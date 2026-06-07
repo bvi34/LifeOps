@@ -60,6 +60,7 @@ class WeekRepository(
         aspectBreakdown = gson.fromJson(aspectBreakdown, mapType) ?: emptyMap(),
         categoryBreakdown = gson.fromJson(categoryBreakdown, mapType) ?: emptyMap(),
         categorySlipBreakdown = gson.fromJson(categorySlipBreakdown, mapType) ?: emptyMap(),
+        categoryTotalBreakdown = gson.fromJson(categoryTotalBreakdown, mapType) ?: emptyMap(),
         hardDeadlineCompletedCount = hardDeadlineCompletedCount,
         hardDeadlineExpiredCount = hardDeadlineExpiredCount,
         createdAt = createdAt

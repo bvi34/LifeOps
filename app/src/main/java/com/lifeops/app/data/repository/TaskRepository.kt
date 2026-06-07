@@ -52,6 +52,8 @@ class TaskRepository(
 
     suspend fun upsertTask(task: Task) = taskDao.upsert(task.toEntity())
 
+    suspend fun updateTask(task: Task) = taskDao.update(task.toEntity())
+
     suspend fun getById(id: String): Task? = taskDao.getById(id)?.toModel()
 
     suspend fun closeWeek(weekId: String) {
@@ -83,15 +85,19 @@ class TaskRepository(
         val aspectBreakdown = mutableMapOf<String, Int>()
         val categoryBreakdown = mutableMapOf<String, Int>()
         val categorySlipBreakdown = mutableMapOf<String, Int>()
+        val categoryTotalBreakdown = mutableMapOf<String, Int>()
 
         tasks.forEach { task ->
+            // Count every task (regardless of status) in the category total
+            task.categoryId?.let { catId ->
+                categoryTotalBreakdown[catId] = (categoryTotalBreakdown[catId] ?: 0) + 1
+            }
             when (task.status) {
                 TaskStatus.COMPLETED -> {
                     task.aspectId?.let { aspectBreakdown[it] = (aspectBreakdown[it] ?: 0) + task.resourceValue }
                     task.categoryId?.let { categoryBreakdown[it] = (categoryBreakdown[it] ?: 0) + task.resourceValue }
                 }
                 TaskStatus.INCOMPLETE, TaskStatus.EXPIRED -> {
-                    // Track slip per category
                     task.categoryId?.let { categorySlipBreakdown[it] = (categorySlipBreakdown[it] ?: 0) + 1 }
                 }
                 else -> Unit
@@ -113,6 +119,7 @@ class TaskRepository(
             aspectBreakdown = gson.toJson(aspectBreakdown),
             categoryBreakdown = gson.toJson(categoryBreakdown),
             categorySlipBreakdown = gson.toJson(categorySlipBreakdown),
+            categoryTotalBreakdown = gson.toJson(categoryTotalBreakdown),
             hardDeadlineCompletedCount = hdCompleted,
             hardDeadlineExpiredCount = hdExpired,
             createdAt = now

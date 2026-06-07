@@ -90,26 +90,22 @@ class ReportsViewModel(
             AspectResourceShare(aspect?.name ?: id, aspect?.color ?: "#6200EE", earned.toFloat() / grandTotal)
         }.sortedByDescending { it.share }
 
-        // Category slip rate: slip = (incomplete + expired) tasks / (all non-skipped tasks)
-        // categorySlipBreakdown tracks slip counts; categoryBreakdown tracks completed resource values.
-        // We need both to compute a task count denominator. Use slip + completed proxy from breakdown keys.
-        val catSlip = mutableMapOf<String, Pair<Int, Int>>() // categoryId → (slipCount, completedCount)
+        // Category slip rate = (incomplete + expired) / total tasks in category across snapshots.
+        // categorySlipBreakdown = slip count per category; categoryTotalBreakdown = all tasks per category.
+        val catSlip = mutableMapOf<String, Int>()   // categoryId → cumulative slip count
+        val catTotal = mutableMapOf<String, Int>()  // categoryId → cumulative total task count
         snapshots.forEach { snap ->
             snap.categorySlipBreakdown.forEach { (catId, slip) ->
-                val cur = catSlip[catId] ?: Pair(0, 0)
-                catSlip[catId] = Pair(cur.first + slip, cur.second)
+                catSlip[catId] = (catSlip[catId] ?: 0) + slip
             }
-            // categoryBreakdown maps categoryId → resource value; we use presence as "had completed tasks"
-            snap.categoryBreakdown.keys.forEach { catId ->
-                val cur = catSlip[catId] ?: Pair(0, 0)
-                catSlip[catId] = Pair(cur.first, cur.second + 1)
+            snap.categoryTotalBreakdown.forEach { (catId, total) ->
+                catTotal[catId] = (catTotal[catId] ?: 0) + total
             }
         }
-        val categorySlipRates = catSlip.map { (id, counts) ->
-            val totalTasks = counts.first + counts.second
+        val categorySlipRates = catTotal.map { (id, total) ->
             CategorySlipRate(
                 state.categories[id]?.name ?: id,
-                if (totalTasks > 0) counts.first.toFloat() / totalTasks else 0f
+                if (total > 0) (catSlip[id] ?: 0).toFloat() / total else 0f
             )
         }.sortedByDescending { it.rate }
 

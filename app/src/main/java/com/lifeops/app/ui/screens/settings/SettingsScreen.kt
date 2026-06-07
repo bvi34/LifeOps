@@ -46,7 +46,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     isExpanded = state.expandedAspectId == aspect.id,
                     onToggle = { viewModel.toggleAspectExpanded(aspect.id) },
                     onArchive = { viewModel.archiveAspect(aspect.id, !aspect.isArchived) },
-                    onAddCategory = { viewModel.showNewCategoryDialog(aspect.id) }
+                    onAddCategory = { viewModel.showNewCategoryDialog(aspect.id) },
+                    onArchiveCategory = { catId, archive -> viewModel.archiveCategory(catId, archive) }
                 )
             }
             item {
@@ -84,7 +85,8 @@ private fun AspectItem(
     isExpanded: Boolean,
     onToggle: () -> Unit,
     onArchive: () -> Unit,
-    onAddCategory: () -> Unit
+    onAddCategory: () -> Unit,
+    onArchiveCategory: (String, Boolean) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -121,10 +123,29 @@ private fun AspectItem(
             if (isExpanded) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 categories.forEach { cat ->
-                    Text("• ${cat.name}", style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(vertical = 2.dp, horizontal = 8.dp),
-                        color = if (cat.isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        else MaterialTheme.colorScheme.onSurface)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "• ${cat.name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f),
+                            color = if (cat.isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                        IconButton(
+                            onClick = { onArchiveCategory(cat.id, !cat.isArchived) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                if (cat.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
+                                contentDescription = if (cat.isArchived) "Unarchive" else "Archive",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
                 }
                 TextButton(onClick = onAddCategory, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))

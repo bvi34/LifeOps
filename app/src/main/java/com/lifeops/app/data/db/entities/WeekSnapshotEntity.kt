@@ -30,6 +30,7 @@ data class WeekSnapshotEntity(
     val categoryBreakdown: String,
     // categoryId → (incomplete + expired) count for slip rate
     val categorySlipBreakdown: String,
+    val categoryTotalBreakdown: String,
     val hardDeadlineCompletedCount: Int,
     val hardDeadlineExpiredCount: Int,
     val createdAt: String

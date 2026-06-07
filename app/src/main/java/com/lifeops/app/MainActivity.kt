@@ -1,9 +1,11 @@
 package com.lifeops.app
 
 import android.Manifest
+import android.app.AlarmManager
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -50,11 +52,24 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val prefs = getSharedPreferences("lifeops_prefs", MODE_PRIVATE)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val prefs = getSharedPreferences("lifeops_prefs", MODE_PRIVATE)
             if (!prefs.getBoolean("notification_permission_requested", false)) {
                 prefs.edit().putBoolean("notification_permission_requested", true).apply()
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        // SCHEDULE_EXACT_ALARM is a special permission on Android 12+ that requires the user
+        // to grant it via system Settings; it cannot be requested via requestPermissions().
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (!prefs.getBoolean("exact_alarm_permission_requested", false)) {
+                prefs.edit().putBoolean("exact_alarm_permission_requested", true).apply()
+                val alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+                if (!alarmManager.canScheduleExactAlarms()) {
+                    startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+                }
             }
         }
 

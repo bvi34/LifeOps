@@ -18,7 +18,7 @@ import com.lifeops.app.data.db.entities.*
         GameResourceMappingEntity::class,
         NotificationEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class LifeOpsDatabase : RoomDatabase() {

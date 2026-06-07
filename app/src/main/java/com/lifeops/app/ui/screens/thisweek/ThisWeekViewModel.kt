@@ -26,7 +26,8 @@ data class ThisWeekUiState(
     val importDialogOpen: Boolean = false,
     val importPreview: ImportPreview? = null,
     val importError: String? = null,
-    val importJson: String = ""
+    val importJson: String = "",
+    val editingTask: Task? = null
 )
 
 class ThisWeekViewModel(
@@ -143,6 +144,34 @@ class ThisWeekViewModel(
             importRepository.commitImport(json)
                 .onSuccess { closeImportDialog() }
                 .onFailure { e -> _uiState.update { it.copy(importError = e.message) } }
+        }
+    }
+
+    fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
+
+    fun cancelEditTask() = _uiState.update { it.copy(editingTask = null) }
+
+    fun saveTaskEdit(
+        title: String,
+        notes: String?,
+        priority: com.lifeops.app.data.model.Priority,
+        dueDate: String?,
+        hardDeadline: Boolean
+    ) {
+        val task = _uiState.value.editingTask ?: return
+        viewModelScope.launch {
+            val newResourceValue = com.lifeops.app.util.ImportParser.computeResourceValue(priority.label, hardDeadline)
+            taskRepository.updateTask(
+                task.copy(
+                    title = title,
+                    notes = notes,
+                    priority = priority,
+                    dueDate = dueDate,
+                    hardDeadline = hardDeadline,
+                    resourceValue = newResourceValue
+                )
+            )
+            _uiState.update { it.copy(editingTask = null) }
         }
     }
 }

@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.ui.components.ImportDialog
+import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.theme.parseColor
 
@@ -88,7 +89,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onSkip = { viewModel.onSkipTask(task.id) },
                                 onCarryForward = { viewModel.onCarryForward(task) },
-                                onEdit = {}
+                                onEdit = { viewModel.startEditTask(task) }
                             )
                         }
                     }
@@ -106,6 +107,16 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             onPreview = viewModel::previewImport,
             onCommit = viewModel::commitImport,
             onDismiss = viewModel::closeImportDialog
+        )
+    }
+
+    state.editingTask?.let { task ->
+        TaskEditDialog(
+            task = task,
+            onSave = { title, notes, priority, dueDate, hardDeadline ->
+                viewModel.saveTaskEdit(title, notes, priority, dueDate, hardDeadline)
+            },
+            onDismiss = viewModel::cancelEditTask
         )
     }
 

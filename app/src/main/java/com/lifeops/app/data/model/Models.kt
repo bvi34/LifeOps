@@ -91,6 +91,7 @@ data class WeekSnapshot(
     val aspectBreakdown: Map<String, Int>,
     val categoryBreakdown: Map<String, Int>,
     val categorySlipBreakdown: Map<String, Int>,
+    val categoryTotalBreakdown: Map<String, Int>,
     val hardDeadlineCompletedCount: Int,
     val hardDeadlineExpiredCount: Int,
     val createdAt: String
