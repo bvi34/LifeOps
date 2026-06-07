@@ -33,6 +33,12 @@ class AspectRepository(
 
     suspend fun setCategoryArchived(id: String, archived: Boolean) = categoryDao.setArchived(id, archived)
 
+    suspend fun findAspectByName(name: String): Aspect? =
+        aspectDao.findByName(name)?.toModel()
+
+    suspend fun findCategoryByName(aspectId: String, name: String): Category? =
+        categoryDao.findByAspectAndName(aspectId, name)?.toModel()
+
     suspend fun findOrCreateAspect(name: String, color: String = "#6200EE", icon: String = "star"): Aspect {
         val existing = aspectDao.findByName(name)
         if (existing != null) return existing.toModel()

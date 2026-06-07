@@ -5,13 +5,13 @@ import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class ResourcesUiState(
     val gameResources: List<GameResource> = emptyList(),
     val mappings: List<GameResourceMapping> = emptyList(),
     val aspects: List<Aspect> = emptyList(),
     val aspectEarnedThisWeek: Map<String, Int> = emptyMap(),
-    val aspectEarnedLifetime: Map<String, Int> = emptyMap(),
     val editingMappingResourceId: String? = null
 )
 
@@ -30,24 +30,37 @@ class ResourcesViewModel(
             combine(
                 gameResourceRepository.observeResources(),
                 gameResourceRepository.observeMappings(),
-                aspectRepository.observeAspects()
-            ) { resources, mappings, aspects -> Triple(resources, mappings, aspects) }
-                .collectLatest { (resources, mappings, aspects) ->
-                    _uiState.update {
-                        it.copy(
-                            gameResources = resources,
-                            mappings = mappings,
-                            aspects = aspects
-                        )
-                    }
+                aspectRepository.observeAspects(),
+                weekRepository.observeCurrentWeek()
+            ) { resources, mappings, aspects, week ->
+                object {
+                    val resources = resources
+                    val mappings = mappings
+                    val aspects = aspects
+                    val week = week
                 }
+            }.collectLatest { state ->
+                // Compute live "earned this week" from completed tasks in current week
+                val earnedThisWeek = state.week?.let { week ->
+                    taskRepository.getEarnedThisWeekByAspect(week.id)
+                } ?: emptyMap()
+
+                _uiState.update {
+                    it.copy(
+                        gameResources = state.resources,
+                        mappings = state.mappings,
+                        aspects = state.aspects,
+                        aspectEarnedThisWeek = earnedThisWeek
+                    )
+                }
+            }
         }
     }
 
     fun onAddOrUpdateMapping(gameResourceId: String, aspectId: String, weight: Float) {
         viewModelScope.launch {
             val mapping = GameResourceMapping(
-                id = java.util.UUID.randomUUID().toString(),
+                id = UUID.randomUUID().toString(),
                 gameResourceId = gameResourceId,
                 aspectId = aspectId,
                 weight = weight
@@ -68,6 +81,17 @@ class ResourcesViewModel(
 
     fun setEditingResource(id: String?) {
         _uiState.update { it.copy(editingMappingResourceId = id) }
+    }
+
+    // Compute game resource earned this week by applying mappings to aspect earnings
+    fun computeResourceEarnedThisWeek(gameResourceId: String): Int {
+        val state = _uiState.value
+        return state.mappings
+            .filter { it.gameResourceId == gameResourceId }
+            .sumOf { mapping ->
+                val aspectEarned = state.aspectEarnedThisWeek[mapping.aspectId] ?: 0
+                (aspectEarned * mapping.weight).toInt()
+            }
     }
 }
 

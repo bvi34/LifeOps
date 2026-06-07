@@ -49,13 +49,11 @@ class ReportsViewModel(
             ) { snapshots, aspects, categories ->
                 Triple(snapshots, aspects, categories)
             }.collectLatest { (snapshots, aspects, categories) ->
-                val aspectMap = aspects.associateBy { it.id }
-                val categoryMap = categories.associateBy { it.id }
                 _uiState.update {
                     it.copy(
                         snapshots = snapshots,
-                        aspects = aspectMap,
-                        categories = categoryMap,
+                        aspects = aspects.associateBy { a -> a.id },
+                        categories = categories.associateBy { c -> c.id },
                         isLoading = false
                     )
                 }
@@ -72,10 +70,16 @@ class ReportsViewModel(
     private fun computeStats() {
         val state = _uiState.value
         val snapshots = filteredSnapshots(state)
+
         val trend = snapshots.map { snap ->
-            val total = snap.completedCount + snap.incompleteCount + snap.expiredCount + snap.skippedCount + snap.carriedForwardCount
-            WeeklyCompletionPoint(snap.createdAt.take(10), if (total > 0) snap.completedCount.toFloat() / total else 0f)
+            val total = snap.completedCount + snap.incompleteCount + snap.expiredCount +
+                    snap.skippedCount + snap.carriedForwardCount
+            WeeklyCompletionPoint(
+                snap.createdAt.take(10),
+                if (total > 0) snap.completedCount.toFloat() / total else 0f
+            )
         }
+
         val totalByAspect = mutableMapOf<String, Int>()
         snapshots.forEach { snap ->
             snap.aspectBreakdown.forEach { (k, v) -> totalByAspect[k] = (totalByAspect[k] ?: 0) + v }
@@ -84,29 +88,47 @@ class ReportsViewModel(
         val aspectShares = totalByAspect.map { (id, earned) ->
             val aspect = state.aspects[id]
             AspectResourceShare(aspect?.name ?: id, aspect?.color ?: "#6200EE", earned.toFloat() / grandTotal)
-        }
-        val totalByCategory = mutableMapOf<String, Pair<Int, Int>>()
+        }.sortedByDescending { it.share }
+
+        // Category slip rate: slip = (incomplete + expired) tasks / (all non-skipped tasks)
+        // categorySlipBreakdown tracks slip counts; categoryBreakdown tracks completed resource values.
+        // We need both to compute a task count denominator. Use slip + completed proxy from breakdown keys.
+        val catSlip = mutableMapOf<String, Pair<Int, Int>>() // categoryId → (slipCount, completedCount)
         snapshots.forEach { snap ->
-            val total = snap.completedCount + snap.incompleteCount + snap.expiredCount
-            snap.categoryBreakdown.forEach { (k, _) ->
-                val cur = totalByCategory[k] ?: Pair(0, 0)
-                totalByCategory[k] = Pair(cur.first + snap.incompleteCount + snap.expiredCount, cur.second + total)
+            snap.categorySlipBreakdown.forEach { (catId, slip) ->
+                val cur = catSlip[catId] ?: Pair(0, 0)
+                catSlip[catId] = Pair(cur.first + slip, cur.second)
+            }
+            // categoryBreakdown maps categoryId → resource value; we use presence as "had completed tasks"
+            snap.categoryBreakdown.keys.forEach { catId ->
+                val cur = catSlip[catId] ?: Pair(0, 0)
+                catSlip[catId] = Pair(cur.first, cur.second + 1)
             }
         }
-        val catSlip = totalByCategory.map { (id, pair) ->
-            val cat = state.categories[id]
-            CategorySlipRate(cat?.name ?: id, if (pair.second > 0) pair.first.toFloat() / pair.second else 0f)
+        val categorySlipRates = catSlip.map { (id, counts) ->
+            val totalTasks = counts.first + counts.second
+            CategorySlipRate(
+                state.categories[id]?.name ?: id,
+                if (totalTasks > 0) counts.first.toFloat() / totalTasks else 0f
+            )
+        }.sortedByDescending { it.rate }
+
+        // HD hit rate: only among tasks with hard deadlines
+        val hdCompleted = snapshots.sumOf { it.hardDeadlineCompletedCount }
+        val hdExpired = snapshots.sumOf { it.hardDeadlineExpiredCount }
+        val hdTotal = hdCompleted + hdExpired
+        val hdHitRate = if (hdTotal > 0) hdCompleted.toFloat() / hdTotal else 0f
+
+        val totalTasks = snapshots.sumOf {
+            it.completedCount + it.incompleteCount + it.expiredCount + it.carriedForwardCount + it.skippedCount
         }
-        val totalHard = snapshots.sumOf { it.expiredCount + it.completedCount }
-        val hdHitRate = if (totalHard > 0) snapshots.sumOf { it.completedCount }.toFloat() / totalHard else 0f
-        val totalTasks = snapshots.sumOf { it.completedCount + it.incompleteCount + it.expiredCount + it.carriedForwardCount + it.skippedCount }
         val cfRate = if (totalTasks > 0) snapshots.sumOf { it.carriedForwardCount }.toFloat() / totalTasks else 0f
 
         _uiState.update {
             it.copy(
                 completionTrend = trend,
                 aspectResourceShares = aspectShares,
-                categorySlipRates = catSlip,
+                categorySlipRates = categorySlipRates,
                 hardDeadlineHitRate = hdHitRate,
                 carryForwardRate = cfRate
             )

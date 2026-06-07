@@ -90,6 +90,9 @@ data class WeekSnapshot(
     val totalResourcesEarned: Int,
     val aspectBreakdown: Map<String, Int>,
     val categoryBreakdown: Map<String, Int>,
+    val categorySlipBreakdown: Map<String, Int>,
+    val hardDeadlineCompletedCount: Int,
+    val hardDeadlineExpiredCount: Int,
     val createdAt: String
 )
 

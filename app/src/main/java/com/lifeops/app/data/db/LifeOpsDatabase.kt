@@ -18,7 +18,7 @@ import com.lifeops.app.data.db.entities.*
         GameResourceMappingEntity::class,
         NotificationEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -40,7 +40,10 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     context.applicationContext,
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
-                ).build().also { INSTANCE = it }
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
+                    .also { INSTANCE = it }
             }
     }
 }

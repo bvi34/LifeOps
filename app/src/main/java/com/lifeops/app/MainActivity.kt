@@ -51,7 +51,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            val prefs = getSharedPreferences("lifeops_prefs", MODE_PRIVATE)
+            if (!prefs.getBoolean("notification_permission_requested", false)) {
+                prefs.edit().putBoolean("notification_permission_requested", true).apply()
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
 
         val app = application as LifeOpsApp

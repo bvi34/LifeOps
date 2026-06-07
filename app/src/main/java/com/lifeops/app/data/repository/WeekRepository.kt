@@ -16,6 +16,7 @@ class WeekRepository(
     private val weekSnapshotDao: WeekSnapshotDao
 ) {
     private val gson = Gson()
+    private val mapType = object : TypeToken<Map<String, Int>>() {}.type
 
     fun observeCurrentWeek(): Flow<Week?> =
         weekDao.observeCurrentWeek().map { it?.toModel() }
@@ -24,10 +25,10 @@ class WeekRepository(
         weekDao.observeAll().map { list -> list.map { it.toModel() } }
 
     fun observeSnapshots(): Flow<List<WeekSnapshot>> =
-        weekSnapshotDao.observeAll().map { list -> list.map { it.toWeekSnapshot() } }
+        weekSnapshotDao.observeAll().map { list -> list.map { it.toModel() } }
 
     fun observeSnapshotsSince(since: String): Flow<List<WeekSnapshot>> =
-        weekSnapshotDao.observeSince(since).map { list -> list.map { it.toWeekSnapshot() } }
+        weekSnapshotDao.observeSince(since).map { list -> list.map { it.toModel() } }
 
     suspend fun getCurrentWeek(): Week? = weekDao.getCurrentWeek()?.toModel()
 
@@ -47,20 +48,20 @@ class WeekRepository(
 
     suspend fun upsertWeek(week: Week) = weekDao.upsert(week.toEntity())
 
-    private fun WeekSnapshotEntity.toWeekSnapshot(): WeekSnapshot {
-        val type = object : TypeToken<Map<String, Int>>() {}.type
-        return WeekSnapshot(
-            id = id,
-            weekId = weekId,
-            completedCount = completedCount,
-            incompleteCount = incompleteCount,
-            expiredCount = expiredCount,
-            skippedCount = skippedCount,
-            carriedForwardCount = carriedForwardCount,
-            totalResourcesEarned = totalResourcesEarned,
-            aspectBreakdown = gson.fromJson(aspectBreakdown, type) ?: emptyMap(),
-            categoryBreakdown = gson.fromJson(categoryBreakdown, type) ?: emptyMap(),
-            createdAt = createdAt
-        )
-    }
+    private fun WeekSnapshotEntity.toModel(): WeekSnapshot = WeekSnapshot(
+        id = id,
+        weekId = weekId,
+        completedCount = completedCount,
+        incompleteCount = incompleteCount,
+        expiredCount = expiredCount,
+        skippedCount = skippedCount,
+        carriedForwardCount = carriedForwardCount,
+        totalResourcesEarned = totalResourcesEarned,
+        aspectBreakdown = gson.fromJson(aspectBreakdown, mapType) ?: emptyMap(),
+        categoryBreakdown = gson.fromJson(categoryBreakdown, mapType) ?: emptyMap(),
+        categorySlipBreakdown = gson.fromJson(categorySlipBreakdown, mapType) ?: emptyMap(),
+        hardDeadlineCompletedCount = hardDeadlineCompletedCount,
+        hardDeadlineExpiredCount = hardDeadlineExpiredCount,
+        createdAt = createdAt
+    )
 }

@@ -31,7 +31,8 @@ class LifeOpsApp : Application() {
             database.weekSnapshotDao(),
             database.gameResourceDao(),
             database.gameResourceMappingDao(),
-            database.notificationDao()
+            database.notificationDao(),
+            notificationRepository
         )
     }
     val importRepository by lazy {

@@ -38,6 +38,7 @@ fun ResourcesScreen(viewModel: ResourcesViewModel) {
                     resource = resource,
                     mappings = state.mappings.filter { it.gameResourceId == resource.id },
                     aspects = state.aspects,
+                    earnedThisWeek = viewModel.computeResourceEarnedThisWeek(resource.id),
                     onRename = { viewModel.onRenameResource(resource, it) },
                     onEditMappings = { viewModel.setEditingResource(resource.id) }
                 )
@@ -65,6 +66,7 @@ private fun GameResourceCard(
     resource: GameResource,
     mappings: List<GameResourceMapping>,
     aspects: List<com.lifeops.app.data.model.Aspect>,
+    earnedThisWeek: Int,
     onRename: (String) -> Unit,
     onEditMappings: () -> Unit
 ) {
@@ -99,6 +101,7 @@ private fun GameResourceCard(
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                StatChip("This Week", "+$earnedThisWeek")
                 StatChip("Current", resource.currentValue.toString())
                 StatChip("Lifetime", resource.lifetimeEarned.toString())
             }

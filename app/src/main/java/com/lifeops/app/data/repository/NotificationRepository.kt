@@ -8,7 +8,8 @@ import com.lifeops.app.data.model.Task
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.worker.TaskNotificationWorker
 import com.lifeops.app.worker.WeekCloseReminderWorker
-import java.time.*
+import java.time.DayOfWeek
+import java.time.ZonedDateTime
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -20,31 +21,23 @@ class NotificationRepository(
 
     suspend fun scheduleForTask(task: Task) {
         val dueDate = task.dueDate ?: return
-        val reminderMillis = DateUtil.epochMillisForDate(dueDate, 9)
         val now = System.currentTimeMillis()
-        if (reminderMillis > now) {
-            val delay = reminderMillis - now
-            enqueueTaskNotification(task.id, task.title, "reminder", delay)
-            val notif = NotificationEntity(
-                id = UUID.randomUUID().toString(),
-                taskId = task.id,
-                type = "reminder",
-                scheduledAt = DateUtil.isoFromEpoch(reminderMillis)
+
+        val reminderAt = DateUtil.epochMillisForDate(dueDate, 9)
+        if (reminderAt > now) {
+            enqueueTaskNotification(task.id, task.title, "reminder", reminderAt - now)
+            notificationDao.insert(
+                NotificationEntity(UUID.randomUUID().toString(), task.id, "reminder", DateUtil.isoFromEpoch(reminderAt))
             )
-            notificationDao.insert(notif)
         }
+
         if (task.hardDeadline) {
-            val dayBefore = DateUtil.epochMillisForDate(dueDate, 18) - TimeUnit.DAYS.toMillis(1)
-            if (dayBefore > now) {
-                val delay = dayBefore - now
-                enqueueTaskNotification(task.id, task.title, "hard_deadline", delay)
-                val notif = NotificationEntity(
-                    id = UUID.randomUUID().toString(),
-                    taskId = task.id,
-                    type = "hard_deadline",
-                    scheduledAt = DateUtil.isoFromEpoch(dayBefore)
+            val hardDeadlineAt = DateUtil.epochMillisForDayBefore(dueDate, 18)
+            if (hardDeadlineAt > now) {
+                enqueueTaskNotification(task.id, task.title, "hard_deadline", hardDeadlineAt - now)
+                notificationDao.insert(
+                    NotificationEntity(UUID.randomUUID().toString(), task.id, "hard_deadline", DateUtil.isoFromEpoch(hardDeadlineAt))
                 )
-                notificationDao.insert(notif)
             }
         }
     }
@@ -61,22 +54,18 @@ class NotificationRepository(
         workManager.enqueueUniqueWork("week_close_reminder", ExistingWorkPolicy.REPLACE, request)
     }
 
+    suspend fun cancelForTask(taskId: String) {
+        workManager.cancelAllWorkByTag("task_$taskId")
+        notificationDao.deleteByTask(taskId)
+    }
+
     private fun enqueueTaskNotification(taskId: String, title: String, type: String, delayMs: Long) {
-        val data = workDataOf(
-            "task_id" to taskId,
-            "title" to title,
-            "type" to type
-        )
+        val data = workDataOf("task_id" to taskId, "title" to title, "type" to type)
         val request = OneTimeWorkRequestBuilder<TaskNotificationWorker>()
             .setInitialDelay(delayMs, TimeUnit.MILLISECONDS)
             .setInputData(data)
             .addTag("task_$taskId")
             .build()
         workManager.enqueue(request)
-    }
-
-    suspend fun cancelForTask(taskId: String) {
-        workManager.cancelAllWorkByTag("task_$taskId")
-        notificationDao.deleteByTask(taskId)
     }
 }

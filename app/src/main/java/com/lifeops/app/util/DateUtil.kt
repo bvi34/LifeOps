@@ -38,6 +38,14 @@ object DateUtil {
         } catch (e: Exception) { System.currentTimeMillis() }
     }
 
+    fun epochMillisForDayBefore(date: String, hour: Int): Long {
+        return try {
+            val ld = LocalDate.parse(date, dateFormatter).minusDays(1)
+            val ldt = LocalDateTime.of(ld, LocalTime.of(hour, 0))
+            ldt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        } catch (e: Exception) { System.currentTimeMillis() }
+    }
+
     fun isoFromEpoch(epochMs: Long): String =
         Instant.ofEpochMilli(epochMs).toString()
 

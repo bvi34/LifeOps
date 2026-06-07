@@ -3,7 +3,6 @@ package com.lifeops.app.data.repository
 import com.lifeops.app.data.model.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
-import com.lifeops.app.util.ParsedTask
 import java.util.UUID
 
 class ImportRepository(
@@ -12,42 +11,50 @@ class ImportRepository(
     private val weekRepository: WeekRepository,
     private val notificationRepository: NotificationRepository
 ) {
+    /**
+     * Parse JSON and compute a preview without writing to DB.
+     * Uses DB to find existing aspects/categories case-insensitively,
+     * so the diff accurately shows only truly new items.
+     */
     suspend fun previewImport(json: String): Result<ImportPreview> {
         val result = ImportParser.parse(json)
         if (result.error != null) return Result.failure(Exception(result.error))
 
+        // Resolve aspects and categories against DB (same logic as commitImport)
+        val aspectCache = mutableMapOf<String, Aspect>()   // lowercase name → resolved aspect
+        val categoryCache = mutableMapOf<String, Category>() // "asp/cat" lowercase → resolved category
         val newAspects = mutableListOf<Aspect>()
         val newCategories = mutableListOf<Category>()
-        val aspectCache = mutableMapOf<String, Aspect>()
-        val categoryCache = mutableMapOf<String, Category>()
 
-        result.tasks.forEach { parsed ->
-            parsed.aspectName?.let { aspectName ->
-                if (!aspectCache.containsKey(aspectName.lowercase())) {
-                    val existing = aspectRepository.observeAspects()
-                    // simplified: we check name cache from parsed list
-                    val aspect = Aspect(UUID.randomUUID().toString(), aspectName, "#6200EE", "star")
-                    aspectCache[aspectName.lowercase()] = aspect
-                    newAspects.add(aspect)
-                }
-                parsed.categoryName?.let { categoryName ->
-                    val cacheKey = "${aspectName.lowercase()}/${categoryName.lowercase()}"
-                    if (!categoryCache.containsKey(cacheKey)) {
-                        val aspect = aspectCache[aspectName.lowercase()]!!
-                        val category = Category(UUID.randomUUID().toString(), aspect.id, categoryName)
-                        categoryCache[cacheKey] = category
-                        newCategories.add(category)
-                    }
-                }
-            }
-        }
+        // Pull all existing aspects/categories once to avoid N+1 queries in preview
+        val existingAspects = mutableMapOf<String, Aspect>()  // lowercase name → aspect from DB placeholder
+        val existingCategories = mutableMapOf<String, Category>()
 
         val week = weekRepository.getOrCreateCurrentWeek()
         val tasks = result.tasks.map { parsed ->
-            val aspect = parsed.aspectName?.let { aspectCache[it.lowercase()] }
-            val category = parsed.categoryName?.let { catName ->
-                parsed.aspectName?.let { aspName ->
-                    categoryCache["${aspName.lowercase()}/${catName.lowercase()}"]
+            val aspect: Aspect? = parsed.aspectName?.let { aspName ->
+                val key = aspName.lowercase()
+                aspectCache.getOrPut(key) {
+                    // Check DB
+                    val found = resolveAspectFromDb(aspName)
+                    if (found == null) {
+                        val new = Aspect(UUID.randomUUID().toString(), aspName, "#6200EE", "star")
+                        newAspects.add(new)
+                        new
+                    } else found
+                }
+            }
+            val category: Category? = parsed.categoryName?.let { catName ->
+                aspect?.let { asp ->
+                    val key = "${asp.id}/${catName.lowercase()}"
+                    categoryCache.getOrPut(key) {
+                        val found = resolveCategoryFromDb(asp.id, catName)
+                        if (found == null) {
+                            val new = Category(UUID.randomUUID().toString(), asp.id, catName)
+                            newCategories.add(new)
+                            new
+                        } else found
+                    }
                 }
             }
             Task(
@@ -66,7 +73,14 @@ class ImportRepository(
             )
         }
 
-        return Result.success(ImportPreview(tasks, newAspects, newCategories, 0))
+        return Result.success(
+            ImportPreview(
+                newTasks = tasks,
+                newAspects = newAspects.distinctBy { it.name.lowercase() },
+                newCategories = newCategories.distinctBy { it.name.lowercase() },
+                existingTaskCount = 0
+            )
+        )
     }
 
     suspend fun commitImport(json: String): Result<Int> {
@@ -77,13 +91,9 @@ class ImportRepository(
         var count = 0
 
         result.tasks.forEach { parsed ->
-            val aspect = parsed.aspectName?.let {
-                aspectRepository.findOrCreateAspect(it)
-            }
+            val aspect = parsed.aspectName?.let { aspectRepository.findOrCreateAspect(it) }
             val category = parsed.categoryName?.let { catName ->
-                aspect?.let { asp ->
-                    aspectRepository.findOrCreateCategory(asp.id, catName)
-                }
+                aspect?.let { asp -> aspectRepository.findOrCreateCategory(asp.id, catName) }
             }
             val task = Task(
                 id = UUID.randomUUID().toString(),
@@ -105,4 +115,11 @@ class ImportRepository(
         }
         return Result.success(count)
     }
+
+    // These delegate to AspectRepository's DAO queries without creating new records
+    private suspend fun resolveAspectFromDb(name: String): Aspect? =
+        aspectRepository.findAspectByName(name)
+
+    private suspend fun resolveCategoryFromDb(aspectId: String, name: String): Category? =
+        aspectRepository.findCategoryByName(aspectId, name)
 }
