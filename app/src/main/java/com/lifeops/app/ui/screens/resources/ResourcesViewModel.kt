@@ -12,6 +12,7 @@ data class ResourcesUiState(
     val mappings: List<GameResourceMapping> = emptyList(),
     val aspects: List<Aspect> = emptyList(),
     val aspectEarnedThisWeek: Map<String, Int> = emptyMap(),
+    val aspectLifetimeEarned: Map<String, Int> = emptyMap(),
     val editingMappingResourceId: String? = null
 )
 
@@ -40,11 +41,9 @@ class ResourcesViewModel(
                     val week = week
                 }
             }.collectLatest { state ->
-                // Compute live "earned this week" from completed tasks in current week
                 val earnedThisWeek = state.week?.let { week ->
                     taskRepository.getEarnedThisWeekByAspect(week.id)
                 } ?: emptyMap()
-
                 _uiState.update {
                     it.copy(
                         gameResources = state.resources,
@@ -53,6 +52,16 @@ class ResourcesViewModel(
                         aspectEarnedThisWeek = earnedThisWeek
                     )
                 }
+            }
+        }
+        // Lifetime per aspect: aggregate aspectBreakdown across all closed week snapshots
+        viewModelScope.launch {
+            weekRepository.observeSnapshots().collectLatest { snapshots ->
+                val lifetime = mutableMapOf<String, Int>()
+                snapshots.forEach { snap ->
+                    snap.aspectBreakdown.forEach { (k, v) -> lifetime[k] = (lifetime[k] ?: 0) + v }
+                }
+                _uiState.update { it.copy(aspectLifetimeEarned = lifetime) }
             }
         }
     }

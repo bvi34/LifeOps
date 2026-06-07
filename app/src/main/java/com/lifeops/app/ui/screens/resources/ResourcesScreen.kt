@@ -12,8 +12,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.GameResourceMapping
+import com.lifeops.app.ui.theme.parseColor
 
 @Composable
 fun ResourcesScreen(viewModel: ResourcesViewModel) {
@@ -29,6 +31,16 @@ fun ResourcesScreen(viewModel: ResourcesViewModel) {
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                Text("Aspect Earnings", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                AspectEarningsCard(
+                    aspects = state.aspects,
+                    earnedThisWeek = state.aspectEarnedThisWeek,
+                    lifetimeEarned = state.aspectLifetimeEarned
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             item {
                 Text("Game Resources", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
@@ -117,6 +129,69 @@ private fun GameResourceCard(
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onEditMappings, modifier = Modifier.fillMaxWidth()) {
                 Text("Edit Mappings")
+            }
+        }
+    }
+}
+
+@Composable
+private fun AspectEarningsCard(
+    aspects: List<Aspect>,
+    earnedThisWeek: Map<String, Int>,
+    lifetimeEarned: Map<String, Int>
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            if (aspects.isEmpty() || (earnedThisWeek.isEmpty() && lifetimeEarned.isEmpty())) {
+                Text(
+                    "No earnings yet — complete tasks to earn resources.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            } else {
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                    Text("Aspect", style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Text("This Week", style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.width(72.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    Text("Lifetime", style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.width(64.dp),
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                }
+                val allAspectIds = (earnedThisWeek.keys + lifetimeEarned.keys).distinct()
+                allAspectIds.forEach { id ->
+                    val aspect = aspects.firstOrNull { it.id == id }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(10.dp),
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = parseColor(aspect?.color ?: "#6200EE")
+                        ) {}
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            aspect?.name ?: id,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            "+${earnedThisWeek[id] ?: 0}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.width(72.dp)
+                        )
+                        Text(
+                            "${lifetimeEarned[id] ?: 0}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                            modifier = Modifier.width(64.dp)
+                        )
+                    }
+                }
             }
         }
     }

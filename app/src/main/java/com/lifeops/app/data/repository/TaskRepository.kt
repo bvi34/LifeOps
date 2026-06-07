@@ -58,6 +58,7 @@ class TaskRepository(
 
     suspend fun closeWeek(weekId: String) {
         val week = weekDao.getById(weekId) ?: return
+        if (week.isClosed) return  // idempotent guard
         val now = DateUtil.now()
 
         // Transition all pending tasks

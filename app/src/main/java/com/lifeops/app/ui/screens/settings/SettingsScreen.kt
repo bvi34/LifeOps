@@ -52,6 +52,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Notifications", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                NotificationPreferenceRow(
+                    hour = state.defaultReminderHour,
+                    onClick = viewModel::showReminderTimePicker
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Game Resource Slots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
             }
@@ -59,6 +69,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 GameResourceItem(resource = resource, onRename = { viewModel.renameGameResource(resource, it) })
             }
         }
+    }
+
+    if (state.showReminderTimePicker) {
+        ReminderTimePickerDialog(
+            currentHour = state.defaultReminderHour,
+            onSelect = { hour -> viewModel.setDefaultReminderHour(hour); viewModel.hideReminderTimePicker() },
+            onDismiss = viewModel::hideReminderTimePicker
+        )
     }
 
     if (state.showNewAspectDialog) {
@@ -210,6 +228,61 @@ private fun NewAspectDialog(onConfirm: (String, String, String) -> Unit, onDismi
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private fun hourLabel(hour: Int): String {
+    val h = if (hour % 12 == 0) 12 else hour % 12
+    val suffix = if (hour < 12) "AM" else "PM"
+    return "$h:00 $suffix"
+}
+
+@Composable
+private fun NotificationPreferenceRow(hour: Int, onClick: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.NotificationsActive, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Default reminder time", style = MaterialTheme.typography.bodyMedium)
+                Text(hourLabel(hour), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+            }
+            TextButton(onClick = onClick) { Text("Change") }
+        }
+    }
+}
+
+@Composable
+private fun ReminderTimePickerDialog(
+    currentHour: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val hours = (5..22).toList()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Default reminder time") },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 320.dp)
+                .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                hours.forEach { h ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = h == currentHour, onClick = { onSelect(h) })
+                        Text(hourLabel(h), style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
 }
 

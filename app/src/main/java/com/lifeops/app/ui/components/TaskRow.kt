@@ -35,7 +35,9 @@ fun TaskRow(
     var showContextMenu by remember { mutableStateOf(false) }
 
     val isCompleted = task.status == TaskStatus.COMPLETED
+    val isSkipped = task.status == TaskStatus.SKIPPED
     val isExpired = task.status == TaskStatus.EXPIRED
+    val isPending = task.status == TaskStatus.PENDING
 
     Card(
         modifier = modifier
@@ -43,7 +45,7 @@ fun TaskRow(
             .padding(horizontal = 8.dp, vertical = 2.dp)
             .combinedClickable(
                 onClick = { if (task.notes != null) expanded = !expanded },
-                onLongClick = { showContextMenu = true }
+                onLongClick = { if (isPending) showContextMenu = true }
             ),
         colors = CardDefaults.cardColors(
             containerColor = if (isExpired)
@@ -79,8 +81,8 @@ fun TaskRow(
                         Text(
                             text = task.title,
                             style = MaterialTheme.typography.bodyMedium,
-                            textDecoration = if (isCompleted) TextDecoration.LineThrough else null,
-                            color = if (isCompleted || task.status == TaskStatus.SKIPPED)
+                            textDecoration = if (isCompleted || isSkipped) TextDecoration.LineThrough else null,
+                            color = if (isCompleted || isSkipped)
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             else MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,

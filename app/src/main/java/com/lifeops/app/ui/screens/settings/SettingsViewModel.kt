@@ -3,6 +3,7 @@ package com.lifeops.app.ui.screens.settings
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -16,12 +17,15 @@ data class SettingsUiState(
     val editingCategory: Category? = null,
     val showNewAspectDialog: Boolean = false,
     val showNewCategoryDialog: Boolean = false,
-    val newAspectForCategoryId: String? = null
+    val newAspectForCategoryId: String? = null,
+    val defaultReminderHour: Int = 9,
+    val showReminderTimePicker: Boolean = false
 )
 
 class SettingsViewModel(
     private val aspectRepository: AspectRepository,
-    private val gameResourceRepository: GameResourceRepository
+    private val gameResourceRepository: GameResourceRepository,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -40,7 +44,8 @@ class SettingsViewModel(
                         it.copy(
                             aspects = aspects,
                             categories = catsByAspect,
-                            gameResources = resources
+                            gameResources = resources,
+                            defaultReminderHour = preferencesRepository.defaultReminderHour
                         )
                     }
                 }
@@ -85,6 +90,14 @@ class SettingsViewModel(
         }
     }
 
+    fun setDefaultReminderHour(hour: Int) {
+        preferencesRepository.defaultReminderHour = hour
+        _uiState.update { it.copy(defaultReminderHour = hour) }
+    }
+
+    fun showReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = true) }
+    fun hideReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = false) }
+
     fun showNewAspectDialog() = _uiState.update { it.copy(showNewAspectDialog = true) }
     fun hideNewAspectDialog() = _uiState.update { it.copy(showNewAspectDialog = false) }
     fun showNewCategoryDialog(aspectId: String) = _uiState.update {
@@ -95,9 +108,10 @@ class SettingsViewModel(
 
 class SettingsViewModelFactory(
     private val aspectRepository: AspectRepository,
-    private val gameResourceRepository: GameResourceRepository
+    private val gameResourceRepository: GameResourceRepository,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository) as T
 }

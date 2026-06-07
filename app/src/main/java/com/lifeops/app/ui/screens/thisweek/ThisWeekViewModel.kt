@@ -118,6 +118,8 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             val week = _uiState.value.week ?: return@launch
             taskRepository.closeWeek(week.id)
+            // Create the next week so the UI doesn't show an empty screen
+            weekRepository.getOrCreateCurrentWeek()
         }
     }
 

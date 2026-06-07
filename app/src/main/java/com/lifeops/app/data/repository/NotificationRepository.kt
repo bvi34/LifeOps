@@ -15,7 +15,8 @@ import java.util.concurrent.TimeUnit
 
 class NotificationRepository(
     private val context: Context,
-    private val notificationDao: NotificationDao
+    private val notificationDao: NotificationDao,
+    private val preferencesRepository: PreferencesRepository
 ) {
     private val workManager = WorkManager.getInstance(context)
 
@@ -23,7 +24,7 @@ class NotificationRepository(
         val dueDate = task.dueDate ?: return
         val now = System.currentTimeMillis()
 
-        val reminderAt = DateUtil.epochMillisForDate(dueDate, 9)
+        val reminderAt = DateUtil.epochMillisForDate(dueDate, preferencesRepository.defaultReminderHour)
         if (reminderAt > now) {
             enqueueTaskNotification(task.id, task.title, "reminder", reminderAt - now)
             notificationDao.insert(
