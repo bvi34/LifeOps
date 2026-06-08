@@ -19,6 +19,8 @@ data class AspectResourceShare(val aspectName: String, val color: String, val sh
 
 data class CategorySlipRate(val categoryName: String, val rate: Float)
 
+data class AspectTimeRow(val aspectName: String, val color: String, val totalMinutes: Int)
+
 data class ReportsUiState(
     val range: ReportRange = ReportRange.DAYS_30,
     val snapshots: List<WeekSnapshot> = emptyList(),
@@ -29,12 +31,16 @@ data class ReportsUiState(
     val categorySlipRates: List<CategorySlipRate> = emptyList(),
     val hardDeadlineHitRate: Float = 0f,
     val carryForwardRate: Float = 0f,
+    val timeByAspect: List<AspectTimeRow> = emptyList(),
+    val totalTimeMinutes: Int = 0,
     val isLoading: Boolean = true
 )
 
 class ReportsViewModel(
     private val weekRepository: WeekRepository,
-    private val aspectRepository: AspectRepository
+    private val aspectRepository: AspectRepository,
+    private val taskRepository: TaskRepository,
+    private val timeEntryRepository: TimeEntryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ReportsUiState())
@@ -64,10 +70,10 @@ class ReportsViewModel(
 
     fun setRange(range: ReportRange) {
         _uiState.update { it.copy(range = range) }
-        computeStats()
+        viewModelScope.launch { computeStats() }
     }
 
-    private fun computeStats() {
+    private suspend fun computeStats() {
         val state = _uiState.value
         val snapshots = filteredSnapshots(state)
 
@@ -90,10 +96,8 @@ class ReportsViewModel(
             AspectResourceShare(aspect?.name ?: id, aspect?.color ?: "#6200EE", earned.toFloat() / grandTotal)
         }.sortedByDescending { it.share }
 
-        // Category slip rate = (incomplete + expired) / total tasks in category across snapshots.
-        // categorySlipBreakdown = slip count per category; categoryTotalBreakdown = all tasks per category.
-        val catSlip = mutableMapOf<String, Int>()   // categoryId → cumulative slip count
-        val catTotal = mutableMapOf<String, Int>()  // categoryId → cumulative total task count
+        val catSlip = mutableMapOf<String, Int>()
+        val catTotal = mutableMapOf<String, Int>()
         snapshots.forEach { snap ->
             snap.categorySlipBreakdown.forEach { (catId, slip) ->
                 catSlip[catId] = (catSlip[catId] ?: 0) + slip
@@ -109,7 +113,6 @@ class ReportsViewModel(
             )
         }.sortedByDescending { it.rate }
 
-        // HD hit rate: only among tasks with hard deadlines
         val hdCompleted = snapshots.sumOf { it.hardDeadlineCompletedCount }
         val hdExpired = snapshots.sumOf { it.hardDeadlineExpiredCount }
         val hdTotal = hdCompleted + hdExpired
@@ -120,13 +123,31 @@ class ReportsViewModel(
         }
         val cfRate = if (totalTasks > 0) snapshots.sumOf { it.carriedForwardCount }.toFloat() / totalTasks else 0f
 
+        // Time by aspect: join time entries with tasks
+        val cutoff = if (state.range == ReportRange.LIFETIME) "1970-01-01T00:00:00Z"
+                     else DateUtil.sinceDate(state.range.days)
+        val timeEntries = timeEntryRepository.getAllSince(cutoff)
+        val tasks = taskRepository.getAllSince(cutoff)
+        val taskAspectMap = tasks.associate { it.id to it.aspectId }
+        val minutesByAspect = mutableMapOf<String, Int>()
+        timeEntries.forEach { entry ->
+            val aspectId = taskAspectMap[entry.taskId] ?: return@forEach
+            minutesByAspect[aspectId] = (minutesByAspect[aspectId] ?: 0) + entry.durationMinutes
+        }
+        val timeRows = minutesByAspect.map { (id, minutes) ->
+            val aspect = state.aspects[id]
+            AspectTimeRow(aspect?.name ?: id, aspect?.color ?: "#6200EE", minutes)
+        }.sortedByDescending { it.totalMinutes }
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
                 aspectResourceShares = aspectShares,
                 categorySlipRates = categorySlipRates,
                 hardDeadlineHitRate = hdHitRate,
-                carryForwardRate = cfRate
+                carryForwardRate = cfRate,
+                timeByAspect = timeRows,
+                totalTimeMinutes = minutesByAspect.values.sum()
             )
         }
     }
@@ -140,9 +161,11 @@ class ReportsViewModel(
 
 class ReportsViewModelFactory(
     private val weekRepository: WeekRepository,
-    private val aspectRepository: AspectRepository
+    private val aspectRepository: AspectRepository,
+    private val taskRepository: TaskRepository,
+    private val timeEntryRepository: TimeEntryRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ReportsViewModel(weekRepository, aspectRepository) as T
+        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository) as T
 }

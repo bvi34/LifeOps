@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.GameResourceMapping
+import com.lifeops.app.data.model.ResourceTransaction
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -53,8 +54,10 @@ fun ResourcesScreen(viewModel: ResourcesViewModel) {
                     mappings = state.mappings.filter { it.gameResourceId == resource.id },
                     aspects = state.aspects,
                     earnedThisWeek = viewModel.computeResourceEarnedThisWeek(resource.id),
+                    recentTransactions = state.transactions[resource.id] ?: emptyList(),
                     onRename = { viewModel.onRenameResource(resource, it) },
-                    onEditMappings = { viewModel.setEditingResource(resource.id) }
+                    onEditMappings = { viewModel.setEditingResource(resource.id) },
+                    onSpend = { viewModel.showSpendDialog(resource.id) }
                 )
             }
         }
@@ -73,6 +76,17 @@ fun ResourcesScreen(viewModel: ResourcesViewModel) {
             )
         }
     }
+
+    state.spendingResourceId?.let { resourceId ->
+        val resource = state.gameResources.firstOrNull { it.id == resourceId }
+        if (resource != null) {
+            SpendDialog(
+                resource = resource,
+                onConfirm = { amount, note -> viewModel.onSpendResource(resourceId, amount, note) },
+                onDismiss = viewModel::hideSpendDialog
+            )
+        }
+    }
 }
 
 @Composable
@@ -81,11 +95,14 @@ private fun GameResourceCard(
     mappings: List<GameResourceMapping>,
     aspects: List<com.lifeops.app.data.model.Aspect>,
     earnedThisWeek: Int,
+    recentTransactions: List<ResourceTransaction>,
     onRename: (String) -> Unit,
-    onEditMappings: () -> Unit
+    onEditMappings: () -> Unit,
+    onSpend: () -> Unit
 ) {
     var editingName by remember { mutableStateOf(false) }
     var nameValue by remember(resource.name) { mutableStateOf(resource.name) }
+    var showHistory by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -116,7 +133,7 @@ private fun GameResourceCard(
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 StatChip("This Week", "+$earnedThisWeek")
-                StatChip("Current", resource.currentValue.toString())
+                StatChip("Balance", resource.currentValue.toString())
                 StatChip("Lifetime", resource.lifetimeEarned.toString())
             }
             if (mappings.isNotEmpty()) {
@@ -129,11 +146,106 @@ private fun GameResourceCard(
                 }
             }
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(onClick = onEditMappings, modifier = Modifier.fillMaxWidth()) {
-                Text("Edit Mappings")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onEditMappings, modifier = Modifier.weight(1f)) { Text("Edit Mappings") }
+                Button(
+                    onClick = onSpend,
+                    enabled = resource.currentValue > 0,
+                    modifier = Modifier.weight(1f)
+                ) { Text("Spend") }
+            }
+            if (recentTransactions.isNotEmpty()) {
+                Spacer(Modifier.height(4.dp))
+                TextButton(
+                    onClick = { showHistory = !showHistory },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (showHistory) "Hide history" else "Show history (${recentTransactions.size})",
+                        style = MaterialTheme.typography.labelSmall)
+                }
+                if (showHistory) {
+                    recentTransactions.take(5).forEach { tx ->
+                        TransactionRow(tx)
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun TransactionRow(tx: ResourceTransaction) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        val isSpend = tx.type == "spend"
+        Text(
+            text = if (isSpend) "−${tx.amount}" else "+${tx.amount}",
+            style = MaterialTheme.typography.bodySmall,
+            color = if (isSpend) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.width(48.dp)
+        )
+        Text(
+            text = tx.note ?: tx.type.replaceFirstChar { it.uppercase() },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = tx.createdAt.take(10),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+        )
+    }
+}
+
+@Composable
+private fun SpendDialog(
+    resource: GameResource,
+    onConfirm: (Int, String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var amount by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    val amountInt = amount.toIntOrNull()
+    val valid = amountInt != null && amountInt > 0 && amountInt <= resource.currentValue
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Spend ${resource.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Balance: ${resource.currentValue}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() } },
+                    label = { Text("Amount to spend") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = amountInt != null && amountInt > resource.currentValue
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Reason (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { amountInt?.let { onConfirm(it, note.trim().ifBlank { null }) } },
+                enabled = valid
+            ) { Text("Spend") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

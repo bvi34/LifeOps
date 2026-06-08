@@ -23,4 +23,7 @@ interface GameResourceDao {
 
     @Query("UPDATE game_resources SET currentValue = currentValue + :amount, lifetimeEarned = lifetimeEarned + :amount WHERE id = :id")
     suspend fun addValue(id: String, amount: Int)
+
+    @Query("UPDATE game_resources SET currentValue = MAX(0, currentValue - :amount) WHERE id = :id")
+    suspend fun spendValue(id: String, amount: Int)
 }

@@ -51,7 +51,6 @@ data class Task(
     val id: String,
     val weekId: String,
     val title: String,
-    val notes: String? = null,
     val aspectId: String? = null,
     val categoryId: String? = null,
     val priority: Priority = Priority.MEDIUM,
@@ -62,6 +61,21 @@ data class Task(
     val completedAt: String? = null,
     val carriedFromTaskId: String? = null,
     val createdAt: String
+)
+
+data class TaskNote(
+    val id: String,
+    val taskId: String,
+    val content: String,
+    val createdAt: String
+)
+
+data class TimeEntry(
+    val id: String,
+    val taskId: String,
+    val durationMinutes: Int,
+    val note: String? = null,
+    val recordedAt: String
 )
 
 data class GameResource(
@@ -77,6 +91,15 @@ data class GameResourceMapping(
     val gameResourceId: String,
     val aspectId: String,
     val weight: Float = 1.0f
+)
+
+data class ResourceTransaction(
+    val id: String,
+    val resourceId: String,
+    val amount: Int,
+    val type: String,
+    val note: String? = null,
+    val createdAt: String
 )
 
 data class WeekSnapshot(

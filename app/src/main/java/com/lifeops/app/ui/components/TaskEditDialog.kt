@@ -13,11 +13,10 @@ import com.lifeops.app.data.model.Task
 @Composable
 fun TaskEditDialog(
     task: Task,
-    onSave: (title: String, notes: String?, priority: Priority, dueDate: String?, hardDeadline: Boolean) -> Unit,
+    onSave: (title: String, priority: Priority, dueDate: String?, hardDeadline: Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     var title by remember(task.id) { mutableStateOf(task.title) }
-    var notes by remember(task.id) { mutableStateOf(task.notes ?: "") }
     var priority by remember(task.id) { mutableStateOf(task.priority) }
     var dueDate by remember(task.id) { mutableStateOf(task.dueDate ?: "") }
     var hardDeadline by remember(task.id) { mutableStateOf(task.hardDeadline) }
@@ -32,14 +31,6 @@ fun TaskEditDialog(
                     onValueChange = { title = it },
                     label = { Text("Title") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    minLines = 2,
-                    maxLines = 4,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
@@ -70,7 +61,6 @@ fun TaskEditDialog(
                 onClick = {
                     onSave(
                         title.trim(),
-                        notes.trim().ifBlank { null },
                         priority,
                         dueDate.trim().ifBlank { null },
                         hardDeadline

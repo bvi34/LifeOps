@@ -5,9 +5,13 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class LifeOpsApp : Application() {
+    // Tied to the process lifetime — not leaked.
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val database by lazy { LifeOpsDatabase.getInstance(this) }
 
     val aspectRepository by lazy {
@@ -17,14 +21,21 @@ class LifeOpsApp : Application() {
         WeekRepository(database.weekDao(), database.weekSnapshotDao())
     }
     val gameResourceRepository by lazy {
-        GameResourceRepository(database.gameResourceDao(), database.gameResourceMappingDao())
+        GameResourceRepository(
+            database.gameResourceDao(),
+            database.gameResourceMappingDao(),
+            database.resourceTransactionDao()
+        )
     }
+    val taskNoteRepository by lazy { TaskNoteRepository(database.taskNoteDao()) }
+    val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
     val preferencesRepository by lazy { PreferencesRepository(this) }
     val notificationRepository by lazy {
         NotificationRepository(this, database.notificationDao(), preferencesRepository)
     }
     val taskRepository by lazy {
         TaskRepository(
+            database,
             database.taskDao(),
             database.aspectDao(),
             database.categoryDao(),
@@ -37,12 +48,12 @@ class LifeOpsApp : Application() {
         )
     }
     val importRepository by lazy {
-        ImportRepository(aspectRepository, taskRepository, weekRepository, notificationRepository)
+        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
     }
 
     override fun onCreate() {
         super.onCreate()
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch {
             weekRepository.getOrCreateCurrentWeek()
             gameResourceRepository.ensureDefaultSlots()
             notificationRepository.scheduleWeekCloseReminder()

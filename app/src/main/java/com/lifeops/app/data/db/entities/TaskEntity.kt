@@ -33,7 +33,6 @@ data class TaskEntity(
     @PrimaryKey val id: String,
     val weekId: String,
     val title: String,
-    val notes: String? = null,
     val aspectId: String? = null,
     val categoryId: String? = null,
     val priority: String = "medium",

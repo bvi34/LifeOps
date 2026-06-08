@@ -16,10 +16,13 @@ import com.lifeops.app.data.db.entities.*
         WeekSnapshotEntity::class,
         GameResourceEntity::class,
         GameResourceMappingEntity::class,
-        NotificationEntity::class
+        NotificationEntity::class,
+        TaskNoteEntity::class,
+        TimeEntryEntity::class,
+        ResourceTransactionEntity::class
     ],
-    version = 3,
-    exportSchema = false
+    version = 4,
+    exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun aspectDao(): AspectDao
@@ -30,6 +33,9 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun gameResourceDao(): GameResourceDao
     abstract fun gameResourceMappingDao(): GameResourceMappingDao
     abstract fun notificationDao(): NotificationDao
+    abstract fun taskNoteDao(): TaskNoteDao
+    abstract fun timeEntryDao(): TimeEntryDao
+    abstract fun resourceTransactionDao(): ResourceTransactionDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null

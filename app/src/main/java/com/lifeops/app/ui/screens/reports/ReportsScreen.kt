@@ -47,8 +47,17 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                     item { StatsSummaryRow(state) }
                     item { CompletionTrendChart(state.completionTrend) }
                     item { AspectBalanceChart(state.aspectResourceShares) }
+                    if (state.timeByAspect.isNotEmpty()) {
+                        item { TimeByAspectCard(state.timeByAspect, state.totalTimeMinutes) }
+                    }
                     if (state.categorySlipRates.isNotEmpty()) {
-                        item { Text("Category Slip Rates", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
+                        item {
+                            Text(
+                                "Category Slip Rates",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                         items(state.categorySlipRates) { cat ->
                             CategorySlipRow(cat)
                         }
@@ -86,6 +95,11 @@ private fun StatsSummaryRow(state: ReportsUiState) {
         StatBox("HD Hit Rate", "${(state.hardDeadlineHitRate * 100).toInt()}%")
         StatBox("Carry Forward", "${(state.carryForwardRate * 100).toInt()}%")
         StatBox("Weeks Tracked", state.snapshots.size.toString())
+        if (state.totalTimeMinutes > 0) {
+            val h = state.totalTimeMinutes / 60
+            val m = state.totalTimeMinutes % 60
+            StatBox("Time", if (h > 0) "${h}h ${m}m" else "${m}m")
+        }
     }
 }
 
@@ -173,6 +187,45 @@ private fun AspectBalanceChart(shares: List<AspectResourceShare>) {
                         Text("${(share.share * 100).toInt()}%", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeByAspectCard(rows: List<AspectTimeRow>, totalMinutes: Int) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            val totalLabel = if (totalMinutes >= 60) "${totalMinutes / 60}h ${totalMinutes % 60}m" else "${totalMinutes}m"
+            Text(
+                "Time Spent — $totalLabel total",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(12.dp))
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(modifier = Modifier.size(10.dp), color = parseColor(row.color), shape = MaterialTheme.shapes.extraSmall) {}
+                    Spacer(Modifier.width(8.dp))
+                    Text(row.aspectName, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    val h = row.totalMinutes / 60
+                    val m = row.totalMinutes % 60
+                    Text(
+                        if (h > 0) "${h}h ${m}m" else "${m}m",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                if (totalMinutes > 0) {
+                    LinearProgressIndicator(
+                        progress = { row.totalMinutes.toFloat() / totalMinutes },
+                        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+                        color = parseColor(row.color)
+                    )
                 }
             }
         }

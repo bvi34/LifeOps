@@ -13,7 +13,9 @@ data class ResourcesUiState(
     val aspects: List<Aspect> = emptyList(),
     val aspectEarnedThisWeek: Map<String, Int> = emptyMap(),
     val aspectLifetimeEarned: Map<String, Int> = emptyMap(),
-    val editingMappingResourceId: String? = null
+    val transactions: Map<String, List<ResourceTransaction>> = emptyMap(),
+    val editingMappingResourceId: String? = null,
+    val spendingResourceId: String? = null
 )
 
 class ResourcesViewModel(
@@ -64,6 +66,12 @@ class ResourcesViewModel(
                 _uiState.update { it.copy(aspectLifetimeEarned = lifetime) }
             }
         }
+        // Observe all resource transactions
+        viewModelScope.launch {
+            gameResourceRepository.observeAllTransactions().collectLatest { all ->
+                _uiState.update { it.copy(transactions = all.groupBy { tx -> tx.resourceId }) }
+            }
+        }
     }
 
     fun onAddOrUpdateMapping(gameResourceId: String, aspectId: String, weight: Float) {
@@ -92,7 +100,16 @@ class ResourcesViewModel(
         _uiState.update { it.copy(editingMappingResourceId = id) }
     }
 
-    // Compute game resource earned this week by applying mappings to aspect earnings
+    fun showSpendDialog(resourceId: String) = _uiState.update { it.copy(spendingResourceId = resourceId) }
+    fun hideSpendDialog() = _uiState.update { it.copy(spendingResourceId = null) }
+
+    fun onSpendResource(resourceId: String, amount: Int, note: String?) {
+        viewModelScope.launch {
+            gameResourceRepository.spendResource(resourceId, amount, note)
+            _uiState.update { it.copy(spendingResourceId = null) }
+        }
+    }
+
     fun computeResourceEarnedThisWeek(gameResourceId: String): Int {
         val state = _uiState.value
         return state.mappings
