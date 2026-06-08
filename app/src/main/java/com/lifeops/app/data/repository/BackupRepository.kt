@@ -38,21 +38,23 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         gson.toJson(data)
     }
 
-    suspend fun restore(json: String): Result<Unit> = try {
-        val data = gson.fromJson(json, BackupData::class.java)
-            ?: return Result.failure(IllegalArgumentException("Invalid backup JSON"))
-        db.withTransaction {
-            for (a in data.aspects) db.aspectDao().upsert(a)
-            for (c in data.categories) db.categoryDao().upsert(c)
-            for (w in data.weeks) db.weekDao().upsert(w)
-            for (t in data.tasks) db.taskDao().upsert(t)
-            for (n in data.taskNotes) db.taskNoteDao().insert(n)
-            for (e in data.timeEntries) db.timeEntryDao().insert(e)
-            for (s in data.weekSnapshots) db.weekSnapshotDao().insert(s)
+    suspend fun restore(json: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val data = gson.fromJson(json, BackupData::class.java)
+                ?: return@withContext Result.failure(IllegalArgumentException("Invalid backup JSON"))
+            db.withTransaction {
+                for (a in data.aspects) db.aspectDao().upsert(a)
+                for (c in data.categories) db.categoryDao().upsert(c)
+                for (w in data.weeks) db.weekDao().upsert(w)
+                for (t in data.tasks) db.taskDao().upsert(t)
+                for (n in data.taskNotes) db.taskNoteDao().insert(n)
+                for (e in data.timeEntries) db.timeEntryDao().insert(e)
+                for (s in data.weekSnapshots) db.weekSnapshotDao().insert(s)
+            }
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
     }
 
     suspend fun buildCsvExport(): String = withContext(Dispatchers.IO) {

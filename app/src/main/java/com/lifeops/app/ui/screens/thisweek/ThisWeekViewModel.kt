@@ -222,17 +222,25 @@ class ThisWeekViewModel(
 
     fun movePlanningTask(taskId: String, direction: Int) {
         val state = _uiState.value
-        val allTasks = state.rawTasks.sortedBy { it.sortOrder }.toMutableList()
-        val idx = allTasks.indexOfFirst { it.id == taskId }
+        // Use stable secondary sort so tasks with sortOrder=0 have consistent positions
+        val allFlat = state.rawTasks
+            .sortedWith(compareBy<Task> { it.sortOrder }.thenBy { it.createdAt })
+        val idx = allFlat.indexOfFirst { it.id == taskId }
         if (idx < 0) return
-        val targetIdx = (idx + direction).coerceIn(0, allTasks.size - 1)
+        val targetIdx = (idx + direction).coerceIn(0, allFlat.size - 1)
         if (targetIdx == idx) return
 
-        val taskA = allTasks[idx]
-        val taskB = allTasks[targetIdx]
+        // Rebuild the full ordering to avoid stale 0-valued sortOrders causing mis-swaps
+        val reordered = allFlat.toMutableList()
+        val moved = reordered.removeAt(idx)
+        reordered.add(targetIdx, moved)
+
         viewModelScope.launch {
-            taskRepository.updateTaskSortOrder(taskA.id, targetIdx)
-            taskRepository.updateTaskSortOrder(taskB.id, idx)
+            for ((newIdx, task) in reordered.withIndex()) {
+                if (task.sortOrder != newIdx) {
+                    taskRepository.updateTaskSortOrder(task.id, newIdx)
+                }
+            }
         }
     }
 
@@ -278,7 +286,8 @@ class ThisWeekViewModel(
         val timer = _uiState.value.activeTimer ?: return
         timerJob?.cancel()
         timerJob = null
-        val minutes = if (timer.isPomodoro) 25 else timer.elapsedSeconds / 60
+        // Always log actual elapsed time. For a completed Pomodoro elapsed ≈ 1500s → 25min.
+        val minutes = timer.elapsedSeconds / 60
         if (saveEntry && minutes > 0) {
             viewModelScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }
@@ -368,7 +377,7 @@ class ThisWeekViewModel(
         val timer = _uiState.value.activeTimer ?: return
         timerJob?.cancel()
         timerJob = null
-        val minutes = if (timer.isPomodoro) 25 else timer.elapsedSeconds / 60
+        val minutes = timer.elapsedSeconds / 60
         if (minutes > 0) {
             saveScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }
