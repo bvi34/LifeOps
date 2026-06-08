@@ -153,7 +153,10 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             }
             composable(Screen.Settings.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.settings.SettingsViewModel>(
-                    factory = SettingsViewModelFactory(app.aspectRepository, app.gameResourceRepository, app.preferencesRepository)
+                    factory = SettingsViewModelFactory(
+                        app.aspectRepository, app.gameResourceRepository,
+                        app.preferencesRepository, app.backupRepository
+                    )
                 )
                 SettingsScreen(vm)
             }

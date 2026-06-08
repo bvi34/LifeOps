@@ -26,4 +26,7 @@ interface CategoryDao {
 
     @Query("UPDATE categories SET isArchived = :archived WHERE id = :id")
     suspend fun setArchived(id: String, archived: Boolean)
+
+    @Query("SELECT * FROM categories ORDER BY name")
+    suspend fun getAllSync(): List<CategoryEntity>
 }

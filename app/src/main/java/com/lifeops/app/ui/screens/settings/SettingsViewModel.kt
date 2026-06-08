@@ -1,5 +1,6 @@
 package com.lifeops.app.ui.screens.settings
 
+import android.content.Context
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
@@ -19,13 +20,18 @@ data class SettingsUiState(
     val showNewCategoryDialog: Boolean = false,
     val newAspectForCategoryId: String? = null,
     val defaultReminderHour: Int = 9,
-    val showReminderTimePicker: Boolean = false
+    val showReminderTimePicker: Boolean = false,
+    val showRestoreDialog: Boolean = false,
+    val restoreJson: String = "",
+    val restoreError: String? = null,
+    val backupStatus: String? = null
 )
 
 class SettingsViewModel(
     private val aspectRepository: AspectRepository,
     private val gameResourceRepository: GameResourceRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val backupRepository: BackupRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -104,14 +110,46 @@ class SettingsViewModel(
         it.copy(showNewCategoryDialog = true, newAspectForCategoryId = aspectId)
     }
     fun hideNewCategoryDialog() = _uiState.update { it.copy(showNewCategoryDialog = false, newAspectForCategoryId = null) }
+
+    fun backup(context: Context) {
+        val repo = backupRepository ?: return
+        viewModelScope.launch {
+            val json = repo.buildBackupJson()
+            repo.shareText(context, json, "LifeOps Backup")
+            _uiState.update { it.copy(backupStatus = "Backup shared") }
+        }
+    }
+
+    fun exportCsv(context: Context) {
+        val repo = backupRepository ?: return
+        viewModelScope.launch {
+            val csv = repo.buildCsvExport()
+            repo.shareText(context, csv, "LifeOps Tasks Export")
+        }
+    }
+
+    fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null) }
+    fun hideRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null) }
+    fun onRestoreJsonChange(json: String) = _uiState.update { it.copy(restoreJson = json) }
+
+    fun restore() {
+        val repo = backupRepository ?: return
+        val json = _uiState.value.restoreJson
+        viewModelScope.launch {
+            repo.restore(json)
+                .onSuccess { hideRestoreDialog() }
+                .onFailure { e -> _uiState.update { it.copy(restoreError = e.message) } }
+        }
+    }
 }
 
 class SettingsViewModelFactory(
     private val aspectRepository: AspectRepository,
     private val gameResourceRepository: GameResourceRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val backupRepository: BackupRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository) as T
 }

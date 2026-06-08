@@ -13,6 +13,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,6 +24,7 @@ import com.lifeops.app.ui.theme.parseColor
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Settings") }) }
@@ -66,6 +68,17 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Data", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                DataActionsSection(
+                    onBackup = { viewModel.backup(context) },
+                    onRestore = viewModel::showRestoreDialog,
+                    onExportCsv = { viewModel.exportCsv(context) }
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Game Resource Slots", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
             }
@@ -73,6 +86,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 GameResourceItem(resource = resource, onRename = { viewModel.renameGameResource(resource, it) })
             }
         }
+    }
+
+    if (state.showRestoreDialog) {
+        RestoreDialog(
+            json = state.restoreJson,
+            error = state.restoreError,
+            onJsonChange = viewModel::onRestoreJsonChange,
+            onConfirm = viewModel::restore,
+            onDismiss = viewModel::hideRestoreDialog
+        )
     }
 
     if (state.showReminderTimePicker) {
@@ -98,6 +121,75 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             )
         }
     }
+}
+
+@Composable
+private fun DataActionsSection(
+    onBackup: () -> Unit,
+    onRestore: () -> Unit,
+    onExportCsv: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onBackup, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Backup")
+                }
+                OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Restore")
+                }
+            }
+            OutlinedButton(onClick = onExportCsv, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Export CSV")
+            }
+        }
+    }
+}
+
+@Composable
+private fun RestoreDialog(
+    json: String,
+    error: String?,
+    onJsonChange: (String) -> Unit,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Restore from Backup") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Paste your backup JSON below. Existing records will be overwritten if IDs match.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedTextField(
+                    value = json,
+                    onValueChange = onJsonChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 120.dp, max = 240.dp),
+                    placeholder = { Text("Paste backup JSON here…") }
+                )
+                error?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = json.isNotBlank()) { Text("Restore") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

@@ -44,4 +44,22 @@ interface TaskDao {
 
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND isRecurring = 1")
+    suspend fun getRecurringByWeek(weekId: String): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE carriedCount > 0 AND status != 'carried_forward' ORDER BY carriedCount DESC")
+    suspend fun getTasksWithCarryHistory(): List<TaskEntity>
+
+    @Query("UPDATE tasks SET sortOrder = :order WHERE id = :id")
+    suspend fun updateSortOrder(id: String, order: Int)
+
+    @Query("UPDATE tasks SET carriedCount = :count WHERE id = :id")
+    suspend fun updateCarriedCount(id: String, count: Int)
+
+    @Query("SELECT * FROM tasks")
+    suspend fun getAll(): List<TaskEntity>
+
+    @Query("UPDATE tasks SET status = 'pending', completedAt = NULL WHERE id = :id")
+    suspend fun unmarkCompleted(id: String)
 }

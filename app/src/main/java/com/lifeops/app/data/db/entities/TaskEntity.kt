@@ -42,5 +42,9 @@ data class TaskEntity(
     val resourceValue: Int = 10,
     val completedAt: String? = null,
     val carriedFromTaskId: String? = null,
-    val createdAt: String
+    val createdAt: String,
+    val isRecurring: Boolean = false,
+    val estimatedMinutes: Int? = null,
+    val carriedCount: Int = 0,
+    val sortOrder: Int = 0
 )

@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,6 +24,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.Task
@@ -46,13 +50,17 @@ fun TaskRow(
     totalTimeMinutes: Int,
     isTimerActive: Boolean,
     timerElapsedSeconds: Int,
+    isPlanningMode: Boolean = false,
     onComplete: () -> Unit,
+    onUnComplete: () -> Unit = {},
     onSkip: () -> Unit,
     onCarryForward: () -> Unit,
     onEdit: () -> Unit,
     onStartTimer: () -> Unit,
     onStopTimer: () -> Unit,
     onOpenDetail: () -> Unit,
+    onMoveUp: () -> Unit = {},
+    onMoveDown: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -64,13 +72,12 @@ fun TaskRow(
     val isCompleted = task.status == TaskStatus.COMPLETED
     val isSkipped = task.status == TaskStatus.SKIPPED
     val isExpired = task.status == TaskStatus.EXPIRED
-    val hasExpandContent = notes.isNotEmpty() || totalTimeMinutes > 0 || isTimerActive
+    val hasExpandContent = notes.isNotEmpty() || totalTimeMinutes > 0 || isTimerActive || task.estimatedMinutes != null
 
     var expanded by remember { mutableStateOf(false) }
 
     fun closeSwipe() { scope.launch { offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) } }
 
-    // Snap closed when task status changes
     LaunchedEffect(task.status) {
         if (offset.value != 0f) offset.animateTo(0f, spring())
     }
@@ -96,6 +103,11 @@ fun TaskRow(
                 }
                 IconButton(onClick = { closeSwipe(); onSkip() }) {
                     Icon(Icons.Default.Close, "Skip", tint = ExpiredRed)
+                }
+            }
+            if (isCompleted) {
+                IconButton(onClick = { closeSwipe(); onUnComplete() }) {
+                    Icon(Icons.Default.Redo, "Unmark complete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             IconButton(
@@ -175,14 +187,17 @@ fun TaskRow(
                 )
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(
                             checked = isCompleted,
-                            onCheckedChange = { if (isPending) onComplete() },
-                            enabled = isPending,
+                            onCheckedChange = {
+                                if (isPending) onComplete()
+                                else if (isCompleted) onUnComplete()
+                            },
+                            enabled = isPending || isCompleted,
                             colors = CheckboxDefaults.colors(checkedColor = parseColor(aspectColor))
                         )
                         Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
@@ -206,6 +221,14 @@ fun TaskRow(
                                         modifier = Modifier.size(14.dp).padding(start = 2.dp)
                                     )
                                 }
+                                if (task.isRecurring) {
+                                    Icon(
+                                        Icons.Default.Redo,
+                                        contentDescription = "Recurring",
+                                        tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f),
+                                        modifier = Modifier.size(14.dp).padding(start = 2.dp)
+                                    )
+                                }
                             }
                             task.dueDate?.let { date ->
                                 Text(
@@ -222,6 +245,13 @@ fun TaskRow(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                                     modifier = Modifier.padding(top = 2.dp)
                                 ) {
+                                    if (task.carriedCount > 0) {
+                                        Text(
+                                            "↩${task.carriedCount}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
+                                        )
+                                    }
                                     if (isTimerActive) {
                                         Text(
                                             "● ${formatElapsed(timerElapsedSeconds)}",
@@ -244,14 +274,50 @@ fun TaskRow(
                                             )
                                         }
                                     }
+                                    task.estimatedMinutes?.let { est ->
+                                        Text(
+                                            "est ${formatMinutes(est)}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                        )
+                                    }
                                 }
                             }
                         }
-                        PriorityBadge(task.priority.label)
+                        if (isPlanningMode) {
+                            Column {
+                                IconButton(onClick = onMoveUp, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.KeyboardArrowUp, "Move up", modifier = Modifier.size(18.dp))
+                                }
+                                IconButton(onClick = onMoveDown, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.KeyboardArrowDown, "Move down", modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        } else {
+                            PriorityBadge(task.priority.label)
+                        }
                     }
 
                     AnimatedVisibility(visible = expanded && hasExpandContent) {
                         Column(modifier = Modifier.padding(start = 44.dp, top = 2.dp, bottom = 4.dp)) {
+                            if (task.carriedCount > 0) {
+                                Text(
+                                    "↩ Carried forward ${task.carriedCount} time${if (task.carriedCount > 1) "s" else ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
+                            if (task.estimatedMinutes != null) {
+                                val est = task.estimatedMinutes
+                                val logged = totalTimeMinutes
+                                Text(
+                                    "Est: ${formatMinutes(est)} / Logged: ${formatMinutes(logged)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
                             if (isTimerActive) {
                                 Text(
                                     "● Running: ${formatElapsed(timerElapsedSeconds)}",

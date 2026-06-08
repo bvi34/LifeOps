@@ -33,6 +33,7 @@ data class ReportsUiState(
     val carryForwardRate: Float = 0f,
     val timeByAspect: List<AspectTimeRow> = emptyList(),
     val totalTimeMinutes: Int = 0,
+    val carryHistory: List<CarryForwardEntry> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -43,6 +44,8 @@ class ReportsViewModel(
     private val timeEntryRepository: TimeEntryRepository
 ) : ViewModel() {
 
+    private var weeksById: Map<String, Week> = emptyMap()
+
     private val _uiState = MutableStateFlow(ReportsUiState())
     val uiState: StateFlow<ReportsUiState> = _uiState.asStateFlow()
 
@@ -50,11 +53,15 @@ class ReportsViewModel(
         viewModelScope.launch {
             combine(
                 weekRepository.observeSnapshots(),
+                weekRepository.observeAllWeeks(),
                 aspectRepository.observeAllAspects(),
                 aspectRepository.observeCategories()
-            ) { snapshots, aspects, categories ->
-                Triple(snapshots, aspects, categories)
-            }.collectLatest { (snapshots, aspects, categories) ->
+            ) { snapshots, weeks, aspects, categories ->
+                Pair(Pair(snapshots, weeks), Pair(aspects, categories))
+            }.collectLatest { (snapshotsWeeks, aspectsCategories) ->
+                val (snapshots, weeks) = snapshotsWeeks
+                val (aspects, categories) = aspectsCategories
+                weeksById = weeks.associateBy { it.id }
                 _uiState.update {
                     it.copy(
                         snapshots = snapshots,
@@ -139,6 +146,19 @@ class ReportsViewModel(
             AspectTimeRow(aspect?.name ?: id, aspect?.color ?: "#6200EE", minutes)
         }.sortedByDescending { it.totalMinutes }
 
+        // Carry history
+        val carryTasks = taskRepository.getTasksWithCarryHistory()
+        val carryEntries = carryTasks.map { task ->
+            val week = weeksById[task.weekId]
+            val weekLabel = week?.startDate?.take(10) ?: task.weekId.take(10)
+            CarryForwardEntry(
+                taskTitle = task.title,
+                carriedCount = task.carriedCount,
+                finalStatus = task.status,
+                weekLabel = weekLabel
+            )
+        }.sortedByDescending { it.carriedCount }
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -147,7 +167,8 @@ class ReportsViewModel(
                 hardDeadlineHitRate = hdHitRate,
                 carryForwardRate = cfRate,
                 timeByAspect = timeRows,
-                totalTimeMinutes = minutesByAspect.values.sum()
+                totalTimeMinutes = minutesByAspect.values.sum(),
+                carryHistory = carryEntries
             )
         }
     }

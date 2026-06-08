@@ -16,6 +16,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.ui.theme.CompletedGreen
+import com.lifeops.app.ui.theme.ExpiredRed
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -61,6 +64,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         items(state.categorySlipRates) { cat ->
                             CategorySlipRow(cat)
                         }
+                    }
+                    if (state.carryHistory.isNotEmpty()) {
+                        item { CarryHistoryCard(state.carryHistory) }
                     }
                 }
             }
@@ -227,6 +233,64 @@ private fun TimeByAspectCard(rows: List<AspectTimeRow>, totalMinutes: Int) {
                         color = parseColor(row.color)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CarryHistoryCard(entries: List<com.lifeops.app.data.model.CarryForwardEntry>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Carry-Forward History",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            entries.forEach { entry ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(entry.taskTitle, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        val timesText = if (entry.carriedCount == 1) "carried 1 time"
+                                        else "carried ${entry.carriedCount} times"
+                        val statusText = when (entry.finalStatus) {
+                            TaskStatus.COMPLETED -> "completed week of ${entry.weekLabel}"
+                            TaskStatus.EXPIRED -> "expired week of ${entry.weekLabel}"
+                            TaskStatus.INCOMPLETE -> "incomplete week of ${entry.weekLabel}"
+                            TaskStatus.SKIPPED -> "skipped week of ${entry.weekLabel}"
+                            TaskStatus.PENDING -> "still pending"
+                            else -> "week of ${entry.weekLabel}"
+                        }
+                        Text(
+                            "$timesText · $statusText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    val badgeColor = when (entry.finalStatus) {
+                        TaskStatus.COMPLETED -> CompletedGreen
+                        TaskStatus.EXPIRED -> ExpiredRed
+                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    }
+                    Surface(
+                        shape = MaterialTheme.shapes.extraSmall,
+                        color = badgeColor.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            entry.carriedCount.toString(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
             }
         }
     }

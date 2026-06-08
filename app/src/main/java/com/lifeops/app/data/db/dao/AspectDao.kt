@@ -26,4 +26,7 @@ interface AspectDao {
 
     @Query("UPDATE aspects SET isArchived = :archived WHERE id = :id")
     suspend fun setArchived(id: String, archived: Boolean)
+
+    @Query("SELECT * FROM aspects ORDER BY name")
+    suspend fun getAllSync(): List<AspectEntity>
 }

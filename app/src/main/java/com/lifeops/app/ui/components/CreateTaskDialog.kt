@@ -25,7 +25,9 @@ fun CreateTaskDialog(
         categoryId: String?,
         priority: Priority,
         dueDate: String?,
-        hardDeadline: Boolean
+        hardDeadline: Boolean,
+        isRecurring: Boolean,
+        estimatedMinutes: Int?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -36,6 +38,8 @@ fun CreateTaskDialog(
     var priority by remember { mutableStateOf(Priority.MEDIUM) }
     var dueDate by remember { mutableStateOf("") }
     var hardDeadline by remember { mutableStateOf(false) }
+    var isRecurring by remember { mutableStateOf(false) }
+    var estimatedMinutes by remember { mutableStateOf("") }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
@@ -142,9 +146,21 @@ fun CreateTaskDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                OutlinedTextField(
+                    value = estimatedMinutes,
+                    onValueChange = { estimatedMinutes = it.filter { c -> c.isDigit() } },
+                    label = { Text("Estimated minutes (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = hardDeadline, onCheckedChange = { hardDeadline = it })
                     Text("Hard deadline", style = MaterialTheme.typography.bodyMedium)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isRecurring, onCheckedChange = { isRecurring = it })
+                    Text("Repeat weekly", style = MaterialTheme.typography.bodyMedium)
                 }
 
                 OutlinedTextField(
@@ -167,7 +183,9 @@ fun CreateTaskDialog(
                         selectedCategoryId,
                         priority,
                         dueDate.trim().ifBlank { null },
-                        hardDeadline
+                        hardDeadline,
+                        isRecurring,
+                        estimatedMinutes.toIntOrNull()
                     )
                 },
                 enabled = title.isNotBlank()

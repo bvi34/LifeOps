@@ -14,4 +14,7 @@ interface TimeEntryDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: TimeEntryEntity)
+
+    @Query("SELECT * FROM time_entries")
+    suspend fun getAll(): List<TimeEntryEntity>
 }

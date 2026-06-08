@@ -48,6 +48,8 @@ class WeekRepository(
 
     suspend fun upsertWeek(week: Week) = weekDao.upsert(week.toEntity())
 
+    suspend fun getMostRecentClosedWeek(): Week? = weekDao.getMostRecentClosedWeek()?.toModel()
+
     private fun WeekSnapshotEntity.toModel(): WeekSnapshot = WeekSnapshot(
         id = id,
         weekId = weekId,

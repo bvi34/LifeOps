@@ -17,13 +17,15 @@ enum class SortOrder(val label: String) {
     DUE_DATE_ASC("Due ↑"),
     DUE_DATE_DESC("Due ↓"),
     PRIORITY_HIGH("Priority ↓"),
-    PRIORITY_LOW("Priority ↑")
+    PRIORITY_LOW("Priority ↑"),
+    PLANNING("Planning")
 }
 
 data class ActiveTimer(
     val taskId: String,
     val startMillis: Long,
-    val elapsedSeconds: Int = 0
+    val elapsedSeconds: Int = 0,
+    val isPomodoro: Boolean = false
 )
 
 data class GroupedTasks(
@@ -35,7 +37,7 @@ data class GroupedTasks(
 data class CategoryGroup(
     val category: Category?,
     val tasks: List<Task>,
-    val dominantPriority: Priority?   // highest-priority pending task; null if no pending tasks
+    val dominantPriority: Priority?
 )
 
 data class ThisWeekUiState(
@@ -55,7 +57,9 @@ data class ThisWeekUiState(
     val showCreateTaskDialog: Boolean = false,
     val activeTimer: ActiveTimer? = null,
     val detailTaskId: String? = null,
-    val sortOrder: SortOrder = SortOrder.DEFAULT
+    val sortOrder: SortOrder = SortOrder.DEFAULT,
+    val searchQuery: String = "",
+    val weekProgress: WeekProgress = WeekProgress(0, 0, 0)
 )
 
 class ThisWeekViewModel(
@@ -78,7 +82,8 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             combine(
                 weekRepository.observeCurrentWeek(),
-                aspectRepository.observeAspects(),
+                // Include archived aspects so tasks are grouped under their original aspect name
+                aspectRepository.observeAllAspects(),
                 aspectRepository.observeCategories()
             ) { week, aspects, categories ->
                 Triple(week, aspects, categories)
@@ -98,15 +103,17 @@ class ThisWeekViewModel(
                             .groupBy { it.taskId }
                             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
                         _uiState.update { state ->
+                            val grouped = groupAndFilterTasks(tasks, aspectMap, categoryMap, state.sortOrder, state.searchQuery)
                             state.copy(
                                 week = week,
                                 rawTasks = tasks,
-                                groupedTasks = groupTasks(tasks, aspectMap, categoryMap, state.sortOrder),
+                                groupedTasks = grouped,
                                 aspects = aspectMap,
                                 categories = categoryMap,
                                 taskNotes = notesByTask,
                                 taskTimeMinutes = timeByTask,
-                                isLoading = false
+                                isLoading = false,
+                                weekProgress = computeProgress(tasks, timeByTask)
                             )
                         }
                     }
@@ -120,7 +127,8 @@ class ThisWeekViewModel(
                             categories = categoryMap,
                             taskNotes = emptyMap(),
                             taskTimeMinutes = emptyMap(),
-                            isLoading = false
+                            isLoading = false,
+                            weekProgress = WeekProgress(0, 0, 0)
                         )
                     }
                 }
@@ -128,11 +136,28 @@ class ThisWeekViewModel(
         }
     }
 
+    private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
+        val relevant = tasks.filter { it.status != TaskStatus.CARRIED_FORWARD }
+        val completed = relevant.count { it.status == TaskStatus.COMPLETED }
+        val total = relevant.size
+        val totalTime = timeByTask.values.sum()
+        return WeekProgress(completed, total, totalTime)
+    }
+
     fun setSortOrder(order: SortOrder) {
         _uiState.update { state ->
             state.copy(
                 sortOrder = order,
-                groupedTasks = groupTasks(state.rawTasks, state.aspects, state.categories, order)
+                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, order, state.searchQuery)
+            )
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { state ->
+            state.copy(
+                searchQuery = query,
+                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, state.sortOrder, query)
             )
         }
     }
@@ -147,15 +172,20 @@ class ThisWeekViewModel(
         )
         SortOrder.PRIORITY_HIGH -> tasks.sortedByDescending { it.priority.baseValue }
         SortOrder.PRIORITY_LOW -> tasks.sortedBy { it.priority.baseValue }
+        SortOrder.PLANNING -> tasks.sortedBy { it.sortOrder }
     }
 
-    private fun groupTasks(
+    private fun groupAndFilterTasks(
         tasks: List<Task>,
         aspects: Map<String, Aspect>,
         categories: Map<String, Category>,
-        sortOrder: SortOrder = SortOrder.DEFAULT
+        sortOrder: SortOrder,
+        searchQuery: String
     ): List<GroupedTasks> {
-        val byAspect = tasks.groupBy { it.aspectId }
+        val filtered = if (searchQuery.isBlank()) tasks
+        else tasks.filter { it.title.contains(searchQuery, ignoreCase = true) }
+
+        val byAspect = filtered.groupBy { it.aspectId }
         return byAspect.map { (aspectId, aspectTasks) ->
             val aspect = aspectId?.let { aspects[it] }
             val byCategory = aspectTasks.groupBy { it.categoryId }
@@ -175,6 +205,10 @@ class ThisWeekViewModel(
         viewModelScope.launch { taskRepository.completeTask(task) }
     }
 
+    fun onUnCompleteTask(taskId: String) {
+        viewModelScope.launch { taskRepository.unCompleteTask(taskId) }
+    }
+
     fun onSkipTask(taskId: String) {
         viewModelScope.launch { taskRepository.skipTask(taskId) }
     }
@@ -183,6 +217,22 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
             taskRepository.carryForward(task, week.id)
+        }
+    }
+
+    fun movePlanningTask(taskId: String, direction: Int) {
+        val state = _uiState.value
+        val allTasks = state.rawTasks.sortedBy { it.sortOrder }.toMutableList()
+        val idx = allTasks.indexOfFirst { it.id == taskId }
+        if (idx < 0) return
+        val targetIdx = (idx + direction).coerceIn(0, allTasks.size - 1)
+        if (targetIdx == idx) return
+
+        val taskA = allTasks[idx]
+        val taskB = allTasks[targetIdx]
+        viewModelScope.launch {
+            taskRepository.updateTaskSortOrder(taskA.id, targetIdx)
+            taskRepository.updateTaskSortOrder(taskB.id, idx)
         }
     }
 
@@ -204,16 +254,21 @@ class ThisWeekViewModel(
     }
 
     // Timer
-    fun startTimer(taskId: String) {
+    fun startTimer(taskId: String, isPomodoro: Boolean = false) {
         stopTimer(saveEntry = true)
         val startMillis = System.currentTimeMillis()
-        _uiState.update { it.copy(activeTimer = ActiveTimer(taskId, startMillis)) }
+        _uiState.update { it.copy(activeTimer = ActiveTimer(taskId, startMillis, isPomodoro = isPomodoro)) }
         timerJob = viewModelScope.launch {
             while (true) {
                 delay(1000)
                 val elapsed = ((System.currentTimeMillis() - startMillis) / 1000).toInt()
                 _uiState.update { state ->
                     state.copy(activeTimer = state.activeTimer?.copy(elapsedSeconds = elapsed))
+                }
+                // Auto-stop Pomodoro at 25 minutes
+                if (isPomodoro && elapsed >= 1500) {
+                    stopTimer(saveEntry = true)
+                    break
                 }
             }
         }
@@ -223,7 +278,7 @@ class ThisWeekViewModel(
         val timer = _uiState.value.activeTimer ?: return
         timerJob?.cancel()
         timerJob = null
-        val minutes = timer.elapsedSeconds / 60
+        val minutes = if (timer.isPomodoro) 25 else timer.elapsedSeconds / 60
         if (saveEntry && minutes > 0) {
             viewModelScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }
@@ -271,7 +326,9 @@ class ThisWeekViewModel(
         categoryId: String?,
         priority: Priority,
         dueDate: String?,
-        hardDeadline: Boolean
+        hardDeadline: Boolean,
+        isRecurring: Boolean = false,
+        estimatedMinutes: Int? = null
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
@@ -287,7 +344,9 @@ class ThisWeekViewModel(
                 hardDeadline = hardDeadline,
                 status = TaskStatus.PENDING,
                 resourceValue = resourceValue,
-                createdAt = DateUtil.now()
+                createdAt = DateUtil.now(),
+                isRecurring = isRecurring,
+                estimatedMinutes = estimatedMinutes
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
@@ -309,7 +368,7 @@ class ThisWeekViewModel(
         val timer = _uiState.value.activeTimer ?: return
         timerJob?.cancel()
         timerJob = null
-        val minutes = timer.elapsedSeconds / 60
+        val minutes = if (timer.isPomodoro) 25 else timer.elapsedSeconds / 60
         if (minutes > 0) {
             saveScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }
@@ -318,7 +377,14 @@ class ThisWeekViewModel(
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
     fun cancelEditTask() = _uiState.update { it.copy(editingTask = null) }
 
-    fun saveTaskEdit(title: String, priority: Priority, dueDate: String?, hardDeadline: Boolean) {
+    fun saveTaskEdit(
+        title: String,
+        priority: Priority,
+        dueDate: String?,
+        hardDeadline: Boolean,
+        isRecurring: Boolean = false,
+        estimatedMinutes: Int? = null
+    ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
             val newResourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
@@ -328,7 +394,9 @@ class ThisWeekViewModel(
                     priority = priority,
                     dueDate = dueDate,
                     hardDeadline = hardDeadline,
-                    resourceValue = newResourceValue
+                    resourceValue = newResourceValue,
+                    isRecurring = isRecurring,
+                    estimatedMinutes = estimatedMinutes
                 )
             )
             _uiState.update { it.copy(editingTask = null) }

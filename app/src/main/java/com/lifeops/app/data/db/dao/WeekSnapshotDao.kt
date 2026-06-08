@@ -17,4 +17,7 @@ interface WeekSnapshotDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(snapshot: WeekSnapshotEntity)
+
+    @Query("SELECT * FROM week_snapshots")
+    suspend fun getAll(): List<WeekSnapshotEntity>
 }

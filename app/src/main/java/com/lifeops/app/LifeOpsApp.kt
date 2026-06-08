@@ -50,11 +50,17 @@ class LifeOpsApp : Application() {
     val importRepository by lazy {
         ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
     }
+    val backupRepository by lazy { BackupRepository(database) }
 
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch {
-            weekRepository.getOrCreateCurrentWeek()
+            val previousWeek = weekRepository.getMostRecentClosedWeek()
+            val currentWeek = weekRepository.getOrCreateCurrentWeek()
+            // Seed recurring tasks from the most recently closed week into the new week
+            if (previousWeek != null) {
+                taskRepository.seedRecurringTasks(previousWeek.id, currentWeek.id)
+            }
             gameResourceRepository.ensureDefaultSlots()
             notificationRepository.scheduleWeekCloseReminder()
         }

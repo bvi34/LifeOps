@@ -26,4 +26,10 @@ interface WeekDao {
 
     @Query("SELECT * FROM weeks WHERE isClosed = 1 ORDER BY startDate DESC")
     fun observeClosed(): Flow<List<WeekEntity>>
+
+    @Query("SELECT * FROM weeks WHERE isClosed = 1 ORDER BY startDate DESC LIMIT 1")
+    suspend fun getMostRecentClosedWeek(): WeekEntity?
+
+    @Query("SELECT * FROM weeks ORDER BY startDate DESC")
+    suspend fun getAllSync(): List<WeekEntity>
 }

@@ -39,12 +39,14 @@ class TaskRepository(
 
     suspend fun carryForward(task: Task, newWeekId: String): Task {
         notificationRepository.cancelForTask(task.id)
+        val newCarriedCount = task.carriedCount + 1
         val newTask = task.copy(
             id = java.util.UUID.randomUUID().toString(),
             weekId = newWeekId,
             status = TaskStatus.PENDING,
             completedAt = null,
             carriedFromTaskId = task.id,
+            carriedCount = newCarriedCount,
             createdAt = DateUtil.now()
         )
         db.withTransaction {
@@ -142,6 +144,39 @@ class TaskRepository(
             }
         }
     }
+
+    suspend fun unCompleteTask(taskId: String) = taskDao.unmarkCompleted(taskId)
+
+    suspend fun updateTaskSortOrder(taskId: String, order: Int) = taskDao.updateSortOrder(taskId, order)
+
+    suspend fun getTasksWithCarryHistory(): List<Task> =
+        taskDao.getTasksWithCarryHistory().map { it.toModel() }
+
+    suspend fun seedRecurringTasks(fromWeekId: String, toWeekId: String) {
+        // Only seed if the target week has no recurring tasks yet (prevents duplicate seeding on every launch)
+        val existingRecurring = taskDao.getRecurringByWeek(toWeekId)
+        if (existingRecurring.isNotEmpty()) return
+        val recurring = taskDao.getRecurringByWeek(fromWeekId)
+        if (recurring.isEmpty()) return
+        val now = DateUtil.now()
+        db.withTransaction {
+            for (entity in recurring) {
+                val newTask = entity.copy(
+                    id = java.util.UUID.randomUUID().toString(),
+                    weekId = toWeekId,
+                    status = TaskStatus.PENDING.value,
+                    completedAt = null,
+                    carriedFromTaskId = null,
+                    carriedCount = 0,
+                    sortOrder = 0,
+                    createdAt = now
+                )
+                taskDao.upsert(newTask)
+            }
+        }
+    }
+
+    suspend fun getAllTasks(): List<Task> = taskDao.getAll().map { it.toModel() }
 
     suspend fun getEarnedThisWeekByAspect(weekId: String): Map<String, Int> {
         val tasks = taskDao.getAllByWeek(weekId).map { it.toModel() }

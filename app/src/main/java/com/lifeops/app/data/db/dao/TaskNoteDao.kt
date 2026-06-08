@@ -14,4 +14,7 @@ interface TaskNoteDao {
 
     @Query("DELETE FROM task_notes WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM task_notes")
+    suspend fun getAll(): List<TaskNoteEntity>
 }

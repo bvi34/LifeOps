@@ -60,7 +60,24 @@ data class Task(
     val resourceValue: Int = 10,
     val completedAt: String? = null,
     val carriedFromTaskId: String? = null,
-    val createdAt: String
+    val createdAt: String,
+    val isRecurring: Boolean = false,
+    val estimatedMinutes: Int? = null,
+    val carriedCount: Int = 0,
+    val sortOrder: Int = 0
+)
+
+data class CarryForwardEntry(
+    val taskTitle: String,
+    val carriedCount: Int,
+    val finalStatus: TaskStatus,
+    val weekLabel: String
+)
+
+data class WeekProgress(
+    val completedCount: Int,
+    val totalCount: Int,
+    val totalTimeMinutes: Int
 )
 
 data class TaskNote(

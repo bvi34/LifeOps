@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,12 +31,14 @@ fun TaskDetailSheet(
     totalTimeMinutes: Int,
     isTimerActive: Boolean,
     timerElapsedSeconds: Int,
+    isPomodoroActive: Boolean = false,
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
     onCarryForward: () -> Unit,
     onStartTimer: () -> Unit,
     onStopTimer: () -> Unit,
+    onStartPomodoro: () -> Unit = {},
     onLogTime: (Int, String?) -> Unit
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -108,32 +111,53 @@ fun TaskDetailSheet(
             Text("Time Tracking", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
 
-            if (totalTimeMinutes > 0) {
-                Text(
-                    "Total logged: ${formatMinutes(totalTimeMinutes)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+            if (task.estimatedMinutes != null || totalTimeMinutes > 0) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    task.estimatedMinutes?.let {
+                        Text(
+                            "Est: ${formatMinutes(it)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    if (totalTimeMinutes > 0) {
+                        Text(
+                            "Logged: ${formatMinutes(totalTimeMinutes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
             }
 
             if (isTimerActive) {
+                val displaySeconds = if (isPomodoroActive) maxOf(0, 1500 - timerElapsedSeconds) else timerElapsedSeconds
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        color = if (isPomodoroActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
                         modifier = Modifier.size(8.dp)
                     ) {}
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        formatElapsed(timerElapsedSeconds),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
+                    Column {
+                        Text(
+                            formatElapsed(displaySeconds),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isPomodoroActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                        )
+                        if (isPomodoroActive) {
+                            Text(
+                                "Pomodoro — ${formatElapsed(timerElapsedSeconds)} elapsed",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
                     Spacer(Modifier.weight(1f))
                     Button(
                         onClick = onStopTimer,
@@ -148,18 +172,22 @@ fun TaskDetailSheet(
                         onClick = onStartTimer,
                         modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            Icons.Default.AccessTime,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Start Timer")
+                        Text("Timer")
+                    }
+                    OutlinedButton(
+                        onClick = onStartPomodoro,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("25min")
                     }
                     OutlinedButton(
                         onClick = { showLogManuallyDialog = true },
                         modifier = Modifier.weight(1f)
-                    ) { Text("Log Manually") }
+                    ) { Text("Manual") }
                 }
             }
 
