@@ -56,6 +56,9 @@ class TaskRepository(
 
     suspend fun getById(id: String): Task? = taskDao.getById(id)?.toModel()
 
+    suspend fun getAllSince(since: String): List<Task> =
+        taskDao.getAllSince(since).map { it.toModel() }
+
     suspend fun closeWeek(weekId: String) {
         val week = weekDao.getById(weekId) ?: return
         if (week.isClosed) return  // idempotent guard

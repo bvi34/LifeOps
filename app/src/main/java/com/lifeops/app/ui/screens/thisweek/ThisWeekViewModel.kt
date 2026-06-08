@@ -3,8 +3,11 @@ package com.lifeops.app.ui.screens.thisweek
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
+import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.ImportParser
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 data class GroupedTasks(
     val aspect: Aspect?,
@@ -22,19 +25,25 @@ data class ThisWeekUiState(
     val groupedTasks: List<GroupedTasks> = emptyList(),
     val aspects: Map<String, Aspect> = emptyMap(),
     val categories: Map<String, Category> = emptyMap(),
+    val taskNotes: Map<String, List<TaskNote>> = emptyMap(),
+    val taskTimeMinutes: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = true,
     val importDialogOpen: Boolean = false,
     val importPreview: ImportPreview? = null,
     val importError: String? = null,
     val importJson: String = "",
-    val editingTask: Task? = null
+    val editingTask: Task? = null,
+    val showCreateTaskDialog: Boolean = false
 )
 
 class ThisWeekViewModel(
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val aspectRepository: AspectRepository,
-    private val importRepository: ImportRepository
+    private val importRepository: ImportRepository,
+    private val taskNoteRepository: TaskNoteRepository,
+    private val timeEntryRepository: TimeEntryRepository,
+    private val notificationRepository: NotificationRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -52,7 +61,17 @@ class ThisWeekViewModel(
                 val aspectMap = aspects.associateBy { it.id }
                 val categoryMap = categories.associateBy { it.id }
                 if (week != null) {
-                    taskRepository.observeTasksForWeek(week.id).collectLatest { tasks ->
+                    combine(
+                        taskRepository.observeTasksForWeek(week.id),
+                        taskNoteRepository.observeByWeek(week.id),
+                        timeEntryRepository.observeByWeek(week.id)
+                    ) { tasks, notes, timeEntries ->
+                        Triple(tasks, notes, timeEntries)
+                    }.collectLatest { (tasks, notes, timeEntries) ->
+                        val notesByTask = notes.groupBy { it.taskId }
+                        val timeByTask = timeEntries
+                            .groupBy { it.taskId }
+                            .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
                         val grouped = groupTasks(tasks, aspectMap, categoryMap)
                         _uiState.update {
                             it.copy(
@@ -60,6 +79,8 @@ class ThisWeekViewModel(
                                 groupedTasks = grouped,
                                 aspects = aspectMap,
                                 categories = categoryMap,
+                                taskNotes = notesByTask,
+                                taskTimeMinutes = timeByTask,
                                 isLoading = false
                             )
                         }
@@ -71,6 +92,8 @@ class ThisWeekViewModel(
                             groupedTasks = emptyList(),
                             aspects = aspectMap,
                             categories = categoryMap,
+                            taskNotes = emptyMap(),
+                            taskTimeMinutes = emptyMap(),
                             isLoading = false
                         )
                     }
@@ -118,7 +141,6 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             val week = _uiState.value.week ?: return@launch
             taskRepository.closeWeek(week.id)
-            // Create the next week so the UI doesn't show an empty screen
             weekRepository.getOrCreateCurrentWeek()
         }
     }
@@ -149,24 +171,65 @@ class ThisWeekViewModel(
         }
     }
 
+    fun showCreateTaskDialog() = _uiState.update { it.copy(showCreateTaskDialog = true) }
+    fun hideCreateTaskDialog() = _uiState.update { it.copy(showCreateTaskDialog = false) }
+
+    fun createTask(
+        title: String,
+        note: String?,
+        aspectId: String?,
+        categoryId: String?,
+        priority: Priority,
+        dueDate: String?,
+        hardDeadline: Boolean
+    ) {
+        viewModelScope.launch {
+            val week = weekRepository.getOrCreateCurrentWeek()
+            val resourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
+            val task = Task(
+                id = UUID.randomUUID().toString(),
+                weekId = week.id,
+                title = title,
+                aspectId = aspectId,
+                categoryId = categoryId,
+                priority = priority,
+                dueDate = dueDate,
+                hardDeadline = hardDeadline,
+                status = TaskStatus.PENDING,
+                resourceValue = resourceValue,
+                createdAt = DateUtil.now()
+            )
+            taskRepository.upsertTask(task)
+            note?.let { taskNoteRepository.addNote(task.id, it) }
+            notificationRepository.scheduleForTask(task)
+            _uiState.update { it.copy(showCreateTaskDialog = false) }
+        }
+    }
+
+    fun onAddNote(taskId: String, content: String) {
+        viewModelScope.launch { taskNoteRepository.addNote(taskId, content) }
+    }
+
+    fun onLogTime(taskId: String, minutes: Int, note: String?) {
+        viewModelScope.launch { timeEntryRepository.logTime(taskId, minutes, note) }
+    }
+
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
 
     fun cancelEditTask() = _uiState.update { it.copy(editingTask = null) }
 
     fun saveTaskEdit(
         title: String,
-        notes: String?,
-        priority: com.lifeops.app.data.model.Priority,
+        priority: Priority,
         dueDate: String?,
         hardDeadline: Boolean
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
-            val newResourceValue = com.lifeops.app.util.ImportParser.computeResourceValue(priority.label, hardDeadline)
+            val newResourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
             taskRepository.updateTask(
                 task.copy(
                     title = title,
-                    notes = notes,
                     priority = priority,
                     dueDate = dueDate,
                     hardDeadline = hardDeadline,
@@ -182,9 +245,15 @@ class ThisWeekViewModelFactory(
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val aspectRepository: AspectRepository,
-    private val importRepository: ImportRepository
+    private val importRepository: ImportRepository,
+    private val taskNoteRepository: TaskNoteRepository,
+    private val timeEntryRepository: TimeEntryRepository,
+    private val notificationRepository: NotificationRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ThisWeekViewModel(weekRepository, taskRepository, aspectRepository, importRepository) as T
+        ThisWeekViewModel(
+            weekRepository, taskRepository, aspectRepository, importRepository,
+            taskNoteRepository, timeEntryRepository, notificationRepository
+        ) as T
 }

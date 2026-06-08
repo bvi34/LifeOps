@@ -120,7 +120,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.ThisWeek.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
                     factory = ThisWeekViewModelFactory(
-                        app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository
+                        app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
+                        app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository
                     )
                 )
                 // Inject shared text if coming from share sheet
@@ -142,7 +143,10 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             }
             composable(Screen.Reports.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.reports.ReportsViewModel>(
-                    factory = ReportsViewModelFactory(app.weekRepository, app.aspectRepository)
+                    factory = ReportsViewModelFactory(
+                        app.weekRepository, app.aspectRepository,
+                        app.taskRepository, app.timeEntryRepository
+                    )
                 )
                 ReportsScreen(vm)
             }

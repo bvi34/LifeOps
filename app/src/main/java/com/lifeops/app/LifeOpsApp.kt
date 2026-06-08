@@ -17,8 +17,14 @@ class LifeOpsApp : Application() {
         WeekRepository(database.weekDao(), database.weekSnapshotDao())
     }
     val gameResourceRepository by lazy {
-        GameResourceRepository(database.gameResourceDao(), database.gameResourceMappingDao())
+        GameResourceRepository(
+            database.gameResourceDao(),
+            database.gameResourceMappingDao(),
+            database.resourceTransactionDao()
+        )
     }
+    val taskNoteRepository by lazy { TaskNoteRepository(database.taskNoteDao()) }
+    val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
     val preferencesRepository by lazy { PreferencesRepository(this) }
     val notificationRepository by lazy {
         NotificationRepository(this, database.notificationDao(), preferencesRepository)
@@ -37,7 +43,7 @@ class LifeOpsApp : Application() {
         )
     }
     val importRepository by lazy {
-        ImportRepository(aspectRepository, taskRepository, weekRepository, notificationRepository)
+        ImportRepository(aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
     }
 
     override fun onCreate() {
