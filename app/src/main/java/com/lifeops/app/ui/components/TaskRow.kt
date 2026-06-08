@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.Task
@@ -40,6 +41,7 @@ private val ACTION_PANEL_WIDTH = 168.dp
 fun TaskRow(
     task: Task,
     aspectColor: String,
+    basketColor: Color = Color.Transparent,
     notes: List<TaskNote>,
     totalTimeMinutes: Int,
     isTimerActive: Boolean,
@@ -156,9 +158,11 @@ fun TaskRow(
                     }
                 },
             colors = CardDefaults.cardColors(
-                containerColor = if (isExpired)
-                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                else MaterialTheme.colorScheme.surface
+                containerColor = when {
+                    isExpired -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                    basketColor != Color.Transparent -> basketColor.copy(alpha = 0.07f)
+                    else -> MaterialTheme.colorScheme.surface
+                }
             )
         ) {
             Row(modifier = Modifier.fillMaxWidth()) {

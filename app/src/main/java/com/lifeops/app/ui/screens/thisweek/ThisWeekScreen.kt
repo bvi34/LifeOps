@@ -1,17 +1,21 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.lifeops.app.ui.screens.thisweek
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,6 +28,7 @@ import com.lifeops.app.ui.components.TaskDetailSheet
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.theme.parseColor
+import com.lifeops.app.ui.theme.priorityColor
 
 @Composable
 fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
@@ -120,6 +125,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                     .padding(padding),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
+                stickyHeader(key = "sort_bar") {
+                    SortBar(selected = state.sortOrder, onSelect = viewModel::setSortOrder)
+                }
+
                 state.groupedTasks.forEach { group ->
                     item(key = "aspect_${group.aspect?.id ?: "none"}") {
                         AspectHeader(
@@ -128,9 +137,16 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                         )
                     }
                     group.categories.forEach { catGroup ->
+                        val basketColor = catGroup.dominantPriority
+                            ?.let { priorityColor(it.label) }
+                            ?: Color.Transparent
+
                         if (catGroup.category != null || group.categories.size > 1) {
                             item(key = "cat_${catGroup.category?.id ?: "none"}") {
-                                CategoryHeader(name = catGroup.category?.name ?: "General")
+                                CategoryHeader(
+                                    name = catGroup.category?.name ?: "General",
+                                    priorityTint = basketColor
+                                )
                             }
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
@@ -139,6 +155,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             TaskRow(
                                 task = task,
                                 aspectColor = group.aspectColor,
+                                basketColor = basketColor,
                                 notes = state.taskNotes[task.id] ?: emptyList(),
                                 totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
                                 isTimerActive = isTimerActive,
@@ -233,6 +250,29 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
 }
 
 @Composable
+private fun SortBar(selected: SortOrder, onSelect: (SortOrder) -> Unit) {
+    Surface(
+        tonalElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            SortOrder.entries.forEach { order ->
+                FilterChip(
+                    selected = selected == order,
+                    onClick = { onSelect(order) },
+                    label = { Text(order.label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun AspectHeader(name: String, color: String) {
     Row(
         modifier = Modifier
@@ -256,11 +296,25 @@ private fun AspectHeader(name: String, color: String) {
 }
 
 @Composable
-private fun CategoryHeader(name: String) {
-    Text(
-        text = name,
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-        modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)
-    )
+private fun CategoryHeader(name: String, priorityTint: Color = Color.Transparent) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 24.dp, end = 16.dp, top = 4.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (priorityTint != Color.Transparent) {
+            Surface(
+                modifier = Modifier.size(6.dp),
+                shape = MaterialTheme.shapes.extraSmall,
+                color = priorityTint
+            ) {}
+            Spacer(Modifier.width(6.dp))
+        }
+        Text(
+            text = name,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+        )
+    }
 }

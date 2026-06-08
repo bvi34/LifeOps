@@ -12,6 +12,14 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+enum class SortOrder(val label: String) {
+    DEFAULT("Default"),
+    DUE_DATE_ASC("Due ↑"),
+    DUE_DATE_DESC("Due ↓"),
+    PRIORITY_HIGH("Priority ↓"),
+    PRIORITY_LOW("Priority ↑")
+}
+
 data class ActiveTimer(
     val taskId: String,
     val startMillis: Long,
@@ -26,12 +34,14 @@ data class GroupedTasks(
 
 data class CategoryGroup(
     val category: Category?,
-    val tasks: List<Task>
+    val tasks: List<Task>,
+    val dominantPriority: Priority?   // highest-priority pending task; null if no pending tasks
 )
 
 data class ThisWeekUiState(
     val week: Week? = null,
     val groupedTasks: List<GroupedTasks> = emptyList(),
+    val rawTasks: List<Task> = emptyList(),
     val aspects: Map<String, Aspect> = emptyMap(),
     val categories: Map<String, Category> = emptyMap(),
     val taskNotes: Map<String, List<TaskNote>> = emptyMap(),
@@ -44,11 +54,11 @@ data class ThisWeekUiState(
     val editingTask: Task? = null,
     val showCreateTaskDialog: Boolean = false,
     val activeTimer: ActiveTimer? = null,
-    val detailTaskId: String? = null
+    val detailTaskId: String? = null,
+    val sortOrder: SortOrder = SortOrder.DEFAULT
 )
 
 class ThisWeekViewModel(
-    // Lives beyond viewModelScope — used for the save in onCleared, where viewModelScope is already cancelled.
     private val saveScope: CoroutineScope,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
@@ -87,11 +97,11 @@ class ThisWeekViewModel(
                         val timeByTask = timeEntries
                             .groupBy { it.taskId }
                             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
-                        val grouped = groupTasks(tasks, aspectMap, categoryMap)
-                        _uiState.update {
-                            it.copy(
+                        _uiState.update { state ->
+                            state.copy(
                                 week = week,
-                                groupedTasks = grouped,
+                                rawTasks = tasks,
+                                groupedTasks = groupTasks(tasks, aspectMap, categoryMap, state.sortOrder),
                                 aspects = aspectMap,
                                 categories = categoryMap,
                                 taskNotes = notesByTask,
@@ -104,6 +114,7 @@ class ThisWeekViewModel(
                     _uiState.update {
                         it.copy(
                             week = null,
+                            rawTasks = emptyList(),
                             groupedTasks = emptyList(),
                             aspects = aspectMap,
                             categories = categoryMap,
@@ -117,17 +128,44 @@ class ThisWeekViewModel(
         }
     }
 
+    fun setSortOrder(order: SortOrder) {
+        _uiState.update { state ->
+            state.copy(
+                sortOrder = order,
+                groupedTasks = groupTasks(state.rawTasks, state.aspects, state.categories, order)
+            )
+        }
+    }
+
+    private fun sortTasks(tasks: List<Task>, order: SortOrder): List<Task> = when (order) {
+        SortOrder.DEFAULT -> tasks
+        SortOrder.DUE_DATE_ASC -> tasks.sortedWith(
+            compareBy<Task> { it.dueDate == null }.thenBy { it.dueDate }
+        )
+        SortOrder.DUE_DATE_DESC -> tasks.sortedWith(
+            compareBy<Task> { it.dueDate == null }.thenByDescending { it.dueDate }
+        )
+        SortOrder.PRIORITY_HIGH -> tasks.sortedByDescending { it.priority.baseValue }
+        SortOrder.PRIORITY_LOW -> tasks.sortedBy { it.priority.baseValue }
+    }
+
     private fun groupTasks(
         tasks: List<Task>,
         aspects: Map<String, Aspect>,
-        categories: Map<String, Category>
+        categories: Map<String, Category>,
+        sortOrder: SortOrder = SortOrder.DEFAULT
     ): List<GroupedTasks> {
         val byAspect = tasks.groupBy { it.aspectId }
         return byAspect.map { (aspectId, aspectTasks) ->
             val aspect = aspectId?.let { aspects[it] }
             val byCategory = aspectTasks.groupBy { it.categoryId }
             val categoryGroups = byCategory.map { (catId, catTasks) ->
-                CategoryGroup(catId?.let { categories[it] }, catTasks)
+                val sorted = sortTasks(catTasks, sortOrder)
+                val dominantPriority = catTasks
+                    .filter { it.status == TaskStatus.PENDING }
+                    .maxByOrNull { it.priority.baseValue }
+                    ?.priority
+                CategoryGroup(catId?.let { categories[it] }, sorted, dominantPriority)
             }
             GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups)
         }
@@ -268,7 +306,6 @@ class ThisWeekViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        // viewModelScope is already cancelled here, so use saveScope for the DB write.
         val timer = _uiState.value.activeTimer ?: return
         timerJob?.cancel()
         timerJob = null
