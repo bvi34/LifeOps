@@ -5,6 +5,7 @@ import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
@@ -47,6 +48,8 @@ data class ThisWeekUiState(
 )
 
 class ThisWeekViewModel(
+    // Lives beyond viewModelScope — used for the save in onCleared, where viewModelScope is already cancelled.
+    private val saveScope: CoroutineScope,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val aspectRepository: AspectRepository,
@@ -265,7 +268,14 @@ class ThisWeekViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        stopTimer(saveEntry = true)
+        // viewModelScope is already cancelled here, so use saveScope for the DB write.
+        val timer = _uiState.value.activeTimer ?: return
+        timerJob?.cancel()
+        timerJob = null
+        val minutes = timer.elapsedSeconds / 60
+        if (minutes > 0) {
+            saveScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
+        }
     }
 
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
@@ -290,6 +300,7 @@ class ThisWeekViewModel(
 }
 
 class ThisWeekViewModelFactory(
+    private val saveScope: CoroutineScope,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val aspectRepository: AspectRepository,
@@ -301,7 +312,7 @@ class ThisWeekViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
-            weekRepository, taskRepository, aspectRepository, importRepository,
+            saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository
         ) as T
 }

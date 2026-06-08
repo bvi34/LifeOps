@@ -120,6 +120,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.ThisWeek.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
                     factory = ThisWeekViewModelFactory(
+                        app.applicationScope,
                         app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                         app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository
                     )
