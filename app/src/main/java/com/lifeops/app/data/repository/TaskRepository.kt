@@ -1,15 +1,19 @@
 package com.lifeops.app.data.repository
 
+import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.dao.*
 import com.lifeops.app.data.db.entities.WeekSnapshotEntity
 import com.lifeops.app.data.model.*
 import com.lifeops.app.util.*
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
 class TaskRepository(
+    private val db: LifeOpsDatabase,
     private val taskDao: TaskDao,
     private val aspectDao: AspectDao,
     private val categoryDao: CategoryDao,
@@ -26,7 +30,6 @@ class TaskRepository(
         taskDao.observeByWeek(weekId).map { list -> list.map { it.toModel() } }
 
     suspend fun completeTask(task: Task) {
-        // Mark completed; resources are tallied and applied to GameResource at week close.
         taskDao.markCompleted(task.id, TaskStatus.COMPLETED.value, DateUtil.now())
     }
 
@@ -61,27 +64,23 @@ class TaskRepository(
 
     suspend fun closeWeek(weekId: String) {
         val week = weekDao.getById(weekId) ?: return
-        if (week.isClosed) return  // idempotent guard
+        if (week.isClosed) return
         val now = DateUtil.now()
 
-        // Transition all pending tasks
         val pending = taskDao.getPendingByWeek(weekId)
-        pending.forEach { task ->
-            val newStatus = if (task.hardDeadline) TaskStatus.EXPIRED.value else TaskStatus.INCOMPLETE.value
-            taskDao.updateStatus(task.id, newStatus)
+
+        db.withTransaction {
+            pending.forEach { task ->
+                val newStatus = if (task.hardDeadline) TaskStatus.EXPIRED.value else TaskStatus.INCOMPLETE.value
+                taskDao.updateStatus(task.id, newStatus)
+            }
+            val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
+            val snapshot = buildSnapshot(weekId, allTasks, now)
+            weekSnapshotDao.insert(snapshot)
+            weekDao.update(week.copy(isClosed = true, closedAt = now))
+            applySnapshotToGameResources(snapshot)
         }
 
-        val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
-        val snapshot = buildSnapshot(weekId, allTasks, now)
-        weekSnapshotDao.insert(snapshot)
-
-        val updatedWeek = week.copy(isClosed = true, closedAt = now)
-        weekDao.update(updatedWeek)
-
-        // Per spec: current_value and lifetime_earned increment on week close
-        applySnapshotToGameResources(snapshot)
-
-        // Reschedule next Sunday's week-close reminder
         notificationRepository.scheduleWeekCloseReminder()
     }
 
@@ -92,7 +91,6 @@ class TaskRepository(
         val categoryTotalBreakdown = mutableMapOf<String, Int>()
 
         tasks.forEach { task ->
-            // Count every task (regardless of status) in the category total
             task.categoryId?.let { catId ->
                 categoryTotalBreakdown[catId] = (categoryTotalBreakdown[catId] ?: 0) + 1
             }
@@ -130,13 +128,14 @@ class TaskRepository(
         )
     }
 
+    // Must be called from within a database transaction.
     private suspend fun applySnapshotToGameResources(snapshot: WeekSnapshotEntity) {
         val type = object : TypeToken<Map<String, Int>>() {}.type
         val aspectBreakdown: Map<String, Int> = gson.fromJson(snapshot.aspectBreakdown, type) ?: emptyMap()
         aspectBreakdown.forEach { (aspectId, earned) ->
             val mappings = gameResourceMappingDao.getByAspect(aspectId)
             mappings.forEach { mapping ->
-                val amount = (earned * mapping.weight).toInt()
+                val amount = (earned * mapping.weight).roundToInt()
                 if (amount > 0) gameResourceDao.addValue(mapping.gameResourceId, amount)
             }
         }

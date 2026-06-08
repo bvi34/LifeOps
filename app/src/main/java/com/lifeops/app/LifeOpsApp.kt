@@ -5,9 +5,13 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class LifeOpsApp : Application() {
+    // Tied to the process lifetime — not leaked.
+    val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val database by lazy { LifeOpsDatabase.getInstance(this) }
 
     val aspectRepository by lazy {
@@ -31,6 +35,7 @@ class LifeOpsApp : Application() {
     }
     val taskRepository by lazy {
         TaskRepository(
+            database,
             database.taskDao(),
             database.aspectDao(),
             database.categoryDao(),
@@ -43,12 +48,12 @@ class LifeOpsApp : Application() {
         )
     }
     val importRepository by lazy {
-        ImportRepository(aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
+        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
     }
 
     override fun onCreate() {
         super.onCreate()
-        CoroutineScope(Dispatchers.IO).launch {
+        applicationScope.launch {
             weekRepository.getOrCreateCurrentWeek()
             gameResourceRepository.ensureDefaultSlots()
             notificationRepository.scheduleWeekCloseReminder()

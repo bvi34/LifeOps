@@ -6,6 +6,6 @@ class PreferencesRepository(context: Context) {
     private val prefs = context.getSharedPreferences("lifeops_settings", Context.MODE_PRIVATE)
 
     var defaultReminderHour: Int
-        get() = prefs.getInt("default_reminder_hour", 9)
-        set(value) { prefs.edit().putInt("default_reminder_hour", value).apply() }
+        get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
+        set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }
 }

@@ -145,12 +145,20 @@ class ThisWeekViewModel(
         }
     }
 
+    private var weekCloseInFlight = false
+
     fun onCloseWeek() {
+        if (weekCloseInFlight) return
         viewModelScope.launch {
-            val week = _uiState.value.week ?: return@launch
-            stopTimer(saveEntry = true)
-            taskRepository.closeWeek(week.id)
-            weekRepository.getOrCreateCurrentWeek()
+            weekCloseInFlight = true
+            try {
+                val week = _uiState.value.week ?: return@launch
+                stopTimer(saveEntry = true)
+                taskRepository.closeWeek(week.id)
+                weekRepository.getOrCreateCurrentWeek()
+            } finally {
+                weekCloseInFlight = false
+            }
         }
     }
 
@@ -253,6 +261,11 @@ class ThisWeekViewModel(
 
     fun onLogTime(taskId: String, minutes: Int, note: String?) {
         viewModelScope.launch { timeEntryRepository.logTime(taskId, minutes, note) }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopTimer(saveEntry = true)
     }
 
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }

@@ -1,11 +1,14 @@
 package com.lifeops.app.data.repository
 
+import androidx.room.withTransaction
+import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.model.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
 import java.util.UUID
 
 class ImportRepository(
+    private val db: LifeOpsDatabase,
     private val aspectRepository: AspectRepository,
     private val taskRepository: TaskRepository,
     private val weekRepository: WeekRepository,
@@ -77,33 +80,36 @@ class ImportRepository(
         if (result.error != null) return Result.failure(Exception(result.error))
 
         val week = weekRepository.getOrCreateCurrentWeek()
-        var count = 0
+        val createdTasks = mutableListOf<Task>()
 
-        result.tasks.forEach { parsed ->
-            val aspect = parsed.aspectName?.let { aspectRepository.findOrCreateAspect(it) }
-            val category = parsed.categoryName?.let { catName ->
-                aspect?.let { asp -> aspectRepository.findOrCreateCategory(asp.id, catName) }
+        // All DB writes are atomic; notification scheduling (WorkManager) happens after.
+        db.withTransaction {
+            result.tasks.forEach { parsed ->
+                val aspect = parsed.aspectName?.let { aspectRepository.findOrCreateAspect(it) }
+                val category = parsed.categoryName?.let { catName ->
+                    aspect?.let { asp -> aspectRepository.findOrCreateCategory(asp.id, catName) }
+                }
+                val task = Task(
+                    id = UUID.randomUUID().toString(),
+                    weekId = week.id,
+                    title = parsed.title,
+                    aspectId = aspect?.id,
+                    categoryId = category?.id,
+                    priority = Priority.from(parsed.priority),
+                    dueDate = parsed.dueDate,
+                    hardDeadline = parsed.hardDeadline,
+                    status = TaskStatus.PENDING,
+                    resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
+                    createdAt = DateUtil.now()
+                )
+                taskRepository.upsertTask(task)
+                parsed.notes?.let { taskNoteRepository.addNote(task.id, it) }
+                createdTasks.add(task)
             }
-            val task = Task(
-                id = UUID.randomUUID().toString(),
-                weekId = week.id,
-                title = parsed.title,
-                aspectId = aspect?.id,
-                categoryId = category?.id,
-                priority = Priority.from(parsed.priority),
-                dueDate = parsed.dueDate,
-                hardDeadline = parsed.hardDeadline,
-                status = TaskStatus.PENDING,
-                resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
-                createdAt = DateUtil.now()
-            )
-            taskRepository.upsertTask(task)
-            // Convert the JSON notes string into the first TaskNote entry
-            parsed.notes?.let { taskNoteRepository.addNote(task.id, it) }
-            notificationRepository.scheduleForTask(task)
-            count++
         }
-        return Result.success(count)
+
+        createdTasks.forEach { notificationRepository.scheduleForTask(it) }
+        return Result.success(createdTasks.size)
     }
 
     private suspend fun resolveAspectFromDb(name: String): Aspect? =

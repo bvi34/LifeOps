@@ -135,7 +135,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
                             val isTimerActive = state.activeTimer?.taskId == task.id
-                            val timerElapsed = if (isTimerActive) state.activeTimer!!.elapsedSeconds else 0
+                            val timerElapsed = if (isTimerActive) state.activeTimer?.elapsedSeconds ?: 0 else 0
                             TaskRow(
                                 task = task,
                                 aspectColor = group.aspectColor,
@@ -163,7 +163,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         val detailTask = allTasks.firstOrNull { it.id == taskId }
         if (detailTask != null) {
             val isTimerActive = state.activeTimer?.taskId == taskId
-            val timerElapsed = if (isTimerActive) state.activeTimer!!.elapsedSeconds else 0
+            val timerElapsed = if (isTimerActive) state.activeTimer?.elapsedSeconds ?: 0 else 0
             TaskDetailSheet(
                 task = detailTask,
                 notes = state.taskNotes[taskId] ?: emptyList(),
@@ -172,7 +172,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 timerElapsedSeconds = timerElapsed,
                 onDismiss = viewModel::closeDetail,
                 onAddNote = { content -> viewModel.onAddNote(taskId, content) },
-                onEdit = { viewModel.closeDetail(); viewModel.startEditTask(detailTask) },
+                onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
                 onCarryForward = { viewModel.closeDetail(); viewModel.onCarryForward(detailTask) },
                 onStartTimer = { viewModel.startTimer(taskId) },
                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },

@@ -23,8 +23,9 @@ class NotificationRepository(
     suspend fun scheduleForTask(task: Task) {
         val dueDate = task.dueDate ?: return
         val now = System.currentTimeMillis()
+        val hour = preferencesRepository.defaultReminderHour // already clamped 0-23
 
-        val reminderAt = DateUtil.epochMillisForDate(dueDate, preferencesRepository.defaultReminderHour)
+        val reminderAt = DateUtil.epochMillisForDate(dueDate, hour)
         if (reminderAt > now) {
             enqueueTaskNotification(task.id, task.title, "reminder", reminderAt - now)
             notificationDao.insert(
@@ -33,11 +34,18 @@ class NotificationRepository(
         }
 
         if (task.hardDeadline) {
-            val hardDeadlineAt = DateUtil.epochMillisForDayBefore(dueDate, 18)
-            if (hardDeadlineAt > now) {
-                enqueueTaskNotification(task.id, task.title, "hard_deadline", hardDeadlineAt - now)
+            // Prefer "day before at 18:00"; if that's already past, fall back to due date at reminder hour.
+            val dayBeforeAt = DateUtil.epochMillisForDayBefore(dueDate, 18)
+            val dueDateAt = DateUtil.epochMillisForDate(dueDate, hour)
+            val effectiveAt = when {
+                dayBeforeAt > now -> dayBeforeAt
+                dueDateAt > now -> dueDateAt
+                else -> null
+            }
+            if (effectiveAt != null) {
+                enqueueTaskNotification(task.id, task.title, "hard_deadline", effectiveAt - now)
                 notificationDao.insert(
-                    NotificationEntity(UUID.randomUUID().toString(), task.id, "hard_deadline", DateUtil.isoFromEpoch(hardDeadlineAt))
+                    NotificationEntity(UUID.randomUUID().toString(), task.id, "hard_deadline", DateUtil.isoFromEpoch(effectiveAt))
                 )
             }
         }

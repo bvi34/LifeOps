@@ -22,7 +22,7 @@ import com.lifeops.app.data.db.entities.*
         ResourceTransactionEntity::class
     ],
     version = 4,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun aspectDao(): AspectDao
