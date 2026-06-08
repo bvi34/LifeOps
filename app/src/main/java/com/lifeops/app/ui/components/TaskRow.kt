@@ -57,6 +57,7 @@ fun TaskRow(
     isPlanningMode: Boolean = false,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit = {},
+    onUnSkip: () -> Unit = {},
     onSkip: () -> Unit,
     onCarryForward: () -> Unit,
     onEdit: () -> Unit,
@@ -185,6 +186,7 @@ fun TaskRow(
                     aspectColor = aspectColor,
                     onComplete = onComplete,
                     onUnComplete = onUnComplete,
+                    onUnSkip = onUnSkip,
                     modifier = Modifier.size(48.dp)
                 )
 
@@ -377,16 +379,18 @@ private fun TaskStatusIcon(
     aspectColor: String,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit,
+    onUnSkip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isInteractive = status == TaskStatus.PENDING || status == TaskStatus.COMPLETED
+    val clickAction: (() -> Unit)? = when (status) {
+        TaskStatus.PENDING -> onComplete
+        TaskStatus.COMPLETED -> onUnComplete
+        TaskStatus.SKIPPED -> onUnSkip
+        else -> null
+    }
     Box(
         modifier = modifier
-            .then(
-                if (isInteractive) Modifier.clickable(
-                    onClick = if (status == TaskStatus.PENDING) onComplete else onUnComplete
-                ) else Modifier
-            ),
+            .then(if (clickAction != null) Modifier.clickable(onClick = clickAction) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         when (status) {
@@ -405,16 +409,13 @@ private fun TaskStatusIcon(
             TaskStatus.SKIPPED -> Box(
                 modifier = Modifier
                     .size(22.dp)
-                    .background(
-                        ExpiredRed.copy(alpha = 0.15f),
-                        RoundedCornerShape(4.dp)
-                    )
+                    .background(ExpiredRed.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
                     .border(1.5.dp, ExpiredRed.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     Icons.Default.Close,
-                    contentDescription = "Cancelled",
+                    contentDescription = "Tap to restore",
                     tint = ExpiredRed,
                     modifier = Modifier.size(14.dp)
                 )

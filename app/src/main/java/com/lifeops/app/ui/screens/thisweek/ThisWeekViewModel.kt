@@ -210,6 +210,10 @@ class ThisWeekViewModel(
         viewModelScope.launch { taskRepository.unCompleteTask(taskId) }
     }
 
+    fun onUnSkipTask(taskId: String) {
+        viewModelScope.launch { taskRepository.unSkipTask(taskId) }
+    }
+
     fun onSkipTask(taskId: String) {
         viewModelScope.launch { taskRepository.skipTask(taskId) }
     }
@@ -393,7 +397,9 @@ class ThisWeekViewModel(
         dueDate: String?,
         hardDeadline: Boolean,
         isRecurring: Boolean = false,
-        estimatedMinutes: Int? = null
+        estimatedMinutes: Int? = null,
+        aspectId: String? = null,
+        categoryId: String? = null
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
@@ -406,7 +412,9 @@ class ThisWeekViewModel(
                     hardDeadline = hardDeadline,
                     resourceValue = newResourceValue,
                     isRecurring = isRecurring,
-                    estimatedMinutes = estimatedMinutes
+                    estimatedMinutes = estimatedMinutes,
+                    aspectId = aspectId,
+                    categoryId = categoryId
                 )
             )
             _uiState.update { it.copy(editingTask = null) }

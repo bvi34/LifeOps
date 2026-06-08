@@ -138,11 +138,10 @@ fun CreateTaskDialog(
                     }
                 }
 
-                OutlinedTextField(
-                    value = dueDate,
-                    onValueChange = { dueDate = it },
-                    label = { Text("Due date (YYYY-MM-DD)") },
-                    singleLine = true,
+                DatePickerButton(
+                    label = "due date",
+                    selectedDateStr = dueDate.ifBlank { null },
+                    onDateSelected = { dueDate = it ?: "" },
                     modifier = Modifier.fillMaxWidth()
                 )
 

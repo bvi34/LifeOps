@@ -59,7 +59,6 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     "lifeops.db"
                 )
                     .addMigrations(MIGRATION_4_5)
-                    .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
             }
