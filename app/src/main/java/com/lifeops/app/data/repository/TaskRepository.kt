@@ -38,7 +38,6 @@ class TaskRepository(
     }
 
     suspend fun carryForward(task: Task, newWeekId: String): Task {
-        taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
         notificationRepository.cancelForTask(task.id)
         val newTask = task.copy(
             id = java.util.UUID.randomUUID().toString(),
@@ -48,7 +47,10 @@ class TaskRepository(
             carriedFromTaskId = task.id,
             createdAt = DateUtil.now()
         )
-        taskDao.upsert(newTask.toEntity())
+        db.withTransaction {
+            taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
+            taskDao.upsert(newTask.toEntity())
+        }
         notificationRepository.scheduleForTask(newTask)
         return newTask
     }

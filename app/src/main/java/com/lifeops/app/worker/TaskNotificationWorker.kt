@@ -23,12 +23,17 @@ class TaskNotificationWorker(
         val channel = NotificationChannel(channelId, "Task Reminders", NotificationManager.IMPORTANCE_DEFAULT)
         nm.createNotificationChannel(channel)
 
-        val notifTitle = if (type == "hard_deadline") "Hard Deadline Tomorrow" else "Task Reminder"
+        val isHardDeadline = type == "hard_deadline" || type == "hard_deadline_today"
+        val notifTitle = when (type) {
+            "hard_deadline" -> "Hard Deadline Tomorrow"
+            "hard_deadline_today" -> "Hard Deadline Today"
+            else -> "Task Reminder"
+        }
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(notifTitle)
             .setContentText(title)
-            .setPriority(if (type == "hard_deadline") NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(if (isHardDeadline) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
 
