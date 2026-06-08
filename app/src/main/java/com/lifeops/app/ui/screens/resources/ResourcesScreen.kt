@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.lifeops.app.ui.screens.resources
 
 import androidx.compose.foundation.layout.*

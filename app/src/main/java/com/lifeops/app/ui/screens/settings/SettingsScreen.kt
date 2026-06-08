@@ -1,8 +1,12 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package com.lifeops.app.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -269,7 +273,7 @@ private fun ReminderTimePickerDialog(
         title = { Text("Default reminder time") },
         text = {
             Column(modifier = Modifier.heightIn(max = 320.dp)
-                .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                .verticalScroll(rememberScrollState())) {
                 hours.forEach { h ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
