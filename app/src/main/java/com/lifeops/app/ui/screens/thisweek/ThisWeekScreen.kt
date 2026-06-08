@@ -12,11 +12,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
+import com.lifeops.app.ui.components.TaskDetailSheet
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.theme.parseColor
@@ -26,6 +30,17 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showCloseConfirm by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                viewModel.stopTimer(saveEntry = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     Scaffold(
         topBar = {
@@ -119,22 +134,50 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             }
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
+                            val isTimerActive = state.activeTimer?.taskId == task.id
+                            val timerElapsed = if (isTimerActive) state.activeTimer!!.elapsedSeconds else 0
                             TaskRow(
                                 task = task,
                                 aspectColor = group.aspectColor,
                                 notes = state.taskNotes[task.id] ?: emptyList(),
                                 totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
+                                isTimerActive = isTimerActive,
+                                timerElapsedSeconds = timerElapsed,
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onSkip = { viewModel.onSkipTask(task.id) },
                                 onCarryForward = { viewModel.onCarryForward(task) },
                                 onEdit = { viewModel.startEditTask(task) },
-                                onAddNote = { content -> viewModel.onAddNote(task.id, content) },
-                                onLogTime = { minutes, note -> viewModel.onLogTime(task.id, minutes, note) }
+                                onStartTimer = { viewModel.startTimer(task.id) },
+                                onStopTimer = { viewModel.stopTimer(saveEntry = true) },
+                                onOpenDetail = { viewModel.openDetail(task.id) }
                             )
                         }
                     }
                 }
             }
+        }
+    }
+
+    state.detailTaskId?.let { taskId ->
+        val allTasks = state.groupedTasks.flatMap { g -> g.categories.flatMap { it.tasks } }
+        val detailTask = allTasks.firstOrNull { it.id == taskId }
+        if (detailTask != null) {
+            val isTimerActive = state.activeTimer?.taskId == taskId
+            val timerElapsed = if (isTimerActive) state.activeTimer!!.elapsedSeconds else 0
+            TaskDetailSheet(
+                task = detailTask,
+                notes = state.taskNotes[taskId] ?: emptyList(),
+                totalTimeMinutes = state.taskTimeMinutes[taskId] ?: 0,
+                isTimerActive = isTimerActive,
+                timerElapsedSeconds = timerElapsed,
+                onDismiss = viewModel::closeDetail,
+                onAddNote = { content -> viewModel.onAddNote(taskId, content) },
+                onEdit = { viewModel.closeDetail(); viewModel.startEditTask(detailTask) },
+                onCarryForward = { viewModel.closeDetail(); viewModel.onCarryForward(detailTask) },
+                onStartTimer = { viewModel.startTimer(taskId) },
+                onStopTimer = { viewModel.stopTimer(saveEntry = true) },
+                onLogTime = { minutes, note -> viewModel.onLogTime(taskId, minutes, note) }
+            )
         }
     }
 

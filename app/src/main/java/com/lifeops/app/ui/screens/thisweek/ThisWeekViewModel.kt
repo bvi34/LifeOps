@@ -5,9 +5,17 @@ import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
+
+data class ActiveTimer(
+    val taskId: String,
+    val startMillis: Long,
+    val elapsedSeconds: Int = 0
+)
 
 data class GroupedTasks(
     val aspect: Aspect?,
@@ -33,7 +41,9 @@ data class ThisWeekUiState(
     val importError: String? = null,
     val importJson: String = "",
     val editingTask: Task? = null,
-    val showCreateTaskDialog: Boolean = false
+    val showCreateTaskDialog: Boolean = false,
+    val activeTimer: ActiveTimer? = null,
+    val detailTaskId: String? = null
 )
 
 class ThisWeekViewModel(
@@ -48,6 +58,8 @@ class ThisWeekViewModel(
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
+
+    private var timerJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -75,7 +87,7 @@ class ThisWeekViewModel(
                         val grouped = groupTasks(tasks, aspectMap, categoryMap)
                         _uiState.update {
                             it.copy(
-                                week = week.toModel(),
+                                week = week,
                                 groupedTasks = grouped,
                                 aspects = aspectMap,
                                 categories = categoryMap,
@@ -102,24 +114,20 @@ class ThisWeekViewModel(
         }
     }
 
-    private fun Week.toModel() = this
-
     private fun groupTasks(
         tasks: List<Task>,
         aspects: Map<String, Aspect>,
         categories: Map<String, Category>
     ): List<GroupedTasks> {
         val byAspect = tasks.groupBy { it.aspectId }
-        val result = mutableListOf<GroupedTasks>()
-        byAspect.forEach { (aspectId, aspectTasks) ->
+        return byAspect.map { (aspectId, aspectTasks) ->
             val aspect = aspectId?.let { aspects[it] }
             val byCategory = aspectTasks.groupBy { it.categoryId }
             val categoryGroups = byCategory.map { (catId, catTasks) ->
                 CategoryGroup(catId?.let { categories[it] }, catTasks)
             }
-            result.add(GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups))
+            GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups)
         }
-        return result
     }
 
     fun onCompleteTask(task: Task) {
@@ -140,11 +148,44 @@ class ThisWeekViewModel(
     fun onCloseWeek() {
         viewModelScope.launch {
             val week = _uiState.value.week ?: return@launch
+            stopTimer(saveEntry = true)
             taskRepository.closeWeek(week.id)
             weekRepository.getOrCreateCurrentWeek()
         }
     }
 
+    // Timer
+    fun startTimer(taskId: String) {
+        stopTimer(saveEntry = true)
+        val startMillis = System.currentTimeMillis()
+        _uiState.update { it.copy(activeTimer = ActiveTimer(taskId, startMillis)) }
+        timerJob = viewModelScope.launch {
+            while (true) {
+                delay(1000)
+                val elapsed = ((System.currentTimeMillis() - startMillis) / 1000).toInt()
+                _uiState.update { state ->
+                    state.copy(activeTimer = state.activeTimer?.copy(elapsedSeconds = elapsed))
+                }
+            }
+        }
+    }
+
+    fun stopTimer(saveEntry: Boolean = true) {
+        val timer = _uiState.value.activeTimer ?: return
+        timerJob?.cancel()
+        timerJob = null
+        val minutes = timer.elapsedSeconds / 60
+        if (saveEntry && minutes > 0) {
+            viewModelScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
+        }
+        _uiState.update { it.copy(activeTimer = null) }
+    }
+
+    // Detail sheet
+    fun openDetail(taskId: String) = _uiState.update { it.copy(detailTaskId = taskId) }
+    fun closeDetail() = _uiState.update { it.copy(detailTaskId = null) }
+
+    // Import
     fun openImportDialog() = _uiState.update { it.copy(importDialogOpen = true, importError = null) }
 
     fun closeImportDialog() = _uiState.update {
@@ -215,15 +256,9 @@ class ThisWeekViewModel(
     }
 
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
-
     fun cancelEditTask() = _uiState.update { it.copy(editingTask = null) }
 
-    fun saveTaskEdit(
-        title: String,
-        priority: Priority,
-        dueDate: String?,
-        hardDeadline: Boolean
-    ) {
+    fun saveTaskEdit(title: String, priority: Priority, dueDate: String?, hardDeadline: Boolean) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
             val newResourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
