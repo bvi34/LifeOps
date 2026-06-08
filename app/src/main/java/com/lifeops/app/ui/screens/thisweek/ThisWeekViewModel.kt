@@ -35,6 +35,7 @@ data class GroupedTasks(
 )
 
 data class CategoryGroup(
+    val categoryId: String?,
     val category: Category?,
     val tasks: List<Task>,
     val dominantPriority: Priority?
@@ -195,7 +196,7 @@ class ThisWeekViewModel(
                     .filter { it.status == TaskStatus.PENDING }
                     .maxByOrNull { it.priority.baseValue }
                     ?.priority
-                CategoryGroup(catId?.let { categories[it] }, sorted, dominantPriority)
+                CategoryGroup(catId, catId?.let { categories[it] }, sorted, dominantPriority)
             }
             GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups)
         }

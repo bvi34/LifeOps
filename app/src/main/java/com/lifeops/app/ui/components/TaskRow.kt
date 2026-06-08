@@ -5,13 +5,18 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.CheckBox
+import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Done
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Redo
@@ -20,11 +25,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.Task
@@ -39,7 +43,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-private val ACTION_PANEL_WIDTH = 168.dp
+private val SWIPE_THRESHOLD_DP = 80.dp
 
 @Composable
 fun TaskRow(
@@ -65,8 +69,8 @@ fun TaskRow(
 ) {
     val scope = rememberCoroutineScope()
     val offset = remember { Animatable(0f) }
-    val density = LocalDensity.current
-    val maxOffset = remember(density) { with(density) { ACTION_PANEL_WIDTH.toPx() } }
+    val swipeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { SWIPE_THRESHOLD_DP.toPx() }
+    val maxSwipePx = swipeThresholdPx * 1.5f
 
     val isPending = task.status == TaskStatus.PENDING
     val isCompleted = task.status == TaskStatus.COMPLETED
@@ -76,7 +80,12 @@ fun TaskRow(
 
     var expanded by remember { mutableStateOf(false) }
 
-    fun closeSwipe() { scope.launch { offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy)) } }
+    // Swipe action colors: right = complete (green), left = timer (tertiary)
+    val swipeBgColor = when {
+        offset.value > 0 -> CompletedGreen.copy(alpha = (offset.value / maxSwipePx).coerceIn(0f, 0.45f))
+        offset.value < 0 -> MaterialTheme.colorScheme.tertiary.copy(alpha = (-offset.value / maxSwipePx).coerceIn(0f, 0.45f))
+        else -> Color.Transparent
+    }
 
     LaunchedEffect(task.status) {
         if (offset.value != 0f) offset.animateTo(0f, spring())
@@ -87,69 +96,55 @@ fun TaskRow(
             .fillMaxWidth()
             .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
-        // Action panel behind the card
-        Row(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .width(ACTION_PANEL_WIDTH)
-                .matchParentSize()
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            if (isPending) {
-                IconButton(onClick = { closeSwipe(); onComplete() }) {
-                    Icon(Icons.Default.Done, "Complete", tint = CompletedGreen)
-                }
-                IconButton(onClick = { closeSwipe(); onSkip() }) {
-                    Icon(Icons.Default.Close, "Skip", tint = ExpiredRed)
-                }
-            }
-            if (isCompleted) {
-                IconButton(onClick = { closeSwipe(); onUnComplete() }) {
-                    Icon(Icons.Default.Redo, "Unmark complete", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            IconButton(
-                onClick = {
-                    closeSwipe()
-                    if (isTimerActive) onStopTimer() else onStartTimer()
-                }
+        // Swipe action background
+        if (swipeBgColor != Color.Transparent) {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(swipeBgColor),
+                contentAlignment = if (offset.value > 0) Alignment.CenterStart else Alignment.CenterEnd
             ) {
+                val icon = if (offset.value > 0) Icons.Default.CheckCircle else Icons.Default.AccessTime
+                val tint = if (offset.value > 0) CompletedGreen else MaterialTheme.colorScheme.tertiary
                 Icon(
-                    if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
-                    contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
-                    tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
-                           else MaterialTheme.colorScheme.onSurfaceVariant
+                    icon,
+                    contentDescription = null,
+                    tint = tint,
+                    modifier = Modifier.padding(horizontal = 16.dp).size(28.dp)
                 )
             }
         }
 
-        // Swipeable task card
+        // Task card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .pointerInput(task.id, hasExpandContent, isPending, isTimerActive) {
+                .pointerInput(task.id, hasExpandContent, isPending, isCompleted, isTimerActive) {
                     coroutineScope {
                         launch {
                             detectHorizontalDragGestures(
                                 onDragEnd = {
                                     scope.launch {
-                                        val target =
-                                            if (offset.value < -maxOffset * 0.35f) -maxOffset else 0f
-                                        offset.animateTo(
-                                            target,
-                                            spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-                                        )
+                                        when {
+                                            // Swipe right past threshold → complete
+                                            offset.value > swipeThresholdPx && isPending -> {
+                                                offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                onComplete()
+                                            }
+                                            // Swipe left past threshold → toggle timer
+                                            offset.value < -swipeThresholdPx -> {
+                                                offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                if (isTimerActive) onStopTimer() else onStartTimer()
+                                            }
+                                            else -> offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                        }
                                     }
                                 },
                                 onHorizontalDrag = { change, delta ->
                                     change.consume()
                                     scope.launch {
-                                        offset.snapTo(
-                                            (offset.value + delta).coerceIn(-maxOffset, 0f)
-                                        )
+                                        offset.snapTo((offset.value + delta).coerceIn(-maxSwipePx, maxSwipePx))
                                     }
                                 }
                             )
@@ -157,14 +152,9 @@ fun TaskRow(
                         launch {
                             detectTapGestures(
                                 onTap = {
-                                    when {
-                                        offset.value < -maxOffset * 0.3f -> closeSwipe()
-                                        hasExpandContent -> expanded = !expanded
-                                    }
+                                    if (hasExpandContent) expanded = !expanded
                                 },
-                                onLongPress = {
-                                    if (offset.value > -maxOffset * 0.3f) onOpenDetail()
-                                }
+                                onLongPress = { onOpenDetail() }
                             )
                         }
                     }
@@ -177,129 +167,118 @@ fun TaskRow(
                 }
             )
         ) {
-            Row(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Priority color bar
                 Box(
                     modifier = Modifier
                         .width(4.dp)
-                        .fillMaxHeight()
+                        .height(56.dp)
                         .background(priorityColor(task.priority.label))
-                        .align(Alignment.CenterVertically)
                 )
+
+                // Status icon (checkbox-like)
+                TaskStatusIcon(
+                    status = task.status,
+                    aspectColor = aspectColor,
+                    onComplete = onComplete,
+                    onUnComplete = onUnComplete,
+                    modifier = Modifier.size(48.dp)
+                )
+
+                // Task content
                 Column(
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                        .padding(end = 4.dp, top = 6.dp, bottom = 6.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = isCompleted,
-                            onCheckedChange = {
-                                if (isPending) onComplete()
-                                else if (isCompleted) onUnComplete()
-                            },
-                            enabled = isPending || isCompleted,
-                            colors = CheckboxDefaults.colors(checkedColor = parseColor(aspectColor))
+                        Text(
+                            text = task.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textDecoration = if (isCompleted || isSkipped) TextDecoration.LineThrough else null,
+                            color = if (isCompleted || isSkipped)
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
-                        Column(modifier = Modifier.weight(1f).padding(start = 4.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = task.title,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textDecoration = if (isCompleted || isSkipped) TextDecoration.LineThrough else null,
-                                    color = if (isCompleted || isSkipped)
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                if (task.hardDeadline) {
-                                    Icon(
-                                        Icons.Default.AccessTime,
-                                        contentDescription = "Hard deadline",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(14.dp).padding(start = 2.dp)
-                                    )
-                                }
-                                if (task.isRecurring) {
-                                    Icon(
-                                        Icons.Default.Redo,
-                                        contentDescription = "Recurring",
-                                        tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(14.dp).padding(start = 2.dp)
-                                    )
-                                }
-                            }
-                            task.dueDate?.let { date ->
-                                Text(
-                                    text = DateUtil.formatDate(date),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (DateUtil.isOverdue(date) && isPending)
-                                        MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                )
-                            }
-                            // Summary chips (collapsed view)
-                            if (!expanded || (!hasExpandContent)) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.padding(top = 2.dp)
-                                ) {
-                                    if (task.carriedCount > 0) {
-                                        Text(
-                                            "↩${task.carriedCount}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
-                                        )
-                                    }
-                                    if (isTimerActive) {
-                                        Text(
-                                            "● ${formatElapsed(timerElapsedSeconds)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.tertiary
-                                        )
-                                    } else if (notes.isNotEmpty() || totalTimeMinutes > 0) {
-                                        if (notes.isNotEmpty()) {
-                                            Text(
-                                                "${notes.size} note${if (notes.size > 1) "s" else ""}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
-                                            )
-                                        }
-                                        if (totalTimeMinutes > 0) {
-                                            Text(
-                                                formatMinutes(totalTimeMinutes),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f)
-                                            )
-                                        }
-                                    }
-                                    task.estimatedMinutes?.let { est ->
-                                        Text(
-                                            "est ${formatMinutes(est)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                        )
-                                    }
-                                }
-                            }
+                        if (task.hardDeadline) {
+                            Icon(
+                                Icons.Default.AccessTime,
+                                contentDescription = "Hard deadline",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(14.dp).padding(start = 2.dp)
+                            )
                         }
-                        if (isPlanningMode) {
-                            Column {
-                                IconButton(onClick = onMoveUp, modifier = Modifier.size(28.dp)) {
-                                    Icon(Icons.Default.KeyboardArrowUp, "Move up", modifier = Modifier.size(18.dp))
+                        if (task.isRecurring) {
+                            Icon(
+                                Icons.Default.Redo,
+                                contentDescription = "Recurring",
+                                tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(14.dp).padding(start = 2.dp)
+                            )
+                        }
+                    }
+                    task.dueDate?.let { date ->
+                        Text(
+                            text = DateUtil.formatDate(date),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (DateUtil.isOverdue(date) && isPending)
+                                MaterialTheme.colorScheme.error
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    // Summary chips (collapsed view)
+                    if (!expanded) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(top = 2.dp)
+                        ) {
+                            if (task.carriedCount > 0) {
+                                Text(
+                                    "↩${task.carriedCount}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
+                                )
+                            }
+                            if (isTimerActive) {
+                                Text(
+                                    "● ${formatElapsed(timerElapsedSeconds)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.tertiary
+                                )
+                            } else {
+                                if (notes.isNotEmpty()) {
+                                    Text(
+                                        "${notes.size} note${if (notes.size > 1) "s" else ""}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                    )
                                 }
-                                IconButton(onClick = onMoveDown, modifier = Modifier.size(28.dp)) {
-                                    Icon(Icons.Default.KeyboardArrowDown, "Move down", modifier = Modifier.size(18.dp))
+                                if (totalTimeMinutes > 0) {
+                                    Text(
+                                        formatMinutes(totalTimeMinutes),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f)
+                                    )
                                 }
                             }
-                        } else {
-                            PriorityBadge(task.priority.label)
+                            task.estimatedMinutes?.let { est ->
+                                Text(
+                                    "est ${formatMinutes(est)}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
                         }
                     }
 
                     AnimatedVisibility(visible = expanded && hasExpandContent) {
-                        Column(modifier = Modifier.padding(start = 44.dp, top = 2.dp, bottom = 4.dp)) {
+                        Column(modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)) {
                             if (task.carriedCount > 0) {
                                 Text(
                                     "↩ Carried forward ${task.carriedCount} time${if (task.carriedCount > 1) "s" else ""}",
@@ -309,10 +288,8 @@ fun TaskRow(
                                 )
                             }
                             if (task.estimatedMinutes != null) {
-                                val est = task.estimatedMinutes
-                                val logged = totalTimeMinutes
                                 Text(
-                                    "Est: ${formatMinutes(est)} / Logged: ${formatMinutes(logged)}",
+                                    "Est: ${formatMinutes(task.estimatedMinutes)} / Logged: ${formatMinutes(totalTimeMinutes)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                     modifier = Modifier.padding(bottom = 2.dp)
@@ -345,7 +322,109 @@ fun TaskRow(
                         }
                     }
                 }
+
+                // Right-side action buttons (or planning mode arrows)
+                if (isPlanningMode) {
+                    Column {
+                        IconButton(onClick = onMoveUp, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.KeyboardArrowUp, "Move up", modifier = Modifier.size(18.dp))
+                        }
+                        IconButton(onClick = onMoveDown, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.KeyboardArrowDown, "Move down", modifier = Modifier.size(18.dp))
+                        }
+                    }
+                } else {
+                    Row {
+                        // Skip / Cancel button (X)
+                        if (isPending) {
+                            IconButton(
+                                onClick = onSkip,
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Cancel task",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.size(40.dp))
+                        }
+                        // Timer button
+                        IconButton(
+                            onClick = { if (isTimerActive) onStopTimer() else onStartTimer() },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(
+                                if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
+                                contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
+                                tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
+                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun TaskStatusIcon(
+    status: TaskStatus,
+    aspectColor: String,
+    onComplete: () -> Unit,
+    onUnComplete: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isInteractive = status == TaskStatus.PENDING || status == TaskStatus.COMPLETED
+    Box(
+        modifier = modifier
+            .then(
+                if (isInteractive) Modifier.clickable(
+                    onClick = if (status == TaskStatus.PENDING) onComplete else onUnComplete
+                ) else Modifier
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        when (status) {
+            TaskStatus.PENDING -> Icon(
+                Icons.Default.CheckBoxOutlineBlank,
+                contentDescription = "Mark complete",
+                tint = parseColor(aspectColor),
+                modifier = Modifier.size(24.dp)
+            )
+            TaskStatus.COMPLETED -> Icon(
+                Icons.Default.CheckBox,
+                contentDescription = "Mark incomplete",
+                tint = CompletedGreen,
+                modifier = Modifier.size(24.dp)
+            )
+            TaskStatus.SKIPPED -> Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(
+                        ExpiredRed.copy(alpha = 0.15f),
+                        RoundedCornerShape(4.dp)
+                    )
+                    .border(1.5.dp, ExpiredRed.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Cancelled",
+                    tint = ExpiredRed,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
+            else -> Icon(
+                Icons.Default.CheckBoxOutlineBlank,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
@@ -360,21 +439,4 @@ internal fun formatElapsed(totalSeconds: Int): String {
     val m = totalSeconds / 60
     val s = totalSeconds % 60
     return "%d:%02d".format(m, s)
-}
-
-@Composable
-private fun PriorityBadge(priority: String) {
-    val color = priorityColor(priority)
-    Surface(
-        shape = MaterialTheme.shapes.extraSmall,
-        color = color.copy(alpha = 0.2f),
-        modifier = Modifier.padding(start = 4.dp)
-    ) {
-        Text(
-            text = priority.take(1).uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-        )
-    }
 }

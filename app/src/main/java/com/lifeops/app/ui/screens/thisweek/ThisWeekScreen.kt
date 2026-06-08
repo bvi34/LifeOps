@@ -191,9 +191,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             ?: Color.Transparent
 
                         if (catGroup.category != null || group.categories.size > 1) {
-                            item(key = "cat_${catGroup.category?.id ?: "none"}") {
+                            item(key = "cat_${catGroup.categoryId ?: catGroup.category?.id ?: "none"}") {
                                 CategoryHeader(
-                                    name = catGroup.category?.name ?: "General",
+                                    name = catGroup.category?.name ?: "Uncategorized",
                                     priorityTint = basketColor
                                 )
                             }

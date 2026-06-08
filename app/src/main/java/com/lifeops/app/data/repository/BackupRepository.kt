@@ -2,6 +2,9 @@ package com.lifeops.app.data.repository
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import androidx.core.content.FileProvider
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
@@ -9,6 +12,7 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.entities.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 private data class BackupData(
     val version: Int = 1,
@@ -36,6 +40,26 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             weekSnapshots = db.weekSnapshotDao().getAll()
         )
         gson.toJson(data)
+    }
+
+    suspend fun saveBackupFile(context: Context, json: String): Uri? = withContext(Dispatchers.IO) {
+        try {
+            val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: return@withContext null
+            dir.mkdirs()
+            val file = File(dir, "lifeops_backup.json")
+            file.writeText(json)
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    suspend fun readFromUri(context: Context, uri: Uri): String? = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     suspend fun restore(json: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -94,6 +118,18 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             )
         }
         sb.toString()
+    }
+
+    fun shareBackupFile(context: Context, uri: Uri) {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/json"
+            putExtra(Intent.EXTRA_SUBJECT, "LifeOps Backup")
+            putExtra(Intent.EXTRA_STREAM, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Save Backup").apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        })
     }
 
     fun shareText(context: Context, content: String, subject: String, mimeType: String = "text/plain") {

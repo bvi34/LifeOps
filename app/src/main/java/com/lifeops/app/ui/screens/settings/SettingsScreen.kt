@@ -2,6 +2,8 @@
 
 package com.lifeops.app.ui.screens.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -25,6 +27,12 @@ import com.lifeops.app.ui.theme.parseColor
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { viewModel.loadBackupFromUri(context, it) }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Settings") }) }
@@ -93,6 +101,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             json = state.restoreJson,
             error = state.restoreError,
             onJsonChange = viewModel::onRestoreJsonChange,
+            onPickFile = { filePickerLauncher.launch("application/json") },
             onConfirm = viewModel::restore,
             onDismiss = viewModel::hideRestoreDialog
         )
@@ -121,6 +130,45 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             )
         }
     }
+
+    // Archive confirmation dialog
+    val pendingAspectId = state.pendingArchiveAspectId
+    val pendingCategoryId = state.pendingArchiveCategoryId
+    if (pendingAspectId != null || pendingCategoryId != null) {
+        val itemName = when {
+            pendingAspectId != null -> state.aspects.firstOrNull { it.id == pendingAspectId }?.name ?: "this aspect"
+            else -> {
+                val cats = state.categories.values.flatten()
+                cats.firstOrNull { it.id == pendingCategoryId }?.name ?: "this category"
+            }
+        }
+        val itemType = if (pendingAspectId != null) "aspect" else "category"
+        AlertDialog(
+            onDismissRequest = viewModel::dismissArchiveConfirmation,
+            title = { Text("Archive $itemType?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Are you sure you want to archive \"$itemName\"?")
+                    if (pendingCategoryId != null) {
+                        Text(
+                            "Tasks in this category will be moved to Uncategorized.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = viewModel::confirmArchive,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Archive") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissArchiveConfirmation) { Text("Cancel") }
+            }
+        )
+    }
 }
 
 @Composable
@@ -138,7 +186,7 @@ private fun DataActionsSection(
                 OutlinedButton(onClick = onBackup, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Backup")
+                    Text("Backup JSON")
                 }
                 OutlinedButton(onClick = onRestore, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -160,6 +208,7 @@ private fun RestoreDialog(
     json: String,
     error: String?,
     onJsonChange: (String) -> Unit,
+    onPickFile: () -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -168,9 +217,16 @@ private fun RestoreDialog(
         title = { Text("Restore from Backup") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onPickFile, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Pick backup file (.json)")
+                }
+                HorizontalDivider()
                 Text(
-                    "Paste your backup JSON below. Existing records will be overwritten if IDs match.",
-                    style = MaterialTheme.typography.bodySmall
+                    "Or paste backup JSON below:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
                 OutlinedTextField(
                     value = json,

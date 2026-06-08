@@ -1,6 +1,7 @@
 package com.lifeops.app.ui.screens.settings
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
@@ -24,14 +25,17 @@ data class SettingsUiState(
     val showRestoreDialog: Boolean = false,
     val restoreJson: String = "",
     val restoreError: String? = null,
-    val backupStatus: String? = null
+    val backupStatus: String? = null,
+    val pendingArchiveAspectId: String? = null,
+    val pendingArchiveCategoryId: String? = null
 )
 
 class SettingsViewModel(
     private val aspectRepository: AspectRepository,
     private val gameResourceRepository: GameResourceRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val backupRepository: BackupRepository? = null
+    private val backupRepository: BackupRepository? = null,
+    private val taskRepository: TaskRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -70,7 +74,11 @@ class SettingsViewModel(
     }
 
     fun archiveAspect(id: String, archive: Boolean) {
-        viewModelScope.launch { aspectRepository.setAspectArchived(id, archive) }
+        if (archive) {
+            _uiState.update { it.copy(pendingArchiveAspectId = id) }
+        } else {
+            viewModelScope.launch { aspectRepository.setAspectArchived(id, false) }
+        }
     }
 
     fun addCategory(aspectId: String, name: String) {
@@ -81,7 +89,30 @@ class SettingsViewModel(
     }
 
     fun archiveCategory(id: String, archive: Boolean) {
-        viewModelScope.launch { aspectRepository.setCategoryArchived(id, archive) }
+        if (archive) {
+            _uiState.update { it.copy(pendingArchiveCategoryId = id) }
+        } else {
+            viewModelScope.launch { aspectRepository.setCategoryArchived(id, false) }
+        }
+    }
+
+    fun confirmArchive() {
+        val state = _uiState.value
+        viewModelScope.launch {
+            state.pendingArchiveAspectId?.let { id ->
+                aspectRepository.setAspectArchived(id, true)
+            }
+            state.pendingArchiveCategoryId?.let { id ->
+                // Null out tasks' categoryId so they appear as Uncategorized
+                taskRepository?.clearCategoryFromTasks(id)
+                aspectRepository.setCategoryArchived(id, true)
+            }
+            _uiState.update { it.copy(pendingArchiveAspectId = null, pendingArchiveCategoryId = null) }
+        }
+    }
+
+    fun dismissArchiveConfirmation() {
+        _uiState.update { it.copy(pendingArchiveAspectId = null, pendingArchiveCategoryId = null) }
     }
 
     fun renameGameResource(resource: GameResource, newName: String) {
@@ -115,8 +146,14 @@ class SettingsViewModel(
         val repo = backupRepository ?: return
         viewModelScope.launch {
             val json = repo.buildBackupJson()
-            repo.shareText(context, json, "LifeOps Backup")
-            _uiState.update { it.copy(backupStatus = "Backup shared") }
+            val uri = repo.saveBackupFile(context, json)
+            if (uri != null) {
+                repo.shareBackupFile(context, uri)
+            } else {
+                // Fallback to text share if file save fails
+                repo.shareText(context, json, "LifeOps Backup")
+            }
+            _uiState.update { it.copy(backupStatus = "Backup saved") }
         }
     }
 
@@ -131,6 +168,18 @@ class SettingsViewModel(
     fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null) }
     fun hideRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null) }
     fun onRestoreJsonChange(json: String) = _uiState.update { it.copy(restoreJson = json) }
+
+    fun loadBackupFromUri(context: Context, uri: Uri) {
+        val repo = backupRepository ?: return
+        viewModelScope.launch {
+            val content = repo.readFromUri(context, uri)
+            if (content != null) {
+                _uiState.update { it.copy(restoreJson = content, restoreError = null) }
+            } else {
+                _uiState.update { it.copy(restoreError = "Could not read backup file") }
+            }
+        }
+    }
 
     fun restore() {
         val repo = backupRepository ?: return
@@ -147,9 +196,10 @@ class SettingsViewModelFactory(
     private val aspectRepository: AspectRepository,
     private val gameResourceRepository: GameResourceRepository,
     private val preferencesRepository: PreferencesRepository,
-    private val backupRepository: BackupRepository? = null
+    private val backupRepository: BackupRepository? = null,
+    private val taskRepository: TaskRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository) as T
 }
