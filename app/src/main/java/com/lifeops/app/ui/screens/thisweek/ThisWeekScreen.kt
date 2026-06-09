@@ -191,9 +191,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             ?: Color.Transparent
 
                         if (catGroup.category != null || group.categories.size > 1) {
-                            item(key = "cat_${catGroup.category?.id ?: "none"}") {
+                            item(key = "cat_${catGroup.categoryId ?: catGroup.category?.id ?: "none"}") {
                                 CategoryHeader(
-                                    name = catGroup.category?.name ?: "General",
+                                    name = catGroup.category?.name ?: "Uncategorized",
                                     priorityTint = basketColor
                                 )
                             }
@@ -212,6 +212,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 isPlanningMode = isPlanningMode,
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onUnComplete = { viewModel.onUnCompleteTask(task.id) },
+                                onUnSkip = { viewModel.onUnSkipTask(task.id) },
                                 onSkip = { viewModel.onSkipTask(task.id) },
                                 onCarryForward = { viewModel.onCarryForward(task) },
                                 onEdit = { viewModel.startEditTask(task) },
@@ -280,8 +281,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     state.editingTask?.let { task ->
         TaskEditDialog(
             task = task,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes ->
-                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes)
+            aspects = state.aspects.values.filter { !it.isArchived }.toList(),
+            allCategories = state.categories,
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId ->
+                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId)
             },
             onDismiss = viewModel::cancelEditTask
         )

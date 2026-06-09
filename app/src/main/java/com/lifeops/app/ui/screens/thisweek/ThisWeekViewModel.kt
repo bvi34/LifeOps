@@ -35,6 +35,7 @@ data class GroupedTasks(
 )
 
 data class CategoryGroup(
+    val categoryId: String?,
     val category: Category?,
     val tasks: List<Task>,
     val dominantPriority: Priority?
@@ -195,7 +196,7 @@ class ThisWeekViewModel(
                     .filter { it.status == TaskStatus.PENDING }
                     .maxByOrNull { it.priority.baseValue }
                     ?.priority
-                CategoryGroup(catId?.let { categories[it] }, sorted, dominantPriority)
+                CategoryGroup(catId, catId?.let { categories[it] }, sorted, dominantPriority)
             }
             GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups)
         }
@@ -207,6 +208,10 @@ class ThisWeekViewModel(
 
     fun onUnCompleteTask(taskId: String) {
         viewModelScope.launch { taskRepository.unCompleteTask(taskId) }
+    }
+
+    fun onUnSkipTask(taskId: String) {
+        viewModelScope.launch { taskRepository.unSkipTask(taskId) }
     }
 
     fun onSkipTask(taskId: String) {
@@ -392,7 +397,9 @@ class ThisWeekViewModel(
         dueDate: String?,
         hardDeadline: Boolean,
         isRecurring: Boolean = false,
-        estimatedMinutes: Int? = null
+        estimatedMinutes: Int? = null,
+        aspectId: String? = null,
+        categoryId: String? = null
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
@@ -405,7 +412,9 @@ class ThisWeekViewModel(
                     hardDeadline = hardDeadline,
                     resourceValue = newResourceValue,
                     isRecurring = isRecurring,
-                    estimatedMinutes = estimatedMinutes
+                    estimatedMinutes = estimatedMinutes,
+                    aspectId = aspectId,
+                    categoryId = categoryId
                 )
             )
             _uiState.update { it.copy(editingTask = null) }

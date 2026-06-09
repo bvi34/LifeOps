@@ -19,7 +19,11 @@ data class ParsedTask(
     val categoryName: String?,
     val priority: String,
     val dueDate: String?,
-    val hardDeadline: Boolean
+    val hardDeadline: Boolean,
+    val status: String = "pending",
+    val timeLoggedMinutes: Int? = null,
+    val estimatedMinutes: Int? = null,
+    val isRecurring: Boolean = false
 )
 
 object ImportParser {
@@ -41,7 +45,11 @@ object ImportParser {
                     categoryName = obj.get("category")?.asString,
                     priority = obj.get("priority")?.asString ?: "medium",
                     dueDate = obj.get("due_date")?.asString,
-                    hardDeadline = obj.get("hard_deadline")?.asBoolean ?: false
+                    hardDeadline = obj.get("hard_deadline")?.asBoolean ?: false,
+                    status = obj.get("status")?.asString ?: "pending",
+                    timeLoggedMinutes = obj.get("time_logged_minutes")?.takeIf { !it.isJsonNull }?.asInt,
+                    estimatedMinutes = obj.get("estimated_minutes")?.takeIf { !it.isJsonNull }?.asInt,
+                    isRecurring = obj.get("is_recurring")?.asBoolean ?: false
                 )
             }
             ImportResult(tasks)

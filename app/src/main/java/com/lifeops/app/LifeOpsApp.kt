@@ -48,7 +48,7 @@ class LifeOpsApp : Application() {
         )
     }
     val importRepository by lazy {
-        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository)
+        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository, timeEntryRepository)
     }
     val backupRepository by lazy { BackupRepository(database) }
 

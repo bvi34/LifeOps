@@ -147,6 +147,10 @@ class TaskRepository(
 
     suspend fun unCompleteTask(taskId: String) = taskDao.unmarkCompleted(taskId)
 
+    suspend fun clearCategoryFromTasks(categoryId: String) = taskDao.nullifyCategoryId(categoryId)
+
+    suspend fun unSkipTask(taskId: String) = taskDao.unSkipTask(taskId)
+
     suspend fun updateTaskSortOrder(taskId: String, order: Int) = taskDao.updateSortOrder(taskId, order)
 
     suspend fun getTasksWithCarryHistory(): List<Task> =

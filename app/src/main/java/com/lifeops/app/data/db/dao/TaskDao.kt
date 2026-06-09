@@ -62,4 +62,10 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET status = 'pending', completedAt = NULL WHERE id = :id")
     suspend fun unmarkCompleted(id: String)
+
+    @Query("UPDATE tasks SET categoryId = NULL WHERE categoryId = :categoryId")
+    suspend fun nullifyCategoryId(categoryId: String)
+
+    @Query("UPDATE tasks SET status = 'pending' WHERE id = :id AND status = 'skipped'")
+    suspend fun unSkipTask(id: String)
 }

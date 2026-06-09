@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.ImportPreview
+import com.lifeops.app.data.model.TaskStatus
 
 @Composable
 fun ImportDialog(
@@ -25,7 +26,7 @@ fun ImportDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Paste JSON with tasks array. Each task: title, priority, aspect, category, due_date, hard_deadline, notes",
+                    "Paste AI-generated JSON. Each task: title, priority (low/medium/high/critical), aspect, category, due_date (YYYY-MM-DD), hard_deadline, notes, status (pending/completed/skipped), time_logged_minutes, estimated_minutes, is_recurring",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
@@ -52,9 +53,22 @@ fun ImportDialog(
                     if (p.newCategories.isNotEmpty()) {
                         Text("New categories: ${p.newCategories.joinToString { it.name }}", style = MaterialTheme.typography.bodySmall)
                     }
-                    Text("Tasks to add: ${p.newTasks.size}", style = MaterialTheme.typography.bodySmall)
+                    val pendingCount = p.newTasks.count { it.status == TaskStatus.PENDING }
+                    val completedCount = p.newTasks.count { it.status == TaskStatus.COMPLETED }
+                    val skippedCount = p.newTasks.count { it.status == TaskStatus.SKIPPED }
+                    val statusSummary = buildList {
+                        if (pendingCount > 0) add("$pendingCount pending")
+                        if (completedCount > 0) add("$completedCount done")
+                        if (skippedCount > 0) add("$skippedCount skipped")
+                    }.joinToString(", ")
+                    Text("Tasks to add: ${p.newTasks.size} ($statusSummary)", style = MaterialTheme.typography.bodySmall)
                     p.newTasks.take(5).forEach { task ->
-                        Text("• ${task.title} (${task.priority.label})", style = MaterialTheme.typography.bodySmall)
+                        val statusTag = when (task.status) {
+                            TaskStatus.COMPLETED -> " ✓"
+                            TaskStatus.SKIPPED -> " –"
+                            else -> ""
+                        }
+                        Text("• ${task.title} (${task.priority.label})$statusTag", style = MaterialTheme.typography.bodySmall)
                     }
                     if (p.newTasks.size > 5) {
                         Text("  ...and ${p.newTasks.size - 5} more", style = MaterialTheme.typography.bodySmall)

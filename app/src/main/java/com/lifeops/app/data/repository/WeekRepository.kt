@@ -10,6 +10,8 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class WeekRepository(
     private val weekDao: WeekDao,
@@ -17,6 +19,7 @@ class WeekRepository(
 ) {
     private val gson = Gson()
     private val mapType = object : TypeToken<Map<String, Int>>() {}.type
+    private val weekCreationMutex = Mutex()
 
     fun observeCurrentWeek(): Flow<Week?> =
         weekDao.observeCurrentWeek().map { it?.toModel() }
@@ -32,9 +35,9 @@ class WeekRepository(
 
     suspend fun getCurrentWeek(): Week? = weekDao.getCurrentWeek()?.toModel()
 
-    suspend fun getOrCreateCurrentWeek(): Week {
+    suspend fun getOrCreateCurrentWeek(): Week = weekCreationMutex.withLock {
         val current = weekDao.getCurrentWeek()
-        if (current != null) return current.toModel()
+        if (current != null) return@withLock current.toModel()
         val start = DateUtil.currentWeekStart()
         val end = DateUtil.currentWeekEnd()
         val week = Week(
@@ -43,7 +46,7 @@ class WeekRepository(
             endDate = end.toString()
         )
         weekDao.upsert(week.toEntity())
-        return week
+        week
     }
 
     suspend fun upsertWeek(week: Week) = weekDao.upsert(week.toEntity())

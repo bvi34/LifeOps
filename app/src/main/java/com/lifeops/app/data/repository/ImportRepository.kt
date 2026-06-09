@@ -13,7 +13,8 @@ class ImportRepository(
     private val taskRepository: TaskRepository,
     private val weekRepository: WeekRepository,
     private val notificationRepository: NotificationRepository,
-    private val taskNoteRepository: TaskNoteRepository
+    private val taskNoteRepository: TaskNoteRepository,
+    private val timeEntryRepository: TimeEntryRepository
 ) {
     suspend fun previewImport(json: String): Result<ImportPreview> {
         val result = ImportParser.parse(json)
@@ -50,6 +51,7 @@ class ImportRepository(
                     }
                 }
             }
+            val taskStatus = TaskStatus.from(parsed.status)
             Task(
                 id = UUID.randomUUID().toString(),
                 weekId = week.id,
@@ -59,8 +61,11 @@ class ImportRepository(
                 priority = Priority.from(parsed.priority),
                 dueDate = parsed.dueDate,
                 hardDeadline = parsed.hardDeadline,
-                status = TaskStatus.PENDING,
+                status = taskStatus,
+                completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
                 resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
+                estimatedMinutes = parsed.estimatedMinutes,
+                isRecurring = parsed.isRecurring,
                 createdAt = DateUtil.now()
             )
         }
@@ -89,6 +94,7 @@ class ImportRepository(
                 val category = parsed.categoryName?.let { catName ->
                     aspect?.let { asp -> aspectRepository.findOrCreateCategory(asp.id, catName) }
                 }
+                val taskStatus = TaskStatus.from(parsed.status)
                 val task = Task(
                     id = UUID.randomUUID().toString(),
                     weekId = week.id,
@@ -98,12 +104,19 @@ class ImportRepository(
                     priority = Priority.from(parsed.priority),
                     dueDate = parsed.dueDate,
                     hardDeadline = parsed.hardDeadline,
-                    status = TaskStatus.PENDING,
+                    status = taskStatus,
+                    completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
                     resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
+                    estimatedMinutes = parsed.estimatedMinutes,
+                    isRecurring = parsed.isRecurring,
                     createdAt = DateUtil.now()
                 )
                 taskRepository.upsertTask(task)
                 parsed.notes?.let { taskNoteRepository.addNote(task.id, it) }
+                val timeToLog = parsed.timeLoggedMinutes
+                if (timeToLog != null && timeToLog > 0) {
+                    timeEntryRepository.logTime(task.id, timeToLog, "imported")
+                }
                 createdTasks.add(task)
             }
         }

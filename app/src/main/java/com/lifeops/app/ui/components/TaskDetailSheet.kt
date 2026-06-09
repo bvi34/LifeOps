@@ -283,6 +283,15 @@ private fun ManualLogTimeDialog(onConfirm: (Int, String?) -> Unit, onDismiss: ()
     var minutes by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     val minutesInt = minutes.toIntOrNull()
+    val preview = minutesInt?.takeIf { it > 0 }?.let { m ->
+        val h = m / 60
+        val rem = m % 60
+        when {
+            h > 0 && rem > 0 -> "$h hr $rem min"
+            h > 0 -> "$h hr"
+            else -> "$rem min"
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -296,6 +305,14 @@ private fun ManualLogTimeDialog(onConfirm: (Int, String?) -> Unit, onDismiss: ()
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (preview != null) {
+                    Text(
+                        "= $preview",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                    )
+                }
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },

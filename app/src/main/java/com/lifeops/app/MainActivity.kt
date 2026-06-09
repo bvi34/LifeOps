@@ -155,7 +155,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 val vm = viewModel<com.lifeops.app.ui.screens.settings.SettingsViewModel>(
                     factory = SettingsViewModelFactory(
                         app.aspectRepository, app.gameResourceRepository,
-                        app.preferencesRepository, app.backupRepository
+                        app.preferencesRepository, app.backupRepository, app.taskRepository
                     )
                 )
                 SettingsScreen(vm)
