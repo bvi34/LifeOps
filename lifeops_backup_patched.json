@@ -1,0 +1,684 @@
+{
+  "aspects": [
+    {
+      "color": "#6200EE",
+      "icon": "star",
+      "id": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "isArchived": false,
+      "name": "Beacon"
+    },
+    {
+      "color": "#6200EE",
+      "icon": "star",
+      "id": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "isArchived": false,
+      "name": "Family"
+    },
+    {
+      "color": "#6200EE",
+      "icon": "star",
+      "id": "2df83250-3b37-4fb0-a438-9b076ab9af08",
+      "isArchived": false,
+      "name": "Home"
+    },
+    {
+      "color": "#6200EE",
+      "icon": "star",
+      "id": "79d75f3f-4820-40bb-9815-91ffe7091e26",
+      "isArchived": false,
+      "name": "Personal"
+    },
+    {
+      "color": "#6200EE",
+      "icon": "star",
+      "id": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "isArchived": false,
+      "name": "SWCA"
+    }
+  ],
+  "categories": [
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "id": "6ce68fa4-341f-44e5-b09f-3c77c4fdc508",
+      "isArchived": false,
+      "name": "Admin"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "id": "30b23b7a-7537-4456-8d69-df3d87e55b05",
+      "isArchived": false,
+      "name": "Dev"
+    },
+    {
+      "aspectId": "79d75f3f-4820-40bb-9815-91ffe7091e26",
+      "id": "20308c55-89c8-4f19-864f-4f2a12c5001e",
+      "isArchived": false,
+      "name": "Finance"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "id": "3d488b9d-6f29-4a4d-a353-1b4ad2ab56df",
+      "isArchived": false,
+      "name": "Health"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "id": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "isArchived": false,
+      "name": "Kids"
+    },
+    {
+      "aspectId": "79d75f3f-4820-40bb-9815-91ffe7091e26",
+      "id": "b452c627-fafd-423f-a480-515f77d6b4ff",
+      "isArchived": false,
+      "name": "Learning"
+    },
+    {
+      "aspectId": "2df83250-3b37-4fb0-a438-9b076ab9af08",
+      "id": "1990ce68-dcb7-46d4-afd6-ac0ffd5dd963",
+      "isArchived": false,
+      "name": "Maintenance"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "id": "5f11bdf5-9628-4f9b-b53d-c5f38b8a597d",
+      "isArchived": false,
+      "name": "Marketing"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "id": "9d81f3e9-b6ee-4125-9f27-212365d9cb98",
+      "isArchived": false,
+      "name": "Ops"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "id": "22bf4809-51b9-423f-845b-7e506613fc2e",
+      "isArchived": false,
+      "name": "Projects"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "id": "56d81515-c30e-4153-92cb-809f0f390364",
+      "isArchived": false,
+      "name": "Sales"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "id": "f9bb2c49-0274-41bd-9df1-421b902c8f81",
+      "isArchived": false,
+      "name": "Vendor"
+    }
+  ],
+  "taskNotes": [
+    {
+      "content": "Contact: Austin at DataVizion",
+      "createdAt": "2026-06-09T03:19:16.463218Z",
+      "id": "689e070f-10b0-4f26-a96a-cb16f5f2ee4a",
+      "taskId": "47455a52-47f2-4479-9e73-3cc66e705fef"
+    },
+    {
+      "content": "2 hours already worked this week",
+      "createdAt": "2026-06-09T03:19:16.464069Z",
+      "id": "ff6b818a-afb4-43a4-afda-cc72e778941a",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    },
+    {
+      "content": "3-step sequence targeting 100 contacts",
+      "createdAt": "2026-06-09T03:19:16.464896Z",
+      "id": "bc79aade-b2fd-46a0-b138-c688c3f6f01a",
+      "taskId": "0e1f83a3-e1a5-4974-92a1-d245be8877f3"
+    },
+    {
+      "content": "Publish by Thursday June 11",
+      "createdAt": "2026-06-09T03:19:16.465497Z",
+      "id": "05037717-e0e6-430d-a50b-a4656d86afa6",
+      "taskId": "d6471a33-b299-4f47-9ac7-c205005a4ab5"
+    },
+    {
+      "content": "30 minutes already spent searching",
+      "createdAt": "2026-06-09T03:19:16.465983Z",
+      "id": "9df2f60d-a855-4a2e-8ba1-5803b6e640c2",
+      "taskId": "9b3ff3e1-fb74-41c8-96db-2be37d5a55df"
+    },
+    {
+      "content": "17 of 30 already sent; 45 minutes logged so far",
+      "createdAt": "2026-06-09T03:19:16.466583Z",
+      "id": "a5cf22f9-fa6a-4024-8dd1-0b3ae8862891",
+      "taskId": "bd3f484e-1574-4dda-8c18-301f37aca6d4"
+    },
+    {
+      "content": "2 hours already worked this week",
+      "createdAt": "2026-06-09T03:19:16.467389Z",
+      "id": "105dad67-855f-4a67-bf4b-2905d34f3a04",
+      "taskId": "3bfbca32-4975-43b6-8dca-573c18a5ff59"
+    },
+    {
+      "content": "30 minutes already worked",
+      "createdAt": "2026-06-09T03:19:16.469461Z",
+      "id": "f991bea9-b233-4b57-bdbe-87fde19d3938",
+      "taskId": "e0eb96c8-ff84-4428-b9ac-24bc4f5bba2f"
+    },
+    {
+      "content": "One of 5 targeted play sessions this week",
+      "createdAt": "2026-06-09T03:19:16.470881Z",
+      "id": "884beb0f-914d-4921-aef3-19efaa3ec32d",
+      "taskId": "fe025dee-2bd1-454d-a5db-fcd210cf570a"
+    },
+    {
+      "content": "One of 5 targeted play sessions this week",
+      "createdAt": "2026-06-09T03:19:16.471582Z",
+      "id": "75bafa3f-5262-4baf-98d3-55080b98602b",
+      "taskId": "8be9bbea-d437-4c58-8cb5-0be00fc4b081"
+    },
+    {
+      "content": "One of 5 targeted play sessions this week",
+      "createdAt": "2026-06-09T03:19:16.472135Z",
+      "id": "3706b055-7f7e-4759-a7cd-66340f760645",
+      "taskId": "cfe44d7b-5494-4de5-9ef2-1bdb5bc2200e"
+    },
+    {
+      "content": "One of 5 targeted play sessions this week",
+      "createdAt": "2026-06-09T03:19:16.472646Z",
+      "id": "360a2bda-d957-4bb5-9b01-44c4244f0914",
+      "taskId": "bcc6c9fc-7d1b-444b-8d67-755dcfac99a9"
+    },
+    {
+      "content": "One of 5 targeted play sessions this week",
+      "createdAt": "2026-06-09T03:19:16.473182Z",
+      "id": "aa61884b-98ee-4c07-b6fc-ab24f259e846",
+      "taskId": "04e2597b-de22-477f-bea2-e39503f84d00"
+    },
+    {
+      "content": "5-minute phone call completed",
+      "createdAt": "2026-06-09T03:19:16.473826Z",
+      "id": "43456833-b8c0-4456-ad4b-fc7d6bfc19c0",
+      "taskId": "363ac5e2-1c12-4ff5-8a4c-c779b0eb6837"
+    },
+    {
+      "content": "Completing playlist unlocks a certification voucher",
+      "createdAt": "2026-06-09T03:19:16.476526Z",
+      "id": "4fa93a5c-a656-4013-87b1-35fb475d6780",
+      "taskId": "91888b75-2724-45f5-91a1-12734fcef2e0"
+    },
+    {
+      "content": "Chevy Equinox duplicate title application",
+      "createdAt": "2026-06-09T03:19:16.477121Z",
+      "id": "7cdd7142-df5a-4f95-abea-a46a795c5dfe",
+      "taskId": "febc4901-09af-4237-80fe-92af4232fe72"
+    },
+    {
+      "content": "Jesus - tons of fixes last minute. \nso close yet not there yet",
+      "createdAt": "2026-06-09T03:30:58.391813Z",
+      "id": "6a827c12-f06f-43f7-a2f3-6ecbc583b605",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    },
+    {
+      "content": "Email prepped and scheduled",
+      "createdAt": "2026-06-09T03:44:32.841106Z",
+      "id": "01723b5e-0a76-481e-9948-309a8f030877",
+      "taskId": "47455a52-47f2-4479-9e73-3cc66e705fef"
+    },
+    {
+      "content": "This got a lot more complicated than I anticipated. \nit works but the fixes are not playing well with the demo story",
+      "createdAt": "2026-06-09T15:14:51.413216Z",
+      "id": "4b8f50fc-2274-40e8-860c-064e1643618e",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    }
+  ],
+  "tasks": [
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "56d81515-c30e-4153-92cb-809f0f390364",
+      "completedAt": "2026-06-09T03:44:44.781007Z",
+      "createdAt": "2026-06-09T03:19:16.462521Z",
+      "dueDate": "2026-06-09",
+      "hardDeadline": true,
+      "id": "47455a52-47f2-4479-9e73-3cc66e705fef",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 15,
+      "sortOrder": 0,
+      "status": "completed",
+      "title": "Check in with DataVizion contact Austin",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "30b23b7a-7537-4456-8d69-df3d87e55b05",
+      "createdAt": "2026-06-09T03:19:16.463915Z",
+      "hardDeadline": false,
+      "id": "7b23d44a-aede-42d9-af7e-8d6c61a3c444",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Fix demo refactor",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "56d81515-c30e-4153-92cb-809f0f390364",
+      "createdAt": "2026-06-09T03:19:16.464737Z",
+      "hardDeadline": false,
+      "id": "0e1f83a3-e1a5-4974-92a1-d245be8877f3",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Set up Apollo cold email sequence (100 contacts, 3 steps)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "5f11bdf5-9628-4f9b-b53d-c5f38b8a597d",
+      "createdAt": "2026-06-09T03:19:16.465348Z",
+      "dueDate": "2026-06-11",
+      "hardDeadline": true,
+      "id": "d6471a33-b299-4f47-9ac7-c205005a4ab5",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 15,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Draft and publish blog post",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "56d81515-c30e-4153-92cb-809f0f390364",
+      "createdAt": "2026-06-09T03:19:16.465832Z",
+      "hardDeadline": false,
+      "id": "9b3ff3e1-fb74-41c8-96db-2be37d5a55df",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Land 1 FieldNation or Thumbtack job",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "396eec5f-104d-45f3-8d72-bca57d29abf4",
+      "carriedCount": 0,
+      "categoryId": "56d81515-c30e-4153-92cb-809f0f390364",
+      "createdAt": "2026-06-09T03:19:16.466434Z",
+      "hardDeadline": false,
+      "id": "bd3f484e-1574-4dda-8c18-301f37aca6d4",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Send 30 LinkedIn connection requests",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "22bf4809-51b9-423f-845b-7e506613fc2e",
+      "createdAt": "2026-06-09T03:19:16.467242Z",
+      "hardDeadline": false,
+      "id": "3bfbca32-4975-43b6-8dca-573c18a5ff59",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "LogicMonitor optimization session with Ramya",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "6ce68fa4-341f-44e5-b09f-3c77c4fdc508",
+      "createdAt": "2026-06-09T03:19:16.467939Z",
+      "hardDeadline": false,
+      "id": "9e76f4b1-b46d-45b2-a496-4bf6b6aa66e6",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Mailbox audit conversation with security",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "f9bb2c49-0274-41bd-9df1-421b902c8f81",
+      "createdAt": "2026-06-09T03:19:16.468412Z",
+      "hardDeadline": false,
+      "id": "d5980984-8928-4bb9-93b0-402399baae99",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "LogicMonitor demo",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "f9bb2c49-0274-41bd-9df1-421b902c8f81",
+      "createdAt": "2026-06-09T03:19:16.468777Z",
+      "hardDeadline": false,
+      "id": "ae8bea3c-6530-461a-9543-c1209936dfcd",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Site24x7 evaluation",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "9d81f3e9-b6ee-4125-9f27-212365d9cb98",
+      "createdAt": "2026-06-09T03:19:16.469246Z",
+      "hardDeadline": false,
+      "id": "e0eb96c8-ff84-4428-b9ac-24bc4f5bba2f",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "NonProd patching change and work",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "f0c14f54-5962-44fa-bfb4-66b427ac968d",
+      "carriedCount": 0,
+      "categoryId": "6ce68fa4-341f-44e5-b09f-3c77c4fdc508",
+      "createdAt": "2026-06-09T03:19:16.470072Z",
+      "hardDeadline": false,
+      "id": "852fba65-c42d-417d-b617-a498437cf82c",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Complete ITIL Udemy course",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.470719Z",
+      "estimatedMinutes": 60,
+      "hardDeadline": false,
+      "id": "fe025dee-2bd1-454d-a5db-fcd210cf570a",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Play session with kids #1 (1 hour)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.471323Z",
+      "estimatedMinutes": 60,
+      "hardDeadline": false,
+      "id": "8be9bbea-d437-4c58-8cb5-0be00fc4b081",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Play session with kids #2 (1 hour)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.471941Z",
+      "estimatedMinutes": 60,
+      "hardDeadline": false,
+      "id": "cfe44d7b-5494-4de5-9ef2-1bdb5bc2200e",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Play session with kids #3 (1 hour)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.472484Z",
+      "estimatedMinutes": 60,
+      "hardDeadline": false,
+      "id": "bcc6c9fc-7d1b-444b-8d67-755dcfac99a9",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Play session with kids #4 (1 hour)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.472985Z",
+      "estimatedMinutes": 60,
+      "hardDeadline": false,
+      "id": "04e2597b-de22-477f-bea2-e39503f84d00",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 13,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Play session with kids #5 (1 hour)",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "3d488b9d-6f29-4a4d-a353-1b4ad2ab56df",
+      "completedAt": "2026-06-09T03:19:16.473644Z",
+      "createdAt": "2026-06-09T03:19:16.473670Z",
+      "dueDate": "2026-06-08",
+      "hardDeadline": true,
+      "id": "363ac5e2-1c12-4ff5-8a4c-c779b0eb6837",
+      "isRecurring": false,
+      "priority": "critical",
+      "resourceValue": 18,
+      "sortOrder": 0,
+      "status": "completed",
+      "title": "Reschedule dog vet visit",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "3d488b9d-6f29-4a4d-a353-1b4ad2ab56df",
+      "createdAt": "2026-06-09T03:19:16.474292Z",
+      "dueDate": "2026-06-10",
+      "hardDeadline": true,
+      "id": "2475d72b-06b0-4d88-b487-3e33c3e854d2",
+      "isRecurring": false,
+      "priority": "critical",
+      "resourceValue": 18,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Dog vet visit",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "3d488b9d-6f29-4a4d-a353-1b4ad2ab56df",
+      "completedAt": "2026-06-09T03:19:16.474675Z",
+      "createdAt": "2026-06-09T03:19:16.474699Z",
+      "dueDate": "2026-06-08",
+      "estimatedMinutes": 60,
+      "hardDeadline": true,
+      "id": "5e888944-fe6d-491b-8caa-a9a865a02e2c",
+      "isRecurring": false,
+      "priority": "high",
+      "resourceValue": 15,
+      "sortOrder": 0,
+      "status": "completed",
+      "title": "Chiropractor appointment",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "e7f1d39c-c78a-47e1-bee6-6473a36ed45d",
+      "carriedCount": 0,
+      "categoryId": "9874eb49-0aa8-4ca4-b9ac-e1ef155ddf2b",
+      "createdAt": "2026-06-09T03:19:16.475226Z",
+      "hardDeadline": false,
+      "id": "0408c140-1e66-443b-8144-632bd656a017",
+      "isRecurring": false,
+      "priority": "low",
+      "resourceValue": 8,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Teach dog 1 new trick",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "2df83250-3b37-4fb0-a438-9b076ab9af08",
+      "carriedCount": 0,
+      "categoryId": "1990ce68-dcb7-46d4-afd6-ac0ffd5dd963",
+      "createdAt": "2026-06-09T03:19:16.475812Z",
+      "hardDeadline": false,
+      "id": "534413a3-f88a-4e4c-b6f6-6622e8448a05",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Clean kitchen",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "79d75f3f-4820-40bb-9815-91ffe7091e26",
+      "carriedCount": 0,
+      "categoryId": "b452c627-fafd-423f-a480-515f77d6b4ff",
+      "createdAt": "2026-06-09T03:19:16.476380Z",
+      "hardDeadline": false,
+      "id": "91888b75-2724-45f5-91a1-12734fcef2e0",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Complete Microsoft AI Skills playlist for cert voucher",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    },
+    {
+      "aspectId": "79d75f3f-4820-40bb-9815-91ffe7091e26",
+      "carriedCount": 0,
+      "categoryId": "20308c55-89c8-4f19-864f-4f2a12c5001e",
+      "createdAt": "2026-06-09T03:19:16.476963Z",
+      "hardDeadline": false,
+      "id": "febc4901-09af-4237-80fe-92af4232fe72",
+      "isRecurring": false,
+      "priority": "medium",
+      "resourceValue": 10,
+      "sortOrder": 0,
+      "status": "pending",
+      "title": "Apply for duplicate title for Equinox",
+      "weekId": "07210ab1-461d-40ac-99d2-f3b773255bc2"
+    }
+  ],
+  "timeEntries": [
+    {
+      "durationMinutes": 120,
+      "id": "b9ae491d-e8fa-4fb8-8d85-75f4ef7459ce",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.464240Z",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    },
+    {
+      "durationMinutes": 30,
+      "id": "e476a5aa-837f-4c3f-8329-29a1e811a63d",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.466099Z",
+      "taskId": "9b3ff3e1-fb74-41c8-96db-2be37d5a55df"
+    },
+    {
+      "durationMinutes": 45,
+      "id": "262cdd17-83dc-4a78-bb6d-1a2b56331783",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.466696Z",
+      "taskId": "bd3f484e-1574-4dda-8c18-301f37aca6d4"
+    },
+    {
+      "durationMinutes": 120,
+      "id": "901c16fe-8843-4a3c-8ec8-2cd489d57966",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.467504Z",
+      "taskId": "3bfbca32-4975-43b6-8dca-573c18a5ff59"
+    },
+    {
+      "durationMinutes": 30,
+      "id": "178ecb04-ddb3-42b4-9dc3-26a42ec2a4ea",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.469635Z",
+      "taskId": "e0eb96c8-ff84-4428-b9ac-24bc4f5bba2f"
+    },
+    {
+      "durationMinutes": 5,
+      "id": "3b8f065f-4927-49d2-b7ce-40fe4d9cc53d",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.473939Z",
+      "taskId": "363ac5e2-1c12-4ff5-8a4c-c779b0eb6837"
+    },
+    {
+      "durationMinutes": 60,
+      "id": "12c39192-a997-4655-9171-9c5e641ef97e",
+      "note": "imported",
+      "recordedAt": "2026-06-09T03:19:16.474857Z",
+      "taskId": "5e888944-fe6d-491b-8caa-a9a865a02e2c"
+    },
+    {
+      "durationMinutes": 120,
+      "id": "5092852f-ffce-4e4f-a800-36ea3661fe96",
+      "recordedAt": "2026-06-09T03:30:39.154212Z",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    },
+    {
+      "durationMinutes": 30,
+      "id": "ed93b227-3a77-456c-8b3a-ede7ef15f268",
+      "recordedAt": "2026-06-09T03:44:37.402317Z",
+      "taskId": "47455a52-47f2-4479-9e73-3cc66e705fef"
+    },
+    {
+      "durationMinutes": 360,
+      "id": "a472ec15-1461-41fb-a376-fa3176da679b",
+      "recordedAt": "2026-06-09T15:14:30.159146Z",
+      "taskId": "7b23d44a-aede-42d9-af7e-8d6c61a3c444"
+    }
+  ],
+  "version": 1,
+  "weekSnapshots": [],
+  "weeks": [
+    {
+      "endDate": "2026-06-14",
+      "id": "07210ab1-461d-40ac-99d2-f3b773255bc2",
+      "isClosed": false,
+      "startDate": "2026-06-08"
+    }
+  ]
+}
