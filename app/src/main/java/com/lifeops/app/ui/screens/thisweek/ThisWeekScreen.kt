@@ -261,6 +261,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             onJsonChange = viewModel::onImportJsonChange,
             preview = state.importPreview,
             error = state.importError,
+            includeUnknownAsNotes = state.includeUnknownAsNotes,
+            onIncludeUnknownChange = viewModel::setIncludeUnknownAsNotes,
             onPreview = viewModel::previewImport,
             onCommit = viewModel::commitImport,
             onDismiss = viewModel::closeImportDialog

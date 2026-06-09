@@ -70,17 +70,22 @@ class ImportRepository(
             )
         }
 
+        val unknownFieldsByTask = result.tasks
+            .filter { it.unknownFields.isNotEmpty() }
+            .map { parsed -> parsed.title to parsed.unknownFields.map { (k, v) -> "$k: $v" } }
+
         return Result.success(
             ImportPreview(
                 newTasks = tasks,
                 newAspects = newAspects.distinctBy { it.name.lowercase() },
                 newCategories = newCategories.distinctBy { it.name.lowercase() },
-                existingTaskCount = 0
+                existingTaskCount = 0,
+                unknownFieldsByTask = unknownFieldsByTask
             )
         )
     }
 
-    suspend fun commitImport(json: String): Result<Int> {
+    suspend fun commitImport(json: String, includeUnknownAsNotes: Boolean = false): Result<Int> {
         val result = ImportParser.parse(json)
         if (result.error != null) return Result.failure(Exception(result.error))
 
@@ -113,6 +118,10 @@ class ImportRepository(
                 )
                 taskRepository.upsertTask(task)
                 parsed.notes?.let { taskNoteRepository.addNote(task.id, it) }
+                if (includeUnknownAsNotes && parsed.unknownFields.isNotEmpty()) {
+                    val extraNote = parsed.unknownFields.entries.joinToString("\n") { (k, v) -> "$k: $v" }
+                    taskNoteRepository.addNote(task.id, extraNote)
+                }
                 val timeToLog = parsed.timeLoggedMinutes
                 if (timeToLog != null && timeToLog > 0) {
                     timeEntryRepository.logTime(task.id, timeToLog, "imported")

@@ -54,6 +54,7 @@ data class ThisWeekUiState(
     val importPreview: ImportPreview? = null,
     val importError: String? = null,
     val importJson: String = "",
+    val includeUnknownAsNotes: Boolean = false,
     val editingTask: Task? = null,
     val showCreateTaskDialog: Boolean = false,
     val activeTimer: ActiveTimer? = null,
@@ -307,24 +308,29 @@ class ThisWeekViewModel(
     fun openImportDialog() = _uiState.update { it.copy(importDialogOpen = true, importError = null) }
 
     fun closeImportDialog() = _uiState.update {
-        it.copy(importDialogOpen = false, importPreview = null, importJson = "", importError = null)
+        it.copy(importDialogOpen = false, importPreview = null, importJson = "", importError = null, includeUnknownAsNotes = false)
     }
 
-    fun onImportJsonChange(json: String) = _uiState.update { it.copy(importJson = json) }
+    fun onImportJsonChange(json: String) = _uiState.update { it.copy(importJson = json, importPreview = null, importError = null) }
+
+    fun setIncludeUnknownAsNotes(include: Boolean) = _uiState.update { it.copy(includeUnknownAsNotes = include) }
 
     fun previewImport() {
         val json = _uiState.value.importJson
         viewModelScope.launch {
             importRepository.previewImport(json)
-                .onSuccess { preview -> _uiState.update { it.copy(importPreview = preview, importError = null) } }
+                .onSuccess { preview ->
+                    _uiState.update { it.copy(importPreview = preview, importError = null, includeUnknownAsNotes = false) }
+                }
                 .onFailure { e -> _uiState.update { it.copy(importError = e.message, importPreview = null) } }
         }
     }
 
     fun commitImport() {
         val json = _uiState.value.importJson
+        val includeUnknown = _uiState.value.includeUnknownAsNotes
         viewModelScope.launch {
-            importRepository.commitImport(json)
+            importRepository.commitImport(json, includeUnknown)
                 .onSuccess { closeImportDialog() }
                 .onFailure { e -> _uiState.update { it.copy(importError = e.message) } }
         }

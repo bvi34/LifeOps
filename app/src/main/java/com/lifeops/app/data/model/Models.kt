@@ -141,5 +141,7 @@ data class ImportPreview(
     val newTasks: List<Task>,
     val newAspects: List<Aspect>,
     val newCategories: List<Category>,
-    val existingTaskCount: Int
+    val existingTaskCount: Int,
+    // Each entry: task title → list of "field: value" strings for unknown fields
+    val unknownFieldsByTask: List<Pair<String, List<String>>> = emptyList()
 )

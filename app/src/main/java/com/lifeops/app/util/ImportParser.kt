@@ -23,11 +23,18 @@ data class ParsedTask(
     val status: String = "pending",
     val timeLoggedMinutes: Int? = null,
     val estimatedMinutes: Int? = null,
-    val isRecurring: Boolean = false
+    val isRecurring: Boolean = false,
+    val unknownFields: Map<String, String> = emptyMap()
 )
 
 object ImportParser {
     private val gson = Gson()
+
+    private val knownKeys = setOf(
+        "title", "notes", "aspect", "category", "priority",
+        "due_date", "hard_deadline", "status",
+        "time_logged_minutes", "estimated_minutes", "is_recurring"
+    )
 
     fun parse(json: String): ImportResult {
         return try {
@@ -38,6 +45,15 @@ object ImportParser {
             }
             val tasks = tasksArray.map { elem ->
                 val obj = elem.asJsonObject
+                val unknown = obj.entrySet()
+                    .filter { it.key !in knownKeys }
+                    .associate { (k, v) ->
+                        k to when {
+                            v.isJsonNull -> "null"
+                            v.isJsonPrimitive -> v.asString
+                            else -> v.toString()
+                        }
+                    }
                 ParsedTask(
                     title = obj.get("title")?.asString ?: return ImportResult(emptyList(), "Missing title"),
                     notes = obj.get("notes")?.asString,
@@ -49,7 +65,8 @@ object ImportParser {
                     status = obj.get("status")?.asString ?: "pending",
                     timeLoggedMinutes = obj.get("time_logged_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     estimatedMinutes = obj.get("estimated_minutes")?.takeIf { !it.isJsonNull }?.asInt,
-                    isRecurring = obj.get("is_recurring")?.asBoolean ?: false
+                    isRecurring = obj.get("is_recurring")?.asBoolean ?: false,
+                    unknownFields = unknown
                 )
             }
             ImportResult(tasks)

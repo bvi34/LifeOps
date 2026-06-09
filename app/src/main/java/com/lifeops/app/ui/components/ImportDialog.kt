@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.ImportPreview
@@ -16,6 +17,8 @@ fun ImportDialog(
     onJsonChange: (String) -> Unit,
     preview: ImportPreview?,
     error: String?,
+    includeUnknownAsNotes: Boolean,
+    onIncludeUnknownChange: (Boolean) -> Unit,
     onPreview: () -> Unit,
     onCommit: () -> Unit,
     onDismiss: () -> Unit
@@ -72,6 +75,47 @@ fun ImportDialog(
                     }
                     if (p.newTasks.size > 5) {
                         Text("  ...and ${p.newTasks.size - 5} more", style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    if (p.unknownFieldsByTask.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Unknown fields found",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        p.unknownFieldsByTask.forEach { (taskTitle, fields) ->
+                            Text(
+                                "• $taskTitle",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = androidx.compose.ui.text.font.FontWeight.Medium
+                            )
+                            fields.forEach { fieldLine ->
+                                Text(
+                                    "    $fieldLine",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(
+                                checked = includeUnknownAsNotes,
+                                onCheckedChange = onIncludeUnknownChange
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                "Append extra fields as notes (field: value)",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }
