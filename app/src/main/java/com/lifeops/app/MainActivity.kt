@@ -137,7 +137,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.Resources.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.resources.ResourcesViewModel>(
                     factory = ResourcesViewModelFactory(
-                        app.gameResourceRepository, app.aspectRepository, app.taskRepository, app.weekRepository
+                        app.gameResourceRepository, app.aspectRepository, app.taskRepository, app.weekRepository, app.timeEntryRepository
                     )
                 )
                 ResourcesScreen(vm)

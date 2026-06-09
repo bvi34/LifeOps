@@ -216,9 +216,13 @@ class TaskRepository(
 
     suspend fun getEarnedThisWeekByAspect(weekId: String): Map<String, Int> {
         val tasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
+        val timeByTask = db.timeEntryDao().getByWeek(weekId)
+            .groupBy { it.taskId }
+            .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
         val result = mutableMapOf<String, Int>()
         tasks.filter { it.status == TaskStatus.COMPLETED }.forEach { task ->
-            task.aspectId?.let { result[it] = (result[it] ?: 0) + task.resourceValue }
+            val earned = (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id])).roundToInt()
+            task.aspectId?.let { result[it] = (result[it] ?: 0) + earned }
         }
         return result
     }
