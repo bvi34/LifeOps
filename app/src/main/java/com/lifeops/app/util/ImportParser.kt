@@ -55,17 +55,17 @@ object ImportParser {
                         }
                     }
                 ParsedTask(
-                    title = obj.get("title")?.asString ?: return ImportResult(emptyList(), "Missing title"),
-                    notes = obj.get("notes")?.asString,
-                    aspectName = obj.get("aspect")?.asString,
-                    categoryName = obj.get("category")?.asString,
-                    priority = obj.get("priority")?.asString ?: "medium",
-                    dueDate = obj.get("due_date")?.asString,
-                    hardDeadline = obj.get("hard_deadline")?.asBoolean ?: false,
-                    status = obj.get("status")?.asString ?: "pending",
+                    title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString ?: return ImportResult(emptyList(), "Missing title"),
+                    notes = obj.get("notes")?.takeIf { !it.isJsonNull }?.asString,
+                    aspectName = obj.get("aspect")?.takeIf { !it.isJsonNull }?.asString,
+                    categoryName = obj.get("category")?.takeIf { !it.isJsonNull }?.asString,
+                    priority = obj.get("priority")?.takeIf { !it.isJsonNull }?.asString ?: "medium",
+                    dueDate = obj.get("due_date")?.takeIf { !it.isJsonNull }?.asString,
+                    hardDeadline = obj.get("hard_deadline")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    status = obj.get("status")?.takeIf { !it.isJsonNull }?.asString ?: "pending",
                     timeLoggedMinutes = obj.get("time_logged_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     estimatedMinutes = obj.get("estimated_minutes")?.takeIf { !it.isJsonNull }?.asInt,
-                    isRecurring = obj.get("is_recurring")?.asBoolean ?: false,
+                    isRecurring = obj.get("is_recurring")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
                     unknownFields = unknown
                 )
             }
