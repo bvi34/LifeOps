@@ -46,5 +46,6 @@ data class TaskEntity(
     val isRecurring: Boolean = false,
     val estimatedMinutes: Int? = null,
     val carriedCount: Int = 0,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val isManuallyAdded: Boolean = false
 )

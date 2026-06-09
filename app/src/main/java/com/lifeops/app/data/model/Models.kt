@@ -64,7 +64,8 @@ data class Task(
     val isRecurring: Boolean = false,
     val estimatedMinutes: Int? = null,
     val carriedCount: Int = 0,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val isManuallyAdded: Boolean = false
 )
 
 data class CarryForwardEntry(

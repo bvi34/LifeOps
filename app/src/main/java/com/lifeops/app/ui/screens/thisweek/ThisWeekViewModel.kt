@@ -352,7 +352,9 @@ class ThisWeekViewModel(
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
-            val resourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
+            val resourceValue = ImportParser.computeResourceValue(
+                priority.label, hardDeadline, estimatedMinutes, isManuallyAdded = true
+            )
             val task = Task(
                 id = UUID.randomUUID().toString(),
                 weekId = week.id,
@@ -366,7 +368,8 @@ class ThisWeekViewModel(
                 resourceValue = resourceValue,
                 createdAt = DateUtil.now(),
                 isRecurring = isRecurring,
-                estimatedMinutes = estimatedMinutes
+                estimatedMinutes = estimatedMinutes,
+                isManuallyAdded = true
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
@@ -409,7 +412,9 @@ class ThisWeekViewModel(
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
-            val newResourceValue = ImportParser.computeResourceValue(priority.label, hardDeadline)
+            val newResourceValue = ImportParser.computeResourceValue(
+                priority.label, hardDeadline, estimatedMinutes, task.isManuallyAdded
+            )
             taskRepository.updateTask(
                 task.copy(
                     title = title,

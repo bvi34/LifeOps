@@ -63,7 +63,7 @@ class ImportRepository(
                 hardDeadline = parsed.hardDeadline,
                 status = taskStatus,
                 completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
-                resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
+                resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                 estimatedMinutes = parsed.estimatedMinutes,
                 isRecurring = parsed.isRecurring,
                 createdAt = DateUtil.now()
@@ -111,7 +111,7 @@ class ImportRepository(
                     hardDeadline = parsed.hardDeadline,
                     status = taskStatus,
                     completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
-                    resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline),
+                    resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                     estimatedMinutes = parsed.estimatedMinutes,
                     isRecurring = parsed.isRecurring,
                     createdAt = DateUtil.now()
