@@ -40,3 +40,11 @@ fun GameResourceMapping.toEntity() = GameResourceMappingEntity(id, gameResourceI
 
 fun ResourceTransactionEntity.toModel() = ResourceTransaction(id, resourceId, amount, type, note, createdAt)
 fun ResourceTransaction.toEntity() = ResourceTransactionEntity(id, resourceId, amount, type, note, createdAt)
+
+fun CostResourceEntity.toModel() = CostResource(
+    id, name, ResourceResetCycle.from(resetCycle), capacity, isActive, sortIndex, createdAt
+)
+fun CostResource.toEntity() = CostResourceEntity(id, name, resetCycle.label, capacity, isActive, sortIndex, createdAt)
+
+fun TaskCostEntryEntity.toModel() = TaskCostEntry(id, taskId, resourceId, amount, note, recordedAt)
+fun TaskCostEntry.toEntity() = TaskCostEntryEntity(id, taskId, resourceId, amount, note, recordedAt)

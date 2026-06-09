@@ -50,6 +50,9 @@ class LifeOpsApp : Application() {
     val importRepository by lazy {
         ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository, timeEntryRepository)
     }
+    val costResourceRepository by lazy {
+        CostResourceRepository(database.costResourceDao(), database.taskCostEntryDao())
+    }
     val backupRepository by lazy { BackupRepository(database) }
 
     override fun onCreate() {

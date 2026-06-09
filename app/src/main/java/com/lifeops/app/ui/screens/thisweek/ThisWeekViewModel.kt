@@ -61,7 +61,9 @@ data class ThisWeekUiState(
     val detailTaskId: String? = null,
     val sortOrder: SortOrder = SortOrder.DEFAULT,
     val searchQuery: String = "",
-    val weekProgress: WeekProgress = WeekProgress(0, 0, 0)
+    val weekProgress: WeekProgress = WeekProgress(0, 0, 0),
+    val costResources: List<CostResource> = emptyList(),
+    val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap()
 )
 
 class ThisWeekViewModel(
@@ -72,7 +74,8 @@ class ThisWeekViewModel(
     private val importRepository: ImportRepository,
     private val taskNoteRepository: TaskNoteRepository,
     private val timeEntryRepository: TimeEntryRepository,
-    private val notificationRepository: NotificationRepository
+    private val notificationRepository: NotificationRepository,
+    private val costResourceRepository: CostResourceRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -81,6 +84,11 @@ class ThisWeekViewModel(
     private var timerJob: Job? = null
 
     init {
+        viewModelScope.launch {
+            costResourceRepository.observeActiveResources().collectLatest { resources ->
+                _uiState.update { it.copy(costResources = resources) }
+            }
+        }
         viewModelScope.launch {
             combine(
                 weekRepository.observeCurrentWeek(),
@@ -96,14 +104,18 @@ class ThisWeekViewModel(
                     combine(
                         taskRepository.observeTasksForWeek(week.id),
                         taskNoteRepository.observeByWeek(week.id),
-                        timeEntryRepository.observeByWeek(week.id)
-                    ) { tasks, notes, timeEntries ->
-                        Triple(tasks, notes, timeEntries)
-                    }.collectLatest { (tasks, notes, timeEntries) ->
+                        timeEntryRepository.observeByWeek(week.id),
+                        costResourceRepository.observeEntriesByWeek(week.id)
+                    ) { tasks, notes, timeEntries, costEntries ->
+                        Pair(Pair(tasks, notes), Pair(timeEntries, costEntries))
+                    }.collectLatest { (tasksNotes, timeEntriesCostEntries) ->
+                        val (tasks, notes) = tasksNotes
+                        val (timeEntries, costEntries) = timeEntriesCostEntries
                         val notesByTask = notes.groupBy { it.taskId }
                         val timeByTask = timeEntries
                             .groupBy { it.taskId }
                             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
+                        val costByTask = costEntries.groupBy { it.taskId }
                         _uiState.update { state ->
                             val grouped = groupAndFilterTasks(tasks, aspectMap, categoryMap, state.sortOrder, state.searchQuery)
                             state.copy(
@@ -114,6 +126,7 @@ class ThisWeekViewModel(
                                 categories = categoryMap,
                                 taskNotes = notesByTask,
                                 taskTimeMinutes = timeByTask,
+                                taskCostEntries = costByTask,
                                 isLoading = false,
                                 weekProgress = computeProgress(tasks, timeByTask)
                             )
@@ -386,6 +399,14 @@ class ThisWeekViewModel(
         viewModelScope.launch { timeEntryRepository.logTime(taskId, minutes, note) }
     }
 
+    fun onLogCost(taskId: String, resourceId: String, amount: Int, note: String?) {
+        viewModelScope.launch { costResourceRepository.logCost(taskId, resourceId, amount, note) }
+    }
+
+    fun onDeleteCostEntry(id: String) {
+        viewModelScope.launch { costResourceRepository.deleteCostEntry(id) }
+    }
+
     override fun onCleared() {
         super.onCleared()
         val timer = _uiState.value.activeTimer ?: return
@@ -441,12 +462,13 @@ class ThisWeekViewModelFactory(
     private val importRepository: ImportRepository,
     private val taskNoteRepository: TaskNoteRepository,
     private val timeEntryRepository: TimeEntryRepository,
-    private val notificationRepository: NotificationRepository
+    private val notificationRepository: NotificationRepository,
+    private val costResourceRepository: CostResourceRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
-            taskNoteRepository, timeEntryRepository, notificationRepository
+            taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository
         ) as T
 }

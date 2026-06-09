@@ -27,7 +27,9 @@ data class SettingsUiState(
     val restoreError: String? = null,
     val backupStatus: String? = null,
     val pendingArchiveAspectId: String? = null,
-    val pendingArchiveCategoryId: String? = null
+    val pendingArchiveCategoryId: String? = null,
+    val costResources: List<CostResource> = emptyList(),
+    val showNewCostResourceDialog: Boolean = false
 )
 
 class SettingsViewModel(
@@ -35,7 +37,8 @@ class SettingsViewModel(
     private val gameResourceRepository: GameResourceRepository,
     private val preferencesRepository: PreferencesRepository,
     private val backupRepository: BackupRepository? = null,
-    private val taskRepository: TaskRepository? = null
+    private val taskRepository: TaskRepository? = null,
+    private val costResourceRepository: CostResourceRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -59,6 +62,13 @@ class SettingsViewModel(
                         )
                     }
                 }
+        }
+        costResourceRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.observeAllResources().collectLatest { resources ->
+                    _uiState.update { it.copy(costResources = resources) }
+                }
+            }
         }
     }
 
@@ -142,6 +152,21 @@ class SettingsViewModel(
     }
     fun hideNewCategoryDialog() = _uiState.update { it.copy(showNewCategoryDialog = false, newAspectForCategoryId = null) }
 
+    fun showNewCostResourceDialog() = _uiState.update { it.copy(showNewCostResourceDialog = true) }
+    fun hideNewCostResourceDialog() = _uiState.update { it.copy(showNewCostResourceDialog = false) }
+
+    fun addCostResource(name: String, resetCycle: String, capacity: Int?) {
+        val repo = costResourceRepository ?: return
+        viewModelScope.launch {
+            repo.addResource(name, resetCycle, capacity)
+            _uiState.update { it.copy(showNewCostResourceDialog = false) }
+        }
+    }
+
+    fun setCostResourceActive(id: String, active: Boolean) {
+        viewModelScope.launch { costResourceRepository?.setActive(id, active) }
+    }
+
     fun backup(context: Context) {
         val repo = backupRepository ?: return
         viewModelScope.launch {
@@ -197,9 +222,10 @@ class SettingsViewModelFactory(
     private val gameResourceRepository: GameResourceRepository,
     private val preferencesRepository: PreferencesRepository,
     private val backupRepository: BackupRepository? = null,
-    private val taskRepository: TaskRepository? = null
+    private val taskRepository: TaskRepository? = null,
+    private val costResourceRepository: CostResourceRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository) as T
 }

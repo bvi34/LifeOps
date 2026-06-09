@@ -138,6 +138,42 @@ data class WeekSnapshot(
     val createdAt: String
 )
 
+enum class ResourceResetCycle(val label: String) {
+    WEEKLY("weekly"),
+    MONTHLY("monthly"),
+    NEVER("never");
+
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.label == value } ?: MONTHLY
+    }
+}
+
+data class CostResource(
+    val id: String,
+    val name: String,
+    val resetCycle: ResourceResetCycle = ResourceResetCycle.MONTHLY,
+    val capacity: Int? = null,
+    val isActive: Boolean = true,
+    val sortIndex: Int = 0,
+    val createdAt: String
+)
+
+data class TaskCostEntry(
+    val id: String,
+    val taskId: String,
+    val resourceId: String,
+    val amount: Int,
+    val note: String? = null,
+    val recordedAt: String
+)
+
+data class CostUsageRow(
+    val resourceName: String,
+    val resetCycle: ResourceResetCycle,
+    val capacity: Int?,
+    val totalAmount: Int
+)
+
 data class ImportPreview(
     val newTasks: List<Task>,
     val newAspects: List<Aspect>,

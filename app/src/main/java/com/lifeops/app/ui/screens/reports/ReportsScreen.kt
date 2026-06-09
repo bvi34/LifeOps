@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.CostUsageRow
+import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.theme.CompletedGreen
 import com.lifeops.app.ui.theme.ExpiredRed
@@ -52,6 +54,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                     item { AspectBalanceChart(state.aspectResourceShares) }
                     if (state.timeByAspect.isNotEmpty()) {
                         item { TimeByAspectCard(state.timeByAspect, state.totalTimeMinutes) }
+                    }
+                    if (state.costUsage.isNotEmpty()) {
+                        item { CostUsageCard(state.costUsage) }
                     }
                     if (state.categorySlipRates.isNotEmpty()) {
                         item {
@@ -311,5 +316,63 @@ private fun CategorySlipRow(cat: CategorySlipRate) {
         Spacer(Modifier.width(8.dp))
         Text("${(cat.rate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+    }
+}
+
+@Composable
+private fun CostUsageCard(rows: List<CostUsageRow>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                "Resource Usage",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(12.dp))
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(row.resourceName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        val cycleLabel = when (row.resetCycle) {
+                            ResourceResetCycle.WEEKLY -> "resets weekly"
+                            ResourceResetCycle.MONTHLY -> "resets monthly"
+                            ResourceResetCycle.NEVER -> "no reset"
+                        }
+                        Text(cycleLabel, style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            row.totalAmount.toString(),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        row.capacity?.let { cap ->
+                            Text(
+                                "of $cap",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+                if (row.capacity != null && row.capacity > 0) {
+                    LinearProgressIndicator(
+                        progress = { (row.totalAmount.toFloat() / row.capacity).coerceIn(0f, 1f) },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                        color = if (row.totalAmount >= row.capacity) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                }
+            }
+        }
     }
 }

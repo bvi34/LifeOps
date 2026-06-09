@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.*
@@ -17,8 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Task
+import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.theme.priorityColor
@@ -32,6 +35,8 @@ fun TaskDetailSheet(
     isTimerActive: Boolean,
     timerElapsedSeconds: Int,
     isPomodoroActive: Boolean = false,
+    costEntries: List<TaskCostEntry> = emptyList(),
+    costResources: List<CostResource> = emptyList(),
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
@@ -39,11 +44,14 @@ fun TaskDetailSheet(
     onStartTimer: () -> Unit,
     onStopTimer: () -> Unit,
     onStartPomodoro: () -> Unit = {},
-    onLogTime: (Int, String?) -> Unit
+    onLogTime: (Int, String?) -> Unit,
+    onLogCost: (resourceId: String, amount: Int, note: String?) -> Unit = { _, _, _ -> },
+    onDeleteCostEntry: (id: String) -> Unit = {}
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newNoteText by remember { mutableStateOf("") }
     var showLogManuallyDialog by remember { mutableStateOf(false) }
+    var showLogCostDialog by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -191,6 +199,89 @@ fun TaskDetailSheet(
                 }
             }
 
+            if (costResources.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "Resource Costs",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(
+                        onClick = { showLogCostDialog = true },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Log", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                if (costEntries.isEmpty()) {
+                    Text(
+                        "No costs logged.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                } else {
+                    val resourceMap = costResources.associateBy { it.id }
+                    costEntries.forEach { entry ->
+                        val resourceName = resourceMap[entry.resourceId]?.name ?: entry.resourceId
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Text(
+                                        resourceName,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        "×${entry.amount}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                entry.note?.let { note ->
+                                    Text(
+                                        note,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                                    )
+                                }
+                                Text(
+                                    entry.recordedAt.take(10),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                            IconButton(
+                                onClick = { onDeleteCostEntry(entry.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete cost entry",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
             // Notes section
@@ -251,6 +342,17 @@ fun TaskDetailSheet(
                 showLogManuallyDialog = false
             },
             onDismiss = { showLogManuallyDialog = false }
+        )
+    }
+
+    if (showLogCostDialog) {
+        LogResourceCostDialog(
+            resources = costResources,
+            onConfirm = { resourceId, amount, note ->
+                onLogCost(resourceId, amount, note)
+                showLogCostDialog = false
+            },
+            onDismiss = { showLogCostDialog = false }
         )
     }
 }
@@ -326,6 +428,82 @@ private fun ManualLogTimeDialog(onConfirm: (Int, String?) -> Unit, onDismiss: ()
             Button(
                 onClick = { minutesInt?.let { onConfirm(it, note.trim().ifBlank { null }) } },
                 enabled = minutesInt != null && minutesInt > 0
+            ) { Text("Log") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun LogResourceCostDialog(
+    resources: List<CostResource>,
+    onConfirm: (resourceId: String, amount: Int, note: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedResource by remember { mutableStateOf(resources.firstOrNull()) }
+    var amount by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    val amountInt = amount.toIntOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Log Resource Cost") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedResource?.name ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Resource") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                        modifier = Modifier
+                            .menuAnchor()
+                            .fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        resources.forEach { resource ->
+                            DropdownMenuItem(
+                                text = { Text(resource.name) },
+                                onClick = {
+                                    selectedResource = resource
+                                    dropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() } },
+                    label = { Text("Amount used") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val res = selectedResource ?: return@Button
+                    val amt = amountInt ?: return@Button
+                    onConfirm(res.id, amt, note.trim().ifBlank { null })
+                },
+                enabled = selectedResource != null && amountInt != null && amountInt > 0
             ) { Text("Log") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

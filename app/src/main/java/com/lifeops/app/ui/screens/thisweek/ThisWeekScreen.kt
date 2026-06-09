@@ -243,6 +243,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 isTimerActive = isTimerActive,
                 timerElapsedSeconds = timerElapsed,
                 isPomodoroActive = isPomodoroActive,
+                costEntries = state.taskCostEntries[taskId] ?: emptyList(),
+                costResources = state.costResources,
                 onDismiss = viewModel::closeDetail,
                 onAddNote = { content -> viewModel.onAddNote(taskId, content) },
                 onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
@@ -250,7 +252,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 onStartTimer = { viewModel.startTimer(taskId) },
                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },
                 onStartPomodoro = { viewModel.startTimer(taskId, isPomodoro = true) },
-                onLogTime = { minutes, note -> viewModel.onLogTime(taskId, minutes, note) }
+                onLogTime = { minutes, note -> viewModel.onLogTime(taskId, minutes, note) },
+                onLogCost = { resourceId, amount, note -> viewModel.onLogCost(taskId, resourceId, amount, note) },
+                onDeleteCostEntry = viewModel::onDeleteCostEntry
             )
         }
     }

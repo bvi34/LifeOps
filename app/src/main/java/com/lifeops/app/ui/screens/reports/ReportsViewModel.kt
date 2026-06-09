@@ -34,6 +34,7 @@ data class ReportsUiState(
     val timeByAspect: List<AspectTimeRow> = emptyList(),
     val totalTimeMinutes: Int = 0,
     val carryHistory: List<CarryForwardEntry> = emptyList(),
+    val costUsage: List<CostUsageRow> = emptyList(),
     val isLoading: Boolean = true
 )
 
@@ -41,7 +42,8 @@ class ReportsViewModel(
     private val weekRepository: WeekRepository,
     private val aspectRepository: AspectRepository,
     private val taskRepository: TaskRepository,
-    private val timeEntryRepository: TimeEntryRepository
+    private val timeEntryRepository: TimeEntryRepository,
+    private val costResourceRepository: CostResourceRepository
 ) : ViewModel() {
 
     private var weeksById: Map<String, Week> = emptyMap()
@@ -159,6 +161,20 @@ class ReportsViewModel(
             )
         }.sortedByDescending { it.carriedCount }
 
+        // Cost usage
+        val allCostEntries = costResourceRepository.getAllEntries()
+        val allCostResources = costResourceRepository.getAllSync().associateBy { it.id }
+        val filteredCostEntries = if (state.range == ReportRange.LIFETIME) allCostEntries
+            else allCostEntries.filter { it.recordedAt >= cutoff }
+        val amountByResource = mutableMapOf<String, Int>()
+        filteredCostEntries.forEach { entry ->
+            amountByResource[entry.resourceId] = (amountByResource[entry.resourceId] ?: 0) + entry.amount
+        }
+        val costUsageRows = amountByResource.mapNotNull { (resourceId, total) ->
+            val resource = allCostResources[resourceId] ?: return@mapNotNull null
+            CostUsageRow(resource.name, resource.resetCycle, resource.capacity, total)
+        }.sortedByDescending { it.totalAmount }
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -168,7 +184,8 @@ class ReportsViewModel(
                 carryForwardRate = cfRate,
                 timeByAspect = timeRows,
                 totalTimeMinutes = minutesByAspect.values.sum(),
-                carryHistory = carryEntries
+                carryHistory = carryEntries,
+                costUsage = costUsageRows
             )
         }
     }
@@ -184,9 +201,10 @@ class ReportsViewModelFactory(
     private val weekRepository: WeekRepository,
     private val aspectRepository: AspectRepository,
     private val taskRepository: TaskRepository,
-    private val timeEntryRepository: TimeEntryRepository
+    private val timeEntryRepository: TimeEntryRepository,
+    private val costResourceRepository: CostResourceRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository) as T
+        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository) as T
 }
