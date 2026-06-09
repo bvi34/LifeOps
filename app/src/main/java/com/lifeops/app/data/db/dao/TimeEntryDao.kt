@@ -9,6 +9,9 @@ interface TimeEntryDao {
     @Query("SELECT te.* FROM time_entries te INNER JOIN tasks t ON t.id = te.taskId WHERE t.weekId = :weekId ORDER BY te.recordedAt DESC")
     fun observeByWeek(weekId: String): Flow<List<TimeEntryEntity>>
 
+    @Query("SELECT te.* FROM time_entries te INNER JOIN tasks t ON t.id = te.taskId WHERE t.weekId = :weekId")
+    suspend fun getByWeek(weekId: String): List<TimeEntryEntity>
+
     @Query("SELECT * FROM time_entries WHERE recordedAt >= :since")
     suspend fun getAllSince(since: String): List<TimeEntryEntity>
 
