@@ -76,6 +76,8 @@ class NotificationRepository(
             .setInputData(data)
             .addTag("task_$taskId")
             .build()
-        workManager.enqueue(request)
+        // REPLACE ensures rescheduling (e.g. after edit) cancels any prior pending notification
+        // for the same task+type pair. The tag is still kept for bulk cancel via cancelForTask().
+        workManager.enqueueUniqueWork("task_${taskId}_$type", ExistingWorkPolicy.REPLACE, request)
     }
 }

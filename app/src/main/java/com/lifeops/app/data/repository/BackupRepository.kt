@@ -8,6 +8,7 @@ import androidx.core.content.FileProvider
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonParser
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.entities.*
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +66,10 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             null
         }
     }
+
+    fun parseVersion(json: String): Int = try {
+        JsonParser.parseString(json).asJsonObject.get("version")?.asInt ?: 1
+    } catch (_: Exception) { 1 }
 
     suspend fun restore(json: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {

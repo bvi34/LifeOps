@@ -25,6 +25,7 @@ data class SettingsUiState(
     val showRestoreDialog: Boolean = false,
     val restoreJson: String = "",
     val restoreError: String? = null,
+    val restoreWarning: String? = null,
     val backupStatus: String? = null,
     val pendingArchiveAspectId: String? = null,
     val pendingArchiveCategoryId: String? = null,
@@ -190,7 +191,7 @@ class SettingsViewModel(
         }
     }
 
-    fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null) }
+    fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null, restoreWarning = null) }
     fun hideRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null) }
     fun onRestoreJsonChange(json: String) = _uiState.update { it.copy(restoreJson = json) }
 
@@ -210,8 +211,14 @@ class SettingsViewModel(
         val repo = backupRepository ?: return
         val json = _uiState.value.restoreJson
         viewModelScope.launch {
+            val version = repo.parseVersion(json)
             repo.restore(json)
-                .onSuccess { hideRestoreDialog() }
+                .onSuccess {
+                    val warning = if (version < 2)
+                        "Restore complete. This was an older backup (v$version) — cost resource data was not included."
+                    else null
+                    _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null, restoreWarning = warning) }
+                }
                 .onFailure { e -> _uiState.update { it.copy(restoreError = e.message) } }
         }
     }

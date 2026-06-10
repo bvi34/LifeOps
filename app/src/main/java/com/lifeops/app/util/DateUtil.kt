@@ -49,6 +49,11 @@ object DateUtil {
     fun isoFromEpoch(epochMs: Long): String =
         Instant.ofEpochMilli(epochMs).toString()
 
+    fun isValidDate(date: String): Boolean = try {
+        LocalDate.parse(date, dateFormatter)
+        true
+    } catch (_: Exception) { false }
+
     fun sinceDate(daysAgo: Int): String {
         val date = LocalDate.now().minusDays(daysAgo.toLong())
         return date.atStartOfDay(ZoneOffset.UTC).toInstant().toString()

@@ -18,7 +18,7 @@ interface TaskCostEntryDao {
     @Query("SELECT tce.* FROM task_cost_entries tce INNER JOIN tasks t ON t.id = tce.taskId WHERE t.weekId = :weekId")
     suspend fun getByWeek(weekId: String): List<TaskCostEntryEntity>
 
-    @Insert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entry: TaskCostEntryEntity)
 
     @Query("DELETE FROM task_cost_entries WHERE id = :id")

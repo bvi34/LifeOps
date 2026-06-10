@@ -85,6 +85,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     onRestore = viewModel::showRestoreDialog,
                     onExportCsv = { viewModel.exportCsv(context) }
                 )
+                state.restoreWarning?.let { warning ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        warning,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
             }
             item {

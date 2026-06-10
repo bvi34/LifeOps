@@ -15,6 +15,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -45,9 +48,11 @@ val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, S
 
 class MainActivity : ComponentActivity() {
 
+    private var showNotificationDeniedDialog by mutableStateOf(false)
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* granted or denied — proceed either way */ }
+    ) { granted -> if (!granted) showNotificationDeniedDialog = true }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +85,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             LifeOpsTheme {
                 LifeOpsNavHost(app, sharedText)
+                if (showNotificationDeniedDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showNotificationDeniedDialog = false },
+                        title = { Text("Notifications disabled") },
+                        text = { Text("Task reminders won't work. You can enable notifications for LifeOps in System Settings → Apps.") },
+                        confirmButton = {
+                            TextButton(onClick = { showNotificationDeniedDialog = false }) { Text("OK") }
+                        }
+                    )
+                }
             }
         }
     }
@@ -120,6 +135,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.ThisWeek.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
                     factory = ThisWeekViewModelFactory(
+                        app,
                         app.applicationScope,
                         app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                         app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,

@@ -1,10 +1,13 @@
 package com.lifeops.app.ui.screens.thisweek
 
+import android.content.Context
+import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -65,6 +68,7 @@ data class ThisWeekUiState(
 )
 
 class ThisWeekViewModel(
+    private val appContext: Context,
     private val saveScope: CoroutineScope,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
@@ -223,20 +227,36 @@ class ThisWeekViewModel(
         }
     }
 
+    private fun refreshWidget() {
+        viewModelScope.launch { try { LifeOpsWidget().updateAll(appContext) } catch (_: Exception) {} }
+    }
+
     fun onCompleteTask(task: Task) {
-        viewModelScope.launch { taskRepository.completeTask(task) }
+        viewModelScope.launch {
+            taskRepository.completeTask(task)
+            refreshWidget()
+        }
     }
 
     fun onUnCompleteTask(taskId: String) {
-        viewModelScope.launch { taskRepository.unCompleteTask(taskId) }
+        viewModelScope.launch {
+            taskRepository.unCompleteTask(taskId)
+            refreshWidget()
+        }
     }
 
     fun onUnSkipTask(taskId: String) {
-        viewModelScope.launch { taskRepository.unSkipTask(taskId) }
+        viewModelScope.launch {
+            taskRepository.unSkipTask(taskId)
+            refreshWidget()
+        }
     }
 
     fun onSkipTask(taskId: String) {
-        viewModelScope.launch { taskRepository.skipTask(taskId) }
+        viewModelScope.launch {
+            taskRepository.skipTask(taskId)
+            refreshWidget()
+        }
     }
 
     fun onCarryForward(task: Task) {
@@ -280,7 +300,9 @@ class ThisWeekViewModel(
                 val week = _uiState.value.week ?: return@launch
                 stopTimer(saveEntry = true)
                 taskRepository.closeWeek(week.id)
-                weekRepository.getOrCreateCurrentWeek()
+                val newWeek = weekRepository.getOrCreateCurrentWeek()
+                taskRepository.seedRecurringTasks(week.id, newWeek.id)
+                refreshWidget()
             } finally {
                 weekCloseInFlight = false
             }
@@ -351,7 +373,10 @@ class ThisWeekViewModel(
         val includeUnknown = _uiState.value.includeUnknownAsNotes
         viewModelScope.launch {
             importRepository.commitImport(json, includeUnknown)
-                .onSuccess { closeImportDialog() }
+                .onSuccess {
+                    refreshWidget()
+                    closeImportDialog()
+                }
                 .onFailure { e -> _uiState.update { it.copy(importError = e.message) } }
         }
     }
@@ -440,28 +465,33 @@ class ThisWeekViewModel(
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
+            val validatedDueDate = dueDate?.takeIf { DateUtil.isValidDate(it) }
             val newResourceValue = ImportParser.computeResourceValue(
                 priority.label, hardDeadline, estimatedMinutes, task.isManuallyAdded
             )
-            taskRepository.updateTask(
-                task.copy(
-                    title = title,
-                    priority = priority,
-                    dueDate = dueDate,
-                    hardDeadline = hardDeadline,
-                    resourceValue = newResourceValue,
-                    isRecurring = isRecurring,
-                    estimatedMinutes = estimatedMinutes,
-                    aspectId = aspectId,
-                    categoryId = categoryId
-                )
+            val updatedTask = task.copy(
+                title = title,
+                priority = priority,
+                dueDate = validatedDueDate,
+                hardDeadline = hardDeadline,
+                resourceValue = newResourceValue,
+                isRecurring = isRecurring,
+                estimatedMinutes = estimatedMinutes,
+                aspectId = aspectId,
+                categoryId = categoryId
             )
+            taskRepository.updateTask(updatedTask)
+            if (task.dueDate != validatedDueDate || task.hardDeadline != hardDeadline) {
+                notificationRepository.cancelForTask(task.id)
+                notificationRepository.scheduleForTask(updatedTask)
+            }
             _uiState.update { it.copy(editingTask = null) }
         }
     }
 }
 
 class ThisWeekViewModelFactory(
+    private val appContext: Context,
     private val saveScope: CoroutineScope,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
@@ -475,7 +505,7 @@ class ThisWeekViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
-            saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
+            appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository
         ) as T
 }

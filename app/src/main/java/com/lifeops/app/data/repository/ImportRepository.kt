@@ -26,6 +26,8 @@ class ImportRepository(
         val newCategories = mutableListOf<Category>()
 
         val week = weekRepository.getOrCreateCurrentWeek()
+        val existingTitles = db.taskDao().getAllByWeek(week.id).map { it.title.lowercase().trim() }.toSet()
+
         val tasks = result.tasks.map { parsed ->
             val aspect: Aspect? = parsed.aspectName?.let { aspName ->
                 val key = aspName.lowercase()
@@ -52,6 +54,7 @@ class ImportRepository(
                 }
             }
             val taskStatus = TaskStatus.from(parsed.status)
+            val validDueDate = parsed.dueDate?.takeIf { DateUtil.isValidDate(it) }
             Task(
                 id = UUID.randomUUID().toString(),
                 weekId = week.id,
@@ -59,16 +62,21 @@ class ImportRepository(
                 aspectId = aspect?.id,
                 categoryId = category?.id,
                 priority = Priority.from(parsed.priority),
-                dueDate = parsed.dueDate,
+                dueDate = validDueDate,
                 hardDeadline = parsed.hardDeadline,
                 status = taskStatus,
                 completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
-                resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
+                // Imported completed tasks get resourceValue=0 — they're historical records
+                // and should not inflate the current week's score.
+                resourceValue = if (taskStatus == TaskStatus.COMPLETED) 0
+                               else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                 estimatedMinutes = parsed.estimatedMinutes,
                 isRecurring = parsed.isRecurring,
                 createdAt = DateUtil.now()
             )
         }
+
+        val existingTaskCount = tasks.count { it.title.lowercase().trim() in existingTitles }
 
         val unknownFieldsByTask = result.tasks
             .filter { it.unknownFields.isNotEmpty() }
@@ -79,7 +87,7 @@ class ImportRepository(
                 newTasks = tasks,
                 newAspects = newAspects.distinctBy { it.name.lowercase() },
                 newCategories = newCategories.distinctBy { it.name.lowercase() },
-                existingTaskCount = 0,
+                existingTaskCount = existingTaskCount,
                 unknownFieldsByTask = unknownFieldsByTask
             )
         )
@@ -90,16 +98,20 @@ class ImportRepository(
         if (result.error != null) return Result.failure(Exception(result.error))
 
         val week = weekRepository.getOrCreateCurrentWeek()
+        val existingTitles = db.taskDao().getAllByWeek(week.id).map { it.title.lowercase().trim() }.toSet()
         val createdTasks = mutableListOf<Task>()
 
         // All DB writes are atomic; notification scheduling (WorkManager) happens after.
         db.withTransaction {
-            result.tasks.forEach { parsed ->
+            for (parsed in result.tasks) {
+                if (parsed.title.lowercase().trim() in existingTitles) continue
+
                 val aspect = parsed.aspectName?.let { aspectRepository.findOrCreateAspect(it) }
                 val category = parsed.categoryName?.let { catName ->
                     aspect?.let { asp -> aspectRepository.findOrCreateCategory(asp.id, catName) }
                 }
                 val taskStatus = TaskStatus.from(parsed.status)
+                val validDueDate = parsed.dueDate?.takeIf { DateUtil.isValidDate(it) }
                 val task = Task(
                     id = UUID.randomUUID().toString(),
                     weekId = week.id,
@@ -107,11 +119,12 @@ class ImportRepository(
                     aspectId = aspect?.id,
                     categoryId = category?.id,
                     priority = Priority.from(parsed.priority),
-                    dueDate = parsed.dueDate,
+                    dueDate = validDueDate,
                     hardDeadline = parsed.hardDeadline,
                     status = taskStatus,
                     completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
-                    resourceValue = ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
+                    resourceValue = if (taskStatus == TaskStatus.COMPLETED) 0
+                                   else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                     estimatedMinutes = parsed.estimatedMinutes,
                     isRecurring = parsed.isRecurring,
                     createdAt = DateUtil.now()

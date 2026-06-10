@@ -8,7 +8,7 @@ import com.lifeops.app.data.db.dao.*
 import com.lifeops.app.data.db.entities.WeekSnapshotEntity
 import com.lifeops.app.data.model.*
 import com.lifeops.app.util.*
-import kotlin.math.abs
+import com.lifeops.app.util.ScoringUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -93,22 +93,8 @@ class TaskRepository(
         notificationRepository.scheduleWeekCloseReminder()
     }
 
-    /**
-     * Accuracy multiplier applied to resourceValue at close time.
-     *   No estimate OR no time logged  → 1.0x (no adjustment)
-     *   Actual within ±15 min          → 2.0x (rewarded for accurate planning)
-     *   Actual < estimated − 15        → 0.9x (over-allocated, finished faster)
-     *   Actual > estimated + 15        → 0.75x (underestimated, ran over)
-     */
-    private fun accuracyMultiplier(task: Task, actualMinutes: Int?): Double {
-        val estimated = task.estimatedMinutes ?: return 1.0
-        val actual = actualMinutes?.takeIf { it > 0 } ?: return 1.0
-        return when {
-            abs(actual - estimated) <= 15 -> 2.0
-            actual < estimated -> 0.9
-            else -> 0.75
-        }
-    }
+    private fun accuracyMultiplier(task: Task, actualMinutes: Int?): Double =
+        ScoringUtils.accuracyMultiplier(task.estimatedMinutes, actualMinutes)
 
     private fun buildSnapshot(
         weekId: String,
