@@ -7,6 +7,7 @@ import com.lifeops.app.data.db.entities.TaskCostEntryEntity
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
