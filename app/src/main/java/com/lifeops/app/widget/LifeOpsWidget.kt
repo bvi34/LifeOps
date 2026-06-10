@@ -17,24 +17,13 @@ import androidx.glance.text.*
 import androidx.glance.unit.ColorProvider
 import com.lifeops.app.LifeOpsApp
 import com.lifeops.app.MainActivity
-import com.lifeops.app.data.model.TaskStatus
 
 class LifeOpsWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val app = context.applicationContext as LifeOpsApp
         val tasks = try {
-            app.database.taskDao().getAll()
-                .filter { it.status == TaskStatus.PENDING.value }
-                .sortedWith(
-                    compareByDescending<com.lifeops.app.data.db.entities.TaskEntity> {
-                        when (it.priority) {
-                            "critical" -> 4; "high" -> 3; "medium" -> 2; else -> 1
-                        }
-                    }.thenBy { it.dueDate ?: "9999" }
-                )
-                .take(5)
-                .map { it.title }
+            app.database.taskDao().getTopPendingTitles(5)
         } catch (e: Exception) {
             emptyList()
         }

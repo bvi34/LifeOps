@@ -54,6 +54,19 @@ private val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
+private val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Indices backing the time-range / status queries that previously did full table
+        // scans (Reports getAllSince, Resources scoring, widget pending filter).
+        // Names must match Room's auto-generated index names (index_<table>_<column>).
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_time_entries_recordedAt ON time_entries(recordedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_task_cost_entries_recordedAt ON task_cost_entries(recordedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_createdAt ON tasks(createdAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_completedAt ON tasks(completedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -70,7 +83,7 @@ private val MIGRATION_6_7 = object : Migration(6, 7) {
         CostResourceEntity::class,
         TaskCostEntryEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -98,7 +111,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .build()
                     .also { INSTANCE = it }
             }

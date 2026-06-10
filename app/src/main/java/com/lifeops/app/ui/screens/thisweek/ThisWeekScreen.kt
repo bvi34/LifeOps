@@ -35,6 +35,11 @@ import com.lifeops.app.ui.theme.priorityColor
 @Composable
 fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
+    // intentionally NOT read at this scope — it's read via a deferred lambda inside the active
+    // row/sheet so the per-second tick doesn't recompose the whole screen.
+    val activeTimer by viewModel.activeTimer.collectAsStateWithLifecycle()
+    val timerElapsedState = viewModel.timerElapsedSeconds.collectAsStateWithLifecycle()
     var showCloseConfirm by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
@@ -199,8 +204,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             }
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
-                            val isTimerActive = state.activeTimer?.taskId == task.id
-                            val timerElapsed = if (isTimerActive) state.activeTimer?.elapsedSeconds ?: 0 else 0
+                            val isTimerActive = activeTimer?.taskId == task.id
                             TaskRow(
                                 task = task,
                                 aspectColor = group.aspectColor,
@@ -208,7 +212,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 notes = state.taskNotes[task.id] ?: emptyList(),
                                 totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
                                 isTimerActive = isTimerActive,
-                                timerElapsedSeconds = timerElapsed,
+                                timerElapsedSeconds = { timerElapsedState.value },
                                 isPlanningMode = isPlanningMode,
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onUnComplete = { viewModel.onUnCompleteTask(task.id) },
@@ -233,15 +237,14 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         val allTasks = state.groupedTasks.flatMap { g -> g.categories.flatMap { it.tasks } }
         val detailTask = allTasks.firstOrNull { it.id == taskId }
         if (detailTask != null) {
-            val isTimerActive = state.activeTimer?.taskId == taskId
-            val timerElapsed = if (isTimerActive) state.activeTimer?.elapsedSeconds ?: 0 else 0
-            val isPomodoroActive = isTimerActive && state.activeTimer?.isPomodoro == true
+            val isTimerActive = activeTimer?.taskId == taskId
+            val isPomodoroActive = isTimerActive && activeTimer?.isPomodoro == true
             TaskDetailSheet(
                 task = detailTask,
                 notes = state.taskNotes[taskId] ?: emptyList(),
                 totalTimeMinutes = state.taskTimeMinutes[taskId] ?: 0,
                 isTimerActive = isTimerActive,
-                timerElapsedSeconds = timerElapsed,
+                timerElapsedSeconds = { timerElapsedState.value },
                 isPomodoroActive = isPomodoroActive,
                 costEntries = state.taskCostEntries[taskId] ?: emptyList(),
                 costResources = state.costResources,

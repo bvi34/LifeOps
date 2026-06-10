@@ -8,7 +8,7 @@ import androidx.room.*
         ForeignKey(entity = TaskEntity::class, parentColumns = ["id"], childColumns = ["taskId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = CostResourceEntity::class, parentColumns = ["id"], childColumns = ["resourceId"], onDelete = ForeignKey.CASCADE)
     ],
-    indices = [Index("taskId"), Index("resourceId")]
+    indices = [Index("taskId"), Index("resourceId"), Index("recordedAt")]
 )
 data class TaskCostEntryEntity(
     @PrimaryKey val id: String,

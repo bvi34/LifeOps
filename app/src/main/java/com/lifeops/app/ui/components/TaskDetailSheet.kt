@@ -33,7 +33,7 @@ fun TaskDetailSheet(
     notes: List<TaskNote>,
     totalTimeMinutes: Int,
     isTimerActive: Boolean,
-    timerElapsedSeconds: Int,
+    timerElapsedSeconds: () -> Int,
     isPomodoroActive: Boolean = false,
     costEntries: List<TaskCostEntry> = emptyList(),
     costResources: List<CostResource> = emptyList(),
@@ -140,7 +140,8 @@ fun TaskDetailSheet(
             }
 
             if (isTimerActive) {
-                val displaySeconds = if (isPomodoroActive) maxOf(0, 1500 - timerElapsedSeconds) else timerElapsedSeconds
+                val elapsed = timerElapsedSeconds()
+                val displaySeconds = if (isPomodoroActive) maxOf(0, 1500 - elapsed) else elapsed
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -160,7 +161,7 @@ fun TaskDetailSheet(
                         )
                         if (isPomodoroActive) {
                             Text(
-                                "Pomodoro — ${formatElapsed(timerElapsedSeconds)} elapsed",
+                                "Pomodoro — ${formatElapsed(elapsed)} elapsed",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             )

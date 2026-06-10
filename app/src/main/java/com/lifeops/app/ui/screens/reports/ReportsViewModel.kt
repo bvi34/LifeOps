@@ -4,8 +4,10 @@ import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.DateUtil
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class ReportRange(val label: String, val days: Int) {
     DAYS_30("30 Days", 30),
@@ -82,7 +84,9 @@ class ReportsViewModel(
         viewModelScope.launch { computeStats() }
     }
 
-    private suspend fun computeStats() {
+    // Runs the snapshot/time/cost aggregation off the main thread; the suspend DB reads and the
+    // O(n) grouping loops below would otherwise block the UI on every range change.
+    private suspend fun computeStats() = withContext(Dispatchers.Default) {
         val state = _uiState.value
         val snapshots = filteredSnapshots(state)
 

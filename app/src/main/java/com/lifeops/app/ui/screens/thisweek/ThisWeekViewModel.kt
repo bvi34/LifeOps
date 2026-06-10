@@ -24,7 +24,6 @@ enum class SortOrder(val label: String) {
 data class ActiveTimer(
     val taskId: String,
     val startMillis: Long,
-    val elapsedSeconds: Int = 0,
     val isPomodoro: Boolean = false
 )
 
@@ -57,7 +56,6 @@ data class ThisWeekUiState(
     val includeUnknownAsNotes: Boolean = false,
     val editingTask: Task? = null,
     val showCreateTaskDialog: Boolean = false,
-    val activeTimer: ActiveTimer? = null,
     val detailTaskId: String? = null,
     val sortOrder: SortOrder = SortOrder.DEFAULT,
     val searchQuery: String = "",
@@ -80,6 +78,15 @@ class ThisWeekViewModel(
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
+
+    // The running timer is kept out of uiState so its per-second tick doesn't churn the whole
+    // screen state. `activeTimer` changes only on start/stop; `timerElapsedSeconds` ticks every
+    // second and is read with a deferred lambda so only the active row's clock recomposes.
+    private val _activeTimer = MutableStateFlow<ActiveTimer?>(null)
+    val activeTimer: StateFlow<ActiveTimer?> = _activeTimer.asStateFlow()
+
+    private val _timerElapsedSeconds = MutableStateFlow(0)
+    val timerElapsedSeconds: StateFlow<Int> = _timerElapsedSeconds.asStateFlow()
 
     private var timerJob: Job? = null
 
@@ -284,14 +291,13 @@ class ThisWeekViewModel(
     fun startTimer(taskId: String, isPomodoro: Boolean = false) {
         stopTimer(saveEntry = true)
         val startMillis = System.currentTimeMillis()
-        _uiState.update { it.copy(activeTimer = ActiveTimer(taskId, startMillis, isPomodoro = isPomodoro)) }
+        _activeTimer.value = ActiveTimer(taskId, startMillis, isPomodoro = isPomodoro)
+        _timerElapsedSeconds.value = 0
         timerJob = viewModelScope.launch {
             while (true) {
                 delay(1000)
                 val elapsed = ((System.currentTimeMillis() - startMillis) / 1000).toInt()
-                _uiState.update { state ->
-                    state.copy(activeTimer = state.activeTimer?.copy(elapsedSeconds = elapsed))
-                }
+                _timerElapsedSeconds.value = elapsed
                 // Auto-stop Pomodoro at 25 minutes
                 if (isPomodoro && elapsed >= 1500) {
                     stopTimer(saveEntry = true)
@@ -302,15 +308,16 @@ class ThisWeekViewModel(
     }
 
     fun stopTimer(saveEntry: Boolean = true) {
-        val timer = _uiState.value.activeTimer ?: return
+        val timer = _activeTimer.value ?: return
         timerJob?.cancel()
         timerJob = null
         // Always log actual elapsed time. For a completed Pomodoro elapsed ≈ 1500s → 25min.
-        val minutes = timer.elapsedSeconds / 60
+        val minutes = _timerElapsedSeconds.value / 60
         if (saveEntry && minutes > 0) {
             viewModelScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }
-        _uiState.update { it.copy(activeTimer = null) }
+        _activeTimer.value = null
+        _timerElapsedSeconds.value = 0
     }
 
     // Detail sheet
@@ -409,10 +416,10 @@ class ThisWeekViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        val timer = _uiState.value.activeTimer ?: return
+        val timer = _activeTimer.value ?: return
         timerJob?.cancel()
         timerJob = null
-        val minutes = timer.elapsedSeconds / 60
+        val minutes = _timerElapsedSeconds.value / 60
         if (minutes > 0) {
             saveScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
         }

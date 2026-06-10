@@ -27,7 +27,10 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.SET_NULL
         )
     ],
-    indices = [Index("weekId"), Index("aspectId"), Index("categoryId")]
+    indices = [
+        Index("weekId"), Index("aspectId"), Index("categoryId"),
+        Index("createdAt"), Index("completedAt"), Index("status")
+    ]
 )
 data class TaskEntity(
     @PrimaryKey val id: String,

@@ -53,7 +53,9 @@ fun TaskRow(
     notes: List<TaskNote>,
     totalTimeMinutes: Int,
     isTimerActive: Boolean,
-    timerElapsedSeconds: Int,
+    // Deferred read so a per-second timer tick only recomposes the active row's clock text,
+    // not the whole list. Only invoked inside the `isTimerActive` branches below.
+    timerElapsedSeconds: () -> Int,
     isPlanningMode: Boolean = false,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit = {},
@@ -249,7 +251,7 @@ fun TaskRow(
                             }
                             if (isTimerActive) {
                                 Text(
-                                    "● ${formatElapsed(timerElapsedSeconds)}",
+                                    "● ${formatElapsed(timerElapsedSeconds())}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.tertiary
                                 )
@@ -299,7 +301,7 @@ fun TaskRow(
                             }
                             if (isTimerActive) {
                                 Text(
-                                    "● Running: ${formatElapsed(timerElapsedSeconds)}",
+                                    "● Running: ${formatElapsed(timerElapsedSeconds())}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.tertiary,
                                     modifier = Modifier.padding(bottom = 2.dp)

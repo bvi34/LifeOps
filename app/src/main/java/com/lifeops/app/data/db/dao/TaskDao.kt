@@ -60,6 +60,25 @@ interface TaskDao {
     @Query("SELECT * FROM tasks")
     suspend fun getAll(): List<TaskEntity>
 
+    // Widget: fetch only the few pending titles we render, sorted in SQLite rather than
+    // loading every task into memory and sorting in Kotlin on each widget refresh.
+    @Query(
+        """
+        SELECT title FROM tasks
+        WHERE status = 'pending'
+        ORDER BY
+            CASE priority
+                WHEN 'critical' THEN 4
+                WHEN 'high' THEN 3
+                WHEN 'medium' THEN 2
+                ELSE 1
+            END DESC,
+            COALESCE(dueDate, '9999') ASC
+        LIMIT :limit
+        """
+    )
+    suspend fun getTopPendingTitles(limit: Int): List<String>
+
     @Query("UPDATE tasks SET status = 'pending', completedAt = NULL WHERE id = :id")
     suspend fun unmarkCompleted(id: String)
 
