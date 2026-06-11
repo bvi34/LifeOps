@@ -16,14 +16,14 @@ fun TaskEntity.toModel() = Task(
     id, weekId, title, aspectId, categoryId,
     Priority.from(priority), dueDate, hardDeadline,
     TaskStatus.from(status), resourceValue, completedAt, carriedFromTaskId, createdAt,
-    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded
+    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId
 )
 
 fun Task.toEntity() = TaskEntity(
     id, weekId, title, aspectId, categoryId,
     priority.label, dueDate, hardDeadline,
     status.value, resourceValue, completedAt, carriedFromTaskId, createdAt,
-    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded
+    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId
 )
 
 fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt)

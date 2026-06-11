@@ -9,8 +9,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Priority
+import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
@@ -37,6 +40,9 @@ fun TaskDetailSheet(
     isPomodoroActive: Boolean = false,
     costEntries: List<TaskCostEntry> = emptyList(),
     costResources: List<CostResource> = emptyList(),
+    project: Project? = null,
+    projects: List<Project> = emptyList(),
+    onAssignProject: ((String?) -> Unit)? = null,
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
@@ -111,6 +117,85 @@ fun TaskDetailSheet(
                     onClick = onCarryForward,
                     modifier = Modifier.padding(top = 2.dp)
                 ) { Text("Carry Forward") }
+            }
+
+            // Project section
+            if (project != null || (onAssignProject != null && projects.isNotEmpty())) {
+                Spacer(Modifier.height(4.dp))
+                var showProjectPicker by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Folder,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    if (project != null) {
+                        Text(
+                            project.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (onAssignProject != null) {
+                            IconButton(
+                                onClick = { onAssignProject(null) },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove project",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                            TextButton(
+                                onClick = { showProjectPicker = true },
+                                contentPadding = PaddingValues(horizontal = 4.dp)
+                            ) {
+                                Text("Change", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    } else {
+                        TextButton(
+                            onClick = { showProjectPicker = true },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text("Assign to project", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                if (showProjectPicker && onAssignProject != null) {
+                    AlertDialog(
+                        onDismissRequest = { showProjectPicker = false },
+                        title = { Text("Assign to Project") },
+                        text = {
+                            Column {
+                                if (project != null) {
+                                    TextButton(
+                                        onClick = { onAssignProject(null); showProjectPicker = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("Remove project assignment")
+                                    }
+                                    HorizontalDivider()
+                                }
+                                projects.forEach { proj ->
+                                    TextButton(
+                                        onClick = { onAssignProject(proj.id); showProjectPicker = false },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(proj.title)
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(onClick = { showProjectPicker = false }) { Text("Cancel") }
+                        }
+                    )
+                }
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))

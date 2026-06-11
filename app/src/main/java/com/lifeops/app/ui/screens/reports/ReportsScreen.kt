@@ -16,12 +16,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.CostUsageRow
+import com.lifeops.app.data.model.PriorityCompletionRow
+import com.lifeops.app.data.model.ProjectStats
+import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
+import com.lifeops.app.data.model.ScoringPoint
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.theme.CompletedGreen
 import com.lifeops.app.ui.theme.ExpiredRed
 import com.lifeops.app.ui.theme.parseColor
+import com.lifeops.app.ui.theme.priorityColor
 
 @Composable
 fun ReportsScreen(viewModel: ReportsViewModel) {
@@ -54,6 +60,15 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                     item { AspectBalanceChart(state.aspectResourceShares) }
                     if (state.timeByAspect.isNotEmpty()) {
                         item { TimeByAspectCard(state.timeByAspect, state.totalTimeMinutes) }
+                    }
+                    if (state.scoringTrend.isNotEmpty()) {
+                        item { ScoringTrendCard(state.scoringTrend) }
+                    }
+                    if (state.projectStats.isNotEmpty()) {
+                        item { ProjectStatsCard(state.projectStats, state.aspects) }
+                    }
+                    if (state.priorityBreakdown.isNotEmpty()) {
+                        item { PriorityBreakdownCard(state.priorityBreakdown) }
                     }
                     if (state.costUsage.isNotEmpty()) {
                         item { CostUsageCard(state.costUsage) }
@@ -316,6 +331,162 @@ private fun CategorySlipRow(cat: CategorySlipRate) {
         Spacer(Modifier.width(8.dp))
         Text("${(cat.rate * 100).toInt()}%", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+    }
+}
+
+@Composable
+private fun ScoringTrendCard(trend: List<ScoringPoint>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Scoring Trend (Resources/Week)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            if (trend.isEmpty()) {
+                Text("No data yet", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+            } else {
+                val primaryColor = MaterialTheme.colorScheme.primary
+                val maxVal = trend.maxOf { it.resourcesEarned }.takeIf { it > 0 } ?: 1
+                Canvas(modifier = Modifier.fillMaxWidth().height(120.dp)) {
+                    val w = size.width
+                    val h = size.height
+                    val step = if (trend.size > 1) w / (trend.size - 1) else w
+                    val points = trend.mapIndexed { i, pt ->
+                        Offset(i * step, h - (pt.resourcesEarned.toFloat() / maxVal) * h)
+                    }
+                    drawLine(
+                        color = Color.Gray.copy(alpha = 0.3f),
+                        start = Offset(0f, h * 0.5f),
+                        end = Offset(w, h * 0.5f),
+                        strokeWidth = 1.dp.toPx()
+                    )
+                    for (i in 0 until points.size - 1) {
+                        drawLine(
+                            color = primaryColor,
+                            start = points[i],
+                            end = points[i + 1],
+                            strokeWidth = 2.dp.toPx()
+                        )
+                    }
+                    points.forEach { pt ->
+                        drawCircle(color = primaryColor, radius = 4.dp.toPx(), center = pt)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProjectStatsCard(projectStats: List<ProjectStats>, aspects: Map<String, Aspect>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Project Health", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            projectStats.forEach { stat ->
+                val isDone = stat.project.status == ProjectStatus.COMPLETED
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                stat.project.title,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = if (isDone) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                        else MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = if (isDone) MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    if (isDone) "Done" else "Active",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isDone) MaterialTheme.colorScheme.outline
+                                            else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        stat.project.aspectId?.let { aspectId ->
+                            aspects[aspectId]?.let { aspect ->
+                                Text(
+                                    aspect.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                        if (stat.taskCount > 0) {
+                            Spacer(Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { stat.completedCount.toFloat() / stat.taskCount },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = if (isDone) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            "${stat.completedCount}/${stat.taskCount}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        if (stat.totalTimeMinutes > 0) {
+                            val h = stat.totalTimeMinutes / 60
+                            val m = stat.totalTimeMinutes % 60
+                            Text(
+                                if (h > 0) "${h}h ${m}m" else "${m}m",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PriorityBreakdownCard(rows: List<PriorityCompletionRow>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Completion by Priority", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            rows.forEach { row ->
+                val color = priorityColor(row.priority.label)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        row.priority.label.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = color,
+                        modifier = Modifier.width(64.dp)
+                    )
+                    LinearProgressIndicator(
+                        progress = { row.rate },
+                        modifier = Modifier.weight(1f),
+                        color = color
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${(row.rate * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.width(36.dp)
+                    )
+                }
+            }
+        }
     }
 }
 

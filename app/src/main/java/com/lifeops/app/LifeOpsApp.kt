@@ -54,6 +54,7 @@ class LifeOpsApp : Application() {
         CostResourceRepository(database.costResourceDao(), database.taskCostEntryDao())
     }
     val backupRepository by lazy { BackupRepository(database) }
+    val projectRepository by lazy { ProjectRepository(database.projectDao()) }
 
     override fun onCreate() {
         super.onCreate()

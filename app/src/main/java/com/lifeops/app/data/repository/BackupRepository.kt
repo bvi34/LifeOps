@@ -16,7 +16,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 2,
+    val version: Int = 3,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -25,7 +25,8 @@ private data class BackupData(
     val timeEntries: List<TimeEntryEntity>,
     val weekSnapshots: List<WeekSnapshotEntity>,
     val costResources: List<CostResourceEntity> = emptyList(),
-    val taskCostEntries: List<TaskCostEntryEntity> = emptyList()
+    val taskCostEntries: List<TaskCostEntryEntity> = emptyList(),
+    val projects: List<ProjectEntity> = emptyList()
 )
 
 class BackupRepository(private val db: LifeOpsDatabase) {
@@ -42,7 +43,8 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             timeEntries = db.timeEntryDao().getAll(),
             weekSnapshots = db.weekSnapshotDao().getAll(),
             costResources = db.costResourceDao().getAllSync(),
-            taskCostEntries = db.taskCostEntryDao().getAll()
+            taskCostEntries = db.taskCostEntryDao().getAll(),
+            projects = db.projectDao().getAll()
         )
         gson.toJson(data)
     }
@@ -85,6 +87,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (s in data.weekSnapshots) db.weekSnapshotDao().insert(s)
                 for (r in data.costResources) db.costResourceDao().upsert(r)
                 for (ce in data.taskCostEntries) db.taskCostEntryDao().insert(ce)
+                for (p in data.projects) db.projectDao().upsert(p)
             }
             Result.success(Unit)
         } catch (e: Exception) {

@@ -239,6 +239,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         if (detailTask != null) {
             val isTimerActive = activeTimer?.taskId == taskId
             val isPomodoroActive = isTimerActive && activeTimer?.isPomodoro == true
+            val detailProject = detailTask.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid } }
             TaskDetailSheet(
                 task = detailTask,
                 notes = state.taskNotes[taskId] ?: emptyList(),
@@ -248,6 +249,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 isPomodoroActive = isPomodoroActive,
                 costEntries = state.taskCostEntries[taskId] ?: emptyList(),
                 costResources = state.costResources,
+                project = detailProject,
+                projects = state.projects.filter { it.status == com.lifeops.app.data.model.ProjectStatus.ACTIVE },
+                onAssignProject = { projectId -> viewModel.onAssignProject(taskId, projectId) },
                 onDismiss = viewModel::closeDetail,
                 onAddNote = { content -> viewModel.onAddNote(taskId, content) },
                 onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
@@ -280,8 +284,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         CreateTaskDialog(
             aspects = state.aspects.values.toList(),
             allCategories = state.categories,
-            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes ->
-                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes)
+            projects = state.projects,
+            onCreateProject = viewModel::onCreateProject,
+            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId ->
+                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId)
             },
             onDismiss = viewModel::hideCreateTaskDialog
         )
@@ -292,8 +298,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             task = task,
             aspects = state.aspects.values.filter { !it.isArchived }.toList(),
             allCategories = state.categories,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId ->
-                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId)
+            projects = state.projects,
+            onCreateProject = viewModel::onCreateProject,
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId ->
+                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId)
             },
             onDismiss = viewModel::cancelEditTask
         )

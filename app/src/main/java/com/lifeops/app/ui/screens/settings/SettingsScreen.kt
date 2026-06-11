@@ -22,6 +22,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.GameResource
+import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.ui.theme.parseColor
 
@@ -130,6 +132,38 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     onToggleActive = { viewModel.setCostResourceActive(resource.id, !resource.isActive) }
                 )
             }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Projects",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = viewModel::showNewProjectDialog) {
+                        Icon(Icons.Default.Add, contentDescription = "Add project")
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Group related tasks into projects within an aspect.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            items(state.projects, key = { it.id }) { project ->
+                ProjectItem(
+                    project = project,
+                    aspectName = state.aspects.firstOrNull { it.id == project.aspectId }?.name,
+                    onToggleStatus = {
+                        val newStatus = if (project.status == ProjectStatus.ACTIVE)
+                            ProjectStatus.COMPLETED else ProjectStatus.ACTIVE
+                        viewModel.setProjectStatus(project.id, newStatus)
+                    }
+                )
+            }
         }
     }
 
@@ -174,6 +208,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 viewModel.addCostResource(name, resetCycle, capacity)
             },
             onDismiss = viewModel::hideNewCostResourceDialog
+        )
+    }
+
+    if (state.showNewProjectDialog) {
+        NewProjectDialog(
+            aspects = state.aspects.filter { !it.isArchived },
+            onConfirm = { title, aspectId ->
+                viewModel.addProject(title, aspectId)
+            },
+            onDismiss = viewModel::hideNewProjectDialog
         )
     }
 
@@ -615,6 +659,107 @@ private fun NewCategoryDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
         },
         confirmButton = {
             Button(onClick = { if (name.isNotBlank()) onConfirm(name) }, enabled = name.isNotBlank()) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun ProjectItem(
+    project: Project,
+    aspectName: String?,
+    onToggleStatus: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    project.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = if (project.status == ProjectStatus.ACTIVE) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                val statusLabel = if (project.status == ProjectStatus.ACTIVE) "Active" else "Completed"
+                val subLabel = listOfNotNull(aspectName, statusLabel).joinToString(" · ")
+                if (subLabel.isNotEmpty()) {
+                    Text(
+                        subLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            }
+            TextButton(onClick = onToggleStatus) {
+                Text(if (project.status == ProjectStatus.ACTIVE) "Complete" else "Reopen")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewProjectDialog(
+    aspects: List<Aspect>,
+    onConfirm: (title: String, aspectId: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var selectedAspectId by remember { mutableStateOf<String?>(null) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    val selectedAspect = aspects.firstOrNull { it.id == selectedAspectId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Project") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (aspects.isNotEmpty()) {
+                    ExposedDropdownMenuBox(
+                        expanded = dropdownExpanded,
+                        onExpandedChange = { dropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedAspect?.name ?: "No aspect",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Aspect (optional)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = dropdownExpanded,
+                            onDismissRequest = { dropdownExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("No aspect") },
+                                onClick = { selectedAspectId = null; dropdownExpanded = false }
+                            )
+                            aspects.forEach { aspect ->
+                                DropdownMenuItem(
+                                    text = { Text(aspect.name) },
+                                    onClick = { selectedAspectId = aspect.id; dropdownExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedAspectId) },
+                enabled = name.isNotBlank()
+            ) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

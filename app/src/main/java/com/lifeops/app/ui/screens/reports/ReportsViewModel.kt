@@ -37,7 +37,10 @@ data class ReportsUiState(
     val totalTimeMinutes: Int = 0,
     val carryHistory: List<CarryForwardEntry> = emptyList(),
     val costUsage: List<CostUsageRow> = emptyList(),
-    val isLoading: Boolean = true
+    val isLoading: Boolean = true,
+    val projectStats: List<ProjectStats> = emptyList(),
+    val scoringTrend: List<ScoringPoint> = emptyList(),
+    val priorityBreakdown: List<PriorityCompletionRow> = emptyList()
 )
 
 class ReportsViewModel(
@@ -45,7 +48,8 @@ class ReportsViewModel(
     private val aspectRepository: AspectRepository,
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
-    private val costResourceRepository: CostResourceRepository
+    private val costResourceRepository: CostResourceRepository,
+    private val projectRepository: ProjectRepository
 ) : ViewModel() {
 
     private var weeksById: Map<String, Week> = emptyMap()
@@ -179,6 +183,43 @@ class ReportsViewModel(
             CostUsageRow(resource.name, resource.resetCycle, resource.capacity, total)
         }.sortedByDescending { it.totalAmount }
 
+        // Scoring trend (resources earned per week from snapshots)
+        val scoringTrend = snapshots.map { snap ->
+            ScoringPoint(snap.createdAt.take(10), snap.totalResourcesEarned)
+        }
+
+        // Priority breakdown
+        val priorityStats = Priority.entries.mapNotNull { p ->
+            val pTasks = tasks.filter { it.priority == p }
+            val completed = pTasks.count { it.status == TaskStatus.COMPLETED }
+            val total = pTasks.count {
+                it.status in listOf(TaskStatus.COMPLETED, TaskStatus.INCOMPLETE, TaskStatus.EXPIRED)
+            }
+            if (total == 0) null else PriorityCompletionRow(p, completed, total)
+        }
+
+        // Project stats
+        val allProjects = projectRepository.getAll()
+        val taskProjectMap = tasks.associate { it.id to it.projectId }
+        val minutesByProject = mutableMapOf<String, Int>()
+        timeEntries.forEach { entry ->
+            val pid = taskProjectMap[entry.taskId] ?: return@forEach
+            minutesByProject[pid] = (minutesByProject[pid] ?: 0) + entry.durationMinutes
+        }
+        val tasksByProject = tasks.groupBy { it.projectId }
+        val projectStatsList = allProjects
+            .filter { proj -> tasksByProject.containsKey(proj.id) || proj.status == ProjectStatus.ACTIVE }
+            .map { proj ->
+                val projTasks = tasksByProject[proj.id] ?: emptyList()
+                ProjectStats(
+                    proj,
+                    projTasks.size,
+                    projTasks.count { it.status == TaskStatus.COMPLETED },
+                    minutesByProject[proj.id] ?: 0
+                )
+            }
+            .sortedWith(compareBy({ it.project.status.value }, { -(it.completedCount) }))
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -189,7 +230,10 @@ class ReportsViewModel(
                 timeByAspect = timeRows,
                 totalTimeMinutes = minutesByAspect.values.sum(),
                 carryHistory = carryEntries,
-                costUsage = costUsageRows
+                costUsage = costUsageRows,
+                projectStats = projectStatsList,
+                scoringTrend = scoringTrend,
+                priorityBreakdown = priorityStats
             )
         }
     }
@@ -206,9 +250,10 @@ class ReportsViewModelFactory(
     private val aspectRepository: AspectRepository,
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
-    private val costResourceRepository: CostResourceRepository
+    private val costResourceRepository: CostResourceRepository,
+    private val projectRepository: ProjectRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository) as T
+        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository, projectRepository) as T
 }

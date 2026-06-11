@@ -64,7 +64,8 @@ data class ThisWeekUiState(
     val searchQuery: String = "",
     val weekProgress: WeekProgress = WeekProgress(0, 0, 0),
     val costResources: List<CostResource> = emptyList(),
-    val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap()
+    val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap(),
+    val projects: List<Project> = emptyList()
 )
 
 class ThisWeekViewModel(
@@ -77,7 +78,8 @@ class ThisWeekViewModel(
     private val taskNoteRepository: TaskNoteRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
-    private val costResourceRepository: CostResourceRepository
+    private val costResourceRepository: CostResourceRepository,
+    private val projectRepository: ProjectRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -98,6 +100,11 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             costResourceRepository.observeActiveResources().collectLatest { resources ->
                 _uiState.update { it.copy(costResources = resources) }
+            }
+        }
+        viewModelScope.launch {
+            projectRepository.observeActive().collectLatest { projects ->
+                _uiState.update { it.copy(projects = projects) }
             }
         }
         viewModelScope.launch {
@@ -393,7 +400,8 @@ class ThisWeekViewModel(
         dueDate: String?,
         hardDeadline: Boolean,
         isRecurring: Boolean = false,
-        estimatedMinutes: Int? = null
+        estimatedMinutes: Int? = null,
+        projectId: String? = null
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
@@ -414,12 +422,24 @@ class ThisWeekViewModel(
                 createdAt = DateUtil.now(),
                 isRecurring = isRecurring,
                 estimatedMinutes = estimatedMinutes,
-                isManuallyAdded = true
+                isManuallyAdded = true,
+                projectId = projectId
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
             notificationRepository.scheduleForTask(task)
             _uiState.update { it.copy(showCreateTaskDialog = false) }
+        }
+    }
+
+    fun onCreateProject(id: String, title: String, aspectId: String?) {
+        viewModelScope.launch { projectRepository.createProject(id, title, aspectId) }
+    }
+
+    fun onAssignProject(taskId: String, projectId: String?) {
+        viewModelScope.launch {
+            val task = taskRepository.getById(taskId) ?: return@launch
+            taskRepository.updateTask(task.copy(projectId = projectId))
         }
     }
 
@@ -461,7 +481,8 @@ class ThisWeekViewModel(
         isRecurring: Boolean = false,
         estimatedMinutes: Int? = null,
         aspectId: String? = null,
-        categoryId: String? = null
+        categoryId: String? = null,
+        projectId: String? = null
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
@@ -478,7 +499,8 @@ class ThisWeekViewModel(
                 isRecurring = isRecurring,
                 estimatedMinutes = estimatedMinutes,
                 aspectId = aspectId,
-                categoryId = categoryId
+                categoryId = categoryId,
+                projectId = projectId
             )
             taskRepository.updateTask(updatedTask)
             if (task.dueDate != validatedDueDate || task.hardDeadline != hardDeadline) {
@@ -500,12 +522,14 @@ class ThisWeekViewModelFactory(
     private val taskNoteRepository: TaskNoteRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
-    private val costResourceRepository: CostResourceRepository
+    private val costResourceRepository: CostResourceRepository,
+    private val projectRepository: ProjectRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
-            taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository
+            taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
+            projectRepository
         ) as T
 }

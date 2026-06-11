@@ -67,6 +67,30 @@ private val MIGRATION_7_8 = object : Migration(7, 8) {
     }
 }
 
+private val MIGRATION_8_9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS projects (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                aspectId TEXT,
+                categoryId TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                description TEXT,
+                createdAt TEXT NOT NULL,
+                completedAt TEXT,
+                FOREIGN KEY(aspectId) REFERENCES aspects(id) ON DELETE SET NULL,
+                FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_projects_aspectId ON projects(aspectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_projects_categoryId ON projects(categoryId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_projects_status ON projects(status)")
+        db.execSQL("ALTER TABLE tasks ADD COLUMN projectId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_projectId ON tasks(projectId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -81,9 +105,10 @@ private val MIGRATION_7_8 = object : Migration(7, 8) {
         TimeEntryEntity::class,
         ResourceTransactionEntity::class,
         CostResourceEntity::class,
-        TaskCostEntryEntity::class
+        TaskCostEntryEntity::class,
+        ProjectEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -100,6 +125,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun resourceTransactionDao(): ResourceTransactionDao
     abstract fun costResourceDao(): CostResourceDao
     abstract fun taskCostEntryDao(): TaskCostEntryDao
+    abstract fun projectDao(): ProjectDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -111,7 +137,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     .build()
                     .also { INSTANCE = it }
             }

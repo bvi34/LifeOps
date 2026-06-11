@@ -13,11 +13,15 @@ import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Priority
+import com.lifeops.app.data.model.Project
+import java.util.UUID
 
 @Composable
 fun CreateTaskDialog(
     aspects: List<Aspect>,
     allCategories: Map<String, Category>,
+    projects: List<Project> = emptyList(),
+    onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onConfirm: (
         title: String,
         note: String?,
@@ -27,7 +31,8 @@ fun CreateTaskDialog(
         dueDate: String?,
         hardDeadline: Boolean,
         isRecurring: Boolean,
-        estimatedMinutes: Int?
+        estimatedMinutes: Int?,
+        projectId: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -35,18 +40,26 @@ fun CreateTaskDialog(
     var note by remember { mutableStateOf("") }
     var selectedAspectId by remember { mutableStateOf<String?>(null) }
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+    var selectedProjectId by remember { mutableStateOf<String?>(null) }
     var priority by remember { mutableStateOf(Priority.MEDIUM) }
     var dueDate by remember { mutableStateOf("") }
     var hardDeadline by remember { mutableStateOf(false) }
     var isRecurring by remember { mutableStateOf(false) }
     var estimatedMinutes by remember { mutableStateOf("") }
+    var showNewProjectDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var projectExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
         if (selectedAspectId == null) emptyList()
         else allCategories.values.filter { it.aspectId == selectedAspectId && !it.isArchived }
+    }
+
+    val suggestedProjects = remember(selectedAspectId, projects) {
+        if (selectedAspectId == null) projects
+        else projects.filter { it.aspectId == selectedAspectId }
     }
 
     AlertDialog(
@@ -55,7 +68,7 @@ fun CreateTaskDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 480.dp)
+                    .heightIn(max = 520.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -127,6 +140,36 @@ fun CreateTaskDialog(
                     }
                 }
 
+                // Project dropdown
+                val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
+                ExposedDropdownMenuBox(expanded = projectExpanded, onExpandedChange = { projectExpanded = it }) {
+                    OutlinedTextField(
+                        value = selectedProject?.title ?: "No project",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Project (optional)") },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(projectExpanded) }
+                    )
+                    ExposedDropdownMenu(expanded = projectExpanded, onDismissRequest = { projectExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("No project") },
+                            onClick = { selectedProjectId = null; projectExpanded = false }
+                        )
+                        suggestedProjects.forEach { project ->
+                            DropdownMenuItem(
+                                text = { Text(project.title) },
+                                onClick = { selectedProjectId = project.id; projectExpanded = false }
+                            )
+                        }
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("New project…") },
+                            onClick = { showNewProjectDialog = true; projectExpanded = false }
+                        )
+                    }
+                }
+
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Priority.entries.forEach { p ->
@@ -184,11 +227,48 @@ fun CreateTaskDialog(
                         dueDate.trim().ifBlank { null },
                         hardDeadline,
                         isRecurring,
-                        estimatedMinutes.toIntOrNull()
+                        estimatedMinutes.toIntOrNull(),
+                        selectedProjectId
                     )
                 },
                 enabled = title.isNotBlank()
             ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+
+    if (showNewProjectDialog) {
+        NewProjectQuickDialog(
+            onConfirm = { projectTitle ->
+                val newId = UUID.randomUUID().toString()
+                onCreateProject(newId, projectTitle, selectedAspectId)
+                selectedProjectId = newId
+                showNewProjectDialog = false
+            },
+            onDismiss = { showNewProjectDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun NewProjectQuickDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Project") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
+                Text("Create")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

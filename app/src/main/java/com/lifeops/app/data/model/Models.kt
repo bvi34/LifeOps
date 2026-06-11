@@ -65,7 +65,8 @@ data class Task(
     val estimatedMinutes: Int? = null,
     val carriedCount: Int = 0,
     val sortOrder: Int = 0,
-    val isManuallyAdded: Boolean = false
+    val isManuallyAdded: Boolean = false,
+    val projectId: String? = null
 )
 
 data class CarryForwardEntry(
@@ -137,6 +138,40 @@ data class WeekSnapshot(
     val hardDeadlineExpiredCount: Int,
     val createdAt: String
 )
+
+enum class ProjectStatus(val value: String) {
+    ACTIVE("active"),
+    COMPLETED("completed");
+    companion object { fun from(value: String) = entries.firstOrNull { it.value == value } ?: ACTIVE }
+}
+
+data class Project(
+    val id: String,
+    val title: String,
+    val aspectId: String? = null,
+    val categoryId: String? = null,
+    val status: ProjectStatus = ProjectStatus.ACTIVE,
+    val description: String? = null,
+    val createdAt: String,
+    val completedAt: String? = null
+)
+
+data class ProjectStats(
+    val project: Project,
+    val taskCount: Int,
+    val completedCount: Int,
+    val totalTimeMinutes: Int
+)
+
+data class ScoringPoint(val weekLabel: String, val resourcesEarned: Int)
+
+data class PriorityCompletionRow(
+    val priority: Priority,
+    val completedCount: Int,
+    val totalCount: Int
+) {
+    val rate: Float get() = if (totalCount > 0) completedCount.toFloat() / totalCount else 0f
+}
 
 enum class ResourceResetCycle(val label: String) {
     WEEKLY("weekly"),

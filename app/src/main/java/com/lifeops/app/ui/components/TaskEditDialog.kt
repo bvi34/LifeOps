@@ -13,13 +13,17 @@ import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Priority
+import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.Task
+import java.util.UUID
 
 @Composable
 fun TaskEditDialog(
     task: Task,
     aspects: List<Aspect>,
     allCategories: Map<String, Category>,
+    projects: List<Project> = emptyList(),
+    onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onSave: (
         title: String,
         priority: Priority,
@@ -28,7 +32,8 @@ fun TaskEditDialog(
         isRecurring: Boolean,
         estimatedMinutes: Int?,
         aspectId: String?,
-        categoryId: String?
+        categoryId: String?,
+        projectId: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -40,13 +45,21 @@ fun TaskEditDialog(
     var estimatedMinutes by remember(task.id) { mutableStateOf(task.estimatedMinutes?.toString() ?: "") }
     var selectedAspectId by remember(task.id) { mutableStateOf(task.aspectId) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
+    var selectedProjectId by remember(task.id) { mutableStateOf(task.projectId) }
+    var showNewProjectDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
+    var projectExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
         if (selectedAspectId == null) emptyList()
         else allCategories.values.filter { it.aspectId == selectedAspectId && !it.isArchived }
+    }
+
+    val suggestedProjects = remember(selectedAspectId, projects) {
+        if (selectedAspectId == null) projects
+        else projects.filter { it.aspectId == selectedAspectId }
     }
 
     AlertDialog(
@@ -55,7 +68,7 @@ fun TaskEditDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .heightIn(max = 520.dp)
+                    .heightIn(max = 560.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
@@ -119,6 +132,36 @@ fun TaskEditDialog(
                     }
                 }
 
+                // Project dropdown
+                val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
+                ExposedDropdownMenuBox(expanded = projectExpanded, onExpandedChange = { projectExpanded = it }) {
+                    OutlinedTextField(
+                        value = selectedProject?.title ?: "No project",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Project (optional)") },
+                        modifier = Modifier.menuAnchor().fillMaxWidth(),
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(projectExpanded) }
+                    )
+                    ExposedDropdownMenu(expanded = projectExpanded, onDismissRequest = { projectExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("No project") },
+                            onClick = { selectedProjectId = null; projectExpanded = false }
+                        )
+                        suggestedProjects.forEach { project ->
+                            DropdownMenuItem(
+                                text = { Text(project.title) },
+                                onClick = { selectedProjectId = project.id; projectExpanded = false }
+                            )
+                        }
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("New project…") },
+                            onClick = { showNewProjectDialog = true; projectExpanded = false }
+                        )
+                    }
+                }
+
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Priority.entries.forEach { p ->
@@ -166,11 +209,48 @@ fun TaskEditDialog(
                         isRecurring,
                         estimatedMinutes.toIntOrNull(),
                         selectedAspectId,
-                        selectedCategoryId
+                        selectedCategoryId,
+                        selectedProjectId
                     )
                 },
                 enabled = title.isNotBlank()
             ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+
+    if (showNewProjectDialog) {
+        NewProjectQuickEditDialog(
+            onConfirm = { projectTitle ->
+                val newId = UUID.randomUUID().toString()
+                onCreateProject(newId, projectTitle, selectedAspectId)
+                selectedProjectId = newId
+                showNewProjectDialog = false
+            },
+            onDismiss = { showNewProjectDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun NewProjectQuickEditDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Project") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onConfirm(name.trim()) }, enabled = name.isNotBlank()) {
+                Text("Create")
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

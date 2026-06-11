@@ -139,7 +139,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         app.applicationScope,
                         app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                         app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
-                        app.costResourceRepository
+                        app.costResourceRepository, app.projectRepository
                     )
                 )
                 // Inject shared text if coming from share sheet
@@ -163,7 +163,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 val vm = viewModel<com.lifeops.app.ui.screens.reports.ReportsViewModel>(
                     factory = ReportsViewModelFactory(
                         app.weekRepository, app.aspectRepository,
-                        app.taskRepository, app.timeEntryRepository, app.costResourceRepository
+                        app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
+                        app.projectRepository
                     )
                 )
                 ReportsScreen(vm)
@@ -173,7 +174,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     factory = SettingsViewModelFactory(
                         app.aspectRepository, app.gameResourceRepository,
                         app.preferencesRepository, app.backupRepository, app.taskRepository,
-                        app.costResourceRepository
+                        app.costResourceRepository, app.projectRepository
                     )
                 )
                 SettingsScreen(vm)

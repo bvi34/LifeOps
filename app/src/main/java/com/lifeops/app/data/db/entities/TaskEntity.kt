@@ -29,7 +29,8 @@ import androidx.room.PrimaryKey
     ],
     indices = [
         Index("weekId"), Index("aspectId"), Index("categoryId"),
-        Index("createdAt"), Index("completedAt"), Index("status")
+        Index("createdAt"), Index("completedAt"), Index("status"),
+        Index("projectId")
     ]
 )
 data class TaskEntity(
@@ -50,5 +51,6 @@ data class TaskEntity(
     val estimatedMinutes: Int? = null,
     val carriedCount: Int = 0,
     val sortOrder: Int = 0,
-    val isManuallyAdded: Boolean = false
+    val isManuallyAdded: Boolean = false,
+    val projectId: String? = null
 )

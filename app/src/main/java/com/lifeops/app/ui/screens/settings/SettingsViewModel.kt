@@ -30,7 +30,9 @@ data class SettingsUiState(
     val pendingArchiveAspectId: String? = null,
     val pendingArchiveCategoryId: String? = null,
     val costResources: List<CostResource> = emptyList(),
-    val showNewCostResourceDialog: Boolean = false
+    val showNewCostResourceDialog: Boolean = false,
+    val projects: List<Project> = emptyList(),
+    val showNewProjectDialog: Boolean = false
 )
 
 class SettingsViewModel(
@@ -39,7 +41,8 @@ class SettingsViewModel(
     private val preferencesRepository: PreferencesRepository,
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
-    private val costResourceRepository: CostResourceRepository? = null
+    private val costResourceRepository: CostResourceRepository? = null,
+    private val projectRepository: ProjectRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -68,6 +71,13 @@ class SettingsViewModel(
             viewModelScope.launch {
                 repo.observeAllResources().collectLatest { resources ->
                     _uiState.update { it.copy(costResources = resources) }
+                }
+            }
+        }
+        projectRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.observeAll().collectLatest { projects ->
+                    _uiState.update { it.copy(projects = projects) }
                 }
             }
         }
@@ -214,13 +224,30 @@ class SettingsViewModel(
             val version = repo.parseVersion(json)
             repo.restore(json)
                 .onSuccess {
-                    val warning = if (version < 2)
-                        "Restore complete. This was an older backup (v$version) — cost resource data was not included."
-                    else null
+                    val warning = when {
+                        version < 2 -> "Older backup (v$version) — cost resource and project data not included."
+                        version < 3 -> "Backup from before project tracking — project assignments not included."
+                        else -> null
+                    }
                     _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null, restoreWarning = warning) }
                 }
                 .onFailure { e -> _uiState.update { it.copy(restoreError = e.message) } }
         }
+    }
+
+    fun showNewProjectDialog() = _uiState.update { it.copy(showNewProjectDialog = true) }
+    fun hideNewProjectDialog() = _uiState.update { it.copy(showNewProjectDialog = false) }
+
+    fun addProject(title: String, aspectId: String?) {
+        val repo = projectRepository ?: return
+        viewModelScope.launch {
+            repo.createProject(java.util.UUID.randomUUID().toString(), title, aspectId)
+            _uiState.update { it.copy(showNewProjectDialog = false) }
+        }
+    }
+
+    fun setProjectStatus(id: String, status: ProjectStatus) {
+        viewModelScope.launch { projectRepository?.setStatus(id, status) }
     }
 }
 
@@ -230,9 +257,10 @@ class SettingsViewModelFactory(
     private val preferencesRepository: PreferencesRepository,
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
-    private val costResourceRepository: CostResourceRepository? = null
+    private val costResourceRepository: CostResourceRepository? = null,
+    private val projectRepository: ProjectRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository) as T
 }
