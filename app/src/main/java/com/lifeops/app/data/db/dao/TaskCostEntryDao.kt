@@ -26,4 +26,10 @@ interface TaskCostEntryDao {
 
     @Query("SELECT * FROM task_cost_entries")
     suspend fun getAll(): List<TaskCostEntryEntity>
+
+    @Query("SELECT * FROM task_cost_entries WHERE taskId = :taskId ORDER BY recordedAt DESC")
+    suspend fun getByTask(taskId: String): List<TaskCostEntryEntity>
+
+    @Query("UPDATE task_cost_entries SET taskId = :newTaskId WHERE taskId = :oldTaskId")
+    suspend fun reassignToTask(oldTaskId: String, newTaskId: String)
 }

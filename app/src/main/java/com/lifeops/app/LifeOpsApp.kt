@@ -59,6 +59,10 @@ class LifeOpsApp : Application() {
     override fun onCreate() {
         super.onCreate()
         applicationScope.launch {
+            if (!preferencesRepository.sameWeekCarryRepairDone) {
+                taskRepository.repairSameWeekCarries()
+                preferencesRepository.sameWeekCarryRepairDone = true
+            }
             val previousWeek = weekRepository.getMostRecentClosedWeek()
             val currentWeek = weekRepository.getOrCreateCurrentWeek()
             // Seed recurring tasks from the most recently closed week into the new week

@@ -87,4 +87,16 @@ interface TaskDao {
 
     @Query("UPDATE tasks SET status = 'pending' WHERE id = :id AND status = 'skipped'")
     suspend fun unSkipTask(id: String)
+
+    @Query("SELECT * FROM tasks WHERE carriedFromTaskId = :parentId LIMIT 1")
+    suspend fun getChildOf(parentId: String): TaskEntity?
+
+    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND status = 'carried_forward'")
+    suspend fun getCarriedForwardByWeek(weekId: String): List<TaskEntity>
+
+    @Query("UPDATE tasks SET status = 'pending' WHERE id = :id AND status = 'carried_forward'")
+    suspend fun unCarryForward(id: String)
+
+    @Query("SELECT * FROM tasks WHERE carriedFromTaskId IN (:parentIds)")
+    suspend fun getChildrenOf(parentIds: List<String>): List<TaskEntity>
 }

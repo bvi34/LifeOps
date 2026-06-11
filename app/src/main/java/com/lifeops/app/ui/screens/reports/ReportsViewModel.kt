@@ -36,6 +36,7 @@ data class ReportsUiState(
     val timeByAspect: List<AspectTimeRow> = emptyList(),
     val totalTimeMinutes: Int = 0,
     val carryHistory: List<CarryForwardEntry> = emptyList(),
+    val carryoverSummary: List<CarryoverSummaryRow> = emptyList(),
     val costUsage: List<CostUsageRow> = emptyList(),
     val isLoading: Boolean = true,
     val projectStats: List<ProjectStats> = emptyList(),
@@ -220,6 +221,40 @@ class ReportsViewModel(
             }
             .sortedWith(compareBy({ it.project.status.value }, { -(it.completedCount) }))
 
+        // Carryover summary
+        val allTasksAll = taskRepository.getAllTasks()
+        val taskByIdAll = allTasksAll.associateBy { it.id }
+        val allWeeksList = weekRepository.getAllWeeksSync()
+        val weeksByIdAll = allWeeksList.associateBy { it.id }
+        val allTimeAll = timeEntryRepository.getAllSince("1970-01-01T00:00:00Z")
+        val minutesByTaskAll = allTimeAll.groupBy { it.taskId }.mapValues { (_, e) -> e.sumOf { it.durationMinutes } }
+
+        val carrierTasks = allTasksAll.filter { it.carriedCount > 0 && it.status in listOf(TaskStatus.COMPLETED, TaskStatus.PENDING) }
+        val summaryRows = mutableListOf<CarryoverSummaryRow>()
+        for (task in carrierTasks) {
+            val root = run {
+                var cur = taskByIdAll[task.id]
+                val seen = mutableSetOf<String>()
+                while (cur?.carriedFromTaskId != null && cur.id !in seen) {
+                    seen.add(cur.id)
+                    cur = taskByIdAll[cur.carriedFromTaskId]
+                }
+                cur
+            }
+            val lineageIds = taskRepository.getLineageIds(task.id)
+            val lineageMins = lineageIds.sumOf { minutesByTaskAll[it] ?: 0 }
+            summaryRows.add(CarryoverSummaryRow(
+                taskTitle = task.title,
+                carriedCount = task.carriedCount,
+                originWeekLabel = weeksByIdAll[root?.weekId]?.startDate?.take(10) ?: "",
+                completionWeekLabel = weeksByIdAll[task.weekId]?.startDate?.take(10) ?: "",
+                lineageMinutes = lineageMins,
+                pointsEarned = if (task.status == TaskStatus.COMPLETED) task.resourceValue else 0,
+                isStillOpen = task.status == TaskStatus.PENDING
+            ))
+        }
+        val carryoverSummary = summaryRows.sortedWith(compareBy({ it.isStillOpen }, { -it.carriedCount }))
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -230,6 +265,7 @@ class ReportsViewModel(
                 timeByAspect = timeRows,
                 totalTimeMinutes = minutesByAspect.values.sum(),
                 carryHistory = carryEntries,
+                carryoverSummary = carryoverSummary,
                 costUsage = costUsageRows,
                 projectStats = projectStatsList,
                 scoringTrend = scoringTrend,

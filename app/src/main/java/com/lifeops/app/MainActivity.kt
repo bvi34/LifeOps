@@ -27,6 +27,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
+import com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModelFactory
 import com.lifeops.app.ui.screens.reports.ReportsScreen
 import com.lifeops.app.ui.screens.reports.ReportsViewModelFactory
 import com.lifeops.app.ui.screens.resources.ResourcesScreen
@@ -167,7 +169,18 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         app.projectRepository
                     )
                 )
-                ReportsScreen(vm)
+                ReportsScreen(vm, onNavigateToProject = { id -> navController.navigate("project_detail/$id") })
+            }
+            composable("project_detail/{projectId}") { backStackEntry ->
+                val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
+                val vm = viewModel<com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModel>(
+                    key = "project_detail_$projectId",
+                    factory = ProjectDetailViewModelFactory(
+                        projectId, app.projectRepository, app.taskRepository, app.weekRepository,
+                        app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository
+                    )
+                )
+                ProjectDetailScreen(vm) { navController.navigateUp() }
             }
             composable(Screen.Settings.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.settings.SettingsViewModel>(

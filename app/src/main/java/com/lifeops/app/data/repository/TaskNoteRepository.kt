@@ -25,4 +25,10 @@ class TaskNoteRepository(private val taskNoteDao: TaskNoteDao) {
     }
 
     suspend fun deleteNote(id: String) = taskNoteDao.delete(id)
+
+    suspend fun getByTask(taskId: String): List<TaskNote> =
+        taskNoteDao.getByTask(taskId).map { it.toModel() }
+
+    suspend fun getByTaskIds(taskIds: List<String>): List<TaskNote> =
+        taskNoteDao.getByTaskIds(taskIds).map { it.toModel() }
 }

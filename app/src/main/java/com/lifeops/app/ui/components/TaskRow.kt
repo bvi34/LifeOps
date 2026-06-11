@@ -79,6 +79,7 @@ fun TaskRow(
     val isCompleted = task.status == TaskStatus.COMPLETED
     val isSkipped = task.status == TaskStatus.SKIPPED
     val isExpired = task.status == TaskStatus.EXPIRED
+    val isCarriedForward = task.status == TaskStatus.CARRIED_FORWARD
     val hasExpandContent = notes.isNotEmpty() || totalTimeMinutes > 0 || isTimerActive || task.estimatedMinutes != null
 
     var expanded by remember { mutableStateOf(false) }
@@ -136,7 +137,7 @@ fun TaskRow(
                                                 onComplete()
                                             }
                                             // Swipe left past threshold → toggle timer
-                                            offset.value < -swipeThresholdPx -> {
+                                            offset.value < -swipeThresholdPx && !isCarriedForward -> {
                                                 offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
                                                 if (isTimerActive) onStopTimer() else onStartTimer()
                                             }
@@ -202,8 +203,8 @@ fun TaskRow(
                         Text(
                             text = task.title,
                             style = MaterialTheme.typography.bodyMedium,
-                            textDecoration = if (isCompleted || isSkipped) TextDecoration.LineThrough else null,
-                            color = if (isCompleted || isSkipped)
+                            textDecoration = if (isCompleted || isSkipped || isCarriedForward) TextDecoration.LineThrough else null,
+                            color = if (isCompleted || isSkipped || isCarriedForward)
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             else MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,
@@ -356,17 +357,21 @@ fun TaskRow(
                             Spacer(Modifier.size(40.dp))
                         }
                         // Timer button
-                        IconButton(
-                            onClick = { if (isTimerActive) onStopTimer() else onStartTimer() },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
-                                contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
-                                tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
-                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                modifier = Modifier.size(20.dp)
-                            )
+                        if (!isCarriedForward) {
+                            IconButton(
+                                onClick = { if (isTimerActive) onStopTimer() else onStartTimer() },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
+                                    contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
+                                    tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
+                                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        } else {
+                            Spacer(Modifier.size(40.dp))
                         }
                     }
                 }
@@ -388,6 +393,7 @@ private fun TaskStatusIcon(
         TaskStatus.PENDING -> onComplete
         TaskStatus.COMPLETED -> onUnComplete
         TaskStatus.SKIPPED -> onUnSkip
+        TaskStatus.CARRIED_FORWARD -> null
         else -> null
     }
     Box(
@@ -420,6 +426,19 @@ private fun TaskStatusIcon(
                     contentDescription = "Tap to restore",
                     tint = ExpiredRed,
                     modifier = Modifier.size(14.dp)
+                )
+            }
+            TaskStatus.CARRIED_FORWARD -> Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                    .border(1.5.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "↩",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary
                 )
             }
             else -> Icon(

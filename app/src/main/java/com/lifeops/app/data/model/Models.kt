@@ -217,3 +217,13 @@ data class ImportPreview(
     // Each entry: task title → list of "field: value" strings for unknown fields
     val unknownFieldsByTask: List<Pair<String, List<String>>> = emptyList()
 )
+
+data class CarryoverSummaryRow(
+    val taskTitle: String,
+    val carriedCount: Int,
+    val originWeekLabel: String,
+    val completionWeekLabel: String,
+    val lineageMinutes: Int,
+    val pointsEarned: Int,
+    val isStillOpen: Boolean   // true = PENDING, false = COMPLETED
+)

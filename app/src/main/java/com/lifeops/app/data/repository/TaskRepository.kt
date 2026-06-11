@@ -31,6 +31,7 @@ class TaskRepository(
         taskDao.observeByWeek(weekId).map { list -> list.map { it.toModel() } }
 
     suspend fun completeTask(task: Task) {
+        if (taskDao.getChildOf(task.id) != null) return
         taskDao.markCompleted(task.id, TaskStatus.COMPLETED.value, DateUtil.now())
     }
 
@@ -38,24 +39,14 @@ class TaskRepository(
         taskDao.updateStatus(taskId, TaskStatus.SKIPPED.value)
     }
 
-    suspend fun carryForward(task: Task, newWeekId: String): Task {
+    suspend fun carryForward(task: Task) {
         notificationRepository.cancelForTask(task.id)
-        val newCarriedCount = task.carriedCount + 1
-        val newTask = task.copy(
-            id = java.util.UUID.randomUUID().toString(),
-            weekId = newWeekId,
-            status = TaskStatus.PENDING,
-            completedAt = null,
-            carriedFromTaskId = task.id,
-            carriedCount = newCarriedCount,
-            createdAt = DateUtil.now()
-        )
-        db.withTransaction {
-            taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
-            taskDao.upsert(newTask.toEntity())
-        }
-        notificationRepository.scheduleForTask(newTask)
-        return newTask
+        taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
+    }
+
+    suspend fun unCarryForward(taskId: String) {
+        val child = taskDao.getChildOf(taskId)
+        if (child == null) taskDao.unCarryForward(taskId)
     }
 
     suspend fun upsertTask(task: Task) = taskDao.upsert(task.toEntity())
@@ -67,21 +58,40 @@ class TaskRepository(
     suspend fun getAllSince(since: String): List<Task> =
         taskDao.getAllSince(since).map { it.toModel() }
 
-    suspend fun closeWeek(weekId: String) {
+    suspend fun closeWeek(weekId: String, newWeekId: String) {
         val week = weekDao.getById(weekId) ?: return
         if (week.isClosed) return
         val now = DateUtil.now()
 
         val pending = taskDao.getPendingByWeek(weekId)
+        val carriedForward = taskDao.getCarriedForwardByWeek(weekId)
 
         val timeByTask = db.timeEntryDao().getByWeek(weekId)
             .groupBy { it.taskId }
             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
 
+        val newTasksToSchedule = mutableListOf<Task>()
+
         db.withTransaction {
             pending.forEach { task ->
                 val newStatus = if (task.hardDeadline) TaskStatus.EXPIRED.value else TaskStatus.INCOMPLETE.value
                 taskDao.updateStatus(task.id, newStatus)
+            }
+            for (carried in carriedForward) {
+                if (taskDao.getChildOf(carried.id) == null) {
+                    val newTask = carried.copy(
+                        id = java.util.UUID.randomUUID().toString(),
+                        weekId = newWeekId,
+                        status = TaskStatus.PENDING.value,
+                        carriedFromTaskId = carried.id,
+                        carriedCount = carried.carriedCount + 1,
+                        completedAt = null,
+                        sortOrder = 0,
+                        createdAt = now
+                    )
+                    taskDao.upsert(newTask)
+                    newTasksToSchedule.add(newTask.toModel())
+                }
             }
             val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
             val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now)
@@ -90,7 +100,65 @@ class TaskRepository(
             applySnapshotToGameResources(snapshot)
         }
 
+        for (task in newTasksToSchedule) notificationRepository.scheduleForTask(task)
         notificationRepository.scheduleWeekCloseReminder()
+    }
+
+    suspend fun getLineageIds(taskId: String): List<String> {
+        val upChain = mutableListOf<String>()
+        var currentId: String? = taskId
+        val visited = mutableSetOf<String>()
+        while (currentId != null && currentId !in visited) {
+            visited.add(currentId)
+            val task = taskDao.getById(currentId) ?: break
+            upChain.add(0, task.id)
+            currentId = task.carriedFromTaskId
+        }
+        val downChain = mutableListOf<String>()
+        val visitedDown = visited.toMutableSet()
+        var child = taskDao.getChildOf(taskId)
+        while (child != null && child.id !in visitedDown) {
+            visitedDown.add(child.id)
+            downChain.add(child.id)
+            child = taskDao.getChildOf(child.id)
+        }
+        return upChain + downChain
+    }
+
+    suspend fun repairSameWeekCarries() {
+        val allTasks = taskDao.getAll()
+        val taskById = allTasks.associateBy { it.id }
+        val badChildren = allTasks.filter { task ->
+            val parent = task.carriedFromTaskId?.let { taskById[it] }
+            parent != null && parent.weekId == task.weekId
+        }
+        if (badChildren.isEmpty()) return
+        db.withTransaction {
+            for (child in badChildren) {
+                val parent = taskById[child.carriedFromTaskId] ?: continue
+                val parentMinutes = db.timeEntryDao().getByTask(parent.id).sumOf { it.durationMinutes }
+                val parentNotes = db.taskNoteDao().getByTask(parent.id)
+                if (parentMinutes == 0 && parentNotes.isEmpty()) {
+                    db.timeEntryDao().reassignToTask(parent.id, child.id)
+                    db.taskNoteDao().reassignToTask(parent.id, child.id)
+                    db.taskCostEntryDao().reassignToTask(parent.id, child.id)
+                    taskDao.update(child.copy(carriedFromTaskId = parent.carriedFromTaskId))
+                    taskDao.delete(parent.id)
+                } else {
+                    taskDao.updateStatus(parent.id, TaskStatus.CARRIED_FORWARD.value)
+                }
+            }
+        }
+    }
+
+    suspend fun promoteTaskToProject(taskId: String, projectId: String) {
+        val lineageIds = getLineageIds(taskId)
+        db.withTransaction {
+            for (id in lineageIds) {
+                val entity = taskDao.getById(id) ?: continue
+                taskDao.upsert(entity.copy(projectId = projectId))
+            }
+        }
     }
 
     private fun accuracyMultiplier(task: Task, actualMinutes: Int?): Double =

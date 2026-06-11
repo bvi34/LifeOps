@@ -243,6 +243,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             TaskDetailSheet(
                 task = detailTask,
                 notes = state.taskNotes[taskId] ?: emptyList(),
+                ancestorNotes = state.ancestorNotesByTask[taskId] ?: emptyList(),
                 totalTimeMinutes = state.taskTimeMinutes[taskId] ?: 0,
                 isTimerActive = isTimerActive,
                 timerElapsedSeconds = { timerElapsedState.value },
@@ -256,6 +257,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 onAddNote = { content -> viewModel.onAddNote(taskId, content) },
                 onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
                 onCarryForward = { viewModel.closeDetail(); viewModel.onCarryForward(detailTask) },
+                onUnCarryForward = { viewModel.onUnCarryForward(taskId) },
+                onPromoteToProject = { viewModel.onPromoteToProject(taskId) },
                 onStartTimer = { viewModel.startTimer(taskId) },
                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },
                 onStartPomodoro = { viewModel.startTimer(taskId, isPomodoro = true) },

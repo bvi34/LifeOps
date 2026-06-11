@@ -3,6 +3,7 @@
 package com.lifeops.app.ui.screens.reports
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -17,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
+import com.lifeops.app.data.model.CarryForwardEntry
+import com.lifeops.app.data.model.CarryoverSummaryRow
 import com.lifeops.app.data.model.CostUsageRow
 import com.lifeops.app.data.model.PriorityCompletionRow
 import com.lifeops.app.data.model.ProjectStats
@@ -24,13 +27,14 @@ import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.ScoringPoint
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.CompletedGreen
 import com.lifeops.app.ui.theme.ExpiredRed
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
 
 @Composable
-fun ReportsScreen(viewModel: ReportsViewModel) {
+fun ReportsScreen(viewModel: ReportsViewModel, onNavigateToProject: (String) -> Unit = {}) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -65,7 +69,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         item { ScoringTrendCard(state.scoringTrend) }
                     }
                     if (state.projectStats.isNotEmpty()) {
-                        item { ProjectStatsCard(state.projectStats, state.aspects) }
+                        item { ProjectStatsCard(state.projectStats, state.aspects, onNavigateToProject) }
                     }
                     if (state.priorityBreakdown.isNotEmpty()) {
                         item { PriorityBreakdownCard(state.priorityBreakdown) }
@@ -85,8 +89,8 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             CategorySlipRow(cat)
                         }
                     }
-                    if (state.carryHistory.isNotEmpty()) {
-                        item { CarryHistoryCard(state.carryHistory) }
+                    if (state.carryHistory.isNotEmpty() || state.carryoverSummary.isNotEmpty()) {
+                        item { CarryoverCard(state.carryHistory, state.carryoverSummary) }
                     }
                 }
             }
@@ -259,58 +263,110 @@ private fun TimeByAspectCard(rows: List<AspectTimeRow>, totalMinutes: Int) {
 }
 
 @Composable
-private fun CarryHistoryCard(entries: List<com.lifeops.app.data.model.CarryForwardEntry>) {
+private fun CarryoverCard(
+    history: List<CarryForwardEntry>,
+    summary: List<CarryoverSummaryRow>
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "Carry-Forward History",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
-            entries.forEach { entry ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(entry.taskTitle, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
-                        val timesText = if (entry.carriedCount == 1) "carried 1 time"
-                                        else "carried ${entry.carriedCount} times"
-                        val statusText = when (entry.finalStatus) {
-                            TaskStatus.COMPLETED -> "completed week of ${entry.weekLabel}"
-                            TaskStatus.EXPIRED -> "expired week of ${entry.weekLabel}"
-                            TaskStatus.INCOMPLETE -> "incomplete week of ${entry.weekLabel}"
-                            TaskStatus.SKIPPED -> "skipped week of ${entry.weekLabel}"
-                            TaskStatus.PENDING -> "still pending"
-                            else -> "week of ${entry.weekLabel}"
-                        }
-                        Text(
-                            "$timesText · $statusText",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                    val badgeColor = when (entry.finalStatus) {
-                        TaskStatus.COMPLETED -> CompletedGreen
-                        TaskStatus.EXPIRED -> ExpiredRed
-                        else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                    }
-                    Surface(
-                        shape = MaterialTheme.shapes.extraSmall,
-                        color = badgeColor.copy(alpha = 0.15f)
+            if (summary.isNotEmpty()) {
+                Text("Carryover Task Summary", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                summary.forEach { row ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top
                     ) {
-                        Text(
-                            entry.carriedCount.toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = badgeColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(row.taskTitle, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                            val statusText = if (row.isStillOpen)
+                                "still open · deferred ${row.carriedCount} week${if (row.carriedCount != 1) "s" else ""}"
+                            else
+                                "completed week of ${row.completionWeekLabel} · deferred ${row.carriedCount}×"
+                            val originText = if (row.originWeekLabel.isNotEmpty()) " · from ${row.originWeekLabel}" else ""
+                            val timeText = if (row.lineageMinutes > 0) " · ${formatMinutes(row.lineageMinutes)} total" else ""
+                            Text(
+                                "$statusText$originText$timeText",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            if (!row.isStillOpen && row.pointsEarned > 0) {
+                                Text(
+                                    "+${row.pointsEarned} pts",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = CompletedGreen
+                                )
+                            }
+                        }
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = if (row.isStillOpen)
+                                MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
+                            else CompletedGreen.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                "↩${row.carriedCount}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (row.isStillOpen) MaterialTheme.colorScheme.tertiary else CompletedGreen,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                if (history.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+            if (history.isNotEmpty()) {
+                Text("Carry-Forward History", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                history.forEach { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(entry.taskTitle, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                            val timesText = if (entry.carriedCount == 1) "carried 1 time"
+                                            else "carried ${entry.carriedCount} times"
+                            val statusText = when (entry.finalStatus) {
+                                TaskStatus.COMPLETED -> "completed week of ${entry.weekLabel}"
+                                TaskStatus.EXPIRED -> "expired week of ${entry.weekLabel}"
+                                TaskStatus.INCOMPLETE -> "incomplete week of ${entry.weekLabel}"
+                                TaskStatus.SKIPPED -> "skipped week of ${entry.weekLabel}"
+                                TaskStatus.PENDING -> "still pending"
+                                else -> "week of ${entry.weekLabel}"
+                            }
+                            Text(
+                                "$timesText · $statusText",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        val badgeColor = when (entry.finalStatus) {
+                            TaskStatus.COMPLETED -> CompletedGreen
+                            TaskStatus.EXPIRED -> ExpiredRed
+                            else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        }
+                        Surface(
+                            shape = MaterialTheme.shapes.extraSmall,
+                            color = badgeColor.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                entry.carriedCount.toString(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = badgeColor,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                }
             }
         }
     }
@@ -377,7 +433,11 @@ private fun ScoringTrendCard(trend: List<ScoringPoint>) {
 }
 
 @Composable
-private fun ProjectStatsCard(projectStats: List<ProjectStats>, aspects: Map<String, Aspect>) {
+private fun ProjectStatsCard(
+    projectStats: List<ProjectStats>,
+    aspects: Map<String, Aspect>,
+    onProjectClick: (String) -> Unit = {}
+) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Project Health", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -385,7 +445,8 @@ private fun ProjectStatsCard(projectStats: List<ProjectStats>, aspects: Map<Stri
             projectStats.forEach { stat ->
                 val isDone = stat.project.status == ProjectStatus.COMPLETED
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        .then(Modifier.clickable { onProjectClick(stat.project.id) }),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {

@@ -32,6 +32,13 @@ class ProjectRepository(private val projectDao: ProjectDao) {
 
     suspend fun getAll(): List<Project> = projectDao.getAll().map { it.toModel() }
 
+    suspend fun getProjectById(id: String): Project? = projectDao.getById(id)?.toModel()
+
+    suspend fun setProjectStatus(id: String, status: ProjectStatus) {
+        val completedAt = if (status == ProjectStatus.COMPLETED) DateUtil.now() else null
+        projectDao.updateStatus(id, status.value, completedAt)
+    }
+
     private fun ProjectEntity.toModel() = Project(id, title, aspectId, categoryId, ProjectStatus.from(status), description, createdAt, completedAt)
     private fun Project.toEntity() = ProjectEntity(id, title, aspectId, categoryId, status.value, description, createdAt, completedAt)
 }

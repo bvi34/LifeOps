@@ -23,4 +23,7 @@ interface ProjectDao {
 
     @Query("SELECT * FROM projects")
     suspend fun getAll(): List<ProjectEntity>
+
+    @Query("SELECT * FROM projects WHERE id = :id")
+    suspend fun getById(id: String): ProjectEntity?
 }

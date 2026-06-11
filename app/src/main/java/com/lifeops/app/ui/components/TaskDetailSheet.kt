@@ -47,6 +47,9 @@ fun TaskDetailSheet(
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
     onCarryForward: () -> Unit,
+    onUnCarryForward: (() -> Unit)? = null,
+    onPromoteToProject: (() -> Unit)? = null,
+    ancestorNotes: List<TaskNote> = emptyList(),
     onStartTimer: () -> Unit,
     onStopTimer: () -> Unit,
     onStartPomodoro: () -> Unit = {},
@@ -117,6 +120,22 @@ fun TaskDetailSheet(
                     onClick = onCarryForward,
                     modifier = Modifier.padding(top = 2.dp)
                 ) { Text("Carry Forward") }
+            }
+
+            if (task.status == TaskStatus.CARRIED_FORWARD && onUnCarryForward != null) {
+                TextButton(
+                    onClick = onUnCarryForward,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) { Text("Restore") }
+            }
+
+            if (task.carriedCount >= 2 && task.projectId == null && onPromoteToProject != null) {
+                Spacer(Modifier.height(8.dp))
+                SuggestionChip(
+                    onClick = onPromoteToProject,
+                    label = { Text("Looks like a project — promote?") },
+                    icon = { Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                )
             }
 
             // Project section
@@ -373,6 +392,24 @@ fun TaskDetailSheet(
             // Notes section
             Text("Notes", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(8.dp))
+
+            if (ancestorNotes.isNotEmpty()) {
+                Text(
+                    "↩ from previous weeks",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                )
+                ancestorNotes.forEach { note ->
+                    Text(
+                        "• ${note.content}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(vertical = 1.dp)
+                    )
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            }
 
             if (notes.isEmpty()) {
                 Text(

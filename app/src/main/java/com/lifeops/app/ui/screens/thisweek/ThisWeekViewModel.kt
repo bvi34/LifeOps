@@ -50,6 +50,7 @@ data class ThisWeekUiState(
     val aspects: Map<String, Aspect> = emptyMap(),
     val categories: Map<String, Category> = emptyMap(),
     val taskNotes: Map<String, List<TaskNote>> = emptyMap(),
+    val ancestorNotesByTask: Map<String, List<TaskNote>> = emptyMap(),
     val taskTimeMinutes: Map<String, Int> = emptyMap(),
     val isLoading: Boolean = true,
     val importDialogOpen: Boolean = false,
@@ -134,6 +135,15 @@ class ThisWeekViewModel(
                             .groupBy { it.taskId }
                             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
                         val costByTask = costEntries.groupBy { it.taskId }
+                        // Fetch ancestor notes for carried tasks
+                        val ancestorNotes = mutableMapOf<String, List<TaskNote>>()
+                        for (task in tasks.filter { it.carriedCount > 0 && it.carriedFromTaskId != null }) {
+                            val lineageIds = taskRepository.getLineageIds(task.id)
+                            val ancestorIds = lineageIds.filter { it != task.id }
+                            if (ancestorIds.isNotEmpty()) {
+                                ancestorNotes[task.id] = taskNoteRepository.getByTaskIds(ancestorIds)
+                            }
+                        }
                         _uiState.update { state ->
                             val grouped = groupAndFilterTasks(tasks, aspectMap, categoryMap, state.sortOrder, state.searchQuery)
                             state.copy(
@@ -143,6 +153,7 @@ class ThisWeekViewModel(
                                 aspects = aspectMap,
                                 categories = categoryMap,
                                 taskNotes = notesByTask,
+                                ancestorNotesByTask = ancestorNotes,
                                 taskTimeMinutes = timeByTask,
                                 taskCostEntries = costByTask,
                                 isLoading = false,
@@ -268,8 +279,15 @@ class ThisWeekViewModel(
 
     fun onCarryForward(task: Task) {
         viewModelScope.launch {
-            val week = weekRepository.getOrCreateCurrentWeek()
-            taskRepository.carryForward(task, week.id)
+            taskRepository.carryForward(task)
+            refreshWidget()
+        }
+    }
+
+    fun onUnCarryForward(taskId: String) {
+        viewModelScope.launch {
+            taskRepository.unCarryForward(taskId)
+            refreshWidget()
         }
     }
 
@@ -306,13 +324,22 @@ class ThisWeekViewModel(
             try {
                 val week = _uiState.value.week ?: return@launch
                 stopTimer(saveEntry = true)
-                taskRepository.closeWeek(week.id)
-                val newWeek = weekRepository.getOrCreateCurrentWeek()
+                val newWeek = weekRepository.createNextWeek(week)
+                taskRepository.closeWeek(week.id, newWeek.id)
                 taskRepository.seedRecurringTasks(week.id, newWeek.id)
                 refreshWidget()
             } finally {
                 weekCloseInFlight = false
             }
+        }
+    }
+
+    fun onPromoteToProject(taskId: String) {
+        viewModelScope.launch {
+            val task = taskRepository.getById(taskId) ?: return@launch
+            val projectId = java.util.UUID.randomUUID().toString()
+            projectRepository.createProject(projectId, task.title, task.aspectId)
+            taskRepository.promoteTaskToProject(taskId, projectId)
         }
     }
 

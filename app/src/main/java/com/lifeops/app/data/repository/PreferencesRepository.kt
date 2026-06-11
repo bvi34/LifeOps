@@ -8,4 +8,8 @@ class PreferencesRepository(context: Context) {
     var defaultReminderHour: Int
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
         set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }
+
+    var sameWeekCarryRepairDone: Boolean
+        get() = prefs.getBoolean("same_week_carry_repair_done", false)
+        set(value) { prefs.edit().putBoolean("same_week_carry_repair_done", value).apply() }
 }

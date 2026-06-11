@@ -54,4 +54,6 @@ class AspectRepository(
         categoryDao.upsert(new.toEntity())
         return new
     }
+
+    suspend fun getAllAspectsSync(): List<Aspect> = aspectDao.getAllSync().map { it.toModel() }
 }

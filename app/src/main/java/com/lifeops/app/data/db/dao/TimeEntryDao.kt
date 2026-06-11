@@ -20,4 +20,13 @@ interface TimeEntryDao {
 
     @Query("SELECT * FROM time_entries")
     suspend fun getAll(): List<TimeEntryEntity>
+
+    @Query("SELECT * FROM time_entries WHERE taskId = :taskId")
+    suspend fun getByTask(taskId: String): List<TimeEntryEntity>
+
+    @Query("SELECT * FROM time_entries WHERE taskId IN (:taskIds)")
+    suspend fun getByTaskIds(taskIds: List<String>): List<TimeEntryEntity>
+
+    @Query("UPDATE time_entries SET taskId = :newTaskId WHERE taskId = :oldTaskId")
+    suspend fun reassignToTask(oldTaskId: String, newTaskId: String)
 }
