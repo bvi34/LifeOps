@@ -68,7 +68,7 @@ dependencies {
     implementation(libs.androidx.glance.appwidget)
     debugImplementation(libs.androidx.ui.tooling)
 
-    implementation("sh.calvin.reorderable:reorderable:2.4.0")
+    implementation("sh.calvin.reorderable:reorderable-android:2.4.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
