@@ -164,7 +164,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             if (showSearch) {
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                     Text(
-                        “No tasks match “${state.searchQuery}””,
+                        "No tasks match \"${state.searchQuery}\"",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
@@ -188,12 +188,12 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
                         )
                         Text(
-                            “No tasks this week”,
+                            "No tasks this week",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                         Text(
-                            “Tap + to add tasks or import from JSON”,
+                            "Tap + to add tasks or import from JSON",
                             style = MaterialTheme.typography.bodySmall,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
