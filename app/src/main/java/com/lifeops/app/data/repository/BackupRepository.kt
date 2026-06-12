@@ -11,12 +11,13 @@ import com.google.gson.GsonBuilder
 import com.google.gson.JsonParser
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.entities.*
+import com.lifeops.app.data.model.CustomPalette
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 3,
+    val version: Int = 4,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -26,14 +27,15 @@ private data class BackupData(
     val weekSnapshots: List<WeekSnapshotEntity>,
     val costResources: List<CostResourceEntity> = emptyList(),
     val taskCostEntries: List<TaskCostEntryEntity> = emptyList(),
-    val projects: List<ProjectEntity> = emptyList()
+    val projects: List<ProjectEntity> = emptyList(),
+    val customPalette: CustomPalette? = null
 )
 
 class BackupRepository(private val db: LifeOpsDatabase) {
 
     private val gson: Gson = GsonBuilder().setPrettyPrinting().create()
 
-    suspend fun buildBackupJson(): String = withContext(Dispatchers.IO) {
+    suspend fun buildBackupJson(customPalette: CustomPalette? = null): String = withContext(Dispatchers.IO) {
         val data = BackupData(
             aspects = db.aspectDao().getAllSync(),
             categories = db.categoryDao().getAllSync(),
@@ -44,10 +46,15 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             weekSnapshots = db.weekSnapshotDao().getAll(),
             costResources = db.costResourceDao().getAllSync(),
             taskCostEntries = db.taskCostEntryDao().getAll(),
-            projects = db.projectDao().getAll()
+            projects = db.projectDao().getAll(),
+            customPalette = customPalette
         )
         gson.toJson(data)
     }
+
+    fun extractCustomPalette(json: String): CustomPalette? = try {
+        gson.fromJson(json, BackupData::class.java)?.customPalette
+    } catch (_: Exception) { null }
 
     suspend fun saveBackupFile(context: Context, json: String): Uri? = withContext(Dispatchers.IO) {
         try {

@@ -34,7 +34,8 @@ data class SettingsUiState(
     val projects: List<Project> = emptyList(),
     val showNewProjectDialog: Boolean = false,
     val themePreset: ThemePreset = ThemePreset.DEFAULT,
-    val isDarkMode: Boolean = true
+    val isDarkMode: Boolean = true,
+    val customPalette: CustomPalette = CustomPalette()
 )
 
 class SettingsViewModel(
@@ -54,7 +55,8 @@ class SettingsViewModel(
         _uiState.update {
             it.copy(
                 themePreset = preferencesRepository.themePreset,
-                isDarkMode = preferencesRepository.isDarkMode
+                isDarkMode = preferencesRepository.isDarkMode,
+                customPalette = preferencesRepository.customPalette
             )
         }
         viewModelScope.launch {
@@ -186,10 +188,15 @@ class SettingsViewModel(
         viewModelScope.launch { costResourceRepository?.setActive(id, active) }
     }
 
+    fun setCustomPalette(palette: CustomPalette) {
+        preferencesRepository.customPalette = palette
+        _uiState.update { it.copy(customPalette = palette) }
+    }
+
     fun backup(context: Context) {
         val repo = backupRepository ?: return
         viewModelScope.launch {
-            val json = repo.buildBackupJson()
+            val json = repo.buildBackupJson(preferencesRepository.customPalette)
             val uri = repo.saveBackupFile(context, json)
             if (uri != null) {
                 repo.shareBackupFile(context, uri)
@@ -232,6 +239,12 @@ class SettingsViewModel(
             val version = repo.parseVersion(json)
             repo.restore(json)
                 .onSuccess {
+                    // Restore custom palette if present in backup
+                    val restoredPalette = backupRepository?.extractCustomPalette(json)
+                    if (restoredPalette != null) {
+                        preferencesRepository.customPalette = restoredPalette
+                        _uiState.update { it.copy(customPalette = restoredPalette) }
+                    }
                     val warning = when {
                         version < 2 -> "Older backup (v$version) — cost resource and project data not included."
                         version < 3 -> "Backup from before project tracking — project assignments not included."

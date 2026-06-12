@@ -23,8 +23,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.text.font.FontFamily
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.CostResource
+import com.lifeops.app.data.model.CustomPalette
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.ProjectStatus
@@ -90,8 +92,10 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 ThemeSection(
                     selectedPreset = state.themePreset,
                     isDarkMode = state.isDarkMode,
+                    customPalette = state.customPalette,
                     onPresetSelect = viewModel::setThemePreset,
-                    onDarkModeToggle = viewModel::setDarkMode
+                    onDarkModeToggle = viewModel::setDarkMode,
+                    onCustomPaletteChange = viewModel::setCustomPalette
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -289,8 +293,10 @@ private val presetSwatches = mapOf(
 private fun ThemeSection(
     selectedPreset: ThemePreset,
     isDarkMode: Boolean,
+    customPalette: CustomPalette,
     onPresetSelect: (ThemePreset) -> Unit,
-    onDarkModeToggle: (Boolean) -> Unit
+    onDarkModeToggle: (Boolean) -> Unit,
+    onCustomPaletteChange: (CustomPalette) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -320,15 +326,70 @@ private fun ThemeSection(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 ThemePreset.entries.forEach { preset ->
+                    val swatches = if (preset == ThemePreset.CUSTOM)
+                        Triple(parseColor(customPalette.primary), parseColor(customPalette.secondary), parseColor(customPalette.tertiary))
+                    else
+                        presetSwatches[preset]
                     PresetCard(
                         preset = preset,
                         isSelected = selectedPreset == preset,
+                        swatches = swatches,
                         onClick = { onPresetSelect(preset) },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
+            if (selectedPreset == ThemePreset.CUSTOM) {
+                HorizontalDivider()
+                Text(
+                    "Custom colors",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                CustomPaletteEditor(palette = customPalette, onChange = onCustomPaletteChange)
+            }
         }
+    }
+}
+
+@Composable
+private fun CustomPaletteEditor(palette: CustomPalette, onChange: (CustomPalette) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        ColorRow("Primary",    palette.primary)    { onChange(palette.copy(primary    = it)) }
+        ColorRow("Secondary",  palette.secondary)  { onChange(palette.copy(secondary  = it)) }
+        ColorRow("Tertiary",   palette.tertiary)   { onChange(palette.copy(tertiary   = it)) }
+        ColorRow("Dark BG",    palette.darkBackground)  { onChange(palette.copy(darkBackground  = it)) }
+        ColorRow("Light BG",   palette.lightBackground) { onChange(palette.copy(lightBackground = it)) }
+    }
+}
+
+@Composable
+private fun ColorRow(label: String, hexValue: String, onValidHex: (String) -> Unit) {
+    var text by remember(hexValue) { mutableStateOf(hexValue) }
+    val isValid = text.matches(Regex("^#[0-9A-Fa-f]{6}$"))
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(72.dp))
+        OutlinedTextField(
+            value = text,
+            onValueChange = { v ->
+                text = v
+                if (v.matches(Regex("^#[0-9A-Fa-f]{6}$"))) onValidHex(v)
+            },
+            singleLine = true,
+            isError = !isValid,
+            modifier = Modifier.weight(1f),
+            textStyle = MaterialTheme.typography.bodySmall.copy(
+                fontFamily = FontFamily.Monospace
+            )
+        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    if (isValid) parseColor(text) else MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small
+                )
+        )
     }
 }
 
@@ -336,10 +397,11 @@ private fun ThemeSection(
 private fun PresetCard(
     preset: ThemePreset,
     isSelected: Boolean,
+    swatches: Triple<Color, Color, Color>?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val swatches = presetSwatches[preset] ?: return
+    if (swatches == null) return
     OutlinedCard(
         onClick = onClick,
         modifier = modifier,

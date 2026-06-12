@@ -3,6 +3,7 @@ package com.lifeops.app.ui.theme
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import com.lifeops.app.data.model.CustomPalette
 import com.lifeops.app.data.model.ThemePreset
 
 private val Snow = Color(0xFFF9FAFB)
@@ -137,21 +138,90 @@ private fun sunsetLightColors() = lightColorScheme(
     onSurfaceVariant = Color(0xFF4A2000)
 )
 
-fun buildColorScheme(preset: ThemePreset, dark: Boolean): ColorScheme = when (preset) {
+// Derive a contrasting foreground colour for any background
+private fun contrastText(bg: Color): Color {
+    val lum = 0.2126f * bg.red + 0.7152f * bg.green + 0.0722f * bg.blue
+    return if (lum > 0.45f) Ink else Snow
+}
+
+// Blend colour towards white by factor (0..1)
+private fun Color.lighten(f: Float) = Color(
+    red   = (red   + (1f - red)   * f).coerceIn(0f, 1f),
+    green = (green + (1f - green) * f).coerceIn(0f, 1f),
+    blue  = (blue  + (1f - blue)  * f).coerceIn(0f, 1f),
+    alpha = alpha
+)
+
+// Blend colour towards black by factor (0..1)
+private fun Color.darken(f: Float) = Color(
+    red   = (red   * (1f - f)).coerceIn(0f, 1f),
+    green = (green * (1f - f)).coerceIn(0f, 1f),
+    blue  = (blue  * (1f - f)).coerceIn(0f, 1f),
+    alpha = alpha
+)
+
+private fun customDarkColors(p: CustomPalette): ColorScheme {
+    val primary   = parseColor(p.primary)
+    val secondary = parseColor(p.secondary)
+    val tertiary  = parseColor(p.tertiary)
+    val bg        = parseColor(p.darkBackground)
+    return darkColorScheme(
+        primary          = primary,
+        onPrimary        = contrastText(primary),
+        secondary        = secondary,
+        onSecondary      = contrastText(secondary),
+        tertiary         = tertiary,
+        onTertiary       = contrastText(tertiary),
+        background       = bg,
+        surface          = bg.lighten(0.06f),
+        surfaceVariant   = bg.lighten(0.12f),
+        onBackground     = Snow,
+        onSurface        = Snow,
+        onSurfaceVariant = Snow.copy(alpha = 0.7f)
+    )
+}
+
+private fun customLightColors(p: CustomPalette): ColorScheme {
+    val primary   = parseColor(p.primary)
+    val secondary = parseColor(p.secondary)
+    val tertiary  = parseColor(p.tertiary)
+    val bg        = parseColor(p.lightBackground)
+    return lightColorScheme(
+        primary          = primary,
+        onPrimary        = contrastText(primary),
+        secondary        = secondary,
+        onSecondary      = contrastText(secondary),
+        tertiary         = tertiary,
+        onTertiary       = contrastText(tertiary),
+        background       = bg,
+        surface          = Color.White,
+        surfaceVariant   = bg.darken(0.04f),
+        onBackground     = Ink,
+        onSurface        = Ink,
+        onSurfaceVariant = Ink.copy(alpha = 0.7f)
+    )
+}
+
+fun buildColorScheme(preset: ThemePreset, dark: Boolean, customPalette: CustomPalette? = null): ColorScheme = when (preset) {
     ThemePreset.DEFAULT -> if (dark) defaultDarkColors() else defaultLightColors()
-    ThemePreset.BEACON -> if (dark) beaconDarkColors() else beaconLightColors()
-    ThemePreset.OCEAN -> if (dark) oceanDarkColors() else oceanLightColors()
-    ThemePreset.SUNSET -> if (dark) sunsetDarkColors() else sunsetLightColors()
+    ThemePreset.BEACON  -> if (dark) beaconDarkColors()  else beaconLightColors()
+    ThemePreset.OCEAN   -> if (dark) oceanDarkColors()   else oceanLightColors()
+    ThemePreset.SUNSET  -> if (dark) sunsetDarkColors()  else sunsetLightColors()
+    ThemePreset.CUSTOM  -> {
+        val p = customPalette ?: CustomPalette()
+        if (dark) customDarkColors(p) else customLightColors(p)
+    }
 }
 
 @Composable
 fun LifeOpsTheme(
     preset: ThemePreset = ThemePreset.DEFAULT,
     darkMode: Boolean = true,
+    customPalette: CustomPalette? = null,
     content: @Composable () -> Unit
 ) {
     MaterialTheme(
-        colorScheme = buildColorScheme(preset, darkMode),
+        colorScheme = buildColorScheme(preset, darkMode, customPalette),
         typography = Typography(),
         content = content
     )

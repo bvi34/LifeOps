@@ -1,6 +1,8 @@
 package com.lifeops.app.data.repository
 
 import android.content.Context
+import com.google.gson.Gson
+import com.lifeops.app.data.model.CustomPalette
 import com.lifeops.app.data.model.ThemePreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 class PreferencesRepository(context: Context) {
     private val prefs = context.getSharedPreferences("lifeops_settings", Context.MODE_PRIVATE)
+    private val gson = Gson()
 
     var defaultReminderHour: Int
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
@@ -41,5 +44,20 @@ class PreferencesRepository(context: Context) {
         set(value) {
             prefs.edit().putBoolean("dark_mode", value).apply()
             _darkModeFlow.value = value
+        }
+
+    private val _customPaletteFlow = MutableStateFlow(
+        try {
+            val json = prefs.getString("custom_palette", null)
+            if (json != null) gson.fromJson(json, CustomPalette::class.java) else CustomPalette()
+        } catch (_: Exception) { CustomPalette() }
+    )
+    val customPaletteFlow: StateFlow<CustomPalette> = _customPaletteFlow.asStateFlow()
+
+    var customPalette: CustomPalette
+        get() = _customPaletteFlow.value
+        set(value) {
+            prefs.edit().putString("custom_palette", gson.toJson(value)).apply()
+            _customPaletteFlow.value = value
         }
 }

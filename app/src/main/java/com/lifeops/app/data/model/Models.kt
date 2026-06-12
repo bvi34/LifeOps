@@ -209,11 +209,20 @@ data class CostUsageRow(
     val totalAmount: Int
 )
 
+data class CustomPalette(
+    val primary: String = "#BB86FC",
+    val secondary: String = "#03DAC6",
+    val tertiary: String = "#3700B3",
+    val darkBackground: String = "#121212",
+    val lightBackground: String = "#F5F5F5"
+)
+
 enum class ThemePreset(val displayName: String) {
     DEFAULT("Default"),
     BEACON("Beacon"),
     OCEAN("Ocean"),
-    SUNSET("Sunset");
+    SUNSET("Sunset"),
+    CUSTOM("Custom");
 
     companion object {
         fun from(value: String) = entries.firstOrNull { it.name == value } ?: DEFAULT

@@ -88,7 +88,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themePreset by app.preferencesRepository.themePresetFlow.collectAsStateWithLifecycle()
             val isDarkMode by app.preferencesRepository.darkModeFlow.collectAsStateWithLifecycle()
-            LifeOpsTheme(preset = themePreset, darkMode = isDarkMode) {
+            val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
+            LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
                 LifeOpsNavHost(app, sharedText)
                 if (showNotificationDeniedDialog) {
                     AlertDialog(
