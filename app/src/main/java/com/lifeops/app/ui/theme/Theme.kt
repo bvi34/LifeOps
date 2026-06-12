@@ -5,6 +5,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import com.lifeops.app.data.model.ThemePreset
 
+private val Snow = Color(0xFFF9FAFB)
+private val Ink = Color(0xFF111827)
+
 private fun defaultDarkColors() = darkColorScheme(
     primary = Color(0xFFBB86FC),
     onPrimary = Color.Black,
@@ -14,8 +17,8 @@ private fun defaultDarkColors() = darkColorScheme(
     background = Color(0xFF121212),
     surface = Color(0xFF1E1E1E),
     surfaceVariant = Color(0xFF2A2A2A),
-    onBackground = Color.White,
-    onSurface = Color.White
+    onBackground = Snow,
+    onSurface = Snow
 )
 
 private fun defaultLightColors() = lightColorScheme(
@@ -28,8 +31,8 @@ private fun defaultLightColors() = lightColorScheme(
     background = Color(0xFFF5F5F5),
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFE8E8E8),
-    onBackground = Color.Black,
-    onSurface = Color.Black
+    onBackground = Ink,
+    onSurface = Ink
 )
 
 private fun beaconDarkColors() = darkColorScheme(
@@ -78,8 +81,8 @@ private fun oceanDarkColors() = darkColorScheme(
     background = Color(0xFF0A1628),
     surface = Color(0xFF0D1B2A),
     surfaceVariant = Color(0xFF152035),
-    onBackground = Color(0xFFE3F2FD),
-    onSurface = Color(0xFFE3F2FD),
+    onBackground = Snow,
+    onSurface = Snow,
     onSurfaceVariant = Color(0xFFB0C8E0)
 )
 
@@ -95,8 +98,8 @@ private fun oceanLightColors() = lightColorScheme(
     background = Color(0xFFF0F7FF),
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFD1E4FF),
-    onBackground = Color(0xFF001E36),
-    onSurface = Color(0xFF001E36),
+    onBackground = Ink,
+    onSurface = Ink,
     onSurfaceVariant = Color(0xFF004B77)
 )
 
@@ -112,8 +115,8 @@ private fun sunsetDarkColors() = darkColorScheme(
     background = Color(0xFF1A0F00),
     surface = Color(0xFF261500),
     surfaceVariant = Color(0xFF341C00),
-    onBackground = Color(0xFFFFF3E0),
-    onSurface = Color(0xFFFFF3E0),
+    onBackground = Snow,
+    onSurface = Snow,
     onSurfaceVariant = Color(0xFFE8CCAA)
 )
 
@@ -129,8 +132,8 @@ private fun sunsetLightColors() = lightColorScheme(
     background = Color(0xFFFFF8F0),
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFFFECDC),
-    onBackground = Color(0xFF1A0900),
-    onSurface = Color(0xFF1A0900),
+    onBackground = Ink,
+    onSurface = Ink,
     onSurfaceVariant = Color(0xFF4A2000)
 )
 
