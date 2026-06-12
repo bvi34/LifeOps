@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -35,7 +36,9 @@ data class SettingsUiState(
     val showNewProjectDialog: Boolean = false,
     val themePreset: ThemePreset = ThemePreset.DEFAULT,
     val isDarkMode: Boolean = true,
-    val customPalette: CustomPalette = CustomPalette()
+    val customPalette: CustomPalette = CustomPalette(),
+    val pendingExportJson: String? = null,
+    val pendingExportCsv: String? = null
 )
 
 class SettingsViewModel(
@@ -193,27 +196,47 @@ class SettingsViewModel(
         _uiState.update { it.copy(customPalette = palette) }
     }
 
-    fun backup(context: Context) {
+    fun prepareBackupExport() {
         val repo = backupRepository ?: return
         viewModelScope.launch {
             val json = repo.buildBackupJson(preferencesRepository.customPalette)
-            val uri = repo.saveBackupFile(context, json)
-            if (uri != null) {
-                repo.shareBackupFile(context, uri)
-            } else {
-                // Fallback to text share if file save fails
-                repo.shareText(context, json, "LifeOps Backup")
-            }
-            _uiState.update { it.copy(backupStatus = "Backup saved") }
+            _uiState.update { it.copy(pendingExportJson = json) }
         }
     }
 
-    fun exportCsv(context: Context) {
+    fun writeBackupToUri(context: Context, uri: Uri) {
+        val json = _uiState.value.pendingExportJson ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(json.toByteArray()) }
+                _uiState.update { it.copy(pendingExportJson = null, backupStatus = "Backup saved") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(pendingExportJson = null, backupStatus = "Export failed") }
+            }
+        }
+    }
+
+    fun prepareExportCsv() {
         val repo = backupRepository ?: return
         viewModelScope.launch {
             val csv = repo.buildCsvExport()
-            repo.shareText(context, csv, "LifeOps Tasks Export")
+            _uiState.update { it.copy(pendingExportCsv = csv) }
         }
+    }
+
+    fun writeCsvToUri(context: Context, uri: Uri) {
+        val csv = _uiState.value.pendingExportCsv ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+            } finally {
+                _uiState.update { it.copy(pendingExportCsv = null) }
+            }
+        }
+    }
+
+    fun cancelPendingExport() {
+        _uiState.update { it.copy(pendingExportJson = null, pendingExportCsv = null) }
     }
 
     fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null, restoreWarning = null) }

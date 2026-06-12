@@ -45,6 +45,27 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         uri?.let { viewModel.loadBackupFromUri(context, it) }
     }
 
+    val createJsonLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.writeBackupToUri(context, uri)
+        else viewModel.cancelPendingExport()
+    }
+
+    val createCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) viewModel.writeCsvToUri(context, uri)
+        else viewModel.cancelPendingExport()
+    }
+
+    LaunchedEffect(state.pendingExportJson) {
+        if (state.pendingExportJson != null) createJsonLauncher.launch("lifeops_backup.json")
+    }
+    LaunchedEffect(state.pendingExportCsv) {
+        if (state.pendingExportCsv != null) createCsvLauncher.launch("lifeops_tasks.csv")
+    }
+
     Scaffold(
         topBar = { TopAppBar(title = { Text("Settings") }) }
     ) { padding ->
@@ -104,9 +125,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 Text("Data", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 DataActionsSection(
-                    onBackup = { viewModel.backup(context) },
+                    onBackup = { viewModel.prepareBackupExport() },
                     onRestore = viewModel::showRestoreDialog,
-                    onExportCsv = { viewModel.exportCsv(context) }
+                    onExportCsv = { viewModel.prepareExportCsv() }
                 )
                 state.restoreWarning?.let { warning ->
                     Spacer(Modifier.height(6.dp))
