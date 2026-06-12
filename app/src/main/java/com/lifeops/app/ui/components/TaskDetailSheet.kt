@@ -9,11 +9,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,7 @@ import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
+import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.theme.priorityColor
 import com.lifeops.app.util.DateUtil
@@ -88,6 +92,23 @@ fun TaskDetailSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = priorityColor(task.priority.label)
                         )
+                    }
+                    if (task.source != TaskSource.MANUAL) {
+                        val (sourceLabel, sourceIcon) = when (task.source) {
+                            TaskSource.SMS -> "via SMS" to Icons.Default.Sms
+                            TaskSource.PLANNED -> "planned" to Icons.Default.EventNote
+                            TaskSource.MANUAL -> "" to Icons.Default.Circle
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(sourceLabel, style = MaterialTheme.typography.labelSmall) },
+                            leadingIcon = {
+                                Icon(sourceIcon, contentDescription = null, modifier = Modifier.size(14.dp))
+                            },
+                            modifier = Modifier.height(24.dp)
+                        )
+                        Spacer(Modifier.height(4.dp))
                     }
                 }
                 IconButton(onClick = onEdit) {

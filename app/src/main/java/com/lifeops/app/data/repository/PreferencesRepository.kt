@@ -60,4 +60,8 @@ class PreferencesRepository(context: Context) {
             prefs.edit().putString("custom_palette", gson.toJson(value)).apply()
             _customPaletteFlow.value = value
         }
+
+    var smsWifeNumber: String
+        get() = prefs.getString("sms_wife_number", "") ?: ""
+        set(value) { prefs.edit().putString("sms_wife_number", value.trim()).apply() }
 }

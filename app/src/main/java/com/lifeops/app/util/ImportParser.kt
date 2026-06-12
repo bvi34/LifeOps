@@ -12,7 +12,7 @@ data class ImportResult(
 
 data class ParsedTask(
     val title: String,
-    val notes: String?,
+    val notes: List<String> = emptyList(),
     val aspectName: String?,
     val categoryName: String?,
     val priority: String,
@@ -55,7 +55,13 @@ object ImportParser {
                 ParsedTask(
                     title = obj.get("title")?.takeIf { !it.isJsonNull }?.asString
                         ?: return ImportResult(emptyList(), "Missing title"),
-                    notes = obj.get("notes")?.takeIf { !it.isJsonNull }?.asString,
+                    notes = obj.get("notes")?.takeIf { !it.isJsonNull }?.let { el ->
+                        when {
+                            el.isJsonArray -> el.asJsonArray.map { it.asString }
+                            el.isJsonPrimitive -> listOf(el.asString)
+                            else -> emptyList()
+                        }
+                    } ?: emptyList(),
                     aspectName = obj.get("aspect")?.takeIf { !it.isJsonNull }?.asString,
                     categoryName = obj.get("category")?.takeIf { !it.isJsonNull }?.asString,
                     priority = obj.get("priority")?.takeIf { !it.isJsonNull }?.asString ?: "medium",

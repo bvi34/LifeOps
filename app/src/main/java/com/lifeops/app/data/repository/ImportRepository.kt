@@ -6,6 +6,7 @@ import com.lifeops.app.data.model.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
 import java.util.UUID
+import com.lifeops.app.data.model.TaskSource
 
 class ImportRepository(
     private val db: LifeOpsDatabase,
@@ -72,7 +73,8 @@ class ImportRepository(
                                else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                 estimatedMinutes = parsed.estimatedMinutes,
                 isRecurring = parsed.isRecurring,
-                createdAt = DateUtil.now()
+                createdAt = DateUtil.now(),
+                source = TaskSource.PLANNED
             )
         }
 
@@ -127,10 +129,11 @@ class ImportRepository(
                                    else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                     estimatedMinutes = parsed.estimatedMinutes,
                     isRecurring = parsed.isRecurring,
-                    createdAt = DateUtil.now()
+                    createdAt = DateUtil.now(),
+                    source = TaskSource.PLANNED
                 )
                 taskRepository.upsertTask(task)
-                parsed.notes?.let { taskNoteRepository.addNote(task.id, it) }
+                for (note in parsed.notes) taskNoteRepository.addNote(task.id, note)
                 if (includeUnknownAsNotes && parsed.unknownFields.isNotEmpty()) {
                     val extraNote = parsed.unknownFields.entries.joinToString("\n") { (k, v) -> "$k: $v" }
                     taskNoteRepository.addNote(task.id, extraNote)

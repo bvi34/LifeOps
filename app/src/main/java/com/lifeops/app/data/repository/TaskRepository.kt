@@ -7,7 +7,9 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.dao.*
 import com.lifeops.app.data.db.entities.WeekSnapshotEntity
 import com.lifeops.app.data.model.*
+import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.util.*
+import com.lifeops.app.util.ImportParser
 import com.lifeops.app.util.ScoringUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
@@ -238,6 +240,43 @@ class TaskRepository(
     suspend fun unSkipTask(taskId: String) = taskDao.unSkipTask(taskId)
 
     suspend fun updateTaskSortOrder(taskId: String, order: Int) = taskDao.updateSortOrder(taskId, order)
+
+    suspend fun createTaskWithNotes(
+        weekId: String,
+        title: String,
+        notes: List<String>,
+        source: TaskSource,
+        aspectId: String? = null,
+        categoryId: String? = null
+    ) {
+        val now = DateUtil.now()
+        val task = Task(
+            id = java.util.UUID.randomUUID().toString(),
+            weekId = weekId,
+            title = title,
+            aspectId = aspectId,
+            categoryId = categoryId,
+            priority = Priority.MEDIUM,
+            status = TaskStatus.PENDING,
+            resourceValue = ImportParser.computeResourceValue("medium", false, null, isManuallyAdded = true),
+            createdAt = now,
+            source = source
+        )
+        db.withTransaction {
+            taskDao.upsert(task.toEntity())
+            for (note in notes) {
+                db.taskNoteDao().insert(
+                    com.lifeops.app.data.db.entities.TaskNoteEntity(
+                        id = java.util.UUID.randomUUID().toString(),
+                        taskId = task.id,
+                        content = note,
+                        createdAt = now
+                    )
+                )
+            }
+        }
+        notificationRepository.scheduleForTask(task)
+    }
 
     suspend fun getTasksWithCarryHistory(): List<Task> =
         taskDao.getTasksWithCarryHistory().map { it.toModel() }

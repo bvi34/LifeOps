@@ -108,6 +108,22 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("SMS Ingestion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Texts from the whitelisted number starting with \"To Do:\" are automatically added as tasks.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(8.dp))
+                SmsSettingsSection(
+                    wifeNumber = state.smsWifeNumber,
+                    onSave = viewModel::setSmsWifeNumber
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 ThemeSection(
@@ -309,6 +325,40 @@ private val presetSwatches = mapOf(
     ThemePreset.OCEAN to Triple(Color(0xFF0277BD), Color(0xFF4FC3F7), Color(0xFF80DEEA)),
     ThemePreset.SUNSET to Triple(Color(0xFFBF360C), Color(0xFFFF7043), Color(0xFFFFCC02)),
 )
+
+@Composable
+private fun SmsSettingsSection(wifeNumber: String, onSave: (String) -> Unit) {
+    var text by remember(wifeNumber) { mutableStateOf(wifeNumber) }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Sms,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text("Whitelisted sender", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                label = { Text("Phone number") },
+                placeholder = { Text("+1XXXXXXXXXX") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                trailingIcon = {
+                    if (text.trim() != wifeNumber) {
+                        IconButton(onClick = { onSave(text.trim()) }) {
+                            Icon(Icons.Default.Check, contentDescription = "Save")
+                        }
+                    }
+                }
+            )
+        }
+    }
+}
 
 @Composable
 private fun ThemeSection(

@@ -66,7 +66,8 @@ data class Task(
     val carriedCount: Int = 0,
     val sortOrder: Int = 0,
     val isManuallyAdded: Boolean = false,
-    val projectId: String? = null
+    val projectId: String? = null,
+    val source: TaskSource = TaskSource.MANUAL
 )
 
 data class CarryForwardEntry(
@@ -208,6 +209,13 @@ data class CostUsageRow(
     val capacity: Int?,
     val totalAmount: Int
 )
+
+enum class TaskSource {
+    MANUAL, PLANNED, SMS;
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: MANUAL
+    }
+}
 
 data class CustomPalette(
     val primary: String = "#BB86FC",

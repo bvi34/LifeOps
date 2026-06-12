@@ -1,5 +1,6 @@
 package com.lifeops.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -52,5 +53,7 @@ data class TaskEntity(
     val carriedCount: Int = 0,
     val sortOrder: Int = 0,
     val isManuallyAdded: Boolean = false,
-    val projectId: String? = null
+    val projectId: String? = null,
+    @ColumnInfo(name = "source", defaultValue = "MANUAL")
+    val source: String = "MANUAL"
 )

@@ -38,7 +38,8 @@ data class SettingsUiState(
     val isDarkMode: Boolean = true,
     val customPalette: CustomPalette = CustomPalette(),
     val pendingExportJson: String? = null,
-    val pendingExportCsv: String? = null
+    val pendingExportCsv: String? = null,
+    val smsWifeNumber: String = ""
 )
 
 class SettingsViewModel(
@@ -59,7 +60,8 @@ class SettingsViewModel(
             it.copy(
                 themePreset = preferencesRepository.themePreset,
                 isDarkMode = preferencesRepository.isDarkMode,
-                customPalette = preferencesRepository.customPalette
+                customPalette = preferencesRepository.customPalette,
+                smsWifeNumber = preferencesRepository.smsWifeNumber
             )
         }
         viewModelScope.launch {
@@ -302,6 +304,11 @@ class SettingsViewModel(
     fun setDarkMode(dark: Boolean) {
         preferencesRepository.isDarkMode = dark
         _uiState.update { it.copy(isDarkMode = dark) }
+    }
+
+    fun setSmsWifeNumber(number: String) {
+        preferencesRepository.smsWifeNumber = number
+        _uiState.update { it.copy(smsWifeNumber = number) }
     }
 }
 
