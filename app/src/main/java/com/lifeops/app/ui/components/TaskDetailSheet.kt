@@ -462,6 +462,7 @@ fun TaskDetailSheet(
         ManualLogTimeDialog(
             onConfirm = { minutes, note ->
                 onLogTime(minutes, note)
+                if (!note.isNullOrBlank()) onAddNote(note)
                 showLogManuallyDialog = false
             },
             onDismiss = { showLogManuallyDialog = false }
