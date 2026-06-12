@@ -11,6 +11,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,10 +22,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.ui.text.font.FontFamily
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.CustomPalette
@@ -348,6 +352,13 @@ private fun SmsSettingsSection(wifeNumber: String, onSave: (String) -> Unit) {
                 placeholder = { Text("+1XXXXXXXXXX") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Phone,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { if (text.trim().isNotBlank()) onSave(text.trim()) }
+                ),
                 trailingIcon = {
                     if (text.trim() != wifeNumber) {
                         IconButton(onClick = { onSave(text.trim()) }) {
