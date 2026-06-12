@@ -31,7 +31,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index("weekId"), Index("aspectId"), Index("categoryId"),
         Index("createdAt"), Index("completedAt"), Index("status"),
-        Index("projectId")
+        Index("projectId"), Index("source")
     ]
 )
 data class TaskEntity(

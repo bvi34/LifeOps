@@ -4,9 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.telephony.SmsMessage
+import androidx.glance.appwidget.updateAll
 import com.lifeops.app.LifeOpsApp
 import com.lifeops.app.config.SmsConfig
 import com.lifeops.app.data.model.TaskSource
+import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -73,6 +75,7 @@ class SmsReceiver : BroadcastReceiver() {
             aspectId = SmsConfig.DEFAULT_SMS_ASPECT_ID,
             categoryId = SmsConfig.DEFAULT_SMS_CATEGORY_ID
         )
+        try { LifeOpsWidget().updateAll(context) } catch (_: Exception) {}
 
         if (SmsConfig.SEND_ACK) {
             try {
