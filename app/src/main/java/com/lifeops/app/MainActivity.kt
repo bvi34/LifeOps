@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -85,7 +86,9 @@ class MainActivity : ComponentActivity() {
             ?.getStringExtra(Intent.EXTRA_TEXT)
 
         setContent {
-            LifeOpsTheme {
+            val themePreset by app.preferencesRepository.themePresetFlow.collectAsStateWithLifecycle()
+            val isDarkMode by app.preferencesRepository.darkModeFlow.collectAsStateWithLifecycle()
+            LifeOpsTheme(preset = themePreset, darkMode = isDarkMode) {
                 LifeOpsNavHost(app, sharedText)
                 if (showNotificationDeniedDialog) {
                     AlertDialog(

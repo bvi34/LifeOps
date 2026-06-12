@@ -209,6 +209,17 @@ data class CostUsageRow(
     val totalAmount: Int
 )
 
+enum class ThemePreset(val displayName: String) {
+    DEFAULT("Default"),
+    BEACON("Beacon"),
+    OCEAN("Ocean"),
+    SUNSET("Sunset");
+
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: DEFAULT
+    }
+}
+
 data class ImportPreview(
     val newTasks: List<Task>,
     val newAspects: List<Aspect>,

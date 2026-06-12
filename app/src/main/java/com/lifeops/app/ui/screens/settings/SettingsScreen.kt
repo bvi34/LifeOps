@@ -4,10 +4,13 @@ package com.lifeops.app.ui.screens.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -15,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,6 +29,7 @@ import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
+import com.lifeops.app.data.model.ThemePreset
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -75,6 +80,18 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 NotificationPreferenceRow(
                     hour = state.defaultReminderHour,
                     onClick = viewModel::showReminderTimePicker
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                ThemeSection(
+                    selectedPreset = state.themePreset,
+                    isDarkMode = state.isDarkMode,
+                    onPresetSelect = viewModel::setThemePreset,
+                    onDarkModeToggle = viewModel::setDarkMode
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -258,6 +275,104 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 TextButton(onClick = viewModel::dismissArchiveConfirmation) { Text("Cancel") }
             }
         )
+    }
+}
+
+private val presetSwatches = mapOf(
+    ThemePreset.DEFAULT to Triple(Color(0xFF6200EE), Color(0xFF03DAC6), Color(0xFF3700B3)),
+    ThemePreset.BEACON to Triple(Color(0xFF3B1F5E), Color(0xFFC8B3E0), Color(0xFFFFB74D)),
+    ThemePreset.OCEAN to Triple(Color(0xFF0277BD), Color(0xFF4FC3F7), Color(0xFF80DEEA)),
+    ThemePreset.SUNSET to Triple(Color(0xFFBF360C), Color(0xFFFF7043), Color(0xFFFFCC02)),
+)
+
+@Composable
+private fun ThemeSection(
+    selectedPreset: ThemePreset,
+    isDarkMode: Boolean,
+    onPresetSelect: (ThemePreset) -> Unit,
+    onDarkModeToggle: (Boolean) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    if (isDarkMode) Icons.Default.DarkMode else Icons.Default.LightMode,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    if (isDarkMode) "Dark mode" else "Light mode",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f)
+                )
+                Switch(checked = isDarkMode, onCheckedChange = onDarkModeToggle)
+            }
+            HorizontalDivider()
+            Text(
+                "Color preset",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                ThemePreset.entries.forEach { preset ->
+                    PresetCard(
+                        preset = preset,
+                        isSelected = selectedPreset == preset,
+                        onClick = { onPresetSelect(preset) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PresetCard(
+    preset: ThemePreset,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val swatches = presetSwatches[preset] ?: return
+    OutlinedCard(
+        onClick = onClick,
+        modifier = modifier,
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                 else BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                Box(modifier = Modifier.size(14.dp).background(swatches.first, shape = CircleShape))
+                Box(modifier = Modifier.size(14.dp).background(swatches.second, shape = CircleShape))
+                Box(modifier = Modifier.size(14.dp).background(swatches.third, shape = CircleShape))
+            }
+            Text(
+                preset.displayName,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.onSurface
+            )
+            if (isSelected) {
+                Icon(
+                    Icons.Default.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(12.dp)
+                )
+            } else {
+                Spacer(Modifier.height(12.dp))
+            }
+        }
     }
 }
 

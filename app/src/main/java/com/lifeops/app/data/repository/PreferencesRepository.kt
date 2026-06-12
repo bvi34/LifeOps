@@ -1,6 +1,10 @@
 package com.lifeops.app.data.repository
 
 import android.content.Context
+import com.lifeops.app.data.model.ThemePreset
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 class PreferencesRepository(context: Context) {
     private val prefs = context.getSharedPreferences("lifeops_settings", Context.MODE_PRIVATE)
@@ -16,4 +20,26 @@ class PreferencesRepository(context: Context) {
     var savedSortOrder: String
         get() = prefs.getString("sort_order", "DEFAULT") ?: "DEFAULT"
         set(value) { prefs.edit().putString("sort_order", value).apply() }
+
+    private val _themePresetFlow = MutableStateFlow(
+        ThemePreset.from(prefs.getString("theme_preset", ThemePreset.DEFAULT.name) ?: ThemePreset.DEFAULT.name)
+    )
+    val themePresetFlow: StateFlow<ThemePreset> = _themePresetFlow.asStateFlow()
+
+    var themePreset: ThemePreset
+        get() = _themePresetFlow.value
+        set(value) {
+            prefs.edit().putString("theme_preset", value.name).apply()
+            _themePresetFlow.value = value
+        }
+
+    private val _darkModeFlow = MutableStateFlow(prefs.getBoolean("dark_mode", true))
+    val darkModeFlow: StateFlow<Boolean> = _darkModeFlow.asStateFlow()
+
+    var isDarkMode: Boolean
+        get() = _darkModeFlow.value
+        set(value) {
+            prefs.edit().putBoolean("dark_mode", value).apply()
+            _darkModeFlow.value = value
+        }
 }

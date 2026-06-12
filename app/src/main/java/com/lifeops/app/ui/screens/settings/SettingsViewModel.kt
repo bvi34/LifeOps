@@ -32,7 +32,9 @@ data class SettingsUiState(
     val costResources: List<CostResource> = emptyList(),
     val showNewCostResourceDialog: Boolean = false,
     val projects: List<Project> = emptyList(),
-    val showNewProjectDialog: Boolean = false
+    val showNewProjectDialog: Boolean = false,
+    val themePreset: ThemePreset = ThemePreset.DEFAULT,
+    val isDarkMode: Boolean = true
 )
 
 class SettingsViewModel(
@@ -49,6 +51,12 @@ class SettingsViewModel(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
+        _uiState.update {
+            it.copy(
+                themePreset = preferencesRepository.themePreset,
+                isDarkMode = preferencesRepository.isDarkMode
+            )
+        }
         viewModelScope.launch {
             combine(
                 aspectRepository.observeAllAspects(),
@@ -248,6 +256,16 @@ class SettingsViewModel(
 
     fun setProjectStatus(id: String, status: ProjectStatus) {
         viewModelScope.launch { projectRepository?.setStatus(id, status) }
+    }
+
+    fun setThemePreset(preset: ThemePreset) {
+        preferencesRepository.themePreset = preset
+        _uiState.update { it.copy(themePreset = preset) }
+    }
+
+    fun setDarkMode(dark: Boolean) {
+        preferencesRepository.isDarkMode = dark
+        _uiState.update { it.copy(isDarkMode = dark) }
     }
 }
 
