@@ -10,6 +10,7 @@ import com.lifeops.app.util.ImportParser
 import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -43,6 +44,9 @@ data class CategoryGroup(
     val dominantPriority: Priority?
 )
 
+data class UndoEvent(val message: String, val taskId: String, val action: UndoEventAction)
+enum class UndoEventAction { UNSKIP, UN_CARRY_FORWARD }
+
 data class ThisWeekUiState(
     val week: Week? = null,
     val groupedTasks: List<GroupedTasks> = emptyList(),
@@ -66,7 +70,8 @@ data class ThisWeekUiState(
     val weekProgress: WeekProgress = WeekProgress(0, 0, 0),
     val costResources: List<CostResource> = emptyList(),
     val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap(),
-    val projects: List<Project> = emptyList()
+    val projects: List<Project> = emptyList(),
+    val showOverdueOnly: Boolean = false
 )
 
 class ThisWeekViewModel(
@@ -80,7 +85,8 @@ class ThisWeekViewModel(
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository
+    private val projectRepository: ProjectRepository,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -96,6 +102,9 @@ class ThisWeekViewModel(
     val timerElapsedSeconds: StateFlow<Int> = _timerElapsedSeconds.asStateFlow()
 
     private var timerJob: Job? = null
+
+    private val _undoChannel = Channel<UndoEvent>(Channel.CONFLATED)
+    val undoEvents = _undoChannel.receiveAsFlow()
 
     init {
         viewModelScope.launch {
@@ -145,7 +154,7 @@ class ThisWeekViewModel(
                             }
                         }
                         _uiState.update { state ->
-                            val grouped = groupAndFilterTasks(tasks, aspectMap, categoryMap, state.sortOrder, state.searchQuery)
+                            val grouped = groupAndFilterTasks(tasks, aspectMap, categoryMap, state.sortOrder, state.searchQuery, state.showOverdueOnly)
                             state.copy(
                                 week = week,
                                 rawTasks = tasks,
@@ -178,6 +187,17 @@ class ThisWeekViewModel(
                 }
             }
         }
+        // Restore saved sort order after tasks load
+        viewModelScope.launch {
+            val savedSort = SortOrder.values().firstOrNull { it.name == preferencesRepository.savedSortOrder } ?: SortOrder.DEFAULT
+            _uiState.first { !it.isLoading }
+            _uiState.update { state ->
+                state.copy(
+                    sortOrder = savedSort,
+                    groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, savedSort, state.searchQuery, state.showOverdueOnly)
+                )
+            }
+        }
     }
 
     private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
@@ -189,10 +209,11 @@ class ThisWeekViewModel(
     }
 
     fun setSortOrder(order: SortOrder) {
+        preferencesRepository.savedSortOrder = order.name
         _uiState.update { state ->
             state.copy(
                 sortOrder = order,
-                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, order, state.searchQuery)
+                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, order, state.searchQuery, state.showOverdueOnly)
             )
         }
     }
@@ -201,7 +222,20 @@ class ThisWeekViewModel(
         _uiState.update { state ->
             state.copy(
                 searchQuery = query,
-                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, state.sortOrder, query)
+                groupedTasks = groupAndFilterTasks(state.rawTasks, state.aspects, state.categories, state.sortOrder, query, state.showOverdueOnly)
+            )
+        }
+    }
+
+    fun toggleOverdueFilter() {
+        _uiState.update { state ->
+            val newFlag = !state.showOverdueOnly
+            state.copy(
+                showOverdueOnly = newFlag,
+                groupedTasks = groupAndFilterTasks(
+                    state.rawTasks, state.aspects, state.categories,
+                    state.sortOrder, state.searchQuery, newFlag
+                )
             )
         }
     }
@@ -224,10 +258,18 @@ class ThisWeekViewModel(
         aspects: Map<String, Aspect>,
         categories: Map<String, Category>,
         sortOrder: SortOrder,
-        searchQuery: String
+        searchQuery: String,
+        overdueOnly: Boolean = false
     ): List<GroupedTasks> {
-        val filtered = if (searchQuery.isBlank()) tasks
-        else tasks.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        var filtered = if (searchQuery.isBlank()) tasks
+                       else tasks.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        if (overdueOnly) {
+            val today = java.time.LocalDate.now().toString()
+            filtered = filtered.filter { task ->
+                task.status == TaskStatus.PENDING &&
+                task.dueDate != null && task.dueDate <= today
+            }
+        }
 
         val byAspect = filtered.groupBy { it.aspectId }
         return byAspect.map { (aspectId, aspectTasks) ->
@@ -274,6 +316,7 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             taskRepository.skipTask(taskId)
             refreshWidget()
+            _undoChannel.trySend(UndoEvent("Task skipped", taskId, UndoEventAction.UNSKIP))
         }
     }
 
@@ -281,6 +324,7 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             taskRepository.carryForward(task)
             refreshWidget()
+            _undoChannel.trySend(UndoEvent("Carried forward", task.id, UndoEventAction.UN_CARRY_FORWARD))
         }
     }
 
@@ -311,6 +355,17 @@ class ThisWeekViewModel(
                 if (task.sortOrder != newIdx) {
                     taskRepository.updateTaskSortOrder(task.id, newIdx)
                 }
+            }
+        }
+    }
+
+    fun onReorderTask(fromIndex: Int, toIndex: Int, currentList: List<Task>) {
+        val reordered = currentList.toMutableList()
+        val moved = reordered.removeAt(fromIndex)
+        reordered.add(toIndex, moved)
+        viewModelScope.launch {
+            for ((idx, task) in reordered.withIndex()) {
+                if (task.sortOrder != idx) taskRepository.updateTaskSortOrder(task.id, idx)
             }
         }
     }
@@ -550,13 +605,14 @@ class ThisWeekViewModelFactory(
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository
+    private val projectRepository: ProjectRepository,
+    private val preferencesRepository: PreferencesRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository
+            projectRepository, preferencesRepository
         ) as T
 }

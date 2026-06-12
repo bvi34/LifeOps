@@ -3,25 +3,34 @@
 package com.lifeops.app.ui.screens.thisweek
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.Task
+import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.data.model.WeekProgress
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
@@ -31,6 +40,8 @@ import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
 fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
@@ -43,6 +54,24 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     var showCloseConfirm by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(Unit) {
+        viewModel.undoEvents.collect { event ->
+            val result = snackbarHostState.showSnackbar(
+                message = event.message,
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                when (event.action) {
+                    UndoEventAction.UNSKIP -> viewModel.onUnSkipTask(event.taskId)
+                    UndoEventAction.UN_CARRY_FORWARD -> viewModel.onUnCarryForward(event.taskId)
+                }
+            }
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -91,6 +120,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 }
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Column(
                 horizontalAlignment = Alignment.End,
@@ -137,14 +167,114 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No tasks this week", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                    )
                     Text(
-                        "Tap + to create or import tasks",
-                        style = MaterialTheme.typography.bodySmall,
+                        "No tasks this week",
+                        style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
+                    Text(
+                        "Tap + to add tasks or import from JSON",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
+                }
+            }
+        } else if (state.groupedTasks.isEmpty() && showSearch) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text(
+                    "No tasks match “${state.searchQuery}”",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+        } else if (isPlanningMode) {
+            // Flat drag-to-reorder list for planning
+            val flatTasks = remember(state.rawTasks) {
+                state.rawTasks.sortedWith(compareBy<Task> { it.sortOrder }.thenBy { it.createdAt })
+            }
+            val lazyListState = rememberLazyListState()
+            val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+                viewModel.onReorderTask(from.index, to.index, flatTasks)
+            }
+            LazyColumn(
+                state = lazyListState,
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(flatTasks, key = { it.id }) { task ->
+                    ReorderableItem(reorderableState, key = task.id) { isDragging ->
+                        val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                                .shadow(elevation),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isDragging)
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                else MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.DragHandle,
+                                    contentDescription = "Drag to reorder",
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .draggableHandle()
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                val aspect = state.aspects[task.aspectId]
+                                Box(
+                                    modifier = Modifier
+                                        .width(4.dp)
+                                        .height(40.dp)
+                                        .background(
+                                            parseColor(aspect?.color ?: "#6200EE"),
+                                            RoundedCornerShape(2.dp)
+                                        )
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        task.title,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    val categoryName = task.categoryId?.let { state.categories[it]?.name }
+                                    val subtitleParts = listOfNotNull(
+                                        aspect?.name,
+                                        categoryName,
+                                        task.priority.label.replaceFirstChar { it.uppercase() }
+                                    )
+                                    Text(
+                                        subtitleParts.joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         } else {
@@ -164,6 +294,25 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             )
                         }
                         SortBar(selected = state.sortOrder, onSelect = viewModel::setSortOrder)
+                        // Overdue/Due-today filter chip
+                        if (state.week?.isClosed == false && state.rawTasks.isNotEmpty()) {
+                            val showOverdueOnly = state.showOverdueOnly
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                FilterChip(
+                                    selected = showOverdueOnly,
+                                    onClick = viewModel::toggleOverdueFilter,
+                                    label = { Text("Overdue / Due today") },
+                                    leadingIcon = if (showOverdueOnly) {
+                                        { Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -213,7 +362,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
                                 isTimerActive = isTimerActive,
                                 timerElapsedSeconds = { timerElapsedState.value },
-                                isPlanningMode = isPlanningMode,
+                                isPlanningMode = false,
+                                projectName = task.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid }?.title },
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onUnComplete = { viewModel.onUnCompleteTask(task.id) },
                                 onUnSkip = { viewModel.onUnSkipTask(task.id) },
@@ -224,7 +374,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },
                                 onOpenDetail = { viewModel.openDetail(task.id) },
                                 onMoveUp = { viewModel.movePlanningTask(task.id, -1) },
-                                onMoveDown = { viewModel.movePlanningTask(task.id, 1) }
+                                onMoveDown = { viewModel.movePlanningTask(task.id, 1) },
+                                onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) }
                             )
                         }
                     }
@@ -311,10 +462,59 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     }
 
     if (showCloseConfirm) {
+        val completedCount = state.rawTasks.count { it.status == TaskStatus.COMPLETED }
+        val totalRelevant = state.rawTasks.count { it.status != TaskStatus.CARRIED_FORWARD }
+        val carriedCount = state.rawTasks.count { it.status == TaskStatus.CARRIED_FORWARD }
+        val pendingCount = state.rawTasks.count { it.status == TaskStatus.PENDING }
+        val hdHits = state.rawTasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }
+        val hdExpired = state.rawTasks.count { it.hardDeadline && it.status != TaskStatus.COMPLETED && it.status != TaskStatus.PENDING }
+        val totalMinutes = state.taskTimeMinutes.values.sum()
+
         AlertDialog(
             onDismissRequest = { showCloseConfirm = false },
             title = { Text("Close This Week?") },
-            text = { Text("Pending tasks without hard deadlines become incomplete. Hard deadline tasks become expired.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "$completedCount / $totalRelevant tasks completed",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (totalMinutes > 0) {
+                        Text(
+                            "Time logged: ${formatMinutes(totalMinutes)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
+                    if (carriedCount > 0) {
+                        Text(
+                            "$carriedCount task${if (carriedCount != 1) "s" else ""} will carry to next week",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
+                    if (pendingCount > 0) {
+                        Text(
+                            "$pendingCount pending → will become incomplete",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    if (hdHits + hdExpired > 0) {
+                        Text(
+                            "Hard deadlines: $hdHits hit, $hdExpired expired",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (hdExpired > 0) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    Text(
+                        "Explicitly carried tasks will appear in next week's list.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            },
             confirmButton = {
                 Button(onClick = {
                     showCloseConfirm = false

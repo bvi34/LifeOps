@@ -4,9 +4,11 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -26,7 +28,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -45,6 +49,7 @@ import kotlin.math.roundToInt
 
 private val SWIPE_THRESHOLD_DP = 80.dp
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TaskRow(
     task: Task,
@@ -57,6 +62,7 @@ fun TaskRow(
     // not the whole list. Only invoked inside the `isTimerActive` branches below.
     timerElapsedSeconds: () -> Int,
     isPlanningMode: Boolean = false,
+    projectName: String? = null,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit = {},
     onUnSkip: () -> Unit = {},
@@ -68,12 +74,14 @@ fun TaskRow(
     onOpenDetail: () -> Unit,
     onMoveUp: () -> Unit = {},
     onMoveDown: () -> Unit = {},
+    onQuickLogTime: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
     val offset = remember { Animatable(0f) }
     val swipeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { SWIPE_THRESHOLD_DP.toPx() }
     val maxSwipePx = swipeThresholdPx * 1.5f
+    val haptic = LocalHapticFeedback.current
 
     val isPending = task.status == TaskStatus.PENDING
     val isCompleted = task.status == TaskStatus.COMPLETED
@@ -134,11 +142,13 @@ fun TaskRow(
                                             // Swipe right past threshold → complete
                                             offset.value > swipeThresholdPx && isPending -> {
                                                 offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 onComplete()
                                             }
                                             // Swipe left past threshold → toggle timer
                                             offset.value < -swipeThresholdPx && !isCarriedForward -> {
                                                 offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 if (isTimerActive) onStopTimer() else onStartTimer()
                                             }
                                             else -> offset.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy))
@@ -250,6 +260,16 @@ fun TaskRow(
                                     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
                                 )
                             }
+                            projectName?.let { name ->
+                                Text(
+                                    "▸ $name",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 100.dp)
+                                )
+                            }
                             if (isTimerActive) {
                                 Text(
                                     "● ${formatElapsed(timerElapsedSeconds())}",
@@ -289,6 +309,14 @@ fun TaskRow(
                                     "↩ Carried forward ${task.carriedCount} time${if (task.carriedCount > 1) "s" else ""}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(bottom = 2.dp)
+                                )
+                            }
+                            projectName?.let { name ->
+                                Text(
+                                    "Project: $name",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                                     modifier = Modifier.padding(bottom = 2.dp)
                                 )
                             }
@@ -356,19 +384,42 @@ fun TaskRow(
                         } else {
                             Spacer(Modifier.size(40.dp))
                         }
-                        // Timer button
+                        // Timer button with long-press quick log
                         if (!isCarriedForward) {
-                            IconButton(
-                                onClick = { if (isTimerActive) onStopTimer() else onStartTimer() },
-                                modifier = Modifier.size(40.dp)
-                            ) {
-                                Icon(
-                                    if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
-                                    contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
-                                    tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
-                                           else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            var showTimerMenu by remember { mutableStateOf(false) }
+                            Box {
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .combinedClickable(
+                                            onClick = { if (isTimerActive) onStopTimer() else onStartTimer() },
+                                            onLongClick = {
+                                                if (!isTimerActive && onQuickLogTime != null) showTimerMenu = true
+                                            }
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        if (isTimerActive) Icons.Default.Stop else Icons.Default.AccessTime,
+                                        contentDescription = if (isTimerActive) "Stop timer" else "Start timer",
+                                        tint = if (isTimerActive) MaterialTheme.colorScheme.tertiary
+                                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                if (showTimerMenu && onQuickLogTime != null) {
+                                    DropdownMenu(
+                                        expanded = showTimerMenu,
+                                        onDismissRequest = { showTimerMenu = false }
+                                    ) {
+                                        listOf(15, 30, 45, 60).forEach { mins ->
+                                            DropdownMenuItem(
+                                                text = { Text("Log ${mins}m") },
+                                                onClick = { onQuickLogTime(mins); showTimerMenu = false }
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         } else {
                             Spacer(Modifier.size(40.dp))
@@ -389,10 +440,11 @@ private fun TaskStatusIcon(
     onUnSkip: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val haptic = LocalHapticFeedback.current
     val clickAction: (() -> Unit)? = when (status) {
-        TaskStatus.PENDING -> onComplete
-        TaskStatus.COMPLETED -> onUnComplete
-        TaskStatus.SKIPPED -> onUnSkip
+        TaskStatus.PENDING -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onComplete() })
+        TaskStatus.COMPLETED -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onUnComplete() })
+        TaskStatus.SKIPPED -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onUnSkip() })
         TaskStatus.CARRIED_FORWARD -> null
         else -> null
     }
