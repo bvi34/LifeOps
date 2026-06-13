@@ -25,6 +25,7 @@ data class WeekSnapshotEntity(
     val expiredCount: Int,
     val skippedCount: Int,
     val carriedForwardCount: Int,
+    val unsuccessfulCount: Int = 0,
     val totalResourcesEarned: Int,
     val aspectBreakdown: String,
     val categoryBreakdown: String,

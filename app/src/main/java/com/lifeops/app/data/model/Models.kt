@@ -17,7 +17,8 @@ enum class TaskStatus(val value: String) {
     SKIPPED("skipped"),
     INCOMPLETE("incomplete"),
     EXPIRED("expired"),
-    CARRIED_FORWARD("carried_forward");
+    CARRIED_FORWARD("carried_forward"),
+    UNSUCCESSFUL("unsuccessful");
 
     companion object {
         fun from(value: String) = entries.firstOrNull { it.value == value } ?: PENDING
@@ -130,6 +131,7 @@ data class WeekSnapshot(
     val expiredCount: Int,
     val skippedCount: Int,
     val carriedForwardCount: Int,
+    val unsuccessfulCount: Int,
     val totalResourcesEarned: Int,
     val aspectBreakdown: Map<String, Int>,
     val categoryBreakdown: Map<String, Int>,

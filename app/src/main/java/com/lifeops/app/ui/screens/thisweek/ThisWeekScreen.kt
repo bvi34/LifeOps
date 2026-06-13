@@ -68,6 +68,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 when (event.action) {
                     UndoEventAction.UNSKIP -> viewModel.onUnSkipTask(event.taskId)
                     UndoEventAction.UN_CARRY_FORWARD -> viewModel.onUnCarryForward(event.taskId)
+                    UndoEventAction.UN_UNSUCCESSFUL -> viewModel.onUnUnsuccessTask(event.taskId)
                 }
             }
         }
@@ -411,6 +412,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
                 onCarryForward = { viewModel.closeDetail(); viewModel.onCarryForward(detailTask) },
                 onUnCarryForward = { viewModel.onUnCarryForward(taskId) },
+                onUnsuccessful = { viewModel.closeDetail(); viewModel.onUnsuccessTask(taskId) },
+                onUnUnsuccessful = { viewModel.onUnUnsuccessTask(taskId) },
                 onPromoteToProject = { viewModel.onPromoteToProject(taskId) },
                 onStartTimer = { viewModel.startTimer(taskId) },
                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },

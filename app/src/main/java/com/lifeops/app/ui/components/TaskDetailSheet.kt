@@ -52,6 +52,8 @@ fun TaskDetailSheet(
     onEdit: () -> Unit,
     onCarryForward: () -> Unit,
     onUnCarryForward: (() -> Unit)? = null,
+    onUnsuccessful: (() -> Unit)? = null,
+    onUnUnsuccessful: (() -> Unit)? = null,
     onPromoteToProject: (() -> Unit)? = null,
     ancestorNotes: List<TaskNote> = emptyList(),
     onStartTimer: () -> Unit,
@@ -141,6 +143,20 @@ fun TaskDetailSheet(
                     onClick = onCarryForward,
                     modifier = Modifier.padding(top = 2.dp)
                 ) { Text("Carry Forward") }
+            }
+
+            if (task.status == TaskStatus.PENDING && onUnsuccessful != null) {
+                TextButton(
+                    onClick = onUnsuccessful,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) { Text("Mark Unsuccessful (50% resources)") }
+            }
+
+            if (task.status == TaskStatus.UNSUCCESSFUL && onUnUnsuccessful != null) {
+                TextButton(
+                    onClick = onUnUnsuccessful,
+                    modifier = Modifier.padding(top = 2.dp)
+                ) { Text("Restore") }
             }
 
             if (task.status == TaskStatus.CARRIED_FORWARD && onUnCarryForward != null) {
@@ -511,6 +527,7 @@ private fun StatusChip(status: TaskStatus) {
         TaskStatus.INCOMPLETE -> MaterialTheme.colorScheme.error to "Incomplete"
         TaskStatus.EXPIRED -> MaterialTheme.colorScheme.error to "Expired"
         TaskStatus.CARRIED_FORWARD -> MaterialTheme.colorScheme.secondary to "Carried"
+        TaskStatus.UNSUCCESSFUL -> MaterialTheme.colorScheme.outline to "Unsuccessful"
     }
     Surface(
         shape = MaterialTheme.shapes.extraSmall,

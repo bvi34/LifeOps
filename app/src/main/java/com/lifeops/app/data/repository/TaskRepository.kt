@@ -41,6 +41,14 @@ class TaskRepository(
         taskDao.updateStatus(taskId, TaskStatus.SKIPPED.value)
     }
 
+    suspend fun unsuccessTask(taskId: String) {
+        taskDao.updateStatus(taskId, TaskStatus.UNSUCCESSFUL.value)
+    }
+
+    suspend fun unUnsuccessTask(taskId: String) {
+        taskDao.updateStatus(taskId, TaskStatus.PENDING.value)
+    }
+
     suspend fun carryForward(task: Task) {
         notificationRepository.cancelForTask(task.id)
         taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
@@ -187,6 +195,11 @@ class TaskRepository(
                     task.aspectId?.let { aspectBreakdown[it] = (aspectBreakdown[it] ?: 0) + earned }
                     task.categoryId?.let { categoryBreakdown[it] = (categoryBreakdown[it] ?: 0) + earned }
                 }
+                TaskStatus.UNSUCCESSFUL -> {
+                    val earned = (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id]) * 0.5).roundToInt()
+                    task.aspectId?.let { aspectBreakdown[it] = (aspectBreakdown[it] ?: 0) + earned }
+                    task.categoryId?.let { categoryBreakdown[it] = (categoryBreakdown[it] ?: 0) + earned }
+                }
                 TaskStatus.INCOMPLETE, TaskStatus.EXPIRED -> {
                     task.categoryId?.let { categorySlipBreakdown[it] = (categorySlipBreakdown[it] ?: 0) + 1 }
                 }
@@ -197,9 +210,15 @@ class TaskRepository(
         val hdCompleted = tasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }
         val hdExpired = tasks.count { it.hardDeadline && it.status == TaskStatus.EXPIRED }
 
-        val totalEarned = tasks
-            .filter { it.status == TaskStatus.COMPLETED }
-            .sumOf { (it.resourceValue * accuracyMultiplier(it, timeByTask[it.id])).roundToInt() }
+        val totalEarned = tasks.sumOf { task ->
+            when (task.status) {
+                TaskStatus.COMPLETED ->
+                    (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id])).roundToInt()
+                TaskStatus.UNSUCCESSFUL ->
+                    (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id]) * 0.5).roundToInt()
+                else -> 0
+            }
+        }
 
         return WeekSnapshotEntity(
             id = java.util.UUID.randomUUID().toString(),
@@ -209,6 +228,7 @@ class TaskRepository(
             expiredCount = tasks.count { it.status == TaskStatus.EXPIRED },
             skippedCount = tasks.count { it.status == TaskStatus.SKIPPED },
             carriedForwardCount = tasks.count { it.status == TaskStatus.CARRIED_FORWARD },
+            unsuccessfulCount = tasks.count { it.status == TaskStatus.UNSUCCESSFUL },
             totalResourcesEarned = totalEarned,
             aspectBreakdown = gson.toJson(aspectBreakdown),
             categoryBreakdown = gson.toJson(categoryBreakdown),

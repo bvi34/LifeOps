@@ -97,7 +97,7 @@ class ReportsViewModel(
 
         val trend = snapshots.map { snap ->
             val total = snap.completedCount + snap.incompleteCount + snap.expiredCount +
-                    snap.skippedCount + snap.carriedForwardCount
+                    snap.skippedCount + snap.carriedForwardCount + snap.unsuccessfulCount
             WeeklyCompletionPoint(
                 snap.createdAt.take(10),
                 if (total > 0) snap.completedCount.toFloat() / total else 0f
@@ -137,7 +137,7 @@ class ReportsViewModel(
         val hdHitRate = if (hdTotal > 0) hdCompleted.toFloat() / hdTotal else 0f
 
         val totalTasks = snapshots.sumOf {
-            it.completedCount + it.incompleteCount + it.expiredCount + it.carriedForwardCount + it.skippedCount
+            it.completedCount + it.incompleteCount + it.expiredCount + it.carriedForwardCount + it.skippedCount + it.unsuccessfulCount
         }
         val cfRate = if (totalTasks > 0) snapshots.sumOf { it.carriedForwardCount }.toFloat() / totalTasks else 0f
 
@@ -194,7 +194,7 @@ class ReportsViewModel(
             val pTasks = tasks.filter { it.priority == p }
             val completed = pTasks.count { it.status == TaskStatus.COMPLETED }
             val total = pTasks.count {
-                it.status in listOf(TaskStatus.COMPLETED, TaskStatus.INCOMPLETE, TaskStatus.EXPIRED)
+                it.status in listOf(TaskStatus.COMPLETED, TaskStatus.INCOMPLETE, TaskStatus.EXPIRED, TaskStatus.UNSUCCESSFUL)
             }
             if (total == 0) null else PriorityCompletionRow(p, completed, total)
         }

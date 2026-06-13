@@ -80,6 +80,7 @@ class WeekRepository(
         expiredCount = expiredCount,
         skippedCount = skippedCount,
         carriedForwardCount = carriedForwardCount,
+        unsuccessfulCount = unsuccessfulCount,
         totalResourcesEarned = totalResourcesEarned,
         aspectBreakdown = gson.fromJson(aspectBreakdown, mapType) ?: emptyMap(),
         categoryBreakdown = gson.fromJson(categoryBreakdown, mapType) ?: emptyMap(),
