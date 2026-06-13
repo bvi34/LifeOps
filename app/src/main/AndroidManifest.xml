@@ -10,6 +10,7 @@
     <application
         android:name=".LifeOpsApp"
         android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="@xml/backup_rules"
         android:label="@string/app_name"
         android:theme="@style/Theme.LifeOps"
