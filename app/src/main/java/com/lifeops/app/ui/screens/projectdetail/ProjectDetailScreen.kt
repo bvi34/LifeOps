@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.CompletedGreen
 
@@ -30,8 +31,7 @@ fun ProjectDetailScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(project?.title ?: "Project") },
+            AppHeader(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, "Back")

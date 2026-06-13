@@ -22,6 +22,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.lifeops.app.ui.components.AppHeaderViewModel
+import com.lifeops.app.ui.components.AppHeaderViewModelFactory
+import com.lifeops.app.ui.components.LocalSardonicMessage
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -118,7 +121,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
     val navController = rememberNavController()
+    val headerVm = viewModel<AppHeaderViewModel>(
+        factory = AppHeaderViewModelFactory(app.weekRepository, app.taskRepository)
+    )
+    val sardonicMessage by headerVm.sardonicMessage.collectAsStateWithLifecycle()
 
+    CompositionLocalProvider(LocalSardonicMessage provides sardonicMessage) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -207,4 +215,5 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             }
         }
     }
+    } // CompositionLocalProvider
 }
