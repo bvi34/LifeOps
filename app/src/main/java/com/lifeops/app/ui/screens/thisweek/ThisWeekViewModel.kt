@@ -45,7 +45,7 @@ data class CategoryGroup(
 )
 
 data class UndoEvent(val message: String, val taskId: String, val action: UndoEventAction)
-enum class UndoEventAction { UNSKIP, UN_CARRY_FORWARD }
+enum class UndoEventAction { UNSKIP, UN_CARRY_FORWARD, UN_UNSUCCESSFUL }
 
 data class ThisWeekUiState(
     val week: Week? = null,
@@ -317,6 +317,21 @@ class ThisWeekViewModel(
             taskRepository.skipTask(taskId)
             refreshWidget()
             _undoChannel.trySend(UndoEvent("Task skipped", taskId, UndoEventAction.UNSKIP))
+        }
+    }
+
+    fun onUnsuccessTask(taskId: String) {
+        viewModelScope.launch {
+            taskRepository.unsuccessTask(taskId)
+            refreshWidget()
+            _undoChannel.trySend(UndoEvent("Marked unsuccessful", taskId, UndoEventAction.UN_UNSUCCESSFUL))
+        }
+    }
+
+    fun onUnUnsuccessTask(taskId: String) {
+        viewModelScope.launch {
+            taskRepository.unUnsuccessTask(taskId)
+            refreshWidget()
         }
     }
 

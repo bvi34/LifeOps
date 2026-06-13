@@ -88,6 +88,7 @@ fun TaskRow(
     val isSkipped = task.status == TaskStatus.SKIPPED
     val isExpired = task.status == TaskStatus.EXPIRED
     val isCarriedForward = task.status == TaskStatus.CARRIED_FORWARD
+    val isUnsuccessful = task.status == TaskStatus.UNSUCCESSFUL
     val hasExpandContent = notes.isNotEmpty() || totalTimeMinutes > 0 || isTimerActive || task.estimatedMinutes != null
 
     var expanded by remember { mutableStateOf(false) }
@@ -213,8 +214,8 @@ fun TaskRow(
                         Text(
                             text = task.title,
                             style = MaterialTheme.typography.bodyMedium,
-                            textDecoration = if (isCompleted || isSkipped || isCarriedForward) TextDecoration.LineThrough else null,
-                            color = if (isCompleted || isSkipped || isCarriedForward)
+                            textDecoration = if (isCompleted || isSkipped || isCarriedForward || isUnsuccessful) TextDecoration.LineThrough else null,
+                            color = if (isCompleted || isSkipped || isCarriedForward || isUnsuccessful)
                                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                             else MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,
@@ -445,6 +446,7 @@ private fun TaskStatusIcon(
         TaskStatus.PENDING -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onComplete() })
         TaskStatus.COMPLETED -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onUnComplete() })
         TaskStatus.SKIPPED -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onUnSkip() })
+        TaskStatus.UNSUCCESSFUL -> ({ haptic.performHapticFeedback(HapticFeedbackType.LongPress); onUnSkip() })
         TaskStatus.CARRIED_FORWARD -> null
         else -> null
     }
@@ -491,6 +493,19 @@ private fun TaskStatusIcon(
                     "↩",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.tertiary
+                )
+            }
+            TaskStatus.UNSUCCESSFUL -> Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                    .border(1.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f), RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "½",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
                 )
             }
             else -> Icon(
