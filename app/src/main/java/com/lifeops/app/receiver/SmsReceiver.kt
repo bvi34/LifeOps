@@ -94,7 +94,8 @@ class SmsReceiver : BroadcastReceiver() {
         val title: String
         val notes: List<String>
         if (lines.first().length > SmsConfig.TITLE_LENGTH_THRESHOLD) {
-            title = "Wife Request"
+            val name = app.preferencesRepository.smsWifeName.trim()
+            title = if (name.isNotBlank()) "${name.take(20).trim()} Task" else "Wife Request"
             notes = listOf(content.trim())
         } else {
             title = lines.first()
