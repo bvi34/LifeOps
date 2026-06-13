@@ -1,0 +1,67 @@
+/*
+  LifeOps icon theme mapping
+  ──────────────────────────────────────────────────────────────
+  Apply one of the .theme-* classes (or data-theme attribute) to
+  <html>, <body>, or any ancestor of an inline <svg> to override
+  the three icon colour tokens.
+
+  Falls back to the canonical dark palette when no class is set.
+
+  Android equivalents live in res/values/colors.xml.
+*/
+
+/* ── Canonical (matches Ocean-dark feel; used as fallback) ── */
+:root,
+.theme-default {
+  --icon-bg:    #1B2A41;
+  --icon-dial:  #4FD1C5;   /* DEFAULT secondary */
+  --icon-check: #F6C453;   /* warm gold */
+}
+
+/* ── Beacon dark ── */
+.theme-beacon,
+[data-theme="beacon"] {
+  --icon-bg:    #111827;   /* beaconDarkColors background */
+  --icon-dial:  #9B72CF;   /* beaconDarkColors secondary  */
+  --icon-check: #FFB74D;   /* beaconDarkColors tertiary   */
+}
+
+/* ── Beacon light ── */
+.theme-beacon-light,
+[data-theme="beacon-light"] {
+  --icon-bg:    #3B1F5E;   /* beaconLightColors primary   */
+  --icon-dial:  #6B4C9A;   /* beaconLightColors secondary */
+  --icon-check: #E65100;   /* beaconLightColors tertiary  */
+}
+
+/* ── Ocean dark ── */
+.theme-ocean,
+[data-theme="ocean"] {
+  --icon-bg:    #0A1628;   /* oceanDarkColors background  */
+  --icon-dial:  #4FC3F7;   /* oceanDarkColors secondary   */
+  --icon-check: #90CAF9;   /* oceanDarkColors primary     */
+}
+
+/* ── Ocean light ── */
+.theme-ocean-light,
+[data-theme="ocean-light"] {
+  --icon-bg:    #0277BD;   /* oceanLightColors primary    */
+  --icon-dial:  #0288D1;   /* oceanLightColors secondary  */
+  --icon-check: #00838F;   /* oceanLightColors tertiary   */
+}
+
+/* ── Sunset dark ── */
+.theme-sunset,
+[data-theme="sunset"] {
+  --icon-bg:    #1A0F00;   /* sunsetDarkColors background */
+  --icon-dial:  #FF7043;   /* sunsetDarkColors secondary  */
+  --icon-check: #FFCC02;   /* sunsetDarkColors tertiary   */
+}
+
+/* ── Sunset light ── */
+.theme-sunset-light,
+[data-theme="sunset-light"] {
+  --icon-bg:    #BF360C;   /* sunsetLightColors primary   */
+  --icon-dial:  #E65100;   /* sunsetLightColors secondary */
+  --icon-check: #F57F17;   /* sunsetLightColors tertiary  */
+}
