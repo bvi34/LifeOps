@@ -1,0 +1,49 @@
+<!--
+  LifeOps App Icon  —  source SVG
+  ──────────────────────────────────────────────────────────────
+  Three CSS custom properties control all colours.
+  When embedded inline in HTML the vars can be overridden by any
+  ancestor rule; when loaded as <img src> the :root fallbacks
+  below are used instead (see icon-themes.css for theme classes).
+
+  Variable      Semantic                  Fallback (canonical dark)
+  ──────────    ───────────────────────   ────────────────────────
+  --icon-bg     rounded-rect background   #1B2A41
+  --icon-dial   ring + cardinal ticks     #4FD1C5
+  --icon-check  checkmark needle          #F6C453
+
+  Beacon dark mapping:
+    --icon-bg    → background  #111827
+    --icon-dial  → secondary   #9B72CF
+    --icon-check → tertiary    #FFB74D
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+  <style>
+    :root {
+      --icon-bg:    #1B2A41;
+      --icon-dial:  #4FD1C5;
+      --icon-check: #F6C453;
+    }
+    .bg    { fill:   var(--icon-bg,    #1B2A41); }
+    .dial  { stroke: var(--icon-dial,  #4FD1C5); fill: none; }
+    .check { stroke: var(--icon-check, #F6C453); fill: none; }
+  </style>
+
+  <!-- Background -->
+  <rect class="bg" width="120" height="120" rx="24"/>
+
+  <!-- Dial ring — subtle, structural -->
+  <circle class="dial" cx="60" cy="60" r="38"
+          stroke-width="2.5" opacity="0.35"/>
+
+  <!-- Cardinal tick marks (12 / 3 / 6 / 9 o'clock) -->
+  <line class="dial" x1="60"  y1="22" x2="60"  y2="32"  stroke-width="4" stroke-linecap="round"/>
+  <line class="dial" x1="98"  y1="60" x2="88"  y2="60"  stroke-width="4" stroke-linecap="round"/>
+  <line class="dial" x1="60"  y1="98" x2="60"  y2="88"  stroke-width="4" stroke-linecap="round"/>
+  <line class="dial" x1="22"  y1="60" x2="32"  y2="60"  stroke-width="4" stroke-linecap="round"/>
+
+  <!-- Checkmark needle -->
+  <path class="check"
+        d="M44 62 L56 73 L79 47"
+        stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
