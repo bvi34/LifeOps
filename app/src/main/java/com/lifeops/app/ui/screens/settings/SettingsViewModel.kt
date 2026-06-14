@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
+import com.lifeops.app.util.nextAspectColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.*
@@ -18,7 +19,9 @@ data class SettingsUiState(
     val expandedAspectId: String? = null,
     val editingAspect: Aspect? = null,
     val editingCategory: Category? = null,
+    val editingProject: Project? = null,
     val showNewAspectDialog: Boolean = false,
+    val suggestedAspectColor: String = "#6200EE",
     val showNewCategoryDialog: Boolean = false,
     val newAspectForCategoryId: String? = null,
     val defaultReminderHour: Int = 9,
@@ -111,6 +114,16 @@ class SettingsViewModel(
         viewModelScope.launch { aspectRepository.upsertAspect(aspect) }
     }
 
+    fun showEditAspectDialog(aspect: Aspect) = _uiState.update { it.copy(editingAspect = aspect) }
+    fun hideEditAspectDialog() = _uiState.update { it.copy(editingAspect = null) }
+
+    fun saveAspectEdit(aspect: Aspect, name: String, color: String, icon: String) {
+        viewModelScope.launch {
+            aspectRepository.upsertAspect(aspect.copy(name = name, color = color, icon = icon))
+            _uiState.update { it.copy(editingAspect = null) }
+        }
+    }
+
     fun archiveAspect(id: String, archive: Boolean) {
         if (archive) {
             _uiState.update { it.copy(pendingArchiveAspectId = id) }
@@ -123,6 +136,16 @@ class SettingsViewModel(
         viewModelScope.launch {
             val category = Category(UUID.randomUUID().toString(), aspectId, name)
             aspectRepository.upsertCategory(category)
+        }
+    }
+
+    fun showEditCategoryDialog(category: Category) = _uiState.update { it.copy(editingCategory = category) }
+    fun hideEditCategoryDialog() = _uiState.update { it.copy(editingCategory = null) }
+
+    fun saveCategoryEdit(category: Category, name: String, aspectId: String) {
+        viewModelScope.launch {
+            aspectRepository.updateCategory(category.copy(name = name, aspectId = aspectId))
+            _uiState.update { it.copy(editingCategory = null) }
         }
     }
 
@@ -173,7 +196,12 @@ class SettingsViewModel(
     fun showReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = true) }
     fun hideReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = false) }
 
-    fun showNewAspectDialog() = _uiState.update { it.copy(showNewAspectDialog = true) }
+    fun showNewAspectDialog() = _uiState.update {
+        it.copy(
+            showNewAspectDialog = true,
+            suggestedAspectColor = nextAspectColor(it.aspects.map { aspect -> aspect.color })
+        )
+    }
     fun hideNewAspectDialog() = _uiState.update { it.copy(showNewAspectDialog = false) }
     fun showNewCategoryDialog(aspectId: String) = _uiState.update {
         it.copy(showNewCategoryDialog = true, newAspectForCategoryId = aspectId)
@@ -296,6 +324,17 @@ class SettingsViewModel(
 
     fun setProjectStatus(id: String, status: ProjectStatus) {
         viewModelScope.launch { projectRepository?.setStatus(id, status) }
+    }
+
+    fun showEditProjectDialog(project: Project) = _uiState.update { it.copy(editingProject = project) }
+    fun hideEditProjectDialog() = _uiState.update { it.copy(editingProject = null) }
+
+    fun saveProjectEdit(project: Project, title: String, aspectId: String?, categoryId: String?, description: String?) {
+        val repo = projectRepository ?: return
+        viewModelScope.launch {
+            repo.update(project.copy(title = title, aspectId = aspectId, categoryId = categoryId, description = description))
+            _uiState.update { it.copy(editingProject = null) }
+        }
     }
 
     fun setThemePreset(preset: ThemePreset) {

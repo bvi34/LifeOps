@@ -4,6 +4,7 @@ import com.lifeops.app.data.db.dao.AspectDao
 import com.lifeops.app.data.db.dao.CategoryDao
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
+import com.lifeops.app.util.nextAspectColor
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
@@ -29,6 +30,8 @@ class AspectRepository(
 
     suspend fun upsertCategory(category: Category) = categoryDao.upsert(category.toEntity())
 
+    suspend fun updateCategory(category: Category) = categoryDao.update(category.toEntity())
+
     suspend fun setAspectArchived(id: String, archived: Boolean) = aspectDao.setArchived(id, archived)
 
     suspend fun setCategoryArchived(id: String, archived: Boolean) = categoryDao.setArchived(id, archived)
@@ -39,13 +42,18 @@ class AspectRepository(
     suspend fun findCategoryByName(aspectId: String, name: String): Category? =
         categoryDao.findByAspectAndName(aspectId, name)?.toModel()
 
-    suspend fun findOrCreateAspect(name: String, color: String = "#6200EE", icon: String = "star"): Aspect {
+    suspend fun findOrCreateAspect(name: String, color: String? = null, icon: String = "star"): Aspect {
         val existing = aspectDao.findByName(name)
         if (existing != null) return existing.toModel()
-        val new = Aspect(java.util.UUID.randomUUID().toString(), name, color, icon)
+        val resolvedColor = color ?: suggestNextColor()
+        val new = Aspect(java.util.UUID.randomUUID().toString(), name, resolvedColor, icon)
         aspectDao.upsert(new.toEntity())
         return new
     }
+
+    /** Suggests the next aspect color, skipping any color already in use by an existing aspect. */
+    suspend fun suggestNextColor(): String =
+        nextAspectColor(aspectDao.getAllSync().map { it.color })
 
     suspend fun findOrCreateCategory(aspectId: String, name: String): Category {
         val existing = categoryDao.findByAspectAndName(aspectId, name)
