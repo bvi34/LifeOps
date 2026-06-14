@@ -31,6 +31,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.lifeops.app.ui.screens.growth.GrowthScreen
+import com.lifeops.app.ui.screens.growth.GrowthViewModelFactory
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModelFactory
 import com.lifeops.app.ui.screens.reports.ReportsScreen
@@ -47,10 +49,11 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
     object Resources : Screen("resources", "Resources", Icons.Default.Diamond)
     object Reports : Screen("reports", "Reports", Icons.Default.BarChart)
+    object Growth : Screen("growth", "Growth", Icons.Default.TrackChanges)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
-val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, Screen.Settings)
+val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, Screen.Growth, Screen.Settings)
 
 class MainActivity : ComponentActivity() {
 
@@ -191,6 +194,14 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     )
                 )
                 ReportsScreen(vm, onNavigateToProject = { id -> navController.navigate("project_detail/$id") })
+            }
+            composable(Screen.Growth.route) {
+                val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
+                    factory = GrowthViewModelFactory(
+                        app.weekRepository, app.aspectRepository, app.taskRepository, app.timeEntryRepository
+                    )
+                )
+                GrowthScreen(vm)
             }
             composable("project_detail/{projectId}") { backStackEntry ->
                 val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable

@@ -123,6 +123,17 @@ data class ResourceTransaction(
     val createdAt: String
 )
 
+/**
+ * Per-aspect record sealed into a closed week's snapshot at week-close. Carries the
+ * minutes spent plus the aspect's name + colour AS THEY WERE that week, so the Growth
+ * Record ring stays faithful even if the aspect is later deleted, renamed or recoloured.
+ */
+data class AspectHistoryEntry(
+    val minutes: Int,
+    val name: String,
+    val colorHex: String
+)
+
 data class WeekSnapshot(
     val id: String,
     val weekId: String,
@@ -139,7 +150,9 @@ data class WeekSnapshot(
     val categoryTotalBreakdown: Map<String, Int>,
     val hardDeadlineCompletedCount: Int,
     val hardDeadlineExpiredCount: Int,
-    val createdAt: String
+    val createdAt: String,
+    /** aspectId -> sealed {minutes, name, colour}. Drives the Growth rings for closed weeks. */
+    val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap()
 )
 
 enum class ProjectStatus(val value: String) {

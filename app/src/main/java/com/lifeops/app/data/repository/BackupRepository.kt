@@ -17,7 +17,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 4,
+    val version: Int = 5,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -91,7 +91,14 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (t in data.tasks) db.taskDao().upsert(t)
                 for (n in data.taskNotes) db.taskNoteDao().insert(n)
                 for (e in data.timeEntries) db.timeEntryDao().insert(e)
-                for (s in data.weekSnapshots) db.weekSnapshotDao().insert(s)
+                for (s in data.weekSnapshots) {
+                    // Backups written before v5 have no aspectHistory; Gson leaves it null,
+                    // which would violate the NOT NULL column. Coerce to "{}".
+                    val rawHistory: String? = s.aspectHistory
+                    db.weekSnapshotDao().insert(
+                        if (rawHistory == null) s.copy(aspectHistory = "{}") else s
+                    )
+                }
                 for (r in data.costResources) db.costResourceDao().upsert(r)
                 for (ce in data.taskCostEntries) db.taskCostEntryDao().insert(ce)
                 for (p in data.projects) db.projectDao().upsert(p)

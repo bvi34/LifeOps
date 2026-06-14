@@ -63,6 +63,14 @@ class LifeOpsApp : Application() {
                 taskRepository.repairSameWeekCarries()
                 preferencesRepository.sameWeekCarryRepairDone = true
             }
+            if (!preferencesRepository.growthAspectHistoryBackfillDone) {
+                // Non-fatal: if this fails, rings just fall back to live derivation for old
+                // weeks and we retry next launch — it must never block current-week creation.
+                try {
+                    taskRepository.backfillAspectHistory()
+                    preferencesRepository.growthAspectHistoryBackfillDone = true
+                } catch (_: Exception) { }
+            }
             val previousWeek = weekRepository.getMostRecentClosedWeek()
             val currentWeek = weekRepository.getOrCreateCurrentWeek()
             // Seed recurring tasks from the most recently closed week into the new week
