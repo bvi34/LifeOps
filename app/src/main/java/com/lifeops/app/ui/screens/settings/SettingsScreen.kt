@@ -11,6 +11,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -103,8 +105,10 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     isExpanded = state.expandedAspectId == aspect.id,
                     onToggle = { viewModel.toggleAspectExpanded(aspect.id) },
                     onArchive = { viewModel.archiveAspect(aspect.id, !aspect.isArchived) },
+                    onEdit = { viewModel.showEditAspectDialog(aspect) },
                     onAddCategory = { viewModel.showNewCategoryDialog(aspect.id) },
-                    onArchiveCategory = { catId, archive -> viewModel.archiveCategory(catId, archive) }
+                    onArchiveCategory = { catId, archive -> viewModel.archiveCategory(catId, archive) },
+                    onEditCategory = { category -> viewModel.showEditCategoryDialog(category) }
                 )
             }
             item {
@@ -232,7 +236,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         val newStatus = if (project.status == ProjectStatus.ACTIVE)
                             ProjectStatus.COMPLETED else ProjectStatus.ACTIVE
                         viewModel.setProjectStatus(project.id, newStatus)
-                    }
+                    },
+                    onEdit = { viewModel.showEditProjectDialog(project) }
                 )
             }
         }
@@ -259,8 +264,17 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
     if (state.showNewAspectDialog) {
         NewAspectDialog(
+            suggestedColor = state.suggestedAspectColor,
             onConfirm = { name, color, icon -> viewModel.addAspect(name, color, icon); viewModel.hideNewAspectDialog() },
             onDismiss = viewModel::hideNewAspectDialog
+        )
+    }
+
+    state.editingAspect?.let { aspect ->
+        EditAspectDialog(
+            aspect = aspect,
+            onConfirm = { name, color, icon -> viewModel.saveAspectEdit(aspect, name, color, icon) },
+            onDismiss = viewModel::hideEditAspectDialog
         )
     }
 
@@ -271,6 +285,15 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 onDismiss = viewModel::hideNewCategoryDialog
             )
         }
+    }
+
+    state.editingCategory?.let { category ->
+        EditCategoryDialog(
+            category = category,
+            aspects = state.aspects,
+            onConfirm = { name, aspectId -> viewModel.saveCategoryEdit(category, name, aspectId) },
+            onDismiss = viewModel::hideEditCategoryDialog
+        )
     }
 
     if (state.showNewCostResourceDialog) {
@@ -289,6 +312,18 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 viewModel.addProject(title, aspectId)
             },
             onDismiss = viewModel::hideNewProjectDialog
+        )
+    }
+
+    state.editingProject?.let { project ->
+        EditProjectDialog(
+            project = project,
+            aspects = state.aspects,
+            categories = state.categories,
+            onConfirm = { title, aspectId, categoryId, description ->
+                viewModel.saveProjectEdit(project, title, aspectId, categoryId, description)
+            },
+            onDismiss = viewModel::hideEditProjectDialog
         )
     }
 
@@ -680,8 +715,10 @@ private fun AspectItem(
     isExpanded: Boolean,
     onToggle: () -> Unit,
     onArchive: () -> Unit,
+    onEdit: () -> Unit,
     onAddCategory: () -> Unit,
-    onArchiveCategory: (String, Boolean) -> Unit
+    onArchiveCategory: (String, Boolean) -> Unit,
+    onEditCategory: (com.lifeops.app.data.model.Category) -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -707,6 +744,13 @@ private fun AspectItem(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+                IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.Edit,
+                        contentDescription = "Edit aspect",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
                 IconButton(onClick = onArchive, modifier = Modifier.size(32.dp)) {
                     Icon(
                         if (aspect.isArchived) Icons.Default.Unarchive else Icons.Default.Archive,
@@ -729,6 +773,17 @@ private fun AspectItem(
                             color = if (cat.isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             else MaterialTheme.colorScheme.onSurface
                         )
+                        IconButton(
+                            onClick = { onEditCategory(cat) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Edit,
+                                contentDescription = "Edit category",
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
+                        }
                         IconButton(
                             onClick = { onArchiveCategory(cat.id, !cat.isArchived) },
                             modifier = Modifier.size(28.dp)
@@ -784,9 +839,9 @@ private fun GameResourceItem(resource: GameResource, onRename: (String) -> Unit)
 }
 
 @Composable
-private fun NewAspectDialog(onConfirm: (String, String, String) -> Unit, onDismiss: () -> Unit) {
+private fun NewAspectDialog(suggestedColor: String, onConfirm: (String, String, String) -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
-    var color by remember { mutableStateOf("#6200EE") }
+    var color by remember { mutableStateOf(suggestedColor) }
     var icon by remember { mutableStateOf("star") }
 
     AlertDialog(
@@ -795,6 +850,8 @@ private fun NewAspectDialog(onConfirm: (String, String, String) -> Unit, onDismi
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
                 OutlinedTextField(value = color, onValueChange = { color = it }, label = { Text("Color (hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
@@ -806,6 +863,56 @@ private fun NewAspectDialog(onConfirm: (String, String, String) -> Unit, onDismi
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun EditAspectDialog(aspect: Aspect, onConfirm: (String, String, String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember(aspect.id) { mutableStateOf(aspect.name) }
+    var color by remember(aspect.id) { mutableStateOf(aspect.color) }
+    var icon by remember(aspect.id) { mutableStateOf(aspect.icon) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Aspect") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
+                OutlinedTextField(value = color, onValueChange = { color = it }, label = { Text("Color (hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            Button(onClick = { if (name.isNotBlank()) onConfirm(name.trim(), color, icon) }, enabled = name.isNotBlank()) {
+                Text("Save")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun ColorSwatchPicker(selectedColor: String, onSelect: (String) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        com.lifeops.app.util.aspectColorPalette.forEach { hex ->
+            val isSelected = hex.equals(selectedColor, ignoreCase = true)
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .background(parseColor(hex), shape = CircleShape)
+                    .then(
+                        if (isSelected)
+                            Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, shape = CircleShape)
+                        else Modifier
+                    )
+                    .clickable { onSelect(hex) }
+            ) {}
+        }
+    }
 }
 
 private fun hourLabel(hour: Int): String {
@@ -1000,10 +1107,65 @@ private fun NewCategoryDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit
 }
 
 @Composable
+private fun EditCategoryDialog(
+    category: com.lifeops.app.data.model.Category,
+    aspects: List<Aspect>,
+    onConfirm: (name: String, aspectId: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember(category.id) { mutableStateOf(category.name) }
+    var selectedAspectId by remember(category.id) { mutableStateOf(category.aspectId) }
+    var dropdownExpanded by remember { mutableStateOf(false) }
+    val selectedAspect = aspects.firstOrNull { it.id == selectedAspectId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Category") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedAspect?.name ?: "Select aspect",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Aspect") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        aspects.forEach { aspect ->
+                            DropdownMenuItem(
+                                text = { Text(aspect.name) },
+                                onClick = { selectedAspectId = aspect.id; dropdownExpanded = false }
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedAspectId) },
+                enabled = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
 private fun ProjectItem(
     project: Project,
     aspectName: String?,
-    onToggleStatus: () -> Unit
+    onToggleStatus: () -> Unit,
+    onEdit: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1027,6 +1189,9 @@ private fun ProjectItem(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                 }
+            }
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit project", modifier = Modifier.size(18.dp))
             }
             TextButton(onClick = onToggleStatus) {
                 Text(if (project.status == ProjectStatus.ACTIVE) "Complete" else "Reopen")
@@ -1095,6 +1260,117 @@ private fun NewProjectDialog(
                 onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedAspectId) },
                 enabled = name.isNotBlank()
             ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun EditProjectDialog(
+    project: Project,
+    aspects: List<Aspect>,
+    categories: Map<String, List<com.lifeops.app.data.model.Category>>,
+    onConfirm: (title: String, aspectId: String?, categoryId: String?, description: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var title by remember(project.id) { mutableStateOf(project.title) }
+    var description by remember(project.id) { mutableStateOf(project.description ?: "") }
+    var selectedAspectId by remember(project.id) { mutableStateOf(project.aspectId) }
+    var selectedCategoryId by remember(project.id) { mutableStateOf(project.categoryId) }
+    var aspectExpanded by remember { mutableStateOf(false) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+
+    val selectedAspect = aspects.firstOrNull { it.id == selectedAspectId }
+    val categoriesForAspect = categories[selectedAspectId] ?: emptyList()
+    val selectedCategory = categoriesForAspect.firstOrNull { it.id == selectedCategoryId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Project") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                ExposedDropdownMenuBox(
+                    expanded = aspectExpanded,
+                    onExpandedChange = { aspectExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedAspect?.name ?: "No aspect",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Aspect (optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = aspectExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = aspectExpanded,
+                        onDismissRequest = { aspectExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("No aspect") },
+                            onClick = { selectedAspectId = null; selectedCategoryId = null; aspectExpanded = false }
+                        )
+                        aspects.forEach { aspect ->
+                            DropdownMenuItem(
+                                text = { Text(aspect.name) },
+                                onClick = { selectedAspectId = aspect.id; selectedCategoryId = null; aspectExpanded = false }
+                            )
+                        }
+                    }
+                }
+                if (selectedAspectId != null && categoriesForAspect.isNotEmpty()) {
+                    ExposedDropdownMenuBox(
+                        expanded = categoryExpanded,
+                        onExpandedChange = { categoryExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "No category",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category (optional)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = categoryExpanded,
+                            onDismissRequest = { categoryExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("No category") },
+                                onClick = { selectedCategoryId = null; categoryExpanded = false }
+                            )
+                            categoriesForAspect.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = { selectedCategoryId = cat.id; categoryExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (title.isNotBlank()) {
+                        onConfirm(title.trim(), selectedAspectId, selectedCategoryId, description.trim().ifBlank { null })
+                    }
+                },
+                enabled = title.isNotBlank()
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

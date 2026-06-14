@@ -25,6 +25,8 @@ class ProjectRepository(private val projectDao: ProjectDao) {
 
     suspend fun upsert(project: Project) = projectDao.upsert(project.toEntity())
 
+    suspend fun update(project: Project) = projectDao.update(project.toEntity())
+
     suspend fun setStatus(id: String, status: ProjectStatus) {
         val completedAt = if (status == ProjectStatus.COMPLETED) DateUtil.now() else null
         projectDao.updateStatus(id, status.value, completedAt)

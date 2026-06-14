@@ -18,6 +18,9 @@ interface ProjectDao {
     @Upsert
     suspend fun upsert(project: ProjectEntity)
 
+    @Update
+    suspend fun update(project: ProjectEntity)
+
     @Query("UPDATE projects SET status = :status, completedAt = :completedAt WHERE id = :id")
     suspend fun updateStatus(id: String, status: String, completedAt: String?)
 
