@@ -104,7 +104,8 @@ class TaskRepository(
                 }
             }
             val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
-            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now)
+            val aspectMeta = aspectDao.getAllSync().associate { it.id to (it.name to it.color) }
+            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta)
             weekSnapshotDao.insert(snapshot)
             weekDao.update(week.copy(isClosed = true, closedAt = now))
             applySnapshotToGameResources(snapshot)
@@ -178,7 +179,8 @@ class TaskRepository(
         weekId: String,
         tasks: List<Task>,
         timeByTask: Map<String, Int>,
-        now: String
+        now: String,
+        aspectMeta: Map<String, Pair<String, String>>
     ): WeekSnapshotEntity {
         val aspectBreakdown = mutableMapOf<String, Int>()
         val categoryBreakdown = mutableMapOf<String, Int>()
@@ -205,6 +207,20 @@ class TaskRepository(
                 }
                 else -> Unit
             }
+        }
+
+        // Growth rings: minutes per aspect = ALL logged time that week (effort is effort,
+        // regardless of whether the task was completed). Seal the aspect's current name +
+        // colour so the ring stays faithful if the aspect is later deleted/renamed/recoloured.
+        val aspectMinutes = mutableMapOf<String, Int>()
+        tasks.forEach { task ->
+            val aspectId = task.aspectId ?: return@forEach
+            val mins = timeByTask[task.id] ?: 0
+            if (mins > 0) aspectMinutes[aspectId] = (aspectMinutes[aspectId] ?: 0) + mins
+        }
+        val aspectHistory = aspectMinutes.mapValues { (id, mins) ->
+            val meta = aspectMeta[id]
+            AspectHistoryEntry(mins, meta?.first ?: id, meta?.second ?: GrowthRings.SCAR_COLOR)
         }
 
         val hdCompleted = tasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }
@@ -236,8 +252,40 @@ class TaskRepository(
             categoryTotalBreakdown = gson.toJson(categoryTotalBreakdown),
             hardDeadlineCompletedCount = hdCompleted,
             hardDeadlineExpiredCount = hdExpired,
-            createdAt = now
+            createdAt = now,
+            aspectHistory = gson.toJson(aspectHistory)
         )
+    }
+
+    /**
+     * One-time backfill of [WeekSnapshotEntity.aspectHistory] for weeks closed before that
+     * column existed, so their Growth rings are deletion-safe (and identical to what a live
+     * derivation would produce today). Idempotent — only fills snapshots that are still empty.
+     */
+    suspend fun backfillAspectHistory() {
+        val snapshots = weekSnapshotDao.getAll()
+        if (snapshots.isEmpty()) return
+        val aspectMeta = aspectDao.getAllSync().associate { it.id to (it.name to it.color) }
+        db.withTransaction {
+            for (snap in snapshots) {
+                if (snap.aspectHistory.isNotBlank() && snap.aspectHistory != "{}") continue
+                val timeByTask = db.timeEntryDao().getByWeek(snap.weekId)
+                    .groupBy { it.taskId }
+                    .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
+                val aspectMinutes = mutableMapOf<String, Int>()
+                taskDao.getAllByWeek(snap.weekId).forEach { task ->
+                    val aspectId = task.aspectId ?: return@forEach
+                    val mins = timeByTask[task.id] ?: 0
+                    if (mins > 0) aspectMinutes[aspectId] = (aspectMinutes[aspectId] ?: 0) + mins
+                }
+                if (aspectMinutes.isEmpty()) continue
+                val history = aspectMinutes.mapValues { (id, mins) ->
+                    val meta = aspectMeta[id]
+                    AspectHistoryEntry(mins, meta?.first ?: id, meta?.second ?: GrowthRings.SCAR_COLOR)
+                }
+                weekSnapshotDao.insert(snap.copy(aspectHistory = gson.toJson(history)))
+            }
+        }
     }
 
     // Must be called from within a database transaction.

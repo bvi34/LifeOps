@@ -3,6 +3,7 @@ package com.lifeops.app.data.repository
 import com.lifeops.app.data.db.dao.WeekDao
 import com.lifeops.app.data.db.dao.WeekSnapshotDao
 import com.lifeops.app.data.db.entities.WeekSnapshotEntity
+import com.lifeops.app.data.model.AspectHistoryEntry
 import com.lifeops.app.data.model.Week
 import com.lifeops.app.data.model.WeekSnapshot
 import com.lifeops.app.util.*
@@ -20,6 +21,7 @@ class WeekRepository(
 ) {
     private val gson = Gson()
     private val mapType = object : TypeToken<Map<String, Int>>() {}.type
+    private val aspectHistoryType = object : TypeToken<Map<String, AspectHistoryEntry>>() {}.type
     private val weekCreationMutex = Mutex()
 
     fun observeCurrentWeek(): Flow<Week?> =
@@ -72,6 +74,8 @@ class WeekRepository(
 
     suspend fun getAllWeeksSync(): List<Week> = weekDao.getAllSync().map { it.toModel() }
 
+    suspend fun getAllSnapshotsSync(): List<WeekSnapshot> = weekSnapshotDao.getAll().map { it.toModel() }
+
     private fun WeekSnapshotEntity.toModel(): WeekSnapshot = WeekSnapshot(
         id = id,
         weekId = weekId,
@@ -88,6 +92,7 @@ class WeekRepository(
         categoryTotalBreakdown = gson.fromJson(categoryTotalBreakdown, mapType) ?: emptyMap(),
         hardDeadlineCompletedCount = hardDeadlineCompletedCount,
         hardDeadlineExpiredCount = hardDeadlineExpiredCount,
-        createdAt = createdAt
+        createdAt = createdAt,
+        aspectHistory = gson.fromJson(aspectHistory, aspectHistoryType) ?: emptyMap()
     )
 }

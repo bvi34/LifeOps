@@ -55,6 +55,9 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
+    val growthRepository by lazy {
+        GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -62,6 +65,14 @@ class LifeOpsApp : Application() {
             if (!preferencesRepository.sameWeekCarryRepairDone) {
                 taskRepository.repairSameWeekCarries()
                 preferencesRepository.sameWeekCarryRepairDone = true
+            }
+            if (!preferencesRepository.growthAspectHistoryBackfillDone) {
+                // Non-fatal: if this fails, rings just fall back to live derivation for old
+                // weeks and we retry next launch — it must never block current-week creation.
+                try {
+                    taskRepository.backfillAspectHistory()
+                    preferencesRepository.growthAspectHistoryBackfillDone = true
+                } catch (_: Exception) { }
             }
             val previousWeek = weekRepository.getMostRecentClosedWeek()
             val currentWeek = weekRepository.getOrCreateCurrentWeek()

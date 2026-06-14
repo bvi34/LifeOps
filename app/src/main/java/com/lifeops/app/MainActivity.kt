@@ -25,12 +25,15 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lifeops.app.ui.components.AppHeaderViewModel
 import com.lifeops.app.ui.components.AppHeaderViewModelFactory
 import com.lifeops.app.ui.components.LocalSardonicMessage
+import com.lifeops.app.ui.components.WelcomeDialog
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.lifeops.app.ui.screens.growth.GrowthScreen
+import com.lifeops.app.ui.screens.growth.GrowthViewModelFactory
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModelFactory
 import com.lifeops.app.ui.screens.reports.ReportsScreen
@@ -47,10 +50,11 @@ sealed class Screen(val route: String, val label: String, val icon: ImageVector)
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
     object Resources : Screen("resources", "Resources", Icons.Default.Diamond)
     object Reports : Screen("reports", "Reports", Icons.Default.BarChart)
+    object Growth : Screen("growth", "Growth", Icons.Default.TrackChanges)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
-val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, Screen.Settings)
+val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, Screen.Growth, Screen.Settings)
 
 class MainActivity : ComponentActivity() {
 
@@ -103,6 +107,13 @@ class MainActivity : ComponentActivity() {
             val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
             LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
                 LifeOpsNavHost(app, sharedText)
+                var showWelcome by remember { mutableStateOf(!app.preferencesRepository.onboardingShown) }
+                if (showWelcome) {
+                    WelcomeDialog(onDismiss = {
+                        app.preferencesRepository.onboardingShown = true
+                        showWelcome = false
+                    })
+                }
                 if (showNotificationDeniedDialog) {
                     AlertDialog(
                         onDismissRequest = { showNotificationDeniedDialog = false },
@@ -192,6 +203,12 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 )
                 ReportsScreen(vm, onNavigateToProject = { id -> navController.navigate("project_detail/$id") })
             }
+            composable(Screen.Growth.route) {
+                val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
+                    factory = GrowthViewModelFactory(app.growthRepository)
+                )
+                GrowthScreen(vm)
+            }
             composable("project_detail/{projectId}") { backStackEntry ->
                 val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
                 val vm = viewModel<com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModel>(
@@ -208,7 +225,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     factory = SettingsViewModelFactory(
                         app.aspectRepository, app.gameResourceRepository,
                         app.preferencesRepository, app.backupRepository, app.taskRepository,
-                        app.costResourceRepository, app.projectRepository
+                        app.costResourceRepository, app.projectRepository, app.growthRepository
                     )
                 )
                 SettingsScreen(vm)

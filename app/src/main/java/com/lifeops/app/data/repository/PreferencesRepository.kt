@@ -20,9 +20,20 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getBoolean("same_week_carry_repair_done", false)
         set(value) { prefs.edit().putBoolean("same_week_carry_repair_done", value).apply() }
 
+    // One-time backfill of WeekSnapshot.aspectHistory (per-aspect minutes/name/colour) for
+    // weeks closed before that column existed, so historical Growth rings are deletion-safe.
+    var growthAspectHistoryBackfillDone: Boolean
+        get() = prefs.getBoolean("growth_aspect_history_backfill_done", false)
+        set(value) { prefs.edit().putBoolean("growth_aspect_history_backfill_done", value).apply() }
+
     var savedSortOrder: String
         get() = prefs.getString("sort_order", "DEFAULT") ?: "DEFAULT"
         set(value) { prefs.edit().putString("sort_order", value).apply() }
+
+    // First-run welcome: shown once, then never again.
+    var onboardingShown: Boolean
+        get() = prefs.getBoolean("onboarding_shown", false)
+        set(value) { prefs.edit().putBoolean("onboarding_shown", value).apply() }
 
     private val _themePresetFlow = MutableStateFlow(
         ThemePreset.from(prefs.getString("theme_preset", ThemePreset.DEFAULT.name) ?: ThemePreset.DEFAULT.name)

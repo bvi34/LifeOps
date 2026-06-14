@@ -34,5 +34,9 @@ data class WeekSnapshotEntity(
     val categoryTotalBreakdown: String,
     val hardDeadlineCompletedCount: Int,
     val hardDeadlineExpiredCount: Int,
-    val createdAt: String
+    val createdAt: String,
+    // JSON: aspectId -> { minutes, name, colorHex }. Sealed at week-close so the Growth
+    // Record rings survive an aspect being deleted/renamed/recoloured. Defaults to "{}"
+    // for snapshots written before this column existed (backfilled on first launch).
+    val aspectHistory: String = "{}"
 )
