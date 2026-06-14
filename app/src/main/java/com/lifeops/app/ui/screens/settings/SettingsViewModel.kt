@@ -42,6 +42,8 @@ data class SettingsUiState(
     val customPalette: CustomPalette = CustomPalette(),
     val pendingExportJson: String? = null,
     val pendingExportCsv: String? = null,
+    val pendingExportRingsCsv: String? = null,
+    val pendingExportRingsSvg: String? = null,
     val smsWifeNumber: String = "",
     val smsWifeName: String = ""
 )
@@ -53,7 +55,8 @@ class SettingsViewModel(
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
-    private val projectRepository: ProjectRepository? = null
+    private val projectRepository: ProjectRepository? = null,
+    private val growthRepository: GrowthRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -267,8 +270,51 @@ class SettingsViewModel(
         }
     }
 
+    fun prepareExportRingsCsv() {
+        val repo = growthRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingExportRingsCsv = repo.buildRingsCsv()) }
+        }
+    }
+
+    fun writeRingsCsvToUri(context: Context, uri: Uri) {
+        val csv = _uiState.value.pendingExportRingsCsv ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+            } finally {
+                _uiState.update { it.copy(pendingExportRingsCsv = null) }
+            }
+        }
+    }
+
+    fun prepareExportRingsSvg() {
+        val repo = growthRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingExportRingsSvg = repo.buildRingsSvg()) }
+        }
+    }
+
+    fun writeRingsSvgToUri(context: Context, uri: Uri) {
+        val svg = _uiState.value.pendingExportRingsSvg ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(svg.toByteArray()) }
+            } finally {
+                _uiState.update { it.copy(pendingExportRingsSvg = null) }
+            }
+        }
+    }
+
     fun cancelPendingExport() {
-        _uiState.update { it.copy(pendingExportJson = null, pendingExportCsv = null) }
+        _uiState.update {
+            it.copy(
+                pendingExportJson = null,
+                pendingExportCsv = null,
+                pendingExportRingsCsv = null,
+                pendingExportRingsSvg = null
+            )
+        }
     }
 
     fun showRestoreDialog() = _uiState.update { it.copy(showRestoreDialog = true, restoreError = null, restoreWarning = null) }
@@ -367,9 +413,10 @@ class SettingsViewModelFactory(
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
-    private val projectRepository: ProjectRepository? = null
+    private val projectRepository: ProjectRepository? = null,
+    private val growthRepository: GrowthRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository) as T
 }

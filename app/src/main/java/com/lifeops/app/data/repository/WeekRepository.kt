@@ -74,6 +74,8 @@ class WeekRepository(
 
     suspend fun getAllWeeksSync(): List<Week> = weekDao.getAllSync().map { it.toModel() }
 
+    suspend fun getAllSnapshotsSync(): List<WeekSnapshot> = weekSnapshotDao.getAll().map { it.toModel() }
+
     private fun WeekSnapshotEntity.toModel(): WeekSnapshot = WeekSnapshot(
         id = id,
         weekId = weekId,

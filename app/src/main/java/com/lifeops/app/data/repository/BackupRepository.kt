@@ -12,6 +12,7 @@ import com.google.gson.JsonParser
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.entities.*
 import com.lifeops.app.data.model.CustomPalette
+import com.lifeops.app.util.Csv
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -113,37 +114,53 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         val tasks = db.taskDao().getAll()
         val aspects = db.aspectDao().getAllSync().associateBy { it.id }
         val categories = db.categoryDao().getAllSync().associateBy { it.id }
+        val weeks = db.weekDao().getAllSync().associateBy { it.id }
+        val projects = db.projectDao().getAll().associateBy { it.id }
         val timeByTask = db.timeEntryDao().getAll()
             .groupBy { it.taskId }
             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
         val notesByTask = db.taskNoteDao().getAll()
             .groupBy { it.taskId }
             .mapValues { (_, notes) -> notes.joinToString("; ") { it.content } }
+        val costResources = db.costResourceDao().getAllSync().associateBy { it.id }
+        val costByTask = db.taskCostEntryDao().getAll()
+            .groupBy { it.taskId }
+            .mapValues { (_, entries) ->
+                entries.joinToString("; ") { e -> "${costResources[e.resourceId]?.name ?: e.resourceId}:${e.amount}" }
+            }
 
+        // One row per task carrying every task-level field. Proper CSV quoting (via Csv) means
+        // commas in titles/notes are preserved rather than mangled, and timestamps are kept in
+        // full. Still a flat projection: the JSON backup remains the lossless / restorable copy.
         val sb = StringBuilder()
-        sb.appendLine("Title,Aspect,Category,Priority,Status,DueDate,HardDeadline,Recurring,EstimatedMinutes,TimeLoggedMinutes,CarriedCount,Notes,CreatedAt,CompletedAt")
+        sb.append(Csv.row(listOf(
+            "ID", "Title", "Week", "Aspect", "Category", "Project", "Priority", "Status", "Source",
+            "DueDate", "HardDeadline", "Recurring", "EstimatedMinutes", "TimeLoggedMinutes",
+            "ResourceValue", "CarriedCount", "CostEntries", "Notes", "CreatedAt", "CompletedAt"
+        ))).append('\n')
         tasks.forEach { t ->
-            val aspect = aspects[t.aspectId]?.name ?: ""
-            val category = categories[t.categoryId]?.name ?: ""
-            val notes = notesByTask[t.id]?.replace(",", ";") ?: ""
-            sb.appendLine(
-                listOf(
-                    t.title.replace(",", ";"),
-                    aspect,
-                    category,
-                    t.priority,
-                    t.status,
-                    t.dueDate ?: "",
-                    if (t.hardDeadline) "true" else "false",
-                    if (t.isRecurring) "true" else "false",
-                    t.estimatedMinutes?.toString() ?: "",
-                    timeByTask[t.id]?.toString() ?: "0",
-                    t.carriedCount.toString(),
-                    notes,
-                    t.createdAt.take(10),
-                    t.completedAt?.take(10) ?: ""
-                ).joinToString(",")
-            )
+            sb.append(Csv.row(listOf(
+                t.id,
+                t.title,
+                weeks[t.weekId]?.startDate ?: "",
+                aspects[t.aspectId]?.name ?: "",
+                categories[t.categoryId]?.name ?: "",
+                projects[t.projectId]?.title ?: "",
+                t.priority,
+                t.status,
+                t.source,
+                t.dueDate ?: "",
+                if (t.hardDeadline) "true" else "false",
+                if (t.isRecurring) "true" else "false",
+                t.estimatedMinutes?.toString() ?: "",
+                (timeByTask[t.id] ?: 0).toString(),
+                t.resourceValue.toString(),
+                t.carriedCount.toString(),
+                costByTask[t.id] ?: "",
+                notesByTask[t.id] ?: "",
+                t.createdAt,
+                t.completedAt ?: ""
+            ))).append('\n')
         }
         sb.toString()
     }

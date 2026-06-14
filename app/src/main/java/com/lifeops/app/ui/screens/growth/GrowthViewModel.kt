@@ -3,25 +3,16 @@ package com.lifeops.app.ui.screens.growth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lifeops.app.data.model.Week
-import com.lifeops.app.data.model.WeekSnapshot
-import com.lifeops.app.data.repository.AspectRepository
-import com.lifeops.app.data.repository.TaskRepository
-import com.lifeops.app.data.repository.TimeEntryRepository
-import com.lifeops.app.data.repository.WeekRepository
+import com.lifeops.app.data.repository.GrowthRepository
 import com.lifeops.app.util.GrowthColor
 import com.lifeops.app.util.GrowthData
-import com.lifeops.app.util.GrowthExport
 import com.lifeops.app.util.GrowthRings
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 data class GrowthLegendRow(
     val aspectId: String,
@@ -40,16 +31,11 @@ data class GrowthUiState(
     val glowEnabled: Boolean = true,
     val selectedWeekId: String? = null,
     val selectedWeekDetail: List<GrowthLegendRow> = emptyList(),
-    val isLoading: Boolean = true,
-    val pendingExportCsv: String? = null,
-    val pendingExportSvg: String? = null
+    val isLoading: Boolean = true
 )
 
 class GrowthViewModel(
-    private val weekRepository: WeekRepository,
-    private val aspectRepository: AspectRepository,
-    private val taskRepository: TaskRepository,
-    private val timeEntryRepository: TimeEntryRepository
+    private val growthRepository: GrowthRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GrowthUiState())
@@ -60,50 +46,11 @@ class GrowthViewModel(
 
     init {
         viewModelScope.launch {
-            combine(
-                weekRepository.observeAllWeeks(),
-                weekRepository.observeSnapshots(),
-                aspectRepository.observeAllAspects()
-            ) { weeks, snapshots, aspects ->
-                Triple(weeks, snapshots, aspects.map { GrowthData.LiveAspect(it.id, it.name, it.color) })
-            }.collectLatest { (weeks, snapshots, liveAspects) ->
-                assembled = withContext(Dispatchers.Default) { assemble(weeks, snapshots, liveAspects) }
+            growthRepository.observeChanges().collectLatest {
+                assembled = growthRepository.assemble()
                 rebuildScene()
             }
         }
-    }
-
-    private suspend fun assemble(
-        weeks: List<Week>,
-        snapshots: List<WeekSnapshot>,
-        liveAspects: List<GrowthData.LiveAspect>
-    ): GrowthData.Assembled {
-        val snapshotByWeek = snapshots.associateBy { it.weekId }
-
-        // Live fallback: weekId -> aspectId -> minutes, joined from tasks + time entries.
-        val tasks = taskRepository.getAllTasks()
-        val taskById = tasks.associateBy { it.id }
-        val minutesByTaskWeekAspect = HashMap<String, HashMap<String, Int>>()
-        timeEntryRepository.getAllSince(EPOCH).forEach { entry ->
-            val task = taskById[entry.taskId] ?: return@forEach
-            val aspectId = task.aspectId ?: return@forEach
-            val perWeek = minutesByTaskWeekAspect.getOrPut(task.weekId) { HashMap() }
-            perWeek[aspectId] = (perWeek[aspectId] ?: 0) + entry.durationMinutes
-        }
-
-        val sources = weeks.map { week ->
-            val sealedHistory = snapshotByWeek[week.id]?.aspectHistory.orEmpty().mapValues {
-                GrowthData.AspectHist(it.value.minutes, it.value.name, it.value.colorHex)
-            }
-            GrowthData.WeekSource(
-                weekId = week.id,
-                startDate = week.startDate,
-                isClosed = week.isClosed,
-                aspectHistory = sealedHistory,
-                liveMinutesByAspect = minutesByTaskWeekAspect[week.id] ?: emptyMap()
-            )
-        }
-        return GrowthData.assemble(liveAspects, sources)
     }
 
     private fun rebuildScene() {
@@ -115,12 +62,11 @@ class GrowthViewModel(
             glowEnabled = state.glowEnabled
         )
         val latest = assembled.weeks.lastOrNull()
-        val legend = legendFor(latest?.hoursByAspect ?: emptyMap(), state.colorByHours)
         val totalHours = assembled.weeks.sumOf { it.hoursByAspect.values.sum() }
         _uiState.update {
             it.copy(
                 scene = scene,
-                legend = legend,
+                legend = legendFor(latest?.hoursByAspect ?: emptyMap(), state.colorByHours),
                 latestWeekLabel = latest?.label,
                 totalWeeks = assembled.weeks.size,
                 totalHours = totalHours,
@@ -160,38 +106,12 @@ class GrowthViewModel(
             )
         }
     }
-
-    fun prepareCsvExport() {
-        _uiState.update { it.copy(pendingExportCsv = GrowthExport.buildRingsCsv(assembled.aspects, assembled.weeks)) }
-    }
-
-    fun prepareSvgExport() {
-        val scene = _uiState.value.scene ?: GrowthRings.computeScene(assembled.aspects, assembled.weeks)
-        _uiState.update { it.copy(pendingExportSvg = GrowthExport.buildSvg(scene)) }
-    }
-
-    fun consumeCsvExport(): String? = _uiState.value.pendingExportCsv
-        ?.also { _uiState.update { s -> s.copy(pendingExportCsv = null) } }
-
-    fun consumeSvgExport(): String? = _uiState.value.pendingExportSvg
-        ?.also { _uiState.update { s -> s.copy(pendingExportSvg = null) } }
-
-    fun cancelPendingExport() {
-        _uiState.update { it.copy(pendingExportCsv = null, pendingExportSvg = null) }
-    }
-
-    companion object {
-        private const val EPOCH = "1970-01-01T00:00:00Z"
-    }
 }
 
 class GrowthViewModelFactory(
-    private val weekRepository: WeekRepository,
-    private val aspectRepository: AspectRepository,
-    private val taskRepository: TaskRepository,
-    private val timeEntryRepository: TimeEntryRepository
+    private val growthRepository: GrowthRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        GrowthViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository) as T
+        GrowthViewModel(growthRepository) as T
 }

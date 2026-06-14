@@ -55,6 +55,9 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
+    val growthRepository by lazy {
+        GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
+    }
 
     override fun onCreate() {
         super.onCreate()

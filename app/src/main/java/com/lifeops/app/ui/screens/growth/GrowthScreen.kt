@@ -2,11 +2,7 @@
 
 package com.lifeops.app.ui.screens.growth
 
-import android.content.Context
 import android.graphics.BlurMaskFilter
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts.CreateDocument
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -15,8 +11,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,7 +22,6 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
@@ -43,16 +36,6 @@ import kotlin.math.min
 @Composable
 fun GrowthScreen(viewModel: GrowthViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-
-    val createCsv = rememberLauncherForActivityResult(CreateDocument("text/csv")) { uri ->
-        if (uri != null) writeTextToUri(context, uri, viewModel.consumeCsvExport()) else viewModel.cancelPendingExport()
-    }
-    val createSvg = rememberLauncherForActivityResult(CreateDocument("image/svg+xml")) { uri ->
-        if (uri != null) writeTextToUri(context, uri, viewModel.consumeSvgExport()) else viewModel.cancelPendingExport()
-    }
-    LaunchedEffect(state.pendingExportCsv) { if (state.pendingExportCsv != null) createCsv.launch("growth_rings.csv") }
-    LaunchedEffect(state.pendingExportSvg) { if (state.pendingExportSvg != null) createSvg.launch("growth_record.svg") }
 
     Scaffold(topBar = { AppHeader() }) { padding ->
         Column(
@@ -63,9 +46,7 @@ fun GrowthScreen(viewModel: GrowthViewModel) {
             GrowthControls(
                 state = state,
                 onColorByHours = viewModel::setColorByHours,
-                onGlow = viewModel::setGlow,
-                onExportCsv = viewModel::prepareCsvExport,
-                onExportSvg = viewModel::prepareSvgExport
+                onGlow = viewModel::setGlow
             )
 
             when {
@@ -91,9 +72,7 @@ fun GrowthScreen(viewModel: GrowthViewModel) {
 private fun GrowthControls(
     state: GrowthUiState,
     onColorByHours: (Boolean) -> Unit,
-    onGlow: (Boolean) -> Unit,
-    onExportCsv: () -> Unit,
-    onExportSvg: () -> Unit
+    onGlow: (Boolean) -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -124,13 +103,6 @@ private fun GrowthControls(
                 onClick = { onGlow(!state.glowEnabled) },
                 label = { Text("Glow") }
             )
-            Spacer(Modifier.weight(1f))
-            IconButton(onClick = onExportCsv) {
-                Icon(Icons.Default.TableChart, contentDescription = "Export rings CSV")
-            }
-            IconButton(onClick = onExportSvg) {
-                Icon(Icons.Default.Image, contentDescription = "Export SVG")
-            }
         }
     }
 }
@@ -360,12 +332,3 @@ private fun EmptyGrowthState() {
 
 private fun formatHours(h: Double): String =
     if (h % 1.0 == 0.0) "${h.toInt()}h" else String.format("%.1fh", h)
-
-private fun writeTextToUri(context: Context, uri: Uri, content: String?) {
-    if (content == null) return
-    try {
-        context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray()) }
-    } catch (_: Exception) {
-        // Export is best-effort; a failed write just leaves the user where they were.
-    }
-}

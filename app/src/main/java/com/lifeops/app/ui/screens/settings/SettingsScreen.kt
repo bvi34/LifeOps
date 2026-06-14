@@ -72,11 +72,31 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         else viewModel.cancelPendingExport()
     }
 
+    val createRingsCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) viewModel.writeRingsCsvToUri(context, uri)
+        else viewModel.cancelPendingExport()
+    }
+
+    val createRingsSvgLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("image/svg+xml")
+    ) { uri ->
+        if (uri != null) viewModel.writeRingsSvgToUri(context, uri)
+        else viewModel.cancelPendingExport()
+    }
+
     LaunchedEffect(state.pendingExportJson) {
         if (state.pendingExportJson != null) createJsonLauncher.launch("lifeops_backup.json")
     }
     LaunchedEffect(state.pendingExportCsv) {
         if (state.pendingExportCsv != null) createCsvLauncher.launch("lifeops_tasks.csv")
+    }
+    LaunchedEffect(state.pendingExportRingsCsv) {
+        if (state.pendingExportRingsCsv != null) createRingsCsvLauncher.launch("growth_rings.csv")
+    }
+    LaunchedEffect(state.pendingExportRingsSvg) {
+        if (state.pendingExportRingsSvg != null) createRingsSvgLauncher.launch("growth_record.svg")
     }
 
     Scaffold(
@@ -160,7 +180,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 DataActionsSection(
                     onBackup = { viewModel.prepareBackupExport() },
                     onRestore = viewModel::showRestoreDialog,
-                    onExportCsv = { viewModel.prepareExportCsv() }
+                    onExportCsv = { viewModel.prepareExportCsv() },
+                    onExportRingsCsv = { viewModel.prepareExportRingsCsv() },
+                    onExportRingsSvg = { viewModel.prepareExportRingsSvg() }
                 )
                 state.restoreWarning?.let { warning ->
                     Spacer(Modifier.height(6.dp))
@@ -635,7 +657,9 @@ private fun PresetCard(
 private fun DataActionsSection(
     onBackup: () -> Unit,
     onRestore: () -> Unit,
-    onExportCsv: () -> Unit
+    onExportCsv: () -> Unit,
+    onExportRingsCsv: () -> Unit,
+    onExportRingsSvg: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -657,7 +681,27 @@ private fun DataActionsSection(
             OutlinedButton(onClick = onExportCsv, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Export CSV")
+                Text("Export Tasks CSV")
+            }
+            Text(
+                "Growth Record",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = onExportRingsCsv, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Rings CSV")
+                }
+                OutlinedButton(onClick = onExportRingsSvg, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Rings SVG")
+                }
             }
         }
     }

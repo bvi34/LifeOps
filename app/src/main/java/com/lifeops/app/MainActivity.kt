@@ -197,9 +197,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             }
             composable(Screen.Growth.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
-                    factory = GrowthViewModelFactory(
-                        app.weekRepository, app.aspectRepository, app.taskRepository, app.timeEntryRepository
-                    )
+                    factory = GrowthViewModelFactory(app.growthRepository)
                 )
                 GrowthScreen(vm)
             }
@@ -219,7 +217,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     factory = SettingsViewModelFactory(
                         app.aspectRepository, app.gameResourceRepository,
                         app.preferencesRepository, app.backupRepository, app.taskRepository,
-                        app.costResourceRepository, app.projectRepository
+                        app.costResourceRepository, app.projectRepository, app.growthRepository
                     )
                 )
                 SettingsScreen(vm)

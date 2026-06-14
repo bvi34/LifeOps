@@ -20,13 +20,9 @@ object GrowthExport {
 
     fun buildRingsCsv(aspects: List<GrowthRings.AspectRef>, weeks: List<GrowthRings.WeekInput>): String {
         val sb = StringBuilder()
-        sb.append("week")
-        for (a in aspects) sb.append(',').append(csvEscape(a.name))
-        sb.append('\n')
+        sb.append(Csv.row(listOf("week") + aspects.map { it.name })).append('\n')
         for (w in weeks) {
-            sb.append(csvEscape(w.label))
-            for (a in aspects) sb.append(',').append(formatHours(w.hoursByAspect[a.id] ?: 0.0))
-            sb.append('\n')
+            sb.append(Csv.row(listOf(w.label) + aspects.map { formatHours(w.hoursByAspect[it.id] ?: 0.0) })).append('\n')
         }
         return sb.toString()
     }
@@ -37,14 +33,14 @@ object GrowthExport {
         if (lines.isEmpty()) {
             return Result.failure(IllegalArgumentException("Couldn't read that file — it's empty. A record of nothing is still nothing."))
         }
-        val header = parseCsvLine(lines.first())
+        val header = Csv.parseLine(lines.first())
         if (header.size < 2 || !header.first().trim().equals("week", ignoreCase = true)) {
             return Result.failure(IllegalArgumentException("Couldn't read that file — expected a \"week\" column followed by one column per aspect."))
         }
         val aspectNames = header.drop(1).map { it.trim() }
         val weeks = ArrayList<Pair<String, List<Double>>>()
         for (i in 1 until lines.size) {
-            val cells = parseCsvLine(lines[i])
+            val cells = Csv.parseLine(lines[i])
             val label = cells.firstOrNull()?.trim().orEmpty()
             val hours = aspectNames.indices.map { idx ->
                 val cell = cells.getOrNull(idx + 1)?.trim().orEmpty()
@@ -123,34 +119,5 @@ object GrowthExport {
     private fun fmt(d: Double): String {
         val r = (d * 1000.0).roundToLong() / 1000.0
         return if (r == r.toLong().toDouble()) r.toLong().toString() else r.toString()
-    }
-
-    private fun csvEscape(s: String): String =
-        if (s.any { it == ',' || it == '"' || it == '\n' || it == '\r' })
-            "\"" + s.replace("\"", "\"\"") + "\""
-        else s
-
-    private fun parseCsvLine(line: String): List<String> {
-        val out = ArrayList<String>()
-        val sb = StringBuilder()
-        var inQuotes = false
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            when {
-                inQuotes -> {
-                    if (c == '"') {
-                        if (i + 1 < line.length && line[i + 1] == '"') { sb.append('"'); i++ }
-                        else inQuotes = false
-                    } else sb.append(c)
-                }
-                c == '"' -> inQuotes = true
-                c == ',' -> { out.add(sb.toString()); sb.setLength(0) }
-                else -> sb.append(c)
-            }
-            i++
-        }
-        out.add(sb.toString())
-        return out
     }
 }
