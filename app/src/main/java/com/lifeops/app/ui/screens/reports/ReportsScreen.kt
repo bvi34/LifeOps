@@ -27,6 +27,7 @@ import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.ScoringPoint
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.CompletedGreen
 import com.lifeops.app.ui.theme.ExpiredRed
@@ -38,7 +39,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onNavigateToProject: (String) -> 
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Reports") }) }
+        topBar = { AppHeader() }
     ) { padding ->
         Column(
             modifier = Modifier

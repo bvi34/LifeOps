@@ -18,6 +18,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.GameResourceMapping
 import com.lifeops.app.data.model.ResourceTransaction
+import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -25,7 +26,7 @@ fun ResourcesScreen(viewModel: ResourcesViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Resources") }) }
+        topBar = { AppHeader() }
     ) { padding ->
         LazyColumn(
             modifier = Modifier

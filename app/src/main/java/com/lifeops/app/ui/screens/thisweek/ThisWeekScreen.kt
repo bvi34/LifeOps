@@ -32,6 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.data.model.WeekProgress
+import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskDetailSheet
@@ -89,8 +90,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("This Week") },
+            AppHeader(
                 actions = {
                     IconButton(onClick = {
                         showSearch = !showSearch

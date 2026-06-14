@@ -42,6 +42,7 @@ import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.ThemePreset
+import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -77,7 +78,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Settings") }) }
+        topBar = { AppHeader() }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
