@@ -9,8 +9,11 @@ import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +39,7 @@ import kotlin.math.min
 @Composable
 fun GrowthScreen(viewModel: GrowthViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    var showHelp by remember { mutableStateOf(false) }
 
     Scaffold(topBar = { AppHeader() }) { padding ->
         Column(
@@ -46,7 +50,8 @@ fun GrowthScreen(viewModel: GrowthViewModel) {
             GrowthControls(
                 state = state,
                 onColorByHours = viewModel::setColorByHours,
-                onGlow = viewModel::setGlow
+                onGlow = viewModel::setGlow,
+                onHelp = { showHelp = true }
             )
 
             when {
@@ -65,6 +70,8 @@ fun GrowthScreen(viewModel: GrowthViewModel) {
                 }
             }
         }
+
+        if (showHelp) RingsHelpDialog(onDismiss = { showHelp = false })
     }
 }
 
@@ -72,7 +79,8 @@ fun GrowthScreen(viewModel: GrowthViewModel) {
 private fun GrowthControls(
     state: GrowthUiState,
     onColorByHours: (Boolean) -> Unit,
-    onGlow: (Boolean) -> Unit
+    onGlow: (Boolean) -> Unit,
+    onHelp: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -103,7 +111,42 @@ private fun GrowthControls(
                 onClick = { onGlow(!state.glowEnabled) },
                 label = { Text("Glow") }
             )
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onHelp) {
+                Icon(Icons.Default.Info, contentDescription = "How the Growth Record works")
+            }
         }
+    }
+}
+
+@Composable
+private fun RingsHelpDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Got it") } },
+        title = { Text("How the Growth Record works", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                HelpLine("Each week becomes one ring, drawn once and never changed. Newer weeks circle further out.")
+                HelpLine("To grow a ring: log time against your tasks, then close the week on This Week. More hours → thicker, brighter bands (≈50h reads as \"full\", then it glows).")
+                HelpLine("Every aspect keeps the same track across all rings, so you can follow one outward through time.")
+                HelpLine("A week with zero logged hours leaves a permanent grey scar — never a gap.")
+                HelpLine("\"Colour by hours\" and \"Glow\" only change how it looks, never the record.")
+                HelpLine("History is sealed at week-close: deleting, renaming or recolouring an aspect later won't repaint past rings. It can't be faked or ground.")
+                HelpLine("Pinch or use the slider to zoom, drag to pan, Fit to re-centre. Tap a ring for that week's hours. Export from Settings → Data.")
+            }
+        }
+    )
+}
+
+@Composable
+private fun HelpLine(text: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("•", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        Text(text, style = MaterialTheme.typography.bodySmall)
     }
 }
 

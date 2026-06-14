@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lifeops.app.ui.components.AppHeaderViewModel
 import com.lifeops.app.ui.components.AppHeaderViewModelFactory
 import com.lifeops.app.ui.components.LocalSardonicMessage
+import com.lifeops.app.ui.components.WelcomeDialog
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -106,6 +107,13 @@ class MainActivity : ComponentActivity() {
             val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
             LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
                 LifeOpsNavHost(app, sharedText)
+                var showWelcome by remember { mutableStateOf(!app.preferencesRepository.onboardingShown) }
+                if (showWelcome) {
+                    WelcomeDialog(onDismiss = {
+                        app.preferencesRepository.onboardingShown = true
+                        showWelcome = false
+                    })
+                }
                 if (showNotificationDeniedDialog) {
                     AlertDialog(
                         onDismissRequest = { showNotificationDeniedDialog = false },

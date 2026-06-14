@@ -30,6 +30,11 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getString("sort_order", "DEFAULT") ?: "DEFAULT"
         set(value) { prefs.edit().putString("sort_order", value).apply() }
 
+    // First-run welcome: shown once, then never again.
+    var onboardingShown: Boolean
+        get() = prefs.getBoolean("onboarding_shown", false)
+        set(value) { prefs.edit().putBoolean("onboarding_shown", value).apply() }
+
     private val _themePresetFlow = MutableStateFlow(
         ThemePreset.from(prefs.getString("theme_preset", ThemePreset.DEFAULT.name) ?: ThemePreset.DEFAULT.name)
     )
