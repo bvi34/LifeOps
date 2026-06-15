@@ -2,11 +2,6 @@
 
 package com.lifeops.app.ui.screens.settings
 
-import android.app.Activity
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.provider.ContactsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -18,8 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -27,13 +20,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
@@ -138,24 +128,6 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 NotificationPreferenceRow(
                     hour = state.defaultReminderHour,
                     onClick = viewModel::showReminderTimePicker
-                )
-                Spacer(Modifier.height(8.dp))
-            }
-            item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text("SMS Ingestion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "Texts from the whitelisted number starting with \"To Do:\" are automatically added as tasks.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Spacer(Modifier.height(8.dp))
-                SmsSettingsSection(
-                    wifeNumber = state.smsWifeNumber,
-                    wifeName = state.smsWifeName,
-                    onSaveNumber = viewModel::setSmsWifeNumber,
-                    onSaveContact = viewModel::setSmsWifeContact
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -395,114 +367,6 @@ private val presetSwatches = mapOf(
     ThemePreset.OCEAN to Triple(Color(0xFF0277BD), Color(0xFF4FC3F7), Color(0xFF80DEEA)),
     ThemePreset.SUNSET to Triple(Color(0xFFBF360C), Color(0xFFFF7043), Color(0xFFFFCC02)),
 )
-
-@Composable
-private fun SmsSettingsSection(
-    wifeNumber: String,
-    wifeName: String,
-    onSaveNumber: (String) -> Unit,
-    onSaveContact: (String, String) -> Unit
-) {
-    val context = LocalContext.current
-    var text by remember(wifeNumber) { mutableStateOf(wifeNumber) }
-    var wasFocused by remember { mutableStateOf(false) }
-
-    val contactPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val uri = result.data?.data
-        if (result.resultCode == Activity.RESULT_OK && uri != null) {
-            resolveContact(context, uri)?.let { (name, number) -> onSaveContact(name, number) }
-        }
-    }
-
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Default.Sms,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(Modifier.width(12.dp))
-                Text("Whitelisted sender", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            }
-            if (wifeName.isNotBlank()) {
-                Text(
-                    "Saved: $wifeName",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Phone number") },
-                placeholder = { Text("+1XXXXXXXXXX") },
-                singleLine = true,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onFocusChanged { focus ->
-                        // Persist on focus loss so a back-gesture dismiss still saves.
-                        if (wasFocused && !focus.isFocused &&
-                            text.trim().isNotBlank() && text.trim() != wifeNumber
-                        ) {
-                            onSaveNumber(text.trim())
-                        }
-                        wasFocused = focus.isFocused
-                    },
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Phone,
-                    imeAction = ImeAction.Done
-                ),
-                keyboardActions = KeyboardActions(
-                    onDone = { if (text.trim().isNotBlank()) onSaveNumber(text.trim()) }
-                ),
-                trailingIcon = {
-                    if (text.trim() != wifeNumber) {
-                        IconButton(onClick = { onSaveNumber(text.trim()) }) {
-                            Icon(Icons.Default.Check, contentDescription = "Save")
-                        }
-                    }
-                }
-            )
-            OutlinedButton(
-                onClick = {
-                    contactPicker.launch(
-                        Intent(Intent.ACTION_PICK).apply {
-                            type = ContactsContract.CommonDataKinds.Phone.CONTENT_TYPE
-                        }
-                    )
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Contacts, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Pick from contacts")
-            }
-        }
-    }
-}
-
-/**
- * Resolves a contact picked via ACTION_PICK on Phone.CONTENT_TYPE. The system
- * grants us a one-shot read on the returned item URI, so this works WITHOUT
- * holding READ_CONTACTS. Returns (displayName, number) or null if unreadable.
- */
-private fun resolveContact(context: Context, uri: Uri): Pair<String, String>? {
-    val projection = arrayOf(
-        ContactsContract.CommonDataKinds.Phone.NUMBER,
-        ContactsContract.Contacts.DISPLAY_NAME
-    )
-    return context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-        if (cursor.moveToFirst()) {
-            val number = cursor.getString(0)
-            val name = cursor.getString(1) ?: ""
-            if (number.isNullOrBlank()) null else name to number
-        } else null
-    }
-}
 
 @Composable
 private fun ThemeSection(

@@ -90,6 +90,9 @@ fun ReportsScreen(viewModel: ReportsViewModel, onNavigateToProject: (String) -> 
                             CategorySlipRow(cat)
                         }
                     }
+                    if (state.selfRatingPoints.isNotEmpty()) {
+                        item { SelfRatingCard(state.selfRatingPoints, state.avgSelfRating) }
+                    }
                     if (state.carryHistory.isNotEmpty() || state.carryoverSummary.isNotEmpty()) {
                         item { CarryoverCard(state.carryHistory, state.carryoverSummary) }
                     }
@@ -604,6 +607,72 @@ private fun CostUsageCard(rows: List<CostUsageRow>) {
                     )
                 } else {
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SelfRatingCard(points: List<SelfRatingPoint>, avg: Float?) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Weekly Self-Rating",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold
+                )
+                avg?.let {
+                    Text(
+                        "avg ${String.format("%.1f", it)}/10",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            points.takeLast(8).forEach { point ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        point.weekLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        modifier = Modifier.width(80.dp)
+                    )
+                    LinearProgressIndicator(
+                        progress = { point.rating / 10f },
+                        modifier = Modifier.weight(1f),
+                        color = when {
+                            point.rating >= 7 -> CompletedGreen
+                            point.rating >= 4 -> MaterialTheme.colorScheme.primary
+                            else -> MaterialTheme.colorScheme.error
+                        }
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${point.rating}",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                        modifier = Modifier.width(20.dp)
+                    )
+                }
+                point.note?.let { note ->
+                    Text(
+                        note,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(start = 80.dp, bottom = 4.dp)
+                    )
                 }
             }
         }

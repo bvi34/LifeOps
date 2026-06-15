@@ -221,8 +221,6 @@ From **Settings → Data**:
 - **Aspects & Categories** — create, rename, recolour, and archive. Colours come from a
   curated, well-separated palette. (Archiving keeps history intact; it just stops new use.)
 - **Notifications** — set the default daily reminder time.
-- **SMS Ingestion** — whitelist a single sender; texts from them starting with `To Do:`
-  are added automatically as tasks. (Requires SMS permission.)
 - **Theme** — light/dark, colour presets (Default, Beacon, Ocean, Sunset), or a fully custom
   palette.
 - **Data** — Backup JSON, Restore, Export Tasks CSV, and the Rings CSV/SVG exports.

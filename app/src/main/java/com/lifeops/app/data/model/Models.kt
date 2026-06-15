@@ -152,7 +152,9 @@ data class WeekSnapshot(
     val hardDeadlineExpiredCount: Int,
     val createdAt: String,
     /** aspectId -> sealed {minutes, name, colour}. Drives the Growth rings for closed weeks. */
-    val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap()
+    val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap(),
+    val selfRating: Int? = null,
+    val selfRatingNote: String? = null
 )
 
 enum class ProjectStatus(val value: String) {
@@ -226,7 +228,7 @@ data class CostUsageRow(
 )
 
 enum class TaskSource {
-    MANUAL, PLANNED, SMS;
+    MANUAL, PLANNED;
     companion object {
         fun from(value: String) = entries.firstOrNull { it.name == value } ?: MANUAL
     }

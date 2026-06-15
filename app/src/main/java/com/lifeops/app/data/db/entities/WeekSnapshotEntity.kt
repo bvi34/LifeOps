@@ -38,5 +38,7 @@ data class WeekSnapshotEntity(
     // JSON: aspectId -> { minutes, name, colorHex }. Sealed at week-close so the Growth
     // Record rings survive an aspect being deleted/renamed/recoloured. Defaults to "{}"
     // for snapshots written before this column existed (backfilled on first launch).
-    val aspectHistory: String = "{}"
+    val aspectHistory: String = "{}",
+    val selfRating: Int? = null,
+    val selfRatingNote: String? = null
 )

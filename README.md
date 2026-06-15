@@ -22,7 +22,7 @@ the receipts.
 | **Resources** | RPG-style resource slots that fill as you complete work, mapped from your aspects. |
 | **Reports** | Trends: completion rate, aspect balance, time spent, scoring, project health, priority breakdown, resource usage, carryover. |
 | **Growth Record** | A permanent, per-week concentric-ring history. One ring per week; effort shows as colour; skipped weeks leave grey scars. |
-| **Settings** | Aspects & categories, projects, cost resources, notifications, SMS ingestion, theme, and all backup/export actions. |
+| **Settings** | Aspects & categories, projects, cost resources, notifications, theme, and all backup/export actions. |
 
 ### Core concepts
 

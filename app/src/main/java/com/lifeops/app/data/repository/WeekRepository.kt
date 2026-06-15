@@ -93,6 +93,8 @@ class WeekRepository(
         hardDeadlineCompletedCount = hardDeadlineCompletedCount,
         hardDeadlineExpiredCount = hardDeadlineExpiredCount,
         createdAt = createdAt,
-        aspectHistory = gson.fromJson(aspectHistory, aspectHistoryType) ?: emptyMap()
+        aspectHistory = gson.fromJson(aspectHistory, aspectHistoryType) ?: emptyMap(),
+        selfRating = selfRating,
+        selfRatingNote = selfRatingNote
     )
 }
