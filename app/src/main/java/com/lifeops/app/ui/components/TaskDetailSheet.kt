@@ -97,7 +97,6 @@ fun TaskDetailSheet(
                     }
                     if (task.source != TaskSource.MANUAL) {
                         val (sourceLabel, sourceIcon) = when (task.source) {
-                            TaskSource.SMS -> "via SMS" to Icons.Default.Sms
                             TaskSource.PLANNED -> "planned" to Icons.Default.EventNote
                             TaskSource.MANUAL -> "" to Icons.Default.Circle
                         }

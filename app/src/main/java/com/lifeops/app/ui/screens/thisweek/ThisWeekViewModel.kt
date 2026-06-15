@@ -387,7 +387,7 @@ class ThisWeekViewModel(
 
     private var weekCloseInFlight = false
 
-    fun onCloseWeek() {
+    fun onCloseWeek(selfRating: Int? = null, selfRatingNote: String? = null) {
         if (weekCloseInFlight) return
         viewModelScope.launch {
             weekCloseInFlight = true
@@ -395,7 +395,7 @@ class ThisWeekViewModel(
                 val week = _uiState.value.week ?: return@launch
                 stopTimer(saveEntry = true)
                 val newWeek = weekRepository.createNextWeek(week)
-                taskRepository.closeWeek(week.id, newWeek.id)
+                taskRepository.closeWeek(week.id, newWeek.id, selfRating, selfRatingNote)
                 taskRepository.seedRecurringTasks(week.id, newWeek.id)
                 refreshWidget()
             } finally {

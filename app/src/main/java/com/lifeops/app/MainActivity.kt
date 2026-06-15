@@ -64,9 +64,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (!granted) showNotificationDeniedDialog = true }
 
-    private val smsPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* granted state handled by system; SmsReceiver fires automatically when granted */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,11 +75,6 @@ class MainActivity : ComponentActivity() {
                 prefs.edit().putBoolean("notification_permission_requested", true).apply()
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
-        }
-
-        if (!prefs.getBoolean("sms_permission_requested", false)) {
-            prefs.edit().putBoolean("sms_permission_requested", true).apply()
-            smsPermissionLauncher.launch(Manifest.permission.RECEIVE_SMS)
         }
 
         // SCHEDULE_EXACT_ALARM is a special permission on Android 12+ that requires the user

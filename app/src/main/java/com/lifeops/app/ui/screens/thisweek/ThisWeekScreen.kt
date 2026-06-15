@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -475,6 +476,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         val hdExpired = state.rawTasks.count { it.hardDeadline && it.status != TaskStatus.COMPLETED && it.status != TaskStatus.PENDING }
         val totalMinutes = state.taskTimeMinutes.values.sum()
 
+        var selfRating by remember { mutableStateOf<Int?>(null) }
+        var selfRatingNote by remember { mutableStateOf("") }
+
         AlertDialog(
             onDismissRequest = { showCloseConfirm = false },
             title = { Text("Close This Week?") },
@@ -518,12 +522,54 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        "How do you think this week went?",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        (0..10).forEach { n ->
+                            val isSelected = selfRating == n
+                            Surface(
+                                shape = MaterialTheme.shapes.extraSmall,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.surfaceVariant,
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clickable { selfRating = if (selfRating == n) null else n }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        n.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (selfRating != null) {
+                        OutlinedTextField(
+                            value = selfRatingNote,
+                            onValueChange = { selfRatingNote = it },
+                            label = { Text("Why? (optional)") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            maxLines = 3
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     showCloseConfirm = false
-                    viewModel.onCloseWeek()
+                    viewModel.onCloseWeek(selfRating, selfRatingNote.takeIf { it.isNotBlank() })
                 }) { Text("Close Week") }
             },
             dismissButton = {

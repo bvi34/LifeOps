@@ -43,9 +43,7 @@ data class SettingsUiState(
     val pendingExportJson: String? = null,
     val pendingExportCsv: String? = null,
     val pendingExportRingsCsv: String? = null,
-    val pendingExportRingsSvg: String? = null,
-    val smsWifeNumber: String = "",
-    val smsWifeName: String = ""
+    val pendingExportRingsSvg: String? = null
 )
 
 class SettingsViewModel(
@@ -67,9 +65,7 @@ class SettingsViewModel(
             it.copy(
                 themePreset = preferencesRepository.themePreset,
                 isDarkMode = preferencesRepository.isDarkMode,
-                customPalette = preferencesRepository.customPalette,
-                smsWifeNumber = preferencesRepository.smsWifeNumber,
-                smsWifeName = preferencesRepository.smsWifeName
+                customPalette = preferencesRepository.customPalette
             )
         }
         viewModelScope.launch {
@@ -393,17 +389,6 @@ class SettingsViewModel(
         _uiState.update { it.copy(isDarkMode = dark) }
     }
 
-    fun setSmsWifeNumber(number: String) {
-        preferencesRepository.smsWifeNumber = number
-        preferencesRepository.smsWifeName = ""
-        _uiState.update { it.copy(smsWifeNumber = number, smsWifeName = "") }
-    }
-
-    fun setSmsWifeContact(name: String, number: String) {
-        preferencesRepository.smsWifeNumber = number
-        preferencesRepository.smsWifeName = name
-        _uiState.update { it.copy(smsWifeNumber = number, smsWifeName = name) }
-    }
 }
 
 class SettingsViewModelFactory(

@@ -72,13 +72,4 @@ class PreferencesRepository(context: Context) {
             _customPaletteFlow.value = value
         }
 
-    var smsWifeNumber: String
-        get() = prefs.getString("sms_wife_number", "") ?: ""
-        set(value) { prefs.edit().putString("sms_wife_number", value.trim()).apply() }
-
-    // Display name of the picked contact, used for long-message task titles.
-    // Empty when the number was entered manually rather than chosen from contacts.
-    var smsWifeName: String
-        get() = prefs.getString("sms_wife_name", "") ?: ""
-        set(value) { prefs.edit().putString("sms_wife_name", value.trim()).apply() }
 }

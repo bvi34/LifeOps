@@ -68,7 +68,7 @@ class TaskRepository(
     suspend fun getAllSince(since: String): List<Task> =
         taskDao.getAllSince(since).map { it.toModel() }
 
-    suspend fun closeWeek(weekId: String, newWeekId: String) {
+    suspend fun closeWeek(weekId: String, newWeekId: String, selfRating: Int? = null, selfRatingNote: String? = null) {
         val week = weekDao.getById(weekId) ?: return
         if (week.isClosed) return
         val now = DateUtil.now()
@@ -105,7 +105,7 @@ class TaskRepository(
             }
             val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
             val aspectMeta = aspectDao.getAllSync().associate { it.id to (it.name to it.color) }
-            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta)
+            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote)
             weekSnapshotDao.insert(snapshot)
             weekDao.update(week.copy(isClosed = true, closedAt = now))
             applySnapshotToGameResources(snapshot)
@@ -180,7 +180,9 @@ class TaskRepository(
         tasks: List<Task>,
         timeByTask: Map<String, Int>,
         now: String,
-        aspectMeta: Map<String, Pair<String, String>>
+        aspectMeta: Map<String, Pair<String, String>>,
+        selfRating: Int? = null,
+        selfRatingNote: String? = null
     ): WeekSnapshotEntity {
         val aspectBreakdown = mutableMapOf<String, Int>()
         val categoryBreakdown = mutableMapOf<String, Int>()
@@ -253,7 +255,9 @@ class TaskRepository(
             hardDeadlineCompletedCount = hdCompleted,
             hardDeadlineExpiredCount = hdExpired,
             createdAt = now,
-            aspectHistory = gson.toJson(aspectHistory)
+            aspectHistory = gson.toJson(aspectHistory),
+            selfRating = selfRating,
+            selfRatingNote = selfRatingNote?.takeIf { it.isNotBlank() }
         )
     }
 

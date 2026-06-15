@@ -23,6 +23,8 @@ data class CategorySlipRate(val categoryName: String, val rate: Float)
 
 data class AspectTimeRow(val aspectName: String, val color: String, val totalMinutes: Int)
 
+data class SelfRatingPoint(val weekLabel: String, val rating: Int, val note: String?)
+
 data class ReportsUiState(
     val range: ReportRange = ReportRange.DAYS_30,
     val snapshots: List<WeekSnapshot> = emptyList(),
@@ -41,7 +43,9 @@ data class ReportsUiState(
     val isLoading: Boolean = true,
     val projectStats: List<ProjectStats> = emptyList(),
     val scoringTrend: List<ScoringPoint> = emptyList(),
-    val priorityBreakdown: List<PriorityCompletionRow> = emptyList()
+    val priorityBreakdown: List<PriorityCompletionRow> = emptyList(),
+    val selfRatingPoints: List<SelfRatingPoint> = emptyList(),
+    val avgSelfRating: Float? = null
 )
 
 class ReportsViewModel(
@@ -255,6 +259,10 @@ class ReportsViewModel(
         }
         val carryoverSummary = summaryRows.sortedWith(compareBy({ it.isStillOpen }, { -it.carriedCount }))
 
+        val ratingPoints = snapshots
+            .mapNotNull { snap -> snap.selfRating?.let { SelfRatingPoint(snap.createdAt.take(10), it, snap.selfRatingNote) } }
+        val avgRating = ratingPoints.takeIf { it.isNotEmpty() }?.let { pts -> pts.sumOf { it.rating }.toFloat() / pts.size }
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -269,7 +277,9 @@ class ReportsViewModel(
                 costUsage = costUsageRows,
                 projectStats = projectStatsList,
                 scoringTrend = scoringTrend,
-                priorityBreakdown = priorityStats
+                priorityBreakdown = priorityStats,
+                selfRatingPoints = ratingPoints,
+                avgSelfRating = avgRating
             )
         }
     }
