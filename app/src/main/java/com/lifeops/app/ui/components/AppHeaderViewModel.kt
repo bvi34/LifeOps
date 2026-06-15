@@ -67,7 +67,7 @@ class AppHeaderViewModel(
             }
             carried.size in 1..3 -> when {
                 isLateWeek -> "${carried.size} carried task${if (carried.size > 1) "s" else ""} — no shame in it. You showed up."
-                isEarlyWeek -> "${carried.size} task${if (carried.size > 1) "s" else ""} from last week. This week is their week."
+                isEarlyWeek -> "${carried.size} task${if (carried.size > 1) "s" else ""} from last week. This week, close them out."
                 else -> "${carried.size} carried task${if (carried.size > 1) "s" else ""} still in your hands."
             }
             pending.size > 12 -> when {
