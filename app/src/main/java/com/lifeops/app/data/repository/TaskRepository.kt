@@ -167,7 +167,7 @@ class TaskRepository(
         db.withTransaction {
             for (id in lineageIds) {
                 val entity = taskDao.getById(id) ?: continue
-                taskDao.upsert(entity.copy(projectId = projectId))
+                taskDao.update(entity.copy(projectId = projectId))
             }
         }
     }
