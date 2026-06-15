@@ -61,7 +61,7 @@ class AppHeaderViewModel(
                 else -> "One deadline on the horizon. Keep it in sight."
             }
             carried.size > 3 -> when {
-                isLateWeek -> "${carried.size} tasks carried this week — what you did finish matters."
+                isLateWeek -> "${carried.size} tasks carried this week — what you've finished still matters."
                 isEarlyWeek -> "${carried.size} carried tasks. Fresh week, fresh shot at them."
                 else -> "${carried.size} carried tasks still in reach. Keep going."
             }
