@@ -110,7 +110,7 @@ class SettingsViewModel(
     }
 
     fun updateAspect(aspect: Aspect) {
-        viewModelScope.launch { aspectRepository.upsertAspect(aspect) }
+        viewModelScope.launch { aspectRepository.updateAspect(aspect) }
     }
 
     fun showEditAspectDialog(aspect: Aspect) = _uiState.update { it.copy(editingAspect = aspect) }
@@ -118,7 +118,7 @@ class SettingsViewModel(
 
     fun saveAspectEdit(aspect: Aspect, name: String, color: String, icon: String) {
         viewModelScope.launch {
-            aspectRepository.upsertAspect(aspect.copy(name = name, color = color, icon = icon))
+            aspectRepository.updateAspect(aspect.copy(name = name, color = color, icon = icon))
             _uiState.update { it.copy(editingAspect = null) }
         }
     }
