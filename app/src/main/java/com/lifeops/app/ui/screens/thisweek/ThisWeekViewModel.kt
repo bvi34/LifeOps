@@ -74,7 +74,9 @@ data class ThisWeekUiState(
     val projects: List<Project> = emptyList(),
     val showOverdueOnly: Boolean = false,
     val showTemplatePickerDialog: Boolean = false,
-    val availableTemplates: List<TemplateWithTasks> = emptyList()
+    val availableTemplates: List<TemplateWithTasks> = emptyList(),
+    val runbooks: List<RunbookWithSteps> = emptyList(),
+    val detailSubtasks: List<Subtask> = emptyList()
 )
 
 class ThisWeekViewModel(
@@ -120,6 +122,13 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             projectRepository.observeActive().collectLatest { projects ->
                 _uiState.update { it.copy(projects = projects) }
+            }
+        }
+        viewModelScope.launch {
+            // Refresh the runbook list (with steps) whenever runbooks change, so the
+            // create-task picker and detail-sheet "add checklist" picker stay current.
+            runbookRepository.observeRunbooks().collectLatest {
+                _uiState.update { it.copy(runbooks = runbookRepository.getAllRunbooksWithSteps()) }
             }
         }
         viewModelScope.launch {
@@ -452,8 +461,35 @@ class ThisWeekViewModel(
     }
 
     // Detail sheet
-    fun openDetail(taskId: String) = _uiState.update { it.copy(detailTaskId = taskId) }
-    fun closeDetail() = _uiState.update { it.copy(detailTaskId = null) }
+    private var subtaskJob: Job? = null
+
+    fun openDetail(taskId: String) {
+        _uiState.update { it.copy(detailTaskId = taskId, detailSubtasks = emptyList()) }
+        subtaskJob?.cancel()
+        subtaskJob = viewModelScope.launch {
+            runbookRepository.observeSubtasks(taskId).collectLatest { subs ->
+                _uiState.update { it.copy(detailSubtasks = subs) }
+            }
+        }
+    }
+
+    fun closeDetail() {
+        subtaskJob?.cancel()
+        subtaskJob = null
+        _uiState.update { it.copy(detailTaskId = null, detailSubtasks = emptyList()) }
+    }
+
+    fun onToggleSubtask(subtaskId: String, checked: Boolean) {
+        viewModelScope.launch { runbookRepository.setSubtaskChecked(subtaskId, checked) }
+    }
+
+    fun onAttachRunbook(taskId: String, runbookId: String) {
+        viewModelScope.launch { runbookRepository.stampRunbookById(taskId, runbookId) }
+    }
+
+    fun onDeleteSubtask(subtaskId: String) {
+        viewModelScope.launch { runbookRepository.deleteSubtask(subtaskId) }
+    }
 
     // Import
     fun openImportDialog() = _uiState.update { it.copy(importDialogOpen = true, importError = null) }

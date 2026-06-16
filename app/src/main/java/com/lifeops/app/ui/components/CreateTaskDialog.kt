@@ -15,6 +15,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.RunbookWithSteps
 import java.util.UUID
 
 @Composable
@@ -22,6 +23,7 @@ fun CreateTaskDialog(
     aspects: List<Aspect>,
     allCategories: Map<String, Category>,
     projects: List<Project> = emptyList(),
+    runbooks: List<RunbookWithSteps> = emptyList(),
     onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onConfirm: (
         title: String,
@@ -33,7 +35,8 @@ fun CreateTaskDialog(
         hardDeadline: Boolean,
         isRecurring: Boolean,
         estimatedMinutes: Int?,
-        projectId: String?
+        projectId: String?,
+        runbookId: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -47,11 +50,13 @@ fun CreateTaskDialog(
     var hardDeadline by remember { mutableStateOf(false) }
     var isRecurring by remember { mutableStateOf(false) }
     var estimatedMinutes by remember { mutableStateOf("") }
+    var selectedRunbookId by remember { mutableStateOf<String?>(null) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var projectExpanded by remember { mutableStateOf(false) }
+    var runbookExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
         if (selectedAspectId == null) emptyList()
@@ -172,6 +177,34 @@ fun CreateTaskDialog(
                     }
                 }
 
+                // Runbook (checklist) dropdown — stamps the runbook's steps as subtasks
+                if (runbooks.isNotEmpty()) {
+                    val selectedRunbook = runbooks.firstOrNull { it.runbook.id == selectedRunbookId }
+                    ExposedDropdownMenuBox(expanded = runbookExpanded, onExpandedChange = { runbookExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedRunbook?.runbook?.name ?: "No runbook",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Runbook (optional)") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(runbookExpanded) }
+                        )
+                        ExposedDropdownMenu(expanded = runbookExpanded, onDismissRequest = { runbookExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No runbook") },
+                                onClick = { selectedRunbookId = null; runbookExpanded = false }
+                            )
+                            runbooks.forEach { rb ->
+                                val n = rb.steps.size
+                                DropdownMenuItem(
+                                    text = { Text("${rb.runbook.name} · $n step${if (n != 1) "s" else ""}") },
+                                    onClick = { selectedRunbookId = rb.runbook.id; runbookExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Priority.entries.forEach { p ->
@@ -230,7 +263,8 @@ fun CreateTaskDialog(
                         hardDeadline,
                         isRecurring,
                         estimatedMinutes.toIntOrNull(),
-                        selectedProjectId
+                        selectedProjectId,
+                        selectedRunbookId
                     )
                 },
                 enabled = title.isNotBlank()

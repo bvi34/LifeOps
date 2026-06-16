@@ -22,7 +22,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -39,6 +38,7 @@ import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.ThemePreset
 import java.util.UUID
 import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.ui.components.ColorPickerField
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -399,6 +399,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     if (state.showNewTemplateDialog) {
         NewTemplateDialog(
             runbooks = state.runbooks,
+            aspects = state.aspects,
+            categories = state.categories,
             onConfirm = { name, tasks -> viewModel.addTemplate(name, tasks) },
             onDismiss = viewModel::hideNewTemplateDialog
         )
@@ -408,6 +410,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         EditTemplateDialog(
             templateWithTasks = t,
             runbooks = state.runbooks,
+            aspects = state.aspects,
+            categories = state.categories,
             onConfirm = { tasks -> viewModel.saveTemplateEdit(t, tasks) },
             onDismiss = viewModel::hideEditTemplateDialog
         )
@@ -536,32 +540,7 @@ private fun CustomPaletteEditor(palette: CustomPalette, onChange: (CustomPalette
 
 @Composable
 private fun ColorRow(label: String, hexValue: String, onValidHex: (String) -> Unit) {
-    var text by remember(hexValue) { mutableStateOf(hexValue) }
-    val isValid = text.matches(Regex("^#[0-9A-Fa-f]{6}$"))
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(label, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(72.dp))
-        OutlinedTextField(
-            value = text,
-            onValueChange = { v ->
-                text = v
-                if (v.matches(Regex("^#[0-9A-Fa-f]{6}$"))) onValidHex(v)
-            },
-            singleLine = true,
-            isError = !isValid,
-            modifier = Modifier.weight(1f),
-            textStyle = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = FontFamily.Monospace
-            )
-        )
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .background(
-                    if (isValid) parseColor(text) else MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.small
-                )
-        )
-    }
+    ColorPickerField(label = label, color = hexValue, onColorChange = onValidHex)
 }
 
 @Composable
@@ -852,7 +831,7 @@ private fun NewAspectDialog(suggestedColor: String, onConfirm: (String, String, 
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
-                OutlinedTextField(value = color, onValueChange = { color = it }, label = { Text("Color (hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ColorPickerField(label = "Custom color", color = color, onColorChange = { color = it })
                 OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
@@ -879,7 +858,7 @@ private fun EditAspectDialog(aspect: Aspect, onConfirm: (String, String, String)
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
-                OutlinedTextField(value = color, onValueChange = { color = it }, label = { Text("Color (hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ColorPickerField(label = "Custom color", color = color, onColorChange = { color = it })
                 OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
@@ -1571,14 +1550,22 @@ private fun TemplateTaskEditor(
     index: Int,
     task: DraftTemplateTask,
     runbooks: List<RunbookWithSteps>,
+    aspects: List<Aspect>,
+    categories: Map<String, List<com.lifeops.app.data.model.Category>>,
     onUpdate: (DraftTemplateTask) -> Unit,
     onRemove: () -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var priorityExpanded by remember { mutableStateOf(false) }
+    var aspectExpanded by remember { mutableStateOf(false) }
+    var categoryExpanded by remember { mutableStateOf(false) }
     var runbookExpanded by remember { mutableStateOf(false) }
     val priorities = listOf("low", "medium", "high", "critical")
     val selectedRunbook = runbooks.firstOrNull { it.runbook.id == task.runbookId }
+    val activeAspects = aspects.filter { !it.isArchived }
+    // Templates store aspect/category by NAME; resolve the selected aspect to surface its categories.
+    val selectedAspect = activeAspects.firstOrNull { it.name.equals(task.aspectName, ignoreCase = true) }
+    val categoriesForAspect = selectedAspect?.let { categories[it.id] } ?: emptyList()
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(8.dp)) {
@@ -1623,20 +1610,54 @@ private fun TemplateTaskEditor(
                         }
                     }
                 }
-                OutlinedTextField(
-                    value = task.aspectName,
-                    onValueChange = { onUpdate(task.copy(aspectName = it)) },
-                    label = { Text("Aspect name (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = task.categoryName,
-                    onValueChange = { onUpdate(task.copy(categoryName = it)) },
-                    label = { Text("Category name (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                // Aspect — select from existing aspects (stored by name)
+                ExposedDropdownMenuBox(expanded = aspectExpanded, onExpandedChange = { aspectExpanded = it }) {
+                    OutlinedTextField(
+                        value = task.aspectName.ifBlank { "No aspect" },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Aspect (optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = aspectExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = aspectExpanded, onDismissRequest = { aspectExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("No aspect") },
+                            onClick = { onUpdate(task.copy(aspectName = "", categoryName = "")); aspectExpanded = false }
+                        )
+                        activeAspects.forEach { aspect ->
+                            DropdownMenuItem(
+                                text = { Text(aspect.name) },
+                                onClick = { onUpdate(task.copy(aspectName = aspect.name, categoryName = "")); aspectExpanded = false }
+                            )
+                        }
+                    }
+                }
+                // Category — cascades from the selected aspect (stored by name)
+                if (selectedAspect != null && categoriesForAspect.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = it }) {
+                        OutlinedTextField(
+                            value = task.categoryName.ifBlank { "No category" },
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category (optional)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No category") },
+                                onClick = { onUpdate(task.copy(categoryName = "")); categoryExpanded = false }
+                            )
+                            categoriesForAspect.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = { onUpdate(task.copy(categoryName = cat.name)); categoryExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = task.estimatedMinutes,
                     onValueChange = { onUpdate(task.copy(estimatedMinutes = it.filter { c -> c.isDigit() })) },
@@ -1676,6 +1697,8 @@ private fun TemplateTaskEditor(
 @Composable
 private fun NewTemplateDialog(
     runbooks: List<RunbookWithSteps>,
+    aspects: List<Aspect>,
+    categories: Map<String, List<com.lifeops.app.data.model.Category>>,
     onConfirm: (String, List<TemplateTask>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1699,6 +1722,8 @@ private fun NewTemplateDialog(
                         index = i,
                         task = task,
                         runbooks = runbooks,
+                        aspects = aspects,
+                        categories = categories,
                         onUpdate = { updated -> tasks = tasks.toMutableList().also { it[i] = updated } },
                         onRemove = { tasks = tasks.toMutableList().also { it.removeAt(i) } }
                     )
@@ -1729,6 +1754,8 @@ private fun NewTemplateDialog(
 private fun EditTemplateDialog(
     templateWithTasks: TemplateWithTasks,
     runbooks: List<RunbookWithSteps>,
+    aspects: List<Aspect>,
+    categories: Map<String, List<com.lifeops.app.data.model.Category>>,
     onConfirm: (List<TemplateTask>) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1751,6 +1778,8 @@ private fun EditTemplateDialog(
                         index = i,
                         task = task,
                         runbooks = runbooks,
+                        aspects = aspects,
+                        categories = categories,
                         onUpdate = { updated -> tasks = tasks.toMutableList().also { it[i] = updated } },
                         onRemove = { tasks = tasks.toMutableList().also { it.removeAt(i) } }
                     )

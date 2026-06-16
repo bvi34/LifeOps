@@ -416,6 +416,11 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 project = detailProject,
                 projects = state.projects.filter { it.status == com.lifeops.app.data.model.ProjectStatus.ACTIVE },
                 onAssignProject = { projectId -> viewModel.onAssignProject(taskId, projectId) },
+                subtasks = state.detailSubtasks,
+                runbooks = state.runbooks,
+                onToggleSubtask = viewModel::onToggleSubtask,
+                onAttachRunbook = { runbookId -> viewModel.onAttachRunbook(taskId, runbookId) },
+                onDeleteSubtask = viewModel::onDeleteSubtask,
                 onDismiss = viewModel::closeDetail,
                 onAddNote = { content -> viewModel.onAddNote(taskId, content) },
                 onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
@@ -461,9 +466,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             aspects = state.aspects.values.toList(),
             allCategories = state.categories,
             projects = state.projects,
+            runbooks = state.runbooks,
             onCreateProject = viewModel::onCreateProject,
-            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId ->
-                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId)
+            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId ->
+                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId)
             },
             onDismiss = viewModel::hideCreateTaskDialog
         )
