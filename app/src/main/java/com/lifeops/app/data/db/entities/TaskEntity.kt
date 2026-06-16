@@ -31,7 +31,11 @@ import androidx.room.PrimaryKey
     indices = [
         Index("weekId"), Index("aspectId"), Index("categoryId"),
         Index("createdAt"), Index("completedAt"), Index("status"),
-        Index("projectId"), Index("source")
+        Index("projectId"), Index("source"),
+        // Backs the per-week slug dedup query (TaskDao.getSlugsByWeek) and matches the
+        // index MIGRATION_14_15 creates as index_tasks_weekId_slug. Must be declared here
+        // or Room's post-migration schema validation crashes on launch for upgrading users.
+        Index(value = ["weekId", "slug"])
     ]
 )
 data class TaskEntity(
