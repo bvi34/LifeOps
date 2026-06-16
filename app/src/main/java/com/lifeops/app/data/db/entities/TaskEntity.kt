@@ -55,5 +55,7 @@ data class TaskEntity(
     val isManuallyAdded: Boolean = false,
     val projectId: String? = null,
     @ColumnInfo(name = "source", defaultValue = "MANUAL")
-    val source: String = "MANUAL"
+    val source: String = "MANUAL",
+    @ColumnInfo(defaultValue = "")
+    val slug: String = ""
 )

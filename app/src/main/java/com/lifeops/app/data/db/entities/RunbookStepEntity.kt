@@ -6,19 +6,18 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "task_notes",
+    tableName = "runbook_steps",
     foreignKeys = [ForeignKey(
-        entity = TaskEntity::class,
+        entity = RunbookEntity::class,
         parentColumns = ["id"],
-        childColumns = ["taskId"],
+        childColumns = ["runbookId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("taskId"), Index("subtaskId")]
+    indices = [Index("runbookId")]
 )
-data class TaskNoteEntity(
+data class RunbookStepEntity(
     @PrimaryKey val id: String,
-    val taskId: String,
-    val content: String,
-    val createdAt: String,
-    val subtaskId: String? = null
+    val runbookId: String,
+    val label: String,
+    val stepOrder: Int
 )
