@@ -104,6 +104,9 @@ class RunbookRepository(private val db: LifeOpsDatabase) {
     suspend fun setSubtaskChecked(subtaskId: String, checked: Boolean) =
         db.subtaskDao().setChecked(subtaskId, checked)
 
+    suspend fun deleteSubtask(subtaskId: String) =
+        db.subtaskDao().deleteById(subtaskId)
+
     suspend fun getSubtaskCounts(taskId: String): Pair<Int, Int> {
         val total = db.subtaskDao().countByTask(taskId)
         val checked = db.subtaskDao().countCheckedByTask(taskId)

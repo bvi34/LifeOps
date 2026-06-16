@@ -33,6 +33,9 @@ interface SubtaskDao {
     @Query("SELECT COUNT(*) FROM subtasks WHERE taskId = :taskId AND isChecked = 1")
     suspend fun countCheckedByTask(taskId: String): Int
 
+    @Query("DELETE FROM subtasks WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM subtasks WHERE taskId = :taskId")
     suspend fun deleteByTask(taskId: String)
 }

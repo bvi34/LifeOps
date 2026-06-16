@@ -9,6 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -22,10 +23,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.RunbookWithSteps
+import com.lifeops.app.data.model.Subtask
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
@@ -47,6 +51,11 @@ fun TaskDetailSheet(
     project: Project? = null,
     projects: List<Project> = emptyList(),
     onAssignProject: ((String?) -> Unit)? = null,
+    subtasks: List<Subtask> = emptyList(),
+    runbooks: List<RunbookWithSteps> = emptyList(),
+    onToggleSubtask: (id: String, checked: Boolean) -> Unit = { _, _ -> },
+    onAttachRunbook: (runbookId: String) -> Unit = {},
+    onDeleteSubtask: (id: String) -> Unit = {},
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
@@ -67,6 +76,7 @@ fun TaskDetailSheet(
     var newNoteText by remember { mutableStateOf("") }
     var showLogManuallyDialog by remember { mutableStateOf(false) }
     var showLogCostDialog by remember { mutableStateOf(false) }
+    var showRunbookPicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -340,6 +350,90 @@ fun TaskDetailSheet(
                 }
             }
 
+            // Checklist — subtasks stamped from runbooks
+            if (subtasks.isNotEmpty() || runbooks.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Default.Checklist,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Checklist",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (subtasks.isNotEmpty()) {
+                        val done = subtasks.count { it.isChecked }
+                        Text(
+                            "$done/${subtasks.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    if (runbooks.isNotEmpty()) {
+                        Spacer(Modifier.width(4.dp))
+                        OutlinedButton(
+                            onClick = { showRunbookPicker = true },
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Runbook", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+
+                if (subtasks.isEmpty()) {
+                    Text(
+                        "No checklist items. Add a runbook to stamp its steps here.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                } else {
+                    subtasks.forEach { subtask ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Checkbox(
+                                checked = subtask.isChecked,
+                                onCheckedChange = { onToggleSubtask(subtask.id, it) }
+                            )
+                            Text(
+                                subtask.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                textDecoration = if (subtask.isChecked) TextDecoration.LineThrough else null,
+                                color = if (subtask.isChecked)
+                                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = { onDeleteSubtask(subtask.id) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove step",
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             if (costResources.isNotEmpty()) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
 
@@ -515,6 +609,59 @@ fun TaskDetailSheet(
             onDismiss = { showLogCostDialog = false }
         )
     }
+
+    if (showRunbookPicker) {
+        AttachRunbookDialog(
+            runbooks = runbooks,
+            onPick = { runbookId ->
+                onAttachRunbook(runbookId)
+                showRunbookPicker = false
+            },
+            onDismiss = { showRunbookPicker = false }
+        )
+    }
+}
+
+@Composable
+private fun AttachRunbookDialog(
+    runbooks: List<RunbookWithSteps>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add Runbook") },
+        text = {
+            if (runbooks.isEmpty()) {
+                Text(
+                    "No runbooks yet. Create one in Settings → Runbooks.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    runbooks.forEach { rb ->
+                        val n = rb.steps.size
+                        OutlinedCard(
+                            onClick = { onPick(rb.runbook.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(rb.runbook.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                Text(
+                                    "$n step${if (n != 1) "s" else ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
