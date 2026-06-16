@@ -30,18 +30,20 @@ class TemplateRepository(
 
     suspend fun createTemplate(name: String, tasks: List<TemplateTask>): Template {
         val template = Template(UUID.randomUUID().toString(), name, DateUtil.now())
+        val corrected = tasks.map { it.copy(templateId = template.id) }
         db.withTransaction {
             db.templateDao().upsertTemplate(template.toEntity())
-            db.templateDao().upsertTasks(tasks.map { it.toEntity() })
+            db.templateDao().upsertTasks(corrected.map { it.toEntity() })
         }
         return template
     }
 
     suspend fun updateTemplate(template: Template, tasks: List<TemplateTask>) {
+        val corrected = tasks.map { it.copy(templateId = template.id) }
         db.withTransaction {
             db.templateDao().updateTemplate(template.toEntity())
             db.templateDao().deleteTasksForTemplate(template.id)
-            db.templateDao().upsertTasks(tasks.map { it.toEntity() })
+            db.templateDao().upsertTasks(corrected.map { it.toEntity() })
         }
     }
 

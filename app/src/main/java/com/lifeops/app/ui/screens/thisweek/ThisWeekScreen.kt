@@ -32,6 +32,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.WeekProgress
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.CreateTaskDialog
@@ -137,6 +138,13 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                             text = { Text("New Task") },
                             icon = { Icon(Icons.Default.Create, contentDescription = null) },
                             onClick = { fabExpanded = false; viewModel.showCreateTaskDialog() },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        ExtendedFloatingActionButton(
+                            text = { Text("Template") },
+                            icon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                            onClick = { fabExpanded = false; viewModel.showTemplatePicker() },
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                         )
@@ -440,6 +448,14 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
         )
     }
 
+    if (state.showTemplatePickerDialog) {
+        TemplatePickerDialog(
+            templates = state.availableTemplates,
+            onPick = { templateId -> viewModel.applyTemplate(templateId) },
+            onDismiss = viewModel::hideTemplatePicker
+        )
+    }
+
     if (state.showCreateTaskDialog) {
         CreateTaskDialog(
             aspects = state.aspects.values.toList(),
@@ -679,6 +695,59 @@ private fun AspectHeader(name: String, color: String, isArchived: Boolean = fals
             color = parseColor(color).copy(alpha = if (isArchived) 0.5f else 1f)
         )
     }
+}
+
+@Composable
+private fun TemplatePickerDialog(
+    templates: List<TemplateWithTasks>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Apply Template") },
+        text = {
+            if (templates.isEmpty()) {
+                Text(
+                    "No templates yet. Create one in Settings → Templates.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    templates.forEach { t ->
+                        OutlinedCard(
+                            onClick = { onPick(t.template.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(t.template.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                                val count = t.tasks.size
+                                Text(
+                                    "$count task${if (count != 1) "s" else ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                                if (t.tasks.isNotEmpty()) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        t.tasks.take(3).joinToString(", ") { it.title } +
+                                            if (t.tasks.size > 3) "…" else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable
