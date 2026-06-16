@@ -115,7 +115,12 @@ class TaskRepository(
             }
             val allTasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
             val aspectMeta = aspectDao.getAllSync().associate { it.id to (it.name to it.color) }
-            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote)
+            // Phase 9: count checked subtasks at close time (flat +1 each, no modifier)
+            val allTaskIds = allTasks.map { it.id }
+            val subtaskTickCount = if (allTaskIds.isNotEmpty())
+                db.subtaskDao().getByTasks(allTaskIds).count { it.isChecked }
+            else 0
+            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote, subtaskTickCount)
             weekSnapshotDao.insert(snapshot)
             weekDao.update(week.copy(isClosed = true, closedAt = now))
             applySnapshotToGameResources(snapshot)
@@ -192,8 +197,12 @@ class TaskRepository(
         now: String,
         aspectMeta: Map<String, Pair<String, String>>,
         selfRating: Int? = null,
-        selfRatingNote: String? = null
+        selfRatingNote: String? = null,
+        subtaskTickCount: Int = 0
     ): WeekSnapshotEntity {
+        // Phase 10: scoring keys off task-level completion only. Subtask checked state
+        // contributes to subtaskTickCount but never modifies resource point calculations.
+        // A task closed at 6/12 subtasks earns identical run params to one closed at 12/12.
         val aspectBreakdown = mutableMapOf<String, Int>()
         val categoryBreakdown = mutableMapOf<String, Int>()
         val categorySlipBreakdown = mutableMapOf<String, Int>()
@@ -267,7 +276,8 @@ class TaskRepository(
             createdAt = now,
             aspectHistory = gson.toJson(aspectHistory),
             selfRating = selfRating,
-            selfRatingNote = selfRatingNote?.takeIf { it.isNotBlank() }
+            selfRatingNote = selfRatingNote?.takeIf { it.isNotBlank() },
+            subtaskTickCount = subtaskTickCount
         )
     }
 

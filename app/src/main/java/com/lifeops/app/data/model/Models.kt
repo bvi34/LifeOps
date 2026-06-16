@@ -157,7 +157,8 @@ data class WeekSnapshot(
     /** aspectId -> sealed {minutes, name, colour}. Drives the Growth rings for closed weeks. */
     val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap(),
     val selfRating: Int? = null,
-    val selfRatingNote: String? = null
+    val selfRatingNote: String? = null,
+    val subtaskTickCount: Int = 0
 )
 
 enum class ProjectStatus(val value: String) {

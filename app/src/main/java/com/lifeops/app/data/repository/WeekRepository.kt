@@ -95,6 +95,7 @@ class WeekRepository(
         createdAt = createdAt,
         aspectHistory = gson.fromJson(aspectHistory, aspectHistoryType) ?: emptyMap(),
         selfRating = selfRating,
-        selfRatingNote = selfRatingNote
+        selfRatingNote = selfRatingNote,
+        subtaskTickCount = subtaskTickCount
     )
 }
