@@ -28,6 +28,8 @@ class AspectRepository(
 
     suspend fun upsertAspect(aspect: Aspect) = aspectDao.upsert(aspect.toEntity())
 
+    suspend fun updateAspect(aspect: Aspect) = aspectDao.update(aspect.toEntity())
+
     suspend fun upsertCategory(category: Category) = categoryDao.upsert(category.toEntity())
 
     suspend fun updateCategory(category: Category) = categoryDao.update(category.toEntity())

@@ -43,7 +43,13 @@ data class SettingsUiState(
     val pendingExportJson: String? = null,
     val pendingExportCsv: String? = null,
     val pendingExportRingsCsv: String? = null,
-    val pendingExportRingsSvg: String? = null
+    val pendingExportRingsSvg: String? = null,
+    val runbooks: List<RunbookWithSteps> = emptyList(),
+    val templates: List<TemplateWithTasks> = emptyList(),
+    val showNewRunbookDialog: Boolean = false,
+    val editingRunbook: RunbookWithSteps? = null,
+    val showNewTemplateDialog: Boolean = false,
+    val editingTemplate: TemplateWithTasks? = null
 )
 
 class SettingsViewModel(
@@ -54,7 +60,9 @@ class SettingsViewModel(
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
     private val projectRepository: ProjectRepository? = null,
-    private val growthRepository: GrowthRepository? = null
+    private val growthRepository: GrowthRepository? = null,
+    private val runbookRepository: RunbookRepository? = null,
+    private val templateRepository: TemplateRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -100,6 +108,20 @@ class SettingsViewModel(
                 }
             }
         }
+        runbookRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.observeRunbooks().collectLatest {
+                    _uiState.update { state -> state.copy(runbooks = repo.getAllRunbooksWithSteps()) }
+                }
+            }
+        }
+        templateRepository?.let { repo ->
+            viewModelScope.launch {
+                repo.observeAll().collectLatest {
+                    _uiState.update { state -> state.copy(templates = repo.getAllWithTasks()) }
+                }
+            }
+        }
     }
 
     fun addAspect(name: String, color: String, icon: String) {
@@ -110,7 +132,7 @@ class SettingsViewModel(
     }
 
     fun updateAspect(aspect: Aspect) {
-        viewModelScope.launch { aspectRepository.upsertAspect(aspect) }
+        viewModelScope.launch { aspectRepository.updateAspect(aspect) }
     }
 
     fun showEditAspectDialog(aspect: Aspect) = _uiState.update { it.copy(editingAspect = aspect) }
@@ -118,7 +140,7 @@ class SettingsViewModel(
 
     fun saveAspectEdit(aspect: Aspect, name: String, color: String, icon: String) {
         viewModelScope.launch {
-            aspectRepository.upsertAspect(aspect.copy(name = name, color = color, icon = icon))
+            aspectRepository.updateAspect(aspect.copy(name = name, color = color, icon = icon))
             _uiState.update { it.copy(editingAspect = null) }
         }
     }
@@ -389,6 +411,60 @@ class SettingsViewModel(
         _uiState.update { it.copy(isDarkMode = dark) }
     }
 
+    // Runbook CRUD
+    fun showNewRunbookDialog() = _uiState.update { it.copy(showNewRunbookDialog = true) }
+    fun hideNewRunbookDialog() = _uiState.update { it.copy(showNewRunbookDialog = false) }
+
+    fun addRunbook(name: String, steps: List<String>) {
+        val repo = runbookRepository ?: return
+        viewModelScope.launch {
+            repo.createRunbook(name, steps)
+            _uiState.update { it.copy(showNewRunbookDialog = false) }
+        }
+    }
+
+    fun showEditRunbookDialog(rb: RunbookWithSteps) = _uiState.update { it.copy(editingRunbook = rb) }
+    fun hideEditRunbookDialog() = _uiState.update { it.copy(editingRunbook = null) }
+
+    fun saveRunbookEdit(rb: RunbookWithSteps, name: String, steps: List<String>) {
+        val repo = runbookRepository ?: return
+        viewModelScope.launch {
+            repo.updateRunbook(rb.runbook.copy(name = name), steps)
+            _uiState.update { it.copy(editingRunbook = null) }
+        }
+    }
+
+    fun deleteRunbook(id: String) {
+        viewModelScope.launch { runbookRepository?.deleteRunbook(id) }
+    }
+
+    // Template CRUD
+    fun showNewTemplateDialog() = _uiState.update { it.copy(showNewTemplateDialog = true) }
+    fun hideNewTemplateDialog() = _uiState.update { it.copy(showNewTemplateDialog = false) }
+
+    fun addTemplate(name: String, tasks: List<TemplateTask>) {
+        val repo = templateRepository ?: return
+        viewModelScope.launch {
+            repo.createTemplate(name, tasks)
+            _uiState.update { it.copy(showNewTemplateDialog = false) }
+        }
+    }
+
+    fun showEditTemplateDialog(t: TemplateWithTasks) = _uiState.update { it.copy(editingTemplate = t) }
+    fun hideEditTemplateDialog() = _uiState.update { it.copy(editingTemplate = null) }
+
+    fun saveTemplateEdit(t: TemplateWithTasks, tasks: List<TemplateTask>) {
+        val repo = templateRepository ?: return
+        viewModelScope.launch {
+            repo.updateTemplate(t.template, tasks)
+            _uiState.update { it.copy(editingTemplate = null) }
+        }
+    }
+
+    fun deleteTemplate(id: String) {
+        viewModelScope.launch { templateRepository?.deleteTemplate(id) }
+    }
+
 }
 
 class SettingsViewModelFactory(
@@ -399,9 +475,11 @@ class SettingsViewModelFactory(
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
     private val projectRepository: ProjectRepository? = null,
-    private val growthRepository: GrowthRepository? = null
+    private val growthRepository: GrowthRepository? = null,
+    private val runbookRepository: RunbookRepository? = null,
+    private val templateRepository: TemplateRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository) as T
 }

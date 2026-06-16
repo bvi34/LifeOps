@@ -13,12 +13,13 @@ import androidx.room.PrimaryKey
         childColumns = ["taskId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("taskId"), Index("recordedAt")]
+    indices = [Index("taskId"), Index("recordedAt"), Index("subtaskId")]
 )
 data class TimeEntryEntity(
     @PrimaryKey val id: String,
     val taskId: String,
     val durationMinutes: Int,
     val note: String? = null,
-    val recordedAt: String
+    val recordedAt: String,
+    val subtaskId: String? = null
 )

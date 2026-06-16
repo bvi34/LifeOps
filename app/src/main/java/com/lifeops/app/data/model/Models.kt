@@ -68,7 +68,8 @@ data class Task(
     val sortOrder: Int = 0,
     val isManuallyAdded: Boolean = false,
     val projectId: String? = null,
-    val source: TaskSource = TaskSource.MANUAL
+    val source: TaskSource = TaskSource.MANUAL,
+    val slug: String = ""
 )
 
 data class CarryForwardEntry(
@@ -88,7 +89,8 @@ data class TaskNote(
     val id: String,
     val taskId: String,
     val content: String,
-    val createdAt: String
+    val createdAt: String,
+    val subtaskId: String? = null
 )
 
 data class TimeEntry(
@@ -96,7 +98,8 @@ data class TimeEntry(
     val taskId: String,
     val durationMinutes: Int,
     val note: String? = null,
-    val recordedAt: String
+    val recordedAt: String,
+    val subtaskId: String? = null
 )
 
 data class GameResource(
@@ -154,7 +157,8 @@ data class WeekSnapshot(
     /** aspectId -> sealed {minutes, name, colour}. Drives the Growth rings for closed weeks. */
     val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap(),
     val selfRating: Int? = null,
-    val selfRatingNote: String? = null
+    val selfRatingNote: String? = null,
+    val subtaskTickCount: Int = 0
 )
 
 enum class ProjectStatus(val value: String) {
@@ -271,4 +275,54 @@ data class CarryoverSummaryRow(
     val lineageMinutes: Int,
     val pointsEarned: Int,
     val isStillOpen: Boolean   // true = PENDING, false = COMPLETED
+)
+
+data class Runbook(
+    val id: String,
+    val name: String,
+    val createdAt: String
+)
+
+data class RunbookStep(
+    val id: String,
+    val runbookId: String,
+    val label: String,
+    val stepOrder: Int
+)
+
+data class RunbookWithSteps(
+    val runbook: Runbook,
+    val steps: List<RunbookStep>
+)
+
+data class Subtask(
+    val id: String,
+    val taskId: String,
+    val runbookId: String?,
+    val label: String,
+    val stepOrder: Int,
+    val isChecked: Boolean = false
+)
+
+data class Template(
+    val id: String,
+    val name: String,
+    val createdAt: String
+)
+
+data class TemplateTask(
+    val id: String,
+    val templateId: String,
+    val title: String,
+    val aspectName: String? = null,
+    val categoryName: String? = null,
+    val priority: String = "medium",
+    val estimatedMinutes: Int? = null,
+    val runbookId: String? = null,
+    val taskOrder: Int = 0
+)
+
+data class TemplateWithTasks(
+    val template: Template,
+    val tasks: List<TemplateTask>
 )

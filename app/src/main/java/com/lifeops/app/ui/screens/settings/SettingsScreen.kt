@@ -33,7 +33,11 @@ import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.ProjectStatus
 import com.lifeops.app.data.model.ResourceResetCycle
+import com.lifeops.app.data.model.RunbookWithSteps
+import com.lifeops.app.data.model.TemplateTask
+import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.ThemePreset
+import java.util.UUID
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.theme.parseColor
 
@@ -234,6 +238,62 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     onEdit = { viewModel.showEditProjectDialog(project) }
                 )
             }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Runbooks",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = viewModel::showNewRunbookDialog) {
+                        Icon(Icons.Default.Add, contentDescription = "Add runbook")
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Reusable step lists stamped onto tasks as subtasks.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            items(state.runbooks, key = { it.runbook.id }) { rb ->
+                RunbookItem(
+                    rb = rb,
+                    onEdit = { viewModel.showEditRunbookDialog(rb) },
+                    onDelete = { viewModel.deleteRunbook(rb.runbook.id) }
+                )
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Templates",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = viewModel::showNewTemplateDialog) {
+                        Icon(Icons.Default.Add, contentDescription = "Add template")
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Reusable task sets applied to a week via the + menu.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            items(state.templates, key = { it.template.id }) { t ->
+                TemplateItem(
+                    templateWithTasks = t,
+                    onEdit = { viewModel.showEditTemplateDialog(t) },
+                    onDelete = { viewModel.deleteTemplate(t.template.id) }
+                )
+            }
         }
     }
 
@@ -318,6 +378,38 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 viewModel.saveProjectEdit(project, title, aspectId, categoryId, description)
             },
             onDismiss = viewModel::hideEditProjectDialog
+        )
+    }
+
+    if (state.showNewRunbookDialog) {
+        NewRunbookDialog(
+            onConfirm = { name, steps -> viewModel.addRunbook(name, steps) },
+            onDismiss = viewModel::hideNewRunbookDialog
+        )
+    }
+
+    state.editingRunbook?.let { rb ->
+        EditRunbookDialog(
+            rb = rb,
+            onConfirm = { name, steps -> viewModel.saveRunbookEdit(rb, name, steps) },
+            onDismiss = viewModel::hideEditRunbookDialog
+        )
+    }
+
+    if (state.showNewTemplateDialog) {
+        NewTemplateDialog(
+            runbooks = state.runbooks,
+            onConfirm = { name, tasks -> viewModel.addTemplate(name, tasks) },
+            onDismiss = viewModel::hideNewTemplateDialog
+        )
+    }
+
+    state.editingTemplate?.let { t ->
+        EditTemplateDialog(
+            templateWithTasks = t,
+            runbooks = state.runbooks,
+            onConfirm = { tasks -> viewModel.saveTemplateEdit(t, tasks) },
+            onDismiss = viewModel::hideEditTemplateDialog
         )
     }
 
@@ -1283,3 +1375,405 @@ private fun EditProjectDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+// --- Runbook composables ---
+
+@Composable
+private fun RunbookItem(rb: RunbookWithSteps, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(rb.runbook.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                val n = rb.steps.size
+                Text(
+                    "$n step${if (n != 1) "s" else ""}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            }
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp))
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun RunbookStepEditor(steps: List<String>, onChange: (List<String>) -> Unit) {
+    steps.forEachIndexed { i, step ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+            Text(
+                "${i + 1}.",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.width(24.dp),
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            )
+            OutlinedTextField(
+                value = step,
+                onValueChange = { v -> onChange(steps.toMutableList().also { it[i] = v }) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(
+                onClick = { onChange(steps.toMutableList().also { it.removeAt(i) }) },
+                enabled = steps.size > 1,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Default.Remove, contentDescription = "Remove", modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+    TextButton(onClick = { onChange(steps + "") }, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Add Step")
+    }
+}
+
+@Composable
+private fun NewRunbookDialog(onConfirm: (String, List<String>) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var steps by remember { mutableStateOf(listOf("")) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Runbook") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(value = name, onValueChange = { name = it },
+                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Steps", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                RunbookStepEditor(steps = steps, onChange = { steps = it })
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val filtered = steps.filter { it.isNotBlank() }.map { it.trim() }
+                    if (name.isNotBlank() && filtered.isNotEmpty()) onConfirm(name.trim(), filtered)
+                },
+                enabled = name.isNotBlank() && steps.any { it.isNotBlank() }
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun EditRunbookDialog(rb: RunbookWithSteps, onConfirm: (String, List<String>) -> Unit, onDismiss: () -> Unit) {
+    var name by remember(rb.runbook.id) { mutableStateOf(rb.runbook.name) }
+    var steps by remember(rb.runbook.id) { mutableStateOf(rb.steps.map { it.label }.ifEmpty { listOf("") }) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Runbook") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(value = name, onValueChange = { name = it },
+                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Steps", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                RunbookStepEditor(steps = steps, onChange = { steps = it })
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val filtered = steps.filter { it.isNotBlank() }.map { it.trim() }
+                    if (name.isNotBlank() && filtered.isNotEmpty()) onConfirm(name.trim(), filtered)
+                },
+                enabled = name.isNotBlank() && steps.any { it.isNotBlank() }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+// --- Template composables ---
+
+private data class DraftTemplateTask(
+    val title: String = "",
+    val aspectName: String = "",
+    val categoryName: String = "",
+    val priority: String = "medium",
+    val estimatedMinutes: String = "",
+    val runbookId: String? = null
+)
+
+private fun DraftTemplateTask.toTemplateTask(order: Int) = TemplateTask(
+    id = UUID.randomUUID().toString(),
+    templateId = "",
+    title = title.trim(),
+    aspectName = aspectName.trim().ifBlank { null },
+    categoryName = categoryName.trim().ifBlank { null },
+    priority = priority,
+    estimatedMinutes = estimatedMinutes.toIntOrNull(),
+    runbookId = runbookId,
+    taskOrder = order
+)
+
+private fun TemplateTask.toDraft() = DraftTemplateTask(
+    title = title,
+    aspectName = aspectName ?: "",
+    categoryName = categoryName ?: "",
+    priority = priority,
+    estimatedMinutes = estimatedMinutes?.toString() ?: "",
+    runbookId = runbookId
+)
+
+@Composable
+private fun TemplateItem(templateWithTasks: TemplateWithTasks, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(templateWithTasks.template.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                val n = templateWithTasks.tasks.size
+                Text(
+                    "$n task${if (n != 1) "s" else ""}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                if (templateWithTasks.tasks.isNotEmpty()) {
+                    Text(
+                        templateWithTasks.tasks.take(3).joinToString(", ") { it.title } +
+                            if (templateWithTasks.tasks.size > 3) "…" else "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+            IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit", modifier = Modifier.size(18.dp))
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+@Composable
+private fun TemplateTaskEditor(
+    index: Int,
+    task: DraftTemplateTask,
+    runbooks: List<RunbookWithSteps>,
+    onUpdate: (DraftTemplateTask) -> Unit,
+    onRemove: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var priorityExpanded by remember { mutableStateOf(false) }
+    var runbookExpanded by remember { mutableStateOf(false) }
+    val priorities = listOf("low", "medium", "high", "critical")
+    val selectedRunbook = runbooks.firstOrNull { it.runbook.id == task.runbookId }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = task.title,
+                    onValueChange = { onUpdate(task.copy(title = it)) },
+                    label = { Text("Task ${index + 1}") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = "More options",
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = onRemove, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
+                }
+            }
+            if (expanded) {
+                Spacer(Modifier.height(4.dp))
+                ExposedDropdownMenuBox(expanded = priorityExpanded, onExpandedChange = { priorityExpanded = it }) {
+                    OutlinedTextField(
+                        value = task.priority.replaceFirstChar { it.uppercase() },
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Priority") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = priorityExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = priorityExpanded, onDismissRequest = { priorityExpanded = false }) {
+                        priorities.forEach { p ->
+                            DropdownMenuItem(
+                                text = { Text(p.replaceFirstChar { it.uppercase() }) },
+                                onClick = { onUpdate(task.copy(priority = p)); priorityExpanded = false }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = task.aspectName,
+                    onValueChange = { onUpdate(task.copy(aspectName = it)) },
+                    label = { Text("Aspect name (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = task.categoryName,
+                    onValueChange = { onUpdate(task.copy(categoryName = it)) },
+                    label = { Text("Category name (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = task.estimatedMinutes,
+                    onValueChange = { onUpdate(task.copy(estimatedMinutes = it.filter { c -> c.isDigit() })) },
+                    label = { Text("Est. minutes (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (runbooks.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = runbookExpanded, onExpandedChange = { runbookExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedRunbook?.runbook?.name ?: "No runbook",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Runbook (optional)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = runbookExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = runbookExpanded, onDismissRequest = { runbookExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No runbook") },
+                                onClick = { onUpdate(task.copy(runbookId = null)); runbookExpanded = false }
+                            )
+                            runbooks.forEach { rb ->
+                                DropdownMenuItem(
+                                    text = { Text(rb.runbook.name) },
+                                    onClick = { onUpdate(task.copy(runbookId = rb.runbook.id)); runbookExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NewTemplateDialog(
+    runbooks: List<RunbookWithSteps>,
+    onConfirm: (String, List<TemplateTask>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var tasks by remember { mutableStateOf(listOf(DraftTemplateTask())) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Template") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(value = name, onValueChange = { name = it },
+                    label = { Text("Template name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Text("Tasks", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                tasks.forEachIndexed { i, task ->
+                    TemplateTaskEditor(
+                        index = i,
+                        task = task,
+                        runbooks = runbooks,
+                        onUpdate = { updated -> tasks = tasks.toMutableList().also { it[i] = updated } },
+                        onRemove = { tasks = tasks.toMutableList().also { it.removeAt(i) } }
+                    )
+                }
+                TextButton(onClick = { tasks = tasks + DraftTemplateTask() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Task")
+                }
+            }
+        },
+        confirmButton = {
+            val validTasks = tasks.filter { it.title.isNotBlank() }
+            Button(
+                onClick = {
+                    if (name.isNotBlank() && validTasks.isNotEmpty()) {
+                        onConfirm(name.trim(), validTasks.mapIndexed { i, d -> d.toTemplateTask(i) })
+                    }
+                },
+                enabled = name.isNotBlank() && validTasks.isNotEmpty()
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun EditTemplateDialog(
+    templateWithTasks: TemplateWithTasks,
+    runbooks: List<RunbookWithSteps>,
+    onConfirm: (List<TemplateTask>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var tasks by remember(templateWithTasks.template.id) {
+        mutableStateOf(templateWithTasks.tasks.map { it.toDraft() }.ifEmpty { listOf(DraftTemplateTask()) })
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Template: ${templateWithTasks.template.name}") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())
+            ) {
+                Text("Tasks", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                tasks.forEachIndexed { i, task ->
+                    TemplateTaskEditor(
+                        index = i,
+                        task = task,
+                        runbooks = runbooks,
+                        onUpdate = { updated -> tasks = tasks.toMutableList().also { it[i] = updated } },
+                        onRemove = { tasks = tasks.toMutableList().also { it.removeAt(i) } }
+                    )
+                }
+                TextButton(onClick = { tasks = tasks + DraftTemplateTask() }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Add Task")
+                }
+            }
+        },
+        confirmButton = {
+            val validTasks = tasks.filter { it.title.isNotBlank() }
+            Button(
+                onClick = {
+                    if (validTasks.isNotEmpty()) {
+                        onConfirm(validTasks.mapIndexed { i, d -> d.toTemplateTask(i) })
+                    }
+                },
+                enabled = validTasks.isNotEmpty()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+

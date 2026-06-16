@@ -5,6 +5,8 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.model.*
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import com.lifeops.app.util.ParsedTask
+import com.lifeops.app.util.toSlug
 import java.util.UUID
 import com.lifeops.app.data.model.TaskSource
 
@@ -15,7 +17,8 @@ class ImportRepository(
     private val weekRepository: WeekRepository,
     private val notificationRepository: NotificationRepository,
     private val taskNoteRepository: TaskNoteRepository,
-    private val timeEntryRepository: TimeEntryRepository
+    private val timeEntryRepository: TimeEntryRepository,
+    private val runbookRepository: RunbookRepository
 ) {
     suspend fun previewImport(json: String): Result<ImportPreview> {
         val result = ImportParser.parse(json)
@@ -27,7 +30,7 @@ class ImportRepository(
         val newCategories = mutableListOf<Category>()
 
         val week = weekRepository.getOrCreateCurrentWeek()
-        val existingTitles = db.taskDao().getAllByWeek(week.id).map { it.title.lowercase().trim() }.toSet()
+        val existingSlugs = db.taskDao().getSlugsByWeek(week.id).toSet()
 
         val tasks = result.tasks.map { parsed ->
             val aspect: Aspect? = parsed.aspectName?.let { aspName ->
@@ -67,8 +70,6 @@ class ImportRepository(
                 hardDeadline = parsed.hardDeadline,
                 status = taskStatus,
                 completedAt = if (taskStatus == TaskStatus.COMPLETED) DateUtil.now() else null,
-                // Imported completed tasks get resourceValue=0 — they're historical records
-                // and should not inflate the current week's score.
                 resourceValue = if (taskStatus == TaskStatus.COMPLETED) 0
                                else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                 estimatedMinutes = parsed.estimatedMinutes,
@@ -78,7 +79,7 @@ class ImportRepository(
             )
         }
 
-        val existingTaskCount = tasks.count { it.title.lowercase().trim() in existingTitles }
+        val existingTaskCount = tasks.count { it.title.toSlug() in existingSlugs }
 
         val unknownFieldsByTask = result.tasks
             .filter { it.unknownFields.isNotEmpty() }
@@ -98,15 +99,31 @@ class ImportRepository(
     suspend fun commitImport(json: String, includeUnknownAsNotes: Boolean = false): Result<Int> {
         val result = ImportParser.parse(json)
         if (result.error != null) return Result.failure(Exception(result.error))
-
         val week = weekRepository.getOrCreateCurrentWeek()
-        val existingTitles = db.taskDao().getAllByWeek(week.id).map { it.title.lowercase().trim() }.toSet()
+        return try {
+            Result.success(commitParsedTasks(result.tasks, week.id, includeUnknownAsNotes))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Shared pipeline for all three entry paths (JSON import, template apply, one-off).
+     * Phase 4 merge: slug collision → incumbent survives, incoming task is skipped.
+     * Phase 7 stamp: runbookName/runbookId on ParsedTask triggers runbook stamp after create.
+     */
+    suspend fun commitParsedTasks(
+        tasks: List<ParsedTask>,
+        weekId: String,
+        includeUnknownAsNotes: Boolean = false
+    ): Int {
+        val existingSlugs = db.taskDao().getSlugsByWeek(weekId).toMutableSet()
         val createdTasks = mutableListOf<Task>()
 
-        // All DB writes are atomic; notification scheduling (WorkManager) happens after.
         db.withTransaction {
-            for (parsed in result.tasks) {
-                if (parsed.title.lowercase().trim() in existingTitles) continue
+            for (parsed in tasks) {
+                val slug = parsed.title.toSlug()
+                if (slug in existingSlugs) continue
 
                 val aspect = parsed.aspectName?.let { aspectRepository.findOrCreateAspect(it) }
                 val category = parsed.categoryName?.let { catName ->
@@ -116,7 +133,7 @@ class ImportRepository(
                 val validDueDate = parsed.dueDate?.takeIf { DateUtil.isValidDate(it) }
                 val task = Task(
                     id = UUID.randomUUID().toString(),
-                    weekId = week.id,
+                    weekId = weekId,
                     title = parsed.title,
                     aspectId = aspect?.id,
                     categoryId = category?.id,
@@ -130,9 +147,11 @@ class ImportRepository(
                     estimatedMinutes = parsed.estimatedMinutes,
                     isRecurring = parsed.isRecurring,
                     createdAt = DateUtil.now(),
-                    source = TaskSource.PLANNED
+                    source = TaskSource.PLANNED,
+                    slug = slug
                 )
                 taskRepository.upsertTask(task)
+
                 for (note in parsed.notes) taskNoteRepository.addNote(task.id, note)
                 if (includeUnknownAsNotes && parsed.unknownFields.isNotEmpty()) {
                     val extraNote = parsed.unknownFields.entries.joinToString("\n") { (k, v) -> "$k: $v" }
@@ -142,12 +161,19 @@ class ImportRepository(
                 if (timeToLog != null && timeToLog > 0) {
                     timeEntryRepository.logTime(task.id, timeToLog, "imported")
                 }
+
+                // Phase 7: stamp runbook. Direct ID wins over name lookup.
+                val rb = parsed.runbookId?.let { runbookRepository.getRunbookWithSteps(it) }
+                    ?: parsed.runbookName?.let { runbookRepository.findByName(it) }
+                rb?.let { runbookRepository.stampRunbook(task.id, it) }
+
+                existingSlugs.add(slug)
                 createdTasks.add(task)
             }
         }
 
         createdTasks.forEach { notificationRepository.scheduleForTask(it) }
-        return Result.success(createdTasks.size)
+        return createdTasks.size
     }
 
     private suspend fun resolveAspectFromDb(name: String): Aspect? =

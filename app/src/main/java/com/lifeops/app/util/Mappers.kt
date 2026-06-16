@@ -17,7 +17,7 @@ fun TaskEntity.toModel() = Task(
     Priority.from(priority), dueDate, hardDeadline,
     TaskStatus.from(status), resourceValue, completedAt, carriedFromTaskId, createdAt,
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
-    TaskSource.from(source)
+    TaskSource.from(source), slug
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -25,14 +25,14 @@ fun Task.toEntity() = TaskEntity(
     priority.label, dueDate, hardDeadline,
     status.value, resourceValue, completedAt, carriedFromTaskId, createdAt,
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
-    source.name
+    source.name, slug.ifEmpty { title.toSlug() }
 )
 
-fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt)
-fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt)
+fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt, subtaskId)
+fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtaskId)
 
-fun TimeEntryEntity.toModel() = TimeEntry(id, taskId, durationMinutes, note, recordedAt)
-fun TimeEntry.toEntity() = TimeEntryEntity(id, taskId, durationMinutes, note, recordedAt)
+fun TimeEntryEntity.toModel() = TimeEntry(id, taskId, durationMinutes, note, recordedAt, subtaskId)
+fun TimeEntry.toEntity() = TimeEntryEntity(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 
 fun GameResourceEntity.toModel() = GameResource(id, name, currentValue, lifetimeEarned, slotIndex)
 fun GameResource.toEntity() = GameResourceEntity(id, name, currentValue, lifetimeEarned, slotIndex)
@@ -50,3 +50,18 @@ fun CostResource.toEntity() = CostResourceEntity(id, name, resetCycle.label, cap
 
 fun TaskCostEntryEntity.toModel() = TaskCostEntry(id, taskId, resourceId, amount, note, recordedAt)
 fun TaskCostEntry.toEntity() = TaskCostEntryEntity(id, taskId, resourceId, amount, note, recordedAt)
+
+fun RunbookEntity.toModel() = Runbook(id, name, createdAt)
+fun Runbook.toEntity() = RunbookEntity(id, name, createdAt)
+
+fun RunbookStepEntity.toModel() = RunbookStep(id, runbookId, label, stepOrder)
+fun RunbookStep.toEntity() = RunbookStepEntity(id, runbookId, label, stepOrder)
+
+fun SubtaskEntity.toModel() = Subtask(id, taskId, runbookId, label, stepOrder, isChecked)
+fun Subtask.toEntity() = SubtaskEntity(id, taskId, runbookId, label, stepOrder, isChecked)
+
+fun TemplateEntity.toModel() = Template(id, name, createdAt)
+fun Template.toEntity() = TemplateEntity(id, name, createdAt)
+
+fun TemplateTaskEntity.toModel() = TemplateTask(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)
+fun TemplateTask.toEntity() = TemplateTaskEntity(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)

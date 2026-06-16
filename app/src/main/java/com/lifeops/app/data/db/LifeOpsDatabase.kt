@@ -125,6 +125,94 @@ private val MIGRATION_13_14 = object : Migration(13, 14) {
     }
 }
 
+private val MIGRATION_14_15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Slug on tasks — stable dedup key derived from title
+        db.execSQL("ALTER TABLE tasks ADD COLUMN slug TEXT NOT NULL DEFAULT ''")
+        db.execSQL("UPDATE tasks SET slug = LOWER(TRIM(title))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_weekId_slug ON tasks(weekId, slug)")
+
+        // Subtask provenance on time entries and notes
+        db.execSQL("ALTER TABLE time_entries ADD COLUMN subtaskId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_time_entries_subtaskId ON time_entries(subtaskId)")
+        db.execSQL("ALTER TABLE task_notes ADD COLUMN subtaskId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_task_notes_subtaskId ON task_notes(subtaskId)")
+
+        // Runbook definitions
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS runbooks (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        // Ordered step definitions per runbook
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS runbook_steps (
+                id TEXT NOT NULL PRIMARY KEY,
+                runbookId TEXT NOT NULL,
+                label TEXT NOT NULL,
+                stepOrder INTEGER NOT NULL,
+                FOREIGN KEY(runbookId) REFERENCES runbooks(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_runbook_steps_runbookId ON runbook_steps(runbookId)")
+
+        // Subtask instances stamped onto tasks
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS subtasks (
+                id TEXT NOT NULL PRIMARY KEY,
+                taskId TEXT NOT NULL,
+                runbookId TEXT,
+                label TEXT NOT NULL,
+                stepOrder INTEGER NOT NULL,
+                isChecked INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY(runbookId) REFERENCES runbooks(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_subtasks_taskId ON subtasks(taskId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_subtasks_runbookId ON subtasks(runbookId)")
+    }
+}
+
+private val MIGRATION_16_17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 9: flat subtask tick counter sealed at week-close
+        db.execSQL("ALTER TABLE week_snapshots ADD COLUMN subtaskTickCount INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+private val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS templates (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS template_tasks (
+                id TEXT NOT NULL PRIMARY KEY,
+                templateId TEXT NOT NULL,
+                title TEXT NOT NULL,
+                aspectName TEXT,
+                categoryName TEXT,
+                priority TEXT NOT NULL DEFAULT 'medium',
+                estimatedMinutes INTEGER,
+                runbookId TEXT,
+                taskOrder INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(templateId) REFERENCES templates(id) ON DELETE CASCADE,
+                FOREIGN KEY(runbookId) REFERENCES runbooks(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_template_tasks_templateId ON template_tasks(templateId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_template_tasks_runbookId ON template_tasks(runbookId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -140,9 +228,14 @@ private val MIGRATION_13_14 = object : Migration(13, 14) {
         ResourceTransactionEntity::class,
         CostResourceEntity::class,
         TaskCostEntryEntity::class,
-        ProjectEntity::class
+        ProjectEntity::class,
+        RunbookEntity::class,
+        RunbookStepEntity::class,
+        SubtaskEntity::class,
+        TemplateEntity::class,
+        TemplateTaskEntity::class
     ],
-    version = 14,
+    version = 17,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -160,6 +253,9 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun costResourceDao(): CostResourceDao
     abstract fun taskCostEntryDao(): TaskCostEntryDao
     abstract fun projectDao(): ProjectDao
+    abstract fun runbookDao(): RunbookDao
+    abstract fun subtaskDao(): SubtaskDao
+    abstract fun templateDao(): TemplateDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -171,7 +267,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17)
                     .build()
                     .also { INSTANCE = it }
             }

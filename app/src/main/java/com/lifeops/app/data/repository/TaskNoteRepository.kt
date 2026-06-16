@@ -13,13 +13,14 @@ class TaskNoteRepository(private val taskNoteDao: TaskNoteDao) {
     fun observeByWeek(weekId: String): Flow<List<TaskNote>> =
         taskNoteDao.observeByWeek(weekId).map { list -> list.map { it.toModel() } }
 
-    suspend fun addNote(taskId: String, content: String) {
+    suspend fun addNote(taskId: String, content: String, subtaskId: String? = null) {
         taskNoteDao.insert(
             TaskNoteEntity(
                 id = UUID.randomUUID().toString(),
                 taskId = taskId,
                 content = content,
-                createdAt = DateUtil.now()
+                createdAt = DateUtil.now(),
+                subtaskId = subtaskId
             )
         )
     }

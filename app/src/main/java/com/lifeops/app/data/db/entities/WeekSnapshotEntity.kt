@@ -40,5 +40,7 @@ data class WeekSnapshotEntity(
     // for snapshots written before this column existed (backfilled on first launch).
     val aspectHistory: String = "{}",
     val selfRating: Int? = null,
-    val selfRatingNote: String? = null
+    val selfRatingNote: String? = null,
+    // Phase 9: flat +1 per subtask check at week-close; no modifier, independent of task scoring
+    val subtaskTickCount: Int = 0
 )
