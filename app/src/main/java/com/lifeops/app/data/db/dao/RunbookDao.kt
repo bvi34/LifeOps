@@ -16,6 +16,9 @@ interface RunbookDao {
     @Query("SELECT * FROM runbooks WHERE id = :id")
     suspend fun getById(id: String): RunbookEntity?
 
+    @Query("SELECT * FROM runbooks WHERE LOWER(name) = LOWER(:name) LIMIT 1")
+    suspend fun findByName(name: String): RunbookEntity?
+
     @Query("SELECT * FROM runbook_steps WHERE runbookId = :runbookId ORDER BY stepOrder")
     suspend fun getSteps(runbookId: String): List<RunbookStepEntity>
 

@@ -177,6 +177,35 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
     }
 }
 
+private val MIGRATION_15_16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS templates (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS template_tasks (
+                id TEXT NOT NULL PRIMARY KEY,
+                templateId TEXT NOT NULL,
+                title TEXT NOT NULL,
+                aspectName TEXT,
+                categoryName TEXT,
+                priority TEXT NOT NULL DEFAULT 'medium',
+                estimatedMinutes INTEGER,
+                runbookId TEXT,
+                taskOrder INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(templateId) REFERENCES templates(id) ON DELETE CASCADE,
+                FOREIGN KEY(runbookId) REFERENCES runbooks(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_template_tasks_templateId ON template_tasks(templateId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_template_tasks_runbookId ON template_tasks(runbookId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -195,9 +224,11 @@ private val MIGRATION_14_15 = object : Migration(14, 15) {
         ProjectEntity::class,
         RunbookEntity::class,
         RunbookStepEntity::class,
-        SubtaskEntity::class
+        SubtaskEntity::class,
+        TemplateEntity::class,
+        TemplateTaskEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -217,6 +248,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun projectDao(): ProjectDao
     abstract fun runbookDao(): RunbookDao
     abstract fun subtaskDao(): SubtaskDao
+    abstract fun templateDao(): TemplateDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -228,7 +260,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16)
                     .build()
                     .also { INSTANCE = it }
             }

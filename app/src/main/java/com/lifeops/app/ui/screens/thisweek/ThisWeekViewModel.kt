@@ -5,6 +5,7 @@ import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
+import com.lifeops.app.util.toSlug
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
 import com.lifeops.app.widget.LifeOpsWidget
@@ -71,7 +72,9 @@ data class ThisWeekUiState(
     val costResources: List<CostResource> = emptyList(),
     val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap(),
     val projects: List<Project> = emptyList(),
-    val showOverdueOnly: Boolean = false
+    val showOverdueOnly: Boolean = false,
+    val showTemplatePickerDialog: Boolean = false,
+    val availableTemplates: List<TemplateWithTasks> = emptyList()
 )
 
 class ThisWeekViewModel(
@@ -86,7 +89,9 @@ class ThisWeekViewModel(
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
     private val projectRepository: ProjectRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val runbookRepository: RunbookRepository,
+    private val templateRepository: TemplateRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -498,10 +503,17 @@ class ThisWeekViewModel(
         hardDeadline: Boolean,
         isRecurring: Boolean = false,
         estimatedMinutes: Int? = null,
-        projectId: String? = null
+        projectId: String? = null,
+        runbookId: String? = null
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
+            val slug = title.toSlug()
+            // Phase 4 merge: incumbent survives
+            if (slug in taskRepository.getSlugsByWeek(week.id)) {
+                _uiState.update { it.copy(showCreateTaskDialog = false) }
+                return@launch
+            }
             val resourceValue = ImportParser.computeResourceValue(
                 priority.label, hardDeadline, estimatedMinutes, isManuallyAdded = true
             )
@@ -520,12 +532,33 @@ class ThisWeekViewModel(
                 isRecurring = isRecurring,
                 estimatedMinutes = estimatedMinutes,
                 isManuallyAdded = true,
-                projectId = projectId
+                projectId = projectId,
+                slug = slug
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
+            // Phase 8: optional runbook stamp on one-off tasks
+            runbookId?.let { runbookRepository.stampRunbookById(task.id, it) }
             notificationRepository.scheduleForTask(task)
             _uiState.update { it.copy(showCreateTaskDialog = false) }
+        }
+    }
+
+    // Template picker (Phase 8 — third entry path)
+    fun showTemplatePicker() {
+        viewModelScope.launch {
+            val templates = templateRepository.getAllWithTasks()
+            _uiState.update { it.copy(showTemplatePickerDialog = true, availableTemplates = templates) }
+        }
+    }
+
+    fun hideTemplatePicker() = _uiState.update { it.copy(showTemplatePickerDialog = false) }
+
+    fun applyTemplate(templateId: String) {
+        viewModelScope.launch {
+            val week = weekRepository.getOrCreateCurrentWeek()
+            templateRepository.applyTemplate(templateId, week.id)
+            _uiState.update { it.copy(showTemplatePickerDialog = false) }
         }
     }
 
@@ -621,13 +654,15 @@ class ThisWeekViewModelFactory(
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
     private val projectRepository: ProjectRepository,
-    private val preferencesRepository: PreferencesRepository
+    private val preferencesRepository: PreferencesRepository,
+    private val runbookRepository: RunbookRepository,
+    private val templateRepository: TemplateRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository, preferencesRepository
+            projectRepository, preferencesRepository, runbookRepository, templateRepository
         ) as T
 }

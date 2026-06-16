@@ -99,4 +99,7 @@ interface TaskDao {
 
     @Query("SELECT * FROM tasks WHERE carriedFromTaskId IN (:parentIds)")
     suspend fun getChildrenOf(parentIds: List<String>): List<TaskEntity>
+
+    @Query("SELECT slug FROM tasks WHERE weekId = :weekId")
+    suspend fun getSlugsByWeek(weekId: String): List<String>
 }

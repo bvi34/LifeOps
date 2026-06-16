@@ -22,7 +22,11 @@ data class ParsedTask(
     val timeLoggedMinutes: Int? = null,
     val estimatedMinutes: Int? = null,
     val isRecurring: Boolean = false,
-    val unknownFields: Map<String, String> = emptyMap()
+    val unknownFields: Map<String, String> = emptyMap(),
+    // Phase 7: runbook to stamp after task creation. JSON uses "runbook" key (name);
+    // template apply path supplies runbookId directly to skip the name lookup.
+    val runbookName: String? = null,
+    val runbookId: String? = null
 )
 
 object ImportParser {
@@ -31,7 +35,8 @@ object ImportParser {
     private val knownKeys = setOf(
         "title", "notes", "aspect", "category", "priority",
         "due_date", "hard_deadline", "status",
-        "time_logged_minutes", "estimated_minutes", "is_recurring"
+        "time_logged_minutes", "estimated_minutes", "is_recurring",
+        "runbook"
     )
 
     fun parse(json: String): ImportResult {
@@ -71,7 +76,8 @@ object ImportParser {
                     timeLoggedMinutes = obj.get("time_logged_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     estimatedMinutes = obj.get("estimated_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     isRecurring = obj.get("is_recurring")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
-                    unknownFields = unknown
+                    unknownFields = unknown,
+                    runbookName = obj.get("runbook")?.takeIf { !it.isJsonNull }?.asString
                 )
             }
             ImportResult(tasks)

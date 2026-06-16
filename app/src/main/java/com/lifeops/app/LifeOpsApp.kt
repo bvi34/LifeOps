@@ -47,9 +47,11 @@ class LifeOpsApp : Application() {
             notificationRepository
         )
     }
+    val runbookRepository by lazy { RunbookRepository(database) }
     val importRepository by lazy {
-        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository, timeEntryRepository)
+        ImportRepository(database, aspectRepository, taskRepository, weekRepository, notificationRepository, taskNoteRepository, timeEntryRepository, runbookRepository)
     }
+    val templateRepository by lazy { TemplateRepository(database, importRepository) }
     val costResourceRepository by lazy {
         CostResourceRepository(database.costResourceDao(), database.taskCostEntryDao())
     }

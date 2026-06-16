@@ -302,3 +302,26 @@ data class Subtask(
     val stepOrder: Int,
     val isChecked: Boolean = false
 )
+
+data class Template(
+    val id: String,
+    val name: String,
+    val createdAt: String
+)
+
+data class TemplateTask(
+    val id: String,
+    val templateId: String,
+    val title: String,
+    val aspectName: String? = null,
+    val categoryName: String? = null,
+    val priority: String = "medium",
+    val estimatedMinutes: Int? = null,
+    val runbookId: String? = null,
+    val taskOrder: Int = 0
+)
+
+data class TemplateWithTasks(
+    val template: Template,
+    val tasks: List<TemplateTask>
+)

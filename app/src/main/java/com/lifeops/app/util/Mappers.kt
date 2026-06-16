@@ -59,3 +59,9 @@ fun RunbookStep.toEntity() = RunbookStepEntity(id, runbookId, label, stepOrder)
 
 fun SubtaskEntity.toModel() = Subtask(id, taskId, runbookId, label, stepOrder, isChecked)
 fun Subtask.toEntity() = SubtaskEntity(id, taskId, runbookId, label, stepOrder, isChecked)
+
+fun TemplateEntity.toModel() = Template(id, name, createdAt)
+fun Template.toEntity() = TemplateEntity(id, name, createdAt)
+
+fun TemplateTaskEntity.toModel() = TemplateTask(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)
+fun TemplateTask.toEntity() = TemplateTaskEntity(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)

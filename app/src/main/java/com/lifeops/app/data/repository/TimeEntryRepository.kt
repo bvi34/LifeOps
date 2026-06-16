@@ -16,14 +16,15 @@ class TimeEntryRepository(private val timeEntryDao: TimeEntryDao) {
     suspend fun getAllSince(since: String): List<TimeEntry> =
         timeEntryDao.getAllSince(since).map { it.toModel() }
 
-    suspend fun logTime(taskId: String, durationMinutes: Int, note: String? = null) {
+    suspend fun logTime(taskId: String, durationMinutes: Int, note: String? = null, subtaskId: String? = null) {
         timeEntryDao.insert(
             TimeEntryEntity(
                 id = UUID.randomUUID().toString(),
                 taskId = taskId,
                 durationMinutes = durationMinutes,
                 note = note,
-                recordedAt = DateUtil.now()
+                recordedAt = DateUtil.now(),
+                subtaskId = subtaskId
             )
         )
     }

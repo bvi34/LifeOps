@@ -18,6 +18,12 @@ class RunbookRepository(private val db: LifeOpsDatabase) {
     suspend fun getAllRunbooks(): List<Runbook> =
         db.runbookDao().getAll().map { it.toModel() }
 
+    suspend fun findByName(name: String): RunbookWithSteps? {
+        val runbook = db.runbookDao().findByName(name)?.toModel() ?: return null
+        val steps = db.runbookDao().getSteps(runbook.id).map { it.toModel() }
+        return RunbookWithSteps(runbook, steps)
+    }
+
     suspend fun getRunbookWithSteps(runbookId: String): RunbookWithSteps? {
         val runbook = db.runbookDao().getById(runbookId)?.toModel() ?: return null
         val steps = db.runbookDao().getSteps(runbookId).map { it.toModel() }

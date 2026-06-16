@@ -165,7 +165,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         app.applicationScope,
                         app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                         app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
-                        app.costResourceRepository, app.projectRepository, app.preferencesRepository
+                        app.costResourceRepository, app.projectRepository, app.preferencesRepository,
+                        app.runbookRepository, app.templateRepository
                     )
                 )
                 // Inject shared text if coming from share sheet

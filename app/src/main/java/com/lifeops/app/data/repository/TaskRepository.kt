@@ -100,6 +100,16 @@ class TaskRepository(
                         createdAt = now
                     )
                     taskDao.upsert(newTask)
+                    // Phase 5: carry subtasks with their checked state into the new week
+                    val parentSubtasks = db.subtaskDao().getByTask(carried.id)
+                    if (parentSubtasks.isNotEmpty()) {
+                        db.subtaskDao().insertAll(
+                            parentSubtasks.map { it.copy(
+                                id = java.util.UUID.randomUUID().toString(),
+                                taskId = newTask.id
+                            )}
+                        )
+                    }
                     newTasksToSchedule.add(newTask.toModel())
                 }
             }
@@ -376,6 +386,9 @@ class TaskRepository(
             }
         }
     }
+
+    suspend fun getSlugsByWeek(weekId: String): Set<String> =
+        taskDao.getSlugsByWeek(weekId).toSet()
 
     suspend fun getAllTasks(): List<Task> = taskDao.getAll().map { it.toModel() }
 
