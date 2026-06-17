@@ -789,7 +789,7 @@ private fun AspectItem(
 @Composable
 private fun GameResourceItem(resource: GameResource, onRename: (String) -> Unit) {
     var editing by remember { mutableStateOf(false) }
-    var nameValue by remember(resource.name) { mutableStateOf(resource.name) }
+    var nameValue by remember(resource.id) { mutableStateOf(resource.name) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(

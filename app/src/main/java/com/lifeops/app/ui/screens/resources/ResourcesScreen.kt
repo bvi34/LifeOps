@@ -102,7 +102,7 @@ private fun GameResourceCard(
     onSpend: () -> Unit
 ) {
     var editingName by remember { mutableStateOf(false) }
-    var nameValue by remember(resource.name) { mutableStateOf(resource.name) }
+    var nameValue by remember(resource.id) { mutableStateOf(resource.name) }
     var showHistory by remember { mutableStateOf(false) }
 
     Card(modifier = Modifier.fillMaxWidth()) {
