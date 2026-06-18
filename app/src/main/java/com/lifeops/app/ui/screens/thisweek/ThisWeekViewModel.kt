@@ -349,9 +349,9 @@ class ThisWeekViewModel(
         }
     }
 
-    fun onCarryForward(task: Task) {
+    fun onCarryForward(task: Task, reason: CarryForwardReason) {
         viewModelScope.launch {
-            taskRepository.carryForward(task)
+            taskRepository.carryForward(task, reason)
             refreshWidget()
             _undoChannel.trySend(UndoEvent("Carried forward", task.id, UndoEventAction.UN_CARRY_FORWARD))
         }

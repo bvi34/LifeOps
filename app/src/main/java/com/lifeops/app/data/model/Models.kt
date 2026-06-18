@@ -25,6 +25,15 @@ enum class TaskStatus(val value: String) {
     }
 }
 
+enum class CarryForwardReason(val value: String, val label: String) {
+    INTERNAL("internal", "I'm delaying"),
+    EXTERNAL("external", "Other party is delaying");
+
+    companion object {
+        fun from(value: String?) = entries.firstOrNull { it.value == value }
+    }
+}
+
 data class Aspect(
     val id: String,
     val name: String,
@@ -69,7 +78,8 @@ data class Task(
     val isManuallyAdded: Boolean = false,
     val projectId: String? = null,
     val source: TaskSource = TaskSource.MANUAL,
-    val slug: String = ""
+    val slug: String = "",
+    val carryForwardReason: CarryForwardReason? = null
 )
 
 data class CarryForwardEntry(
