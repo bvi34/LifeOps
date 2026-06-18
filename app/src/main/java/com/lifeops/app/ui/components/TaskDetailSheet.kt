@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import com.lifeops.app.data.model.CarryForwardReason
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
@@ -59,7 +60,7 @@ fun TaskDetailSheet(
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
     onEdit: () -> Unit,
-    onCarryForward: () -> Unit,
+    onCarryForward: (CarryForwardReason) -> Unit,
     onUnCarryForward: (() -> Unit)? = null,
     onUnsuccessful: (() -> Unit)? = null,
     onUnUnsuccessful: (() -> Unit)? = null,
@@ -77,6 +78,7 @@ fun TaskDetailSheet(
     var showLogManuallyDialog by remember { mutableStateOf(false) }
     var showLogCostDialog by remember { mutableStateOf(false) }
     var showRunbookPicker by remember { mutableStateOf(false) }
+    var showCarryForwardReasonPicker by remember { mutableStateOf(false) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -149,7 +151,7 @@ fun TaskDetailSheet(
 
             if (task.status == TaskStatus.PENDING) {
                 TextButton(
-                    onClick = onCarryForward,
+                    onClick = { showCarryForwardReasonPicker = true },
                     modifier = Modifier.padding(top = 2.dp)
                 ) { Text("Carry Forward") }
             }
@@ -169,10 +171,43 @@ fun TaskDetailSheet(
             }
 
             if (task.status == TaskStatus.CARRIED_FORWARD && onUnCarryForward != null) {
-                TextButton(
-                    onClick = onUnCarryForward,
-                    modifier = Modifier.padding(top = 2.dp)
-                ) { Text("Restore") }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(
+                        onClick = onUnCarryForward,
+                        modifier = Modifier.padding(top = 2.dp)
+                    ) { Text("Restore") }
+                    task.carryForwardReason?.let { reason ->
+                        Text(
+                            "· ${reason.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        )
+                    }
+                }
+            }
+
+            if (showCarryForwardReasonPicker) {
+                AlertDialog(
+                    onDismissRequest = { showCarryForwardReasonPicker = false },
+                    title = { Text("Why is this being delayed?") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            CarryForwardReason.entries.forEach { reason ->
+                                OutlinedButton(
+                                    onClick = {
+                                        showCarryForwardReasonPicker = false
+                                        onCarryForward(reason)
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text(reason.label) }
+                            }
+                        }
+                    },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { showCarryForwardReasonPicker = false }) { Text("Cancel") }
+                    }
+                )
             }
 
             if (task.carriedCount >= 2 && task.projectId == null && onPromoteToProject != null) {

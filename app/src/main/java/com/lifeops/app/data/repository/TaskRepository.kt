@@ -49,9 +49,9 @@ class TaskRepository(
         taskDao.updateStatus(taskId, TaskStatus.PENDING.value)
     }
 
-    suspend fun carryForward(task: Task) {
+    suspend fun carryForward(task: Task, reason: CarryForwardReason) {
         notificationRepository.cancelForTask(task.id)
-        taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
+        taskDao.updateStatusAndReason(task.id, TaskStatus.CARRIED_FORWARD.value, reason.value)
     }
 
     suspend fun unCarryForward(taskId: String) {

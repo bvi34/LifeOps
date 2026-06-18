@@ -94,7 +94,10 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE weekId = :weekId AND status = 'carried_forward'")
     suspend fun getCarriedForwardByWeek(weekId: String): List<TaskEntity>
 
-    @Query("UPDATE tasks SET status = 'pending' WHERE id = :id AND status = 'carried_forward'")
+    @Query("UPDATE tasks SET status = :status, carryForwardReason = :reason WHERE id = :id")
+    suspend fun updateStatusAndReason(id: String, status: String, reason: String?)
+
+    @Query("UPDATE tasks SET status = 'pending', carryForwardReason = NULL WHERE id = :id AND status = 'carried_forward'")
     suspend fun unCarryForward(id: String)
 
     @Query("SELECT * FROM tasks WHERE carriedFromTaskId IN (:parentIds)")

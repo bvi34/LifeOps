@@ -61,5 +61,6 @@ data class TaskEntity(
     @ColumnInfo(name = "source", defaultValue = "MANUAL")
     val source: String = "MANUAL",
     @ColumnInfo(defaultValue = "")
-    val slug: String = ""
+    val slug: String = "",
+    val carryForwardReason: String? = null
 )
