@@ -7,14 +7,31 @@ import java.time.temporal.ChronoUnit
 object DateUtil {
     private val dateFormatter = DateTimeFormatter.ISO_LOCAL_DATE
 
+    // Single source of truth for where a week boundary sits: weeks are Monday-anchored in
+    // the system zone. Both task weeks (currentWeekStart) and counter weekKeys (weekIndexFor)
+    // route through weekStartFor, so they can never disagree on where a week begins.
+    private val WEEK_ANCHOR: LocalDate = LocalDate.of(1970, 1, 5) // first Monday of the epoch
+
     fun now(): String = Instant.now().toString()
 
-    fun currentWeekStart(): LocalDate {
-        val today = LocalDate.now()
-        return today.with(DayOfWeek.MONDAY)
-    }
+    /** Monday of the ISO week containing [date] — the one definition of a week boundary. */
+    fun weekStartFor(date: LocalDate): LocalDate = date.with(DayOfWeek.MONDAY)
+
+    fun currentWeekStart(): LocalDate = weekStartFor(LocalDate.now())
 
     fun currentWeekEnd(): LocalDate = currentWeekStart().plusDays(6)
+
+    /**
+     * Stable, monotonically increasing index of the Monday-anchored week that contains
+     * [millis] (interpreted in the system zone). Any instant within the same Mon–Sun week
+     * yields the same value; consecutive weeks differ by exactly 1. This is the only place
+     * the week-boundary floor math lives — CounterEvent inserts stamp weekKey with it and
+     * catch-up close counts missed weeks with it, so counters and tasks stay in lockstep.
+     */
+    fun weekIndexFor(millis: Long): Int {
+        val date = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
+        return ChronoUnit.WEEKS.between(WEEK_ANCHOR, weekStartFor(date)).toInt()
+    }
 
     fun formatDate(date: String?): String {
         if (date == null) return ""
