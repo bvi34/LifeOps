@@ -79,7 +79,8 @@ data class Task(
     val projectId: String? = null,
     val source: TaskSource = TaskSource.MANUAL,
     val slug: String = "",
-    val carryForwardReason: CarryForwardReason? = null
+    val carryForwardReason: CarryForwardReason? = null,
+    val counterId: String? = null
 )
 
 data class CarryForwardEntry(

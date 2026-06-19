@@ -31,7 +31,8 @@ class TaskRepository(
     private val gameResourceMappingDao: GameResourceMappingDao,
     private val notificationDao: NotificationDao,
     private val notificationRepository: NotificationRepository,
-    private val weekRepository: WeekRepository
+    private val weekRepository: WeekRepository,
+    private val counterRepository: CounterRepository
 ) {
     private val gson = Gson()
 
@@ -40,7 +41,15 @@ class TaskRepository(
 
     suspend fun completeTask(task: Task) {
         if (taskDao.getChildOf(task.id) != null) return
-        taskDao.markCompleted(task.id, TaskStatus.COMPLETED.value, DateUtil.now())
+        db.withTransaction {
+            val current = taskDao.getById(task.id) ?: return@withTransaction
+            if (current.status == TaskStatus.COMPLETED.value) return@withTransaction // already done — no double tick
+            val nowMillis = System.currentTimeMillis()
+            taskDao.markCompleted(current.id, TaskStatus.COMPLETED.value, DateUtil.isoFromEpoch(nowMillis))
+            // Same transaction as the status flip: if anything fails the tick rolls back too,
+            // so a half-completed task can never leave a phantom CounterEvent.
+            current.counterId?.let { counterRepository.logEvent(it, occurredAt = nowMillis) }
+        }
     }
 
     suspend fun skipTask(taskId: String) {

@@ -228,6 +228,15 @@ private val MIGRATION_18_19 = object : Migration(18, 19) {
     }
 }
 
+private val MIGRATION_19_20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Optional counter a task ticks when completed. Nullable column + index, no FK — same
+        // shape as projectId (MIGRATION_8_9); counters are archived, never deleted.
+        db.execSQL("ALTER TABLE tasks ADD COLUMN counterId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_counterId ON tasks(counterId)")
+    }
+}
+
 private val MIGRATION_15_16 = object : Migration(15, 16) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("""
@@ -281,7 +290,7 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
         CounterEntity::class,
         CounterEventEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -314,7 +323,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
                     .build()
                     .also { INSTANCE = it }
             }
