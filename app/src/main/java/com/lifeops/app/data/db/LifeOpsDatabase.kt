@@ -190,6 +190,44 @@ private val MIGRATION_17_18 = object : Migration(17, 18) {
     }
 }
 
+private val MIGRATION_18_19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Counters: standalone tally streams, optionally attached to a category (same
+        // nullable-categoryId + SET_NULL pattern as projects/tasks). Purely additive —
+        // touches no existing tables, so it can't disturb the current schema.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS counters (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                categoryId TEXT,
+                isArchived INTEGER NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_counters_categoryId ON counters(categoryId)")
+
+        // CounterEvent: one timestamped tick (delta defaults to 1 in Kotlin). weekKey is
+        // stamped from occurredAt at insert time, so backdated events sit in the right week.
+        // No SQL DEFAULTs here — these columns have no @ColumnInfo(defaultValue), so the
+        // CREATE must match Room's entity-generated schema exactly to pass validation.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS counter_events (
+                id TEXT NOT NULL PRIMARY KEY,
+                counterId TEXT NOT NULL,
+                weekKey INTEGER NOT NULL,
+                occurredAt TEXT NOT NULL,
+                delta INTEGER NOT NULL,
+                note TEXT,
+                FOREIGN KEY(counterId) REFERENCES counters(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_counter_events_counterId_weekKey ON counter_events(counterId, weekKey)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_counter_events_occurredAt ON counter_events(occurredAt)")
+    }
+}
+
 private val MIGRATION_15_16 = object : Migration(15, 16) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("""
@@ -239,9 +277,11 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
         RunbookStepEntity::class,
         SubtaskEntity::class,
         TemplateEntity::class,
-        TemplateTaskEntity::class
+        TemplateTaskEntity::class,
+        CounterEntity::class,
+        CounterEventEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -262,6 +302,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun runbookDao(): RunbookDao
     abstract fun subtaskDao(): SubtaskDao
     abstract fun templateDao(): TemplateDao
+    abstract fun counterDao(): CounterDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -273,7 +314,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19)
                     .build()
                     .also { INSTANCE = it }
             }
