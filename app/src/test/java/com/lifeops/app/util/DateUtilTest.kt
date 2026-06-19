@@ -25,6 +25,15 @@ class DateUtilTest {
     }
 
     @Test
+    fun `weekIndexFor(LocalDate) matches the millis overload and steps by one per week`() {
+        val monday = LocalDate.of(2026, 6, 15).with(DayOfWeek.MONDAY)
+        assertEquals(DateUtil.weekIndexFor(millisAtStartOfDay(monday)), DateUtil.weekIndexFor(monday))
+        assertEquals(DateUtil.weekIndexFor(monday) + 1, DateUtil.weekIndexFor(monday.plusWeeks(1)))
+        // every day in a week maps to the same index as that week's Monday
+        assertEquals(DateUtil.weekIndexFor(monday), DateUtil.weekIndexFor(monday.plusDays(5)))
+    }
+
+    @Test
     fun `weekIndexFor agrees with the task-week boundary (currentWeekStart)`() {
         // The current instant and the current task week's Monday must land in the same
         // week index — i.e. counters and tasks share one boundary.

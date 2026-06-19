@@ -22,16 +22,17 @@ object DateUtil {
     fun currentWeekEnd(): LocalDate = currentWeekStart().plusDays(6)
 
     /**
-     * Stable, monotonically increasing index of the Monday-anchored week that contains
-     * [millis] (interpreted in the system zone). Any instant within the same Mon–Sun week
-     * yields the same value; consecutive weeks differ by exactly 1. This is the only place
-     * the week-boundary floor math lives — CounterEvent inserts stamp weekKey with it and
-     * catch-up close counts missed weeks with it, so counters and tasks stay in lockstep.
+     * Stable, monotonically increasing index of the Monday-anchored week containing [date].
+     * Consecutive weeks differ by exactly 1. This is the only place the week-boundary floor
+     * math lives — CounterEvent inserts stamp weekKey from an instant, catch-up close compares
+     * week rows' startDate against it — so counters and tasks can never disagree on a boundary.
      */
-    fun weekIndexFor(millis: Long): Int {
-        val date = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
-        return ChronoUnit.WEEKS.between(WEEK_ANCHOR, weekStartFor(date)).toInt()
-    }
+    fun weekIndexFor(date: LocalDate): Int =
+        ChronoUnit.WEEKS.between(WEEK_ANCHOR, weekStartFor(date)).toInt()
+
+    /** Week index of the week containing [millis], interpreted in the system zone. */
+    fun weekIndexFor(millis: Long): Int =
+        weekIndexFor(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate())
 
     fun formatDate(date: String?): String {
         if (date == null) return ""
