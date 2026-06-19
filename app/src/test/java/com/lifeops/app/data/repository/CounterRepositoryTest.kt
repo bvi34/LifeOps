@@ -7,6 +7,8 @@ import com.lifeops.app.data.db.entities.CounterEntity
 import com.lifeops.app.data.db.entities.CounterEventEntity
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -17,17 +19,20 @@ import java.time.ZoneId
 
 class CounterRepositoryTest {
 
-    /** Captures inserts so we can assert what the repository persists. Read queries are unused here. */
+    /** Captures writes so we can assert what the repository persists; rollup rows are settable. */
     private class FakeCounterDao : CounterDao {
         val events = mutableListOf<CounterEventEntity>()
         val counters = mutableListOf<CounterEntity>()
+        val updated = mutableListOf<CounterEntity>()
+        var rollupRows: List<CounterCategoryTotal> = emptyList()
         override suspend fun insertCounter(counter: CounterEntity) { counters += counter }
         override suspend fun insertEvent(event: CounterEventEntity) { events += event }
+        override suspend fun update(counter: CounterEntity) { updated += counter }
         override fun observeWeeklyTotal(counterId: String, weekKey: Int): Flow<Int> = throw NotImplementedError()
         override fun observeCumulativeTotal(counterId: String): Flow<Int> = throw NotImplementedError()
         override fun observeWeeklyTrend(counterId: String): Flow<List<CounterWeeklyTotal>> = throw NotImplementedError()
         override fun observeEvents(counterId: String): Flow<List<CounterEventEntity>> = throw NotImplementedError()
-        override fun observeCategoryRollup(): Flow<List<CounterCategoryTotal>> = throw NotImplementedError()
+        override fun observeCategoryRollup(): Flow<List<CounterCategoryTotal>> = flowOf(rollupRows)
     }
 
     private fun millis(date: LocalDate): Long =
@@ -86,5 +91,40 @@ class CounterRepositoryTest {
         repo.logEvent("K1")
         repo.logEvent("K1")
         assertEquals(2, dao.events.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun `createCounter persists the name and category attachment`() = runTest {
+        val dao = FakeCounterDao()
+        val counter = CounterRepository(dao).createCounter("K1", "Pushups", categoryId = "C1")
+
+        assertEquals("Pushups", counter.name)
+        assertEquals("C1", counter.categoryId)
+        assertFalse(counter.isArchived)
+        val persisted = dao.counters.single()
+        assertEquals("C1", persisted.categoryId)
+    }
+
+    @Test
+    fun `createCounter with no category is uncategorized`() = runTest {
+        val dao = FakeCounterDao()
+        val counter = CounterRepository(dao).createCounter("K1", "Standup")
+        assertNull(counter.categoryId)
+        assertNull(dao.counters.single().categoryId)
+    }
+
+    @Test
+    fun `category rollup maps rows to a categoryId-keyed total map (null = uncategorized)`() = runTest {
+        val dao = FakeCounterDao()
+        dao.rollupRows = listOf(
+            CounterCategoryTotal("C1", 4),
+            CounterCategoryTotal("C2", 5),
+            CounterCategoryTotal(null, 1)
+        )
+        val rollup = CounterRepository(dao).observeCategoryRollup().first()
+
+        assertEquals(4, rollup["C1"])
+        assertEquals(5, rollup["C2"])
+        assertEquals(1, rollup[null]) // uncategorized bucket
     }
 }

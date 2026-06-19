@@ -195,6 +195,15 @@ data class ProjectStats(
     val totalTimeMinutes: Int
 )
 
+data class Counter(
+    val id: String,
+    val name: String,
+    val categoryId: String? = null,
+    val isArchived: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: String
+)
+
 data class ScoringPoint(val weekLabel: String, val resourcesEarned: Int)
 
 data class PriorityCompletionRow(

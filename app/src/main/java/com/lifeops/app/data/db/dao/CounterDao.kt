@@ -19,6 +19,11 @@ interface CounterDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEvent(event: CounterEventEntity)
 
+    // Edits (rename, attach/detach category) go through @Update, not insert-REPLACE, so an
+    // edit can never cascade-delete the counter's events the way a PK-conflict REPLACE would.
+    @Update
+    suspend fun update(counter: CounterEntity)
+
     // 1. Weekly window — total logged for one counter in a single week.
     @Query("SELECT COALESCE(SUM(delta), 0) FROM counter_events WHERE counterId = :counterId AND weekKey = :weekKey")
     fun observeWeeklyTotal(counterId: String, weekKey: Int): Flow<Int>
