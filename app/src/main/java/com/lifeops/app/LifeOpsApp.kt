@@ -57,6 +57,7 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
+    val counterRepository by lazy { CounterRepository(database.counterDao()) }
     val growthRepository by lazy {
         GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
     }
