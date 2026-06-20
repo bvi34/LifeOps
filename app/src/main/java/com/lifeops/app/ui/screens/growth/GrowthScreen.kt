@@ -32,17 +32,18 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.util.GrowthRings
 import kotlin.math.hypot
 import kotlin.math.min
 
 @Composable
-fun GrowthScreen(viewModel: GrowthViewModel) {
+fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showHelp by remember { mutableStateOf(false) }
 
-    Scaffold(topBar = { AppHeader() }) { padding ->
+    Scaffold(topBar = { AppHeader(navigationIcon = { onBack?.let { BackNavIcon(it) } }) }) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
