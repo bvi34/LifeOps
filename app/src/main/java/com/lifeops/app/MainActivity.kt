@@ -31,6 +31,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.navigation
 import androidx.navigation.compose.rememberNavController
 import com.lifeops.app.ui.screens.counters.CounterDetailScreen
 import com.lifeops.app.ui.screens.counters.CounterDetailViewModelFactory
@@ -38,6 +39,12 @@ import com.lifeops.app.ui.screens.counters.CountersScreen
 import com.lifeops.app.ui.screens.counters.CountersViewModelFactory
 import com.lifeops.app.ui.screens.growth.GrowthScreen
 import com.lifeops.app.ui.screens.growth.GrowthViewModelFactory
+import com.lifeops.app.ui.screens.history.HistoryScreen
+import com.lifeops.app.ui.screens.planning.CostResourcesScreen
+import com.lifeops.app.ui.screens.planning.PlanningScreen
+import com.lifeops.app.ui.screens.planning.ProjectsScreen
+import com.lifeops.app.ui.screens.planning.RunbooksScreen
+import com.lifeops.app.ui.screens.planning.TemplatesScreen
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModelFactory
 import com.lifeops.app.ui.screens.reports.ReportsScreen
@@ -45,6 +52,7 @@ import com.lifeops.app.ui.screens.reports.ReportsViewModelFactory
 import com.lifeops.app.ui.screens.resources.ResourcesScreen
 import com.lifeops.app.ui.screens.resources.ResourcesViewModelFactory
 import com.lifeops.app.ui.screens.settings.SettingsScreen
+import com.lifeops.app.ui.screens.settings.SettingsViewModel
 import com.lifeops.app.ui.screens.settings.SettingsViewModelFactory
 import com.lifeops.app.ui.screens.thisweek.ThisWeekScreen
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModelFactory
@@ -52,14 +60,12 @@ import com.lifeops.app.ui.theme.LifeOpsTheme
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
-    object Resources : Screen("resources", "Resources", Icons.Default.Diamond)
-    object Counters : Screen("counters", "Counters", Icons.Default.Numbers)
-    object Reports : Screen("reports", "Reports", Icons.Default.BarChart)
-    object Growth : Screen("growth", "Growth", Icons.Default.TrackChanges)
+    object Planning : Screen("planning", "Planning", Icons.Default.Checklist)
+    object History : Screen("history", "History", Icons.Default.History)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
-val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Counters, Screen.Reports, Screen.Growth, Screen.Settings)
+val bottomNavItems = listOf(Screen.ThisWeek, Screen.Planning, Screen.History, Screen.Settings)
 
 class MainActivity : ComponentActivity() {
 
@@ -129,6 +135,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
     val navController = rememberNavController()
+    // One factory shared by Settings and the Planning management screens (projects,
+    // runbooks, templates, cost resources). Each destination still gets its own
+    // ViewModel instance scoped to its back-stack entry.
+    val settingsVmFactory = remember {
+        SettingsViewModelFactory(
+            app.aspectRepository, app.gameResourceRepository,
+            app.preferencesRepository, app.backupRepository, app.taskRepository,
+            app.costResourceRepository, app.projectRepository, app.growthRepository,
+            app.runbookRepository, app.templateRepository
+        )
+    }
     val headerVm = viewModel<AppHeaderViewModel>(
         factory = AppHeaderViewModelFactory(app.weekRepository, app.taskRepository)
     )
@@ -183,66 +200,108 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 }
                 ThisWeekScreen(vm)
             }
-            composable(Screen.Resources.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.resources.ResourcesViewModel>(
-                    factory = ResourcesViewModelFactory(
-                        app.gameResourceRepository, app.aspectRepository, app.taskRepository, app.weekRepository, app.timeEntryRepository
+
+            // Planning — forward-looking management screens, reached via a hub.
+            navigation(startDestination = "planning_hub", route = Screen.Planning.route) {
+                composable("planning_hub") {
+                    PlanningScreen(
+                        onOpenProjects = { navController.navigate("projects") },
+                        onOpenCounters = { navController.navigate("counters") },
+                        onOpenRunbooks = { navController.navigate("runbooks") },
+                        onOpenTemplates = { navController.navigate("templates") },
+                        onOpenCostResources = { navController.navigate("cost_resources") }
                     )
-                )
-                ResourcesScreen(vm)
-            }
-            composable(Screen.Counters.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.counters.CountersViewModel>(
-                    factory = CountersViewModelFactory(
-                        app.counterRepository, app.aspectRepository, app.weekRepository
+                }
+                composable("projects") {
+                    val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
+                    ProjectsScreen(vm) { navController.navigateUp() }
+                }
+                composable("counters") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.counters.CountersViewModel>(
+                        factory = CountersViewModelFactory(
+                            app.counterRepository, app.aspectRepository, app.weekRepository
+                        )
                     )
-                )
-                CountersScreen(vm, onOpenCounter = { id -> navController.navigate("counter_detail/$id") })
-            }
-            composable(Screen.Reports.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.reports.ReportsViewModel>(
-                    factory = ReportsViewModelFactory(
-                        app.weekRepository, app.aspectRepository,
-                        app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
-                        app.projectRepository
+                    CountersScreen(
+                        vm,
+                        onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
+                        onBack = { navController.navigateUp() }
                     )
-                )
-                ReportsScreen(vm, onNavigateToProject = { id -> navController.navigate("project_detail/$id") })
-            }
-            composable(Screen.Growth.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
-                    factory = GrowthViewModelFactory(app.growthRepository)
-                )
-                GrowthScreen(vm)
-            }
-            composable("project_detail/{projectId}") { backStackEntry ->
-                val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
-                val vm = viewModel<com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModel>(
-                    key = "project_detail_$projectId",
-                    factory = ProjectDetailViewModelFactory(
-                        projectId, app.projectRepository, app.taskRepository, app.weekRepository,
-                        app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository
+                }
+                composable("runbooks") {
+                    val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
+                    RunbooksScreen(vm) { navController.navigateUp() }
+                }
+                composable("templates") {
+                    val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
+                    TemplatesScreen(vm) { navController.navigateUp() }
+                }
+                composable("cost_resources") {
+                    val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
+                    CostResourcesScreen(vm) { navController.navigateUp() }
+                }
+                composable("counter_detail/{counterId}") { backStackEntry ->
+                    val counterId = backStackEntry.arguments?.getString("counterId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.counters.CounterDetailViewModel>(
+                        key = "counter_detail_$counterId",
+                        factory = CounterDetailViewModelFactory(counterId, app.counterRepository)
                     )
-                )
-                ProjectDetailScreen(vm) { navController.navigateUp() }
+                    CounterDetailScreen(vm) { navController.navigateUp() }
+                }
             }
-            composable("counter_detail/{counterId}") { backStackEntry ->
-                val counterId = backStackEntry.arguments?.getString("counterId") ?: return@composable
-                val vm = viewModel<com.lifeops.app.ui.screens.counters.CounterDetailViewModel>(
-                    key = "counter_detail_$counterId",
-                    factory = CounterDetailViewModelFactory(counterId, app.counterRepository)
-                )
-                CounterDetailScreen(vm) { navController.navigateUp() }
+
+            // History — backward-looking record screens, reached via a hub (Growth first).
+            navigation(startDestination = "history_hub", route = Screen.History.route) {
+                composable("history_hub") {
+                    HistoryScreen(
+                        onOpenGrowth = { navController.navigate("growth") },
+                        onOpenReports = { navController.navigate("reports") },
+                        onOpenResources = { navController.navigate("resources") }
+                    )
+                }
+                composable("growth") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
+                        factory = GrowthViewModelFactory(app.growthRepository)
+                    )
+                    GrowthScreen(vm, onBack = { navController.navigateUp() })
+                }
+                composable("reports") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.reports.ReportsViewModel>(
+                        factory = ReportsViewModelFactory(
+                            app.weekRepository, app.aspectRepository,
+                            app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
+                            app.projectRepository
+                        )
+                    )
+                    ReportsScreen(
+                        vm,
+                        onNavigateToProject = { id -> navController.navigate("project_detail/$id") },
+                        onBack = { navController.navigateUp() }
+                    )
+                }
+                composable("resources") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.resources.ResourcesViewModel>(
+                        factory = ResourcesViewModelFactory(
+                            app.gameResourceRepository, app.aspectRepository, app.taskRepository, app.weekRepository, app.timeEntryRepository
+                        )
+                    )
+                    ResourcesScreen(vm, onBack = { navController.navigateUp() })
+                }
+                composable("project_detail/{projectId}") { backStackEntry ->
+                    val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModel>(
+                        key = "project_detail_$projectId",
+                        factory = ProjectDetailViewModelFactory(
+                            projectId, app.projectRepository, app.taskRepository, app.weekRepository,
+                            app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository
+                        )
+                    )
+                    ProjectDetailScreen(vm) { navController.navigateUp() }
+                }
             }
+
             composable(Screen.Settings.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.settings.SettingsViewModel>(
-                    factory = SettingsViewModelFactory(
-                        app.aspectRepository, app.gameResourceRepository,
-                        app.preferencesRepository, app.backupRepository, app.taskRepository,
-                        app.costResourceRepository, app.projectRepository, app.growthRepository,
-                        app.runbookRepository, app.templateRepository
-                    )
-                )
+                val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
                 SettingsScreen(vm)
             }
         }

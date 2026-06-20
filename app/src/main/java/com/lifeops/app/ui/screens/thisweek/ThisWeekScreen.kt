@@ -57,6 +57,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     var showCloseConfirm by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    // Per-aspect expand/collapse. The default follows whether the aspect still has open
+    // work (expanded when it does); an explicit user tap is remembered here and overrides it.
+    val aspectExpanded = remember { mutableStateMapOf<String, Boolean>() }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -344,14 +347,20 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 }
 
                 state.groupedTasks.forEach { group ->
-                    item(key = "aspect_${group.aspect?.id ?: "none"}") {
+                    val aspectKey = group.aspect?.id ?: "none"
+                    val hasActive = group.categories.any { c -> c.tasks.any { it.status == TaskStatus.PENDING } }
+                    val expanded = aspectExpanded[aspectKey] ?: hasActive
+                    item(key = "aspect_$aspectKey") {
                         AspectHeader(
                             name = group.aspect?.name ?: "Uncategorized",
                             color = group.aspectColor,
-                            isArchived = group.aspect?.isArchived == true
+                            isArchived = group.aspect?.isArchived == true,
+                            isExpanded = expanded,
+                            isComplete = !hasActive,
+                            onToggle = { aspectExpanded[aspectKey] = !expanded }
                         )
                     }
-                    group.categories.forEach { catGroup ->
+                    if (expanded) group.categories.forEach { catGroup ->
                         val basketColor = catGroup.dominantPriority
                             ?.let { priorityColor(it.label) }
                             ?: Color.Transparent
@@ -683,10 +692,18 @@ private fun SortBar(selected: SortOrder, onSelect: (SortOrder) -> Unit) {
 }
 
 @Composable
-private fun AspectHeader(name: String, color: String, isArchived: Boolean = false) {
+private fun AspectHeader(
+    name: String,
+    color: String,
+    isArchived: Boolean = false,
+    isExpanded: Boolean = true,
+    isComplete: Boolean = false,
+    onToggle: () -> Unit = {}
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onToggle)
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -701,6 +718,21 @@ private fun AspectHeader(name: String, color: String, isArchived: Boolean = fals
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = parseColor(color).copy(alpha = if (isArchived) 0.5f else 1f)
+        )
+        if (isComplete) {
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                Icons.Default.CheckCircle,
+                contentDescription = "All tasks resolved",
+                tint = parseColor(color).copy(alpha = if (isArchived) 0.5f else 1f),
+                modifier = Modifier.size(18.dp)
+            )
+        }
+        Spacer(Modifier.weight(1f))
+        Icon(
+            if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+            contentDescription = if (isExpanded) "Collapse" else "Expand",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
         )
     }
 }

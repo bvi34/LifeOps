@@ -3,6 +3,8 @@
 package com.lifeops.app.ui.components
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -13,6 +15,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 val LocalSardonicMessage = compositionLocalOf { "Surveying the damage..." }
+
+/** Standard back arrow for [AppHeader.navigationIcon] on drill-down screens. */
+@Composable
+fun BackNavIcon(onBack: () -> Unit) {
+    IconButton(onClick = onBack) {
+        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    }
+}
 
 @Composable
 fun AppHeader(

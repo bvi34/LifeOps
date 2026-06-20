@@ -22,6 +22,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.components.DatePickerButton
 import java.time.LocalDate
 import java.time.ZoneId
@@ -29,7 +30,8 @@ import java.time.ZoneId
 @Composable
 fun CountersScreen(
     viewModel: CountersViewModel,
-    onOpenCounter: (String) -> Unit = {}
+    onOpenCounter: (String) -> Unit = {},
+    onBack: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -40,7 +42,7 @@ fun CountersScreen(
     val categoriesFlat = remember(state.categoriesByAspect) { state.categoriesByAspect.values.flatten() }
 
     Scaffold(
-        topBar = { AppHeader() },
+        topBar = { AppHeader(navigationIcon = { onBack?.let { BackNavIcon(it) } }) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreate = true }) {
                 Icon(Icons.Default.Add, contentDescription = "New counter")

@@ -28,6 +28,7 @@ import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.ScoringPoint
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.CompletedGreen
 import com.lifeops.app.ui.theme.ExpiredRed
@@ -35,11 +36,15 @@ import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
 
 @Composable
-fun ReportsScreen(viewModel: ReportsViewModel, onNavigateToProject: (String) -> Unit = {}) {
+fun ReportsScreen(
+    viewModel: ReportsViewModel,
+    onNavigateToProject: (String) -> Unit = {},
+    onBack: (() -> Unit)? = null
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = { AppHeader() }
+        topBar = { AppHeader(navigationIcon = { onBack?.let { BackNavIcon(it) } }) }
     ) { padding ->
         Column(
             modifier = Modifier
