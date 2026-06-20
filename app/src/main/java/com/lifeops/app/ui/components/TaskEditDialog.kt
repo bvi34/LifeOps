@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
+import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.Task
@@ -24,6 +25,7 @@ fun TaskEditDialog(
     aspects: List<Aspect>,
     allCategories: Map<String, Category>,
     projects: List<Project> = emptyList(),
+    counters: List<Counter> = emptyList(),
     onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onSave: (
         title: String,
@@ -34,7 +36,8 @@ fun TaskEditDialog(
         estimatedMinutes: Int?,
         aspectId: String?,
         categoryId: String?,
-        projectId: String?
+        projectId: String?,
+        counterId: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -47,11 +50,13 @@ fun TaskEditDialog(
     var selectedAspectId by remember(task.id) { mutableStateOf(task.aspectId) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
     var selectedProjectId by remember(task.id) { mutableStateOf(task.projectId) }
+    var selectedCounterId by remember(task.id) { mutableStateOf(task.counterId) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var projectExpanded by remember { mutableStateOf(false) }
+    var counterExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
         if (selectedAspectId == null) emptyList()
@@ -164,6 +169,33 @@ fun TaskEditDialog(
                     }
                 }
 
+                // Counter dropdown — completing this task logs a tick on the chosen counter
+                if (counters.isNotEmpty()) {
+                    val selectedCounter = counters.firstOrNull { it.id == selectedCounterId }
+                    ExposedDropdownMenuBox(expanded = counterExpanded, onExpandedChange = { counterExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedCounter?.name ?: "No counter",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Counter (optional)") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(counterExpanded) }
+                        )
+                        ExposedDropdownMenu(expanded = counterExpanded, onDismissRequest = { counterExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No counter") },
+                                onClick = { selectedCounterId = null; counterExpanded = false }
+                            )
+                            counters.forEach { counter ->
+                                DropdownMenuItem(
+                                    text = { Text(counter.name) },
+                                    onClick = { selectedCounterId = counter.id; counterExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Priority.entries.forEach { p ->
@@ -212,7 +244,8 @@ fun TaskEditDialog(
                         estimatedMinutes.toIntOrNull(),
                         selectedAspectId,
                         selectedCategoryId,
-                        selectedProjectId
+                        selectedProjectId,
+                        selectedCounterId
                     )
                 },
                 enabled = title.isNotBlank()

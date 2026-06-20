@@ -76,7 +76,8 @@ data class ThisWeekUiState(
     val showTemplatePickerDialog: Boolean = false,
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
-    val detailSubtasks: List<Subtask> = emptyList()
+    val detailSubtasks: List<Subtask> = emptyList(),
+    val counters: List<Counter> = emptyList()
 )
 
 class ThisWeekViewModel(
@@ -93,7 +94,8 @@ class ThisWeekViewModel(
     private val projectRepository: ProjectRepository,
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
-    private val templateRepository: TemplateRepository
+    private val templateRepository: TemplateRepository,
+    private val counterRepository: CounterRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -117,6 +119,11 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             costResourceRepository.observeActiveResources().collectLatest { resources ->
                 _uiState.update { it.copy(costResources = resources) }
+            }
+        }
+        viewModelScope.launch {
+            counterRepository.observeActive().collectLatest { counters ->
+                _uiState.update { it.copy(counters = counters) }
             }
         }
         viewModelScope.launch {
@@ -540,7 +547,8 @@ class ThisWeekViewModel(
         isRecurring: Boolean = false,
         estimatedMinutes: Int? = null,
         projectId: String? = null,
-        runbookId: String? = null
+        runbookId: String? = null,
+        counterId: String? = null
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
@@ -569,7 +577,8 @@ class ThisWeekViewModel(
                 estimatedMinutes = estimatedMinutes,
                 isManuallyAdded = true,
                 projectId = projectId,
-                slug = slug
+                slug = slug,
+                counterId = counterId
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
@@ -648,7 +657,8 @@ class ThisWeekViewModel(
         estimatedMinutes: Int? = null,
         aspectId: String? = null,
         categoryId: String? = null,
-        projectId: String? = null
+        projectId: String? = null,
+        counterId: String? = null
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
@@ -666,7 +676,8 @@ class ThisWeekViewModel(
                 estimatedMinutes = estimatedMinutes,
                 aspectId = aspectId,
                 categoryId = categoryId,
-                projectId = projectId
+                projectId = projectId,
+                counterId = counterId
             )
             taskRepository.updateTask(updatedTask)
             if (task.dueDate != validatedDueDate || task.hardDeadline != hardDeadline) {
@@ -692,13 +703,14 @@ class ThisWeekViewModelFactory(
     private val projectRepository: ProjectRepository,
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
-    private val templateRepository: TemplateRepository
+    private val templateRepository: TemplateRepository,
+    private val counterRepository: CounterRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository, preferencesRepository, runbookRepository, templateRepository
+            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository
         ) as T
 }
