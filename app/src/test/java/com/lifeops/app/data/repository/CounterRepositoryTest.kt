@@ -2,6 +2,7 @@ package com.lifeops.app.data.repository
 
 import com.lifeops.app.data.db.dao.CounterCategoryTotal
 import com.lifeops.app.data.db.dao.CounterDao
+import com.lifeops.app.data.db.dao.CounterIdTotal
 import com.lifeops.app.data.db.dao.CounterWeeklyTotal
 import com.lifeops.app.data.db.entities.CounterEntity
 import com.lifeops.app.data.db.entities.CounterEventEntity
@@ -28,11 +29,17 @@ class CounterRepositoryTest {
         override suspend fun insertCounter(counter: CounterEntity) { counters += counter }
         override suspend fun insertEvent(event: CounterEventEntity) { events += event }
         override suspend fun update(counter: CounterEntity) { updated += counter }
+        override fun observeActive(): Flow<List<CounterEntity>> = flowOf(counters.filter { !it.isArchived })
+        override fun observeAll(): Flow<List<CounterEntity>> = flowOf(counters)
+        override fun observeById(id: String): Flow<CounterEntity?> = flowOf(counters.firstOrNull { it.id == id })
+        override suspend fun getById(id: String): CounterEntity? = counters.firstOrNull { it.id == id }
         override fun observeWeeklyTotal(counterId: String, weekKey: Int): Flow<Int> = throw NotImplementedError()
         override fun observeCumulativeTotal(counterId: String): Flow<Int> = throw NotImplementedError()
         override fun observeWeeklyTrend(counterId: String): Flow<List<CounterWeeklyTotal>> = throw NotImplementedError()
         override fun observeEvents(counterId: String): Flow<List<CounterEventEntity>> = throw NotImplementedError()
         override fun observeCategoryRollup(): Flow<List<CounterCategoryTotal>> = flowOf(rollupRows)
+        override fun observeWeeklyTotalsByCounter(weekKey: Int): Flow<List<CounterIdTotal>> = flowOf(emptyList())
+        override fun observeCumulativeTotalsByCounter(): Flow<List<CounterIdTotal>> = flowOf(emptyList())
     }
 
     private fun millis(date: LocalDate): Long =

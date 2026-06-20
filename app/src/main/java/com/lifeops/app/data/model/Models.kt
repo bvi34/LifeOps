@@ -205,6 +205,15 @@ data class Counter(
     val createdAt: String
 )
 
+data class CounterEvent(
+    val id: String,
+    val counterId: String,
+    val weekKey: Int,
+    val occurredAt: String,
+    val delta: Int = 1,
+    val note: String? = null
+)
+
 data class ScoringPoint(val weekLabel: String, val resourcesEarned: Int)
 
 data class PriorityCompletionRow(

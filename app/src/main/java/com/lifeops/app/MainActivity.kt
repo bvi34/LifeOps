@@ -32,6 +32,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.lifeops.app.ui.screens.counters.CounterDetailScreen
+import com.lifeops.app.ui.screens.counters.CounterDetailViewModelFactory
+import com.lifeops.app.ui.screens.counters.CountersScreen
+import com.lifeops.app.ui.screens.counters.CountersViewModelFactory
 import com.lifeops.app.ui.screens.growth.GrowthScreen
 import com.lifeops.app.ui.screens.growth.GrowthViewModelFactory
 import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
@@ -49,12 +53,13 @@ import com.lifeops.app.ui.theme.LifeOpsTheme
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
     object Resources : Screen("resources", "Resources", Icons.Default.Diamond)
+    object Counters : Screen("counters", "Counters", Icons.Default.Numbers)
     object Reports : Screen("reports", "Reports", Icons.Default.BarChart)
     object Growth : Screen("growth", "Growth", Icons.Default.TrackChanges)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
-val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Reports, Screen.Growth, Screen.Settings)
+val bottomNavItems = listOf(Screen.ThisWeek, Screen.Resources, Screen.Counters, Screen.Reports, Screen.Growth, Screen.Settings)
 
 class MainActivity : ComponentActivity() {
 
@@ -186,6 +191,14 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 )
                 ResourcesScreen(vm)
             }
+            composable(Screen.Counters.route) {
+                val vm = viewModel<com.lifeops.app.ui.screens.counters.CountersViewModel>(
+                    factory = CountersViewModelFactory(
+                        app.counterRepository, app.aspectRepository, app.weekRepository
+                    )
+                )
+                CountersScreen(vm, onOpenCounter = { id -> navController.navigate("counter_detail/$id") })
+            }
             composable(Screen.Reports.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.reports.ReportsViewModel>(
                     factory = ReportsViewModelFactory(
@@ -212,6 +225,14 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     )
                 )
                 ProjectDetailScreen(vm) { navController.navigateUp() }
+            }
+            composable("counter_detail/{counterId}") { backStackEntry ->
+                val counterId = backStackEntry.arguments?.getString("counterId") ?: return@composable
+                val vm = viewModel<com.lifeops.app.ui.screens.counters.CounterDetailViewModel>(
+                    key = "counter_detail_$counterId",
+                    factory = CounterDetailViewModelFactory(counterId, app.counterRepository)
+                )
+                CounterDetailScreen(vm) { navController.navigateUp() }
             }
             composable(Screen.Settings.route) {
                 val vm = viewModel<com.lifeops.app.ui.screens.settings.SettingsViewModel>(

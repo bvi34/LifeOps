@@ -30,6 +30,11 @@ fun Task.toEntity() = TaskEntity(
     carryForwardReason?.value, counterId
 )
 
+fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt)
+fun Counter.toEntity() = CounterEntity(id, name, categoryId, isArchived, sortOrder, createdAt)
+
+fun CounterEventEntity.toModel() = CounterEvent(id, counterId, weekKey, occurredAt, delta, note)
+
 fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt, subtaskId)
 fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtaskId)
 

@@ -1,17 +1,32 @@
 package com.lifeops.app.data.repository
 
 import com.lifeops.app.data.db.dao.CounterDao
+import com.lifeops.app.data.db.dao.CounterWeeklyTotal
 import com.lifeops.app.data.db.entities.CounterEntity
 import com.lifeops.app.data.db.entities.CounterEventEntity
 import com.lifeops.app.data.model.Counter
+import com.lifeops.app.data.model.CounterEvent
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.toEntity
+import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 class CounterRepository(private val counterDao: CounterDao) {
 
-    // --- Counter <-> category attach (same shape as ProjectRepository) ---
+    // --- Counters list / lifecycle (same shape as ProjectRepository) ---
+
+    fun observeAll(): Flow<List<Counter>> =
+        counterDao.observeAll().map { list -> list.map { it.toModel() } }
+
+    fun observeActive(): Flow<List<Counter>> =
+        counterDao.observeActive().map { list -> list.map { it.toModel() } }
+
+    fun observeCounter(id: String): Flow<Counter?> =
+        counterDao.observeById(id).map { it?.toModel() }
+
+    suspend fun getById(id: String): Counter? = counterDao.getById(id)?.toModel()
 
     /** Create a counter, optionally attached to a category. Mirrors createProject. */
     suspend fun createCounter(id: String, name: String, categoryId: String? = null): Counter {
@@ -21,19 +36,45 @@ class CounterRepository(private val counterDao: CounterDao) {
     }
 
     /**
-     * Persist an edited counter. Attach/detach is just update(counter.copy(categoryId = ...)),
-     * exactly how projects do it — categoryId is nullable, and a null detaches. The category
-     * itself is resolved the same way projects/imports do (AspectRepository.findOrCreateCategory),
-     * so counters and projects share one set of categories.
+     * Persist an edited counter (rename, archive, attach/detach category). Attach is just
+     * update(counter.copy(categoryId = ...)), exactly how projects do it — categoryId is
+     * nullable and null detaches. Categories are the same shared set projects/imports use
+     * (AspectRepository.findOrCreateCategory), so counters and projects can't fork categories.
      */
     suspend fun update(counter: Counter) = counterDao.update(counter.toEntity())
 
-    /** Wired category rollup: cumulative tick total per category (null key = uncategorized). */
+    suspend fun setArchived(counter: Counter, archived: Boolean) =
+        counterDao.update(counter.copy(isArchived = archived).toEntity())
+
+    // --- Reporting (the five DAO queries, surfaced as models) ---
+
+    /** Weekly window: total logged for [counterId] in [weekKey]. */
+    fun observeWeeklyTotal(counterId: String, weekKey: Int): Flow<Int> =
+        counterDao.observeWeeklyTotal(counterId, weekKey)
+
+    /** Cumulative: all-time total for [counterId]. */
+    fun observeCumulativeTotal(counterId: String): Flow<Int> =
+        counterDao.observeCumulativeTotal(counterId)
+
+    /** Per-week trend for [counterId], oldest week first. */
+    fun observeWeeklyTrend(counterId: String): Flow<List<CounterWeeklyTotal>> =
+        counterDao.observeWeeklyTrend(counterId)
+
+    /** Timestamped detail: every event for [counterId], newest first. */
+    fun observeEvents(counterId: String): Flow<List<CounterEvent>> =
+        counterDao.observeEvents(counterId).map { list -> list.map { it.toModel() } }
+
+    /** Category rollup: cumulative total per category (null key = uncategorized). */
     fun observeCategoryRollup(): Flow<Map<String?, Int>> =
         counterDao.observeCategoryRollup().map { rows -> rows.associate { it.categoryId to it.total } }
 
-    private fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt)
-    private fun Counter.toEntity() = CounterEntity(id, name, categoryId, isArchived, sortOrder, createdAt)
+    /** counterId -> total for [weekKey], for the counters list. */
+    fun observeWeeklyTotalsByCounter(weekKey: Int): Flow<Map<String, Int>> =
+        counterDao.observeWeeklyTotalsByCounter(weekKey).map { rows -> rows.associate { it.counterId to it.total } }
+
+    /** counterId -> all-time total, for the counters list. */
+    fun observeCumulativeTotalsByCounter(): Flow<Map<String, Int>> =
+        counterDao.observeCumulativeTotalsByCounter().map { rows -> rows.associate { it.counterId to it.total } }
 
     // --- Logging ---
 

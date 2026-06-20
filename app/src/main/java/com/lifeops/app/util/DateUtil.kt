@@ -34,6 +34,9 @@ object DateUtil {
     fun weekIndexFor(millis: Long): Int =
         weekIndexFor(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate())
 
+    /** Inverse of [weekIndexFor]: the Monday that starts the week with [index]. */
+    fun weekStartForIndex(index: Int): LocalDate = WEEK_ANCHOR.plusWeeks(index.toLong())
+
     fun formatDate(date: String?): String {
         if (date == null) return ""
         return try {
