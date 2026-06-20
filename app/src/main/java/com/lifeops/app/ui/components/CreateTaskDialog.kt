@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
+import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.RunbookWithSteps
@@ -24,6 +25,7 @@ fun CreateTaskDialog(
     allCategories: Map<String, Category>,
     projects: List<Project> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
+    counters: List<Counter> = emptyList(),
     onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onConfirm: (
         title: String,
@@ -36,7 +38,8 @@ fun CreateTaskDialog(
         isRecurring: Boolean,
         estimatedMinutes: Int?,
         projectId: String?,
-        runbookId: String?
+        runbookId: String?,
+        counterId: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -51,12 +54,14 @@ fun CreateTaskDialog(
     var isRecurring by remember { mutableStateOf(false) }
     var estimatedMinutes by remember { mutableStateOf("") }
     var selectedRunbookId by remember { mutableStateOf<String?>(null) }
+    var selectedCounterId by remember { mutableStateOf<String?>(null) }
     var showNewProjectDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var projectExpanded by remember { mutableStateOf(false) }
     var runbookExpanded by remember { mutableStateOf(false) }
+    var counterExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
         if (selectedAspectId == null) emptyList()
@@ -205,6 +210,33 @@ fun CreateTaskDialog(
                     }
                 }
 
+                // Counter dropdown — completing this task logs a tick on the chosen counter
+                if (counters.isNotEmpty()) {
+                    val selectedCounter = counters.firstOrNull { it.id == selectedCounterId }
+                    ExposedDropdownMenuBox(expanded = counterExpanded, onExpandedChange = { counterExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedCounter?.name ?: "No counter",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Counter (optional)") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(counterExpanded) }
+                        )
+                        ExposedDropdownMenu(expanded = counterExpanded, onDismissRequest = { counterExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No counter") },
+                                onClick = { selectedCounterId = null; counterExpanded = false }
+                            )
+                            counters.forEach { counter ->
+                                DropdownMenuItem(
+                                    text = { Text(counter.name) },
+                                    onClick = { selectedCounterId = counter.id; counterExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Text("Priority", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Priority.entries.forEach { p ->
@@ -264,7 +296,8 @@ fun CreateTaskDialog(
                         isRecurring,
                         estimatedMinutes.toIntOrNull(),
                         selectedProjectId,
-                        selectedRunbookId
+                        selectedRunbookId,
+                        selectedCounterId
                     )
                 },
                 enabled = title.isNotBlank()

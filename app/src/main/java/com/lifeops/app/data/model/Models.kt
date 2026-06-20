@@ -79,7 +79,8 @@ data class Task(
     val projectId: String? = null,
     val source: TaskSource = TaskSource.MANUAL,
     val slug: String = "",
-    val carryForwardReason: CarryForwardReason? = null
+    val carryForwardReason: CarryForwardReason? = null,
+    val counterId: String? = null
 )
 
 data class CarryForwardEntry(
@@ -193,6 +194,24 @@ data class ProjectStats(
     val taskCount: Int,
     val completedCount: Int,
     val totalTimeMinutes: Int
+)
+
+data class Counter(
+    val id: String,
+    val name: String,
+    val categoryId: String? = null,
+    val isArchived: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: String
+)
+
+data class CounterEvent(
+    val id: String,
+    val counterId: String,
+    val weekKey: Int,
+    val occurredAt: String,
+    val delta: Int = 1,
+    val note: String? = null
 )
 
 data class ScoringPoint(val weekLabel: String, val resourcesEarned: Int)

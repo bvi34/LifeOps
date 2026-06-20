@@ -467,9 +467,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             allCategories = state.categories,
             projects = state.projects,
             runbooks = state.runbooks,
+            counters = state.counters,
             onCreateProject = viewModel::onCreateProject,
-            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId ->
-                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId)
+            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId ->
+                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId)
             },
             onDismiss = viewModel::hideCreateTaskDialog
         )
@@ -481,9 +482,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             aspects = state.aspects.values.filter { !it.isArchived }.toList(),
             allCategories = state.categories,
             projects = state.projects,
+            counters = state.counters,
             onCreateProject = viewModel::onCreateProject,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId ->
-                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId)
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId ->
+                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId)
             },
             onDismiss = viewModel::cancelEditTask
         )

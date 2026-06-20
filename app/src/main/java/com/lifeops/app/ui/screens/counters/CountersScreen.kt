@@ -1,0 +1,325 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package com.lifeops.app.ui.screens.counters
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.Aspect
+import com.lifeops.app.data.model.Category
+import com.lifeops.app.data.model.Counter
+import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.ui.components.DatePickerButton
+import java.time.LocalDate
+import java.time.ZoneId
+
+@Composable
+fun CountersScreen(
+    viewModel: CountersViewModel,
+    onOpenCounter: (String) -> Unit = {}
+) {
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    var showCreate by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<Counter?>(null) }
+    var backdating by remember { mutableStateOf<Counter?>(null) }
+
+    val categoriesFlat = remember(state.categoriesByAspect) { state.categoriesByAspect.values.flatten() }
+
+    Scaffold(
+        topBar = { AppHeader() },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showCreate = true }) {
+                Icon(Icons.Default.Add, contentDescription = "New counter")
+            }
+        }
+    ) { padding ->
+        if (state.counters.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text(
+                    "No counters yet. Tap + to add one.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                items(state.counters, key = { it.id }) { counter ->
+                    CounterCard(
+                        counter = counter,
+                        categoryName = categoriesFlat.firstOrNull { it.id == counter.categoryId }?.name,
+                        weekCount = state.weeklyTotals[counter.id] ?: 0,
+                        totalCount = state.cumulativeTotals[counter.id] ?: 0,
+                        onIncrement = { viewModel.increment(counter) },
+                        onOpen = { onOpenCounter(counter.id) },
+                        onEdit = { editing = counter },
+                        onBackdate = { backdating = counter },
+                        onArchiveToggle = { viewModel.setArchived(counter, !counter.isArchived) }
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCreate) {
+        CounterEditorDialog(
+            title = "New counter",
+            initialName = "",
+            initialCategoryId = null,
+            aspects = state.aspects,
+            categoriesByAspect = state.categoriesByAspect,
+            onConfirm = { name, categoryId -> viewModel.createCounter(name, categoryId); showCreate = false },
+            onDismiss = { showCreate = false }
+        )
+    }
+
+    editing?.let { counter ->
+        CounterEditorDialog(
+            title = "Edit counter",
+            initialName = counter.name,
+            initialCategoryId = counter.categoryId,
+            aspects = state.aspects,
+            categoriesByAspect = state.categoriesByAspect,
+            onConfirm = { name, categoryId -> viewModel.saveCounter(counter, name, categoryId); editing = null },
+            onDismiss = { editing = null }
+        )
+    }
+
+    backdating?.let { counter ->
+        BackdateDialog(
+            counterName = counter.name,
+            onConfirm = { occurredAtMillis, delta -> viewModel.logBackdated(counter, occurredAtMillis, delta); backdating = null },
+            onDismiss = { backdating = null }
+        )
+    }
+}
+
+@Composable
+private fun CounterCard(
+    counter: Counter,
+    categoryName: String?,
+    weekCount: Int,
+    totalCount: Int,
+    onIncrement: () -> Unit,
+    onOpen: () -> Unit,
+    onEdit: () -> Unit,
+    onBackdate: () -> Unit,
+    onArchiveToggle: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val dim = if (counter.isArchived) 0.5f else 1f
+
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        counter.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = dim)
+                    )
+                    if (counter.isArchived) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "archived",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+                Text(
+                    buildString {
+                        append("This week: $weekCount   ·   Total: $totalCount")
+                        if (categoryName != null) append("   ·   $categoryName")
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+            if (!counter.isArchived) {
+                FilledTonalButton(onClick = onIncrement) { Text("+1") }
+            }
+            Box {
+                IconButton(onClick = { menuOpen = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More")
+                }
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
+                    DropdownMenuItem(text = { Text("Log a past day") }, onClick = { menuOpen = false; onBackdate() })
+                    DropdownMenuItem(
+                        text = { Text(if (counter.isArchived) "Unarchive" else "Archive") },
+                        onClick = { menuOpen = false; onArchiveToggle() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Name + aspect/category picker — same two-dropdown pattern projects use. */
+@Composable
+private fun CounterEditorDialog(
+    title: String,
+    initialName: String,
+    initialCategoryId: String?,
+    aspects: List<Aspect>,
+    categoriesByAspect: Map<String, List<Category>>,
+    onConfirm: (name: String, categoryId: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(initialName) }
+    // A counter stores only categoryId; derive the owning aspect so the dropdowns prefill.
+    val initialAspectId = remember(initialCategoryId, categoriesByAspect) {
+        categoriesByAspect.entries.firstOrNull { entry -> entry.value.any { it.id == initialCategoryId } }?.key
+    }
+    var selectedAspectId by remember { mutableStateOf(initialAspectId) }
+    var selectedCategoryId by remember { mutableStateOf(initialCategoryId) }
+    var aspectExpanded by remember { mutableStateOf(false) }
+    var categoryExpanded by remember { mutableStateOf(false) }
+
+    val selectedAspect = aspects.firstOrNull { it.id == selectedAspectId }
+    val categoriesForAspect = categoriesByAspect[selectedAspectId] ?: emptyList()
+    val selectedCategory = categoriesForAspect.firstOrNull { it.id == selectedCategoryId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                ExposedDropdownMenuBox(expanded = aspectExpanded, onExpandedChange = { aspectExpanded = it }) {
+                    OutlinedTextField(
+                        value = selectedAspect?.name ?: "No aspect",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Aspect (optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = aspectExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = aspectExpanded, onDismissRequest = { aspectExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("No aspect") },
+                            onClick = { selectedAspectId = null; selectedCategoryId = null; aspectExpanded = false }
+                        )
+                        aspects.forEach { aspect ->
+                            DropdownMenuItem(
+                                text = { Text(aspect.name) },
+                                onClick = { selectedAspectId = aspect.id; selectedCategoryId = null; aspectExpanded = false }
+                            )
+                        }
+                    }
+                }
+                if (selectedAspectId != null && categoriesForAspect.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = categoryExpanded, onExpandedChange = { categoryExpanded = it }) {
+                        OutlinedTextField(
+                            value = selectedCategory?.name ?: "No category",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Category (optional)") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoryExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = categoryExpanded, onDismissRequest = { categoryExpanded = false }) {
+                            DropdownMenuItem(
+                                text = { Text("No category") },
+                                onClick = { selectedCategoryId = null; categoryExpanded = false }
+                            )
+                            categoriesForAspect.forEach { cat ->
+                                DropdownMenuItem(
+                                    text = { Text(cat.name) },
+                                    onClick = { selectedCategoryId = cat.id; categoryExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedCategoryId) },
+                enabled = name.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Backdate / bulk: pick a past day and how many to add. Interpreted at noon system-zone so
+ *  the event's weekKey lands in the right week. */
+@Composable
+private fun BackdateDialog(
+    counterName: String,
+    onConfirm: (occurredAtMillis: Long, delta: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var dateStr by remember { mutableStateOf<String?>(null) }
+    var deltaText by remember { mutableStateOf("1") }
+    val delta = deltaText.toIntOrNull() ?: 0
+    val canSave = dateStr != null && delta > 0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Log a past day") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Add to \"$counterName\" on a past day.", style = MaterialTheme.typography.bodySmall)
+                DatePickerButton(
+                    label = "date",
+                    selectedDateStr = dateStr,
+                    onDateSelected = { dateStr = it },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = deltaText,
+                    onValueChange = { v -> deltaText = v.filter { it.isDigit() } },
+                    label = { Text("How many") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val d = dateStr
+                    if (d != null && delta > 0) {
+                        val millis = LocalDate.parse(d).atTime(12, 0)
+                            .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        onConfirm(millis, delta)
+                    }
+                },
+                enabled = canSave
+            ) { Text("Log") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}

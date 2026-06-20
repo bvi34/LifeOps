@@ -44,7 +44,9 @@ class LifeOpsApp : Application() {
             database.gameResourceDao(),
             database.gameResourceMappingDao(),
             database.notificationDao(),
-            notificationRepository
+            notificationRepository,
+            weekRepository,
+            counterRepository
         )
     }
     val runbookRepository by lazy { RunbookRepository(database) }
@@ -57,6 +59,7 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
+    val counterRepository by lazy { CounterRepository(database.counterDao()) }
     val growthRepository by lazy {
         GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
     }
@@ -75,6 +78,12 @@ class LifeOpsApp : Application() {
                     taskRepository.backfillAspectHistory()
                     preferencesRepository.growthAspectHistoryBackfillDone = true
                 } catch (_: Exception) { }
+            }
+            // Seal any whole weeks that elapsed while the app was closed, before we resolve
+            // the current week — otherwise a stale open week would masquerade as "this week".
+            val closedUpTo = taskRepository.catchUpClose()
+            if (closedUpTo != null && closedUpTo > preferencesRepository.lastClosedWeek) {
+                preferencesRepository.lastClosedWeek = closedUpTo
             }
             val previousWeek = weekRepository.getMostRecentClosedWeek()
             val currentWeek = weekRepository.getOrCreateCurrentWeek()

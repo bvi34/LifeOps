@@ -11,9 +11,14 @@ import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.util.*
 import com.lifeops.app.util.ImportParser
 import com.lifeops.app.util.ScoringUtils
+import java.time.LocalDate
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+
+// Safety bound on a single catch-up pass (~20 years). The loop terminates naturally after
+// (currentWeek - openWeek) iterations; this only guards against corrupt/duplicate week rows.
+private const val MAX_CATCHUP_WEEKS = 1040
 
 class TaskRepository(
     private val db: LifeOpsDatabase,
@@ -25,7 +30,9 @@ class TaskRepository(
     private val gameResourceDao: GameResourceDao,
     private val gameResourceMappingDao: GameResourceMappingDao,
     private val notificationDao: NotificationDao,
-    private val notificationRepository: NotificationRepository
+    private val notificationRepository: NotificationRepository,
+    private val weekRepository: WeekRepository,
+    private val counterRepository: CounterRepository
 ) {
     private val gson = Gson()
 
@@ -34,7 +41,15 @@ class TaskRepository(
 
     suspend fun completeTask(task: Task) {
         if (taskDao.getChildOf(task.id) != null) return
-        taskDao.markCompleted(task.id, TaskStatus.COMPLETED.value, DateUtil.now())
+        db.withTransaction {
+            val current = taskDao.getById(task.id) ?: return@withTransaction
+            if (current.status == TaskStatus.COMPLETED.value) return@withTransaction // already done — no double tick
+            val nowMillis = System.currentTimeMillis()
+            taskDao.markCompleted(current.id, TaskStatus.COMPLETED.value, DateUtil.isoFromEpoch(nowMillis))
+            // Same transaction as the status flip: if anything fails the tick rolls back too,
+            // so a half-completed task can never leave a phantom CounterEvent.
+            current.counterId?.let { counterRepository.logEvent(it, occurredAt = nowMillis) }
+        }
     }
 
     suspend fun skipTask(taskId: String) {
@@ -128,6 +143,32 @@ class TaskRepository(
 
         for (task in newTasksToSchedule) notificationRepository.scheduleForTask(task)
         notificationRepository.scheduleWeekCloseReminder()
+    }
+
+    /**
+     * Close every whole week that has elapsed but is still open, oldest-first, exactly as a
+     * manual week-close would (createNextWeek + closeWeek + seedRecurringTasks per week). This
+     * is what "kills manual date entry": opening the app after a gap auto-seals the missed
+     * weeks instead of making the user close them one by one.
+     *
+     * Strictly closes weeks whose index < the current week's — the in-progress week is never
+     * closed. Idempotent: when the open week is already the current week, it does nothing.
+     * Touches no counter rows; week-close doesn't reference counters at all. Returns the
+     * highest week index it closed, or null if already caught up.
+     */
+    suspend fun catchUpClose(now: Long = System.currentTimeMillis()): Int? {
+        val currentIndex = DateUtil.weekIndexFor(now)
+        var lastClosed: Int? = null
+        repeat(MAX_CATCHUP_WEEKS) {
+            val open = weekRepository.getCurrentWeek() ?: return lastClosed
+            val openIndex = DateUtil.weekIndexFor(LocalDate.parse(open.startDate))
+            if (openIndex >= currentIndex) return lastClosed   // in-progress week — leave it open
+            val next = weekRepository.createNextWeek(open)
+            closeWeek(open.id, next.id)
+            seedRecurringTasks(open.id, next.id)
+            lastClosed = openIndex
+        }
+        return lastClosed
     }
 
     suspend fun getLineageIds(taskId: String): List<String> {

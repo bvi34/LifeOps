@@ -20,6 +20,13 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getBoolean("same_week_carry_repair_done", false)
         set(value) { prefs.edit().putBoolean("same_week_carry_repair_done", value).apply() }
 
+    // Highest week index (DateUtil.weekIndexFor) that catch-up close has sealed. -1 means
+    // "never run". Recorded marker of how far the week timeline has been closed; the catch-up
+    // loop itself is driven by the open week in the DB, so this stays a durable record.
+    var lastClosedWeek: Int
+        get() = prefs.getInt("last_closed_week", -1)
+        set(value) { prefs.edit().putInt("last_closed_week", value).apply() }
+
     // One-time backfill of WeekSnapshot.aspectHistory (per-aspect minutes/name/colour) for
     // weeks closed before that column existed, so historical Growth rings are deletion-safe.
     var growthAspectHistoryBackfillDone: Boolean
