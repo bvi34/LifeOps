@@ -41,10 +41,11 @@ object ImportParser {
 
     fun parse(json: String): ImportResult {
         return try {
-            val root = JsonParser.parseString(json).asJsonObject
+            val root = JsonParser.parseString(json)
             val tasksArray = when {
-                root.has("tasks") -> root.getAsJsonArray("tasks")
-                else -> JsonParser.parseString(json).asJsonArray
+                root.isJsonObject && root.asJsonObject.has("tasks") -> root.asJsonObject.getAsJsonArray("tasks")
+                root.isJsonArray -> root.asJsonArray
+                else -> return ImportResult(emptyList(), "Expected a JSON array or an object with a \"tasks\" array")
             }
             val tasks = tasksArray.map { elem ->
                 val obj = elem.asJsonObject
