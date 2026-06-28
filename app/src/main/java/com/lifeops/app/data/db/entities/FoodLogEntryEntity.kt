@@ -10,9 +10,10 @@ import androidx.room.PrimaryKey
 @Entity(
     tableName = "food_log_entries",
     foreignKeys = [
-        ForeignKey(entity = FoodItemEntity::class, parentColumns = ["id"], childColumns = ["foodItemId"], onDelete = ForeignKey.SET_NULL)
+        ForeignKey(entity = FoodItemEntity::class, parentColumns = ["id"], childColumns = ["foodItemId"], onDelete = ForeignKey.SET_NULL),
+        ForeignKey(entity = WeeklyMenuItemEntity::class, parentColumns = ["id"], childColumns = ["weeklyMenuItemId"], onDelete = ForeignKey.SET_NULL)
     ],
-    indices = [Index("foodItemId"), Index("loggedAt")]
+    indices = [Index("foodItemId"), Index("loggedAt"), Index("weeklyMenuItemId")]
 )
 data class FoodLogEntryEntity(
     @PrimaryKey val id: String,
@@ -25,5 +26,10 @@ data class FoodLogEntryEntity(
     val carbsG: Double,
     val proteinG: Double,
     val fatG: Double,
-    val loggedAt: String
+    val loggedAt: String,
+    val source: String,
+    val confirmed: Boolean,
+    val confirmedAt: String?,
+    // Null unless this entry originated from (or was later linked back to) a WeeklyMenuItem.
+    val weeklyMenuItemId: String?
 )

@@ -338,6 +338,38 @@ private val MIGRATION_20_21 = object : Migration(20, 21) {
     }
 }
 
+private val MIGRATION_21_22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Meals committed to a week before they're necessarily assigned to a day — recipeId is
+        // nullable so a freeform name (e.g. "meatloaf") can be jotted down before a Recipe
+        // exists for it. Purely additive table, no existing schema touched.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weekly_menu_items (
+                id TEXT NOT NULL PRIMARY KEY,
+                weekStartDate TEXT NOT NULL,
+                recipeId TEXT,
+                mealName TEXT NOT NULL,
+                plannedServings REAL NOT NULL,
+                assignedDate TEXT,
+                mealType TEXT,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(recipeId) REFERENCES recipes(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weekly_menu_items_weekStartDate ON weekly_menu_items(weekStartDate)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weekly_menu_items_recipeId ON weekly_menu_items(recipeId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weekly_menu_items_assignedDate ON weekly_menu_items(assignedDate)")
+
+        // Tracks how a log entry came to exist (Planned/Adjusted/AdHoc) and whether the user has
+        // confirmed it, plus a link back to the WeeklyMenuItem it was spawned from, if any.
+        db.execSQL("ALTER TABLE food_log_entries ADD COLUMN source TEXT NOT NULL DEFAULT 'AD_HOC'")
+        db.execSQL("ALTER TABLE food_log_entries ADD COLUMN confirmed INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE food_log_entries ADD COLUMN confirmedAt TEXT")
+        db.execSQL("ALTER TABLE food_log_entries ADD COLUMN weeklyMenuItemId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_weeklyMenuItemId ON food_log_entries(weeklyMenuItemId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -364,9 +396,10 @@ private val MIGRATION_20_21 = object : Migration(20, 21) {
         FoodItemEntity::class,
         RecipeEntity::class,
         RecipeIngredientEntity::class,
-        FoodLogEntryEntity::class
+        FoodLogEntryEntity::class,
+        WeeklyMenuItemEntity::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -391,6 +424,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun foodItemDao(): FoodItemDao
     abstract fun recipeDao(): RecipeDao
     abstract fun foodLogDao(): FoodLogDao
+    abstract fun weeklyMenuItemDao(): WeeklyMenuItemDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -402,7 +436,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
                     .build()
                     .also { INSTANCE = it }
             }

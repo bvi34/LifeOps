@@ -4,6 +4,7 @@ import com.lifeops.app.data.db.dao.FoodItemDao
 import com.lifeops.app.data.db.dao.FoodLogDao
 import com.lifeops.app.data.model.FoodItem
 import com.lifeops.app.data.model.FoodLogEntry
+import com.lifeops.app.data.model.FoodLogSource
 import com.lifeops.app.data.model.FoodSource
 import com.lifeops.app.data.model.IngredientUnit
 import com.lifeops.app.util.DateUtil
@@ -25,6 +26,7 @@ class FoodLogRepository(
     suspend fun logFoodItem(foodItemId: String, quantity: Double, unit: IngredientUnit): FoodLogEntry? {
         val food = foodItemDao.getById(foodItemId)?.toModel() ?: return null
         val nutrition = NutritionCalculator.nutritionFor(food, quantity, unit) ?: return null
+        val now = DateUtil.now()
         val entry = FoodLogEntry(
             id = UUID.randomUUID().toString(),
             foodItemId = food.id,
@@ -35,7 +37,10 @@ class FoodLogRepository(
             carbsG = nutrition.carbsG,
             proteinG = nutrition.proteinG,
             fatG = nutrition.fatG,
-            loggedAt = DateUtil.now()
+            loggedAt = now,
+            source = FoodLogSource.AD_HOC,
+            confirmed = true,
+            confirmedAt = now
         )
         foodLogDao.insert(entry.toEntity())
         return entry
@@ -52,6 +57,7 @@ class FoodLogRepository(
         proteinG: Double,
         fatG: Double
     ): FoodLogEntry {
+        val now = DateUtil.now()
         val entry = FoodLogEntry(
             id = UUID.randomUUID().toString(),
             foodItemId = null,
@@ -62,7 +68,10 @@ class FoodLogRepository(
             carbsG = carbsG,
             proteinG = proteinG,
             fatG = fatG,
-            loggedAt = DateUtil.now()
+            loggedAt = now,
+            source = FoodLogSource.AD_HOC,
+            confirmed = true,
+            confirmedAt = now
         )
         foodLogDao.insert(entry.toEntity())
         return entry

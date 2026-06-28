@@ -90,5 +90,14 @@ fun Recipe.toEntity() = RecipeEntity(id, name, servings, createdAt)
 fun RecipeIngredientEntity.toModel() = RecipeIngredient(id, recipeId, foodItemId, quantity, IngredientUnit.from(unit), sortOrder)
 fun RecipeIngredient.toEntity() = RecipeIngredientEntity(id, recipeId, foodItemId, quantity, unit.name, sortOrder)
 
-fun FoodLogEntryEntity.toModel() = FoodLogEntry(id, foodItemId, name, quantity, IngredientUnit.from(unit), calories, carbsG, proteinG, fatG, loggedAt)
-fun FoodLogEntry.toEntity() = FoodLogEntryEntity(id, foodItemId, name, quantity, unit.name, calories, carbsG, proteinG, fatG, loggedAt)
+fun FoodLogEntryEntity.toModel() = FoodLogEntry(
+    id, foodItemId, name, quantity, IngredientUnit.from(unit), calories, carbsG, proteinG, fatG, loggedAt,
+    FoodLogSource.from(source), confirmed, confirmedAt, weeklyMenuItemId
+)
+fun FoodLogEntry.toEntity() = FoodLogEntryEntity(
+    id, foodItemId, name, quantity, unit.name, calories, carbsG, proteinG, fatG, loggedAt,
+    source.name, confirmed, confirmedAt, weeklyMenuItemId
+)
+
+fun WeeklyMenuItemEntity.toModel() = WeeklyMenuItem(id, weekStartDate, recipeId, mealName, plannedServings, assignedDate, mealType, createdAt)
+fun WeeklyMenuItem.toEntity() = WeeklyMenuItemEntity(id, weekStartDate, recipeId, mealName, plannedServings, assignedDate, mealType, createdAt)

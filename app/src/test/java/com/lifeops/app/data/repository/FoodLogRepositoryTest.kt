@@ -17,7 +17,11 @@ class FoodLogRepositoryTest {
         var recentFoodItems: List<FoodItemEntity> = emptyList()
         var frequentFoodItems: List<FoodItemEntity> = emptyList()
         override suspend fun insert(entry: FoodLogEntryEntity) { entries += entry }
+        override suspend fun update(entry: FoodLogEntryEntity) { entries.removeAll { it.id == entry.id }; entries += entry }
         override suspend fun getById(id: String): FoodLogEntryEntity? = entries.firstOrNull { it.id == id }
+        override suspend fun getByWeeklyMenuItemId(weeklyMenuItemId: String): FoodLogEntryEntity? =
+            entries.firstOrNull { it.weeklyMenuItemId == weeklyMenuItemId }
+        override suspend fun delete(id: String) { entries.removeAll { it.id == id } }
         override suspend fun getRecent(limit: Int): List<FoodLogEntryEntity> = entries.takeLast(limit)
         override suspend fun getRecentFoodItems(limit: Int): List<FoodItemEntity> = recentFoodItems.take(limit)
         override suspend fun getFrequentFoodItems(since: String, limit: Int): List<FoodItemEntity> = frequentFoodItems.take(limit)

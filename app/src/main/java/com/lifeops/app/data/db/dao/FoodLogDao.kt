@@ -3,6 +3,7 @@ package com.lifeops.app.data.db.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import com.lifeops.app.data.db.entities.FoodItemEntity
 import com.lifeops.app.data.db.entities.FoodLogEntryEntity
 
@@ -11,8 +12,17 @@ interface FoodLogDao {
     @Insert
     suspend fun insert(entry: FoodLogEntryEntity)
 
+    @Update
+    suspend fun update(entry: FoodLogEntryEntity)
+
     @Query("SELECT * FROM food_log_entries WHERE id = :id")
     suspend fun getById(id: String): FoodLogEntryEntity?
+
+    @Query("SELECT * FROM food_log_entries WHERE weeklyMenuItemId = :weeklyMenuItemId")
+    suspend fun getByWeeklyMenuItemId(weeklyMenuItemId: String): FoodLogEntryEntity?
+
+    @Query("DELETE FROM food_log_entries WHERE id = :id")
+    suspend fun delete(id: String)
 
     @Query("SELECT * FROM food_log_entries ORDER BY loggedAt DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<FoodLogEntryEntity>

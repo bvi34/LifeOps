@@ -426,6 +426,13 @@ data class NutritionTotals(
         fatG / divisor
     )
 
+    operator fun times(factor: Double) = NutritionTotals(
+        calories * factor,
+        carbsG * factor,
+        proteinG * factor,
+        fatG * factor
+    )
+
     companion object {
         val ZERO = NutritionTotals(0.0, 0.0, 0.0, 0.0)
     }
@@ -437,6 +444,14 @@ data class RecipeNutrition(
     val perServing: NutritionTotals
 )
 
+// How a FoodLogEntry came to exist — distinct from FoodSource (provenance of a FoodItem).
+enum class FoodLogSource {
+    PLANNED, ADJUSTED, AD_HOC;
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: AD_HOC
+    }
+}
+
 data class FoodLogEntry(
     val id: String,
     val foodItemId: String?,
@@ -447,5 +462,20 @@ data class FoodLogEntry(
     val carbsG: Double,
     val proteinG: Double,
     val fatG: Double,
-    val loggedAt: String
+    val loggedAt: String,
+    val source: FoodLogSource = FoodLogSource.AD_HOC,
+    val confirmed: Boolean = false,
+    val confirmedAt: String? = null,
+    val weeklyMenuItemId: String? = null
+)
+
+data class WeeklyMenuItem(
+    val id: String,
+    val weekStartDate: String,
+    val recipeId: String? = null,
+    val mealName: String,
+    val plannedServings: Double = 1.0,
+    val assignedDate: String? = null,
+    val mealType: String? = null,
+    val createdAt: String
 )
