@@ -14,6 +14,7 @@ import com.lifeops.app.data.model.FoodSource
 import com.lifeops.app.data.model.IngredientUnit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -40,6 +41,8 @@ class WeeklyMenuItemRepositoryTest {
             entries.firstOrNull { it.weeklyMenuItemId == weeklyMenuItemId }
         override suspend fun delete(id: String) { entries.removeAll { it.id == id } }
         override suspend fun getRecent(limit: Int): List<FoodLogEntryEntity> = entries.takeLast(limit)
+        override fun observeByDateRange(startIso: String, endIso: String): Flow<List<FoodLogEntryEntity>> =
+            flowOf(entries.filter { it.loggedAt >= startIso && it.loggedAt < endIso })
         override suspend fun getRecentFoodItems(limit: Int): List<FoodItemEntity> = emptyList()
         override suspend fun getFrequentFoodItems(since: String, limit: Int): List<FoodItemEntity> = emptyList()
     }

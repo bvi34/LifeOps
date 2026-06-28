@@ -6,6 +6,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.lifeops.app.data.db.entities.FoodItemEntity
 import com.lifeops.app.data.db.entities.FoodLogEntryEntity
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface FoodLogDao {
@@ -26,6 +27,11 @@ interface FoodLogDao {
 
     @Query("SELECT * FROM food_log_entries ORDER BY loggedAt DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<FoodLogEntryEntity>
+
+    // Half-open [startIso, endIso) range — callers pass a day's start/next-day's start so a
+    // local calendar day's entries are returned regardless of what hour they're stamped at.
+    @Query("SELECT * FROM food_log_entries WHERE loggedAt >= :startIso AND loggedAt < :endIso ORDER BY loggedAt ASC")
+    fun observeByDateRange(startIso: String, endIso: String): Flow<List<FoodLogEntryEntity>>
 
     // Most-recently-logged distinct foods — surfaced at the top of ad-hoc search.
     @Query(

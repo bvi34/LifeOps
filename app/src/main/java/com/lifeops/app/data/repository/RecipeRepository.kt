@@ -10,12 +10,16 @@ import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.NutritionCalculator
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 class RecipeRepository(
     private val recipeDao: RecipeDao,
     private val foodItemDao: FoodItemDao
 ) {
+    fun observeAll(): Flow<List<Recipe>> = recipeDao.observeAll().map { list -> list.map { it.toModel() } }
+
     suspend fun createRecipe(name: String, servings: Double = 1.0): Recipe {
         val recipe = Recipe(UUID.randomUUID().toString(), name, servings, DateUtil.now())
         recipeDao.upsert(recipe.toEntity())

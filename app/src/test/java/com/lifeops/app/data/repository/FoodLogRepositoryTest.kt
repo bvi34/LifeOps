@@ -4,8 +4,14 @@ import com.lifeops.app.data.db.dao.FoodItemDao
 import com.lifeops.app.data.db.dao.FoodLogDao
 import com.lifeops.app.data.db.entities.FoodItemEntity
 import com.lifeops.app.data.db.entities.FoodLogEntryEntity
+import com.lifeops.app.data.model.FoodLogSource
 import com.lifeops.app.data.model.FoodSource
 import com.lifeops.app.data.model.IngredientUnit
+import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.toEntity
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
 import org.junit.Test
@@ -23,6 +29,8 @@ class FoodLogRepositoryTest {
             entries.firstOrNull { it.weeklyMenuItemId == weeklyMenuItemId }
         override suspend fun delete(id: String) { entries.removeAll { it.id == id } }
         override suspend fun getRecent(limit: Int): List<FoodLogEntryEntity> = entries.takeLast(limit)
+        override fun observeByDateRange(startIso: String, endIso: String): Flow<List<FoodLogEntryEntity>> =
+            flowOf(entries.filter { it.loggedAt >= startIso && it.loggedAt < endIso })
         override suspend fun getRecentFoodItems(limit: Int): List<FoodItemEntity> = recentFoodItems.take(limit)
         override suspend fun getFrequentFoodItems(since: String, limit: Int): List<FoodItemEntity> = frequentFoodItems.take(limit)
     }
@@ -103,5 +111,58 @@ class FoodLogRepositoryTest {
         val repo = FoodLogRepository(logDao, FakeFoodItemDao())
         assertEquals("f1", repo.getRecentFoodItems().single().id)
         assertEquals("f2", repo.getFrequentFoodItems().single().id)
+    }
+
+    @Test
+    fun `observeForDate returns only entries logged on that calendar day`() = runTest {
+        val logDao = FakeFoodLogDao()
+        val repo = FoodLogRepository(logDao, FakeFoodItemDao())
+        val onDay = repo.logAdHoc("Breakfast", 1.0, IngredientUnit.SERVING, 300.0, 30.0, 10.0, 10.0)
+            .copy(loggedAt = DateUtil.isoFromEpoch(DateUtil.epochMillisForDate("2026-06-24", 8)))
+        val otherDay = repo.logAdHoc("Dinner", 1.0, IngredientUnit.SERVING, 500.0, 40.0, 20.0, 15.0)
+            .copy(loggedAt = DateUtil.isoFromEpoch(DateUtil.epochMillisForDate("2026-06-25", 19)))
+        logDao.update(onDay.toEntity())
+        logDao.update(otherDay.toEntity())
+
+        val result = repo.observeForDate("2026-06-24").first()
+        assertEquals(listOf("Breakfast"), result.map { it.name })
+    }
+
+    @Test
+    fun `confirmEntry flips confirmed and stamps confirmedAt without touching macros`() = runTest {
+        val logDao = FakeFoodLogDao()
+        val repo = FoodLogRepository(logDao, FakeFoodItemDao())
+        val entry = repo.logAdHoc("Planned Meal", 1.0, IngredientUnit.SERVING, 400.0, 40.0, 20.0, 10.0)
+            .copy(confirmed = false, confirmedAt = null, source = FoodLogSource.PLANNED)
+        logDao.update(entry.toEntity())
+
+        val confirmed = repo.confirmEntry(entry.id)!!
+        assertTrue(confirmed.confirmed)
+        assertNotNull(confirmed.confirmedAt)
+        assertEquals(400.0, confirmed.calories, 0.0001)
+    }
+
+    @Test
+    fun `adjustEntry recomputes macros from the linked FoodItem when one exists`() = runTest {
+        val logDao = FakeFoodLogDao()
+        val foodDao = FakeFoodItemDao().apply { items += food("f1") } // 89 kcal/serving
+        val repo = FoodLogRepository(logDao, foodDao)
+        val entry = repo.logFoodItem("f1", 1.0, IngredientUnit.SERVING)!!
+
+        val adjusted = repo.adjustEntry(entry.id, quantity = 2.0, unit = IngredientUnit.SERVING)!!
+        assertEquals(178.0, adjusted.calories, 0.0001)
+        assertEquals(FoodLogSource.ADJUSTED, adjusted.source)
+        assertTrue(adjusted.confirmed)
+    }
+
+    @Test
+    fun `adjustEntry scales macros proportionally when there is no linked FoodItem`() = runTest {
+        val logDao = FakeFoodLogDao()
+        val repo = FoodLogRepository(logDao, FakeFoodItemDao())
+        val entry = repo.logAdHoc("Restaurant Meal", 1.0, IngredientUnit.SERVING, 600.0, 60.0, 30.0, 20.0)
+
+        val adjusted = repo.adjustEntry(entry.id, quantity = 0.5, unit = IngredientUnit.SERVING)!!
+        assertEquals(300.0, adjusted.calories, 0.0001)
+        assertEquals(FoodLogSource.ADJUSTED, adjusted.source)
     }
 }

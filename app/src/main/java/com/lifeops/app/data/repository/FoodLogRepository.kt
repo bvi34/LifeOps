@@ -11,6 +11,9 @@ import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.NutritionCalculator
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 import java.util.UUID
 
 private const val FREQUENT_LOOKBACK_DAYS = 30L
@@ -83,6 +86,70 @@ class FoodLogRepository(
     suspend fun getFrequentFoodItems(limit: Int = 20): List<FoodItem> {
         val since = DateUtil.isoFromEpoch(System.currentTimeMillis() - FREQUENT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
         return foodLogDao.getFrequentFoodItems(since, limit).map { it.toModel() }
+    }
+
+    /** All entries logged on the local calendar day [date] (yyyy-MM-dd), in chronological order. */
+    fun observeForDate(date: String): Flow<List<FoodLogEntry>> {
+        val day = LocalDate.parse(date)
+        val startIso = DateUtil.isoFromEpoch(DateUtil.epochMillisForDate(day.toString(), 0))
+        val endIso = DateUtil.isoFromEpoch(DateUtil.epochMillisForDate(day.plusDays(1).toString(), 0))
+        return foodLogDao.observeByDateRange(startIso, endIso).map { entries -> entries.map { it.toModel() } }
+    }
+
+    /** One-tap Confirm for a planned entry — flips [FoodLogEntry.confirmed] and stamps the time,
+     *  leaving its macros untouched since the user is accepting the plan as-is. */
+    suspend fun confirmEntry(entryId: String): FoodLogEntry? {
+        val entry = foodLogDao.getById(entryId)?.toModel() ?: return null
+        if (entry.confirmed) return entry
+        val updated = entry.copy(confirmed = true, confirmedAt = DateUtil.now())
+        foodLogDao.update(updated.toEntity())
+        return updated
+    }
+
+    /** Changes quantity/unit (and optionally swaps to a different saved food) on an existing
+     *  entry, marking it Adjusted and confirmed. Macros are recomputed from the linked FoodItem
+     *  when one is known; otherwise they're scaled proportionally from the entry's own quantity. */
+    suspend fun adjustEntry(
+        entryId: String,
+        quantity: Double,
+        unit: IngredientUnit,
+        newFoodItemId: String? = null
+    ): FoodLogEntry? {
+        val entry = foodLogDao.getById(entryId)?.toModel() ?: return null
+        val foodItemId = newFoodItemId ?: entry.foodItemId
+
+        val updated = if (foodItemId != null) {
+            val food = foodItemDao.getById(foodItemId)?.toModel() ?: return null
+            val nutrition = NutritionCalculator.nutritionFor(food, quantity, unit) ?: return null
+            entry.copy(
+                foodItemId = food.id,
+                name = food.name,
+                quantity = quantity,
+                unit = unit,
+                calories = nutrition.calories,
+                carbsG = nutrition.carbsG,
+                proteinG = nutrition.proteinG,
+                fatG = nutrition.fatG,
+                source = FoodLogSource.ADJUSTED,
+                confirmed = true,
+                confirmedAt = DateUtil.now()
+            )
+        } else {
+            val factor = if (entry.quantity != 0.0) quantity / entry.quantity else 0.0
+            entry.copy(
+                quantity = quantity,
+                unit = unit,
+                calories = entry.calories * factor,
+                carbsG = entry.carbsG * factor,
+                proteinG = entry.proteinG * factor,
+                fatG = entry.fatG * factor,
+                source = FoodLogSource.ADJUSTED,
+                confirmed = true,
+                confirmedAt = DateUtil.now()
+            )
+        }
+        foodLogDao.update(updated.toEntity())
+        return updated
     }
 
     /** Promotes a one-off ad-hoc log entry into a permanent, searchable custom food, one tap.
