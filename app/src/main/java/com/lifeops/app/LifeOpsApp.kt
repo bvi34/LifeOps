@@ -63,6 +63,12 @@ class LifeOpsApp : Application() {
     val growthRepository by lazy {
         GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
     }
+    val foodItemRepository by lazy { FoodItemRepository(database.foodItemDao()) }
+    val recipeRepository by lazy { RecipeRepository(database.recipeDao(), database.foodItemDao()) }
+    val foodLogRepository by lazy { FoodLogRepository(database.foodLogDao(), database.foodItemDao()) }
+    val weeklyMenuItemRepository by lazy {
+        WeeklyMenuItemRepository(database.weeklyMenuItemDao(), database.foodLogDao(), recipeRepository)
+    }
 
     override fun onCreate() {
         super.onCreate()

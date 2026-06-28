@@ -54,7 +54,6 @@ import com.lifeops.app.ui.screens.resources.ResourcesViewModelFactory
 import com.lifeops.app.ui.screens.settings.SettingsScreen
 import com.lifeops.app.ui.screens.settings.SettingsViewModel
 import com.lifeops.app.ui.screens.settings.SettingsViewModelFactory
-import com.lifeops.app.ui.screens.thisweek.ThisWeekScreen
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModelFactory
 import com.lifeops.app.ui.theme.LifeOpsTheme
 
@@ -181,7 +180,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.ThisWeek.route) {
-                val vm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
+                val taskManagerVm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
                     factory = ThisWeekViewModelFactory(
                         app,
                         app.applicationScope,
@@ -191,14 +190,26 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         app.runbookRepository, app.templateRepository, app.counterRepository
                     )
                 )
-                // Inject shared text if coming from share sheet
-                LaunchedEffect(sharedText) {
-                    if (!sharedText.isNullOrBlank()) {
-                        vm.onImportJsonChange(sharedText)
-                        vm.openImportDialog()
+                val weeklyMenuVm = viewModel<com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuViewModel>(
+                    factory = com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuViewModelFactory(
+                        app.weeklyMenuItemRepository, app.recipeRepository
+                    )
+                )
+                val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
+                    factory = com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModelFactory(
+                        app.foodLogRepository, app.foodItemRepository
+                    )
+                )
+                com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
+                    weeklyMenuViewModel = weeklyMenuVm,
+                    dailyPlanViewModel = dailyPlanVm,
+                    taskManagerViewModel = taskManagerVm,
+                    sharedText = sharedText,
+                    onImportShared = { text ->
+                        taskManagerVm.onImportJsonChange(text)
+                        taskManagerVm.openImportDialog()
                     }
-                }
-                ThisWeekScreen(vm)
+                )
             }
 
             // Planning — forward-looking management screens, reached via a hub.
