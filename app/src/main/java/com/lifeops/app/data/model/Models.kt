@@ -355,3 +355,97 @@ data class TemplateWithTasks(
     val template: Template,
     val tasks: List<TemplateTask>
 )
+
+enum class FoodSource {
+    UsdaFoundation, UsdaBranded, Custom, Remembered;
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: Custom
+    }
+}
+
+data class FoodItem(
+    val id: String,
+    val name: String,
+    val brand: String? = null,
+    val servingSize: Double,
+    val servingUnit: String,
+    val servingSizeGrams: Double?,
+    val calories: Double,
+    val carbsG: Double,
+    val proteinG: Double,
+    val fatG: Double,
+    val fiberG: Double? = null,
+    val sodiumMg: Double? = null,
+    val source: FoodSource = FoodSource.Custom,
+    val fdcId: Long? = null,
+    val createdAt: String
+)
+
+// Strict gram/serving math for now — see NutritionCalculator. Friendlier units (cups, tbsp)
+// are a later step once strict entry has proven itself.
+enum class IngredientUnit {
+    GRAM, SERVING;
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: SERVING
+    }
+}
+
+data class Recipe(
+    val id: String,
+    val name: String,
+    val servings: Double = 1.0,
+    val createdAt: String
+)
+
+data class RecipeIngredient(
+    val id: String,
+    val recipeId: String,
+    val foodItemId: String,
+    val quantity: Double,
+    val unit: IngredientUnit,
+    val sortOrder: Int = 0
+)
+
+data class NutritionTotals(
+    val calories: Double,
+    val carbsG: Double,
+    val proteinG: Double,
+    val fatG: Double
+) {
+    operator fun plus(other: NutritionTotals) = NutritionTotals(
+        calories + other.calories,
+        carbsG + other.carbsG,
+        proteinG + other.proteinG,
+        fatG + other.fatG
+    )
+
+    operator fun div(divisor: Double) = NutritionTotals(
+        calories / divisor,
+        carbsG / divisor,
+        proteinG / divisor,
+        fatG / divisor
+    )
+
+    companion object {
+        val ZERO = NutritionTotals(0.0, 0.0, 0.0, 0.0)
+    }
+}
+
+data class RecipeNutrition(
+    val recipe: Recipe,
+    val total: NutritionTotals,
+    val perServing: NutritionTotals
+)
+
+data class FoodLogEntry(
+    val id: String,
+    val foodItemId: String?,
+    val name: String,
+    val quantity: Double,
+    val unit: IngredientUnit,
+    val calories: Double,
+    val carbsG: Double,
+    val proteinG: Double,
+    val fatG: Double,
+    val loggedAt: String
+)

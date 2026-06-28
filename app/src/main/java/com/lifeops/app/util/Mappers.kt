@@ -72,3 +72,23 @@ fun Template.toEntity() = TemplateEntity(id, name, createdAt)
 
 fun TemplateTaskEntity.toModel() = TemplateTask(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)
 fun TemplateTask.toEntity() = TemplateTaskEntity(id, templateId, title, aspectName, categoryName, priority, estimatedMinutes, runbookId, taskOrder)
+
+fun FoodItemEntity.toModel() = FoodItem(
+    id, name, brand, servingSize, servingUnit, servingSizeGrams,
+    calories, carbsG, proteinG, fatG, fiberG, sodiumMg,
+    FoodSource.from(source), fdcId, createdAt
+)
+fun FoodItem.toEntity() = FoodItemEntity(
+    id, name, brand, servingSize, servingUnit, servingSizeGrams,
+    calories, carbsG, proteinG, fatG, fiberG, sodiumMg,
+    source.name, fdcId, createdAt
+)
+
+fun RecipeEntity.toModel() = Recipe(id, name, servings, createdAt)
+fun Recipe.toEntity() = RecipeEntity(id, name, servings, createdAt)
+
+fun RecipeIngredientEntity.toModel() = RecipeIngredient(id, recipeId, foodItemId, quantity, IngredientUnit.from(unit), sortOrder)
+fun RecipeIngredient.toEntity() = RecipeIngredientEntity(id, recipeId, foodItemId, quantity, unit.name, sortOrder)
+
+fun FoodLogEntryEntity.toModel() = FoodLogEntry(id, foodItemId, name, quantity, IngredientUnit.from(unit), calories, carbsG, proteinG, fatG, loggedAt)
+fun FoodLogEntry.toEntity() = FoodLogEntryEntity(id, foodItemId, name, quantity, unit.name, calories, carbsG, proteinG, fatG, loggedAt)

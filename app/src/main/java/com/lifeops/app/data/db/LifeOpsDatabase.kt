@@ -266,6 +266,78 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
     }
 }
 
+private val MIGRATION_20_21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Nutrition backend: USDA-seeded + custom foods, recipes built from them, and a food
+        // log to drive recent/frequent search and ad-hoc-to-custom promotion. Purely additive.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS food_items (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                brand TEXT,
+                servingSize REAL NOT NULL,
+                servingUnit TEXT NOT NULL,
+                servingSizeGrams REAL,
+                calories REAL NOT NULL,
+                carbsG REAL NOT NULL,
+                proteinG REAL NOT NULL,
+                fatG REAL NOT NULL,
+                fiberG REAL,
+                sodiumMg REAL,
+                source TEXT NOT NULL,
+                fdcId INTEGER,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_items_name ON food_items(name)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_items_brand ON food_items(brand)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_items_source ON food_items(source)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_items_fdcId ON food_items(fdcId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS recipes (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                servings REAL NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS recipe_ingredients (
+                id TEXT NOT NULL PRIMARY KEY,
+                recipeId TEXT NOT NULL,
+                foodItemId TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                unit TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                FOREIGN KEY(recipeId) REFERENCES recipes(id) ON DELETE CASCADE,
+                FOREIGN KEY(foodItemId) REFERENCES food_items(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_ingredients_recipeId ON recipe_ingredients(recipeId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_ingredients_foodItemId ON recipe_ingredients(foodItemId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS food_log_entries (
+                id TEXT NOT NULL PRIMARY KEY,
+                foodItemId TEXT,
+                name TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                unit TEXT NOT NULL,
+                calories REAL NOT NULL,
+                carbsG REAL NOT NULL,
+                proteinG REAL NOT NULL,
+                fatG REAL NOT NULL,
+                loggedAt TEXT NOT NULL,
+                FOREIGN KEY(foodItemId) REFERENCES food_items(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_foodItemId ON food_log_entries(foodItemId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_loggedAt ON food_log_entries(loggedAt)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -288,9 +360,13 @@ private val MIGRATION_15_16 = object : Migration(15, 16) {
         TemplateEntity::class,
         TemplateTaskEntity::class,
         CounterEntity::class,
-        CounterEventEntity::class
+        CounterEventEntity::class,
+        FoodItemEntity::class,
+        RecipeEntity::class,
+        RecipeIngredientEntity::class,
+        FoodLogEntryEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -312,6 +388,9 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun subtaskDao(): SubtaskDao
     abstract fun templateDao(): TemplateDao
     abstract fun counterDao(): CounterDao
+    abstract fun foodItemDao(): FoodItemDao
+    abstract fun recipeDao(): RecipeDao
+    abstract fun foodLogDao(): FoodLogDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -323,7 +402,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21)
                     .build()
                     .also { INSTANCE = it }
             }
