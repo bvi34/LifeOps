@@ -2104,13 +2104,15 @@
             "fieldPath": "source",
             "columnName": "source",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'AD_HOC'"
           },
           {
             "fieldPath": "confirmed",
             "columnName": "confirmed",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "confirmedAt",

@@ -1,5 +1,6 @@
 package com.lifeops.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -27,8 +28,8 @@ data class FoodLogEntryEntity(
     val proteinG: Double,
     val fatG: Double,
     val loggedAt: String,
-    val source: String,
-    val confirmed: Boolean,
+    @ColumnInfo(defaultValue = "'AD_HOC'") val source: String,
+    @ColumnInfo(defaultValue = "0") val confirmed: Boolean,
     val confirmedAt: String?,
     // Null unless this entry originated from (or was later linked back to) a WeeklyMenuItem.
     val weeklyMenuItemId: String?
