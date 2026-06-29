@@ -15,6 +15,7 @@ data class ProjectEntity(
     val title: String,
     val aspectId: String? = null,
     val categoryId: String? = null,
+    @ColumnInfo(defaultValue = "'active'")
     val status: String = "active",
     val description: String? = null,
     val createdAt: String,

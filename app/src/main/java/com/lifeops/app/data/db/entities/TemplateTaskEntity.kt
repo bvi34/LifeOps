@@ -1,5 +1,6 @@
 package com.lifeops.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -29,8 +30,10 @@ data class TemplateTaskEntity(
     val title: String,
     val aspectName: String? = null,
     val categoryName: String? = null,
+    @ColumnInfo(defaultValue = "'medium'")
     val priority: String = "medium",
     val estimatedMinutes: Int? = null,
     val runbookId: String? = null,
+    @ColumnInfo(defaultValue = "0")
     val taskOrder: Int = 0
 )

@@ -52,10 +52,14 @@ data class TaskEntity(
     val completedAt: String? = null,
     val carriedFromTaskId: String? = null,
     val createdAt: String,
+    @ColumnInfo(defaultValue = "0")
     val isRecurring: Boolean = false,
     val estimatedMinutes: Int? = null,
+    @ColumnInfo(defaultValue = "0")
     val carriedCount: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val sortOrder: Int = 0,
+    @ColumnInfo(defaultValue = "0")
     val isManuallyAdded: Boolean = false,
     val projectId: String? = null,
     @ColumnInfo(name = "source", defaultValue = "MANUAL")
