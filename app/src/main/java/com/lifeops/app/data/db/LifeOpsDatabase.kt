@@ -370,6 +370,78 @@ private val MIGRATION_21_22 = object : Migration(21, 22) {
     }
 }
 
+private val MIGRATION_22_23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Rebuilds `tasks` to fix a defaultValue mismatch that's been silently carried forward
+        // since MIGRATION_4_5/14_15: those ALTER TABLE ... ADD COLUMN statements ran on devices
+        // before this file declared DEFAULT 0 / DEFAULT '' for isRecurring, carriedCount,
+        // sortOrder and slug, so SQLite never recorded a default for those columns on disk —
+        // even though the migration source here looks correct today, migrations are immutable
+        // once shipped, so already-upgraded installs kept the defaultless columns forever.
+        // Room's startup schema validation then fails every launch with "Migration didn't
+        // properly handle: tasks" because TaskEntity's @ColumnInfo(defaultValue=...) no longer
+        // matches what's actually on disk. SQLite can't ALTER a column to add a default, so the
+        // only fix is to recreate the table with the schema Room actually expects.
+        db.execSQL("""
+            CREATE TABLE tasks_new (
+                id TEXT NOT NULL PRIMARY KEY,
+                weekId TEXT NOT NULL,
+                title TEXT NOT NULL,
+                aspectId TEXT,
+                categoryId TEXT,
+                priority TEXT NOT NULL,
+                dueDate TEXT,
+                hardDeadline INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                resourceValue INTEGER NOT NULL,
+                completedAt TEXT,
+                carriedFromTaskId TEXT,
+                createdAt TEXT NOT NULL,
+                isRecurring INTEGER NOT NULL DEFAULT 0,
+                estimatedMinutes INTEGER,
+                carriedCount INTEGER NOT NULL DEFAULT 0,
+                sortOrder INTEGER NOT NULL DEFAULT 0,
+                isManuallyAdded INTEGER NOT NULL DEFAULT 0,
+                projectId TEXT,
+                source TEXT NOT NULL DEFAULT 'MANUAL',
+                slug TEXT NOT NULL DEFAULT '',
+                carryForwardReason TEXT,
+                counterId TEXT,
+                FOREIGN KEY(weekId) REFERENCES weeks(id) ON DELETE CASCADE,
+                FOREIGN KEY(aspectId) REFERENCES aspects(id) ON DELETE SET NULL,
+                FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO tasks_new (
+                id, weekId, title, aspectId, categoryId, priority, dueDate, hardDeadline,
+                status, resourceValue, completedAt, carriedFromTaskId, createdAt, isRecurring,
+                estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId, source,
+                slug, carryForwardReason, counterId
+            )
+            SELECT
+                id, weekId, title, aspectId, categoryId, priority, dueDate, hardDeadline,
+                status, resourceValue, completedAt, carriedFromTaskId, createdAt, isRecurring,
+                estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId, source,
+                slug, carryForwardReason, counterId
+            FROM tasks
+        """.trimIndent())
+        db.execSQL("DROP TABLE tasks")
+        db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_weekId ON tasks(weekId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_aspectId ON tasks(aspectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_categoryId ON tasks(categoryId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_createdAt ON tasks(createdAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_completedAt ON tasks(completedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_projectId ON tasks(projectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_source ON tasks(source)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_counterId ON tasks(counterId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_weekId_slug ON tasks(weekId, slug)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -399,7 +471,7 @@ private val MIGRATION_21_22 = object : Migration(21, 22) {
         FoodLogEntryEntity::class,
         WeeklyMenuItemEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -436,7 +508,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
                     .build()
                     .also { INSTANCE = it }
             }
