@@ -1,5 +1,6 @@
 package com.lifeops.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -29,5 +30,6 @@ data class SubtaskEntity(
     val runbookId: String?,
     val label: String,
     val stepOrder: Int,
+    @ColumnInfo(defaultValue = "0")
     val isChecked: Boolean = false
 )

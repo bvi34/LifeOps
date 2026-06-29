@@ -238,7 +238,8 @@
             "fieldPath": "isRecurring",
             "columnName": "isRecurring",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "estimatedMinutes",
@@ -250,19 +251,22 @@
             "fieldPath": "carriedCount",
             "columnName": "carriedCount",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "sortOrder",
             "columnName": "sortOrder",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "isManuallyAdded",
             "columnName": "isManuallyAdded",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "projectId",
@@ -482,7 +486,8 @@
             "fieldPath": "unsuccessfulCount",
             "columnName": "unsuccessfulCount",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "totalResourcesEarned",
@@ -536,7 +541,8 @@
             "fieldPath": "aspectHistory",
             "columnName": "aspectHistory",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'{}'"
           },
           {
             "fieldPath": "selfRating",
@@ -554,7 +560,8 @@
             "fieldPath": "subtaskTickCount",
             "columnName": "subtaskTickCount",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1035,7 +1042,8 @@
             "fieldPath": "resetCycle",
             "columnName": "resetCycle",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'monthly'"
           },
           {
             "fieldPath": "capacity",
@@ -1047,13 +1055,15 @@
             "fieldPath": "isActive",
             "columnName": "isActive",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "1"
           },
           {
             "fieldPath": "sortIndex",
             "columnName": "sortIndex",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           },
           {
             "fieldPath": "createdAt",
@@ -1204,7 +1214,8 @@
             "fieldPath": "status",
             "columnName": "status",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'active'"
           },
           {
             "fieldPath": "description",
@@ -1415,7 +1426,8 @@
             "fieldPath": "isChecked",
             "columnName": "isChecked",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -1539,7 +1551,8 @@
             "fieldPath": "priority",
             "columnName": "priority",
             "affinity": "TEXT",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "'medium'"
           },
           {
             "fieldPath": "estimatedMinutes",
@@ -1557,7 +1570,8 @@
             "fieldPath": "taskOrder",
             "columnName": "taskOrder",
             "affinity": "INTEGER",
-            "notNull": true
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
