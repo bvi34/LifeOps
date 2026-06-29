@@ -442,6 +442,53 @@ private val MIGRATION_22_23 = object : Migration(22, 23) {
     }
 }
 
+private val MIGRATION_23_24 = object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Rebuilds `food_log_entries` to add the FK on weeklyMenuItemId that the entity has
+        // always declared. MIGRATION_21_22 added that column with a plain
+        // ALTER TABLE ... ADD COLUMN, but SQLite can't attach a foreign-key constraint via
+        // ALTER TABLE, so the on-disk table never actually got it — Room's schema validation
+        // then fails every launch because FoodLogEntryEntity expects a FK to weekly_menu_items
+        // that isn't there. Only a table rebuild can add it.
+        db.execSQL("""
+            CREATE TABLE food_log_entries_new (
+                id TEXT NOT NULL PRIMARY KEY,
+                foodItemId TEXT,
+                name TEXT NOT NULL,
+                quantity REAL NOT NULL,
+                unit TEXT NOT NULL,
+                calories REAL NOT NULL,
+                carbsG REAL NOT NULL,
+                proteinG REAL NOT NULL,
+                fatG REAL NOT NULL,
+                loggedAt TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'AD_HOC',
+                confirmed INTEGER NOT NULL DEFAULT 0,
+                confirmedAt TEXT,
+                weeklyMenuItemId TEXT,
+                FOREIGN KEY(foodItemId) REFERENCES food_items(id) ON DELETE SET NULL,
+                FOREIGN KEY(weeklyMenuItemId) REFERENCES weekly_menu_items(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO food_log_entries_new (
+                id, foodItemId, name, quantity, unit, calories, carbsG, proteinG, fatG,
+                loggedAt, source, confirmed, confirmedAt, weeklyMenuItemId
+            )
+            SELECT
+                id, foodItemId, name, quantity, unit, calories, carbsG, proteinG, fatG,
+                loggedAt, source, confirmed, confirmedAt, weeklyMenuItemId
+            FROM food_log_entries
+        """.trimIndent())
+        db.execSQL("DROP TABLE food_log_entries")
+        db.execSQL("ALTER TABLE food_log_entries_new RENAME TO food_log_entries")
+
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_foodItemId ON food_log_entries(foodItemId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_loggedAt ON food_log_entries(loggedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_food_log_entries_weeklyMenuItemId ON food_log_entries(weeklyMenuItemId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -471,7 +518,7 @@ private val MIGRATION_22_23 = object : Migration(22, 23) {
         FoodLogEntryEntity::class,
         WeeklyMenuItemEntity::class
     ],
-    version = 23,
+    version = 24,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -508,7 +555,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
                     .build()
                     .also { INSTANCE = it }
             }
