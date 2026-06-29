@@ -49,7 +49,10 @@ data class SettingsUiState(
     val showNewRunbookDialog: Boolean = false,
     val editingRunbook: RunbookWithSteps? = null,
     val showNewTemplateDialog: Boolean = false,
-    val editingTemplate: TemplateWithTasks? = null
+    val editingTemplate: TemplateWithTasks? = null,
+    val foodItemCount: Int = 0,
+    val isImportingFoods: Boolean = false,
+    val foodImportStatus: String? = null
 )
 
 class SettingsViewModel(
@@ -62,7 +65,8 @@ class SettingsViewModel(
     private val projectRepository: ProjectRepository? = null,
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
-    private val templateRepository: TemplateRepository? = null
+    private val templateRepository: TemplateRepository? = null,
+    private val foodItemRepository: FoodItemRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -75,6 +79,11 @@ class SettingsViewModel(
                 isDarkMode = preferencesRepository.isDarkMode,
                 customPalette = preferencesRepository.customPalette
             )
+        }
+        foodItemRepository?.let { repo ->
+            viewModelScope.launch {
+                _uiState.update { it.copy(foodItemCount = repo.count()) }
+            }
         }
         viewModelScope.launch {
             combine(
@@ -465,6 +474,36 @@ class SettingsViewModel(
         viewModelScope.launch { templateRepository?.deleteTemplate(id) }
     }
 
+    // USDA food database import — populates the table that daily-intake food search reads from.
+    fun importUsdaFoods(context: Context, foodCsvUri: Uri, foodNutrientCsvUri: Uri, foodPortionCsvUri: Uri?) {
+        val repo = foodItemRepository ?: return
+        _uiState.update { it.copy(isImportingFoods = true, foodImportStatus = null) }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val resolver = context.contentResolver
+                resolver.openInputStream(foodCsvUri)!!.bufferedReader().use { foodCsv ->
+                    resolver.openInputStream(foodNutrientCsvUri)!!.bufferedReader().use { nutrientCsv ->
+                        val portionReader = foodPortionCsvUri?.let { resolver.openInputStream(it)?.bufferedReader() }
+                        try {
+                            val count = repo.importUsda(foodCsv, nutrientCsv, portionReader)
+                            _uiState.update {
+                                it.copy(
+                                    isImportingFoods = false,
+                                    foodItemCount = repo.count(),
+                                    foodImportStatus = "Imported $count foods"
+                                )
+                            }
+                        } finally {
+                            portionReader?.close()
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isImportingFoods = false, foodImportStatus = "Import failed: ${e.message}") }
+            }
+        }
+    }
+
 }
 
 class SettingsViewModelFactory(
@@ -477,9 +516,10 @@ class SettingsViewModelFactory(
     private val projectRepository: ProjectRepository? = null,
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
-    private val templateRepository: TemplateRepository? = null
+    private val templateRepository: TemplateRepository? = null,
+    private val foodItemRepository: FoodItemRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository, foodItemRepository) as T
 }

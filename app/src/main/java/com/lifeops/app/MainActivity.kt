@@ -142,7 +142,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             app.aspectRepository, app.gameResourceRepository,
             app.preferencesRepository, app.backupRepository, app.taskRepository,
             app.costResourceRepository, app.projectRepository, app.growthRepository,
-            app.runbookRepository, app.templateRepository
+            app.runbookRepository, app.templateRepository, app.foodItemRepository
         )
     }
     val headerVm = viewModel<AppHeaderViewModel>(

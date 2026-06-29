@@ -23,6 +23,7 @@ class FoodItemRepositoryTest {
         override suspend fun upsertAll(items: List<FoodItemEntity>) = items.forEach { upsert(it) }
         override suspend fun delete(id: String) { items.removeAll { it.id == id } }
         override suspend fun countBySource(source: String): Int = items.count { it.source == source }
+        override suspend fun count(): Int = items.size
     }
 
     @Test

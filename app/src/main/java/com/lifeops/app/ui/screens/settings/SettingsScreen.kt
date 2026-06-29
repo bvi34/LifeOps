@@ -71,6 +71,20 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         else viewModel.cancelPendingExport()
     }
 
+    var pickedFoodCsv by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pickedFoodNutrientCsv by remember { mutableStateOf<android.net.Uri?>(null) }
+    var pickedFoodPortionCsv by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val foodCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) pickedFoodCsv = uri
+    }
+    val foodNutrientCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) pickedFoodNutrientCsv = uri
+    }
+    val foodPortionCsvLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) pickedFoodPortionCsv = uri
+    }
+
     LaunchedEffect(state.pendingExportJson) {
         if (state.pendingExportJson != null) createJsonLauncher.launch("lifeops_backup.json")
     }
@@ -159,6 +173,30 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Food Database", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                FoodDatabaseSection(
+                    foodItemCount = state.foodItemCount,
+                    isImporting = state.isImportingFoods,
+                    status = state.foodImportStatus,
+                    foodCsvPicked = pickedFoodCsv != null,
+                    foodNutrientCsvPicked = pickedFoodNutrientCsv != null,
+                    foodPortionCsvPicked = pickedFoodPortionCsv != null,
+                    onPickFoodCsv = { foodCsvLauncher.launch("text/*") },
+                    onPickFoodNutrientCsv = { foodNutrientCsvLauncher.launch("text/*") },
+                    onPickFoodPortionCsv = { foodPortionCsvLauncher.launch("text/*") },
+                    onImport = {
+                        val foodCsv = pickedFoodCsv
+                        val nutrientCsv = pickedFoodNutrientCsv
+                        if (foodCsv != null && nutrientCsv != null) {
+                            viewModel.importUsdaFoods(context, foodCsv, nutrientCsv, pickedFoodPortionCsv)
+                        }
+                    }
+                )
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -437,6 +475,64 @@ private fun DataActionsSection(
                     Spacer(Modifier.width(4.dp))
                     Text("Rings SVG")
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FoodDatabaseSection(
+    foodItemCount: Int,
+    isImporting: Boolean,
+    status: String?,
+    foodCsvPicked: Boolean,
+    foodNutrientCsvPicked: Boolean,
+    foodPortionCsvPicked: Boolean,
+    onPickFoodCsv: () -> Unit,
+    onPickFoodNutrientCsv: () -> Unit,
+    onPickFoodPortionCsv: () -> Unit,
+    onImport: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "$foodItemCount foods loaded",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Import the USDA FoodData Central bulk CSV download (food.csv + food_nutrient.csv, " +
+                    "food_portion.csv optional) to populate food search for the daily intake log.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            OutlinedButton(onClick = onPickFoodCsv, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (foodCsvPicked) "food.csv selected" else "Pick food.csv")
+            }
+            OutlinedButton(onClick = onPickFoodNutrientCsv, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (foodNutrientCsvPicked) "food_nutrient.csv selected" else "Pick food_nutrient.csv")
+            }
+            OutlinedButton(onClick = onPickFoodPortionCsv, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.FolderOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (foodPortionCsvPicked) "food_portion.csv selected" else "Pick food_portion.csv (optional)")
+            }
+            Button(
+                onClick = onImport,
+                enabled = foodCsvPicked && foodNutrientCsvPicked && !isImporting,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isImporting) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (isImporting) "Importing…" else "Import")
+            }
+            status?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
     }
