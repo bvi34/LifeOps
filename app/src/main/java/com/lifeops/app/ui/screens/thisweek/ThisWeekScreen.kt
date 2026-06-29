@@ -51,7 +51,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
     // intentionally NOT read at this scope — it's read via a deferred lambda inside the active
-    // row/sheet so the per-second tick doesn't recompose the whole screen.
+    // row/sheet so the per-second tick doesn'sq`t recompose the whole screen.
     val activeTimer by viewModel.activeTimer.collectAsStateWithLifecycle()
     val timerElapsedState = viewModel.timerElapsedSeconds.collectAsStateWithLifecycle()
     var showCloseConfirm by remember { mutableStateOf(false) }
