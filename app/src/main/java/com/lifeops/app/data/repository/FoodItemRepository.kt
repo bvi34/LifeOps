@@ -17,6 +17,8 @@ class FoodItemRepository(private val foodItemDao: FoodItemDao) {
 
     suspend fun getById(id: String): FoodItem? = foodItemDao.getById(id)?.toModel()
 
+    suspend fun count(): Int = foodItemDao.count()
+
     /** The escape hatch for anything not in USDA. A custom food is a permanent row — enter
      *  "my protein shake" once, find it forever. */
     suspend fun createCustomFood(
