@@ -101,3 +101,15 @@ fun FoodLogEntry.toEntity() = FoodLogEntryEntity(
 
 fun WeeklyMenuItemEntity.toModel() = WeeklyMenuItem(id, weekStartDate, recipeId, mealName, plannedServings, assignedDate, mealType, createdAt)
 fun WeeklyMenuItem.toEntity() = WeeklyMenuItemEntity(id, weekStartDate, recipeId, mealName, plannedServings, assignedDate, mealType, createdAt)
+
+fun BookEntity.toModel() = Book(id, title, author, BookStatus.from(status), createdAt, completedAt)
+fun Book.toEntity() = BookEntity(id, title, author, status.name, createdAt, completedAt)
+
+fun BookNoteEntity.toModel() = BookNote(id, bookId, content, createdAt)
+fun BookNote.toEntity() = BookNoteEntity(id, bookId, content, createdAt)
+
+fun BookTimeEntryEntity.toModel() = BookTimeEntry(id, bookId, durationMinutes, note, recordedAt)
+fun BookTimeEntry.toEntity() = BookTimeEntryEntity(id, bookId, durationMinutes, note, recordedAt)
+
+fun FutureProjectEntity.toModel() = FutureProject(id, title, content, createdAt, updatedAt)
+fun FutureProject.toEntity() = FutureProjectEntity(id, title, content, createdAt, updatedAt)

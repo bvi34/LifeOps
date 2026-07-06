@@ -24,40 +24,48 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.lifeops.app.ui.screens.collection.BookViewModel
+import com.lifeops.app.ui.screens.collection.CollectionScreen
+import com.lifeops.app.ui.screens.collection.FutureProjectViewModel
+import com.lifeops.app.ui.screens.collection.RecipeViewModel
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanScreen
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel
 import com.lifeops.app.ui.screens.thisweek.ThisWeekScreen
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel
-import com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuScreen
-import com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuViewModel
 import com.lifeops.app.util.DateUtil
 import java.time.LocalDate
 
 enum class WeekHubTab(val label: String) {
-    WEEKLY_MENU("Weekly Menu"),
+    TASK_MANAGER("Tasks"),
     DAILY_PLAN("Daily Plan"),
-    TASK_MANAGER("Tasks")
+    COLLECTION("Collection")
 }
 
-/** Shell over the three week-scoped sub-views. Owns the one "selected week" value all three
- *  stay in sync with — Weekly Menu and Daily Plan re-key off it directly since their data is
- *  plain date-stamped; Task Manager keeps showing the actual current week regardless (see its
- *  own ViewModel), since browsing past/future weeks of tasks would mean either fabricating Week
- *  rows for dates that were never closed into (breaking the "exactly one open week" invariant
- *  the close-week flow relies on) or a much larger query rewrite — out of scope here. */
+/** Shell over the three sub-views. Tasks is the default landing tab. Daily Plan stays
+ *  week-scoped (re-keys off [selectedWeekStart] since its data is plain date-stamped); Collection
+ *  is a standalone reference library (recipes, books, future projects) with no week concept, so
+ *  it never re-keys off the selected week. Task Manager keeps showing the actual current week
+ *  regardless (see its own ViewModel), since browsing past/future weeks of tasks would mean
+ *  either fabricating Week rows for dates that were never closed into (breaking the "exactly one
+ *  open week" invariant the close-week flow relies on) or a much larger query rewrite — out of
+ *  scope here. */
 @Composable
 fun WeekHubScreen(
-    weeklyMenuViewModel: WeeklyMenuViewModel,
     dailyPlanViewModel: DailyPlanViewModel,
     taskManagerViewModel: ThisWeekViewModel,
+    recipeViewModel: RecipeViewModel,
+    bookViewModel: BookViewModel,
+    futureProjectViewModel: FutureProjectViewModel,
+    onOpenRecipe: (String) -> Unit,
+    onOpenBook: (String) -> Unit,
+    onOpenFutureProject: (String) -> Unit,
     sharedText: String? = null,
     onImportShared: (String) -> Unit = {}
 ) {
     var selectedWeekStart by rememberSaveable { mutableStateOf(DateUtil.currentWeekStart().toString()) }
-    var selectedTab by rememberSaveable { mutableStateOf(WeekHubTab.WEEKLY_MENU) }
+    var selectedTab by rememberSaveable { mutableStateOf(WeekHubTab.TASK_MANAGER) }
 
     LaunchedEffect(selectedWeekStart) {
-        weeklyMenuViewModel.setWeekStartDate(selectedWeekStart)
         dailyPlanViewModel.setWeekStartDate(selectedWeekStart)
     }
     LaunchedEffect(sharedText) {
@@ -65,12 +73,14 @@ fun WeekHubScreen(
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        WeekNavRow(
-            weekStartDate = selectedWeekStart,
-            onPrevious = { selectedWeekStart = LocalDate.parse(selectedWeekStart).minusWeeks(1).toString() },
-            onNext = { selectedWeekStart = LocalDate.parse(selectedWeekStart).plusWeeks(1).toString() },
-            onToday = { selectedWeekStart = DateUtil.currentWeekStart().toString() }
-        )
+        if (selectedTab != WeekHubTab.COLLECTION) {
+            WeekNavRow(
+                weekStartDate = selectedWeekStart,
+                onPrevious = { selectedWeekStart = LocalDate.parse(selectedWeekStart).minusWeeks(1).toString() },
+                onNext = { selectedWeekStart = LocalDate.parse(selectedWeekStart).plusWeeks(1).toString() },
+                onToday = { selectedWeekStart = DateUtil.currentWeekStart().toString() }
+            )
+        }
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -88,9 +98,16 @@ fun WeekHubScreen(
         }
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                WeekHubTab.WEEKLY_MENU -> WeeklyMenuScreen(weeklyMenuViewModel)
-                WeekHubTab.DAILY_PLAN -> DailyPlanScreen(dailyPlanViewModel)
                 WeekHubTab.TASK_MANAGER -> ThisWeekScreen(taskManagerViewModel)
+                WeekHubTab.DAILY_PLAN -> DailyPlanScreen(dailyPlanViewModel)
+                WeekHubTab.COLLECTION -> CollectionScreen(
+                    recipeViewModel = recipeViewModel,
+                    bookViewModel = bookViewModel,
+                    futureProjectViewModel = futureProjectViewModel,
+                    onOpenRecipe = onOpenRecipe,
+                    onOpenBook = onOpenBook,
+                    onOpenFutureProject = onOpenFutureProject
+                )
             }
         }
     }

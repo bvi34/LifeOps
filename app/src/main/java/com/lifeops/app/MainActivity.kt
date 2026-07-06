@@ -179,37 +179,78 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             startDestination = Screen.ThisWeek.route,
             modifier = Modifier.padding(innerPadding)
         ) {
-            composable(Screen.ThisWeek.route) {
-                val taskManagerVm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
-                    factory = ThisWeekViewModelFactory(
-                        app,
-                        app.applicationScope,
-                        app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
-                        app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
-                        app.costResourceRepository, app.projectRepository, app.preferencesRepository,
-                        app.runbookRepository, app.templateRepository, app.counterRepository
+            // This Week — Tasks/Daily Plan/Collection hub, plus the Collection detail screens
+            // (recipes, books, future projects) it drills into.
+            navigation(startDestination = "this_week_hub", route = Screen.ThisWeek.route) {
+                composable("this_week_hub") {
+                    val taskManagerVm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
+                        factory = ThisWeekViewModelFactory(
+                            app,
+                            app.applicationScope,
+                            app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
+                            app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
+                            app.costResourceRepository, app.projectRepository, app.preferencesRepository,
+                            app.runbookRepository, app.templateRepository, app.counterRepository
+                        )
                     )
-                )
-                val weeklyMenuVm = viewModel<com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuViewModel>(
-                    factory = com.lifeops.app.ui.screens.weeklymenu.WeeklyMenuViewModelFactory(
-                        app.weeklyMenuItemRepository, app.recipeRepository
+                    val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
+                        factory = com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModelFactory(
+                            app.foodLogRepository, app.foodItemRepository
+                        )
                     )
-                )
-                val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
-                    factory = com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModelFactory(
-                        app.foodLogRepository, app.foodItemRepository
+                    val recipeVm = viewModel<com.lifeops.app.ui.screens.collection.RecipeViewModel>(
+                        factory = com.lifeops.app.ui.screens.collection.RecipeViewModelFactory(app.recipeRepository)
                     )
-                )
-                com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
-                    weeklyMenuViewModel = weeklyMenuVm,
-                    dailyPlanViewModel = dailyPlanVm,
-                    taskManagerViewModel = taskManagerVm,
-                    sharedText = sharedText,
-                    onImportShared = { text ->
-                        taskManagerVm.onImportJsonChange(text)
-                        taskManagerVm.openImportDialog()
-                    }
-                )
+                    val bookVm = viewModel<com.lifeops.app.ui.screens.collection.BookViewModel>(
+                        factory = com.lifeops.app.ui.screens.collection.BookViewModelFactory(app.bookRepository)
+                    )
+                    val futureProjectVm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectViewModel>(
+                        factory = com.lifeops.app.ui.screens.collection.FutureProjectViewModelFactory(app.futureProjectRepository)
+                    )
+                    com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
+                        dailyPlanViewModel = dailyPlanVm,
+                        taskManagerViewModel = taskManagerVm,
+                        recipeViewModel = recipeVm,
+                        bookViewModel = bookVm,
+                        futureProjectViewModel = futureProjectVm,
+                        onOpenRecipe = { id -> navController.navigate("recipe_detail/$id") },
+                        onOpenBook = { id -> navController.navigate("book_detail/$id") },
+                        onOpenFutureProject = { id -> navController.navigate("future_project_detail/$id") },
+                        sharedText = sharedText,
+                        onImportShared = { text ->
+                            taskManagerVm.onImportJsonChange(text)
+                            taskManagerVm.openImportDialog()
+                        }
+                    )
+                }
+                composable("recipe_detail/{recipeId}") { backStackEntry ->
+                    val recipeId = backStackEntry.arguments?.getString("recipeId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.collection.RecipeDetailViewModel>(
+                        key = "recipe_detail_$recipeId",
+                        factory = com.lifeops.app.ui.screens.collection.RecipeDetailViewModelFactory(
+                            recipeId, app.recipeRepository, app.foodItemRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.collection.RecipeDetailScreen(vm) { navController.navigateUp() }
+                }
+                composable("book_detail/{bookId}") { backStackEntry ->
+                    val bookId = backStackEntry.arguments?.getString("bookId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.collection.BookDetailViewModel>(
+                        key = "book_detail_$bookId",
+                        factory = com.lifeops.app.ui.screens.collection.BookDetailViewModelFactory(bookId, app.bookRepository)
+                    )
+                    com.lifeops.app.ui.screens.collection.BookDetailScreen(vm) { navController.navigateUp() }
+                }
+                composable("future_project_detail/{projectId}") { backStackEntry ->
+                    val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModel>(
+                        key = "future_project_detail_$projectId",
+                        factory = com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModelFactory(
+                            projectId, app.futureProjectRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.collection.FutureProjectDetailScreen(vm) { navController.navigateUp() }
+                }
             }
 
             // Planning — forward-looking management screens, reached via a hub.

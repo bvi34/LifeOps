@@ -20,6 +20,7 @@ class RecipeRepositoryTest {
         val ingredients = mutableListOf<RecipeIngredientEntity>()
         override fun observeAll(): Flow<List<RecipeEntity>> = flowOf(recipes)
         override suspend fun getById(id: String): RecipeEntity? = recipes.firstOrNull { it.id == id }
+        override fun observeById(id: String): Flow<RecipeEntity?> = flowOf(recipes.firstOrNull { it.id == id })
         override suspend fun upsert(recipe: RecipeEntity) { recipes.removeAll { it.id == recipe.id }; recipes += recipe }
         override suspend fun delete(id: String) { recipes.removeAll { it.id == id } }
         override suspend fun getIngredients(recipeId: String): List<RecipeIngredientEntity> =

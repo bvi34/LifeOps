@@ -1,0 +1,51 @@
+package com.lifeops.app.data.repository
+
+import com.lifeops.app.data.db.dao.BookDao
+import com.lifeops.app.data.model.Book
+import com.lifeops.app.data.model.BookNote
+import com.lifeops.app.data.model.BookStatus
+import com.lifeops.app.data.model.BookTimeEntry
+import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.toEntity
+import com.lifeops.app.util.toModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import java.util.UUID
+
+class BookRepository(private val bookDao: BookDao) {
+    fun observeAll(): Flow<List<Book>> = bookDao.observeAll().map { list -> list.map { it.toModel() } }
+    fun observeById(id: String): Flow<Book?> = bookDao.observeById(id).map { it?.toModel() }
+    fun observeNotes(bookId: String): Flow<List<BookNote>> = bookDao.observeNotes(bookId).map { list -> list.map { it.toModel() } }
+    fun observeTimeEntries(bookId: String): Flow<List<BookTimeEntry>> = bookDao.observeTimeEntries(bookId).map { list -> list.map { it.toModel() } }
+
+    suspend fun createBook(title: String, author: String?): Book {
+        val book = Book(UUID.randomUUID().toString(), title, author, BookStatus.TO_READ, DateUtil.now())
+        bookDao.upsert(book.toEntity())
+        return book
+    }
+
+    suspend fun updateBook(book: Book, title: String, author: String?) {
+        bookDao.upsert(book.copy(title = title, author = author).toEntity())
+    }
+
+    suspend fun setStatus(book: Book, status: BookStatus) {
+        val completedAt = if (status == BookStatus.DONE) DateUtil.now() else null
+        bookDao.upsert(book.copy(status = status, completedAt = completedAt).toEntity())
+    }
+
+    suspend fun deleteBook(id: String) = bookDao.delete(id)
+
+    suspend fun addNote(bookId: String, content: String) {
+        bookDao.insertNote(BookNote(UUID.randomUUID().toString(), bookId, content, DateUtil.now()).toEntity())
+    }
+
+    suspend fun deleteNote(id: String) = bookDao.deleteNote(id)
+
+    suspend fun addTimeEntry(bookId: String, durationMinutes: Int, note: String?) {
+        bookDao.insertTimeEntry(
+            BookTimeEntry(UUID.randomUUID().toString(), bookId, durationMinutes, note, DateUtil.now()).toEntity()
+        )
+    }
+
+    suspend fun deleteTimeEntry(id: String) = bookDao.deleteTimeEntry(id)
+}
