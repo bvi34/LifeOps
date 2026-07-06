@@ -19,12 +19,21 @@ class RecipeRepository(
     private val foodItemDao: FoodItemDao
 ) {
     fun observeAll(): Flow<List<Recipe>> = recipeDao.observeAll().map { list -> list.map { it.toModel() } }
+    fun observeById(id: String): Flow<Recipe?> = recipeDao.observeById(id).map { it?.toModel() }
+    fun observeIngredients(recipeId: String): Flow<List<RecipeIngredient>> =
+        recipeDao.observeIngredients(recipeId).map { list -> list.map { it.toModel() } }
 
     suspend fun createRecipe(name: String, servings: Double = 1.0): Recipe {
         val recipe = Recipe(UUID.randomUUID().toString(), name, servings, DateUtil.now())
         recipeDao.upsert(recipe.toEntity())
         return recipe
     }
+
+    suspend fun updateRecipe(recipe: Recipe, name: String, servings: Double) {
+        recipeDao.upsert(recipe.copy(name = name, servings = servings).toEntity())
+    }
+
+    suspend fun deleteRecipe(id: String) = recipeDao.delete(id)
 
     suspend fun addIngredient(recipeId: String, foodItemId: String, quantity: Double, unit: IngredientUnit): RecipeIngredient {
         val sortOrder = recipeDao.getIngredients(recipeId).size

@@ -479,3 +479,42 @@ data class WeeklyMenuItem(
     val mealType: String? = null,
     val createdAt: String
 )
+
+enum class BookStatus {
+    TO_READ, READING, DONE;
+    companion object {
+        fun from(value: String) = entries.firstOrNull { it.name == value } ?: TO_READ
+    }
+}
+
+data class Book(
+    val id: String,
+    val title: String,
+    val author: String? = null,
+    val status: BookStatus = BookStatus.TO_READ,
+    val createdAt: String,
+    val completedAt: String? = null
+)
+
+data class BookNote(
+    val id: String,
+    val bookId: String,
+    val content: String,
+    val createdAt: String
+)
+
+data class BookTimeEntry(
+    val id: String,
+    val bookId: String,
+    val durationMinutes: Int,
+    val note: String? = null,
+    val recordedAt: String
+)
+
+data class FutureProject(
+    val id: String,
+    val title: String,
+    val content: String = "",
+    val createdAt: String,
+    val updatedAt: String
+)

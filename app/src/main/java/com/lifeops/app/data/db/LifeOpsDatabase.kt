@@ -489,6 +489,57 @@ private val MIGRATION_23_24 = object : Migration(23, 24) {
     }
 }
 
+private val MIGRATION_24_25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Collection: recipe library (reusing existing recipes table), books to read, and
+        // long-form future-project notes. All new tables, no existing schema touched.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS books (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                author TEXT,
+                status TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                completedAt TEXT
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS book_notes (
+                id TEXT NOT NULL PRIMARY KEY,
+                bookId TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(bookId) REFERENCES books(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_book_notes_bookId ON book_notes(bookId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS book_time_entries (
+                id TEXT NOT NULL PRIMARY KEY,
+                bookId TEXT NOT NULL,
+                durationMinutes INTEGER NOT NULL,
+                note TEXT,
+                recordedAt TEXT NOT NULL,
+                FOREIGN KEY(bookId) REFERENCES books(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_book_time_entries_bookId ON book_time_entries(bookId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_book_time_entries_recordedAt ON book_time_entries(recordedAt)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS future_projects (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                updatedAt TEXT NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -516,9 +567,13 @@ private val MIGRATION_23_24 = object : Migration(23, 24) {
         RecipeEntity::class,
         RecipeIngredientEntity::class,
         FoodLogEntryEntity::class,
-        WeeklyMenuItemEntity::class
+        WeeklyMenuItemEntity::class,
+        BookEntity::class,
+        BookNoteEntity::class,
+        BookTimeEntryEntity::class,
+        FutureProjectEntity::class
     ],
-    version = 24,
+    version = 25,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -544,6 +599,8 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun recipeDao(): RecipeDao
     abstract fun foodLogDao(): FoodLogDao
     abstract fun weeklyMenuItemDao(): WeeklyMenuItemDao
+    abstract fun bookDao(): BookDao
+    abstract fun futureProjectDao(): FutureProjectDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -555,7 +612,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
                     .build()
                     .also { INSTANCE = it }
             }
