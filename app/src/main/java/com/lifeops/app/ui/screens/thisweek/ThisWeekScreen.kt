@@ -477,6 +477,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             projects = state.projects,
             runbooks = state.runbooks,
             counters = state.counters,
+            currentWeekEndDate = state.week?.endDate,
             onCreateProject = viewModel::onCreateProject,
             onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId ->
                 viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId)
@@ -502,7 +503,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
 
     if (showCloseConfirm) {
         val completedCount = state.rawTasks.count { it.status == TaskStatus.COMPLETED }
-        val totalRelevant = state.rawTasks.count { it.status != TaskStatus.CARRIED_FORWARD }
+        val totalRelevant = state.rawTasks.count { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
         val carriedCount = state.rawTasks.count { it.status == TaskStatus.CARRIED_FORWARD }
         val pendingCount = state.rawTasks.count { it.status == TaskStatus.PENDING }
         val hdHits = state.rawTasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }

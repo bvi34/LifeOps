@@ -718,6 +718,7 @@ private fun StatusChip(status: TaskStatus) {
         TaskStatus.EXPIRED -> MaterialTheme.colorScheme.error to "Expired"
         TaskStatus.CARRIED_FORWARD -> MaterialTheme.colorScheme.secondary to "Carried"
         TaskStatus.UNSUCCESSFUL -> MaterialTheme.colorScheme.outline to "Unsuccessful"
+        TaskStatus.QUEUED -> MaterialTheme.colorScheme.secondary to "Queued"
     }
     Surface(
         shape = MaterialTheme.shapes.extraSmall,

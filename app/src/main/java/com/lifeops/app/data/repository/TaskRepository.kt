@@ -96,8 +96,13 @@ class TaskRepository(
             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
 
         val newTasksToSchedule = mutableListOf<Task>()
+        val newWeek = weekDao.getById(newWeekId)
 
         db.withTransaction {
+            // Queued (future-dated) tasks ride into the new week before the snapshot is
+            // built, then any whose due date now falls inside it become live.
+            taskDao.moveQueuedToWeek(weekId, newWeekId)
+            newWeek?.let { taskDao.activateQueuedDueBy(it.id, it.endDate) }
             pending.forEach { task ->
                 val newStatus = if (task.hardDeadline) TaskStatus.EXPIRED.value else TaskStatus.INCOMPLETE.value
                 taskDao.updateStatus(task.id, newStatus)
@@ -436,6 +441,26 @@ class TaskRepository(
                 taskDao.upsert(newTask)
             }
         }
+    }
+
+    fun observeQueuedTasks(): Flow<List<Task>> =
+        taskDao.observeQueued().map { list -> list.map { it.toModel() } }
+
+    /** Flip queued tasks whose due date falls within [week] to pending (idempotent). */
+    suspend fun activateDueQueuedTasks(week: Week) =
+        taskDao.activateQueuedDueBy(week.id, week.endDate)
+
+    /** Pull a queued task into the current week ahead of its due date. */
+    suspend fun activateQueuedTaskNow(taskId: String) {
+        val task = taskDao.getById(taskId) ?: return
+        if (task.status != TaskStatus.QUEUED.value) return
+        val week = weekRepository.getOrCreateCurrentWeek()
+        taskDao.update(task.copy(weekId = week.id, status = TaskStatus.PENDING.value))
+    }
+
+    suspend fun deleteTask(taskId: String) {
+        notificationRepository.cancelForTask(taskId)
+        taskDao.delete(taskId)
     }
 
     suspend fun getSlugsByWeek(weekId: String): Set<String> =

@@ -96,6 +96,9 @@ class LifeOpsApp : Application() {
             if (previousWeek != null) {
                 taskRepository.seedRecurringTasks(previousWeek.id, currentWeek.id)
             }
+            // Wake queued tasks whose due date now falls inside the current week (normally
+            // handled at week close; this catches restores/imports and clock changes).
+            taskRepository.activateDueQueuedTasks(currentWeek)
             gameResourceRepository.ensureDefaultSlots()
             notificationRepository.scheduleWeekCloseReminder()
         }

@@ -26,6 +26,7 @@ fun CreateTaskDialog(
     projects: List<Project> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
     counters: List<Counter> = emptyList(),
+    currentWeekEndDate: String? = null,
     onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onConfirm: (
         title: String,
@@ -254,6 +255,14 @@ fun CreateTaskDialog(
                     onDateSelected = { dueDate = it ?: "" },
                     modifier = Modifier.fillMaxWidth()
                 )
+                // ISO dates compare lexicographically, so a plain string compare is safe here.
+                if (currentWeekEndDate != null && dueDate.isNotBlank() && dueDate > currentWeekEndDate) {
+                    Text(
+                        "Due after this week — it will wait in Future Tasks (Planning tab) until its week arrives.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                }
 
                 OutlinedTextField(
                     value = estimatedMinutes,

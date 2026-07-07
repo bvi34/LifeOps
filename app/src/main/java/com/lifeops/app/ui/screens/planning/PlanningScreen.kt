@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import com.lifeops.app.ui.components.HubCard
  */
 @Composable
 fun PlanningScreen(
+    onOpenFutureTasks: () -> Unit,
     onOpenProjects: () -> Unit,
     onOpenCounters: () -> Unit,
     onOpenRunbooks: () -> Unit,
@@ -41,6 +43,14 @@ fun PlanningScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                HubCard(
+                    title = "Future Tasks",
+                    subtitle = "Queued until their due date's week arrives",
+                    icon = Icons.Default.Schedule,
+                    onClick = onOpenFutureTasks
+                )
+            }
             item {
                 HubCard(
                     title = "Projects",
