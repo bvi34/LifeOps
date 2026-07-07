@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -134,7 +135,9 @@ private fun TimeEntryRow(entry: BookTimeEntry, onDelete: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("${entry.durationMinutes} min", style = MaterialTheme.typography.bodyMedium)
                 entry.note?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    SelectionContainer {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    }
                 }
             }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete time entry") }
@@ -146,7 +149,9 @@ private fun TimeEntryRow(entry: BookTimeEntry, onDelete: () -> Unit) {
 private fun NoteRow(note: BookNote, onDelete: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.padding(12.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(note.content, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            SelectionContainer(modifier = Modifier.weight(1f)) {
+                Text(note.content, style = MaterialTheme.typography.bodyMedium)
+            }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete note") }
         }
     }

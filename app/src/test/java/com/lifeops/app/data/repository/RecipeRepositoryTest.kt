@@ -19,6 +19,8 @@ class RecipeRepositoryTest {
         val recipes = mutableListOf<RecipeEntity>()
         val ingredients = mutableListOf<RecipeIngredientEntity>()
         override fun observeAll(): Flow<List<RecipeEntity>> = flowOf(recipes)
+        override suspend fun getAll(): List<RecipeEntity> = recipes.toList()
+        override suspend fun getAllIngredients(): List<RecipeIngredientEntity> = ingredients.toList()
         override suspend fun getById(id: String): RecipeEntity? = recipes.firstOrNull { it.id == id }
         override fun observeById(id: String): Flow<RecipeEntity?> = flowOf(recipes.firstOrNull { it.id == id })
         override suspend fun upsert(recipe: RecipeEntity) { recipes.removeAll { it.id == recipe.id }; recipes += recipe }
@@ -36,6 +38,7 @@ class RecipeRepositoryTest {
     private class FakeFoodItemDao : FoodItemDao {
         val items = mutableListOf<FoodItemEntity>()
         override suspend fun getById(id: String): FoodItemEntity? = items.firstOrNull { it.id == id }
+        override suspend fun getAll(): List<FoodItemEntity> = items.toList()
         override suspend fun getByFdcId(fdcId: Long): FoodItemEntity? = items.firstOrNull { it.fdcId == fdcId }
         override suspend fun search(query: String, limit: Int): List<FoodItemEntity> = emptyList()
         override suspend fun upsert(item: FoodItemEntity) { items.removeAll { it.id == item.id }; items += item }

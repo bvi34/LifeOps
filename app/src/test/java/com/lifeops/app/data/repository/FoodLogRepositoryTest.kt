@@ -38,6 +38,7 @@ class FoodLogRepositoryTest {
     private class FakeFoodItemDao : FoodItemDao {
         val items = mutableListOf<FoodItemEntity>()
         override suspend fun getById(id: String): FoodItemEntity? = items.firstOrNull { it.id == id }
+        override suspend fun getAll(): List<FoodItemEntity> = items.toList()
         override suspend fun getByFdcId(fdcId: Long): FoodItemEntity? = null
         override suspend fun search(query: String, limit: Int): List<FoodItemEntity> = emptyList()
         override suspend fun upsert(item: FoodItemEntity) { items.removeAll { it.id == item.id }; items += item }
