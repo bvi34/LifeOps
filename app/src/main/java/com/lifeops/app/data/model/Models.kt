@@ -18,7 +18,11 @@ enum class TaskStatus(val value: String) {
     INCOMPLETE("incomplete"),
     EXPIRED("expired"),
     CARRIED_FORWARD("carried_forward"),
-    UNSUCCESSFUL("unsuccessful");
+    UNSUCCESSFUL("unsuccessful"),
+
+    // Due date falls beyond the current week: the task waits in the Future Tasks queue
+    // (Planning tab), rides along on week close, and flips to PENDING once its week arrives.
+    QUEUED("queued");
 
     companion object {
         fun from(value: String) = entries.firstOrNull { it.value == value } ?: PENDING

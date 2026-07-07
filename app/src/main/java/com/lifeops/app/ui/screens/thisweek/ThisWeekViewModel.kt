@@ -222,7 +222,7 @@ class ThisWeekViewModel(
     }
 
     private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
-        val relevant = tasks.filter { it.status != TaskStatus.CARRIED_FORWARD }
+        val relevant = tasks.filter { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
         val completed = relevant.count { it.status == TaskStatus.COMPLETED }
         val total = relevant.size
         val totalTime = timeByTask.values.sum()
@@ -282,8 +282,11 @@ class ThisWeekViewModel(
         searchQuery: String,
         overdueOnly: Boolean = false
     ): List<GroupedTasks> {
-        var filtered = if (searchQuery.isBlank()) tasks
-                       else tasks.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        // Queued (future-week) tasks live in the Planning tab's Future Tasks screen, not here.
+        var filtered = tasks.filter { it.status != TaskStatus.QUEUED }
+        if (searchQuery.isNotBlank()) {
+            filtered = filtered.filter { it.title.contains(searchQuery, ignoreCase = true) }
+        }
         if (overdueOnly) {
             val today = java.time.LocalDate.now().toString()
             filtered = filtered.filter { task ->
@@ -561,6 +564,11 @@ class ThisWeekViewModel(
             val resourceValue = ImportParser.computeResourceValue(
                 priority.label, hardDeadline, estimatedMinutes, isManuallyAdded = true
             )
+            // Due beyond this week? Park it in the Future Tasks queue; it becomes pending
+            // once a week containing its due date opens (see TaskRepository.closeWeek).
+            val validDueDate = dueDate?.takeIf { DateUtil.isValidDate(it) }
+            val status = if (validDueDate != null && validDueDate > week.endDate) TaskStatus.QUEUED
+                         else TaskStatus.PENDING
             val task = Task(
                 id = UUID.randomUUID().toString(),
                 weekId = week.id,
@@ -568,9 +576,9 @@ class ThisWeekViewModel(
                 aspectId = aspectId,
                 categoryId = categoryId,
                 priority = priority,
-                dueDate = dueDate,
+                dueDate = validDueDate,
                 hardDeadline = hardDeadline,
-                status = TaskStatus.PENDING,
+                status = status,
                 resourceValue = resourceValue,
                 createdAt = DateUtil.now(),
                 isRecurring = isRecurring,
@@ -666,10 +674,20 @@ class ThisWeekViewModel(
             val newResourceValue = ImportParser.computeResourceValue(
                 priority.label, hardDeadline, estimatedMinutes, task.isManuallyAdded
             )
+            // Editing the due date across the week boundary moves the task in/out of the queue.
+            val weekEnd = _uiState.value.week?.endDate
+            val newStatus = when {
+                task.status == TaskStatus.PENDING && weekEnd != null &&
+                    validatedDueDate != null && validatedDueDate > weekEnd -> TaskStatus.QUEUED
+                task.status == TaskStatus.QUEUED &&
+                    (validatedDueDate == null || weekEnd == null || validatedDueDate <= weekEnd) -> TaskStatus.PENDING
+                else -> task.status
+            }
             val updatedTask = task.copy(
                 title = title,
                 priority = priority,
                 dueDate = validatedDueDate,
+                status = newStatus,
                 hardDeadline = hardDeadline,
                 resourceValue = newResourceValue,
                 isRecurring = isRecurring,

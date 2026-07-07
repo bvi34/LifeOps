@@ -257,12 +257,21 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             navigation(startDestination = "planning_hub", route = Screen.Planning.route) {
                 composable("planning_hub") {
                     PlanningScreen(
+                        onOpenFutureTasks = { navController.navigate("future_tasks") },
                         onOpenProjects = { navController.navigate("projects") },
                         onOpenCounters = { navController.navigate("counters") },
                         onOpenRunbooks = { navController.navigate("runbooks") },
                         onOpenTemplates = { navController.navigate("templates") },
                         onOpenCostResources = { navController.navigate("cost_resources") }
                     )
+                }
+                composable("future_tasks") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.FutureTasksViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.FutureTasksViewModelFactory(
+                            app.taskRepository, app.aspectRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.FutureTasksScreen(vm) { navController.navigateUp() }
                 }
                 composable("projects") {
                     val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)

@@ -45,8 +45,19 @@ interface TaskDao {
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun delete(id: String)
 
-    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND isRecurring = 1")
+    // Queued tasks are excluded so a future-dated recurring task neither gets seeded as a
+    // pending duplicate nor suppresses seeding of the target week's other recurring tasks.
+    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND isRecurring = 1 AND status != 'queued'")
     suspend fun getRecurringByWeek(weekId: String): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE status = 'queued' ORDER BY COALESCE(dueDate, '9999') ASC, createdAt ASC")
+    fun observeQueued(): Flow<List<TaskEntity>>
+
+    @Query("UPDATE tasks SET weekId = :toWeekId WHERE weekId = :fromWeekId AND status = 'queued'")
+    suspend fun moveQueuedToWeek(fromWeekId: String, toWeekId: String)
+
+    @Query("UPDATE tasks SET status = 'pending' WHERE weekId = :weekId AND status = 'queued' AND dueDate IS NOT NULL AND dueDate <= :endDate")
+    suspend fun activateQueuedDueBy(weekId: String, endDate: String)
 
     @Query("SELECT * FROM tasks WHERE carriedCount > 0 AND status != 'carried_forward' ORDER BY carriedCount DESC")
     suspend fun getTasksWithCarryHistory(): List<TaskEntity>
