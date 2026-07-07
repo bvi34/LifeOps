@@ -5,6 +5,7 @@ package com.lifeops.app.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -565,13 +566,17 @@ fun TaskDetailSheet(
                     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f),
                     modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
                 )
-                ancestorNotes.forEach { note ->
-                    Text(
-                        "• ${note.content}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(vertical = 1.dp)
-                    )
+                SelectionContainer {
+                    Column {
+                        ancestorNotes.forEach { note ->
+                            Text(
+                                "• ${note.content}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                                modifier = Modifier.padding(vertical = 1.dp)
+                            )
+                        }
+                    }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             }
@@ -583,16 +588,20 @@ fun TaskDetailSheet(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
             } else {
-                notes.forEach { note ->
-                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                        Text(note.content, style = MaterialTheme.typography.bodyMedium)
-                        Text(
-                            note.createdAt.take(10),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        )
+                SelectionContainer {
+                    Column {
+                        notes.forEach { note ->
+                            Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                                Text(note.content, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    note.createdAt.take(10),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                            HorizontalDivider()
+                        }
                     }
-                    HorizontalDivider()
                 }
             }
 

@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 5,
+    val version: Int = 6,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -29,6 +29,15 @@ private data class BackupData(
     val costResources: List<CostResourceEntity> = emptyList(),
     val taskCostEntries: List<TaskCostEntryEntity> = emptyList(),
     val projects: List<ProjectEntity> = emptyList(),
+    // Collection hub (v6): books, recipes, and future project ideas. Food items ride along
+    // because recipe ingredients hold a foreign key into them.
+    val books: List<BookEntity> = emptyList(),
+    val bookNotes: List<BookNoteEntity> = emptyList(),
+    val bookTimeEntries: List<BookTimeEntryEntity> = emptyList(),
+    val foodItems: List<FoodItemEntity> = emptyList(),
+    val recipes: List<RecipeEntity> = emptyList(),
+    val recipeIngredients: List<RecipeIngredientEntity> = emptyList(),
+    val futureProjects: List<FutureProjectEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -48,6 +57,13 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             costResources = db.costResourceDao().getAllSync(),
             taskCostEntries = db.taskCostEntryDao().getAll(),
             projects = db.projectDao().getAll(),
+            books = db.bookDao().getAll(),
+            bookNotes = db.bookDao().getAllNotes(),
+            bookTimeEntries = db.bookDao().getAllTimeEntries(),
+            foodItems = db.foodItemDao().getAll(),
+            recipes = db.recipeDao().getAll(),
+            recipeIngredients = db.recipeDao().getAllIngredients(),
+            futureProjects = db.futureProjectDao().getAll(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -103,6 +119,14 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (r in data.costResources) db.costResourceDao().upsert(r)
                 for (ce in data.taskCostEntries) db.taskCostEntryDao().insert(ce)
                 for (p in data.projects) db.projectDao().upsert(p)
+                for (b in data.books) db.bookDao().upsert(b)
+                for (bn in data.bookNotes) db.bookDao().insertNote(bn)
+                for (bt in data.bookTimeEntries) db.bookDao().insertTimeEntry(bt)
+                // Food items before recipe ingredients: ingredients reference them by FK.
+                for (fi in data.foodItems) db.foodItemDao().upsert(fi)
+                for (rc in data.recipes) db.recipeDao().upsert(rc)
+                for (ri in data.recipeIngredients) db.recipeDao().upsertIngredient(ri)
+                for (fp in data.futureProjects) db.futureProjectDao().upsert(fp)
             }
             Result.success(Unit)
         } catch (e: Exception) {

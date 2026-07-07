@@ -12,6 +12,9 @@ interface FutureProjectDao {
     @Query("SELECT * FROM future_projects ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<FutureProjectEntity>>
 
+    @Query("SELECT * FROM future_projects")
+    suspend fun getAll(): List<FutureProjectEntity>
+
     @Query("SELECT * FROM future_projects WHERE id = :id")
     fun observeById(id: String): Flow<FutureProjectEntity?>
 

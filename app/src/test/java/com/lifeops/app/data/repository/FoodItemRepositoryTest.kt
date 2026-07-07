@@ -12,6 +12,7 @@ class FoodItemRepositoryTest {
     private class FakeFoodItemDao : FoodItemDao {
         val items = mutableListOf<FoodItemEntity>()
         override suspend fun getById(id: String): FoodItemEntity? = items.firstOrNull { it.id == id }
+        override suspend fun getAll(): List<FoodItemEntity> = items.toList()
         override suspend fun getByFdcId(fdcId: Long): FoodItemEntity? = items.firstOrNull { it.fdcId == fdcId }
         override suspend fun search(query: String, limit: Int): List<FoodItemEntity> =
             items.filter { it.name.contains(query, ignoreCase = true) || it.brand?.contains(query, ignoreCase = true) == true }

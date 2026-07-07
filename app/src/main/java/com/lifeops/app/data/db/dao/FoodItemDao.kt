@@ -11,6 +11,9 @@ interface FoodItemDao {
     @Query("SELECT * FROM food_items WHERE id = :id")
     suspend fun getById(id: String): FoodItemEntity?
 
+    @Query("SELECT * FROM food_items")
+    suspend fun getAll(): List<FoodItemEntity>
+
     @Query("SELECT * FROM food_items WHERE fdcId = :fdcId LIMIT 1")
     suspend fun getByFdcId(fdcId: Long): FoodItemEntity?
 

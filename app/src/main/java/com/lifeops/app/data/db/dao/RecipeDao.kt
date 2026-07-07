@@ -13,6 +13,12 @@ interface RecipeDao {
     @Query("SELECT * FROM recipes ORDER BY name")
     fun observeAll(): Flow<List<RecipeEntity>>
 
+    @Query("SELECT * FROM recipes")
+    suspend fun getAll(): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipe_ingredients")
+    suspend fun getAllIngredients(): List<RecipeIngredientEntity>
+
     @Query("SELECT * FROM recipes WHERE id = :id")
     suspend fun getById(id: String): RecipeEntity?
 

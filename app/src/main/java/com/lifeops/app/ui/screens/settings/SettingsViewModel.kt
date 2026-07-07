@@ -376,6 +376,7 @@ class SettingsViewModel(
                     val warning = when {
                         version < 2 -> "Older backup (v$version) — cost resource and project data not included."
                         version < 3 -> "Backup from before project tracking — project assignments not included."
+                        version < 6 -> "Backup from before the Collection hub — recipes, books, and future projects not included."
                         else -> null
                     }
                     _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null, restoreWarning = warning) }
