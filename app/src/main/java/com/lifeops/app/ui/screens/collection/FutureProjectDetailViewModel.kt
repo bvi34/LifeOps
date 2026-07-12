@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.FutureProject
+import com.lifeops.app.data.model.FutureProjectNote
 import com.lifeops.app.data.repository.FutureProjectRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,7 +13,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class FutureProjectDetailUiState(val project: FutureProject? = null)
+data class FutureProjectDetailUiState(
+    val project: FutureProject? = null,
+    val notes: List<FutureProjectNote> = emptyList()
+)
 
 class FutureProjectDetailViewModel(
     private val projectId: String,
@@ -27,11 +31,20 @@ class FutureProjectDetailViewModel(
                 _uiState.update { it.copy(project = project) }
             }
         }
+        viewModelScope.launch {
+            futureProjectRepository.observeNotes(projectId).collectLatest { notes ->
+                _uiState.update { it.copy(notes = notes) }
+            }
+        }
     }
 
-    fun save(title: String, content: String) {
+    fun saveTitle(title: String) {
         val project = _uiState.value.project ?: return
-        viewModelScope.launch { futureProjectRepository.save(project, title, content) }
+        viewModelScope.launch { futureProjectRepository.saveTitle(project, title) }
+    }
+
+    fun addNote(content: String) {
+        viewModelScope.launch { futureProjectRepository.addNote(projectId, content) }
     }
 
     fun delete(onDeleted: () -> Unit) {

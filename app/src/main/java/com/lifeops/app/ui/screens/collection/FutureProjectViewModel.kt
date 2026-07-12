@@ -3,7 +3,7 @@ package com.lifeops.app.ui.screens.collection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lifeops.app.data.model.FutureProject
+import com.lifeops.app.data.repository.FutureProjectListItem
 import com.lifeops.app.data.repository.FutureProjectRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class FutureProjectListUiState(
-    val projects: List<FutureProject> = emptyList(),
+    val projects: List<FutureProjectListItem> = emptyList(),
     val showCreateDialog: Boolean = false
 )
 

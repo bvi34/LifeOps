@@ -16,7 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeops.app.data.model.FutureProject
+import com.lifeops.app.data.repository.FutureProjectListItem
 
 @Composable
 fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (String) -> Unit) {
@@ -43,8 +43,8 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(state.projects, key = { it.id }) { project ->
-                    FutureProjectCard(project, onClick = { onOpenProject(project.id) })
+                items(state.projects, key = { it.project.id }) { item ->
+                    FutureProjectCard(item, onClick = { onOpenProject(item.project.id) })
                 }
             }
         }
@@ -59,13 +59,13 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
 }
 
 @Composable
-private fun FutureProjectCard(project: FutureProject, onClick: () -> Unit) {
+private fun FutureProjectCard(item: FutureProjectListItem, onClick: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text(project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (project.content.isNotBlank()) {
+            Text(item.project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            item.latestNote?.let { latest ->
                 Text(
-                    project.content,
+                    latest,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     maxLines = 2

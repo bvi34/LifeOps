@@ -3,7 +3,12 @@
 package com.lifeops.app.ui.screens.collection
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,15 +21,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 
-/** Autosaves on every field change rather than requiring an explicit save action — this is a
- *  running idea journal, not a form with a submit step. */
+/** Notes are posted as timestamped segments, the same journal shape as task notes — each
+ *  entry is committed once via the composer at the bottom rather than edited in place. */
 @Composable
 fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val project = state.project
 
     var title by rememberSaveable(project?.id) { mutableStateOf(project?.title ?: "") }
-    var content by rememberSaveable(project?.id) { mutableStateOf(project?.content ?: "") }
+    var newNoteText by rememberSaveable(project?.id) { mutableStateOf("") }
+    val listState = rememberLazyListState()
+
+    // Newest notes sit at the bottom next to the composer; keep them in view as they post.
+    LaunchedEffect(state.notes.size) {
+        if (state.notes.isNotEmpty()) listState.animateScrollToItem(state.notes.size - 1)
+    }
 
     Scaffold(
         topBar = {
@@ -48,28 +59,72 @@ fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: (
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+                .padding(16.dp)
         ) {
             OutlinedTextField(
                 value = title,
                 onValueChange = {
                     title = it
-                    viewModel.save(it, content)
+                    viewModel.saveTitle(it)
                 },
                 label = { Text("Title") },
                 textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.fillMaxWidth()
             )
-            OutlinedTextField(
-                value = content,
-                onValueChange = {
-                    content = it
-                    viewModel.save(title, it)
-                },
-                label = { Text("Notes") },
-                modifier = Modifier.fillMaxWidth().weight(1f)
-            )
+
+            Spacer(Modifier.height(12.dp))
+            Text("Notes", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+
+            if (state.notes.isEmpty()) {
+                Text(
+                    "No notes yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                LazyColumn(state = listState, modifier = Modifier.weight(1f)) {
+                    items(state.notes, key = { it.id }) { note ->
+                        SelectionContainer {
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                                Text(note.content, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    note.createdAt.take(10),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                        HorizontalDivider()
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                OutlinedTextField(
+                    value = newNoteText,
+                    onValueChange = { newNoteText = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Add a note…") },
+                    minLines = 1,
+                    maxLines = 4
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(
+                    onClick = {
+                        if (newNoteText.isNotBlank()) {
+                            viewModel.addNote(newNoteText.trim())
+                            newNoteText = ""
+                        }
+                    },
+                    enabled = newNoteText.isNotBlank()
+                ) { Icon(Icons.Default.Add, "Add note") }
+            }
         }
     }
 }
