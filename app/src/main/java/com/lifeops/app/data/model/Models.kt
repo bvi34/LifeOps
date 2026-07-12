@@ -518,7 +518,13 @@ data class BookTimeEntry(
 data class FutureProject(
     val id: String,
     val title: String,
-    val content: String = "",
     val createdAt: String,
     val updatedAt: String
+)
+
+data class FutureProjectNote(
+    val id: String,
+    val projectId: String,
+    val content: String,
+    val createdAt: String
 )

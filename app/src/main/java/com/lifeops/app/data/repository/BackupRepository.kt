@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 6,
+    val version: Int = 7,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -38,6 +38,8 @@ private data class BackupData(
     val recipes: List<RecipeEntity> = emptyList(),
     val recipeIngredients: List<RecipeIngredientEntity> = emptyList(),
     val futureProjects: List<FutureProjectEntity> = emptyList(),
+    // v7: future project notes replace the long-form content blob on future_projects.
+    val futureProjectNotes: List<FutureProjectNoteEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -64,6 +66,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             recipes = db.recipeDao().getAll(),
             recipeIngredients = db.recipeDao().getAllIngredients(),
             futureProjects = db.futureProjectDao().getAll(),
+            futureProjectNotes = db.futureProjectDao().getAllNotes(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -126,7 +129,19 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (fi in data.foodItems) db.foodItemDao().upsert(fi)
                 for (rc in data.recipes) db.recipeDao().upsert(rc)
                 for (ri in data.recipeIngredients) db.recipeDao().upsertIngredient(ri)
-                for (fp in data.futureProjects) db.futureProjectDao().upsert(fp)
+                for (fp in data.futureProjects) db.futureProjectDao().upsert(fp.copy(content = ""))
+                for (fpn in data.futureProjectNotes) db.futureProjectDao().insertNote(fpn)
+                // Backups written before v7 carried one long-form content blob per future
+                // project; fold it into a single catch-up note. The deterministic '-catchup'
+                // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring
+                // onto an already-migrated project) can't duplicate the note.
+                for (fp in data.futureProjects) {
+                    if (fp.content.isNotBlank()) {
+                        db.futureProjectDao().insertNote(
+                            FutureProjectNoteEntity("${fp.id}-catchup", fp.id, fp.content, fp.updatedAt)
+                        )
+                    }
+                }
             }
             Result.success(Unit)
         } catch (e: Exception) {

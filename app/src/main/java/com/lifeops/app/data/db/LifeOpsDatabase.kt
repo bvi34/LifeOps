@@ -540,6 +540,31 @@ private val MIGRATION_24_25 = object : Migration(24, 25) {
     }
 }
 
+private val MIGRATION_25_26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Future projects move from one long-form content blob to posted note segments, the
+        // same shape as task_notes. Each project's existing content is folded into a single
+        // "catch-up" note stamped with the project's updatedAt; the deterministic '-catchup'
+        // id keeps re-runs (and legacy backup restores, see BackupRepository) from duplicating
+        // it. The content column stays behind, emptied, purely for schema/backup compatibility.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS future_project_notes (
+                id TEXT NOT NULL PRIMARY KEY,
+                projectId TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(projectId) REFERENCES future_projects(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_future_project_notes_projectId ON future_project_notes(projectId)")
+        db.execSQL("""
+            INSERT OR REPLACE INTO future_project_notes (id, projectId, content, createdAt)
+            SELECT id || '-catchup', id, content, updatedAt FROM future_projects WHERE TRIM(content) <> ''
+        """.trimIndent())
+        db.execSQL("UPDATE future_projects SET content = ''")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -571,9 +596,10 @@ private val MIGRATION_24_25 = object : Migration(24, 25) {
         BookEntity::class,
         BookNoteEntity::class,
         BookTimeEntryEntity::class,
-        FutureProjectEntity::class
+        FutureProjectEntity::class,
+        FutureProjectNoteEntity::class
     ],
-    version = 25,
+    version = 26,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -612,7 +638,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
                     .build()
                     .also { INSTANCE = it }
             }
