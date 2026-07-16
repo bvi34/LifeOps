@@ -113,8 +113,8 @@ fun BookTimeEntry.toEntity() = BookTimeEntryEntity(id, bookId, durationMinutes, 
 
 // The entity's legacy long-form `content` column stays only for old-backup compatibility;
 // MIGRATION_25_26 folded it into future_project_notes, so notes are the source of truth now.
-fun FutureProjectEntity.toModel() = FutureProject(id, title, createdAt, updatedAt)
-fun FutureProject.toEntity() = FutureProjectEntity(id, title, "", createdAt, updatedAt)
+fun FutureProjectEntity.toModel() = FutureProject(id, title, createdAt, updatedAt, FutureProjectStatus.from(status))
+fun FutureProject.toEntity() = FutureProjectEntity(id, title, "", createdAt, updatedAt, status.value)
 
 fun FutureProjectNoteEntity.toModel() = FutureProjectNote(id, projectId, content, createdAt)
 fun FutureProjectNote.toEntity() = FutureProjectNoteEntity(id, projectId, content, createdAt)

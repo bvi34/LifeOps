@@ -515,11 +515,18 @@ data class BookTimeEntry(
     val recordedAt: String
 )
 
+enum class FutureProjectStatus(val value: String) {
+    ACTIVE("active"),
+    ARCHIVED("archived");
+    companion object { fun from(value: String) = entries.firstOrNull { it.value == value } ?: ACTIVE }
+}
+
 data class FutureProject(
     val id: String,
     val title: String,
     val createdAt: String,
-    val updatedAt: String
+    val updatedAt: String,
+    val status: FutureProjectStatus = FutureProjectStatus.ACTIVE
 )
 
 data class FutureProjectNote(

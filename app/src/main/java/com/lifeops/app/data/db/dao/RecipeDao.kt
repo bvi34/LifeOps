@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.lifeops.app.data.db.entities.RecipeEntity
 import com.lifeops.app.data.db.entities.RecipeIngredientEntity
 import kotlinx.coroutines.flow.Flow
@@ -25,7 +26,9 @@ interface RecipeDao {
     @Query("SELECT * FROM recipes WHERE id = :id")
     fun observeById(id: String): Flow<RecipeEntity?>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert updates in place; @Insert(REPLACE) would delete-and-reinsert the recipe,
+    // cascading away its ingredients.
+    @Upsert
     suspend fun upsert(recipe: RecipeEntity)
 
     @Query("DELETE FROM recipes WHERE id = :id")

@@ -129,7 +129,12 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (fi in data.foodItems) db.foodItemDao().upsert(fi)
                 for (rc in data.recipes) db.recipeDao().upsert(rc)
                 for (ri in data.recipeIngredients) db.recipeDao().upsertIngredient(ri)
-                for (fp in data.futureProjects) db.futureProjectDao().upsert(fp.copy(content = ""))
+                for (fp in data.futureProjects) {
+                    // Backups written before the archive lifecycle carry no status; Gson leaves
+                    // it null despite the Kotlin default, which would violate NOT NULL.
+                    val rawStatus: String? = fp.status
+                    db.futureProjectDao().upsert(fp.copy(content = "", status = rawStatus ?: "active"))
+                }
                 for (fpn in data.futureProjectNotes) db.futureProjectDao().insertNote(fpn)
                 // Backups written before v7 carried one long-form content blob per future
                 // project; fold it into a single catch-up note. The deterministic '-catchup'

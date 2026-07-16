@@ -565,6 +565,14 @@ private val MIGRATION_25_26 = object : Migration(25, 26) {
     }
 }
 
+private val MIGRATION_26_27 = object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Future projects gain an archive lifecycle mirroring projects.status: 'active'
+        // ideas can be archived, or promoted into a real project and archived alongside.
+        db.execSQL("ALTER TABLE future_projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -599,7 +607,7 @@ private val MIGRATION_25_26 = object : Migration(25, 26) {
         FutureProjectEntity::class,
         FutureProjectNoteEntity::class
     ],
-    version = 26,
+    version = 27,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -638,7 +646,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27)
                     .build()
                     .also { INSTANCE = it }
             }

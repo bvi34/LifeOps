@@ -5,6 +5,7 @@ import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.lifeops.app.data.db.entities.FutureProjectEntity
 import com.lifeops.app.data.db.entities.FutureProjectNoteEntity
 import kotlinx.coroutines.flow.Flow
@@ -31,11 +32,17 @@ interface FutureProjectDao {
     @Query("SELECT * FROM future_projects WHERE id = :id")
     fun observeById(id: String): Flow<FutureProjectEntity?>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert updates in place on conflict. @Insert(REPLACE) must never be used for parent
+    // rows here: REPLACE deletes the old row before re-inserting, which cascades and wipes
+    // the project's notes.
+    @Upsert
     suspend fun upsert(project: FutureProjectEntity)
 
     @Query("UPDATE future_projects SET updatedAt = :updatedAt WHERE id = :id")
     suspend fun touch(id: String, updatedAt: String)
+
+    @Query("UPDATE future_projects SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: String, status: String)
 
     @Query("DELETE FROM future_projects WHERE id = :id")
     suspend fun delete(id: String)
