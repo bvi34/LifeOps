@@ -60,11 +60,14 @@ import com.lifeops.app.ui.theme.LifeOpsTheme
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
     object Planning : Screen("planning", "Planning", Icons.Default.Checklist)
+    object Game : Screen("game", "Game", Icons.Default.SportsEsports)
     object History : Screen("history", "History", Icons.Default.History)
     object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
-val bottomNavItems = listOf(Screen.ThisWeek, Screen.Planning, Screen.History, Screen.Settings)
+// Game sits in the middle — the present-tense payoff between forward-looking Planning and the
+// backward-looking History record.
+val bottomNavItems = listOf(Screen.ThisWeek, Screen.Planning, Screen.Game, Screen.History, Screen.Settings)
 
 class MainActivity : ComponentActivity() {
 
@@ -308,6 +311,27 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         factory = CounterDetailViewModelFactory(counterId, app.counterRepository)
                     )
                     CounterDetailScreen(vm) { navController.navigateUp() }
+                }
+            }
+
+            // Game — the arcade run and its economy, reached via a hub. Resources is shared with
+            // the History graph (registered there), reached by cross-graph route navigation.
+            navigation(startDestination = "game_hub", route = Screen.Game.route) {
+                composable("game_hub") {
+                    com.lifeops.app.ui.screens.game.GameScreen(
+                        onPlayRun = { navController.navigate("game_run") },
+                        onOpenResources = { navController.navigate("resources") },
+                        onOpenArtifacts = { navController.navigate("game_artifacts") }
+                    )
+                }
+                composable("game_run") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.game.RunViewModel>(
+                        factory = com.lifeops.app.ui.screens.game.RunViewModelFactory(app.gameResourceRepository)
+                    )
+                    com.lifeops.app.ui.screens.game.RunScreen(vm) { navController.navigateUp() }
+                }
+                composable("game_artifacts") {
+                    com.lifeops.app.ui.screens.game.ArtifactCodexScreen { navController.navigateUp() }
                 }
             }
 
