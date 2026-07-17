@@ -55,12 +55,16 @@ class FutureProjectDetailViewModel(
         viewModelScope.launch { futureProjectRepository.setStatus(projectId, status) }
     }
 
-    /** Turn this idea into a real (current) project, then archive it here. The archived
-     *  future project keeps its notes as the record of the original brainstorming. */
+    /** Turn this idea into a real (current) project, then archive it here. The notes stay
+     *  on the archived future project; the link lets the promoted project's detail screen
+     *  surface them as its brainstorm history. */
     fun promote() {
         val project = _uiState.value.project ?: return
         viewModelScope.launch {
-            projectRepository.createProject(UUID.randomUUID().toString(), project.title, aspectId = null)
+            projectRepository.createProject(
+                UUID.randomUUID().toString(), project.title,
+                aspectId = null, sourceFutureProjectId = projectId
+            )
             futureProjectRepository.setStatus(projectId, FutureProjectStatus.ARCHIVED)
         }
     }

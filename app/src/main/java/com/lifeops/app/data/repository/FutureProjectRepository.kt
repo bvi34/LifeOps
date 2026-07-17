@@ -25,6 +25,9 @@ class FutureProjectRepository(private val futureProjectDao: FutureProjectDao) {
     fun observeNotes(projectId: String): Flow<List<FutureProjectNote>> =
         futureProjectDao.observeNotes(projectId).map { list -> list.map { it.toModel() } }
 
+    suspend fun getNotes(projectId: String): List<FutureProjectNote> =
+        futureProjectDao.getNotes(projectId).map { it.toModel() }
+
     suspend fun create(title: String): FutureProject {
         val now = DateUtil.now()
         val project = FutureProject(UUID.randomUUID().toString(), title, now, now)

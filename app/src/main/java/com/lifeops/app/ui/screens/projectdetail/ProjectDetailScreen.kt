@@ -78,6 +78,27 @@ fun ProjectDetailScreen(
                     }
                 }
             }
+            // Brainstorm notes carried over from the future project this one was promoted from
+            if (state.brainstormNotes.isNotEmpty()) {
+                item {
+                    Text(
+                        "Brainstorm",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(state.brainstormNotes) { note ->
+                    Column(modifier = Modifier.padding(vertical = 2.dp)) {
+                        Text(note.content, style = MaterialTheme.typography.bodySmall)
+                        Text(
+                            note.createdAt.take(10),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+            }
             // Tasks by week
             state.tasksByWeek.forEach { (week, tasks) ->
                 item {

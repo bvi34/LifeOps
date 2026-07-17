@@ -50,6 +50,9 @@ interface FutureProjectDao {
     @Query("SELECT * FROM future_project_notes WHERE projectId = :projectId ORDER BY createdAt ASC")
     fun observeNotes(projectId: String): Flow<List<FutureProjectNoteEntity>>
 
+    @Query("SELECT * FROM future_project_notes WHERE projectId = :projectId ORDER BY createdAt ASC")
+    suspend fun getNotes(projectId: String): List<FutureProjectNoteEntity>
+
     @Query("SELECT * FROM future_project_notes")
     suspend fun getAllNotes(): List<FutureProjectNoteEntity>
 

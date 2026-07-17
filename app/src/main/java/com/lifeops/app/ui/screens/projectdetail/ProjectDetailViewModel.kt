@@ -12,6 +12,8 @@ data class ProjectDetailUiState(
     val tasksByWeek: Map<Week, List<Task>> = emptyMap(),
     val aspects: Map<String, Aspect> = emptyMap(),
     val notes: List<Pair<String, TaskNote>> = emptyList(), // Pair(taskTitle, note)
+    // Notes carried over from the future project this one was promoted from, if any.
+    val brainstormNotes: List<FutureProjectNote> = emptyList(),
     val totalTimeMinutes: Int = 0,
     val totalPoints: Int = 0,
     val isLoading: Boolean = true
@@ -24,7 +26,8 @@ class ProjectDetailViewModel(
     private val weekRepository: WeekRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val taskNoteRepository: TaskNoteRepository,
-    private val aspectRepository: AspectRepository
+    private val aspectRepository: AspectRepository,
+    private val futureProjectRepository: FutureProjectRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProjectDetailUiState())
@@ -59,6 +62,10 @@ class ProjectDetailViewModel(
         }
         allNotes.sortBy { it.second.createdAt }
 
+        val brainstormNotes = project.sourceFutureProjectId
+            ?.let { futureProjectRepository.getNotes(it) }
+            .orEmpty()
+
         // Group tasks by week, newest first
         val tasksByWeek = allTasks.groupBy { task -> weekById[task.weekId] }
             .filterKeys { it != null }
@@ -74,6 +81,7 @@ class ProjectDetailViewModel(
                 tasksByWeek = tasksByWeek,
                 aspects = aspects.associateBy { a -> a.id },
                 notes = allNotes,
+                brainstormNotes = brainstormNotes,
                 totalTimeMinutes = totalMins,
                 totalPoints = totalPoints,
                 isLoading = false
@@ -96,12 +104,13 @@ class ProjectDetailViewModelFactory(
     private val weekRepository: WeekRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val taskNoteRepository: TaskNoteRepository,
-    private val aspectRepository: AspectRepository
+    private val aspectRepository: AspectRepository,
+    private val futureProjectRepository: FutureProjectRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ProjectDetailViewModel(
             projectId, projectRepository, taskRepository, weekRepository,
-            timeEntryRepository, taskNoteRepository, aspectRepository
+            timeEntryRepository, taskNoteRepository, aspectRepository, futureProjectRepository
         ) as T
 }

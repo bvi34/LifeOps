@@ -190,7 +190,8 @@ data class Project(
     val status: ProjectStatus = ProjectStatus.ACTIVE,
     val description: String? = null,
     val createdAt: String,
-    val completedAt: String? = null
+    val completedAt: String? = null,
+    val sourceFutureProjectId: String? = null
 )
 
 data class ProjectStats(

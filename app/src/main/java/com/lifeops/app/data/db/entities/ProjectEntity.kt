@@ -19,5 +19,8 @@ data class ProjectEntity(
     val status: String = "active",
     val description: String? = null,
     val createdAt: String,
-    val completedAt: String? = null
+    val completedAt: String? = null,
+    // Set when this project was promoted from a future project; its brainstorming notes
+    // stay on the archived future_projects row and are surfaced on the project detail.
+    val sourceFutureProjectId: String? = null
 )

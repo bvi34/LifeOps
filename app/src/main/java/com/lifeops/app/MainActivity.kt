@@ -354,7 +354,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         key = "project_detail_$projectId",
                         factory = ProjectDetailViewModelFactory(
                             projectId, app.projectRepository, app.taskRepository, app.weekRepository,
-                            app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository
+                            app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository,
+                            app.futureProjectRepository
                         )
                     )
                     ProjectDetailScreen(vm) { navController.navigateUp() }
