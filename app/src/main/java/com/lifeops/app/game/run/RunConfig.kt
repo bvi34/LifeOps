@@ -1,5 +1,6 @@
 package com.lifeops.app.game.run
 
+import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
 
 /**
@@ -20,6 +21,8 @@ data class RunConfig(
     val seed: Long,
     /** Waves in the run — one per day of the closed week (§7). */
     val waves: Int = 7,
+    /** Optional challenge mode the run's Director hosts (§8). Defaults to the standard run. */
+    val challengeMode: ChallengeMode = ChallengeMode.NONE,
 ) {
     companion object {
         const val MIN_LEVEL_CAP = 6

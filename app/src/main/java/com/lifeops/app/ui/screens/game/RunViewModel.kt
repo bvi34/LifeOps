@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.repository.GameResourceRepository
+import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.RunSeed
 import com.lifeops.app.game.run.Loadout
@@ -24,6 +25,7 @@ data class Commitment(val levelCap: Int = 0, val maxHealth: Int = 0, val gold: I
 data class RunUiState(
     val resources: List<GameResource> = emptyList(),
     val weapon: StartingWeapon = StartingWeapon.GATLING,
+    val challengeMode: ChallengeMode = ChallengeMode.NONE,
     val commitment: Commitment = Commitment(),
     val message: String? = null,
 )
@@ -53,6 +55,8 @@ class RunViewModel(
     }
 
     fun selectWeapon(weapon: StartingWeapon) = _uiState.update { it.copy(weapon = weapon) }
+
+    fun selectChallengeMode(mode: ChallengeMode) = _uiState.update { it.copy(challengeMode = mode) }
 
     fun setCommitment(commitment: Commitment) =
         _uiState.update { it.copy(commitment = commitment.clampedTo(it.resources)) }
@@ -97,6 +101,7 @@ class RunViewModel(
                 maxHealth = Loadout.maxHealthFor(commitment.maxHealth),
                 startingGold = commitment.gold,
                 seed = RunSeed.fromWeek(DateUtil.currentWeekStart().toString()),
+                challengeMode = state.challengeMode,
             )
             _engine.value = RunEngine(config)
             _uiState.update { it.copy(message = null) }

@@ -37,6 +37,7 @@ data class RunSnapshot(
     val pickups: List<PickupView>,
     val levelUpOptions: List<LevelUpOption>,
     val weaponName: String,
+    val challengeModeName: String,
     val held: List<HeldView>,
 )
 

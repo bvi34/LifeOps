@@ -30,6 +30,14 @@ enum class Stat {
     XP_GAIN,         // multiplier on collected XP
     TURRET_COUNT,    // concurrent artifact turrets (also secretly multiplicative)
     TURRET_TTL,      // seconds a turret lives
+
+    // Director-scoped stats (DESIGN.md §8). Inert on the player/enemies — only the run's Director
+    // reads them. Remap tables feed player stats into these; challenge-mode modifiers set them
+    // directly. Adding a challenge variant is authoring these values, not writing engine code.
+    SPAWN_MULT,        // multiplies how many enemies a wave spawns
+    ENEMY_HP_MULT,     // multiplies each spawned enemy's max health
+    ENEMY_SPEED_MULT,  // multiplies each spawned enemy's move speed
+    ENEMY_DAMAGE_MULT, // multiplies each spawned enemy's touch damage
 }
 
 /**
@@ -104,6 +112,10 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.XP_GAIN to 1f,
             Stat.TURRET_COUNT to 0f,
             Stat.TURRET_TTL to 8f,
+            Stat.SPAWN_MULT to 1f,
+            Stat.ENEMY_HP_MULT to 1f,
+            Stat.ENEMY_SPEED_MULT to 1f,
+            Stat.ENEMY_DAMAGE_MULT to 1f,
         )
     }
 }

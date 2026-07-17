@@ -46,6 +46,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.PickupKind
@@ -114,6 +115,33 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             ui.weapon.blurb,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
+
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Challenge", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        ChallengeMode.ALL.forEach { mode ->
+                            val selected = ui.challengeMode.id == mode.id
+                            if (selected) {
+                                Button(onClick = { viewModel.selectChallengeMode(mode) }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(mode.name)
+                                }
+                            } else {
+                                OutlinedButton(onClick = { viewModel.selectChallengeMode(mode) }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(mode.name)
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            ui.challengeMode.description,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
@@ -362,6 +390,10 @@ private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
             HudChip("Lvl", "${snapshot.level}/${snapshot.levelCap}")
             HudChip("Gold", "${snapshot.gold}")
             HudChip("Score", "${snapshot.score}")
+        }
+        if (snapshot.challengeModeName != ChallengeMode.NONE.name) {
+            Spacer(Modifier.height(6.dp))
+            HudChip("Mode", snapshot.challengeModeName)
         }
         Spacer(Modifier.height(8.dp))
         Meter(

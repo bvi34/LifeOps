@@ -57,6 +57,12 @@ class Enemy(
     var pos: Vec2,
     var health: Float,
     val maxHealth: Float,
+    /** Effective move speed after Director multipliers + any enemy-attached modifiers (Mob Boss). */
+    val moveSpeed: Float,
+    /** Effective touch damage after Director multipliers + any enemy-attached modifiers. */
+    val touchDamage: Float,
+    /** Artifacts this enemy is wielding (Mob Boss); empty in a standard run. */
+    val held: List<HeldModifier> = emptyList(),
     val kind: EntityKind = if (type == EnemyType.ABOMINATION) EntityKind.BOSS else EntityKind.ENEMY,
 ) {
     val alive: Boolean get() = health > 0f

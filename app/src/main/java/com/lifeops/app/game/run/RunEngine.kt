@@ -7,11 +7,16 @@ import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
 import com.lifeops.app.game.core.GameEvent
 import com.lifeops.app.game.core.HeldModifier
+import com.lifeops.app.game.core.Op
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.RunSeed
+import com.lifeops.app.game.core.Scope
+import com.lifeops.app.game.core.Stat
 import com.lifeops.app.game.core.StatBlock
+import com.lifeops.app.game.core.StatContribution
 import com.lifeops.app.game.core.Vec2
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -53,6 +58,10 @@ class RunEngine(
     private var stats: StatBlock = player.buildStats()
     private var nextId = 1
 
+    /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
+     *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
+    val director = Director(bus)
+
     // Wave director state.
     private var spawnedThisWave = 0
     private var toSpawnThisWave = 0
@@ -63,10 +72,15 @@ class RunEngine(
     private var levelUpOptions: List<LevelUpOption> = emptyList()
 
     init {
+        director.configure(config.challengeMode, stats)
         beginWave(0)
     }
 
-    private fun rebuildStats() { stats = player.buildStats() }
+    private fun rebuildStats() {
+        stats = player.buildStats()
+        // Keep the Director tracking the player's build so Mirror inflates in lockstep (§8).
+        director.rebuild(stats)
+    }
 
     // --- Public API -------------------------------------------------------------------------
 
@@ -122,6 +136,7 @@ class RunEngine(
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         levelUpOptions = levelUpOptions,
         weaponName = config.weapon.displayName,
+        challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
     )
 
@@ -138,7 +153,7 @@ class RunEngine(
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
             val toPlayer = (player.pos - e.pos).normalized()
-            e.pos = clampToArena(e.pos + toPlayer * (e.type.moveSpeed * dt), e.type.radius)
+            e.pos = clampToArena(e.pos + toPlayer * (e.moveSpeed * dt), e.type.radius)
         }
     }
 
@@ -153,7 +168,9 @@ class RunEngine(
         bossSpawned = false
         spawnTimer = 0f
         // Enemy budget grows per wave; the final wave is lighter on trash to make room for the boss.
-        toSpawnThisWave = if (isFinalWave()) 6 + index else 8 + index * 3
+        // The Director's spawn multiplier (e.g. Mirror mode) scales the whole wave.
+        val baseBudget = if (isFinalWave()) 6 + index else 8 + index * 3
+        toSpawnThisWave = (baseBudget * director.spawnMult()).roundToInt().coerceAtLeast(1)
         bus.emit(GameEvent.OnWaveStart(index + 1))
     }
 
@@ -202,8 +219,32 @@ class RunEngine(
 
     private fun spawnEnemy(type: EnemyType, hpScale: Float) {
         val pos = randomEdgePoint()
-        val hp = type.maxHealth * hpScale
-        val e = Enemy(id = nextId++, type = type, pos = pos, health = hp, maxHealth = hp)
+        // Build the enemy through the same StatBlock path the player uses: its archetype base, then
+        // the Director's per-enemy multipliers, then any enemy-attached artifacts (Mob Boss). An
+        // aimed-scope artifact is simply inert on an enemy with no weapon (DESIGN.md §3).
+        val block = StatBlock(
+            mapOf(
+                Stat.MAX_HEALTH to type.maxHealth,
+                Stat.MOVE_SPEED to type.moveSpeed,
+                Stat.DAMAGE to type.touchDamage,
+            )
+        )
+        block.add(StatContribution(Stat.MAX_HEALTH, Scope.GLOBAL, Op.MULTIPLY, director.enemyHpMult()))
+        block.add(StatContribution(Stat.MOVE_SPEED, Scope.GLOBAL, Op.MULTIPLY, director.enemySpeedMult()))
+        block.add(StatContribution(Stat.DAMAGE, Scope.GLOBAL, Op.MULTIPLY, director.enemyDamageMult()))
+        director.enemyModifiers.forEach { block.addAll(it.contributions()) }
+
+        val hp = block.resolve(Stat.MAX_HEALTH, Scope.GLOBAL) * hpScale
+        val e = Enemy(
+            id = nextId++,
+            type = type,
+            pos = pos,
+            health = hp,
+            maxHealth = hp,
+            moveSpeed = block.resolve(Stat.MOVE_SPEED, Scope.GLOBAL),
+            touchDamage = block.resolve(Stat.DAMAGE, Scope.GLOBAL),
+            held = director.enemyModifiers,
+        )
         enemies.add(e)
         bus.emit(GameEvent.OnSpawn(e.id, e.kind))
     }
@@ -319,7 +360,7 @@ class RunEngine(
     private fun resolveTouchDamage(dt: Float) {
         for (e in enemies) {
             if (e.pos.distanceTo(player.pos) <= e.type.radius + player.radius) {
-                val dmg = e.type.touchDamage * dt
+                val dmg = e.touchDamage * dt
                 player.health -= dmg
                 bus.emit(GameEvent.OnHit(e.id, PLAYER_ID, dmg, false))
             }

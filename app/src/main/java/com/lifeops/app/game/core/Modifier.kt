@@ -45,3 +45,17 @@ data class Modifier(
 data class HeldModifier(val modifier: Modifier, val rank: Int) {
     fun contributions(): List<StatContribution> = modifier.contributionsAt(rank)
 }
+
+/**
+ * One row of a remap table (DESIGN.md §3/§8). Cross-entity meaning is assigned ONLY here — never by
+ * field-name coincidence. A remap reads one entity's stat and feeds it into another's, e.g.
+ * `player.PROJECTILES → director.SPAWN_MULT`. The consumer decides how [factor] applies (the
+ * Director scales the player's relative growth from a run-start baseline, so a Mirror run inflates
+ * in lockstep with player power and never needs re-tuning). Remaps are data rows, not code.
+ */
+data class Remap(
+    val fromStat: Stat,
+    val fromScope: Scope,
+    val toStat: Stat,
+    val factor: Float,
+)
