@@ -47,6 +47,7 @@ class RunEngine(
     val enemies = ArrayList<Enemy>()
     val projectiles = ArrayList<Projectile>()
     val pickups = ArrayList<Pickup>()
+    val effects = ArrayList<RunEffect>()
 
     var status: RunStatus = RunStatus.RUNNING
         private set
@@ -98,6 +99,7 @@ class RunEngine(
         resolveProjectileHits()
         resolveTouchDamage(clamped)
         updatePickups(clamped)
+        ageVisuals(clamped)
 
         if (player.health <= 0f) endRun(victory = false)
     }
@@ -131,9 +133,21 @@ class RunEngine(
         score = score,
         status = status,
         strained = resolver.strained,
-        enemies = enemies.map { EnemyView(it.pos, it.type.radius, (it.health / it.maxHealth).coerceIn(0f, 1f), it.type) },
+        enemies = enemies.map {
+            EnemyView(
+                pos = it.pos,
+                radius = it.type.radius,
+                healthFrac = (it.health / it.maxHealth).coerceIn(0f, 1f),
+                type = it.type,
+                hitFlashFrac = (it.hitFlash / HIT_FLASH_SECONDS).coerceIn(0f, 1f),
+                facing = (player.pos - it.pos).normalized(),
+            )
+        },
         projectiles = projectiles.map { it.pos },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
+        effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
+        boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
+            ?.let { BossView((it.health / it.maxHealth).coerceIn(0f, 1f), it.type.displayName) },
         levelUpOptions = levelUpOptions,
         weaponName = config.weapon.displayName,
         challengeModeName = config.challengeMode.name,
@@ -337,6 +351,7 @@ class RunEngine(
             // Every hit is an event routed through the resolver's frame budget (invariants #2/#3).
             resolver.resolve {
                 target.health -= p.damage
+                target.hitFlash = HIT_FLASH_SECONDS
                 bus.emit(GameEvent.OnHit(PLAYER_ID, target.id, p.damage, p.crit))
                 if (!target.alive) killEnemy(target)
             }
@@ -354,6 +369,18 @@ class RunEngine(
         }
         if (e.kind == EntityKind.BOSS) {
             pickups.add(Pickup(nextId++, e.pos, PickupKind.HEALTH, 30))
+        }
+        effects.add(RunEffect(pos = e.pos, kind = EffectKind.DEATH_BURST, worldRadius = e.type.radius, ttl = BURST_SECONDS))
+    }
+
+    /** Age hit-flash timers and transient effects; drop anything that has expired. Visual only. */
+    private fun ageVisuals(dt: Float) {
+        for (e in enemies) if (e.hitFlash > 0f) e.hitFlash = (e.hitFlash - dt).coerceAtLeast(0f)
+        val it = effects.iterator()
+        while (it.hasNext()) {
+            val fx = it.next()
+            fx.age += dt
+            if (fx.age >= fx.ttl) it.remove()
         }
     }
 
@@ -471,5 +498,7 @@ class RunEngine(
         const val PLAYER_ID = 0
         const val SPAWN_INTERVAL = 0.55f
         const val BREATHER_SECONDS = 2.5f
+        const val HIT_FLASH_SECONDS = 0.09f
+        const val BURST_SECONDS = 0.35f
     }
 }

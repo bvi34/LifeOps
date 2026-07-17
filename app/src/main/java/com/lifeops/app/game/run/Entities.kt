@@ -64,9 +64,28 @@ class Enemy(
     /** Artifacts this enemy is wielding (Mob Boss); empty in a standard run. */
     val held: List<HeldModifier> = emptyList(),
     val kind: EntityKind = if (type == EnemyType.ABOMINATION) EntityKind.BOSS else EntityKind.ENEMY,
+    /** Seconds of remaining hit-flash; set on each incoming hit, decays each frame (visual only). */
+    var hitFlash: Float = 0f,
 ) {
     val alive: Boolean get() = health > 0f
 }
+
+/** Kind of transient visual effect. Visual-only; never affects the simulation. */
+enum class EffectKind { DEATH_BURST }
+
+/**
+ * A short-lived visual effect (e.g. an enemy death burst). The sim spawns and ages these so the
+ * renderer can draw feedback without having to diff entity lists between frames; they carry no
+ * gameplay weight and are purely presentational.
+ */
+class RunEffect(
+    var pos: Vec2,
+    val kind: EffectKind,
+    /** Reference size in world units (e.g. the dead enemy's radius) for scaling the effect. */
+    val worldRadius: Float,
+    var age: Float = 0f,
+    val ttl: Float,
+)
 
 class Projectile(
     val id: Int,

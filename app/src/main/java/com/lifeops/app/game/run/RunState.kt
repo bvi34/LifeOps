@@ -35,14 +35,27 @@ data class RunSnapshot(
     val enemies: List<EnemyView>,
     val projectiles: List<Vec2>,
     val pickups: List<PickupView>,
+    val effects: List<EffectView>,
+    val boss: BossView?,
     val levelUpOptions: List<LevelUpOption>,
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,
 )
 
-data class EnemyView(val pos: Vec2, val radius: Float, val healthFrac: Float, val type: EnemyType)
+data class EnemyView(
+    val pos: Vec2,
+    val radius: Float,
+    val healthFrac: Float,
+    val type: EnemyType,
+    /** 0 = idle, 1 = just hit; renderer flashes the silhouette toward white. */
+    val hitFlashFrac: Float,
+    /** Direction the enemy is heading (toward the player), for orienting its silhouette. */
+    val facing: Vec2,
+)
 data class PickupView(val pos: Vec2, val kind: PickupKind)
+data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
+data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)
 
 /** Player intent for a frame. [move] is a raw joystick vector (clamped to unit length by the engine). */

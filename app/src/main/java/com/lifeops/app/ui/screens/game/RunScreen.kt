@@ -42,6 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -59,7 +62,10 @@ import com.lifeops.app.game.run.RunStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import kotlinx.coroutines.isActive
+import kotlin.math.atan2
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 
 @Composable
 fun RunScreen(viewModel: RunViewModel, onBack: () -> Unit) {
@@ -339,12 +345,36 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
 
             snapshot.enemies.forEach { e ->
                 val c = Offset(sx(e.pos.x), sy(e.pos.y))
-                drawCircle(color = enemyColor(e.type), radius = e.radius * scale, center = c)
-                // Health arc as a shrinking inner dot.
+                val r = e.radius * scale
+                val facing = atan2(e.facing.y, e.facing.x)
+                // Silhouette flashes toward white on a fresh hit.
+                val body = lerp(enemyColor(e.type), Color.White, e.hitFlashFrac)
+                drawPath(enemyPath(e.type, c, r, facing), color = body)
+                // A thin HP arc hugging the silhouette — only while damaged.
+                if (e.healthFrac < 0.999f) {
+                    val pad = 3f * scale
+                    val d = (r + pad) * 2f
+                    drawArc(
+                        color = HP_ARC_COLOR,
+                        startAngle = -90f,
+                        sweepAngle = 360f * e.healthFrac,
+                        useCenter = false,
+                        topLeft = Offset(c.x - r - pad, c.y - r - pad),
+                        size = androidx.compose.ui.geometry.Size(d, d),
+                        style = Stroke(width = 2.5f * scale)
+                    )
+                }
+            }
+
+            // Death bursts: an expanding, fading ring where an enemy fell.
+            snapshot.effects.forEach { fx ->
+                val c = Offset(sx(fx.pos.x), sy(fx.pos.y))
+                val r = fx.worldRadius * scale * (0.6f + fx.ageFrac * 1.7f)
                 drawCircle(
-                    color = Color.Black.copy(alpha = 0.25f),
-                    radius = e.radius * scale * (1f - e.healthFrac) * 0.9f,
-                    center = c
+                    color = Color.White.copy(alpha = (1f - fx.ageFrac) * 0.6f),
+                    radius = r,
+                    center = c,
+                    style = Stroke(width = 2f * scale)
                 )
             }
 
@@ -394,6 +424,10 @@ private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
         if (snapshot.challengeModeName != ChallengeMode.NONE.name) {
             Spacer(Modifier.height(6.dp))
             HudChip("Mode", snapshot.challengeModeName)
+        }
+        snapshot.boss?.let { boss ->
+            Spacer(Modifier.height(8.dp))
+            Meter(fraction = boss.healthFrac, color = BOSS_COLOR, label = "${boss.name}  ${(boss.healthFrac * 100).toInt()}%")
         }
         Spacer(Modifier.height(8.dp))
         Meter(
@@ -528,6 +562,33 @@ private fun enemyColor(type: EnemyType): Color = when (type) {
     EnemyType.ABOMINATION -> Color(0xFF8E24AA)
 }
 
+/**
+ * Per-type silhouette as polar vertices (angleOffset radians, radiusMultiplier), rotated by
+ * [facing] so each enemy points where it's heading. Distinct shapes let type read at a glance:
+ * Shambler = a dart, Husk = a hexagon, Abomination = a spiked star.
+ */
+private fun enemyVerts(type: EnemyType): List<Pair<Float, Float>> = when (type) {
+    // Dart: a sharp nose at facing (0 rad) with two swept-back tails.
+    EnemyType.SHAMBLER -> listOf(0f to 1.35f, 2.5f to 0.95f, Math.PI.toFloat() to 0.45f, -2.5f to 0.95f)
+    // Hexagon.
+    EnemyType.HUSK -> (0 until 6).map { (it * (2.0 * Math.PI / 6.0)).toFloat() to 1f }
+    // Twelve-point spiked star.
+    EnemyType.ABOMINATION -> (0 until 12).map {
+        (it * (2.0 * Math.PI / 12.0)).toFloat() to if (it % 2 == 0) 1.2f else 0.62f
+    }
+}
+
+private fun enemyPath(type: EnemyType, center: Offset, rScreen: Float, facing: Float): Path {
+    val path = Path()
+    enemyVerts(type).forEachIndexed { i, (a, rm) ->
+        val x = center.x + cos(facing + a) * rScreen * rm
+        val y = center.y + sin(facing + a) * rScreen * rm
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    return path
+}
+
 private val ARENA_BG = Color(0xFF101014)
 private val ARENA_FLOOR = Color(0xFF1B1B22)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
@@ -536,3 +597,5 @@ private val XP_COLOR = Color(0xFF66BB6A)
 private val GOLD_COLOR = Color(0xFFFFCA28)
 private val HEALTH_COLOR = Color(0xFFEF5350)
 private val STRAIN_TINT = Color(0x22FF00FF)
+private val HP_ARC_COLOR = Color(0xFFECEFF1)
+private val BOSS_COLOR = Color(0xFFAB47BC)
