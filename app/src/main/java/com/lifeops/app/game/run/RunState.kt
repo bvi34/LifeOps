@@ -1,6 +1,7 @@
 package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.EnemyType
+import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
@@ -22,6 +23,12 @@ data class RunSnapshot(
     val playerPos: Vec2,
     val playerHealth: Float,
     val playerMaxHealth: Float,
+    /** Unit aim direction, for drawing the barrel/reticle. */
+    val playerAim: Vec2,
+    /** 0 = idle, 1 = just fired; renderer draws a muzzle flash. */
+    val playerMuzzleFrac: Float,
+    /** 0 = unharmed, 1 = just took touch damage; renderer flashes the player red. */
+    val playerHurtFrac: Float,
     val level: Int,
     val levelCap: Int,
     val xp: Float,
@@ -38,6 +45,7 @@ data class RunSnapshot(
     val effects: List<EffectView>,
     val boss: BossView?,
     val levelUpOptions: List<LevelUpOption>,
+    val weapon: StartingWeapon,
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,

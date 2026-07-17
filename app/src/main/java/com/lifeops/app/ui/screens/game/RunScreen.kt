@@ -382,10 +382,47 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 drawCircle(color = PROJECTILE_COLOR, radius = 3.5f * scale, center = Offset(sx(p.x), sy(p.y)))
             }
 
-            // Player.
+            // Player: an oriented silhouette pointing where it's aiming, a weapon nub whose shape
+            // reads the weapon, plus aim guide, muzzle flash, and a red hurt flash.
             val pc = Offset(sx(snapshot.playerPos.x), sy(snapshot.playerPos.y))
-            drawCircle(color = PLAYER_COLOR, radius = 14f * scale, center = pc)
-            drawCircle(color = Color.White.copy(alpha = 0.85f), radius = 5f * scale, center = pc)
+            val pr = 14f * scale
+            val aim = atan2(snapshot.playerAim.y, snapshot.playerAim.x)
+            val aimDir = Offset(cos(aim), sin(aim))
+
+            // Faint aim guide out to the reticle.
+            val guideEnd = pc + aimDir * (46f * scale)
+            drawLine(
+                color = Color.White.copy(alpha = 0.22f),
+                start = pc + aimDir * pr,
+                end = guideEnd,
+                strokeWidth = 1.5f * scale
+            )
+            drawCircle(color = Color.White.copy(alpha = 0.35f), radius = 3.5f * scale, center = guideEnd, style = Stroke(1.5f * scale))
+
+            // Weapon nub: Sniper = long thin barrel, Gatling = short wide barrel.
+            val gatling = snapshot.weapon == StartingWeapon.GATLING
+            val nubLen = if (gatling) 1.35f else 1.95f
+            val nubTip = pc + aimDir * (pr * nubLen)
+            drawLine(
+                color = Color(0xFFB0BEC5),
+                start = pc,
+                end = nubTip,
+                strokeWidth = (if (gatling) 6f else 3f) * scale
+            )
+
+            // Body silhouette (flashes red when hurt), then a bright core.
+            val body = lerp(PLAYER_COLOR, HURT_FLASH_COLOR, snapshot.playerHurtFrac)
+            drawPath(playerPath(pc, pr, aim), color = body)
+            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = 4.5f * scale, center = pc)
+
+            // Muzzle flash at the barrel tip on each shot.
+            if (snapshot.playerMuzzleFrac > 0f) {
+                drawCircle(
+                    color = MUZZLE_COLOR.copy(alpha = snapshot.playerMuzzleFrac),
+                    radius = (if (gatling) 6f else 8f) * scale * (0.6f + snapshot.playerMuzzleFrac),
+                    center = nubTip
+                )
+            }
 
             if (snapshot.strained) {
                 drawRect(color = STRAIN_TINT, topLeft = Offset.Zero, size = size)
@@ -589,6 +626,20 @@ private fun enemyPath(type: EnemyType, center: Offset, rScreen: Float, facing: F
     return path
 }
 
+/** The player silhouette: a rounded arrowhead pointing along [facing] (the aim direction). */
+private val PLAYER_VERTS = listOf(0f to 1.35f, 2.3f to 1.05f, Math.PI.toFloat() to 0.7f, -2.3f to 1.05f)
+
+private fun playerPath(center: Offset, rScreen: Float, facing: Float): Path {
+    val path = Path()
+    PLAYER_VERTS.forEachIndexed { i, (a, rm) ->
+        val x = center.x + cos(facing + a) * rScreen * rm
+        val y = center.y + sin(facing + a) * rScreen * rm
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    return path
+}
+
 private val ARENA_BG = Color(0xFF101014)
 private val ARENA_FLOOR = Color(0xFF1B1B22)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
@@ -599,3 +650,5 @@ private val HEALTH_COLOR = Color(0xFFEF5350)
 private val STRAIN_TINT = Color(0x22FF00FF)
 private val HP_ARC_COLOR = Color(0xFFECEFF1)
 private val BOSS_COLOR = Color(0xFFAB47BC)
+private val MUZZLE_COLOR = Color(0xFFFFF59D)
+private val HURT_FLASH_COLOR = Color(0xFFEF5350)

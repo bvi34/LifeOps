@@ -26,6 +26,12 @@ class Player(
     var xpToNext: Float = 12f,
     var gold: Int = 0,
     var fireCooldown: Float = 0f,
+    /** Current aim direction (unit), tracked every frame for the barrel/reticle. Visual + firing. */
+    var aim: Vec2 = Vec2(1f, 0f),
+    /** Seconds of remaining muzzle flash; set on each shot, decays each frame (visual only). */
+    var muzzleFlash: Float = 0f,
+    /** Seconds of remaining hurt flash; set when taking touch damage, decays each frame (visual). */
+    var hurtFlash: Float = 0f,
 ) {
     /**
      * Rebuild the stat block from the weapon base + every held modifier's contributions. Called

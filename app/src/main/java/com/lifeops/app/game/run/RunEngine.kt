@@ -94,6 +94,7 @@ class RunEngine(
         movePlayer(clamped, input)
         updateWaves(clamped)
         moveEnemies(clamped)
+        updateAim(input)
         fireWeapon(clamped, input)
         moveProjectiles(clamped)
         resolveProjectileHits()
@@ -123,6 +124,9 @@ class RunEngine(
         playerPos = player.pos,
         playerHealth = player.health,
         playerMaxHealth = player.maxHealth,
+        playerAim = player.aim,
+        playerMuzzleFrac = (player.muzzleFlash / MUZZLE_SECONDS).coerceIn(0f, 1f),
+        playerHurtFrac = (player.hurtFlash / HURT_SECONDS).coerceIn(0f, 1f),
         level = player.level,
         levelCap = config.levelCap,
         xp = player.xp,
@@ -149,6 +153,7 @@ class RunEngine(
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
             ?.let { BossView((it.health / it.maxHealth).coerceIn(0f, 1f), it.type.displayName) },
         levelUpOptions = levelUpOptions,
+        weapon = config.weapon,
         weaponName = config.weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
@@ -308,6 +313,13 @@ class RunEngine(
             projectiles.add(p)
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
         }
+        player.muzzleFlash = MUZZLE_SECONDS
+    }
+
+    /** Track the aim direction every frame so the barrel/reticle follows the nearest target even
+     *  between shots. Keeps the previous aim when there is no target, so the barrel never snaps. */
+    private fun updateAim(input: RunInput) {
+        resolveAim(input)?.let { player.aim = it }
     }
 
     /** Manual aim wins if given; otherwise auto-aim the nearest enemy within range (DESIGN.md §4). */
@@ -376,6 +388,8 @@ class RunEngine(
     /** Age hit-flash timers and transient effects; drop anything that has expired. Visual only. */
     private fun ageVisuals(dt: Float) {
         for (e in enemies) if (e.hitFlash > 0f) e.hitFlash = (e.hitFlash - dt).coerceAtLeast(0f)
+        if (player.muzzleFlash > 0f) player.muzzleFlash = (player.muzzleFlash - dt).coerceAtLeast(0f)
+        if (player.hurtFlash > 0f) player.hurtFlash = (player.hurtFlash - dt).coerceAtLeast(0f)
         val it = effects.iterator()
         while (it.hasNext()) {
             val fx = it.next()
@@ -389,6 +403,7 @@ class RunEngine(
             if (e.pos.distanceTo(player.pos) <= e.type.radius + player.radius) {
                 val dmg = e.touchDamage * dt
                 player.health -= dmg
+                player.hurtFlash = HURT_SECONDS
                 bus.emit(GameEvent.OnHit(e.id, PLAYER_ID, dmg, false))
             }
         }
@@ -500,5 +515,7 @@ class RunEngine(
         const val BREATHER_SECONDS = 2.5f
         const val HIT_FLASH_SECONDS = 0.09f
         const val BURST_SECONDS = 0.35f
+        const val MUZZLE_SECONDS = 0.06f
+        const val HURT_SECONDS = 0.16f
     }
 }

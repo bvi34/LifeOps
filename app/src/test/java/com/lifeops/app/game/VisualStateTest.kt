@@ -76,4 +76,34 @@ class VisualStateTest {
         // Facing points from the enemy toward the player, so it is a (near) unit vector.
         assertTrue(views.all { it.facing.length() <= 1.01f })
     }
+
+    @Test
+    fun playerAimIsAUnitVector() {
+        val e = RunEngine(cfg())
+        repeat(400) { e.step(1f / 60f, RunInput()) }
+        val aim = e.snapshot().playerAim
+        assertTrue(aim.length() in 0.99f..1.01f)
+    }
+
+    @Test
+    fun playerMuzzleFlashesWhileFiring() {
+        val e = RunEngine(cfg())
+        var muzzled = false
+        repeat(600) {
+            e.step(1f / 60f, RunInput())
+            if (e.snapshot().playerMuzzleFrac > 0f) muzzled = true
+        }
+        assertTrue("the player should flash a muzzle when it fires", muzzled)
+    }
+
+    @Test
+    fun playerHurtFlashesWhenTouched() {
+        val e = RunEngine(cfg())
+        var hurt = false
+        repeat(900) {
+            e.step(1f / 60f, RunInput()) // stationary: enemies reach the player and deal touch damage
+            if (e.snapshot().playerHurtFrac > 0f) hurt = true
+        }
+        assertTrue("the player should flash when taking touch damage", hurt)
+    }
 }
