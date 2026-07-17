@@ -15,9 +15,16 @@ class ProjectRepository(private val projectDao: ProjectDao) {
     fun observeAll(): Flow<List<Project>> =
         projectDao.observeAll().map { list -> list.map { it.toModel() } }
 
-    suspend fun createProject(id: String, title: String, aspectId: String?, categoryId: String? = null): Project {
+    suspend fun createProject(
+        id: String,
+        title: String,
+        aspectId: String?,
+        categoryId: String? = null,
+        sourceFutureProjectId: String? = null
+    ): Project {
         val entity = ProjectEntity(
-            id = id, title = title, aspectId = aspectId, categoryId = categoryId, createdAt = DateUtil.now()
+            id = id, title = title, aspectId = aspectId, categoryId = categoryId,
+            createdAt = DateUtil.now(), sourceFutureProjectId = sourceFutureProjectId
         )
         projectDao.upsert(entity)
         return entity.toModel()
@@ -41,6 +48,6 @@ class ProjectRepository(private val projectDao: ProjectDao) {
         projectDao.updateStatus(id, status.value, completedAt)
     }
 
-    private fun ProjectEntity.toModel() = Project(id, title, aspectId, categoryId, ProjectStatus.from(status), description, createdAt, completedAt)
-    private fun Project.toEntity() = ProjectEntity(id, title, aspectId, categoryId, status.value, description, createdAt, completedAt)
+    private fun ProjectEntity.toModel() = Project(id, title, aspectId, categoryId, ProjectStatus.from(status), description, createdAt, completedAt, sourceFutureProjectId)
+    private fun Project.toEntity() = ProjectEntity(id, title, aspectId, categoryId, status.value, description, createdAt, completedAt, sourceFutureProjectId)
 }

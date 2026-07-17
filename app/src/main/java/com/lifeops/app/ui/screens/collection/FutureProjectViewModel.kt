@@ -3,6 +3,7 @@ package com.lifeops.app.ui.screens.collection
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.data.model.FutureProjectStatus
 import com.lifeops.app.data.repository.FutureProjectListItem
 import com.lifeops.app.data.repository.FutureProjectRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,10 @@ class FutureProjectViewModel(private val futureProjectRepository: FutureProjectR
             futureProjectRepository.create(title)
             _uiState.update { it.copy(showCreateDialog = false) }
         }
+    }
+
+    fun setStatus(projectId: String, status: FutureProjectStatus) {
+        viewModelScope.launch { futureProjectRepository.setStatus(projectId, status) }
     }
 }
 

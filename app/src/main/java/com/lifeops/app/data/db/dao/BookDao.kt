@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import com.lifeops.app.data.db.entities.BookEntity
 import com.lifeops.app.data.db.entities.BookNoteEntity
 import com.lifeops.app.data.db.entities.BookTimeEntryEntity
@@ -26,7 +27,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id")
     fun observeById(id: String): Flow<BookEntity?>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert updates in place; @Insert(REPLACE) would delete-and-reinsert the book,
+    // cascading away its notes and time entries.
+    @Upsert
     suspend fun upsert(book: BookEntity)
 
     @Query("DELETE FROM books WHERE id = :id")

@@ -3,6 +3,7 @@ package com.lifeops.app.data.repository
 import com.lifeops.app.data.db.dao.FutureProjectDao
 import com.lifeops.app.data.model.FutureProject
 import com.lifeops.app.data.model.FutureProjectNote
+import com.lifeops.app.data.model.FutureProjectStatus
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
@@ -24,6 +25,9 @@ class FutureProjectRepository(private val futureProjectDao: FutureProjectDao) {
     fun observeNotes(projectId: String): Flow<List<FutureProjectNote>> =
         futureProjectDao.observeNotes(projectId).map { list -> list.map { it.toModel() } }
 
+    suspend fun getNotes(projectId: String): List<FutureProjectNote> =
+        futureProjectDao.getNotes(projectId).map { it.toModel() }
+
     suspend fun create(title: String): FutureProject {
         val now = DateUtil.now()
         val project = FutureProject(UUID.randomUUID().toString(), title, now, now)
@@ -43,6 +47,9 @@ class FutureProjectRepository(private val futureProjectDao: FutureProjectDao) {
         // Keep the list's recency ordering in step with note activity, not just title edits.
         futureProjectDao.touch(projectId, now)
     }
+
+    suspend fun setStatus(id: String, status: FutureProjectStatus) =
+        futureProjectDao.updateStatus(id, status.value)
 
     suspend fun delete(id: String) = futureProjectDao.delete(id)
 }

@@ -246,7 +246,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     val vm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModel>(
                         key = "future_project_detail_$projectId",
                         factory = com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModelFactory(
-                            projectId, app.futureProjectRepository
+                            projectId, app.futureProjectRepository, app.projectRepository
                         )
                     )
                     com.lifeops.app.ui.screens.collection.FutureProjectDetailScreen(vm) { navController.navigateUp() }
@@ -354,7 +354,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         key = "project_detail_$projectId",
                         factory = ProjectDetailViewModelFactory(
                             projectId, app.projectRepository, app.taskRepository, app.weekRepository,
-                            app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository
+                            app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository,
+                            app.futureProjectRepository
                         )
                     )
                     ProjectDetailScreen(vm) { navController.navigateUp() }

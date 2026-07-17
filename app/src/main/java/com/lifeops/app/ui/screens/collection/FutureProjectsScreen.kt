@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.FutureProjectStatus
 import com.lifeops.app.data.repository.FutureProjectListItem
 
 @Composable
@@ -38,13 +39,35 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
                 )
             }
         } else {
+            val (archived, active) = state.projects.partition { it.project.status == FutureProjectStatus.ARCHIVED }
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(state.projects, key = { it.project.id }) { item ->
-                    FutureProjectCard(item, onClick = { onOpenProject(item.project.id) })
+                items(active, key = { it.project.id }) { item ->
+                    FutureProjectCard(
+                        item,
+                        onClick = { onOpenProject(item.project.id) },
+                        onToggleStatus = { viewModel.setStatus(item.project.id, FutureProjectStatus.ARCHIVED) }
+                    )
+                }
+                if (archived.isNotEmpty()) {
+                    item(key = "archived-header") {
+                        Text(
+                            "Archived",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    items(archived, key = { it.project.id }) { item ->
+                        FutureProjectCard(
+                            item,
+                            onClick = { onOpenProject(item.project.id) },
+                            onToggleStatus = { viewModel.setStatus(item.project.id, FutureProjectStatus.ACTIVE) }
+                        )
+                    }
                 }
             }
         }
@@ -59,17 +82,36 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
 }
 
 @Composable
-private fun FutureProjectCard(item: FutureProjectListItem, onClick: () -> Unit) {
+private fun FutureProjectCard(
+    item: FutureProjectListItem,
+    onClick: () -> Unit,
+    onToggleStatus: () -> Unit
+) {
+    val isArchived = item.project.status == FutureProjectStatus.ARCHIVED
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(item.project.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            item.latestNote?.let { latest ->
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    latest,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 2
+                    item.project.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            else MaterialTheme.colorScheme.onSurface
                 )
+                item.latestNote?.let { latest ->
+                    Text(
+                        latest,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 2
+                    )
+                }
+            }
+            TextButton(onClick = onToggleStatus) {
+                Text(if (isArchived) "Restore" else "Archive")
             }
         }
     }

@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.FutureProjectStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 
@@ -42,6 +43,20 @@ fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: (
             AppHeader(
                 navigationIcon = { BackNavIcon(onBack) },
                 actions = {
+                    // Mirrors the Complete/Reactivate lifecycle on current projects: active
+                    // ideas can be promoted into a real project or shelved; archived ones restored.
+                    if (project != null) {
+                        if (project.status == FutureProjectStatus.ACTIVE) {
+                            TextButton(onClick = { viewModel.promote() }) { Text("Promote") }
+                            TextButton(onClick = { viewModel.setStatus(FutureProjectStatus.ARCHIVED) }) {
+                                Text("Archive")
+                            }
+                        } else {
+                            TextButton(onClick = { viewModel.setStatus(FutureProjectStatus.ACTIVE) }) {
+                                Text("Restore")
+                            }
+                        }
+                    }
                     IconButton(onClick = { viewModel.delete(onBack) }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete project")
                     }
