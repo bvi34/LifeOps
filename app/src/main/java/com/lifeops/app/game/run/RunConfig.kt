@@ -1,7 +1,9 @@
 package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.ChallengeMode
+import com.lifeops.app.game.content.Maps
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.map.GameMap
 
 /**
  * The committed loadout for one run, resolved from banked resources before the run starts
@@ -23,6 +25,8 @@ data class RunConfig(
     val waves: Int = 7,
     /** Optional challenge mode the run's Director hosts (§8). Defaults to the standard run. */
     val challengeMode: ChallengeMode = ChallengeMode.NONE,
+    /** The bunker the run is fought in (DESIGN.md §7 holdout). */
+    val map: GameMap = Maps.NACHT,
 ) {
     companion object {
         const val MIN_LEVEL_CAP = 6

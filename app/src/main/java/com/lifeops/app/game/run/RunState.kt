@@ -5,6 +5,7 @@ import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
+import com.lifeops.app.game.map.GameMap
 
 enum class RunStatus { RUNNING, LEVEL_UP, VICTORY, DEFEAT }
 
@@ -49,7 +50,15 @@ data class RunSnapshot(
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,
+    /** Static map geometry (immutable reference — the renderer draws tiles from it). */
+    val map: GameMap,
+    val unlockedZoneIds: Set<Int>,
+    val openBarrierIds: Set<Int>,
+    /** A locked door the player is standing next to, or null; drives the buy prompt. */
+    val nearbyBarrier: BarrierPrompt?,
 )
+
+data class BarrierPrompt(val id: Int, val name: String, val cost: Int, val affordable: Boolean)
 
 data class EnemyView(
     val pos: Vec2,

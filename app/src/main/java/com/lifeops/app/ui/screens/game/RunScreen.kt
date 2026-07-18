@@ -324,12 +324,44 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             fun sx(x: Float) = originX + x * scale
             fun sy(y: Float) = originY + y * scale
 
-            // Arena floor.
-            drawRect(
-                color = ARENA_FLOOR,
-                topLeft = Offset(sx(0f), sy(0f)),
-                size = androidx.compose.ui.geometry.Size(snapshot.arena.x * scale, snapshot.arena.y * scale)
-            )
+            // Map: draw every tile. Locked rooms read as dim voids; open floor lights up; doors show
+            // barred (locked) or open; windows and turret pads are marked in unlocked rooms.
+            val m = snapshot.map
+            val cw = m.cellSize * scale
+            for (r in 0 until m.rows) for (c in 0 until m.cols) {
+                val t = m.tileAt(c, r)
+                val tl = Offset(sx(c * m.cellSize), sy(r * m.cellSize))
+                val cellSz = androidx.compose.ui.geometry.Size(cw, cw)
+                when (t.type) {
+                    com.lifeops.app.game.map.TileType.WALL ->
+                        drawRect(color = WALL_COLOR, topLeft = tl, size = cellSz)
+                    com.lifeops.app.game.map.TileType.FLOOR -> {
+                        val unlocked = t.zoneId in snapshot.unlockedZoneIds
+                        drawRect(color = if (unlocked) FLOOR_COLOR else LOCKED_COLOR, topLeft = tl, size = cellSz)
+                        if (unlocked) {
+                            // Faint grid so turret pads have a legible lattice to land on.
+                            drawRect(color = GRID_LINE, topLeft = tl, size = cellSz, style = Stroke(1f))
+                            if (t.pad) drawRect(
+                                color = PAD_COLOR,
+                                topLeft = Offset(tl.x + cw * 0.2f, tl.y + cw * 0.2f),
+                                size = androidx.compose.ui.geometry.Size(cw * 0.6f, cw * 0.6f),
+                                style = Stroke(1.5f * scale)
+                            )
+                        }
+                    }
+                    com.lifeops.app.game.map.TileType.DOOR -> {
+                        val open = t.barrierId in snapshot.openBarrierIds
+                        drawRect(color = if (open) FLOOR_COLOR else DOOR_LOCKED_COLOR, topLeft = tl, size = cellSz)
+                    }
+                }
+            }
+            // Windows (entrances) in unlocked rooms: a bright breach mark where enemies climb in.
+            m.entrances.forEach { e ->
+                if (e.zoneId in snapshot.unlockedZoneIds) {
+                    val cc = m.cellCenter(e.col, e.row)
+                    drawCircle(color = WINDOW_COLOR, radius = cw * 0.28f, center = Offset(sx(cc.x), sy(cc.y)), style = Stroke(2f * scale))
+                }
+            }
 
             snapshot.pickups.forEach { pk ->
                 drawCircle(
@@ -436,6 +468,21 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
         }
 
         RunHud(snapshot, Modifier.align(Alignment.TopStart))
+
+        // Buy prompt when standing next to a locked door (a §7 gold sink).
+        snapshot.nearbyBarrier?.let { prompt ->
+            if (snapshot.status == RunStatus.RUNNING) {
+                Button(
+                    onClick = { engine.buyBarrier(prompt.id) },
+                    enabled = prompt.affordable,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 28.dp)
+                ) {
+                    Text(if (prompt.affordable) "Open ${prompt.name} — ${prompt.cost}g" else "${prompt.name} — need ${prompt.cost}g")
+                }
+            }
+        }
 
         when (snapshot.status) {
             RunStatus.LEVEL_UP -> LevelUpOverlay(snapshot) { engine.choose(it) }
@@ -642,6 +689,13 @@ private fun playerPath(center: Offset, rScreen: Float, facing: Float): Path {
 
 private val ARENA_BG = Color(0xFF101014)
 private val ARENA_FLOOR = Color(0xFF1B1B22)
+private val WALL_COLOR = Color(0xFF2B2B36)
+private val FLOOR_COLOR = Color(0xFF24303B)
+private val LOCKED_COLOR = Color(0xFF141418)
+private val DOOR_LOCKED_COLOR = Color(0xFF6D4C41)
+private val GRID_LINE = Color(0x14FFFFFF)
+private val PAD_COLOR = Color(0x66FFD54F)
+private val WINDOW_COLOR = Color(0xFFEF5350)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
 private val PROJECTILE_COLOR = Color(0xFFFFF176)
 private val XP_COLOR = Color(0xFF66BB6A)

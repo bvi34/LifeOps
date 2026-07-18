@@ -15,6 +15,7 @@ import com.lifeops.app.game.core.Stat
 import com.lifeops.app.game.core.StatBlock
 import com.lifeops.app.game.core.StatContribution
 import com.lifeops.app.game.core.Vec2
+import com.lifeops.app.game.map.MapState
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -33,11 +34,13 @@ class RunEngine(
     val bus: EventBus = EventBus(),
     private val resolver: EffectResolver = EffectResolver(),
 ) {
-    val arena: Vec2 = Vec2(360f, 600f)
+    /** Runtime map state (unlocked rooms, open doors, flow field). Geometry lives in [config.map]. */
+    val mapState = MapState(config.map)
+    val arena: Vec2 = config.map.worldSize
     private val rng = RunSeed(config.seed)
 
     val player = Player(
-        pos = Vec2(arena.x / 2f, arena.y / 2f),
+        pos = config.map.cellCenter(config.map.startCol, config.map.startRow),
         weapon = config.weapon,
         health = config.maxHealth,
         maxHealth = config.maxHealth,
@@ -92,6 +95,7 @@ class RunEngine(
         resolver.beginFrame()
 
         movePlayer(clamped, input)
+        mapState.computeFlow(config.map.colOf(player.pos.x), config.map.rowOf(player.pos.y))
         updateWaves(clamped)
         moveEnemies(clamped)
         updateAim(input)
@@ -103,6 +107,22 @@ class RunEngine(
         ageVisuals(clamped)
 
         if (player.health <= 0f) endRun(victory = false)
+    }
+
+    /**
+     * Buy the given barrier if the player is standing near it and can afford it: spend in-run gold
+     * and open the door (a §7 gold sink). No-op otherwise. Returns whether the purchase happened.
+     */
+    fun buyBarrier(barrierId: Int): Boolean {
+        if (status != RunStatus.RUNNING) return false
+        val barrier = config.map.barriers.firstOrNull { it.id == barrierId } ?: return false
+        if (barrier.id in mapState.openBarriers) return false
+        val near = mapState.nearbyLockedBarrier(player.pos, INTERACT_DIST)
+        if (near?.id != barrier.id) return false
+        if (player.gold < barrier.cost) return false
+        player.gold -= barrier.cost
+        mapState.unlock(barrier.id)
+        return true
     }
 
     /** Apply the chosen level-up option and resume. Ignored unless currently paused on level-up. */
@@ -157,6 +177,12 @@ class RunEngine(
         weaponName = config.weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
+        map = config.map,
+        unlockedZoneIds = mapState.unlockedZones.toSet(),
+        openBarrierIds = mapState.openBarriers.toSet(),
+        nearbyBarrier = mapState.nearbyLockedBarrier(player.pos, INTERACT_DIST)?.let {
+            BarrierPrompt(it.id, it.name, it.cost, player.gold >= it.cost)
+        },
     )
 
     // --- Movement ---------------------------------------------------------------------------
@@ -165,19 +191,30 @@ class RunEngine(
         val dir = input.move.clampLength(1f)
         if (dir.length() <= Vec2.EPSILON) return
         val speed = player.moveSpeed(stats)
-        val next = player.pos + dir * (speed * dt)
-        player.pos = clampToArena(next, player.radius)
+        player.pos = slideMove(player.pos, dir * (speed * dt))
     }
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
-            val toPlayer = (player.pos - e.pos).normalized()
-            e.pos = clampToArena(e.pos + toPlayer * (e.moveSpeed * dt), e.type.radius)
+            // Descend the flow field so enemies funnel through open doorways instead of clipping walls.
+            val dir = mapState.flowDir(e.pos, player.pos)
+            e.pos = slideMove(e.pos, dir * (e.moveSpeed * dt))
         }
     }
 
-    private fun clampToArena(p: Vec2, r: Float): Vec2 =
-        Vec2(p.x.coerceIn(r, arena.x - r), p.y.coerceIn(r, arena.y - r))
+    /**
+     * Move [from] by [delta] against the map's walls, sliding along a wall rather than sticking:
+     * each axis is applied only if the resulting cell is walkable. Keeps the player and enemies
+     * inside unlocked rooms and out of the walls (DESIGN.md §7 holdout geometry).
+     */
+    private fun slideMove(from: Vec2, delta: Vec2): Vec2 {
+        var p = from
+        val tryX = Vec2(p.x + delta.x, p.y)
+        if (mapState.walkableWorld(tryX)) p = tryX
+        val tryY = Vec2(p.x, p.y + delta.y)
+        if (mapState.walkableWorld(tryY)) p = tryY
+        return p
+    }
 
     // --- Waves ------------------------------------------------------------------------------
 
@@ -237,7 +274,7 @@ class RunEngine(
     private fun spawnBoss() = spawnEnemy(EnemyType.ABOMINATION, hpScale = 1f)
 
     private fun spawnEnemy(type: EnemyType, hpScale: Float) {
-        val pos = randomEdgePoint()
+        val pos = spawnPoint() ?: return
         // Build the enemy through the same StatBlock path the player uses: its archetype base, then
         // the Director's per-enemy multipliers, then any enemy-attached artifacts (Mob Boss). An
         // aimed-scope artifact is simply inert on an enemy with no weapon (DESIGN.md §3).
@@ -268,14 +305,12 @@ class RunEngine(
         bus.emit(GameEvent.OnSpawn(e.id, e.kind))
     }
 
-    private fun randomEdgePoint(): Vec2 {
-        // Pick a point just inside one of the four edges.
-        return when (rng.nextInt(4)) {
-            0 -> Vec2(rng.nextFloat(0f, arena.x), 8f)
-            1 -> Vec2(rng.nextFloat(0f, arena.x), arena.y - 8f)
-            2 -> Vec2(8f, rng.nextFloat(0f, arena.y))
-            else -> Vec2(arena.x - 8f, rng.nextFloat(0f, arena.y))
-        }
+    /** Enemies climb in through a random window of an unlocked room (DESIGN.md §7). */
+    private fun spawnPoint(): Vec2? {
+        val active = mapState.activeEntrances()
+        if (active.isEmpty()) return null
+        val e = active[rng.nextInt(active.size)]
+        return config.map.cellCenter(e.col, e.row)
     }
 
     // --- Weapon fire ------------------------------------------------------------------------
@@ -517,5 +552,7 @@ class RunEngine(
         const val BURST_SECONDS = 0.35f
         const val MUZZLE_SECONDS = 0.06f
         const val HURT_SECONDS = 0.16f
+        /** How close (world units) the player must be to a locked door to buy it. */
+        const val INTERACT_DIST = 42f
     }
 }
