@@ -109,4 +109,33 @@ class MapTest {
         assertTrue(enemies.isNotEmpty())
         assertTrue("every enemy should stand on walkable, unlocked floor", enemies.all { e.mapState.walkableWorld(it.pos) })
     }
+
+    // --- Boss breaches ----------------------------------------------------------------------
+
+    @Test
+    fun bossBreachOpensAWallPermanentlyAndCannotBeBarricaded() {
+        val s = MapState(map)
+        // A divider-wall cell between Foyer and West (the door is at row 9; row 3 is solid wall).
+        assertFalse(s.walkable(5, 3))
+        assertTrue(s.breach(5, 3))
+        assertTrue(s.walkable(5, 3))
+        assertFalse(s.isBarricadeable(5, 3))
+        assertTrue(1 in s.unlockedZones) // tearing the divider reveals the West wing
+    }
+
+    @Test
+    fun theBunkerBorderCanNeverBeBreached() {
+        val s = MapState(map)
+        assertFalse(s.breach(0, 5))
+        assertFalse(s.walkable(0, 5))
+    }
+
+    @Test
+    fun breachingADoorForcesItOpen() {
+        val s = MapState(map)
+        assertFalse(s.walkable(5, 9)) // West Door, still shut
+        assertTrue(s.breach(5, 9))
+        assertTrue(0 in s.openBarriers)
+        assertTrue(1 in s.unlockedZones)
+    }
 }

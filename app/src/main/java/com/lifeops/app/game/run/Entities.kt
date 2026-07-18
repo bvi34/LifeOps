@@ -72,6 +72,8 @@ class Enemy(
     val kind: EntityKind = if (type == EnemyType.ABOMINATION) EntityKind.BOSS else EntityKind.ENEMY,
     /** Seconds of remaining hit-flash; set on each incoming hit, decays each frame (visual only). */
     var hitFlash: Float = 0f,
+    /** Bosses only: seconds until the next wall-smash. Ignored for non-boss enemies. */
+    var breakCooldown: Float = 0f,
 ) {
     val alive: Boolean get() = health > 0f
 }

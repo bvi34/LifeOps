@@ -163,10 +163,22 @@ this table is the seed of the whole modifier system.
 - **Wave-based** (SAS-style holdout), not continuous swarm. Between-wave
   breathers are where gold gets spent: barricades, door welds, turret
   placements, consumables.
+- **Fixed grid bunker.** The holdout is a tile map (Nacht-style): rooms, walls,
+  window entrances enemies climb through, and gold-gated doors that unlock new
+  rooms. The grid's floor cells are the pads turrets land on. Map layout is
+  fixed for now; week-seeding drives spawns, not geometry (procgen layout later).
+- **Endless.** A run is `waves` waves ending in a boss; clearing the boss loops
+  back to wave 1 at the next **tier**, with pure multipliers scaling enemy
+  hp/speed/damage/count — the enemies come back "leveled up". The run only ever
+  ends on death; score (and the tier reached) is the record of how long you held.
+- **The boss tears the bunker open.** On a cooldown a boss smashes the wall/door
+  next to it toward the player into a permanent **breach** — widened, force-open,
+  and (unlike a bought door) never barricadeable. Over an endless run the map
+  gets progressively torn apart.
 - **Week-seeded procgen.** Hash the closed week's snapshot into the run seed.
-  Seven waves, one per day. Literal mapping where feasible: skipped tasks
-  spawn as enemy types in their day's wave; carried-forward tasks are elites
-  with HP scaled by carry count; an unsuccessful task seeds the boss.
+  Literal mapping where feasible: skipped tasks spawn as enemy types in their
+  day's wave; carried-forward tasks are elites with HP scaled by carry count;
+  an unsuccessful task seeds the boss.
 - Entry: debit run's energy price. Loadout draws on banked Level Cap, Max
   Health, Starting Gold. All committed resources are expended by the run.
 

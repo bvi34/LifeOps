@@ -37,6 +37,8 @@ data class RunSnapshot(
     val gold: Int,
     val wave: Int,
     val totalWaves: Int,
+    /** Endless-mode loop/difficulty tier (0 = first loop). */
+    val tier: Int,
     val score: Long,
     val status: RunStatus,
     val strained: Boolean,
@@ -54,6 +56,8 @@ data class RunSnapshot(
     val map: GameMap,
     val unlockedZoneIds: Set<Int>,
     val openBarrierIds: Set<Int>,
+    /** Cell indices (row*cols+col) the boss has smashed permanently open. */
+    val breachedCells: Set<Int>,
     /** A locked door the player is standing next to, or null; drives the buy prompt. */
     val nearbyBarrier: BarrierPrompt?,
 )

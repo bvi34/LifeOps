@@ -58,6 +58,9 @@ class RunEngine(
         private set
     var wave: Int = 0
         private set
+    /** Endless-mode loop counter: every full waves+boss clear bumps it, scaling all enemies (§7). */
+    var tier: Int = 0
+        private set
 
     private var stats: StatBlock = player.buildStats()
     private var nextId = 1
@@ -98,6 +101,7 @@ class RunEngine(
         mapState.computeFlow(config.map.colOf(player.pos.x), config.map.rowOf(player.pos.y))
         updateWaves(clamped)
         moveEnemies(clamped)
+        updateBossBreaches(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
         moveProjectiles(clamped)
@@ -154,6 +158,7 @@ class RunEngine(
         gold = player.gold,
         wave = wave + 1,
         totalWaves = config.waves,
+        tier = tier,
         score = score,
         status = status,
         strained = resolver.strained,
@@ -180,6 +185,7 @@ class RunEngine(
         map = config.map,
         unlockedZoneIds = mapState.unlockedZones.toSet(),
         openBarrierIds = mapState.openBarriers.toSet(),
+        breachedCells = mapState.breaches.toSet(),
         nearbyBarrier = mapState.nearbyLockedBarrier(player.pos, INTERACT_DIST)?.let {
             BarrierPrompt(it.id, it.name, it.cost, player.gold >= it.cost)
         },
@@ -216,6 +222,46 @@ class RunEngine(
         return p
     }
 
+    /**
+     * The boss tears the bunker open (DESIGN.md §7): on a cooldown, each boss smashes the wall/door
+     * cell next to it in the player's direction into a permanent breach, widening it perpendicular
+     * to the smash. Breaches force-open sealed rooms and can never be barricaded, so a long endless
+     * run leaves the map progressively more torn open.
+     */
+    private fun updateBossBreaches(dt: Float) {
+        for (e in enemies) {
+            if (e.kind != EntityKind.BOSS) continue
+            e.breakCooldown -= dt
+            if (e.breakCooldown > 0f) continue
+            e.breakCooldown = BOSS_BREAK_INTERVAL
+            attemptBreach(e)
+        }
+    }
+
+    private fun attemptBreach(boss: Enemy) {
+        val bc = config.map.colOf(boss.pos.x)
+        val br = config.map.rowOf(boss.pos.y)
+        val toPlayer = (player.pos - boss.pos).normalized()
+        // Pick the adjacent solid cell best aligned with the direction of the player.
+        var bestC = -1; var bestR = -1; var bestDot = 0f
+        for (dc in -1..1) for (dr in -1..1) {
+            if (dc == 0 && dr == 0) continue
+            val nc = bc + dc; val nr = br + dr
+            if (!config.map.inBounds(nc, nr)) continue
+            if (mapState.walkable(nc, nr)) continue // already open
+            val len = kotlin.math.hypot(dc.toFloat(), dr.toFloat())
+            val dot = (dc / len) * toPlayer.x + (dr / len) * toPlayer.y
+            if (dot > bestDot) { bestDot = dot; bestC = nc; bestR = nr }
+        }
+        if (bestC < 0) return
+        if (!mapState.breach(bestC, bestR)) return
+        // Widen perpendicular to the smash direction so the doorway genuinely gets bigger.
+        val dcs = bestC - bc; val drs = bestR - br
+        val perp = if (kotlin.math.abs(dcs) >= kotlin.math.abs(drs)) listOf(bestC to bestR - 1, bestC to bestR + 1)
+        else listOf(bestC - 1 to bestR, bestC + 1 to bestR)
+        perp.forEach { (pc, pr) -> mapState.breach(pc, pr) }
+    }
+
     // --- Waves ------------------------------------------------------------------------------
 
     private fun beginWave(index: Int) {
@@ -224,9 +270,9 @@ class RunEngine(
         bossSpawned = false
         spawnTimer = 0f
         // Enemy budget grows per wave; the final wave is lighter on trash to make room for the boss.
-        // The Director's spawn multiplier (e.g. Mirror mode) scales the whole wave.
+        // The Director's spawn multiplier (e.g. Mirror mode) and the endless tier both scale it.
         val baseBudget = if (isFinalWave()) 6 + index else 8 + index * 3
-        toSpawnThisWave = (baseBudget * director.spawnMult()).roundToInt().coerceAtLeast(1)
+        toSpawnThisWave = (baseBudget * director.spawnMult() * Tiers.spawnMult(tier)).roundToInt().coerceAtLeast(1)
         bus.emit(GameEvent.OnWaveStart(index + 1))
     }
 
@@ -256,7 +302,12 @@ class RunEngine(
         if (doneSpawning && enemies.isEmpty()) {
             score += 100L * (wave + 1)
             if (isFinalWave()) {
-                endRun(victory = true)
+                // Endless: the boss is down, so loop back to wave 1 at a higher tier — the enemies
+                // return "leveled up" (DESIGN.md §7). The run only ever ends on death.
+                tier++
+                score += 500L * tier
+                breatherTimer = BREATHER_SECONDS * 1.5f
+                beginWave(0)
             } else {
                 breatherTimer = BREATHER_SECONDS
                 beginWave(wave + 1)
@@ -285,12 +336,14 @@ class RunEngine(
                 Stat.DAMAGE to type.touchDamage,
             )
         )
-        block.add(StatContribution(Stat.MAX_HEALTH, Scope.GLOBAL, Op.MULTIPLY, director.enemyHpMult()))
-        block.add(StatContribution(Stat.MOVE_SPEED, Scope.GLOBAL, Op.MULTIPLY, director.enemySpeedMult()))
-        block.add(StatContribution(Stat.DAMAGE, Scope.GLOBAL, Op.MULTIPLY, director.enemyDamageMult()))
+        // Director multipliers (challenge modes) and the endless tier both compound onto the base.
+        block.add(StatContribution(Stat.MAX_HEALTH, Scope.GLOBAL, Op.MULTIPLY, director.enemyHpMult() * Tiers.hpMult(tier)))
+        block.add(StatContribution(Stat.MOVE_SPEED, Scope.GLOBAL, Op.MULTIPLY, director.enemySpeedMult() * Tiers.speedMult(tier)))
+        block.add(StatContribution(Stat.DAMAGE, Scope.GLOBAL, Op.MULTIPLY, director.enemyDamageMult() * Tiers.damageMult(tier)))
         director.enemyModifiers.forEach { block.addAll(it.contributions()) }
 
         val hp = block.resolve(Stat.MAX_HEALTH, Scope.GLOBAL) * hpScale
+        val boss = type == EnemyType.ABOMINATION
         val e = Enemy(
             id = nextId++,
             type = type,
@@ -300,6 +353,7 @@ class RunEngine(
             moveSpeed = block.resolve(Stat.MOVE_SPEED, Scope.GLOBAL),
             touchDamage = block.resolve(Stat.DAMAGE, Scope.GLOBAL),
             held = director.enemyModifiers,
+            breakCooldown = if (boss) BOSS_BREAK_INTERVAL else 0f,
         )
         enemies.add(e)
         bus.emit(GameEvent.OnSpawn(e.id, e.kind))
@@ -554,5 +608,7 @@ class RunEngine(
         const val HURT_SECONDS = 0.16f
         /** How close (world units) the player must be to a locked door to buy it. */
         const val INTERACT_DIST = 42f
+        /** Seconds between a boss's wall-smashes. */
+        const val BOSS_BREAK_INTERVAL = 2.2f
     }
 }

@@ -332,6 +332,12 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 val t = m.tileAt(c, r)
                 val tl = Offset(sx(c * m.cellSize), sy(r * m.cellSize))
                 val cellSz = androidx.compose.ui.geometry.Size(cw, cw)
+                if ((r * m.cols + c) in snapshot.breachedCells) {
+                    // Boss-smashed: permanent rubble opening, walkable, never barricadeable.
+                    drawRect(color = BREACH_COLOR, topLeft = tl, size = cellSz)
+                    drawRect(color = GRID_LINE, topLeft = tl, size = cellSz, style = Stroke(1f))
+                    continue
+                }
                 when (t.type) {
                     com.lifeops.app.game.map.TileType.WALL ->
                         drawRect(color = WALL_COLOR, topLeft = tl, size = cellSz)
@@ -500,6 +506,7 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
 private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
     Column(modifier.padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            HudChip("Tier", "${snapshot.tier + 1}")
             HudChip("Wave", "${snapshot.wave}/${snapshot.totalWaves}")
             HudChip("Lvl", "${snapshot.level}/${snapshot.levelCap}")
             HudChip("Gold", "${snapshot.gold}")
@@ -609,7 +616,7 @@ private fun LevelUpOverlay(snapshot: RunSnapshot, onChoose: (com.lifeops.app.gam
 
 @Composable
 private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLeave: () -> Unit) {
-    val victory = snapshot.status == RunStatus.VICTORY
+    // Endless mode ends only in defeat — you hold out as long as you can.
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)),
         contentAlignment = Alignment.Center
@@ -621,14 +628,14 @@ private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLea
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    if (victory) "Cleared" else "Overrun",
+                    "Overrun",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = if (victory) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                    color = MaterialTheme.colorScheme.error
                 )
                 Text("Score ${snapshot.score}", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Reached wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
+                    "Reached tier ${snapshot.tier + 1} · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
@@ -696,6 +703,7 @@ private val DOOR_LOCKED_COLOR = Color(0xFF6D4C41)
 private val GRID_LINE = Color(0x14FFFFFF)
 private val PAD_COLOR = Color(0x66FFD54F)
 private val WINDOW_COLOR = Color(0xFFEF5350)
+private val BREACH_COLOR = Color(0xFF3A2A24)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
 private val PROJECTILE_COLOR = Color(0xFFFFF176)
 private val XP_COLOR = Color(0xFF66BB6A)

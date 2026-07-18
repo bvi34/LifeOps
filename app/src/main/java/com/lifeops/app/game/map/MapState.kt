@@ -18,15 +18,53 @@ class MapState(val map: GameMap) {
     }
     val openBarriers: MutableSet<Int> = HashSet()
 
+    /**
+     * Cells the boss has smashed open (DESIGN.md §7). A breach is permanent for the run, walkable
+     * regardless of the underlying tile, and — unlike a bought door — can never be barricaded shut.
+     */
+    val breaches: MutableSet<Int> = HashSet()
+
     private val flow = IntArray(map.cols * map.rows) { -1 }
 
+    private fun index(c: Int, r: Int) = r * map.cols + c
+    private fun isBorder(c: Int, r: Int) = c == 0 || r == 0 || c == map.cols - 1 || r == map.rows - 1
+
+    fun isBreached(c: Int, r: Int): Boolean = map.inBounds(c, r) && index(c, r) in breaches
+
+    /** Whether a cell could ever be barricaded shut — boss breaches never can be. */
+    fun isBarricadeable(c: Int, r: Int): Boolean = !isBreached(c, r)
+
     fun walkable(c: Int, r: Int): Boolean {
+        if (!map.inBounds(c, r)) return false
+        if (index(c, r) in breaches) return true
         val t = map.tileAt(c, r)
         return when (t.type) {
             TileType.FLOOR -> t.zoneId in unlockedZones
             TileType.DOOR -> t.barrierId in openBarriers
             TileType.WALL -> false
         }
+    }
+
+    /**
+     * Smash a wall/door cell open for good. The border is never breachable (the bunker can't be
+     * opened to the void). Breaching a door force-opens it; either way, any room the newly-open cell
+     * borders is revealed, so the boss can tear its way into a sealed wing.
+     */
+    fun breach(c: Int, r: Int): Boolean {
+        if (!map.inBounds(c, r) || isBorder(c, r)) return false
+        if (index(c, r) in breaches) return false
+        breaches.add(index(c, r))
+        val t = map.tileAt(c, r)
+        if (t.type == TileType.DOOR) {
+            openBarriers.add(t.barrierId)
+            map.barrierZones[t.barrierId]?.forEach { unlockedZones.add(it) }
+        }
+        // Reveal any room the breach now exposes.
+        for ((nc, nr) in listOf(c - 1 to r, c + 1 to r, c to r - 1, c to r + 1)) {
+            val nt = map.tileAt(nc, nr)
+            if (nt.type == TileType.FLOOR) unlockedZones.add(nt.zoneId)
+        }
+        return true
     }
 
     fun walkableWorld(p: Vec2): Boolean = walkable(map.colOf(p.x), map.rowOf(p.y))
