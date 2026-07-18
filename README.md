@@ -19,7 +19,8 @@ the receipts.
 | Screen | Purpose |
 |---|---|
 | **This Week** | The cockpit. Create tasks, set priority/estimate/due date, log time (timer, Pomodoro, or manual), complete/skip/carry tasks, then **close the week**. |
-| **Resources** | RPG-style resource slots that fill as you complete work, mapped from your aspects. |
+| **Game** | An arcade wave-holdout run funded by the resources your real work earns. Spend Energy to enter, commit banked resources into your loadout, and fight a week-seeded run. See **[DESIGN.md](DESIGN.md)**. |
+| **Resources** | RPG-style resource slots that fill as you complete work, mapped from your aspects. The economy behind the Game. |
 | **Reports** | Trends: completion rate, aspect balance, time spent, scoring, project health, priority breakdown, resource usage, carryover. |
 | **Growth Record** | A permanent, per-week concentric-ring history. One ring per week; effort shows as colour; skipped weeks leave grey scars. |
 | **Settings** | Aspects & categories, projects, cost resources, notifications, theme, and all backup/export actions. |

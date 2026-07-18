@@ -1,0 +1,133 @@
+package com.lifeops.app.game.content
+
+import com.lifeops.app.game.core.AttachTarget
+import com.lifeops.app.game.core.Modifier
+import com.lifeops.app.game.core.Op
+import com.lifeops.app.game.core.Scope
+import com.lifeops.app.game.core.Stat
+import com.lifeops.app.game.core.StatBlock
+import com.lifeops.app.game.core.StatContribution
+
+/**
+ * All baseline content authored as data (DESIGN.md invariant #4). No behaviour here — baseline
+ * artifacts do stat math only (§5); behaviour is Phase-2 shop territory. Adding a weapon, an
+ * artifact rank, or an enemy is editing these tables, not the engine.
+ */
+
+/** The two player-aimed starting weapons (DESIGN.md §4). Base stat rows for each. */
+enum class StartingWeapon(
+    val displayName: String,
+    val blurb: String,
+    val baseStats: Map<Stat, Float>,
+    /**
+     * Gatling normalizes total DPS across projectile count (§4): more projectiles = more, smaller
+     * hits at the same throughput. The engine divides per-hit damage by projectile count when this
+     * is true, so buying projectile ranks buys coverage, not raw DPS.
+     */
+    val dpsNormalized: Boolean,
+) {
+    SNIPER(
+        displayName = "Sniper",
+        blurb = "Burst, precision, single-target. Deletes elites; weak vs trash.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 34f,
+            Stat.FIRE_RATE to 1.6f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 560f,
+            Stat.RANGE to 620f,
+            Stat.CRIT_CHANCE to 0.15f,
+            Stat.CRIT_MULT to 2.5f,
+        ),
+        dpsNormalized = false,
+    ),
+    GATLING(
+        displayName = "Gatling",
+        blurb = "Sustained stream. Total DPS normalized across projectiles — coverage, not throughput.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 16f,
+            Stat.FIRE_RATE to 7f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 420f,
+            Stat.RANGE to 460f,
+            Stat.CRIT_CHANCE to 0.05f,
+            Stat.CRIT_MULT to 2f,
+        ),
+        dpsNormalized = true,
+    );
+
+    fun baseStatBlock(): StatBlock = StatBlock(baseStats)
+}
+
+/**
+ * Baseline artifact pool: exactly 4, each with 4 pure-additive stacking ranks (DESIGN.md §5).
+ * Rolling a duplicate upgrades the rank. Balance warnings from the design doc are honoured:
+ * +projectiles and +turret are secretly multiplicative, so their per-rank steps are smaller.
+ */
+object Artifacts {
+
+    private fun ranks(stat: Stat, scope: Scope, perRank: Float, op: Op = Op.ADD_PERCENT, count: Int = 4) =
+        List(count) { StatContribution(stat, scope, op, perRank) }
+
+    val OVERCLOCK = Modifier(
+        id = "overclock",
+        name = "Overclock",
+        description = "+10% aimed damage per rank.",
+        attachesTo = AttachTarget.ENTITY,
+        maxRank = 4,
+        rankContributions = ranks(Stat.DAMAGE, Scope.AIMED, 0.10f),
+    )
+
+    val AUTOLOADER = Modifier(
+        id = "autoloader",
+        name = "Autoloader",
+        description = "+12% aimed fire rate per rank.",
+        attachesTo = AttachTarget.ENTITY,
+        maxRank = 4,
+        rankContributions = ranks(Stat.FIRE_RATE, Scope.AIMED, 0.12f),
+    )
+
+    // +1 projectile per rank is flat-additive to the count but multiplicative in effect (§5),
+    // so it is deliberately the rarest kind of power — one artifact, capped at +4.
+    val SPLITTER = Modifier(
+        id = "splitter",
+        name = "Splitter",
+        description = "+1 aimed projectile per rank.",
+        attachesTo = AttachTarget.ENTITY,
+        maxRank = 4,
+        rankContributions = ranks(Stat.PROJECTILES, Scope.AIMED, 1f, op = Op.FLAT),
+    )
+
+    val ADRENALINE = Modifier(
+        id = "adrenaline",
+        name = "Adrenaline",
+        description = "+8% move speed per rank.",
+        attachesTo = AttachTarget.ENTITY,
+        maxRank = 4,
+        rankContributions = ranks(Stat.MOVE_SPEED, Scope.GLOBAL, 0.08f),
+    )
+
+    val ALL: List<Modifier> = listOf(OVERCLOCK, AUTOLOADER, SPLITTER, ADRENALINE)
+
+    fun byId(id: String): Modifier? = ALL.firstOrNull { it.id == id }
+}
+
+/**
+ * Enemy archetypes (DESIGN.md §3/§7). Same stat schema as the player, so a future Mob-Boss mode
+ * can hand an enemy an artifact through the identical attachment code path.
+ */
+enum class EnemyType(
+    val displayName: String,
+    val maxHealth: Float,
+    val moveSpeed: Float,
+    val touchDamage: Float,
+    val radius: Float,
+    val xpValue: Int,
+    val goldValue: Int,
+) {
+    // Trash: cheap, fast, swarms. Sniper struggles, gatling shines.
+    SHAMBLER("Shambler", maxHealth = 26f, moveSpeed = 46f, touchDamage = 8f, radius = 13f, xpValue = 3, goldValue = 1),
+    // Elite: carried-forward tasks map here, HP scaled by carry count at spawn time.
+    HUSK("Husk", maxHealth = 120f, moveSpeed = 34f, touchDamage = 16f, radius = 18f, xpValue = 10, goldValue = 4),
+    // Boss: seeded from an unsuccessful task; one per run finale.
+    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, touchDamage = 30f, radius = 34f, xpValue = 80, goldValue = 40),
+}
