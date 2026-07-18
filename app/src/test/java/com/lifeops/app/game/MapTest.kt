@@ -26,8 +26,16 @@ class MapTest {
         // 4 Foyer windows + 2 West + 2 East.
         assertEquals(8, map.entrances.size)
         assertEquals(2, map.pads.size)
-        // Start is a floor cell in the Foyer (zone 0).
-        assertEquals(0, map.tileAt(map.startCol, map.startRow).zoneId)
+        // Start is a walkable Foyer floor cell — NOT parsed as a door ('s'/'p' are letters too,
+        // and must not be mistaken for the a-z door range, or the player spawns at (0,0) in a wall).
+        assertEquals(8, map.startCol)
+        assertEquals(9, map.startRow)
+        val startTile = map.tileAt(map.startCol, map.startRow)
+        assertEquals(com.lifeops.app.game.map.TileType.FLOOR, startTile.type)
+        assertEquals(0, startTile.zoneId)
+        assertTrue(MapState(map).walkable(map.startCol, map.startRow))
+        // Pads are floor, not doors.
+        map.pads.forEach { (c, r) -> assertEquals(com.lifeops.app.game.map.TileType.FLOOR, map.tileAt(c, r).type) }
     }
 
     @Test

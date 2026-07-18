@@ -77,10 +77,13 @@ object Maps {
         for (r in 0 until rows) for (c in 0 until cols) {
             val ch = charAt(c, r)
             tiles[r * cols + c] = when {
+                ch == '#' -> Tile(TileType.WALL)
+                // Reserved special markers (window / pad / start) are letters too, so they must be
+                // matched BEFORE the a-z door range or they'd be mistaken for doors. Resolved in pass 2.
+                ch == '*' || ch == 'p' || ch == 's' -> null
                 ch in '0'..'9' -> Tile(TileType.FLOOR, zoneId = ch - '0')
                 ch in 'a'..'z' -> Tile(TileType.DOOR, barrierId = ch - 'a')
-                ch == '#' -> Tile(TileType.WALL)
-                else -> null // pending special
+                else -> null
             }
         }
 
