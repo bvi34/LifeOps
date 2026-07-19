@@ -166,6 +166,10 @@ class WeatherRepository(
 
     suspend fun pruneExpiredAlerts() = weatherDao.pruneExpiredAlerts(DateUtil.now())
 
+    /** True when any (non-expired) alert is cached — the refresh worker uses this to tighten
+     *  its cadence while severe weather is in play. Call after [pruneExpiredAlerts]. */
+    suspend fun hasActiveAlerts(): Boolean = weatherDao.activeAlertCount() > 0
+
     private fun snapshotOf(locationId: String, report: WeatherReport) = WeatherSnapshotEntity(
         id = UUID.randomUUID().toString(),
         locationId = locationId,

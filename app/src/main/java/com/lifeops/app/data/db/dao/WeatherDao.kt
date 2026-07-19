@@ -69,6 +69,10 @@ interface WeatherDao {
     @Query("DELETE FROM weather_alerts WHERE locationId = :locationId")
     suspend fun clearAlerts(locationId: String)
 
+    /** How many alerts are cached across all locations — non-zero drives a denser refresh cadence. */
+    @Query("SELECT COUNT(*) FROM weather_alerts")
+    suspend fun activeAlertCount(): Int
+
     /**
      * Drop alerts whose expiry has passed. Uses SQLite datetime() so the compare is offset-aware:
      * NWS stamps expires with a local offset ("...-05:00") while [nowIso] is UTC ("...Z"), and

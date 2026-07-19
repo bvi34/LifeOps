@@ -104,5 +104,7 @@ class LifeOpsApp : Application() {
             gameResourceRepository.ensureDefaultSlots()
             notificationRepository.scheduleWeekCloseReminder()
         }
+        // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
+        com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(this)
     }
 }

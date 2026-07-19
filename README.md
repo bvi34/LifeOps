@@ -114,9 +114,16 @@ intentionally **left out of backup/restore** — it's regenerable.
 The Android-free, JVM-testable pieces sit in `util/`: `WeatherMath.kt` (NWS heat-index /
 wind-chill "feels like") and `NwsParser.kt` (raw api.weather.gov JSON → models). Only
 `data/weather/NwsClient.kt` performs I/O (via `HttpURLConnection` — no new dependencies), which is
-why the app gains the `INTERNET` permission for the first time. This is the foundation the later
-roadmap phases (refresh worker, OutdoorScore, task weather-requirements, "best time" engine,
-dynamic cards) build on.
+why the app gains the `INTERNET` permission for the first time.
+
+**Phase 2 — awareness.** `worker/WeatherRefreshWorker.kt` keeps the cache warm in the background:
+a ~2-hour periodic WorkManager job (network-constrained, `KEEP` so relaunches don't reset it,
+scheduled from `LifeOpsApp`) that refreshes every location, prunes expired alerts, and — while any
+alert is active — chains a shorter one-time follow-up for a denser cadence. `util/OutdoorScore.kt`
+is the rules-based scorer: a pure 0–100 *discomfort* total (0–25 Excellent … 76+ Avoid) built from
+feels-like, humidity, UV, wind, rain probability and storm risk, returning human-readable
+positives/warnings for the Phase 3 cards. Still ahead: task weather-requirements, the "best time"
+engine, and dynamic cards.
 
 ---
 
@@ -170,6 +177,9 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 - `WeatherMathTest` — heat-index / wind-chill "feels like", including the humidity/wind extremes.
 - `NwsParserTest` — api.weather.gov `/points`, forecast, and alert parsing (wind-text → mph,
   nested unit-values, graceful empty/malformed payloads).
+- `OutdoorScoreTest` — rules-based OutdoorScore band thresholds, storm-risk override, alert
+  folding, and the 0–100 clamp.
+- `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 ---
 
