@@ -5,7 +5,6 @@ import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
-import com.lifeops.app.game.map.GameMap
 
 enum class RunStatus { RUNNING, LEVEL_UP, VICTORY, DEFEAT }
 
@@ -20,7 +19,12 @@ data class LevelUpOption(
 
 /** Immutable per-frame view handed to the renderer. Cheap value types only — no engine internals. */
 data class RunSnapshot(
-    val arena: Vec2,
+    /** Fixed maximum world extent (for a stable camera). */
+    val worldSize: Vec2,
+    /** Top-left / bottom-right of the currently-active (lit) region; the rest is dead margin. */
+    val activeMin: Vec2,
+    val activeMax: Vec2,
+    val cellSize: Float,
     val playerPos: Vec2,
     val playerHealth: Float,
     val playerMaxHealth: Float,
@@ -52,17 +56,11 @@ data class RunSnapshot(
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,
-    /** Static map geometry (immutable reference — the renderer draws tiles from it). */
-    val map: GameMap,
-    val unlockedZoneIds: Set<Int>,
-    val openBarrierIds: Set<Int>,
-    /** Cell indices (row*cols+col) the boss has smashed permanently open. */
-    val breachedCells: Set<Int>,
-    /** A locked door the player is standing next to, or null; drives the buy prompt. */
-    val nearbyBarrier: BarrierPrompt?,
+    /** The arena-expansion offer, or null at max size; drives the Expand button. */
+    val expand: ExpandPrompt?,
 )
 
-data class BarrierPrompt(val id: Int, val name: String, val cost: Int, val affordable: Boolean)
+data class ExpandPrompt(val cost: Int, val affordable: Boolean, val stage: Int, val maxStage: Int)
 
 data class EnemyView(
     val pos: Vec2,
