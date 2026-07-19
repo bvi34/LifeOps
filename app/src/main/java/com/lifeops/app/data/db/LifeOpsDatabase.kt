@@ -581,6 +581,175 @@ private val MIGRATION_27_28 = object : Migration(27, 28) {
     }
 }
 
+private val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 1 weather foundation: a source-agnostic local cache so opening LifeOps never
+        // waits on the network. Three new standalone tables — no existing schema is touched.
+        // NOTE: no SQL DEFAULTs. The entities' Kotlin `= 0` defaults are NOT @ColumnInfo
+        // defaults, so Room's generated schema has none; the CREATE must match exactly (same
+        // rule the counters migration 18_19 calls out) or startup validation fails.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_locations (
+                id TEXT NOT NULL PRIMARY KEY,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                name TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_snapshots (
+                id TEXT NOT NULL PRIMARY KEY,
+                locationId TEXT NOT NULL,
+                fetchedAt TEXT NOT NULL,
+                observedAt TEXT NOT NULL,
+                temperatureF INTEGER NOT NULL,
+                feelsLikeF INTEGER NOT NULL,
+                humidityPct INTEGER,
+                windSpeedMph INTEGER NOT NULL,
+                windDirection TEXT,
+                windGustMph INTEGER,
+                uvIndex INTEGER,
+                precipitationProbabilityPct INTEGER,
+                shortForecast TEXT NOT NULL,
+                hourlyJson TEXT NOT NULL,
+                dailyJson TEXT NOT NULL,
+                FOREIGN KEY(locationId) REFERENCES weather_locations(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_snapshots_locationId ON weather_snapshots(locationId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_alerts (
+                id TEXT NOT NULL PRIMARY KEY,
+                locationId TEXT NOT NULL,
+                event TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                headline TEXT,
+                description TEXT,
+                instruction TEXT,
+                onset TEXT,
+                expires TEXT,
+                areaDesc TEXT,
+                fetchedAt TEXT NOT NULL,
+                FOREIGN KEY(locationId) REFERENCES weather_locations(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_alerts_locationId ON weather_alerts(locationId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_alerts_expires ON weather_alerts(expires)")
+    }
+}
+
+private val MIGRATION_29_30 = object : Migration(29, 30) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // People: household profiles with weather-comfort preferences (Phase 4 groundwork),
+        // timeline notes, and a task_people join marking which tasks involve whom. All additive.
+        // No SQL DEFAULTs — the entities carry no @ColumnInfo(defaultValue), so Room's generated
+        // schema has none and the CREATE must match exactly (same rule as the counters migration).
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS persons (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                heatToleranceMaxF INTEGER,
+                coldToleranceMinF INTEGER,
+                uvMax INTEGER,
+                windMaxMph INTEGER,
+                maxPrecipitationPct INTEGER,
+                sunSensitivity TEXT NOT NULL,
+                activityPreferences TEXT,
+                isArchived INTEGER NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS person_notes (
+                id TEXT NOT NULL PRIMARY KEY,
+                personId TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_person_notes_personId ON person_notes(personId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS task_people (
+                taskId TEXT NOT NULL,
+                personId TEXT NOT NULL,
+                PRIMARY KEY(taskId, personId),
+                FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+                FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_task_people_taskId ON task_people(taskId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_task_people_personId ON task_people(personId)")
+    }
+}
+
+private val MIGRATION_30_31 = object : Migration(30, 31) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 3: optional 1:1 weather constraints per task. Side table (taskId PK) so the core
+        // `tasks` schema is untouched. No SQL DEFAULTs — the entity carries no @ColumnInfo
+        // defaults, so Room's generated schema has none and the CREATE must match exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS task_weather_requirements (
+                taskId TEXT NOT NULL PRIMARY KEY,
+                outdoorPreferred INTEGER NOT NULL,
+                durationMinutes INTEGER,
+                maxTempF INTEGER,
+                minTempF INTEGER,
+                avoidRain INTEGER NOT NULL,
+                maxWindMph INTEGER,
+                FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+    }
+}
+
+private val MIGRATION_31_32 = object : Migration(31, 32) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 4: saved activities with default weather requirements. Standalone table; built-ins
+        // are seeded in Kotlin on first launch (ActivityTemplateRepository.ensureDefaults). No SQL
+        // DEFAULTs — the entity carries no @ColumnInfo defaults, so the CREATE must match exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS activity_templates (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                outdoorPreferred INTEGER NOT NULL,
+                durationMinutes INTEGER,
+                maxTempF INTEGER,
+                minTempF INTEGER,
+                avoidRain INTEGER NOT NULL,
+                maxWindMph INTEGER,
+                isBuiltIn INTEGER NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
+private val MIGRATION_32_33 = object : Migration(32, 33) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 5 learning: log of manual overrides of activity defaults. Standalone table, no FK.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS activity_overrides (
+                id TEXT NOT NULL PRIMARY KEY,
+                activityId TEXT NOT NULL,
+                field TEXT NOT NULL,
+                templateValue INTEGER,
+                userValue INTEGER,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_activity_overrides_activityId ON activity_overrides(activityId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -613,9 +782,18 @@ private val MIGRATION_27_28 = object : Migration(27, 28) {
         BookNoteEntity::class,
         BookTimeEntryEntity::class,
         FutureProjectEntity::class,
-        FutureProjectNoteEntity::class
+        FutureProjectNoteEntity::class,
+        WeatherLocationEntity::class,
+        WeatherSnapshotEntity::class,
+        WeatherAlertEntity::class,
+        PersonEntity::class,
+        PersonNoteEntity::class,
+        TaskPersonEntity::class,
+        TaskWeatherRequirementEntity::class,
+        ActivityTemplateEntity::class,
+        ActivityOverrideEntity::class
     ],
-    version = 28,
+    version = 33,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -643,6 +821,9 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun weeklyMenuItemDao(): WeeklyMenuItemDao
     abstract fun bookDao(): BookDao
     abstract fun futureProjectDao(): FutureProjectDao
+    abstract fun weatherDao(): WeatherDao
+    abstract fun personDao(): PersonDao
+    abstract fun activityTemplateDao(): ActivityTemplateDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -654,7 +835,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
                     .build()
                     .also { INSTANCE = it }
             }

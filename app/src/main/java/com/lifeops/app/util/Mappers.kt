@@ -118,3 +118,42 @@ fun FutureProject.toEntity() = FutureProjectEntity(id, title, "", createdAt, upd
 
 fun FutureProjectNoteEntity.toModel() = FutureProjectNote(id, projectId, content, createdAt)
 fun FutureProjectNote.toEntity() = FutureProjectNoteEntity(id, projectId, content, createdAt)
+
+// Weather — the domain models are deliberately source-agnostic (no sortOrder/createdAt/locationId),
+// so entity construction that needs those persistence-only fields lives in WeatherRepository.
+fun WeatherLocationEntity.toModel() = WeatherLocation(id, latitude, longitude, name)
+
+fun WeatherAlertEntity.toModel() = WeatherAlert(
+    id, event, AlertSeverity.from(severity), headline, description, instruction, onset, expires, areaDesc
+)
+
+fun PersonEntity.toModel() = Person(
+    id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
+    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt
+)
+fun Person.toEntity() = PersonEntity(
+    id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
+    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt
+)
+
+fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)
+fun PersonNote.toEntity() = PersonNoteEntity(id, personId, content, createdAt)
+
+fun TaskWeatherRequirementEntity.toModel() = TaskWeatherRequirement(
+    taskId, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph
+)
+fun TaskWeatherRequirement.toEntity() = TaskWeatherRequirementEntity(
+    taskId, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph
+)
+
+fun ActivityTemplateEntity.toModel() = ActivityTemplate(
+    id, name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph,
+    isBuiltIn, sortOrder, createdAt
+)
+fun ActivityTemplate.toEntity() = ActivityTemplateEntity(
+    id, name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph,
+    isBuiltIn, sortOrder, createdAt
+)
+
+fun ActivityOverrideEntity.toModel() = ActivityOverride(id, activityId, field, templateValue, userValue, createdAt)
+fun ActivityOverride.toEntity() = ActivityOverrideEntity(id, activityId, field, templateValue, userValue, createdAt)

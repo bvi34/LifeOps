@@ -11,9 +11,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.LocalActivity
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
@@ -34,6 +37,9 @@ fun PlanningScreen(
     onOpenRunbooks: () -> Unit,
     onOpenTemplates: () -> Unit,
     onOpenCostResources: () -> Unit,
+    onOpenPeople: () -> Unit,
+    onOpenWeather: () -> Unit,
+    onOpenActivities: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -65,6 +71,30 @@ fun PlanningScreen(
                     subtitle = "Track recurring tallies over time",
                     icon = Icons.Default.Numbers,
                     onClick = onOpenCounters
+                )
+            }
+            item {
+                HubCard(
+                    title = "People",
+                    subtitle = "Household profiles, preferences & who's involved",
+                    icon = Icons.Default.People,
+                    onClick = onOpenPeople
+                )
+            }
+            item {
+                HubCard(
+                    title = "Weather",
+                    subtitle = "Conditions, alerts & the best time for outdoor tasks",
+                    icon = Icons.Default.WbSunny,
+                    onClick = onOpenWeather
+                )
+            }
+            item {
+                HubCard(
+                    title = "Activities",
+                    subtitle = "Saved weather profiles for tasks (mowing, biking…)",
+                    icon = Icons.Default.LocalActivity,
+                    onClick = onOpenActivities
                 )
             }
             item {
