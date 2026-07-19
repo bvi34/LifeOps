@@ -5,6 +5,7 @@ package com.lifeops.app.ui.screens.game
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
 import com.lifeops.app.game.run.Loadout
@@ -280,6 +282,9 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
     val move = remember(engine) { mutableStateOf(Vec2.ZERO) }
     var joyCenter by remember(engine) { mutableStateOf<Offset?>(null) }
     var joyKnob by remember(engine) { mutableStateOf(Offset.Zero) }
+    // Selected build tool: null = just move; otherwise tapping the arena places this structure.
+    var buildType by remember(engine) { mutableStateOf<StructureType?>(null) }
+    val worldSize = snapshot.worldSize
 
     // Frame loop — the only Android-timed part; the engine step itself is pure.
     androidx.compose.runtime.LaunchedEffect(engine) {
@@ -316,6 +321,18 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                         onDragEnd = { joyCenter = null; move.value = Vec2.ZERO },
                         onDragCancel = { joyCenter = null; move.value = Vec2.ZERO }
                     )
+                }
+                // Tap-to-place when a build tool is selected (drag still moves via the block above).
+                .pointerInput(buildType, worldSize) {
+                    val type = buildType
+                    if (type != null) {
+                        detectTapGestures { tap ->
+                            val scale = min(size.width / worldSize.x, size.height / worldSize.y)
+                            val ox = (size.width - worldSize.x * scale) / 2f
+                            val oy = (size.height - worldSize.y * scale) / 2f
+                            engine.placeStructure(type, Vec2((tap.x - ox) / scale, (tap.y - oy) / scale))
+                        }
+                    }
                 }
         ) {
             val scale = min(size.width / snapshot.worldSize.x, size.height / snapshot.worldSize.y)
@@ -361,6 +378,21 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                     radius = 5f * scale,
                     center = Offset(sx(pk.pos.x), sy(pk.pos.y))
                 )
+            }
+
+            // Placed defenses. Turret = teal box with a barrel toward its target; Barricade = crate.
+            // Both darken as they take damage.
+            val struct = snapshot.cellSize * scale
+            snapshot.structures.forEach { s ->
+                val c = Offset(sx(s.pos.x), sy(s.pos.y))
+                val half = struct * (if (s.type == StructureType.TURRET) 0.34f else 0.42f)
+                val base = if (s.type == StructureType.TURRET) TURRET_COLOR else BARRICADE_COLOR
+                val col = lerp(Color(0xFF3A1010), base, s.healthFrac.coerceIn(0.15f, 1f))
+                drawRect(color = col, topLeft = Offset(c.x - half, c.y - half), size = androidx.compose.ui.geometry.Size(half * 2, half * 2))
+                if (s.type == StructureType.TURRET) {
+                    val a = atan2(s.aim.y, s.aim.x)
+                    drawLine(Color(0xFFB0BEC5), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
+                }
             }
 
             snapshot.enemies.forEach { e ->
@@ -456,6 +488,27 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
         }
 
         RunHud(snapshot, Modifier.align(Alignment.TopStart))
+
+        // Build palette: pick a tool, then tap the arena to place it. Tap the active tool to clear it.
+        if (snapshot.status == RunStatus.RUNNING) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 12.dp, bottom = 28.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StructureType.values().forEach { type ->
+                    val selected = buildType == type
+                    val affordable = snapshot.gold >= type.cost
+                    val onClick = { buildType = if (selected) null else type }
+                    if (selected) {
+                        Button(onClick = onClick) { Text("${type.displayName} ${type.cost}g") }
+                    } else {
+                        OutlinedButton(onClick = onClick, enabled = affordable) { Text("${type.displayName} ${type.cost}g") }
+                    }
+                }
+            }
+        }
 
         // Widen the arena for gold (the "unlock to widen the space" §7 sink).
         snapshot.expand?.let { prompt ->
@@ -681,6 +734,8 @@ private val FLOOR_COLOR = Color(0xFF1A2230)
 private val LOCKED_COLOR = Color(0xFF0C0C10)
 private val GRID_LINE = Color(0x14FFFFFF)
 private val ARENA_EDGE = Color(0xFF4FC3F7)
+private val TURRET_COLOR = Color(0xFF26A69A)
+private val BARRICADE_COLOR = Color(0xFF8D6E63)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
 private val PROJECTILE_COLOR = Color(0xFFFFF176)
 private val XP_COLOR = Color(0xFF66BB6A)

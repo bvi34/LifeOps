@@ -101,8 +101,29 @@ class Projectile(
     val damage: Float,
     val crit: Boolean,
     var lifeRemaining: Float,
+    /** True for player/turret shots (they hit enemies). Enemy shots would be false. */
+    val friendly: Boolean = false,
     val radius: Float = 5f,
 )
+
+/**
+ * A player-placed defense (turret or barricade) snapped to a grid cell. Permanent for the run and
+ * destructible — enemies blocked by it attack it. Turrets track an [aim] toward their current
+ * target for the barrel.
+ */
+class Structure(
+    val id: Int,
+    val type: com.lifeops.app.game.content.StructureType,
+    val col: Int,
+    val row: Int,
+    val pos: Vec2,
+    var hp: Float,
+    val maxHp: Float,
+    var fireCooldown: Float = 0f,
+    var aim: Vec2 = Vec2(1f, 0f),
+) {
+    val alive: Boolean get() = hp > 0f
+}
 
 class Pickup(
     val id: Int,

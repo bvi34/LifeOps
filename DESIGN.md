@@ -170,10 +170,11 @@ and — soon — your own placed turrets and barricades.
   enemies are bounded by the current active edges; enemies enter at those edges
   and **beeline** at the player. A grid overlays the arena — the lattice
   player-placed turrets/obstacles snap to.
-- **Placed defenses (YAZD).** The player spends gold to build turrets (auto-fire)
-  and obstacles/barricades (block + soak) on the grid. Permanent for the run and
-  destructible — enemies attack them. *(Being built — the grid and economy are in
-  place; structures land next.)*
+- **Placed defenses (YAZD).** The player spends gold to build turrets (auto-fire
+  friendly shots) and barricades (block + soak) on the grid, snapped to cells.
+  Permanent for the run and destructible — enemies blocked by one attack it until
+  it falls. Select a tool from the palette, tap the arena to place; drag still
+  moves.
 - **Waves + bosses, numerous.** SAS-style waves, heavier than a classic holdout,
   ending in one or more bosses (more bosses at higher tiers).
 - **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the

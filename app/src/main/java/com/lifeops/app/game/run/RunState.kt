@@ -2,6 +2,7 @@ package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
@@ -48,6 +49,7 @@ data class RunSnapshot(
     val strained: Boolean,
     val enemies: List<EnemyView>,
     val projectiles: List<Vec2>,
+    val structures: List<StructureView>,
     val pickups: List<PickupView>,
     val effects: List<EffectView>,
     val boss: BossView?,
@@ -73,6 +75,7 @@ data class EnemyView(
     val facing: Vec2,
 )
 data class PickupView(val pos: Vec2, val kind: PickupKind)
+data class StructureView(val pos: Vec2, val type: StructureType, val healthFrac: Float, val aim: Vec2)
 data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
 data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)

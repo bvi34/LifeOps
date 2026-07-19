@@ -2,6 +2,7 @@ package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.Artifacts
 import com.lifeops.app.game.content.EnemyType
+import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -49,6 +50,15 @@ class RunEngine(
     val projectiles = ArrayList<Projectile>()
     val pickups = ArrayList<Pickup>()
     val effects = ArrayList<RunEffect>()
+    val structures = ArrayList<Structure>()
+    /** Grid-cell occupancy for placed structures, keyed by [cellKey]. One structure per cell. */
+    private val occupancy = HashMap<Int, Structure>()
+    private val worldCols = (arena.worldSize.x / arena.cellSize).toInt().coerceAtLeast(1)
+
+    private fun colOf(x: Float) = (x / arena.cellSize).toInt()
+    private fun rowOf(y: Float) = (y / arena.cellSize).toInt()
+    private fun cellKey(col: Int, row: Int) = row * worldCols + col
+    private fun structureAt(pos: Vec2): Structure? = occupancy[cellKey(colOf(pos.x), rowOf(pos.y))]
 
     var status: RunStatus = RunStatus.RUNNING
         private set
@@ -102,6 +112,7 @@ class RunEngine(
         moveEnemies(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
+        updateStructures(clamped)
         moveProjectiles(clamped)
         resolveProjectileHits()
         resolveTouchDamage(clamped)
@@ -109,6 +120,30 @@ class RunEngine(
         ageVisuals(clamped)
 
         if (player.health <= 0f) endRun(victory = false)
+    }
+
+    /**
+     * Place a defense at the grid cell containing [worldPos], spending its gold cost. Rejected if
+     * the cell is outside the active arena, already occupied, on the player's own cell, or
+     * unaffordable. Returns whether it was placed.
+     */
+    fun placeStructure(type: StructureType, worldPos: Vec2): Boolean {
+        if (status != RunStatus.RUNNING) return false
+        if (player.gold < type.cost) return false
+        val col = colOf(worldPos.x)
+        val row = rowOf(worldPos.y)
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        if (!arena.contains(center)) return false
+        if (occupancy.containsKey(cellKey(col, row))) return false
+        if (col == colOf(player.pos.x) && row == rowOf(player.pos.y)) return false // don't box yourself in
+        player.gold -= type.cost
+        val s = Structure(
+            id = nextId++, type = type, col = col, row = row, pos = center,
+            hp = type.maxHp, maxHp = type.maxHp,
+        )
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
+        return true
     }
 
     /**
@@ -171,6 +206,7 @@ class RunEngine(
             )
         },
         projectiles = projectiles.map { it.pos },
+        structures = structures.map { StructureView(it.pos, it.type, (it.hp / it.maxHp).coerceIn(0f, 1f), it.aim) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
@@ -194,10 +230,62 @@ class RunEngine(
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
-            // Open arena: beeline straight at the player (Geometry Wars), bounded by the active edges.
+            // Open arena: beeline straight at the player (Geometry Wars), bounded by the active edges,
+            // but blocked by placed structures — which the enemy attacks instead of walking through.
             val dir = (player.pos - e.pos).normalized()
-            e.pos = arena.clamp(e.pos + dir * (e.moveSpeed * dt), e.type.radius)
+            val delta = dir * (e.moveSpeed * dt)
+            var p = e.pos
+            val here = structureAt(p)
+            val tryX = Vec2(p.x + delta.x, p.y)
+            val sX = structureAt(tryX)
+            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e, dt) else p = tryX
+            val tryY = Vec2(p.x, p.y + delta.y)
+            val sY = structureAt(tryY)
+            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e, dt) else p = Vec2(p.x, tryY.y)
+            e.pos = arena.clamp(p, e.type.radius)
         }
+    }
+
+    private fun attackStructure(s: Structure, e: Enemy, dt: Float) {
+        s.hp -= e.touchDamage * dt
+        bus.emit(GameEvent.OnHit(e.id, s.id, e.touchDamage * dt, false))
+    }
+
+    /** Turrets auto-fire at the nearest enemy in range; dead structures are cleared. */
+    private fun updateStructures(dt: Float) {
+        val it = structures.iterator()
+        while (it.hasNext()) {
+            val s = it.next()
+            if (!s.alive) {
+                occupancy.remove(cellKey(s.col, s.row))
+                effects.add(RunEffect(s.pos, EffectKind.DEATH_BURST, worldRadius = arena.cellSize * 0.5f, ttl = BURST_SECONDS))
+                it.remove()
+                continue
+            }
+            if (!s.type.isTurret) continue
+            s.fireCooldown -= dt
+            var target: Enemy? = null
+            var bestDist = s.type.range
+            for (en in enemies) {
+                val d = en.pos.distanceTo(s.pos)
+                if (d <= bestDist) { bestDist = d; target = en }
+            }
+            val t = target ?: continue
+            s.aim = (t.pos - s.pos).normalized()
+            if (s.fireCooldown <= 0f) {
+                s.fireCooldown = 1f / s.type.fireRate
+                spawnFriendlyProjectile(s.pos, s.aim, s.type.damage, s.id, s.type.projectileSpeed, s.type.range)
+            }
+        }
+    }
+
+    private fun spawnFriendlyProjectile(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float) {
+        val p = Projectile(
+            id = nextId++, ownerId = ownerId, pos = origin, vel = dir * speed,
+            damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
+        )
+        projectiles.add(p)
+        bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
     }
 
     // --- Waves ------------------------------------------------------------------------------
@@ -336,7 +424,7 @@ class RunEngine(
             val dmg = if (crit) perHit * critMult else perHit
             val p = Projectile(
                 id = nextId++, ownerId = PLAYER_ID, pos = player.pos, vel = vel,
-                damage = dmg, crit = crit, lifeRemaining = life,
+                damage = dmg, crit = crit, lifeRemaining = life, friendly = true,
             )
             projectiles.add(p)
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
@@ -382,7 +470,7 @@ class RunEngine(
         val pit = projectiles.iterator()
         while (pit.hasNext()) {
             val p = pit.next()
-            if (p.ownerId != PLAYER_ID) continue
+            if (!p.friendly) continue // only player/turret shots damage enemies
             var hitEnemy: Enemy? = null
             for (e in enemies) {
                 if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { hitEnemy = e; break }
