@@ -57,13 +57,11 @@ class StructureTest {
     }
 
     @Test
-    fun barricadeCostEscalatesPerWall() {
+    fun barricadeCostIsFlat() {
         val e = engine(gold = 200)
         val c0 = e.buildCost(StructureType.BARRICADE)
         assertTrue(e.placeStructure(StructureType.BARRICADE, nearby(e, dx = 2f)))
-        assertEquals(c0 + RunEngine.BARRICADE_COST_STEP, e.buildCost(StructureType.BARRICADE))
-        // Turret cost is unaffected by barricades.
-        assertEquals(StructureType.TURRET.cost, e.buildCost(StructureType.TURRET))
+        assertEquals("placing a barricade no longer inflates the next one", c0, e.buildCost(StructureType.BARRICADE))
     }
 
     @Test

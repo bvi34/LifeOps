@@ -699,6 +699,8 @@ private fun enemyColor(type: EnemyType): Color = when (type) {
     EnemyType.RUSHER -> Color(0xFFFFEE58)
     EnemyType.BRUTE -> Color(0xFFC62828)
     EnemyType.ABOMINATION -> Color(0xFF8E24AA)
+    EnemyType.SPITTER_BOSS -> Color(0xFF00ACC1)
+    EnemyType.RUSHER_BOSS -> Color(0xFFF9A825)
 }
 
 /**
@@ -721,6 +723,9 @@ private fun enemyVerts(type: EnemyType): List<Pair<Float, Float>> = when (type) 
     EnemyType.ABOMINATION -> (0 until 12).map {
         (it * (2.0 * Math.PI / 12.0)).toFloat() to if (it % 2 == 0) 1.2f else 0.62f
     }
+    // Boss variants: bigger stars so they read as bosses of their archetype.
+    EnemyType.SPITTER_BOSS -> (0 until 8).map { (it * (2.0 * Math.PI / 8.0)).toFloat() to if (it % 2 == 0) 1.3f else 0.7f }
+    EnemyType.RUSHER_BOSS -> (0 until 10).map { (it * (2.0 * Math.PI / 10.0)).toFloat() to if (it % 2 == 0) 1.35f else 0.6f }
 }
 
 private fun enemyPath(type: EnemyType, center: Offset, rScreen: Float, facing: Float): Path {

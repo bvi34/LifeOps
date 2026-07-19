@@ -77,4 +77,18 @@ class HitsTest {
         assertTrue("should have looped past tier 0", e.tier >= 1)
         assertTrue("a ranged enemy should have fired once unlocked", sawEnemyShot)
     }
+
+    @Test
+    fun eachTierAddsANewBossToTheFinale() {
+        // Invincible, waves = 1: tier-0 finale is just the Abomination; the tier-1 finale adds the
+        // Spitter Boss on top.
+        val e = RunEngine(config(hits = 999, waves = 1))
+        var sawSpitterBoss = false
+        repeat(9000) {
+            e.step(1f / 60f, RunInput())
+            if (e.enemies.any { it.type == EnemyType.SPITTER_BOSS }) sawSpitterBoss = true
+        }
+        assertTrue("should have reached the tier-2 finale", e.tier >= 1)
+        assertTrue("the tier-2 finale should add the Spitter Boss", sawSpitterBoss)
+    }
 }

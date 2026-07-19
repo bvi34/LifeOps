@@ -125,11 +125,15 @@ enum class EnemyType(
     val radius: Float,
     val xpValue: Int,
     val goldValue: Int,
-    /** Endless tier at which this type joins the spawn pool (0 = from the start). Each tier unlocks
-     *  a new archetype; the boss is spawned separately and is not part of the roll. */
+    /** Endless tier at which this type joins its pool (0 = from the start). For trash, this gates
+     *  the spawn roll; for bosses, it gates the cumulative boss roster on the final wave. */
     val unlockTier: Int = 0,
-    /** Relative likelihood of being chosen from the unlocked pool. */
+    /** Relative likelihood of being chosen from the unlocked trash pool. */
     val spawnWeight: Int = 1,
+    /** Boss-kind: drops guaranteed loot, shows on the boss bar, spawned only on the final wave. */
+    val isBoss: Boolean = false,
+    /** How many of this boss spawn per final wave (a "swarm" boss spawns several). */
+    val bossCount: Int = 1,
     // Ranged enemies (Spitter) fire bursts at "tower rate"; melee types leave these zero.
     val fireRate: Float = 0f,       // intra-burst cadence
     val burstCount: Int = 1,        // shots per burst
@@ -152,8 +156,17 @@ enum class EnemyType(
     // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine.
     BRUTE("Brute", maxHealth = 150f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
         unlockTier = 3, spawnWeight = 2),
-    // Boss: heavy sponge; a contact costs three hearts (one-shots a baseline player).
-    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40),
+
+    // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
+    // Tier 1: the original heavy melee sponge. A contact costs three hearts.
+    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40,
+        isBoss = true, unlockTier = 0),
+    // Tier 2: a ranged boss that fires without pause — a relentless stream, not bursts.
+    SPITTER_BOSS("Spitter Boss", maxHealth = 620f, moveSpeed = 26f, contactHits = 3, radius = 30f, xpValue = 70, goldValue = 34,
+        isBoss = true, unlockTier = 1, fireRate = 5f, burstCount = 100000, burstCooldown = 0f, range = 400f, projectileSpeed = 320f),
+    // Tier 3: a swarm of fast, dangerous rusher-bosses that arrive together.
+    RUSHER_BOSS("Rusher Swarm", maxHealth = 240f, moveSpeed = 80f, contactHits = 2, radius = 22f, xpValue = 40, goldValue = 16,
+        isBoss = true, unlockTier = 2, bossCount = 3),
     ;
 
     val isRanged: Boolean get() = fireRate > 0f
