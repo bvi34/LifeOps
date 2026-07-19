@@ -187,8 +187,9 @@ and — soon — your own placed turrets and barricades.
   The **boss roster is cumulative**: every boss unlocked so far spawns together on
   the final wave — Abomination (tier 1), + Spitter Boss (tier 2, fires without
   pause), + Rusher Swarm (tier 3, several fast rusher-bosses at once), and beyond.
-- **Stingy drops.** Kills roll 25% XP / 5% gold / 70% nothing; bosses always drop
-  XP, gold, and a heart. Levelling and gold are meant to be earned.
+- **Drops scale with the kill.** Trash stays stingy (~25% XP / 5% gold); elites
+  (Husk, Spitter, Brute) pay out far more often; bosses always drop XP, gold, and
+  a heart. So farming the dangerous things — not the swarm — is what funds you.
 - **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the
   next **tier**, with pure multipliers scaling enemy hp/speed/damage/count — the
   enemies come back "leveled up". The run only ever ends on death; score and the
