@@ -273,7 +273,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenTemplates = { navController.navigate("templates") },
                         onOpenCostResources = { navController.navigate("cost_resources") },
                         onOpenPeople = { navController.navigate("people") },
-                        onOpenWeather = { navController.navigate("weather") }
+                        onOpenWeather = { navController.navigate("weather") },
+                        onOpenActivities = { navController.navigate("activities") }
                     )
                 }
                 composable("future_tasks") {
@@ -343,10 +344,17 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 composable("weather") {
                     val vm = viewModel<com.lifeops.app.ui.screens.weather.WeatherViewModel>(
                         factory = WeatherViewModelFactory(
-                            app.weatherRepository, app.weekRepository, app.taskRepository, app.personRepository
+                            app.weatherRepository, app.weekRepository, app.taskRepository,
+                            app.personRepository, app.activityTemplateRepository
                         )
                     )
                     WeatherScreen(vm) { navController.navigateUp() }
+                }
+                composable("activities") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.ActivitiesViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.ActivitiesViewModelFactory(app.activityTemplateRepository)
+                    )
+                    com.lifeops.app.ui.screens.planning.ActivitiesScreen(vm) { navController.navigateUp() }
                 }
             }
 

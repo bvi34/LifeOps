@@ -3,11 +3,13 @@ package com.lifeops.app.ui.screens.weather
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.data.model.WeatherLocation
 import com.lifeops.app.data.model.WeatherReport
+import com.lifeops.app.data.repository.ActivityTemplateRepository
 import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.WeatherRepository
@@ -36,6 +38,7 @@ data class WeatherUiState(
     val requirements: Map<String, TaskWeatherRequirement> = emptyMap(),
     val people: List<Person> = emptyList(),
     val taskPeople: Map<String, List<String>> = emptyMap(),
+    val activityTemplates: List<ActivityTemplate> = emptyList(),
     val isRefreshing: Boolean = false,
     val message: String? = null
 )
@@ -45,7 +48,8 @@ class WeatherViewModel(
     private val weatherRepository: WeatherRepository,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
-    private val personRepository: PersonRepository
+    private val personRepository: PersonRepository,
+    private val activityTemplateRepository: ActivityTemplateRepository
 ) : ViewModel() {
 
     private val selectedId = MutableStateFlow<String?>(null)
@@ -87,6 +91,11 @@ class WeatherViewModel(
         viewModelScope.launch {
             personRepository.observeTaskPeople().collect { links ->
                 _uiState.update { it.copy(taskPeople = links) }; recompute()
+            }
+        }
+        viewModelScope.launch {
+            activityTemplateRepository.observeAll().collect { templates ->
+                _uiState.update { it.copy(activityTemplates = templates) }
             }
         }
     }
@@ -169,9 +178,12 @@ class WeatherViewModelFactory(
     private val weatherRepository: WeatherRepository,
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
-    private val personRepository: PersonRepository
+    private val personRepository: PersonRepository,
+    private val activityTemplateRepository: ActivityTemplateRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        WeatherViewModel(weatherRepository, weekRepository, taskRepository, personRepository) as T
+        WeatherViewModel(
+            weatherRepository, weekRepository, taskRepository, personRepository, activityTemplateRepository
+        ) as T
 }

@@ -710,6 +710,29 @@ private val MIGRATION_30_31 = object : Migration(30, 31) {
     }
 }
 
+private val MIGRATION_31_32 = object : Migration(31, 32) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 4: saved activities with default weather requirements. Standalone table; built-ins
+        // are seeded in Kotlin on first launch (ActivityTemplateRepository.ensureDefaults). No SQL
+        // DEFAULTs — the entity carries no @ColumnInfo defaults, so the CREATE must match exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS activity_templates (
+                id TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                outdoorPreferred INTEGER NOT NULL,
+                durationMinutes INTEGER,
+                maxTempF INTEGER,
+                minTempF INTEGER,
+                avoidRain INTEGER NOT NULL,
+                maxWindMph INTEGER,
+                isBuiltIn INTEGER NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -749,9 +772,10 @@ private val MIGRATION_30_31 = object : Migration(30, 31) {
         PersonEntity::class,
         PersonNoteEntity::class,
         TaskPersonEntity::class,
-        TaskWeatherRequirementEntity::class
+        TaskWeatherRequirementEntity::class,
+        ActivityTemplateEntity::class
     ],
-    version = 31,
+    version = 32,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -781,6 +805,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun futureProjectDao(): FutureProjectDao
     abstract fun weatherDao(): WeatherDao
     abstract fun personDao(): PersonDao
+    abstract fun activityTemplateDao(): ActivityTemplateDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -792,7 +817,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32)
                     .build()
                     .also { INSTANCE = it }
             }

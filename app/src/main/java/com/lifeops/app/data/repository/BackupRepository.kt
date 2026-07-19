@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 9,
+    val version: Int = 10,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -46,6 +46,8 @@ private data class BackupData(
     val taskPeople: List<TaskPersonEntity> = emptyList(),
     // v9: per-task weather requirements.
     val taskWeatherRequirements: List<TaskWeatherRequirementEntity> = emptyList(),
+    // v10: saved activity templates (built-in + custom).
+    val activityTemplates: List<ActivityTemplateEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -77,6 +79,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             personNotes = db.personDao().getAllNotes(),
             taskPeople = db.personDao().getAllLinks(),
             taskWeatherRequirements = db.weatherDao().getAllRequirements(),
+            activityTemplates = db.activityTemplateDao().getAll(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -152,6 +155,8 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (link in data.taskPeople) db.personDao().attach(link)
                 // Task weather requirements: after tasks (FK taskId → tasks).
                 for (req in data.taskWeatherRequirements) db.weatherDao().upsertRequirement(req)
+                // Saved activities (standalone, no FKs).
+                for (at in data.activityTemplates) db.activityTemplateDao().upsert(at)
                 // Backups written before v7 carried one long-form content blob per future
                 // project; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring

@@ -70,6 +70,7 @@ class LifeOpsApp : Application() {
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
+    val activityTemplateRepository by lazy { ActivityTemplateRepository(database.activityTemplateDao()) }
 
     override fun onCreate() {
         super.onCreate()
@@ -102,6 +103,7 @@ class LifeOpsApp : Application() {
             // handled at week close; this catches restores/imports and clock changes).
             taskRepository.activateDueQueuedTasks(currentWeek)
             gameResourceRepository.ensureDefaultSlots()
+            activityTemplateRepository.ensureDefaults()
             notificationRepository.scheduleWeekCloseReminder()
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).

@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.data.model.WeatherReport
@@ -163,6 +164,7 @@ fun WeatherScreen(
         RequirementDialog(
             task = task,
             existing = state.requirements[task.id],
+            templates = state.activityTemplates,
             onSave = { req -> viewModel.setRequirement(req); editingTask = null },
             onDismiss = { editingTask = null }
         )
@@ -361,6 +363,7 @@ private fun AddLocationDialog(onConfirm: (Double, Double, String) -> Unit, onDis
 private fun RequirementDialog(
     task: Task,
     existing: TaskWeatherRequirement?,
+    templates: List<ActivityTemplate>,
     onSave: (TaskWeatherRequirement) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -370,6 +373,7 @@ private fun RequirementDialog(
     var maxTemp by remember { mutableStateOf(existing?.maxTempF?.toString() ?: "") }
     var minTemp by remember { mutableStateOf(existing?.minTempF?.toString() ?: "") }
     var maxWind by remember { mutableStateOf(existing?.maxWindMph?.toString() ?: "") }
+    var activityMenu by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -379,6 +383,36 @@ private fun RequirementDialog(
                 modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Prefill everything from a saved activity, then tweak below.
+                if (templates.isNotEmpty()) {
+                    ExposedDropdownMenuBox(expanded = activityMenu, onExpandedChange = { activityMenu = it }) {
+                        OutlinedTextField(
+                            value = "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Start from activity (optional)") },
+                            placeholder = { Text("Pick one…") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(activityMenu) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = activityMenu, onDismissRequest = { activityMenu = false }) {
+                            templates.forEach { t ->
+                                DropdownMenuItem(
+                                    text = { Text(t.name) },
+                                    onClick = {
+                                        outdoor = t.outdoorPreferred
+                                        avoidRain = t.avoidRain
+                                        duration = t.durationMinutes?.toString() ?: ""
+                                        maxTemp = t.maxTempF?.toString() ?: ""
+                                        minTemp = t.minTempF?.toString() ?: ""
+                                        maxWind = t.maxWindMph?.toString() ?: ""
+                                        activityMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
                 SwitchRow("Outdoor preferred", outdoor) { outdoor = it }
                 SwitchRow("Avoid rain", avoidRain) { avoidRain = it }
                 NumField("Max temperature (°F)", maxTemp) { maxTemp = it }

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.LocalActivity
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Numbers
 import androidx.compose.material.icons.filled.People
@@ -38,6 +39,7 @@ fun PlanningScreen(
     onOpenCostResources: () -> Unit,
     onOpenPeople: () -> Unit,
     onOpenWeather: () -> Unit,
+    onOpenActivities: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -85,6 +87,14 @@ fun PlanningScreen(
                     subtitle = "Conditions, alerts & the best time for outdoor tasks",
                     icon = Icons.Default.WbSunny,
                     onClick = onOpenWeather
+                )
+            }
+            item {
+                HubCard(
+                    title = "Activities",
+                    subtitle = "Saved weather profiles for tasks (mowing, biking…)",
+                    icon = Icons.Default.LocalActivity,
+                    onClick = onOpenActivities
                 )
             }
             item {

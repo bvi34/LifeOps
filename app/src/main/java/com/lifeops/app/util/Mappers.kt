@@ -145,3 +145,12 @@ fun TaskWeatherRequirementEntity.toModel() = TaskWeatherRequirement(
 fun TaskWeatherRequirement.toEntity() = TaskWeatherRequirementEntity(
     taskId, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph
 )
+
+fun ActivityTemplateEntity.toModel() = ActivityTemplate(
+    id, name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph,
+    isBuiltIn, sortOrder, createdAt
+)
+fun ActivityTemplate.toEntity() = ActivityTemplateEntity(
+    id, name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph,
+    isBuiltIn, sortOrder, createdAt
+)

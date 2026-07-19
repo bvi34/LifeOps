@@ -595,3 +595,34 @@ data class TaskWeatherRequirement(
         get() = !outdoorPreferred && durationMinutes == null && maxTempF == null &&
             minTempF == null && !avoidRain && maxWindMph == null
 }
+
+/**
+ * A reusable "saved activity" (Phase 4) — Mowing, Car Washing, or anything the user builds — that
+ * carries a default set of weather requirements. Applying one stamps its constraints onto a task.
+ * Built-ins are seeded on first launch but are fully editable/deletable; [isBuiltIn] only records
+ * provenance so seeding runs once. Custom templates are just rows with [isBuiltIn] = false.
+ */
+data class ActivityTemplate(
+    val id: String,
+    val name: String,
+    val outdoorPreferred: Boolean = true,
+    val durationMinutes: Int? = null,
+    val maxTempF: Int? = null,
+    val minTempF: Int? = null,
+    val avoidRain: Boolean = false,
+    val maxWindMph: Int? = null,
+    val isBuiltIn: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: String
+) {
+    /** Project this template's defaults onto [taskId] as a task weather requirement. */
+    fun toRequirement(taskId: String) = TaskWeatherRequirement(
+        taskId = taskId,
+        outdoorPreferred = outdoorPreferred,
+        durationMinutes = durationMinutes,
+        maxTempF = maxTempF,
+        minTempF = minTempF,
+        avoidRain = avoidRain,
+        maxWindMph = maxWindMph
+    )
+}

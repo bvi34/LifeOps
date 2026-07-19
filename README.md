@@ -136,6 +136,14 @@ conditions → per-task **recommendation**). It all surfaces on a self-contained
 per-task weather needs, and get best-time suggestions for the week's outdoor tasks. Requirements are
 included in backup/restore (v9).
 
+**Phase 4 — saved activities.** The **Activities** screen (Planning hub → Activities) is a library
+of reusable weather profiles (`activity_templates`, migration 31→32). Eight built-ins (Mowing,
+Gardening, Car Washing, …) are seeded once on first launch, but every template — built-in or not —
+is a fully editable/deletable row, and users can **build their own from scratch**. Applying one from
+the Weather screen's requirement editor stamps its defaults onto the task's weather requirement.
+Templates are in backup/restore (v10). The other half of Phase 4 — household profiles — already
+shipped as the People feature, which the best-time engine consumes.
+
 ---
 
 ## People (Planning) — design note
@@ -193,6 +201,7 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 - `BestTimeTest` — "best time" ranking: task max-temp / avoid-rain limits, per-person heat
   ceilings, calendar busy-labels, and match-% for a pleasant window.
 - `WeatherCardsTest` — dynamic-card ordering (severe warning → morning → task) and summaries.
+- `ActivityTemplateTest` — saved-activity → task-requirement projection and entity round-trip.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 ---
