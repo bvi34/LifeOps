@@ -76,5 +76,8 @@ interface PersonDao {
     fun observeTaskCounts(): Flow<List<PersonTaskCount>>
 
     @Query("SELECT * FROM task_people")
+    fun observeAllLinks(): Flow<List<TaskPersonEntity>>
+
+    @Query("SELECT * FROM task_people")
     suspend fun getAllLinks(): List<TaskPersonEntity>
 }

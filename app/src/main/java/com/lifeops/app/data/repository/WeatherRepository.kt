@@ -8,11 +8,13 @@ import com.lifeops.app.data.db.entities.WeatherLocationEntity
 import com.lifeops.app.data.db.entities.WeatherSnapshotEntity
 import com.lifeops.app.data.model.CurrentConditions
 import com.lifeops.app.data.model.ForecastPeriod
+import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.data.model.WeatherLocation
 import com.lifeops.app.data.model.WeatherReport
 import com.lifeops.app.data.model.Wind
 import com.lifeops.app.data.weather.NwsClient
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -169,6 +171,23 @@ class WeatherRepository(
     /** True when any (non-expired) alert is cached — the refresh worker uses this to tighten
      *  its cadence while severe weather is in play. Call after [pruneExpiredAlerts]. */
     suspend fun hasActiveAlerts(): Boolean = weatherDao.activeAlertCount() > 0
+
+    // --- Task weather requirements (Phase 3) ---
+
+    fun observeRequirement(taskId: String): Flow<TaskWeatherRequirement?> =
+        weatherDao.observeRequirement(taskId).map { it?.toModel() }
+
+    /** All requirements as taskId -> requirement, for joining against a week's tasks. */
+    fun observeRequirements(): Flow<Map<String, TaskWeatherRequirement>> =
+        weatherDao.observeAllRequirements().map { list -> list.associate { it.taskId to it.toModel() } }
+
+    /** Persist a requirement, or delete the row when it carries nothing meaningful. */
+    suspend fun setRequirement(requirement: TaskWeatherRequirement) {
+        if (requirement.isEmpty) weatherDao.deleteRequirement(requirement.taskId)
+        else weatherDao.upsertRequirement(requirement.toEntity())
+    }
+
+    suspend fun clearRequirement(taskId: String) = weatherDao.deleteRequirement(taskId)
 
     private fun snapshotOf(locationId: String, report: WeatherReport) = WeatherSnapshotEntity(
         id = UUID.randomUUID().toString(),

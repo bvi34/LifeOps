@@ -574,3 +574,24 @@ data class PersonNote(
     val content: String,
     val createdAt: String
 )
+
+/**
+ * Optional weather constraints attached to a task (Phase 3). A task with [outdoorPreferred] set
+ * opts into "best time" recommendations; the nullable ceilings/floors are hard limits the engine
+ * uses to disqualify unsuitable forecast windows. All-null means "no weather opinion" and the
+ * row simply won't exist for most tasks.
+ */
+data class TaskWeatherRequirement(
+    val taskId: String,
+    val outdoorPreferred: Boolean = false,
+    val durationMinutes: Int? = null,
+    val maxTempF: Int? = null,
+    val minTempF: Int? = null,
+    val avoidRain: Boolean = false,
+    val maxWindMph: Int? = null
+) {
+    /** True when nothing meaningful is set — the caller can delete the row instead of storing it. */
+    val isEmpty: Boolean
+        get() = !outdoorPreferred && durationMinutes == null && maxTempF == null &&
+            minTempF == null && !avoidRain && maxWindMph == null
+}

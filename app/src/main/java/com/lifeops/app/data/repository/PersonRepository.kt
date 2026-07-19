@@ -70,6 +70,10 @@ class PersonRepository(private val personDao: PersonDao) {
     fun observeTaskCounts(): Flow<Map<String, Int>> =
         personDao.observeTaskCounts().map { rows -> rows.associate { it.personId to it.count } }
 
+    /** taskId -> the person ids involved in it, for weather recommendations. */
+    fun observeTaskPeople(): Flow<Map<String, List<String>>> =
+        personDao.observeAllLinks().map { rows -> rows.groupBy({ it.taskId }, { it.personId }) }
+
     suspend fun attach(taskId: String, personId: String) =
         personDao.attach(TaskPersonEntity(taskId, personId))
 

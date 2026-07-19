@@ -1,6 +1,7 @@
 package com.lifeops.app.data.db.dao
 
 import androidx.room.*
+import com.lifeops.app.data.db.entities.TaskWeatherRequirementEntity
 import com.lifeops.app.data.db.entities.WeatherAlertEntity
 import com.lifeops.app.data.db.entities.WeatherLocationEntity
 import com.lifeops.app.data.db.entities.WeatherSnapshotEntity
@@ -86,4 +87,21 @@ interface WeatherDao {
         clearAlerts(locationId)
         if (alerts.isNotEmpty()) insertAlerts(alerts)
     }
+
+    // --- Task weather requirements (1:1 side table) ---
+
+    @Upsert
+    suspend fun upsertRequirement(requirement: TaskWeatherRequirementEntity)
+
+    @Query("DELETE FROM task_weather_requirements WHERE taskId = :taskId")
+    suspend fun deleteRequirement(taskId: String)
+
+    @Query("SELECT * FROM task_weather_requirements WHERE taskId = :taskId")
+    fun observeRequirement(taskId: String): Flow<TaskWeatherRequirementEntity?>
+
+    @Query("SELECT * FROM task_weather_requirements")
+    fun observeAllRequirements(): Flow<List<TaskWeatherRequirementEntity>>
+
+    @Query("SELECT * FROM task_weather_requirements")
+    suspend fun getAllRequirements(): List<TaskWeatherRequirementEntity>
 }

@@ -56,6 +56,8 @@ import com.lifeops.app.ui.screens.reports.ReportsViewModelFactory
 import com.lifeops.app.ui.screens.resources.ResourcesScreen
 import com.lifeops.app.ui.screens.resources.ResourcesViewModelFactory
 import com.lifeops.app.ui.screens.settings.SettingsScreen
+import com.lifeops.app.ui.screens.weather.WeatherScreen
+import com.lifeops.app.ui.screens.weather.WeatherViewModelFactory
 import com.lifeops.app.ui.screens.settings.SettingsViewModel
 import com.lifeops.app.ui.screens.settings.SettingsViewModelFactory
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModelFactory
@@ -270,7 +272,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenRunbooks = { navController.navigate("runbooks") },
                         onOpenTemplates = { navController.navigate("templates") },
                         onOpenCostResources = { navController.navigate("cost_resources") },
-                        onOpenPeople = { navController.navigate("people") }
+                        onOpenPeople = { navController.navigate("people") },
+                        onOpenWeather = { navController.navigate("weather") }
                     )
                 }
                 composable("future_tasks") {
@@ -336,6 +339,14 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         )
                     )
                     PersonDetailScreen(vm) { navController.navigateUp() }
+                }
+                composable("weather") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.weather.WeatherViewModel>(
+                        factory = WeatherViewModelFactory(
+                            app.weatherRepository, app.weekRepository, app.taskRepository, app.personRepository
+                        )
+                    )
+                    WeatherScreen(vm) { navController.navigateUp() }
                 }
             }
 

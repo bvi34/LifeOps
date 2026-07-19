@@ -122,8 +122,19 @@ scheduled from `LifeOpsApp`) that refreshes every location, prunes expired alert
 alert is active — chains a shorter one-time follow-up for a denser cadence. `util/OutdoorScore.kt`
 is the rules-based scorer: a pure 0–100 *discomfort* total (0–25 Excellent … 76+ Avoid) built from
 feels-like, humidity, UV, wind, rain probability and storm risk, returning human-readable
-positives/warnings for the Phase 3 cards. Still ahead: task weather-requirements, the "best time"
-engine, and dynamic cards.
+positives/warnings.
+
+**Phase 3 — LifeOps integration.** Tasks gain optional weather constraints via a
+`task_weather_requirements` 1:1 side table (outdoor-preferred, duration, max/min temp, avoid-rain,
+max wind) — kept off the core `tasks` schema so the create/edit pipeline is untouched.
+`util/BestTime.kt` is the pure recommendation engine: it scores each forecast window with
+OutdoorScore, disqualifies windows that break the task's hard limits or a household member's
+comfort ceilings (and optional calendar busy-labels), and ranks the rest best-first with a friendly
+match-%. `util/WeatherCards.kt` assembles the dynamic cards (severe-weather **Warning** → **Morning**
+conditions → per-task **recommendation**). It all surfaces on a self-contained **Weather** screen
+(Planning hub → Weather): add a location, see current conditions + outdoor rating + alert cards, set
+per-task weather needs, and get best-time suggestions for the week's outdoor tasks. Requirements are
+included in backup/restore (v9).
 
 ---
 
@@ -179,6 +190,9 @@ JVM unit tests live in `app/src/test/`. Notable suites:
   nested unit-values, graceful empty/malformed payloads).
 - `OutdoorScoreTest` — rules-based OutdoorScore band thresholds, storm-risk override, alert
   folding, and the 0–100 clamp.
+- `BestTimeTest` — "best time" ranking: task max-temp / avoid-rain limits, per-person heat
+  ceilings, calendar busy-labels, and match-% for a pleasant window.
+- `WeatherCardsTest` — dynamic-card ordering (severe warning → morning → task) and summaries.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 ---
