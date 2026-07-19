@@ -68,6 +68,7 @@ class LifeOpsApp : Application() {
     val foodLogRepository by lazy { FoodLogRepository(database.foodLogDao(), database.foodItemDao()) }
     val bookRepository by lazy { BookRepository(database.bookDao()) }
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
+    val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
 
     override fun onCreate() {
         super.onCreate()

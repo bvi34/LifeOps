@@ -118,3 +118,11 @@ fun FutureProject.toEntity() = FutureProjectEntity(id, title, "", createdAt, upd
 
 fun FutureProjectNoteEntity.toModel() = FutureProjectNote(id, projectId, content, createdAt)
 fun FutureProjectNote.toEntity() = FutureProjectNoteEntity(id, projectId, content, createdAt)
+
+// Weather — the domain models are deliberately source-agnostic (no sortOrder/createdAt/locationId),
+// so entity construction that needs those persistence-only fields lives in WeatherRepository.
+fun WeatherLocationEntity.toModel() = WeatherLocation(id, latitude, longitude, name)
+
+fun WeatherAlertEntity.toModel() = WeatherAlert(
+    id, event, AlertSeverity.from(severity), headline, description, instruction, onset, expires, areaDesc
+)

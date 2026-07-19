@@ -581,6 +581,67 @@ private val MIGRATION_27_28 = object : Migration(27, 28) {
     }
 }
 
+private val MIGRATION_28_29 = object : Migration(28, 29) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Phase 1 weather foundation: a source-agnostic local cache so opening LifeOps never
+        // waits on the network. Three new standalone tables — no existing schema is touched.
+        // NOTE: no SQL DEFAULTs. The entities' Kotlin `= 0` defaults are NOT @ColumnInfo
+        // defaults, so Room's generated schema has none; the CREATE must match exactly (same
+        // rule the counters migration 18_19 calls out) or startup validation fails.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_locations (
+                id TEXT NOT NULL PRIMARY KEY,
+                latitude REAL NOT NULL,
+                longitude REAL NOT NULL,
+                name TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_snapshots (
+                id TEXT NOT NULL PRIMARY KEY,
+                locationId TEXT NOT NULL,
+                fetchedAt TEXT NOT NULL,
+                observedAt TEXT NOT NULL,
+                temperatureF INTEGER NOT NULL,
+                feelsLikeF INTEGER NOT NULL,
+                humidityPct INTEGER,
+                windSpeedMph INTEGER NOT NULL,
+                windDirection TEXT,
+                windGustMph INTEGER,
+                uvIndex INTEGER,
+                precipitationProbabilityPct INTEGER,
+                shortForecast TEXT NOT NULL,
+                hourlyJson TEXT NOT NULL,
+                dailyJson TEXT NOT NULL,
+                FOREIGN KEY(locationId) REFERENCES weather_locations(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_snapshots_locationId ON weather_snapshots(locationId)")
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS weather_alerts (
+                id TEXT NOT NULL PRIMARY KEY,
+                locationId TEXT NOT NULL,
+                event TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                headline TEXT,
+                description TEXT,
+                instruction TEXT,
+                onset TEXT,
+                expires TEXT,
+                areaDesc TEXT,
+                fetchedAt TEXT NOT NULL,
+                FOREIGN KEY(locationId) REFERENCES weather_locations(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_alerts_locationId ON weather_alerts(locationId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_weather_alerts_expires ON weather_alerts(expires)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -613,9 +674,12 @@ private val MIGRATION_27_28 = object : Migration(27, 28) {
         BookNoteEntity::class,
         BookTimeEntryEntity::class,
         FutureProjectEntity::class,
-        FutureProjectNoteEntity::class
+        FutureProjectNoteEntity::class,
+        WeatherLocationEntity::class,
+        WeatherSnapshotEntity::class,
+        WeatherAlertEntity::class
     ],
-    version = 28,
+    version = 29,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -643,6 +707,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun weeklyMenuItemDao(): WeeklyMenuItemDao
     abstract fun bookDao(): BookDao
     abstract fun futureProjectDao(): FutureProjectDao
+    abstract fun weatherDao(): WeatherDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -654,7 +719,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29)
                     .build()
                     .also { INSTANCE = it }
             }

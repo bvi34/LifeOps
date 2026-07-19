@@ -76,13 +76,14 @@ first-class feature.
 app/src/main/java/com/lifeops/app/
 ├── data/
 │   ├── db/            Room database, entities, DAOs, migrations
-│   ├── model/         Plain domain models (Models.kt)
-│   └── repository/    Repositories (the only thing ViewModels talk to)
+│   ├── model/         Plain domain models (Models.kt, Weather.kt)
+│   ├── repository/    Repositories (the only thing ViewModels talk to)
+│   └── weather/       NWS (api.weather.gov) network client — the only thing that touches the net
 ├── ui/
 │   ├── screens/       thisweek · resources · reports · growth · settings · projectdetail
 │   ├── components/    Reusable composables (header, dialogs, task rows, …)
 │   └── theme/         Colours, theming, parseColor
-├── util/              Pure logic: scoring, dates, growth rings/colour/export, CSV
+├── util/              Pure logic: scoring, dates, growth rings/colour/export, CSV, weather
 ├── widget/            Glance app widget
 └── worker/            WorkManager workers (reminders)
 ```
@@ -91,6 +92,31 @@ The **growth** logic lives in pure, Android-free modules so it is unit-testable 
 `util/GrowthRings.kt` (geometry/scene), `util/GrowthColor.kt` (hex/HSL + intensity),
 `util/GrowthData.kt` (assemble live + sealed snapshots), `util/GrowthExport.kt` (CSV + SVG),
 `util/Csv.kt` (shared CSV quoting).
+
+---
+
+## Weather foundation (Phase 1) — design note
+
+LifeOps grows a **source-agnostic weather layer**. The rest of the app asks *"what are current
+conditions?"* against plain models in `data/model/Weather.kt` (`WeatherReport`,
+`CurrentConditions`, `ForecastPeriod`, `WeatherAlert`) and never learns where the numbers came
+from. Today they come from the US National Weather Service (`api.weather.gov` — free, keyless,
+US-only), but that lives entirely behind `WeatherRepository`.
+
+**Cache-first, so opening LifeOps never waits on weather.** Reads stream straight from a local
+Room cache (`weather_locations`, `weather_snapshots`, `weather_alerts`, migration 28→29); the
+network is touched only by an explicit `WeatherRepository.refresh(...)`, which folds any failure
+into a `Result` so a dropped connection just keeps the last cached report on screen. Each refresh
+stores the current conditions as flat columns plus the full hourly/daily forecast as JSON blobs,
+so an entire `WeatherReport` rebuilds from cache with zero network. The weather cache is
+intentionally **left out of backup/restore** — it's regenerable.
+
+The Android-free, JVM-testable pieces sit in `util/`: `WeatherMath.kt` (NWS heat-index /
+wind-chill "feels like") and `NwsParser.kt` (raw api.weather.gov JSON → models). Only
+`data/weather/NwsClient.kt` performs I/O (via `HttpURLConnection` — no new dependencies), which is
+why the app gains the `INTERNET` permission for the first time. This is the foundation the later
+roadmap phases (refresh worker, OutdoorScore, task weather-requirements, "best time" engine,
+dynamic cards) build on.
 
 ---
 
@@ -126,6 +152,9 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 - `GrowthDataTest` — sealed-vs-live source selection, stable aspect ordering, and
   `deleteAspect_preservesHistoricalSnapshots`.
 - `CsvTest` — CSV quoting/round-trip.
+- `WeatherMathTest` — heat-index / wind-chill "feels like", including the humidity/wind extremes.
+- `NwsParserTest` — api.weather.gov `/points`, forecast, and alert parsing (wind-text → mph,
+  nested unit-values, graceful empty/malformed payloads).
 
 ---
 
