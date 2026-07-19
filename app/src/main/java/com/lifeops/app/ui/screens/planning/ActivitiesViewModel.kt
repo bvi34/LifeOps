@@ -5,13 +5,17 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.data.repository.ActivityTemplateRepository
+import com.lifeops.app.util.PreferenceLearning
+import com.lifeops.app.util.PreferenceSuggestion
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 data class ActivitiesUiState(
-    val templates: List<ActivityTemplate> = emptyList()
+    val templates: List<ActivityTemplate> = emptyList(),
+    val suggestions: List<PreferenceSuggestion> = emptyList()
 )
 
 class ActivitiesViewModel(
@@ -23,10 +27,24 @@ class ActivitiesViewModel(
 
     init {
         viewModelScope.launch {
-            repository.observeAll().collect { templates ->
-                _uiState.value = ActivitiesUiState(templates)
-            }
+            combine(
+                repository.observeAll(),
+                repository.observeOverrides()
+            ) { templates, overrides ->
+                ActivitiesUiState(
+                    templates = templates,
+                    suggestions = PreferenceLearning.suggest(overrides, templates)
+                )
+            }.collect { _uiState.value = it }
         }
+    }
+
+    fun applySuggestion(suggestion: PreferenceSuggestion) {
+        viewModelScope.launch { repository.applySuggestion(suggestion) }
+    }
+
+    fun dismissSuggestion(suggestion: PreferenceSuggestion) {
+        viewModelScope.launch { repository.dismissSuggestion(suggestion.activityId, suggestion.field) }
     }
 
     fun create(

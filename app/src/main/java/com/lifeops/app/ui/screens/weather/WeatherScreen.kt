@@ -179,7 +179,7 @@ fun WeatherScreen(
             task = task,
             existing = state.requirements[task.id],
             templates = state.activityTemplates,
-            onSave = { req -> viewModel.setRequirement(req); editingTask = null },
+            onSave = { req, appliedTemplateId -> viewModel.setRequirement(req, appliedTemplateId); editingTask = null },
             onDismiss = { editingTask = null }
         )
     }
@@ -397,7 +397,7 @@ private fun RequirementDialog(
     task: Task,
     existing: TaskWeatherRequirement?,
     templates: List<ActivityTemplate>,
-    onSave: (TaskWeatherRequirement) -> Unit,
+    onSave: (TaskWeatherRequirement, appliedTemplateId: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var outdoor by remember { mutableStateOf(existing?.outdoorPreferred ?: false) }
@@ -407,6 +407,8 @@ private fun RequirementDialog(
     var minTemp by remember { mutableStateOf(existing?.minTempF?.toString() ?: "") }
     var maxWind by remember { mutableStateOf(existing?.maxWindMph?.toString() ?: "") }
     var activityMenu by remember { mutableStateOf(false) }
+    // Which activity (if any) seeded these values — powers the learning signal on save.
+    var appliedTemplateId by remember { mutableStateOf<String?>(null) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -439,6 +441,7 @@ private fun RequirementDialog(
                                         maxTemp = t.maxTempF?.toString() ?: ""
                                         minTemp = t.minTempF?.toString() ?: ""
                                         maxWind = t.maxWindMph?.toString() ?: ""
+                                        appliedTemplateId = t.id
                                         activityMenu = false
                                     }
                                 )
@@ -465,7 +468,8 @@ private fun RequirementDialog(
                         minTempF = minTemp.toIntOrNull(),
                         avoidRain = avoidRain,
                         maxWindMph = maxWind.toIntOrNull()
-                    )
+                    ),
+                    appliedTemplateId
                 )
             }) { Text("Save") }
         },

@@ -626,3 +626,19 @@ data class ActivityTemplate(
         maxWindMph = maxWindMph
     )
 }
+
+/**
+ * A recorded manual override (Phase 5 learning): when a user applies an activity template to a task
+ * but then changes one of its numeric limits before saving, the delta is logged here. Enough of
+ * these trending the same way lets the app suggest adjusting the activity's default (see
+ * PreferenceLearning). [field] is a stable key like "maxTempF" / "minTempF" / "maxWindMph" /
+ * "durationMinutes".
+ */
+data class ActivityOverride(
+    val id: String,
+    val activityId: String,
+    val field: String,
+    val templateValue: Int?,
+    val userValue: Int?,
+    val createdAt: String
+)

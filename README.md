@@ -144,6 +144,17 @@ the Weather screen's requirement editor stamps its defaults onto the task's weat
 Templates are in backup/restore (v10). The other half of Phase 4 — household profiles — already
 shipped as the People feature, which the best-time engine consumes.
 
+**Phase 5 — advanced.** `util/SevereWeatherIntel.kt` turns alerts + the hourly forecast into
+actionable advisories ("Storm approaching · clearing by 4 PM", with a *Delay ~90 min* hint),
+surfaced as a new `WeatherCard.Advisory`. Radar is deliberately on-demand only (the roadmap's "avoid
+a constant feature"): a **View radar** action resolves the nearest NWS station (`/points`
+`radarStation`) and opens the official radar in the browser — no image library, network only when
+asked. `util/PreferenceLearning.kt` closes the loop: when you seed a task from an activity then
+change a limit, the delta is logged (`activity_overrides`, migration 32→33); once a field trends the
+same way enough times, the **Activities** screen suggests updating that activity's default ("You keep
+mowing above the recommended temperature — raise the threshold?") with one-tap Apply/Dismiss. All in
+backup/restore (v11).
+
 ---
 
 ## People (Planning) — design note
@@ -202,6 +213,10 @@ JVM unit tests live in `app/src/test/`. Notable suites:
   ceilings, calendar busy-labels, and match-% for a pleasant window.
 - `WeatherCardsTest` — dynamic-card ordering (severe warning → morning → task) and summaries.
 - `ActivityTemplateTest` — saved-activity → task-requirement projection and entity round-trip.
+- `SevereWeatherIntelTest` — alert-expiry / approaching-storm delays, quiet-forecast no-op,
+  distant-storm horizon, and delay-hint formatting.
+- `PreferenceLearningTest` — override-trend suggestions, min-observations gate, and the
+  no-change-when-median-equals-default guard.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 ---

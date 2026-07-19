@@ -23,6 +23,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
+import com.lifeops.app.util.PreferenceSuggestion
 
 /**
  * Saved activities (Phase 4): the library of reusable weather profiles. Built-ins are seeded but
@@ -60,6 +61,15 @@ fun ActivitiesScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (state.suggestions.isNotEmpty()) {
+                    items(state.suggestions, key = { "sugg-${it.activityId}-${it.field}" }) { suggestion ->
+                        SuggestionCard(
+                            suggestion = suggestion,
+                            onApply = { viewModel.applySuggestion(suggestion) },
+                            onDismiss = { viewModel.dismissSuggestion(suggestion) }
+                        )
+                    }
+                }
                 items(state.templates, key = { it.id }) { template ->
                     ActivityCard(
                         template = template,
@@ -98,6 +108,25 @@ fun ActivitiesScreen(
             },
             onDismiss = { editing = null }
         )
+    }
+}
+
+@Composable
+private fun SuggestionCard(suggestion: PreferenceSuggestion, onApply: () -> Unit, onDismiss: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Suggestion", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
+            Text(suggestion.message, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onApply) { Text("Update to ${suggestion.suggestedValue}") }
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+            }
+        }
     }
 }
 

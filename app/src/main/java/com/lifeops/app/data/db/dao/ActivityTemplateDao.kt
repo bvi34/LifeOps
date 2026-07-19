@@ -1,6 +1,7 @@
 package com.lifeops.app.data.db.dao
 
 import androidx.room.*
+import com.lifeops.app.data.db.entities.ActivityOverrideEntity
 import com.lifeops.app.data.db.entities.ActivityTemplateEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -25,4 +26,18 @@ interface ActivityTemplateDao {
 
     @Query("SELECT COUNT(*) FROM activity_templates")
     suspend fun count(): Int
+
+    // --- Manual overrides (learning signal) ---
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOverride(override: ActivityOverrideEntity)
+
+    @Query("SELECT * FROM activity_overrides ORDER BY createdAt ASC")
+    fun observeOverrides(): Flow<List<ActivityOverrideEntity>>
+
+    @Query("SELECT * FROM activity_overrides")
+    suspend fun getAllOverrides(): List<ActivityOverrideEntity>
+
+    @Query("DELETE FROM activity_overrides WHERE activityId = :activityId AND field = :field")
+    suspend fun clearOverrides(activityId: String, field: String)
 }

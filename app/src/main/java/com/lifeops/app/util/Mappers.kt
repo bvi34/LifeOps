@@ -154,3 +154,6 @@ fun ActivityTemplate.toEntity() = ActivityTemplateEntity(
     id, name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph,
     isBuiltIn, sortOrder, createdAt
 )
+
+fun ActivityOverrideEntity.toModel() = ActivityOverride(id, activityId, field, templateValue, userValue, createdAt)
+fun ActivityOverride.toEntity() = ActivityOverrideEntity(id, activityId, field, templateValue, userValue, createdAt)

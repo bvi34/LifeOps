@@ -170,8 +170,28 @@ class WeatherViewModel(
         }
     }
 
-    fun setRequirement(requirement: TaskWeatherRequirement) {
-        viewModelScope.launch { weatherRepository.setRequirement(requirement) }
+    /**
+     * Persist a task requirement. When it was seeded from [appliedTemplateId] and the user changed
+     * a numeric limit, log the delta so PreferenceLearning can later suggest updating that
+     * activity's default.
+     */
+    fun setRequirement(requirement: TaskWeatherRequirement, appliedTemplateId: String? = null) {
+        viewModelScope.launch {
+            weatherRepository.setRequirement(requirement)
+            val template = appliedTemplateId?.let { id -> _uiState.value.activityTemplates.firstOrNull { it.id == id } }
+            if (template != null) {
+                maybeRecord(template.id, "maxTempF", template.maxTempF, requirement.maxTempF)
+                maybeRecord(template.id, "minTempF", template.minTempF, requirement.minTempF)
+                maybeRecord(template.id, "maxWindMph", template.maxWindMph, requirement.maxWindMph)
+                maybeRecord(template.id, "durationMinutes", template.durationMinutes, requirement.durationMinutes)
+            }
+        }
+    }
+
+    private suspend fun maybeRecord(activityId: String, field: String, templateValue: Int?, userValue: Int?) {
+        if (userValue != null && userValue != templateValue) {
+            activityTemplateRepository.recordOverride(activityId, field, templateValue, userValue)
+        }
     }
 
     /** On-demand radar: resolve the nearest station, then hand the screen a URL to open. Falls

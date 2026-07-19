@@ -1,8 +1,11 @@
 package com.lifeops.app.data.repository
 
 import com.lifeops.app.data.db.dao.ActivityTemplateDao
+import com.lifeops.app.data.db.entities.ActivityOverrideEntity
+import com.lifeops.app.data.model.ActivityOverride
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.PreferenceSuggestion
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
@@ -52,6 +55,43 @@ class ActivityTemplateRepository(private val dao: ActivityTemplateDao) {
     suspend fun update(template: ActivityTemplate) = dao.upsert(template.toEntity())
 
     suspend fun delete(template: ActivityTemplate) = dao.delete(template.toEntity())
+
+    // --- Learning (Phase 5) ---
+
+    fun observeOverrides(): Flow<List<ActivityOverride>> =
+        dao.observeOverrides().map { list -> list.map { it.toModel() } }
+
+    /** Log one manual override of an activity default. Only meaningful deltas should be recorded. */
+    suspend fun recordOverride(activityId: String, field: String, templateValue: Int?, userValue: Int?) {
+        dao.insertOverride(
+            ActivityOverrideEntity(
+                id = UUID.randomUUID().toString(),
+                activityId = activityId,
+                field = field,
+                templateValue = templateValue,
+                userValue = userValue,
+                createdAt = DateUtil.now()
+            )
+        )
+    }
+
+    /** Accept a learned suggestion: write the new default and clear the observations behind it. */
+    suspend fun applySuggestion(suggestion: PreferenceSuggestion) {
+        val template = dao.getById(suggestion.activityId)?.toModel() ?: return
+        val updated = when (suggestion.field) {
+            "maxTempF" -> template.copy(maxTempF = suggestion.suggestedValue)
+            "minTempF" -> template.copy(minTempF = suggestion.suggestedValue)
+            "maxWindMph" -> template.copy(maxWindMph = suggestion.suggestedValue)
+            "durationMinutes" -> template.copy(durationMinutes = suggestion.suggestedValue)
+            else -> template
+        }
+        dao.upsert(updated.toEntity())
+        dao.clearOverrides(suggestion.activityId, suggestion.field)
+    }
+
+    /** Dismiss a suggestion without changing the default — just forget the observations. */
+    suspend fun dismissSuggestion(activityId: String, field: String) =
+        dao.clearOverrides(activityId, field)
 
     /** Seed the built-in activities exactly once (idempotent — no-op if any rows exist). */
     suspend fun ensureDefaults() {
