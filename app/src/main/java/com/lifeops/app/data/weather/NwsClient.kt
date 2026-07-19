@@ -69,6 +69,21 @@ class NwsClient(
         )
     }
 
+    /**
+     * On-demand lookup of the nearest NWS radar station id (e.g. "KTLX") for a location — used
+     * only when the user explicitly asks to see radar, so it isn't part of the regular refresh.
+     * Returns null on any failure rather than throwing; the caller falls back to national radar.
+     */
+    suspend fun fetchRadarStation(location: WeatherLocation): String? = withContext(Dispatchers.IO) {
+        try {
+            val lat = String.format(Locale.US, "%.4f", location.latitude)
+            val lon = String.format(Locale.US, "%.4f", location.longitude)
+            NwsParser.parseGridPoint(get("$baseUrl/points/$lat,$lon")).radarStation?.ifBlank { null }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     /** Build "right now" from the leading hourly period, computing feels-like ourselves. */
     private fun currentFrom(hourly: List<ForecastPeriod>): CurrentConditions? {
         val p = hourly.firstOrNull() ?: return null

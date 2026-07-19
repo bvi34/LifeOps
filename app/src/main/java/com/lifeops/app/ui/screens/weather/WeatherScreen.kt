@@ -21,10 +21,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.content.Intent
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskWeatherRequirement
@@ -41,6 +44,7 @@ fun WeatherScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
+    val context = LocalContext.current
 
     var showAddLocation by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<Task?>(null) }
@@ -50,6 +54,12 @@ fun WeatherScreen(
         state.message?.let {
             snackbarHost.showSnackbar(it)
             viewModel.clearMessage()
+        }
+    }
+    LaunchedEffect(state.radarUrl) {
+        state.radarUrl?.let { url ->
+            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
+            viewModel.clearRadarUrl()
         }
     }
 
@@ -76,6 +86,10 @@ fun WeatherScreen(
                                 onClick = { menuOpen = false; showAddLocation = true }
                             )
                             if (state.selectedLocationId != null) {
+                                DropdownMenuItem(
+                                    text = { Text("View radar") },
+                                    onClick = { menuOpen = false; viewModel.openRadar() }
+                                )
                                 DropdownMenuItem(
                                     text = { Text("Delete this location") },
                                     onClick = {
@@ -252,6 +266,25 @@ private fun WeatherCardView(card: WeatherCard) {
                 if (card.detail.isNotBlank()) {
                     Text(card.detail, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            }
+        }
+        is WeatherCard.Advisory -> Card(
+            Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+        ) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text(card.headline, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    card.delayHint?.let {
+                        Text(it, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    }
+                }
+                if (card.detail.isNotBlank()) {
+                    Text(card.detail, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer)
                 }
             }
         }

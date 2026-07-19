@@ -31,6 +31,13 @@ sealed class WeatherCard {
         val detail: String,
         val severityLabel: String
     ) : WeatherCard()
+
+    /** Actionable severe-weather intelligence, e.g. "Storm approaching · Delay ~90 min". */
+    data class Advisory(
+        val headline: String,
+        val detail: String,
+        val delayHint: String?
+    ) : WeatherCard()
 }
 
 object WeatherCards {
@@ -39,7 +46,8 @@ object WeatherCards {
         alerts: List<WeatherAlert>,
         assessment: OutdoorAssessment,
         bestWindowLabel: String?,
-        taskRecommendations: List<WeatherCard.TaskRecommendation> = emptyList()
+        taskRecommendations: List<WeatherCard.TaskRecommendation> = emptyList(),
+        advisories: List<WeatherAdvisory> = emptyList()
     ): List<WeatherCard> {
         val cards = mutableListOf<WeatherCard>()
 
@@ -52,14 +60,19 @@ object WeatherCards {
             )
         }
 
-        // 2. Morning conditions card.
+        // 2. Actionable advisories (severe-weather intelligence), most severe first.
+        advisories.sortedByDescending { it.severityRank }.forEach { adv ->
+            cards += WeatherCard.Advisory(adv.headline, adv.detail, adv.delayHint)
+        }
+
+        // 3. Morning conditions card.
         cards += WeatherCard.Morning(
             ratingLabel = assessment.rating.label,
             summary = morningSummary(assessment),
             bestWindowLabel = bestWindowLabel
         )
 
-        // 3. Per-task recommendations.
+        // 4. Per-task recommendations.
         cards += taskRecommendations
 
         return cards

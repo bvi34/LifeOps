@@ -30,7 +30,9 @@ object NwsParser {
         val forecastHourlyUrl: String,
         val timeZone: String?,
         val city: String?,
-        val state: String?
+        val state: String?,
+        /** Nearest NWS radar station id (e.g. "KTLX"), used for on-demand radar. */
+        val radarStation: String?
     ) {
         /** "Topeka, KS" when both are present, else whichever exists, else null. */
         val placeName: String?
@@ -51,7 +53,8 @@ object NwsParser {
             forecastHourlyUrl = p.forecastHourly.orEmpty(),
             timeZone = p.timeZone,
             city = p.relativeLocation?.properties?.city,
-            state = p.relativeLocation?.properties?.state
+            state = p.relativeLocation?.properties?.state,
+            radarStation = p.radarStation
         )
     }
 
@@ -118,6 +121,7 @@ object NwsParser {
         val forecast: String?,
         val forecastHourly: String?,
         val timeZone: String?,
+        val radarStation: String?,
         val relativeLocation: RelativeLocation?
     )
     private data class RelativeLocation(val properties: RelativeLocationProps?)

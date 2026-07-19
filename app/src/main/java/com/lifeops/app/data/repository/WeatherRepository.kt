@@ -189,6 +189,12 @@ class WeatherRepository(
 
     suspend fun clearRequirement(taskId: String) = weatherDao.deleteRequirement(taskId)
 
+    /** On-demand nearest radar station id for a location (Phase 5 radar), or null if unavailable. */
+    suspend fun radarStationFor(locationId: String): String? {
+        val location = weatherDao.getLocation(locationId)?.toModel() ?: return null
+        return client.fetchRadarStation(location)
+    }
+
     private fun snapshotOf(locationId: String, report: WeatherReport) = WeatherSnapshotEntity(
         id = UUID.randomUUID().toString(),
         locationId = locationId,

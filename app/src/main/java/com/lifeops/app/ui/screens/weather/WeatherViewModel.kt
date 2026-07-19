@@ -15,8 +15,10 @@ import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.WeatherRepository
 import com.lifeops.app.data.repository.WeekRepository
 import com.lifeops.app.util.BestTime
+import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.OutdoorAssessment
 import com.lifeops.app.util.OutdoorScore
+import com.lifeops.app.util.SevereWeatherIntel
 import com.lifeops.app.util.WeatherCard
 import com.lifeops.app.util.WeatherCards
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -40,7 +42,9 @@ data class WeatherUiState(
     val taskPeople: Map<String, List<String>> = emptyMap(),
     val activityTemplates: List<ActivityTemplate> = emptyList(),
     val isRefreshing: Boolean = false,
-    val message: String? = null
+    val message: String? = null,
+    /** One-shot: a radar URL for the screen to open in the browser, then clear. */
+    val radarUrl: String? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -129,7 +133,8 @@ class WeatherViewModel(
             )
         }
 
-        val cards = WeatherCards.build(report.alerts, assessment, generalBest, taskCards)
+        val advisories = SevereWeatherIntel.advise(report.alerts, report.hourly, DateUtil.now())
+        val cards = WeatherCards.build(report.alerts, assessment, generalBest, taskCards, advisories)
         _uiState.update { it.copy(assessment = assessment, cards = cards) }
     }
 
@@ -167,6 +172,22 @@ class WeatherViewModel(
 
     fun setRequirement(requirement: TaskWeatherRequirement) {
         viewModelScope.launch { weatherRepository.setRequirement(requirement) }
+    }
+
+    /** On-demand radar: resolve the nearest station, then hand the screen a URL to open. Falls
+     *  back to the national radar if the station lookup fails (offline / no coverage). */
+    fun openRadar() {
+        val id = selectedId.value ?: return
+        viewModelScope.launch {
+            val station = weatherRepository.radarStationFor(id)
+            val url = if (station != null) "https://radar.weather.gov/station/$station/standard"
+            else "https://radar.weather.gov"
+            _uiState.update { it.copy(radarUrl = url) }
+        }
+    }
+
+    fun clearRadarUrl() {
+        _uiState.update { it.copy(radarUrl = null) }
     }
 
     fun clearMessage() {
