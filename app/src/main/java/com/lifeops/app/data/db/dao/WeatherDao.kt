@@ -12,7 +12,11 @@ interface WeatherDao {
 
     // --- Locations ---
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // @Upsert (not @Insert REPLACE): weather_locations is a parent of weather_snapshots and
+    // weather_alerts (ON DELETE CASCADE). REPLACE deletes the old row before re-inserting, which
+    // would cascade-wipe a location's cached snapshots + alerts on any same-id write. @Upsert
+    // does UPDATE-or-INSERT in place, so no delete, no cascade.
+    @Upsert
     suspend fun upsertLocation(location: WeatherLocationEntity)
 
     @Update
