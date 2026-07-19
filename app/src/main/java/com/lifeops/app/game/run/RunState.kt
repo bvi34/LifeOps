@@ -27,8 +27,11 @@ data class RunSnapshot(
     val activeMax: Vec2,
     val cellSize: Float,
     val playerPos: Vec2,
-    val playerHealth: Float,
-    val playerMaxHealth: Float,
+    /** Discrete hearts remaining / max. */
+    val playerHits: Int,
+    val playerMaxHits: Int,
+    /** True during post-hit invulnerability frames (renderer blinks the player). */
+    val playerInvuln: Boolean,
     /** Unit aim direction, for drawing the barrel/reticle. */
     val playerAim: Vec2,
     /** 0 = idle, 1 = just fired; renderer draws a muzzle flash. */
@@ -49,7 +52,9 @@ data class RunSnapshot(
     val strained: Boolean,
     val enemies: List<EnemyView>,
     val projectiles: List<Vec2>,
+    val enemyProjectiles: List<Vec2>,
     val structures: List<StructureView>,
+    val structureCosts: Map<StructureType, Int>,
     val pickups: List<PickupView>,
     val effects: List<EffectView>,
     val boss: BossView?,

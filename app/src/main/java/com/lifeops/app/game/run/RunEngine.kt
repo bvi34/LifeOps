@@ -41,10 +41,13 @@ class RunEngine(
     val player = Player(
         pos = arena.center,
         weapon = config.weapon,
-        health = config.maxHealth,
-        maxHealth = config.maxHealth,
+        hits = config.maxHits,
+        maxHits = config.maxHits,
         gold = config.startingGold,
     )
+
+    /** Barricades placed so far; each raises the next barricade's cost (§7 economy pressure). */
+    private var barricadesBuilt = 0
 
     val enemies = ArrayList<Enemy>()
     val projectiles = ArrayList<Projectile>()
@@ -110,16 +113,17 @@ class RunEngine(
         movePlayer(clamped, input)
         updateWaves(clamped)
         moveEnemies(clamped)
+        updateEnemyFire(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
         updateStructures(clamped)
         moveProjectiles(clamped)
         resolveProjectileHits()
-        resolveTouchDamage(clamped)
+        resolveContact(clamped)
         updatePickups(clamped)
         ageVisuals(clamped)
 
-        if (player.health <= 0f) endRun(victory = false)
+        if (player.hits <= 0) endRun(victory = false)
     }
 
     /**
@@ -129,22 +133,28 @@ class RunEngine(
      */
     fun placeStructure(type: StructureType, worldPos: Vec2): Boolean {
         if (status != RunStatus.RUNNING) return false
-        if (player.gold < type.cost) return false
+        val cost = buildCost(type)
+        if (player.gold < cost) return false
         val col = colOf(worldPos.x)
         val row = rowOf(worldPos.y)
         val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
         if (!arena.contains(center)) return false
         if (occupancy.containsKey(cellKey(col, row))) return false
         if (col == colOf(player.pos.x) && row == rowOf(player.pos.y)) return false // don't box yourself in
-        player.gold -= type.cost
+        player.gold -= cost
         val s = Structure(
             id = nextId++, type = type, col = col, row = row, pos = center,
             hp = type.maxHp, maxHp = type.maxHp,
         )
         structures.add(s)
         occupancy[cellKey(col, row)] = s
+        if (type == StructureType.BARRICADE) barricadesBuilt++
         return true
     }
+
+    /** Current gold cost of [type]: each barricade already built raises the next barricade by 5 (§7). */
+    fun buildCost(type: StructureType): Int =
+        if (type == StructureType.BARRICADE) type.cost + barricadesBuilt * BARRICADE_COST_STEP else type.cost
 
     /**
      * Widen the arena a stage for escalating gold (the "unlock to widen the space", §7). No-op if
@@ -179,8 +189,9 @@ class RunEngine(
         activeMax = arena.max(),
         cellSize = arena.cellSize,
         playerPos = player.pos,
-        playerHealth = player.health,
-        playerMaxHealth = player.maxHealth,
+        playerHits = player.hits.coerceAtLeast(0),
+        playerMaxHits = player.maxHits,
+        playerInvuln = player.invuln > 0f,
         playerAim = player.aim,
         playerMuzzleFrac = (player.muzzleFlash / MUZZLE_SECONDS).coerceIn(0f, 1f),
         playerHurtFrac = (player.hurtFlash / HURT_SECONDS).coerceIn(0f, 1f),
@@ -205,8 +216,10 @@ class RunEngine(
                 facing = (player.pos - it.pos).normalized(),
             )
         },
-        projectiles = projectiles.map { it.pos },
+        projectiles = projectiles.filter { it.friendly }.map { it.pos },
+        enemyProjectiles = projectiles.filter { !it.friendly }.map { it.pos },
         structures = structures.map { StructureView(it.pos, it.type, (it.hp / it.maxHp).coerceIn(0f, 1f), it.aim) },
+        structureCosts = StructureType.values().associateWith { buildCost(it) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
@@ -238,17 +251,37 @@ class RunEngine(
             val here = structureAt(p)
             val tryX = Vec2(p.x + delta.x, p.y)
             val sX = structureAt(tryX)
-            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e, dt) else p = tryX
+            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e) else p = tryX
             val tryY = Vec2(p.x, p.y + delta.y)
             val sY = structureAt(tryY)
-            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e, dt) else p = Vec2(p.x, tryY.y)
+            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
             e.pos = arena.clamp(p, e.type.radius)
         }
     }
 
-    private fun attackStructure(s: Structure, e: Enemy, dt: Float) {
-        s.hp -= e.touchDamage * dt
-        bus.emit(GameEvent.OnHit(e.id, s.id, e.touchDamage * dt, false))
+    private fun attackStructure(s: Structure, e: Enemy) {
+        if (e.attackCooldown > 0f) return
+        e.attackCooldown = ATTACK_INTERVAL
+        s.hp -= e.type.contactHits.toFloat() // durability is in hits; a blow removes contactHits
+        bus.emit(GameEvent.OnHit(e.id, s.id, e.type.contactHits.toFloat(), false))
+    }
+
+    /** Ranged enemies (Spitter) fire an enemy projectile at the player at a turret's cadence. */
+    private fun updateEnemyFire(dt: Float) {
+        for (e in enemies) {
+            if (!e.type.isRanged) continue
+            e.fireCooldown -= dt
+            if (e.fireCooldown > 0f) continue
+            if (e.pos.distanceTo(player.pos) > e.type.range) continue
+            e.fireCooldown = 1f / e.type.fireRate
+            val dir = (player.pos - e.pos).normalized()
+            projectiles.add(
+                Projectile(
+                    id = nextId++, ownerId = e.id, pos = e.pos, vel = dir * e.type.projectileSpeed,
+                    damage = 1f, crit = false, lifeRemaining = e.type.range / e.type.projectileSpeed, friendly = false,
+                )
+            )
+        }
     }
 
     /** Turrets auto-fire at the nearest enemy in range; dead structures are cleared. */
@@ -350,9 +383,15 @@ class RunEngine(
     }
 
     private fun spawnWaveEnemy() {
-        // Elites (Husk) grow more common in later waves; early waves are mostly trash.
-        val eliteChance = 0.08f + wave * 0.04f
-        val type = if (rng.chance(eliteChance)) EnemyType.HUSK else EnemyType.SHAMBLER
+        // Trash by default, with a growing chance of an elite Husk or a ranged Spitter as waves climb.
+        val eliteChance = 0.08f + wave * 0.03f
+        val spitterChance = 0.10f + wave * 0.03f
+        val roll = rng.nextFloat()
+        val type = when {
+            roll < eliteChance -> EnemyType.HUSK
+            roll < eliteChance + spitterChance -> EnemyType.SPITTER
+            else -> EnemyType.SHAMBLER
+        }
         spawnEnemy(type, hpScale = 1f)
     }
 
@@ -367,13 +406,11 @@ class RunEngine(
             mapOf(
                 Stat.MAX_HEALTH to type.maxHealth,
                 Stat.MOVE_SPEED to type.moveSpeed,
-                Stat.DAMAGE to type.touchDamage,
             )
         )
         // Director multipliers (challenge modes) and the endless tier both compound onto the base.
         block.add(StatContribution(Stat.MAX_HEALTH, Scope.GLOBAL, Op.MULTIPLY, director.enemyHpMult() * Tiers.hpMult(tier)))
         block.add(StatContribution(Stat.MOVE_SPEED, Scope.GLOBAL, Op.MULTIPLY, director.enemySpeedMult() * Tiers.speedMult(tier)))
-        block.add(StatContribution(Stat.DAMAGE, Scope.GLOBAL, Op.MULTIPLY, director.enemyDamageMult() * Tiers.damageMult(tier)))
         director.enemyModifiers.forEach { block.addAll(it.contributions()) }
 
         val hp = block.resolve(Stat.MAX_HEALTH, Scope.GLOBAL) * hpScale
@@ -384,7 +421,6 @@ class RunEngine(
             health = hp,
             maxHealth = hp,
             moveSpeed = block.resolve(Stat.MOVE_SPEED, Scope.GLOBAL),
-            touchDamage = block.resolve(Stat.DAMAGE, Scope.GLOBAL),
             held = director.enemyModifiers,
         )
         enemies.add(e)
@@ -491,19 +527,27 @@ class RunEngine(
     private fun killEnemy(e: Enemy) {
         score += e.type.xpValue * 10L
         bus.emit(GameEvent.OnKill(PLAYER_ID, e.id, e.kind))
-        pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))
-        if (e.type.goldValue > 0 && rng.chance(0.5f)) {
-            pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
-        }
         if (e.kind == EntityKind.BOSS) {
-            pickups.add(Pickup(nextId++, e.pos, PickupKind.HEALTH, 30))
+            // Bosses always pay out — XP, gold, and a heart.
+            pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))
+            pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
+            pickups.add(Pickup(nextId++, e.pos, PickupKind.HEALTH, 1))
+        } else {
+            // Stingy drop table (§7): 25% XP, 5% gold, 70% nothing.
+            val roll = rng.nextFloat()
+            if (roll < 0.25f) pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))
+            else if (roll < 0.30f && e.type.goldValue > 0) pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
         }
         effects.add(RunEffect(pos = e.pos, kind = EffectKind.DEATH_BURST, worldRadius = e.type.radius, ttl = BURST_SECONDS))
     }
 
-    /** Age hit-flash timers and transient effects; drop anything that has expired. Visual only. */
+    /** Age hit-flash / i-frame / attack timers and transient effects; drop expired. Visual + gameplay timers. */
     private fun ageVisuals(dt: Float) {
-        for (e in enemies) if (e.hitFlash > 0f) e.hitFlash = (e.hitFlash - dt).coerceAtLeast(0f)
+        for (e in enemies) {
+            if (e.hitFlash > 0f) e.hitFlash = (e.hitFlash - dt).coerceAtLeast(0f)
+            if (e.attackCooldown > 0f) e.attackCooldown -= dt
+        }
+        if (player.invuln > 0f) player.invuln -= dt
         if (player.muzzleFlash > 0f) player.muzzleFlash = (player.muzzleFlash - dt).coerceAtLeast(0f)
         if (player.hurtFlash > 0f) player.hurtFlash = (player.hurtFlash - dt).coerceAtLeast(0f)
         val it = effects.iterator()
@@ -514,15 +558,42 @@ class RunEngine(
         }
     }
 
-    private fun resolveTouchDamage(dt: Float) {
+    /**
+     * Contact damage in hearts. Enemy touch and incoming enemy projectiles each cost the player
+     * hearts (a boss touch costs [EnemyType.contactHits] = 3), gated by invulnerability frames so a
+     * single overlap costs one hit, not a heart per frame.
+     */
+    private fun resolveContact(dt: Float) {
+        if (player.invuln > 0f) {
+            // Still take the projectile off the field even while invulnerable, but no heart cost.
+            projectiles.removeAll { !it.friendly && it.pos.distanceTo(player.pos) <= player.radius + it.radius }
+            return
+        }
+        // Enemy body contact.
         for (e in enemies) {
             if (e.pos.distanceTo(player.pos) <= e.type.radius + player.radius) {
-                val dmg = e.touchDamage * dt
-                player.health -= dmg
-                player.hurtFlash = HURT_SECONDS
-                bus.emit(GameEvent.OnHit(e.id, PLAYER_ID, dmg, false))
+                hurtPlayer(e.type.contactHits)
+                return
             }
         }
+        // Enemy projectile hit (each costs one heart).
+        val pit = projectiles.iterator()
+        while (pit.hasNext()) {
+            val p = pit.next()
+            if (p.friendly) continue
+            if (p.pos.distanceTo(player.pos) <= player.radius + p.radius) {
+                pit.remove()
+                hurtPlayer(1)
+                return
+            }
+        }
+    }
+
+    private fun hurtPlayer(hearts: Int) {
+        player.hits -= hearts
+        player.invuln = INVULN_SECONDS
+        player.hurtFlash = HURT_SECONDS
+        bus.emit(GameEvent.OnHit(-1, PLAYER_ID, hearts.toFloat(), false))
     }
 
     // --- Pickups & leveling -----------------------------------------------------------------
@@ -549,7 +620,7 @@ class RunEngine(
         when (pk.kind) {
             PickupKind.GOLD -> player.gold += pk.amount
             PickupKind.HEALTH -> {
-                player.health = (player.health + pk.amount).coerceAtMost(player.maxHealth)
+                player.hits = (player.hits + pk.amount).coerceAtMost(player.maxHits)
                 bus.emit(GameEvent.OnHeal(PLAYER_ID, pk.amount.toFloat()))
             }
             PickupKind.XP -> gainXp(pk.amount.toFloat())
@@ -596,7 +667,7 @@ class RunEngine(
         bus.emit(GameEvent.OnLevelUp(player.level, overflow = true))
         score += 50L
         when (rng.nextInt(3)) {
-            0 -> player.health = (player.health + 12f).coerceAtMost(player.maxHealth)
+            0 -> player.hits = (player.hits + 1).coerceAtMost(player.maxHits) // restore a heart
             1 -> player.gold += 3 // overflow gold dies with the run — never banked (invariant #1)
             else -> score += 40L
         }
@@ -634,5 +705,8 @@ class RunEngine(
         const val BURST_SECONDS = 0.35f
         const val MUZZLE_SECONDS = 0.06f
         const val HURT_SECONDS = 0.16f
+        const val INVULN_SECONDS = 0.8f    // i-frames after a hit — one contact = one heart
+        const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
+        const val BARRICADE_COST_STEP = 5  // each barricade raises the next barricade's cost
     }
 }

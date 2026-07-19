@@ -98,7 +98,7 @@ class RunViewModel(
             val config = RunConfig(
                 weapon = state.weapon,
                 levelCap = Loadout.levelCapFor(commitment.levelCap),
-                maxHealth = Loadout.maxHealthFor(commitment.maxHealth),
+                maxHits = Loadout.heartsFor(commitment.maxHealth),
                 startingGold = commitment.gold,
                 seed = RunSeed.fromWeek(DateUtil.currentWeekStart().toString()),
                 challengeMode = state.challengeMode,

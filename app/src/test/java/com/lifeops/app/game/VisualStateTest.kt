@@ -18,7 +18,7 @@ class VisualStateTest {
     private fun cfg(waves: Int = 3, mode: ChallengeMode = ChallengeMode.NONE) = RunConfig(
         weapon = StartingWeapon.GATLING,
         levelCap = 20,
-        maxHealth = 4000f,
+        maxHits = 99,
         startingGold = 0,
         seed = 11L,
         waves = waves,

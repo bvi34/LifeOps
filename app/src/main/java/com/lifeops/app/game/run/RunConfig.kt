@@ -13,8 +13,8 @@ data class RunConfig(
     val weapon: StartingWeapon,
     /** Ceiling on in-run leveling, funded from banked Level Cap (§2). */
     val levelCap: Int,
-    /** Run survivability, funded from banked Max Health. */
-    val maxHealth: Float,
+    /** Player hearts (discrete): survives this many contacts. Funded from banked Max Health. */
+    val maxHits: Int,
     /** In-run starting purse, funded from banked Starting Gold; gold dies with the run. */
     val startingGold: Int,
     /** Deterministic run seed (week-seeded in production, fixed in tests). */
@@ -27,14 +27,14 @@ data class RunConfig(
     companion object {
         const val MIN_LEVEL_CAP = 6
         const val MAX_LEVEL_CAP = 40
-        const val MIN_MAX_HEALTH = 60f
-        const val MAX_MAX_HEALTH = 400f
+        const val BASE_HITS = 3
+        const val MAX_HITS = 12
 
         /** A sane default loadout for a first run with an empty bank (still playable, per §2). */
         fun default(weapon: StartingWeapon = StartingWeapon.GATLING, seed: Long = 1L) = RunConfig(
             weapon = weapon,
             levelCap = 20,
-            maxHealth = 100f,
+            maxHits = BASE_HITS,
             startingGold = 0,
             seed = seed,
         )

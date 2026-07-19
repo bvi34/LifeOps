@@ -198,8 +198,8 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
             }
             item {
                 CommitCard(
-                    title = "Max Health",
-                    subtitle = "1 : 1 · run HP ${Loadout.maxHealthFor(ui.commitment.maxHealth).toInt()}",
+                    title = "Hearts",
+                    subtitle = "${Loadout.UNITS_PER_HEART} banked per extra heart · ${Loadout.heartsFor(ui.commitment.maxHealth)} hearts",
                     resource = Loadout.resolve(Loadout.Role.MAX_HEALTH, ui.resources),
                     committed = ui.commitment.maxHealth,
                     step = 10,
@@ -433,6 +433,9 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             snapshot.projectiles.forEach { p ->
                 drawCircle(color = PROJECTILE_COLOR, radius = 3.5f * scale, center = Offset(sx(p.x), sy(p.y)))
             }
+            snapshot.enemyProjectiles.forEach { p ->
+                drawCircle(color = ENEMY_PROJECTILE_COLOR, radius = 4f * scale, center = Offset(sx(p.x), sy(p.y)))
+            }
 
             // Player: an oriented silhouette pointing where it's aiming, a weapon nub whose shape
             // reads the weapon, plus aim guide, muzzle flash, and a red hurt flash.
@@ -462,10 +465,11 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 strokeWidth = (if (gatling) 6f else 3f) * scale
             )
 
-            // Body silhouette (flashes red when hurt), then a bright core.
-            val body = lerp(PLAYER_COLOR, HURT_FLASH_COLOR, snapshot.playerHurtFrac)
+            // Body silhouette (flashes red when hurt; dims while invulnerable), then a bright core.
+            val iAlpha = if (snapshot.playerInvuln) 0.5f else 1f
+            val body = lerp(PLAYER_COLOR, HURT_FLASH_COLOR, snapshot.playerHurtFrac).copy(alpha = iAlpha)
             drawPath(playerPath(pc, pr, aim), color = body)
-            drawCircle(color = Color.White.copy(alpha = 0.9f), radius = 4.5f * scale, center = pc)
+            drawCircle(color = Color.White.copy(alpha = 0.9f * iAlpha), radius = 4.5f * scale, center = pc)
 
             // Muzzle flash at the barrel tip on each shot.
             if (snapshot.playerMuzzleFrac > 0f) {
@@ -499,12 +503,13 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             ) {
                 StructureType.values().forEach { type ->
                     val selected = buildType == type
-                    val affordable = snapshot.gold >= type.cost
+                    val cost = snapshot.structureCosts[type] ?: type.cost
+                    val affordable = snapshot.gold >= cost
                     val onClick = { buildType = if (selected) null else type }
                     if (selected) {
-                        Button(onClick = onClick) { Text("${type.displayName} ${type.cost}g") }
+                        Button(onClick = onClick) { Text("${type.displayName} ${cost}g") }
                     } else {
-                        OutlinedButton(onClick = onClick, enabled = affordable) { Text("${type.displayName} ${type.cost}g") }
+                        OutlinedButton(onClick = onClick, enabled = affordable) { Text("${type.displayName} ${cost}g") }
                     }
                 }
             }
@@ -556,11 +561,16 @@ private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
             Meter(fraction = boss.healthFrac, color = BOSS_COLOR, label = "${boss.name}  ${(boss.healthFrac * 100).toInt()}%")
         }
         Spacer(Modifier.height(8.dp))
-        Meter(
-            fraction = if (snapshot.playerMaxHealth > 0f) (snapshot.playerHealth / snapshot.playerMaxHealth) else 0f,
-            color = HEALTH_COLOR,
-            label = "HP ${snapshot.playerHealth.toInt()}/${snapshot.playerMaxHealth.toInt()}"
-        )
+        // Discrete hearts instead of an HP bar.
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            repeat(snapshot.playerMaxHits) { i ->
+                Text(
+                    if (i < snapshot.playerHits) "♥" else "♡",
+                    color = if (i < snapshot.playerHits) HEALTH_COLOR else Color.White.copy(alpha = 0.3f),
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+        }
         Spacer(Modifier.height(4.dp))
         Meter(
             fraction = if (snapshot.xpToNext > 0f) (snapshot.xp / snapshot.xpToNext) else 0f,
@@ -685,6 +695,7 @@ private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLea
 private fun enemyColor(type: EnemyType): Color = when (type) {
     EnemyType.SHAMBLER -> Color(0xFF7CB342)
     EnemyType.HUSK -> Color(0xFFEF6C00)
+    EnemyType.SPITTER -> Color(0xFF26C6DA)
     EnemyType.ABOMINATION -> Color(0xFF8E24AA)
 }
 
@@ -698,6 +709,8 @@ private fun enemyVerts(type: EnemyType): List<Pair<Float, Float>> = when (type) 
     EnemyType.SHAMBLER -> listOf(0f to 1.35f, 2.5f to 0.95f, Math.PI.toFloat() to 0.45f, -2.5f to 0.95f)
     // Hexagon.
     EnemyType.HUSK -> (0 until 6).map { (it * (2.0 * Math.PI / 6.0)).toFloat() to 1f }
+    // Diamond — a hovering ranged spitter.
+    EnemyType.SPITTER -> listOf(0f to 1.3f, (Math.PI / 2).toFloat() to 0.9f, Math.PI.toFloat() to 1.3f, (3 * Math.PI / 2).toFloat() to 0.9f)
     // Twelve-point spiked star.
     EnemyType.ABOMINATION -> (0 until 12).map {
         (it * (2.0 * Math.PI / 12.0)).toFloat() to if (it % 2 == 0) 1.2f else 0.62f
@@ -738,6 +751,7 @@ private val TURRET_COLOR = Color(0xFF26A69A)
 private val BARRICADE_COLOR = Color(0xFF8D6E63)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
 private val PROJECTILE_COLOR = Color(0xFFFFF176)
+private val ENEMY_PROJECTILE_COLOR = Color(0xFFFF5252)
 private val XP_COLOR = Color(0xFF66BB6A)
 private val GOLD_COLOR = Color(0xFFFFCA28)
 private val HEALTH_COLOR = Color(0xFFEF5350)
