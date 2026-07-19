@@ -68,7 +68,7 @@ class ArenaTest {
 
     private fun engine(gold: Int = 0) = RunEngine(
         RunConfig(
-            weapon = StartingWeapon.GATLING, levelCap = 20, maxHealth = 2000f,
+            weapon = StartingWeapon.GATLING, levelCap = 20, maxHits = 99,
             startingGold = gold, seed = 3L, waves = 3, challengeMode = ChallengeMode.NONE,
         )
     )

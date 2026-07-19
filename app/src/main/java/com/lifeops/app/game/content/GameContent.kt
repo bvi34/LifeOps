@@ -117,17 +117,29 @@ object Artifacts {
  */
 enum class EnemyType(
     val displayName: String,
+    /** Durability. Baseline trash is tuned to die to a single shot ("one hit"). */
     val maxHealth: Float,
     val moveSpeed: Float,
-    val touchDamage: Float,
+    /** Hearts removed from the player (and hits dealt to structures) on a contact/attack. */
+    val contactHits: Int,
     val radius: Float,
     val xpValue: Int,
     val goldValue: Int,
+    // Ranged enemies (Spitter) fire at "tower rate"; melee types leave these zero.
+    val fireRate: Float = 0f,
+    val range: Float = 0f,
+    val projectileSpeed: Float = 0f,
 ) {
-    // Trash: cheap, fast, swarms. Sniper struggles, gatling shines.
-    SHAMBLER("Shambler", maxHealth = 26f, moveSpeed = 46f, touchDamage = 8f, radius = 13f, xpValue = 3, goldValue = 1),
-    // Elite: carried-forward tasks map here, HP scaled by carry count at spawn time.
-    HUSK("Husk", maxHealth = 120f, moveSpeed = 34f, touchDamage = 16f, radius = 18f, xpValue = 10, goldValue = 4),
-    // Boss: seeded from an unsuccessful task; one per run finale.
-    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, touchDamage = 30f, radius = 34f, xpValue = 80, goldValue = 40),
+    // Trash: cheap, fast, swarms — dies to one shot. Deals one heart.
+    SHAMBLER("Shambler", maxHealth = 8f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1),
+    // Elite: tanky, takes several shots. Still one heart on contact.
+    HUSK("Husk", maxHealth = 70f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4),
+    // Ranged: hangs back and spits projectiles at a turret's rate of fire.
+    SPITTER("Spitter", maxHealth = 24f, moveSpeed = 30f, contactHits = 1, radius = 15f, xpValue = 8, goldValue = 3,
+        fireRate = 3f, range = 320f, projectileSpeed = 300f),
+    // Boss: heavy sponge; a contact costs three hearts (one-shots a baseline player).
+    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40),
+    ;
+
+    val isRanged: Boolean get() = fireRate > 0f
 }

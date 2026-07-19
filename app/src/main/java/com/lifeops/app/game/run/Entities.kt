@@ -19,8 +19,11 @@ class Player(
     var pos: Vec2,
     val weapon: StartingWeapon,
     val held: MutableList<HeldModifier> = mutableListOf(),
-    var health: Float,
-    var maxHealth: Float,
+    /** Discrete hearts: the player survives [maxHits] contacts, losing one per hit (boss: three). */
+    var hits: Int,
+    var maxHits: Int,
+    /** Seconds of invulnerability remaining after a hit, so one contact costs one heart, not many. */
+    var invuln: Float = 0f,
     var level: Int = 1,
     var xp: Float = 0f,
     var xpToNext: Float = 12f,
@@ -65,13 +68,15 @@ class Enemy(
     val maxHealth: Float,
     /** Effective move speed after Director multipliers + any enemy-attached modifiers (Mob Boss). */
     val moveSpeed: Float,
-    /** Effective touch damage after Director multipliers + any enemy-attached modifiers. */
-    val touchDamage: Float,
     /** Artifacts this enemy is wielding (Mob Boss); empty in a standard run. */
     val held: List<HeldModifier> = emptyList(),
     val kind: EntityKind = if (type == EnemyType.ABOMINATION) EntityKind.BOSS else EntityKind.ENEMY,
     /** Seconds of remaining hit-flash; set on each incoming hit, decays each frame (visual only). */
     var hitFlash: Float = 0f,
+    /** Ranged enemies (Spitter): seconds until the next shot. */
+    var fireCooldown: Float = 0f,
+    /** Seconds until this enemy can strike a structure again (discrete hits, not continuous drain). */
+    var attackCooldown: Float = 0f,
 ) {
     val alive: Boolean get() = health > 0f
 }

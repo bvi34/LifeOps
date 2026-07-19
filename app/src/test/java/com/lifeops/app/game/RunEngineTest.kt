@@ -14,10 +14,10 @@ import kotlin.math.sin
 
 class RunEngineTest {
 
-    private fun config(seed: Long = 123L, cap: Int = 20, hp: Float = 500f) = RunConfig(
+    private fun config(seed: Long = 123L, cap: Int = 20, hits: Int = 3) = RunConfig(
         weapon = StartingWeapon.GATLING,
         levelCap = cap,
-        maxHealth = hp,
+        maxHits = hits,
         startingGold = 0,
         seed = seed,
         waves = 3,
@@ -39,7 +39,7 @@ class RunEngineTest {
         val s = e.snapshot()
         assertEquals(RunStatus.RUNNING, s.status)
         assertEquals(1, s.wave)
-        assertEquals(500f, s.playerHealth, 0.01f)
+        assertEquals(3, s.playerHits)
     }
 
     @Test
@@ -51,15 +51,10 @@ class RunEngineTest {
 
     @Test
     fun playerLevelsUpButNeverExceedsCap() {
-        // Kite in a circle with a big HP pool so the player reliably survives long enough to farm.
-        val e = RunEngine(config(cap = 8, hp = 3000f))
-        repeat(1800) { i ->
-            if (e.status == RunStatus.LEVEL_UP) {
-                e.snapshot().levelUpOptions.firstOrNull()?.let { e.choose(it) }
-            }
-            val ang = i * 0.05f
-            e.step(1f / 60f, RunInput(Vec2(cos(ang), sin(ang))))
-        }
+        // Lots of hearts so the fragile player survives long enough to farm; stationary so XP drops
+        // land within pickup range (the drop table is stingy now — 25% XP).
+        val e = RunEngine(config(cap = 8, hits = 99))
+        drive(e, 3600)
         assertTrue("should have leveled at least once", e.snapshot().level > 1)
         assertTrue("must respect the funded level cap", e.snapshot().level <= 8)
     }
@@ -74,14 +69,14 @@ class RunEngineTest {
         val sb = b.snapshot()
         assertEquals(sa.score, sb.score)
         assertEquals(sa.level, sb.level)
-        assertEquals(sa.playerHealth, sb.playerHealth, 0.001f)
+        assertEquals(sa.playerHits, sb.playerHits)
         assertEquals(sa.enemies.size, sb.enemies.size)
     }
 
     @Test
     fun stepIsInertAfterRunEnds() {
-        // Tiny health, no movement: the player gets overrun and the run ends; further steps no-op.
-        val e = RunEngine(config(hp = 5f))
+        // One heart, no movement: the player gets overrun and the run ends; further steps no-op.
+        val e = RunEngine(config(hits = 1))
         drive(e, 4000)
         val ended = e.snapshot().status
         assertTrue(ended == RunStatus.DEFEAT || ended == RunStatus.VICTORY)

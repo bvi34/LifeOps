@@ -72,7 +72,7 @@ class DirectorTest {
     fun mobBossEnemiesActuallyMoveFasterInEngine() {
         fun firstEnemySpeed(mode: ChallengeMode): Float {
             val e = RunEngine(
-                RunConfig(StartingWeapon.GATLING, levelCap = 20, maxHealth = 500f, startingGold = 0, seed = 5L, waves = 3, challengeMode = mode)
+                RunConfig(StartingWeapon.GATLING, levelCap = 20, maxHits = 99, startingGold = 0, seed = 5L, waves = 3, challengeMode = mode)
             )
             // Step until the first enemy appears.
             repeat(300) { if (e.enemies.isEmpty()) e.step(1f / 60f, RunInput()) }
@@ -84,7 +84,7 @@ class DirectorTest {
     @Test
     fun challengeRunStaysDeterministic() {
         fun run() = RunEngine(
-            RunConfig(StartingWeapon.GATLING, levelCap = 20, maxHealth = 500f, startingGold = 0, seed = 77L, waves = 3, challengeMode = ChallengeMode.MIRROR)
+            RunConfig(StartingWeapon.GATLING, levelCap = 20, maxHits = 99, startingGold = 0, seed = 77L, waves = 3, challengeMode = ChallengeMode.MIRROR)
         ).also { e -> repeat(600) { e.step(1f / 60f, RunInput()) } }
         assertEquals(run().snapshot().score, run().snapshot().score)
     }

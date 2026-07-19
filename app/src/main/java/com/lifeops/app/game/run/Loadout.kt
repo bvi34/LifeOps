@@ -13,9 +13,9 @@ import com.lifeops.app.data.model.GameResource
 object Loadout {
     const val ENERGY_COST = 10          // run entry price (DESIGN.md §2: ~10 energy/run)
     const val UNITS_PER_LEVEL_CAP = 10  // banked units per in-run level of ceiling (§2)
+    const val UNITS_PER_HEART = 25      // banked Max-Health units per extra heart
 
     const val BASE_LEVEL_CAP = 12
-    const val BASE_MAX_HEALTH = 100f
 
     /** A loadout slot bound to a resolved resource (or null if no resource fits the role). */
     data class Slot(val role: Role, val resource: GameResource?)
@@ -53,6 +53,7 @@ object Loadout {
         (BASE_LEVEL_CAP + committed / UNITS_PER_LEVEL_CAP)
             .coerceIn(RunConfig.MIN_LEVEL_CAP, RunConfig.MAX_LEVEL_CAP)
 
-    fun maxHealthFor(committed: Int): Float =
-        (BASE_MAX_HEALTH + committed).coerceIn(RunConfig.MIN_MAX_HEALTH, RunConfig.MAX_MAX_HEALTH)
+    /** Baseline 3 hearts, +1 per [UNITS_PER_HEART] banked Max-Health units. */
+    fun heartsFor(committed: Int): Int =
+        (RunConfig.BASE_HITS + committed / UNITS_PER_HEART).coerceIn(RunConfig.BASE_HITS, RunConfig.MAX_HITS)
 }

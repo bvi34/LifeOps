@@ -16,7 +16,7 @@ class StructureTest {
 
     private fun engine(gold: Int = 200) = RunEngine(
         RunConfig(
-            weapon = StartingWeapon.GATLING, levelCap = 20, maxHealth = 5000f,
+            weapon = StartingWeapon.GATLING, levelCap = 20, maxHits = 99,
             startingGold = gold, seed = 3L, waves = 3, challengeMode = ChallengeMode.NONE,
         )
     )
@@ -54,6 +54,16 @@ class StructureTest {
             if (e.projectiles.any { it.friendly && it.ownerId != RunEngine.PLAYER_ID }) turretShotSeen = true
         }
         assertTrue("a placed turret should shoot when enemies are in range", turretShotSeen)
+    }
+
+    @Test
+    fun barricadeCostEscalatesPerWall() {
+        val e = engine(gold = 200)
+        val c0 = e.buildCost(StructureType.BARRICADE)
+        assertTrue(e.placeStructure(StructureType.BARRICADE, nearby(e, dx = 2f)))
+        assertEquals(c0 + RunEngine.BARRICADE_COST_STEP, e.buildCost(StructureType.BARRICADE))
+        // Turret cost is unaffected by barricades.
+        assertEquals(StructureType.TURRET.cost, e.buildCost(StructureType.TURRET))
     }
 
     @Test

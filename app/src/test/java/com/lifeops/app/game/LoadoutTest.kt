@@ -53,7 +53,9 @@ class LoadoutTest {
     fun committedUnitsConvertWithinBounds() {
         assertEquals(Loadout.BASE_LEVEL_CAP + 3, Loadout.levelCapFor(30))
         assertEquals(RunConfig.MAX_LEVEL_CAP, Loadout.levelCapFor(100_000))
-        assertEquals(Loadout.BASE_MAX_HEALTH + 40f, Loadout.maxHealthFor(40), 0.001f)
-        assertEquals(RunConfig.MAX_MAX_HEALTH, Loadout.maxHealthFor(100_000), 0.001f)
+        // Hearts: baseline 3, +1 per UNITS_PER_HEART banked, capped.
+        assertEquals(RunConfig.BASE_HITS, Loadout.heartsFor(0))
+        assertEquals(RunConfig.BASE_HITS + 2, Loadout.heartsFor(2 * Loadout.UNITS_PER_HEART))
+        assertEquals(RunConfig.MAX_HITS, Loadout.heartsFor(100_000))
     }
 }

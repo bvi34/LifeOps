@@ -30,7 +30,7 @@ class EndlessTest {
         // A near-invincible player so the run keeps looping; waves = 1 makes every loop a boss loop.
         val e = RunEngine(
             RunConfig(
-                weapon = StartingWeapon.GATLING, levelCap = 30, maxHealth = 100_000f,
+                weapon = StartingWeapon.GATLING, levelCap = 30, maxHits = 999,
                 startingGold = 0, seed = 5L, waves = 1, challengeMode = ChallengeMode.NONE,
             )
         )

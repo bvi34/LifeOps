@@ -17,10 +17,11 @@ enum class StructureType(
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
 ) {
+    // Durability is measured in hits now: a turret falls to one enemy blow, a barricade takes three.
     TURRET(
         displayName = "Turret",
         cost = 25,
-        maxHp = 60f,
+        maxHp = 1f,
         blocks = true,
         damage = 14f,
         fireRate = 3f,
@@ -30,7 +31,7 @@ enum class StructureType(
     BARRICADE(
         displayName = "Barricade",
         cost = 10,
-        maxHp = 160f,
+        maxHp = 3f,
         blocks = true,
     );
 
