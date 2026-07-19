@@ -266,14 +266,13 @@ class RunEngine(
         bus.emit(GameEvent.OnHit(e.id, s.id, e.type.contactHits.toFloat(), false))
     }
 
-    /** Ranged enemies (Spitter) fire an enemy projectile at the player at a turret's cadence. */
+    /** Ranged enemies (Spitter) fire bursts at the player: a few quick shots, then a long recovery. */
     private fun updateEnemyFire(dt: Float) {
         for (e in enemies) {
             if (!e.type.isRanged) continue
             e.fireCooldown -= dt
             if (e.fireCooldown > 0f) continue
             if (e.pos.distanceTo(player.pos) > e.type.range) continue
-            e.fireCooldown = 1f / e.type.fireRate
             val dir = (player.pos - e.pos).normalized()
             projectiles.add(
                 Projectile(
@@ -281,6 +280,13 @@ class RunEngine(
                     damage = 1f, crit = false, lifeRemaining = e.type.range / e.type.projectileSpeed, friendly = false,
                 )
             )
+            e.burstShots++
+            if (e.burstShots >= e.type.burstCount) {
+                e.burstShots = 0
+                e.fireCooldown = e.type.burstCooldown // long recovery between bursts
+            } else {
+                e.fireCooldown = 1f / e.type.fireRate // quick shots within a burst
+            }
         }
     }
 
@@ -383,16 +389,17 @@ class RunEngine(
     }
 
     private fun spawnWaveEnemy() {
-        // Trash by default, with a growing chance of an elite Husk or a ranged Spitter as waves climb.
-        val eliteChance = 0.08f + wave * 0.03f
-        val spitterChance = 0.10f + wave * 0.03f
-        val roll = rng.nextFloat()
-        val type = when {
-            roll < eliteChance -> EnemyType.HUSK
-            roll < eliteChance + spitterChance -> EnemyType.SPITTER
-            else -> EnemyType.SHAMBLER
+        // Weighted pick among the archetypes unlocked at the current tier (each tier reveals a new
+        // one). The boss is never in this pool.
+        val pool = EnemyType.values().filter { it != EnemyType.ABOMINATION && it.unlockTier <= tier }
+        val totalWeight = pool.sumOf { it.spawnWeight }
+        var r = rng.nextInt(totalWeight.coerceAtLeast(1))
+        var chosen = pool.first()
+        for (t in pool) {
+            r -= t.spawnWeight
+            if (r < 0) { chosen = t; break }
         }
-        spawnEnemy(type, hpScale = 1f)
+        spawnEnemy(chosen, hpScale = 1f)
     }
 
     private fun spawnBoss() = spawnEnemy(EnemyType.ABOMINATION, hpScale = 1f)

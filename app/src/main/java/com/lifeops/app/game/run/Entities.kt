@@ -75,6 +75,8 @@ class Enemy(
     var hitFlash: Float = 0f,
     /** Ranged enemies (Spitter): seconds until the next shot. */
     var fireCooldown: Float = 0f,
+    /** Ranged enemies: shots fired so far in the current burst. */
+    var burstShots: Int = 0,
     /** Seconds until this enemy can strike a structure again (discrete hits, not continuous drain). */
     var attackCooldown: Float = 0f,
 ) {

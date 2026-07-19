@@ -181,8 +181,10 @@ and — soon — your own placed turrets and barricades.
   base player). Turrets fall to 1 hit, barricades to 3. Baseline trash dies to a
   single shot; elites/bosses take more.
 - **Waves + bosses, numerous.** SAS-style waves, heavier than a classic holdout,
-  including a ranged **Spitter** (fires at turret cadence), ending in one or more
-  bosses (more bosses at higher tiers).
+  ending in one or more bosses (more bosses at higher tiers). Enemy archetypes
+  are **unlocked by tier** — each loop reveals a new one (Spitter at tier 2, then
+  Rusher, then Brute), chosen from the unlocked pool by weight. The ranged Spitter
+  fires in **bursts** (a few quick shots, then a recovery), not a steady stream.
 - **Stingy drops.** Kills roll 25% XP / 5% gold / 70% nothing; bosses always drop
   XP, gold, and a heart. Levelling and gold are meant to be earned.
 - **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the
