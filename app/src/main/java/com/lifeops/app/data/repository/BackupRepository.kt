@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 7,
+    val version: Int = 8,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -40,6 +40,10 @@ private data class BackupData(
     val futureProjects: List<FutureProjectEntity> = emptyList(),
     // v7: future project notes replace the long-form content blob on future_projects.
     val futureProjectNotes: List<FutureProjectNoteEntity> = emptyList(),
+    // v8: household people, their notes, and task-involvement links.
+    val persons: List<PersonEntity> = emptyList(),
+    val personNotes: List<PersonNoteEntity> = emptyList(),
+    val taskPeople: List<TaskPersonEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -67,6 +71,9 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             recipeIngredients = db.recipeDao().getAllIngredients(),
             futureProjects = db.futureProjectDao().getAll(),
             futureProjectNotes = db.futureProjectDao().getAllNotes(),
+            persons = db.personDao().getAll(),
+            personNotes = db.personDao().getAllNotes(),
+            taskPeople = db.personDao().getAllLinks(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -136,6 +143,10 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                     db.futureProjectDao().upsert(fp.copy(content = "", status = rawStatus ?: "active"))
                 }
                 for (fpn in data.futureProjectNotes) db.futureProjectDao().insertNote(fpn)
+                // People before their notes/links (FK), and after tasks (task_people → tasks).
+                for (person in data.persons) db.personDao().upsertPerson(person)
+                for (pn in data.personNotes) db.personDao().insertNote(pn)
+                for (link in data.taskPeople) db.personDao().attach(link)
                 // Backups written before v7 carried one long-form content blob per future
                 // project; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring

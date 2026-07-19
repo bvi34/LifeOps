@@ -41,6 +41,10 @@ import com.lifeops.app.ui.screens.growth.GrowthScreen
 import com.lifeops.app.ui.screens.growth.GrowthViewModelFactory
 import com.lifeops.app.ui.screens.history.HistoryScreen
 import com.lifeops.app.ui.screens.planning.CostResourcesScreen
+import com.lifeops.app.ui.screens.planning.PeopleScreen
+import com.lifeops.app.ui.screens.planning.PeopleViewModelFactory
+import com.lifeops.app.ui.screens.planning.PersonDetailScreen
+import com.lifeops.app.ui.screens.planning.PersonDetailViewModelFactory
 import com.lifeops.app.ui.screens.planning.PlanningScreen
 import com.lifeops.app.ui.screens.planning.ProjectsScreen
 import com.lifeops.app.ui.screens.planning.RunbooksScreen
@@ -265,7 +269,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenCounters = { navController.navigate("counters") },
                         onOpenRunbooks = { navController.navigate("runbooks") },
                         onOpenTemplates = { navController.navigate("templates") },
-                        onOpenCostResources = { navController.navigate("cost_resources") }
+                        onOpenCostResources = { navController.navigate("cost_resources") },
+                        onOpenPeople = { navController.navigate("people") }
                     )
                 }
                 composable("future_tasks") {
@@ -311,6 +316,26 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         factory = CounterDetailViewModelFactory(counterId, app.counterRepository)
                     )
                     CounterDetailScreen(vm) { navController.navigateUp() }
+                }
+                composable("people") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.PeopleViewModel>(
+                        factory = PeopleViewModelFactory(app.personRepository)
+                    )
+                    PeopleScreen(
+                        vm,
+                        onOpenPerson = { id -> navController.navigate("person_detail/$id") },
+                        onBack = { navController.navigateUp() }
+                    )
+                }
+                composable("person_detail/{personId}") { backStackEntry ->
+                    val personId = backStackEntry.arguments?.getString("personId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.PersonDetailViewModel>(
+                        key = "person_detail_$personId",
+                        factory = PersonDetailViewModelFactory(
+                            personId, app.personRepository, app.weekRepository, app.taskRepository
+                        )
+                    )
+                    PersonDetailScreen(vm) { navController.navigateUp() }
                 }
             }
 

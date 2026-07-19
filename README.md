@@ -120,6 +120,21 @@ dynamic cards) build on.
 
 ---
 
+## People (Planning) — design note
+
+The **People** page (Planning hub → People) holds household profiles: a name, weather-comfort
+preferences (max/min feels-like, UV / wind / rain ceilings, sun sensitivity), a freeform activity
+note, and a timeline of notes. Every preference is nullable — "no opinion" never rules a time slot
+out. These are the **Phase 4 household profiles** the weather roadmap's outdoor scoring consumes.
+
+Tasks are marked as *involving* people through a `task_people` many-to-many join (both sides
+cascade). Involvement is managed from a person's detail screen, which lists the tasks that involve
+them and attaches more from the current week — so the task-creation flow stays untouched. Tables
+(`persons`, `person_notes`, `task_people`, migration 29→30) are additive and, unlike the weather
+cache, **included in backup/restore** (backup v8) since profiles are real user data.
+
+---
+
 ## Build & run
 
 The project targets the standard Android toolchain.

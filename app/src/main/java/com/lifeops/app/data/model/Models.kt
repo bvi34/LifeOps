@@ -536,3 +536,41 @@ data class FutureProjectNote(
     val content: String,
     val createdAt: String
 )
+
+/** How much sun exposure a person tolerates — feeds the roadmap's Phase 4 outdoor scoring. */
+enum class SunSensitivity(val value: String, val label: String) {
+    LOW("low", "Low"),
+    MODERATE("moderate", "Moderate"),
+    HIGH("high", "High");
+
+    companion object {
+        fun from(value: String?) = entries.firstOrNull { it.value == value } ?: MODERATE
+    }
+}
+
+/**
+ * A household member. Weather-comfort preferences are all nullable ("no opinion" = never rules a
+ * time out), so a person can be as simple as a name or as detailed as a full comfort profile.
+ * Timeline notes are separate ([PersonNote]); task involvement is a many-to-many join.
+ */
+data class Person(
+    val id: String,
+    val name: String,
+    val heatToleranceMaxF: Int? = null,
+    val coldToleranceMinF: Int? = null,
+    val uvMax: Int? = null,
+    val windMaxMph: Int? = null,
+    val maxPrecipitationPct: Int? = null,
+    val sunSensitivity: SunSensitivity = SunSensitivity.MODERATE,
+    val activityPreferences: String? = null,
+    val isArchived: Boolean = false,
+    val sortOrder: Int = 0,
+    val createdAt: String
+)
+
+data class PersonNote(
+    val id: String,
+    val personId: String,
+    val content: String,
+    val createdAt: String
+)

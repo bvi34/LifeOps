@@ -126,3 +126,15 @@ fun WeatherLocationEntity.toModel() = WeatherLocation(id, latitude, longitude, n
 fun WeatherAlertEntity.toModel() = WeatherAlert(
     id, event, AlertSeverity.from(severity), headline, description, instruction, onset, expires, areaDesc
 )
+
+fun PersonEntity.toModel() = Person(
+    id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
+    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt
+)
+fun Person.toEntity() = PersonEntity(
+    id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
+    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt
+)
+
+fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)
+fun PersonNote.toEntity() = PersonNoteEntity(id, personId, content, createdAt)

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Numbers
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
@@ -34,6 +35,7 @@ fun PlanningScreen(
     onOpenRunbooks: () -> Unit,
     onOpenTemplates: () -> Unit,
     onOpenCostResources: () -> Unit,
+    onOpenPeople: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -65,6 +67,14 @@ fun PlanningScreen(
                     subtitle = "Track recurring tallies over time",
                     icon = Icons.Default.Numbers,
                     onClick = onOpenCounters
+                )
+            }
+            item {
+                HubCard(
+                    title = "People",
+                    subtitle = "Household profiles, preferences & who's involved",
+                    icon = Icons.Default.People,
+                    onClick = onOpenPeople
                 )
             }
             item {
