@@ -1,11 +1,14 @@
 package com.lifeops.app.game
 
 import com.lifeops.app.game.content.ChallengeMode
+import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunStatus
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -43,14 +46,49 @@ class HitsTest {
     }
 
     @Test
-    fun spittersFireEnemyProjectiles() {
-        // Plenty of hearts so the run keeps going; Spitters appear and open fire within range.
-        val e = RunEngine(config(hits = 999))
-        var sawEnemyShot = false
+    fun enemiesUnlockByTier() {
+        assertEquals(0, EnemyType.SHAMBLER.unlockTier)
+        assertEquals(0, EnemyType.HUSK.unlockTier)
+        assertEquals(1, EnemyType.SPITTER.unlockTier) // shows up at UI "tier 2"
+        assertTrue(EnemyType.RUSHER.unlockTier > EnemyType.SPITTER.unlockTier)
+        assertTrue(EnemyType.BRUTE.unlockTier > EnemyType.RUSHER.unlockTier)
+    }
+
+    @Test
+    fun spitterDoesNotSpawnAtTierZero() {
+        val e = RunEngine(config(hits = 999, waves = 99)) // never loops → stays tier 0
+        var sawSpitter = false
         repeat(1200) {
+            e.step(1f / 60f, RunInput())
+            if (e.enemies.any { it.type == EnemyType.SPITTER }) sawSpitter = true
+        }
+        assertFalse("Spitter is a tier-2+ unlock", sawSpitter)
+    }
+
+    @Test
+    fun spittersAppearAndFireOnceTheRunLoopsIntoHigherTiers() {
+        // Invincible, waves = 1 so every clear loops the tier; by tier 1 Spitters are unlocked.
+        val e = RunEngine(config(hits = 999, waves = 1))
+        var sawEnemyShot = false
+        repeat(8000) {
             e.step(1f / 60f, RunInput())
             if (e.snapshot().enemyProjectiles.isNotEmpty()) sawEnemyShot = true
         }
-        assertTrue("a ranged enemy should have fired", sawEnemyShot)
+        assertTrue("should have looped past tier 0", e.tier >= 1)
+        assertTrue("a ranged enemy should have fired once unlocked", sawEnemyShot)
+    }
+
+    @Test
+    fun eachTierAddsANewBossToTheFinale() {
+        // Invincible, waves = 1: tier-0 finale is just the Abomination; the tier-1 finale adds the
+        // Spitter Boss on top.
+        val e = RunEngine(config(hits = 999, waves = 1))
+        var sawSpitterBoss = false
+        repeat(9000) {
+            e.step(1f / 60f, RunInput())
+            if (e.enemies.any { it.type == EnemyType.SPITTER_BOSS }) sawSpitterBoss = true
+        }
+        assertTrue("should have reached the tier-2 finale", e.tier >= 1)
+        assertTrue("the tier-2 finale should add the Spitter Boss", sawSpitterBoss)
     }
 }

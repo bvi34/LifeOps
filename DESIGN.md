@@ -174,15 +174,19 @@ and — soon — your own placed turrets and barricades.
   friendly shots) and barricades (block + soak) on the grid, snapped to cells.
   Permanent for the run and destructible — enemies blocked by one attack it until
   it falls. Select a tool from the palette, tap the arena to place; drag still
-  moves. Each barricade raises the next barricade's cost.
+  moves.
 - **Everything is hits, not HP bars.** The player has a small pool of **hearts**
   (baseline 3, buyable via the Max-Health loadout) with brief i-frames, so one
   contact costs one heart. A normal enemy hits for 1, a boss for 3 (one-shots a
   base player). Turrets fall to 1 hit, barricades to 3. Baseline trash dies to a
   single shot; elites/bosses take more.
-- **Waves + bosses, numerous.** SAS-style waves, heavier than a classic holdout,
-  including a ranged **Spitter** (fires at turret cadence), ending in one or more
-  bosses (more bosses at higher tiers).
+- **Waves + a cumulative boss roster.** SAS-style waves, heavier than a classic
+  holdout, ending in the finale. Enemy archetypes are **unlocked by tier** — each
+  loop reveals a new trash type (Spitter at tier 2, then Rusher, then Brute),
+  chosen from the unlocked pool by weight; the ranged Spitter fires in **bursts**.
+  The **boss roster is cumulative**: every boss unlocked so far spawns together on
+  the final wave — Abomination (tier 1), + Spitter Boss (tier 2, fires without
+  pause), + Rusher Swarm (tier 3, several fast rusher-bosses at once), and beyond.
 - **Stingy drops.** Kills roll 25% XP / 5% gold / 70% nothing; bosses always drop
   XP, gold, and a heart. Levelling and gold are meant to be earned.
 - **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the

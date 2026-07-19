@@ -46,9 +46,6 @@ class RunEngine(
         gold = config.startingGold,
     )
 
-    /** Barricades placed so far; each raises the next barricade's cost (§7 economy pressure). */
-    private var barricadesBuilt = 0
-
     val enemies = ArrayList<Enemy>()
     val projectiles = ArrayList<Projectile>()
     val pickups = ArrayList<Pickup>()
@@ -88,6 +85,7 @@ class RunEngine(
     private var bossTimer = 0f
     private var bossesToSpawn = 0
     private var bossesSpawned = 0
+    private var pendingBosses: List<EnemyType> = emptyList()
 
     private var levelUpOptions: List<LevelUpOption> = emptyList()
 
@@ -148,13 +146,11 @@ class RunEngine(
         )
         structures.add(s)
         occupancy[cellKey(col, row)] = s
-        if (type == StructureType.BARRICADE) barricadesBuilt++
         return true
     }
 
-    /** Current gold cost of [type]: each barricade already built raises the next barricade by 5 (§7). */
-    fun buildCost(type: StructureType): Int =
-        if (type == StructureType.BARRICADE) type.cost + barricadesBuilt * BARRICADE_COST_STEP else type.cost
+    /** Current gold cost of [type]. (Flat — the stingy drop table is what tunes the economy.) */
+    fun buildCost(type: StructureType): Int = type.cost
 
     /**
      * Widen the arena a stage for escalating gold (the "unlock to widen the space", §7). No-op if
@@ -266,14 +262,13 @@ class RunEngine(
         bus.emit(GameEvent.OnHit(e.id, s.id, e.type.contactHits.toFloat(), false))
     }
 
-    /** Ranged enemies (Spitter) fire an enemy projectile at the player at a turret's cadence. */
+    /** Ranged enemies (Spitter) fire bursts at the player: a few quick shots, then a long recovery. */
     private fun updateEnemyFire(dt: Float) {
         for (e in enemies) {
             if (!e.type.isRanged) continue
             e.fireCooldown -= dt
             if (e.fireCooldown > 0f) continue
             if (e.pos.distanceTo(player.pos) > e.type.range) continue
-            e.fireCooldown = 1f / e.type.fireRate
             val dir = (player.pos - e.pos).normalized()
             projectiles.add(
                 Projectile(
@@ -281,6 +276,13 @@ class RunEngine(
                     damage = 1f, crit = false, lifeRemaining = e.type.range / e.type.projectileSpeed, friendly = false,
                 )
             )
+            e.burstShots++
+            if (e.burstShots >= e.type.burstCount) {
+                e.burstShots = 0
+                e.fireCooldown = e.type.burstCooldown // long recovery between bursts
+            } else {
+                e.fireCooldown = 1f / e.type.fireRate // quick shots within a burst
+            }
         }
     }
 
@@ -327,9 +329,10 @@ class RunEngine(
         wave = index
         spawnedThisWave = 0
         bossesSpawned = 0
-        // More numerous than a classic holdout — an open arena wants a real swarm on screen. The
-        // final wave is lighter on trash to make room for the boss(es); more bosses at higher tiers.
-        bossesToSpawn = if (isFinalWave()) 1 + tier / 2 else 0
+        // Final wave spawns the cumulative boss roster for the current tier — every boss unlocked so
+        // far shows up together (Abomination, then + Spitter Boss, then + Rusher Swarm, …).
+        pendingBosses = if (isFinalWave()) bossRosterFor(tier) else emptyList()
+        bossesToSpawn = pendingBosses.size
         spawnTimer = 0f
         bossTimer = 0f
         // Director spawn multiplier (Mirror) and the endless tier both scale the wave.
@@ -358,7 +361,7 @@ class RunEngine(
         if (isFinalWave() && bossesSpawned < bossesToSpawn && spawnedThisWave >= toSpawnThisWave / 2) {
             bossTimer -= dt
             if (bossTimer <= 0f) {
-                spawnBoss()
+                spawnEnemy(pendingBosses[bossesSpawned], hpScale = 1f)
                 bossesSpawned++
                 bossTimer = BOSS_STAGGER
             }
@@ -383,19 +386,35 @@ class RunEngine(
     }
 
     private fun spawnWaveEnemy() {
-        // Trash by default, with a growing chance of an elite Husk or a ranged Spitter as waves climb.
-        val eliteChance = 0.08f + wave * 0.03f
-        val spitterChance = 0.10f + wave * 0.03f
-        val roll = rng.nextFloat()
-        val type = when {
-            roll < eliteChance -> EnemyType.HUSK
-            roll < eliteChance + spitterChance -> EnemyType.SPITTER
-            else -> EnemyType.SHAMBLER
+        // Weighted pick among the trash archetypes unlocked at the current tier (each tier reveals a
+        // new one). Bosses are never in this pool — they come from the final-wave roster.
+        val pool = EnemyType.values().filter { !it.isBoss && it.unlockTier <= tier }
+        val totalWeight = pool.sumOf { it.spawnWeight }
+        var r = rng.nextInt(totalWeight.coerceAtLeast(1))
+        var chosen = pool.first()
+        for (t in pool) {
+            r -= t.spawnWeight
+            if (r < 0) { chosen = t; break }
         }
-        spawnEnemy(type, hpScale = 1f)
+        spawnEnemy(chosen, hpScale = 1f)
     }
 
-    private fun spawnBoss() = spawnEnemy(EnemyType.ABOMINATION, hpScale = 1f)
+    /**
+     * The cumulative boss roster for [tier]: every boss whose unlockTier is reached, each repeated
+     * [EnemyType.bossCount] times, ordered by unlock. Past the last defined boss, extra Abominations
+     * keep the finale escalating.
+     */
+    private fun bossRosterFor(tier: Int): List<EnemyType> {
+        val bosses = EnemyType.values().filter { it.isBoss }
+        val roster = ArrayList<EnemyType>()
+        bosses.filter { it.unlockTier <= tier }.sortedBy { it.unlockTier }.forEach { b ->
+            repeat(b.bossCount) { roster.add(b) }
+        }
+        val maxBossTier = bosses.maxOf { it.unlockTier }
+        if (tier > maxBossTier) repeat(tier - maxBossTier) { roster.add(EnemyType.ABOMINATION) }
+        return roster
+    }
+
 
     private fun spawnEnemy(type: EnemyType, hpScale: Float) {
         val pos = spawnPoint()
@@ -707,6 +726,5 @@ class RunEngine(
         const val HURT_SECONDS = 0.16f
         const val INVULN_SECONDS = 0.8f    // i-frames after a hit — one contact = one heart
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
-        const val BARRICADE_COST_STEP = 5  // each barricade raises the next barricade's cost
     }
 }

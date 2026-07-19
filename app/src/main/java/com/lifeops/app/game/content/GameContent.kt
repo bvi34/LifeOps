@@ -125,20 +125,48 @@ enum class EnemyType(
     val radius: Float,
     val xpValue: Int,
     val goldValue: Int,
-    // Ranged enemies (Spitter) fire at "tower rate"; melee types leave these zero.
-    val fireRate: Float = 0f,
+    /** Endless tier at which this type joins its pool (0 = from the start). For trash, this gates
+     *  the spawn roll; for bosses, it gates the cumulative boss roster on the final wave. */
+    val unlockTier: Int = 0,
+    /** Relative likelihood of being chosen from the unlocked trash pool. */
+    val spawnWeight: Int = 1,
+    /** Boss-kind: drops guaranteed loot, shows on the boss bar, spawned only on the final wave. */
+    val isBoss: Boolean = false,
+    /** How many of this boss spawn per final wave (a "swarm" boss spawns several). */
+    val bossCount: Int = 1,
+    // Ranged enemies (Spitter) fire bursts at "tower rate"; melee types leave these zero.
+    val fireRate: Float = 0f,       // intra-burst cadence
+    val burstCount: Int = 1,        // shots per burst
+    val burstCooldown: Float = 0f,  // recovery after a burst
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
 ) {
     // Trash: cheap, fast, swarms — dies to one shot. Deals one heart.
-    SHAMBLER("Shambler", maxHealth = 8f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1),
+    SHAMBLER("Shambler", maxHealth = 8f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1,
+        unlockTier = 0, spawnWeight = 10),
     // Elite: tanky, takes several shots. Still one heart on contact.
-    HUSK("Husk", maxHealth = 70f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4),
-    // Ranged: hangs back and spits projectiles at a turret's rate of fire.
+    HUSK("Husk", maxHealth = 70f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4,
+        unlockTier = 0, spawnWeight = 3),
+    // Ranged (tier 2+): hangs back and fires bursts — three quick spits, then a long recovery.
     SPITTER("Spitter", maxHealth = 24f, moveSpeed = 30f, contactHits = 1, radius = 15f, xpValue = 8, goldValue = 3,
-        fireRate = 3f, range = 320f, projectileSpeed = 300f),
-    // Boss: heavy sponge; a contact costs three hearts (one-shots a baseline player).
-    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40),
+        unlockTier = 1, spawnWeight = 3, fireRate = 6f, burstCount = 3, burstCooldown = 2.4f, range = 320f, projectileSpeed = 300f),
+    // Rusher (tier 3+): fast, fragile — punishes standing still.
+    RUSHER("Rusher", maxHealth = 6f, moveSpeed = 92f, contactHits = 1, radius = 11f, xpValue = 5, goldValue = 1,
+        unlockTier = 2, spawnWeight = 5),
+    // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine.
+    BRUTE("Brute", maxHealth = 150f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
+        unlockTier = 3, spawnWeight = 2),
+
+    // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
+    // Tier 1: the original heavy melee sponge. A contact costs three hearts.
+    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40,
+        isBoss = true, unlockTier = 0),
+    // Tier 2: a ranged boss that fires without pause — a relentless stream, not bursts.
+    SPITTER_BOSS("Spitter Boss", maxHealth = 620f, moveSpeed = 26f, contactHits = 3, radius = 30f, xpValue = 70, goldValue = 34,
+        isBoss = true, unlockTier = 1, fireRate = 5f, burstCount = 100000, burstCooldown = 0f, range = 400f, projectileSpeed = 320f),
+    // Tier 3: a swarm of fast, dangerous rusher-bosses that arrive together.
+    RUSHER_BOSS("Rusher Swarm", maxHealth = 240f, moveSpeed = 80f, contactHits = 2, radius = 22f, xpValue = 40, goldValue = 16,
+        isBoss = true, unlockTier = 2, bossCount = 3),
     ;
 
     val isRanged: Boolean get() = fireRate > 0f

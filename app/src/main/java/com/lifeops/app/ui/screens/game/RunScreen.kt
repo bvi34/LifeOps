@@ -696,7 +696,11 @@ private fun enemyColor(type: EnemyType): Color = when (type) {
     EnemyType.SHAMBLER -> Color(0xFF7CB342)
     EnemyType.HUSK -> Color(0xFFEF6C00)
     EnemyType.SPITTER -> Color(0xFF26C6DA)
+    EnemyType.RUSHER -> Color(0xFFFFEE58)
+    EnemyType.BRUTE -> Color(0xFFC62828)
     EnemyType.ABOMINATION -> Color(0xFF8E24AA)
+    EnemyType.SPITTER_BOSS -> Color(0xFF00ACC1)
+    EnemyType.RUSHER_BOSS -> Color(0xFFF9A825)
 }
 
 /**
@@ -711,10 +715,17 @@ private fun enemyVerts(type: EnemyType): List<Pair<Float, Float>> = when (type) 
     EnemyType.HUSK -> (0 until 6).map { (it * (2.0 * Math.PI / 6.0)).toFloat() to 1f }
     // Diamond — a hovering ranged spitter.
     EnemyType.SPITTER -> listOf(0f to 1.3f, (Math.PI / 2).toFloat() to 0.9f, Math.PI.toFloat() to 1.3f, (3 * Math.PI / 2).toFloat() to 0.9f)
+    // Chevron — a fast, sharp rusher.
+    EnemyType.RUSHER -> listOf(0f to 1.5f, 2.1f to 1.0f, Math.PI.toFloat() to 0.3f, -2.1f to 1.0f)
+    // Pentagon — a bulky brute.
+    EnemyType.BRUTE -> (0 until 5).map { (it * (2.0 * Math.PI / 5.0)).toFloat() to 1f }
     // Twelve-point spiked star.
     EnemyType.ABOMINATION -> (0 until 12).map {
         (it * (2.0 * Math.PI / 12.0)).toFloat() to if (it % 2 == 0) 1.2f else 0.62f
     }
+    // Boss variants: bigger stars so they read as bosses of their archetype.
+    EnemyType.SPITTER_BOSS -> (0 until 8).map { (it * (2.0 * Math.PI / 8.0)).toFloat() to if (it % 2 == 0) 1.3f else 0.7f }
+    EnemyType.RUSHER_BOSS -> (0 until 10).map { (it * (2.0 * Math.PI / 10.0)).toFloat() to if (it % 2 == 0) 1.35f else 0.6f }
 }
 
 private fun enemyPath(type: EnemyType, center: Offset, rScreen: Float, facing: Float): Path {

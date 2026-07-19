@@ -70,11 +70,13 @@ class Enemy(
     val moveSpeed: Float,
     /** Artifacts this enemy is wielding (Mob Boss); empty in a standard run. */
     val held: List<HeldModifier> = emptyList(),
-    val kind: EntityKind = if (type == EnemyType.ABOMINATION) EntityKind.BOSS else EntityKind.ENEMY,
+    val kind: EntityKind = if (type.isBoss) EntityKind.BOSS else EntityKind.ENEMY,
     /** Seconds of remaining hit-flash; set on each incoming hit, decays each frame (visual only). */
     var hitFlash: Float = 0f,
     /** Ranged enemies (Spitter): seconds until the next shot. */
     var fireCooldown: Float = 0f,
+    /** Ranged enemies: shots fired so far in the current burst. */
+    var burstShots: Int = 0,
     /** Seconds until this enemy can strike a structure again (discrete hits, not continuous drain). */
     var attackCooldown: Float = 0f,
 ) {
