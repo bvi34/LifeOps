@@ -2,6 +2,7 @@ package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.Artifacts
 import com.lifeops.app.game.content.EnemyType
+import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -15,7 +16,6 @@ import com.lifeops.app.game.core.Stat
 import com.lifeops.app.game.core.StatBlock
 import com.lifeops.app.game.core.StatContribution
 import com.lifeops.app.game.core.Vec2
-import com.lifeops.app.game.map.MapState
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -26,21 +26,20 @@ import kotlin.math.sin
  * and reads snapshots. Every combat moment goes through the [EventBus]; every effect goes through
  * the [EffectResolver] budget (DESIGN.md invariants #2, #3). No android.* here.
  *
- * Wave structure follows §7: [RunConfig.waves] waves (one per day of the closed week), a boss on
- * the final wave, short breathers between waves where — once the shop lands — gold gets spent.
+ * The fight is an open single-screen arena (Geometry Wars) you widen with gold (§7): endless waves
+ * of beelining enemies, multiple bosses on the final wave, looping into higher tiers on a clear.
  */
 class RunEngine(
     val config: RunConfig,
     val bus: EventBus = EventBus(),
     private val resolver: EffectResolver = EffectResolver(),
 ) {
-    /** Runtime map state (unlocked rooms, open doors, flow field). Geometry lives in [config.map]. */
-    val mapState = MapState(config.map)
-    val arena: Vec2 = config.map.worldSize
+    /** The open, expandable play space. */
+    val arena = ArenaState()
     private val rng = RunSeed(config.seed)
 
     val player = Player(
-        pos = config.map.cellCenter(config.map.startCol, config.map.startRow),
+        pos = arena.center,
         weapon = config.weapon,
         health = config.maxHealth,
         maxHealth = config.maxHealth,
@@ -51,6 +50,15 @@ class RunEngine(
     val projectiles = ArrayList<Projectile>()
     val pickups = ArrayList<Pickup>()
     val effects = ArrayList<RunEffect>()
+    val structures = ArrayList<Structure>()
+    /** Grid-cell occupancy for placed structures, keyed by [cellKey]. One structure per cell. */
+    private val occupancy = HashMap<Int, Structure>()
+    private val worldCols = (arena.worldSize.x / arena.cellSize).toInt().coerceAtLeast(1)
+
+    private fun colOf(x: Float) = (x / arena.cellSize).toInt()
+    private fun rowOf(y: Float) = (y / arena.cellSize).toInt()
+    private fun cellKey(col: Int, row: Int) = row * worldCols + col
+    private fun structureAt(pos: Vec2): Structure? = occupancy[cellKey(colOf(pos.x), rowOf(pos.y))]
 
     var status: RunStatus = RunStatus.RUNNING
         private set
@@ -74,7 +82,9 @@ class RunEngine(
     private var toSpawnThisWave = 0
     private var spawnTimer = 0f
     private var breatherTimer = 0f
-    private var bossSpawned = false
+    private var bossTimer = 0f
+    private var bossesToSpawn = 0
+    private var bossesSpawned = 0
 
     private var levelUpOptions: List<LevelUpOption> = emptyList()
 
@@ -98,12 +108,11 @@ class RunEngine(
         resolver.beginFrame()
 
         movePlayer(clamped, input)
-        mapState.computeFlow(config.map.colOf(player.pos.x), config.map.rowOf(player.pos.y))
         updateWaves(clamped)
         moveEnemies(clamped)
-        updateBossBreaches(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
+        updateStructures(clamped)
         moveProjectiles(clamped)
         resolveProjectileHits()
         resolveTouchDamage(clamped)
@@ -114,18 +123,39 @@ class RunEngine(
     }
 
     /**
-     * Buy the given barrier if the player is standing near it and can afford it: spend in-run gold
-     * and open the door (a §7 gold sink). No-op otherwise. Returns whether the purchase happened.
+     * Place a defense at the grid cell containing [worldPos], spending its gold cost. Rejected if
+     * the cell is outside the active arena, already occupied, on the player's own cell, or
+     * unaffordable. Returns whether it was placed.
      */
-    fun buyBarrier(barrierId: Int): Boolean {
+    fun placeStructure(type: StructureType, worldPos: Vec2): Boolean {
         if (status != RunStatus.RUNNING) return false
-        val barrier = config.map.barriers.firstOrNull { it.id == barrierId } ?: return false
-        if (barrier.id in mapState.openBarriers) return false
-        val near = mapState.nearbyLockedBarrier(player.pos, INTERACT_DIST)
-        if (near?.id != barrier.id) return false
-        if (player.gold < barrier.cost) return false
-        player.gold -= barrier.cost
-        mapState.unlock(barrier.id)
+        if (player.gold < type.cost) return false
+        val col = colOf(worldPos.x)
+        val row = rowOf(worldPos.y)
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        if (!arena.contains(center)) return false
+        if (occupancy.containsKey(cellKey(col, row))) return false
+        if (col == colOf(player.pos.x) && row == rowOf(player.pos.y)) return false // don't box yourself in
+        player.gold -= type.cost
+        val s = Structure(
+            id = nextId++, type = type, col = col, row = row, pos = center,
+            hp = type.maxHp, maxHp = type.maxHp,
+        )
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
+        return true
+    }
+
+    /**
+     * Widen the arena a stage for escalating gold (the "unlock to widen the space", §7). No-op if
+     * already at max size or the player can't afford it. Returns whether the expansion happened.
+     */
+    fun buyExpansion(): Boolean {
+        if (status != RunStatus.RUNNING) return false
+        val cost = arena.nextCost() ?: return false
+        if (player.gold < cost) return false
+        player.gold -= cost
+        arena.expand()
         return true
     }
 
@@ -144,7 +174,10 @@ class RunEngine(
     }
 
     fun snapshot(): RunSnapshot = RunSnapshot(
-        arena = arena,
+        worldSize = arena.worldSize,
+        activeMin = arena.min(),
+        activeMax = arena.max(),
+        cellSize = arena.cellSize,
         playerPos = player.pos,
         playerHealth = player.health,
         playerMaxHealth = player.maxHealth,
@@ -173,6 +206,7 @@ class RunEngine(
             )
         },
         projectiles = projectiles.map { it.pos },
+        structures = structures.map { StructureView(it.pos, it.type, (it.hp / it.maxHp).coerceIn(0f, 1f), it.aim) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
@@ -182,13 +216,7 @@ class RunEngine(
         weaponName = config.weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
-        map = config.map,
-        unlockedZoneIds = mapState.unlockedZones.toSet(),
-        openBarrierIds = mapState.openBarriers.toSet(),
-        breachedCells = mapState.breaches.toSet(),
-        nearbyBarrier = mapState.nearbyLockedBarrier(player.pos, INTERACT_DIST)?.let {
-            BarrierPrompt(it.id, it.name, it.cost, player.gold >= it.cost)
-        },
+        expand = arena.nextCost()?.let { ExpandPrompt(it, player.gold >= it, arena.stage, arena.maxStage) },
     )
 
     // --- Movement ---------------------------------------------------------------------------
@@ -197,69 +225,67 @@ class RunEngine(
         val dir = input.move.clampLength(1f)
         if (dir.length() <= Vec2.EPSILON) return
         val speed = player.moveSpeed(stats)
-        player.pos = slideMove(player.pos, dir * (speed * dt))
+        player.pos = arena.clamp(player.pos + dir * (speed * dt), player.radius)
     }
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
-            // Descend the flow field so enemies funnel through open doorways instead of clipping walls.
-            val dir = mapState.flowDir(e.pos, player.pos)
-            e.pos = slideMove(e.pos, dir * (e.moveSpeed * dt))
+            // Open arena: beeline straight at the player (Geometry Wars), bounded by the active edges,
+            // but blocked by placed structures — which the enemy attacks instead of walking through.
+            val dir = (player.pos - e.pos).normalized()
+            val delta = dir * (e.moveSpeed * dt)
+            var p = e.pos
+            val here = structureAt(p)
+            val tryX = Vec2(p.x + delta.x, p.y)
+            val sX = structureAt(tryX)
+            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e, dt) else p = tryX
+            val tryY = Vec2(p.x, p.y + delta.y)
+            val sY = structureAt(tryY)
+            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e, dt) else p = Vec2(p.x, tryY.y)
+            e.pos = arena.clamp(p, e.type.radius)
         }
     }
 
-    /**
-     * Move [from] by [delta] against the map's walls, sliding along a wall rather than sticking:
-     * each axis is applied only if the resulting cell is walkable. Keeps the player and enemies
-     * inside unlocked rooms and out of the walls (DESIGN.md §7 holdout geometry).
-     */
-    private fun slideMove(from: Vec2, delta: Vec2): Vec2 {
-        var p = from
-        val tryX = Vec2(p.x + delta.x, p.y)
-        if (mapState.walkableWorld(tryX)) p = tryX
-        val tryY = Vec2(p.x, p.y + delta.y)
-        if (mapState.walkableWorld(tryY)) p = tryY
-        return p
+    private fun attackStructure(s: Structure, e: Enemy, dt: Float) {
+        s.hp -= e.touchDamage * dt
+        bus.emit(GameEvent.OnHit(e.id, s.id, e.touchDamage * dt, false))
     }
 
-    /**
-     * The boss tears the bunker open (DESIGN.md §7): on a cooldown, each boss smashes the wall/door
-     * cell next to it in the player's direction into a permanent breach, widening it perpendicular
-     * to the smash. Breaches force-open sealed rooms and can never be barricaded, so a long endless
-     * run leaves the map progressively more torn open.
-     */
-    private fun updateBossBreaches(dt: Float) {
-        for (e in enemies) {
-            if (e.kind != EntityKind.BOSS) continue
-            e.breakCooldown -= dt
-            if (e.breakCooldown > 0f) continue
-            e.breakCooldown = BOSS_BREAK_INTERVAL
-            attemptBreach(e)
+    /** Turrets auto-fire at the nearest enemy in range; dead structures are cleared. */
+    private fun updateStructures(dt: Float) {
+        val it = structures.iterator()
+        while (it.hasNext()) {
+            val s = it.next()
+            if (!s.alive) {
+                occupancy.remove(cellKey(s.col, s.row))
+                effects.add(RunEffect(s.pos, EffectKind.DEATH_BURST, worldRadius = arena.cellSize * 0.5f, ttl = BURST_SECONDS))
+                it.remove()
+                continue
+            }
+            if (!s.type.isTurret) continue
+            s.fireCooldown -= dt
+            var target: Enemy? = null
+            var bestDist = s.type.range
+            for (en in enemies) {
+                val d = en.pos.distanceTo(s.pos)
+                if (d <= bestDist) { bestDist = d; target = en }
+            }
+            val t = target ?: continue
+            s.aim = (t.pos - s.pos).normalized()
+            if (s.fireCooldown <= 0f) {
+                s.fireCooldown = 1f / s.type.fireRate
+                spawnFriendlyProjectile(s.pos, s.aim, s.type.damage, s.id, s.type.projectileSpeed, s.type.range)
+            }
         }
     }
 
-    private fun attemptBreach(boss: Enemy) {
-        val bc = config.map.colOf(boss.pos.x)
-        val br = config.map.rowOf(boss.pos.y)
-        val toPlayer = (player.pos - boss.pos).normalized()
-        // Pick the adjacent solid cell best aligned with the direction of the player.
-        var bestC = -1; var bestR = -1; var bestDot = 0f
-        for (dc in -1..1) for (dr in -1..1) {
-            if (dc == 0 && dr == 0) continue
-            val nc = bc + dc; val nr = br + dr
-            if (!config.map.inBounds(nc, nr)) continue
-            if (mapState.walkable(nc, nr)) continue // already open
-            val len = kotlin.math.hypot(dc.toFloat(), dr.toFloat())
-            val dot = (dc / len) * toPlayer.x + (dr / len) * toPlayer.y
-            if (dot > bestDot) { bestDot = dot; bestC = nc; bestR = nr }
-        }
-        if (bestC < 0) return
-        if (!mapState.breach(bestC, bestR)) return
-        // Widen perpendicular to the smash direction so the doorway genuinely gets bigger.
-        val dcs = bestC - bc; val drs = bestR - br
-        val perp = if (kotlin.math.abs(dcs) >= kotlin.math.abs(drs)) listOf(bestC to bestR - 1, bestC to bestR + 1)
-        else listOf(bestC - 1 to bestR, bestC + 1 to bestR)
-        perp.forEach { (pc, pr) -> mapState.breach(pc, pr) }
+    private fun spawnFriendlyProjectile(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float) {
+        val p = Projectile(
+            id = nextId++, ownerId = ownerId, pos = origin, vel = dir * speed,
+            damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
+        )
+        projectiles.add(p)
+        bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
     }
 
     // --- Waves ------------------------------------------------------------------------------
@@ -267,11 +293,14 @@ class RunEngine(
     private fun beginWave(index: Int) {
         wave = index
         spawnedThisWave = 0
-        bossSpawned = false
+        bossesSpawned = 0
+        // More numerous than a classic holdout — an open arena wants a real swarm on screen. The
+        // final wave is lighter on trash to make room for the boss(es); more bosses at higher tiers.
+        bossesToSpawn = if (isFinalWave()) 1 + tier / 2 else 0
         spawnTimer = 0f
-        // Enemy budget grows per wave; the final wave is lighter on trash to make room for the boss.
-        // The Director's spawn multiplier (e.g. Mirror mode) and the endless tier both scale it.
-        val baseBudget = if (isFinalWave()) 6 + index else 8 + index * 3
+        bossTimer = 0f
+        // Director spawn multiplier (Mirror) and the endless tier both scale the wave.
+        val baseBudget = if (isFinalWave()) 10 + index * 2 else 14 + index * 4
         toSpawnThisWave = (baseBudget * director.spawnMult() * Tiers.spawnMult(tier)).roundToInt().coerceAtLeast(1)
         bus.emit(GameEvent.OnWaveStart(index + 1))
     }
@@ -292,13 +321,18 @@ class RunEngine(
                 spawnTimer = SPAWN_INTERVAL
             }
         }
-        // Boss appears once the final wave's trash is out.
-        if (isFinalWave() && !bossSpawned && spawnedThisWave >= toSpawnThisWave / 2) {
-            spawnBoss()
-            bossSpawned = true
+        // Bosses roll in once the final wave's trash is half out, dripping so they don't stack at once.
+        if (isFinalWave() && bossesSpawned < bossesToSpawn && spawnedThisWave >= toSpawnThisWave / 2) {
+            bossTimer -= dt
+            if (bossTimer <= 0f) {
+                spawnBoss()
+                bossesSpawned++
+                bossTimer = BOSS_STAGGER
+            }
         }
         // Wave clears when everything spawned is dead.
-        val doneSpawning = spawnedThisWave >= toSpawnThisWave && (!isFinalWave() || bossSpawned)
+        val bossesDone = !isFinalWave() || bossesSpawned >= bossesToSpawn
+        val doneSpawning = spawnedThisWave >= toSpawnThisWave && bossesDone
         if (doneSpawning && enemies.isEmpty()) {
             score += 100L * (wave + 1)
             if (isFinalWave()) {
@@ -325,7 +359,7 @@ class RunEngine(
     private fun spawnBoss() = spawnEnemy(EnemyType.ABOMINATION, hpScale = 1f)
 
     private fun spawnEnemy(type: EnemyType, hpScale: Float) {
-        val pos = spawnPoint() ?: return
+        val pos = spawnPoint()
         // Build the enemy through the same StatBlock path the player uses: its archetype base, then
         // the Director's per-enemy multipliers, then any enemy-attached artifacts (Mob Boss). An
         // aimed-scope artifact is simply inert on an enemy with no weapon (DESIGN.md §3).
@@ -343,7 +377,6 @@ class RunEngine(
         director.enemyModifiers.forEach { block.addAll(it.contributions()) }
 
         val hp = block.resolve(Stat.MAX_HEALTH, Scope.GLOBAL) * hpScale
-        val boss = type == EnemyType.ABOMINATION
         val e = Enemy(
             id = nextId++,
             type = type,
@@ -353,19 +386,13 @@ class RunEngine(
             moveSpeed = block.resolve(Stat.MOVE_SPEED, Scope.GLOBAL),
             touchDamage = block.resolve(Stat.DAMAGE, Scope.GLOBAL),
             held = director.enemyModifiers,
-            breakCooldown = if (boss) BOSS_BREAK_INTERVAL else 0f,
         )
         enemies.add(e)
         bus.emit(GameEvent.OnSpawn(e.id, e.kind))
     }
 
-    /** Enemies climb in through a random window of an unlocked room (DESIGN.md §7). */
-    private fun spawnPoint(): Vec2? {
-        val active = mapState.activeEntrances()
-        if (active.isEmpty()) return null
-        val e = active[rng.nextInt(active.size)]
-        return config.map.cellCenter(e.col, e.row)
-    }
+    /** Enemies enter at a random point on the current active arena edge. */
+    private fun spawnPoint(): Vec2 = arena.randomEdge(rng)
 
     // --- Weapon fire ------------------------------------------------------------------------
 
@@ -397,7 +424,7 @@ class RunEngine(
             val dmg = if (crit) perHit * critMult else perHit
             val p = Projectile(
                 id = nextId++, ownerId = PLAYER_ID, pos = player.pos, vel = vel,
-                damage = dmg, crit = crit, lifeRemaining = life,
+                damage = dmg, crit = crit, lifeRemaining = life, friendly = true,
             )
             projectiles.add(p)
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
@@ -435,7 +462,7 @@ class RunEngine(
     }
 
     private fun outOfArena(p: Vec2): Boolean =
-        p.x < -16f || p.y < -16f || p.x > arena.x + 16f || p.y > arena.y + 16f
+        p.x < -16f || p.y < -16f || p.x > arena.worldSize.x + 16f || p.y > arena.worldSize.y + 16f
 
     // --- Collisions -------------------------------------------------------------------------
 
@@ -443,7 +470,7 @@ class RunEngine(
         val pit = projectiles.iterator()
         while (pit.hasNext()) {
             val p = pit.next()
-            if (p.ownerId != PLAYER_ID) continue
+            if (!p.friendly) continue // only player/turret shots damage enemies
             var hitEnemy: Enemy? = null
             for (e in enemies) {
                 if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { hitEnemy = e; break }
@@ -600,15 +627,12 @@ class RunEngine(
 
     companion object {
         const val PLAYER_ID = 0
-        const val SPAWN_INTERVAL = 0.55f
+        const val SPAWN_INTERVAL = 0.30f   // faster drip — the open arena wants a real swarm
         const val BREATHER_SECONDS = 2.5f
+        const val BOSS_STAGGER = 1.2f      // seconds between multiple bosses entering
         const val HIT_FLASH_SECONDS = 0.09f
         const val BURST_SECONDS = 0.35f
         const val MUZZLE_SECONDS = 0.06f
         const val HURT_SECONDS = 0.16f
-        /** How close (world units) the player must be to a locked door to buy it. */
-        const val INTERACT_DIST = 42f
-        /** Seconds between a boss's wall-smashes. */
-        const val BOSS_BREAK_INTERVAL = 2.2f
     }
 }

@@ -160,25 +160,29 @@ this table is the seed of the whole modifier system.
 
 ## 7. Run structure
 
-- **Wave-based** (SAS-style holdout), not continuous swarm. Between-wave
-  breathers are where gold gets spent: barricades, door welds, turret
-  placements, consumables.
-- **Fixed grid bunker.** The holdout is a tile map (Nacht-style): rooms, walls,
-  window entrances enemies climb through, and gold-gated doors that unlock new
-  rooms. The grid's floor cells are the pads turrets land on. Map layout is
-  fixed for now; week-seeding drives spawns, not geometry (procgen layout later).
-- **Endless.** A run is `waves` waves ending in a boss; clearing the boss loops
-  back to wave 1 at the next **tier**, with pure multipliers scaling enemy
-  hp/speed/damage/count — the enemies come back "leveled up". The run only ever
-  ends on death; score (and the tier reached) is the record of how long you held.
-- **The boss tears the bunker open.** On a cooldown a boss smashes the wall/door
-  next to it toward the player into a permanent **breach** — widened, force-open,
-  and (unlike a bought door) never barricadeable. Over an endless run the map
-  gets progressively torn apart.
-- **Week-seeded procgen.** Hash the closed week's snapshot into the run seed.
-  Literal mapping where feasible: skipped tasks spawn as enemy types in their
-  day's wave; carried-forward tasks are elites with HP scaled by carry count;
-  an unsuccessful task seeds the boss.
+The run is **Geometry Wars meets a zombie-defense holdout**: an open single
+screen (no obstacles by default) that you *widen*, defended with waves, upgrades,
+and — soon — your own placed turrets and barricades.
+
+- **Open, expandable arena.** A fixed maximum world with a small centred *active*
+  region; everything outside is dead margin. Spending gold pushes the active
+  region out a stage at a time (the "unlock to widen the space"). Player and
+  enemies are bounded by the current active edges; enemies enter at those edges
+  and **beeline** at the player. A grid overlays the arena — the lattice
+  player-placed turrets/obstacles snap to.
+- **Placed defenses (YAZD).** The player spends gold to build turrets (auto-fire
+  friendly shots) and barricades (block + soak) on the grid, snapped to cells.
+  Permanent for the run and destructible — enemies blocked by one attack it until
+  it falls. Select a tool from the palette, tap the arena to place; drag still
+  moves.
+- **Waves + bosses, numerous.** SAS-style waves, heavier than a classic holdout,
+  ending in one or more bosses (more bosses at higher tiers).
+- **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the
+  next **tier**, with pure multipliers scaling enemy hp/speed/damage/count — the
+  enemies come back "leveled up". The run only ever ends on death; score and the
+  tier reached are the record of how long you held.
+- **Week-seeded.** Hash the closed week's snapshot into the run seed so spawn
+  order/composition is a fingerprint of the week (geometry is not seeded).
 - Entry: debit run's energy price. Loadout draws on banked Level Cap, Max
   Health, Starting Gold. All committed resources are expended by the run.
 

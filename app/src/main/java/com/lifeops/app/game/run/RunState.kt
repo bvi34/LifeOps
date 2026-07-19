@@ -2,10 +2,10 @@ package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
-import com.lifeops.app.game.map.GameMap
 
 enum class RunStatus { RUNNING, LEVEL_UP, VICTORY, DEFEAT }
 
@@ -20,7 +20,12 @@ data class LevelUpOption(
 
 /** Immutable per-frame view handed to the renderer. Cheap value types only — no engine internals. */
 data class RunSnapshot(
-    val arena: Vec2,
+    /** Fixed maximum world extent (for a stable camera). */
+    val worldSize: Vec2,
+    /** Top-left / bottom-right of the currently-active (lit) region; the rest is dead margin. */
+    val activeMin: Vec2,
+    val activeMax: Vec2,
+    val cellSize: Float,
     val playerPos: Vec2,
     val playerHealth: Float,
     val playerMaxHealth: Float,
@@ -44,6 +49,7 @@ data class RunSnapshot(
     val strained: Boolean,
     val enemies: List<EnemyView>,
     val projectiles: List<Vec2>,
+    val structures: List<StructureView>,
     val pickups: List<PickupView>,
     val effects: List<EffectView>,
     val boss: BossView?,
@@ -52,17 +58,11 @@ data class RunSnapshot(
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,
-    /** Static map geometry (immutable reference — the renderer draws tiles from it). */
-    val map: GameMap,
-    val unlockedZoneIds: Set<Int>,
-    val openBarrierIds: Set<Int>,
-    /** Cell indices (row*cols+col) the boss has smashed permanently open. */
-    val breachedCells: Set<Int>,
-    /** A locked door the player is standing next to, or null; drives the buy prompt. */
-    val nearbyBarrier: BarrierPrompt?,
+    /** The arena-expansion offer, or null at max size; drives the Expand button. */
+    val expand: ExpandPrompt?,
 )
 
-data class BarrierPrompt(val id: Int, val name: String, val cost: Int, val affordable: Boolean)
+data class ExpandPrompt(val cost: Int, val affordable: Boolean, val stage: Int, val maxStage: Int)
 
 data class EnemyView(
     val pos: Vec2,
@@ -75,6 +75,7 @@ data class EnemyView(
     val facing: Vec2,
 )
 data class PickupView(val pos: Vec2, val kind: PickupKind)
+data class StructureView(val pos: Vec2, val type: StructureType, val healthFrac: Float, val aim: Vec2)
 data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
 data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)
