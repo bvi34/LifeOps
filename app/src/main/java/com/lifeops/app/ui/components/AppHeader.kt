@@ -28,11 +28,15 @@ fun BackNavIcon(onBack: () -> Unit) {
 fun AppHeader(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
+    // Screens nested inside another Scaffold (e.g. the Week hub tabs) pass WindowInsets(0) so the
+    // status-bar inset isn't applied a second time, which would open a gap above the bar.
+    windowInsets: WindowInsets = TopAppBarDefaults.windowInsets,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val message = LocalSardonicMessage.current
     TopAppBar(
         modifier = modifier,
+        windowInsets = windowInsets,
         navigationIcon = navigationIcon,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
