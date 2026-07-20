@@ -2,7 +2,9 @@ package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.Artifacts
 import com.lifeops.app.game.content.EnemyType
+import com.lifeops.app.game.content.SetBonuses
 import com.lifeops.app.game.content.StructureType
+import com.lifeops.app.game.content.TempBoosts
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -88,6 +90,8 @@ class RunEngine(
     private var pendingBosses: List<EnemyType> = emptyList()
 
     private var levelUpOptions: List<LevelUpOption> = emptyList()
+    private var setBonusOptions: List<SetBonusOption> = emptyList()
+    private var overflowOptions: List<OverflowOption> = emptyList()
 
     init {
         director.configure(config.challengeMode, stats)
@@ -221,10 +225,14 @@ class RunEngine(
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
             ?.let { BossView((it.health / it.maxHealth).coerceIn(0f, 1f), it.type.displayName) },
         levelUpOptions = levelUpOptions,
+        setBonusOptions = setBonusOptions,
+        overflowOptions = overflowOptions,
         weapon = config.weapon,
         weaponName = config.weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
+        boons = player.runBonuses.mapNotNull { c -> SetBonuses.BOONS.firstOrNull { it.contribution == c }?.name },
+        tempBuffs = player.tempBuffs.map { TempBuffView(it.label, it.remaining.coerceAtLeast(0f)) },
         expand = arena.nextCost()?.let { ExpandPrompt(it, player.gold >= it, arena.stage, arena.maxStage) },
     )
 
@@ -372,12 +380,19 @@ class RunEngine(
         if (doneSpawning && enemies.isEmpty()) {
             score += 100L * (wave + 1)
             if (isFinalWave()) {
-                // Endless: the boss is down, so loop back to wave 1 at a higher tier — the enemies
-                // return "leveled up" (DESIGN.md §7). The run only ever ends on death.
+                // Endless: the boss is down, so loop back to wave 1 at a higher tier/"set" — the
+                // enemies return "leveled up" (DESIGN.md §7). The run only ever ends on death.
                 tier++
                 score += 500L * tier
-                breatherTimer = BREATHER_SECONDS * 1.5f
-                beginWave(0)
+                // The set draft (DESIGN.md §7): pause for a boon/bane pick, then begin the next set
+                // when it's chosen. No offers (should not happen) → just roll straight on.
+                setBonusOptions = rollSetBonusOptions()
+                if (setBonusOptions.isNotEmpty()) {
+                    status = RunStatus.SET_BONUS
+                } else {
+                    breatherTimer = BREATHER_SECONDS * 1.5f
+                    beginWave(0)
+                }
             } else {
                 breatherTimer = BREATHER_SECONDS
                 beginWave(wave + 1)
@@ -568,6 +583,17 @@ class RunEngine(
         if (player.invuln > 0f) player.invuln -= dt
         if (player.muzzleFlash > 0f) player.muzzleFlash = (player.muzzleFlash - dt).coerceAtLeast(0f)
         if (player.hurtFlash > 0f) player.hurtFlash = (player.hurtFlash - dt).coerceAtLeast(0f)
+        // Age temporary surges; when one lapses, rebuild stats so it cleanly falls off the block.
+        if (player.tempBuffs.isNotEmpty()) {
+            var expired = false
+            val tb = player.tempBuffs.iterator()
+            while (tb.hasNext()) {
+                val b = tb.next()
+                b.remaining -= dt
+                if (b.remaining <= 0f) { tb.remove(); expired = true }
+            }
+            if (expired) rebuildStats()
+        }
         val it = effects.iterator()
         while (it.hasNext()) {
             val fx = it.next()
@@ -617,6 +643,10 @@ class RunEngine(
     // --- Pickups & leveling -----------------------------------------------------------------
 
     private fun updatePickups(dt: Float) {
+        // A set-bonus draft can be entered earlier this same frame (updateWaves). Don't collect XP
+        // into a level-up/overflow that would clobber that pause and skip beginning the next set —
+        // the pickups wait on the field until the run resumes.
+        if (status != RunStatus.RUNNING) return
         val radius = player.pickupRadius(stats)
         val it = pickups.iterator()
         while (it.hasNext()) {
@@ -657,10 +687,13 @@ class RunEngine(
             player.xp -= player.xpToNext
             if (player.level < config.levelCap) {
                 levelUp()
-                // A real level-up pauses the run for a pick; stop draining XP until resumed.
-                if (status == RunStatus.LEVEL_UP) break
+                // A real level-up pauses for a pick; a fully-maxed build falls through to an
+                // overflow pick instead. Either pause stops draining XP until the player resumes.
+                if (status == RunStatus.LEVEL_UP || status == RunStatus.OVERFLOW) break
             } else {
                 overflowLevel()
+                // The overflow micro-pick also pauses; resume drains any leftover XP next tick.
+                if (status == RunStatus.OVERFLOW) break
             }
         }
     }
@@ -679,16 +712,78 @@ class RunEngine(
         }
     }
 
-    /** At cap the XP bar keeps filling; each fill is an instant in-run reward (DESIGN.md §6). */
+    /**
+     * At cap the XP bar keeps filling; each fill offers an instant micro-pick (DESIGN.md §6) — bonus
+     * gold, healing, or a short temporary stat boost. The run pauses on the pick; [chooseOverflow]
+     * applies it and resumes.
+     */
     private fun overflowLevel() {
         player.xpToNext *= 1.15f
         bus.emit(GameEvent.OnLevelUp(player.level, overflow = true))
         score += 50L
-        when (rng.nextInt(3)) {
-            0 -> player.hits = (player.hits + 1).coerceAtMost(player.maxHits) // restore a heart
-            1 -> player.gold += 3 // overflow gold dies with the run — never banked (invariant #1)
-            else -> score += 40L
+        overflowOptions = rollOverflowOptions()
+        status = RunStatus.OVERFLOW
+    }
+
+    /** Roll the three overflow offers: bonus gold, a heal, and one random temporary surge. */
+    private fun rollOverflowOptions(): List<OverflowOption> {
+        val surge = TempBoosts.SURGES[rng.nextInt(TempBoosts.SURGES.size)]
+        return listOf(
+            OverflowOption(OverflowKind.GOLD, "Bonus Gold", "+8 gold for this run", amount = 8),
+            OverflowOption(OverflowKind.HEAL, "Field Medic", "Restore 1 heart", amount = 1),
+            OverflowOption(
+                OverflowKind.TEMP_BOOST, surge.label,
+                "Lasts ${TempBoosts.DURATION_SECONDS.toInt()}s", surge = surge,
+            ),
+        )
+    }
+
+    /** Apply the chosen overflow micro-pick and resume (DESIGN.md §6). No-op unless paused on it. */
+    fun chooseOverflow(option: OverflowOption) {
+        if (status != RunStatus.OVERFLOW) return
+        when (option.kind) {
+            OverflowKind.GOLD -> player.gold += option.amount // dies with the run (invariant #1)
+            OverflowKind.HEAL -> {
+                val before = player.hits
+                player.hits = (player.hits + option.amount).coerceAtMost(player.maxHits)
+                if (player.hits > before) bus.emit(GameEvent.OnHeal(PLAYER_ID, (player.hits - before).toFloat()))
+            }
+            OverflowKind.TEMP_BOOST -> option.surge?.let {
+                player.tempBuffs.add(TempBuff(it.contribution, it.label, TempBoosts.DURATION_SECONDS))
+                rebuildStats()
+            }
         }
+        score += 40L
+        overflowOptions = emptyList()
+        status = RunStatus.RUNNING
+    }
+
+    /** Roll the per-set draft: three distinct boons, each paired with a random enemy bane (§7). */
+    private fun rollSetBonusOptions(): List<SetBonusOption> {
+        val boonPool = SetBonuses.BOONS.toMutableList()
+        val out = ArrayList<SetBonusOption>(3)
+        while (boonPool.isNotEmpty() && out.size < 3) {
+            val boon = boonPool.removeAt(rng.nextInt(boonPool.size))
+            val bane = SetBonuses.BANES[rng.nextInt(SetBonuses.BANES.size)]
+            out.add(SetBonusOption(boon, bane))
+        }
+        return out
+    }
+
+    /**
+     * Apply the chosen set draft and begin the next set (DESIGN.md §7). The boon is a permanent
+     * player run-bonus; the bane is layered onto the Director so every enemy spawned in the new set
+     * is tougher. No-op unless paused on the set draft.
+     */
+    fun chooseSetBonus(option: SetBonusOption) {
+        if (status != RunStatus.SET_BONUS) return
+        player.runBonuses.add(option.boon.contribution)
+        director.addRunBane(option.bane.contribution)
+        rebuildStats()
+        setBonusOptions = emptyList()
+        breatherTimer = BREATHER_SECONDS * 1.5f
+        beginWave(0)
+        status = RunStatus.RUNNING
     }
 
     private fun rollLevelUpOptions(): List<LevelUpOption> {

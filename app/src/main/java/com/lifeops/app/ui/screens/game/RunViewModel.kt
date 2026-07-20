@@ -4,14 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.GameResource
+import com.lifeops.app.data.model.GameScore
 import com.lifeops.app.data.repository.GameResourceRepository
+import com.lifeops.app.data.repository.GameScoreRepository
 import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.core.RunSeed
 import com.lifeops.app.game.run.Loadout
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
+import com.lifeops.app.game.run.RunSnapshot
 import com.lifeops.app.util.DateUtil
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +42,7 @@ data class RunUiState(
  */
 class RunViewModel(
     private val gameResourceRepository: GameResourceRepository,
+    private val gameScoreRepository: GameScoreRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RunUiState())
@@ -45,6 +50,19 @@ class RunViewModel(
 
     private val _engine = MutableStateFlow<RunEngine?>(null)
     val engine: StateFlow<RunEngine?> = _engine.asStateFlow()
+
+    /** Loadout facts captured at run start so the scoreboard record needs only the final numbers. */
+    private data class RunMeta(
+        val weekKey: String,
+        val pointInvestment: Int,
+        val totalWaves: Int,
+        val weapon: String,
+        val challengeMode: String,
+    )
+
+    /** Non-null between run start and its one scoreboard write; nulled after recording so a run is
+     *  logged exactly once no matter how many terminal frames the screen observes. */
+    private var runMeta: RunMeta? = null
 
     init {
         viewModelScope.launch {
@@ -99,16 +117,52 @@ class RunViewModel(
             spendCommitment(Loadout.Role.MAX_HEALTH, commitment.maxHealth, state.resources)
             spendCommitment(Loadout.Role.STARTING_GOLD, commitment.gold, state.resources)
 
+            val weekKey = DateUtil.currentWeekStart().toString()
             val config = RunConfig(
                 weapon = state.weapon,
                 levelCap = Loadout.levelCapFor(commitment.levelCap),
                 maxHits = Loadout.heartsFor(commitment.maxHealth),
                 startingGold = commitment.gold,
-                seed = RunSeed.fromWeek(DateUtil.currentWeekStart().toString()),
+                seed = RunSeed.fromWeek(weekKey),
                 challengeMode = state.challengeMode,
+            )
+            // Point investment = every banked point the run spent: the energy gate plus each
+            // committed loadout resource (no cross-conversion — this is just their sum for display).
+            runMeta = RunMeta(
+                weekKey = weekKey,
+                pointInvestment = Loadout.ENERGY_COST + commitment.levelCap + commitment.maxHealth + commitment.gold,
+                totalWaves = config.waves,
+                weapon = state.weapon.displayName,
+                challengeMode = state.challengeMode.name,
             )
             _engine.value = RunEngine(config)
             _uiState.update { it.copy(message = null) }
+        }
+    }
+
+    /**
+     * Log a finished run to the scoreboard, exactly once. The screen calls this on the first frame it
+     * sees a terminal status; [runMeta] is cleared here so repeated terminal frames don't re-record.
+     */
+    fun recordRunEnd(snapshot: RunSnapshot) {
+        val meta = runMeta ?: return
+        runMeta = null
+        viewModelScope.launch {
+            gameScoreRepository.record(
+                GameScore(
+                    id = UUID.randomUUID().toString(),
+                    weekKey = meta.weekKey,
+                    pointInvestment = meta.pointInvestment,
+                    score = snapshot.score,
+                    setReached = snapshot.tier + 1,
+                    waveReached = snapshot.wave,
+                    totalWaves = meta.totalWaves,
+                    levelReached = snapshot.level,
+                    weapon = meta.weapon,
+                    challengeMode = meta.challengeMode,
+                    createdAt = DateUtil.now(),
+                )
+            )
         }
     }
 
@@ -121,6 +175,8 @@ class RunViewModel(
 
     /** Leave the run and return to the loadout screen (resources will have been debited already). */
     fun exitRun() {
+        // Drop any un-recorded meta: leaving mid-run is not a finished run and should not be logged.
+        runMeta = null
         _engine.value = null
         _uiState.update { it.copy(commitment = Commitment()) }
     }
@@ -130,8 +186,9 @@ class RunViewModel(
 
 class RunViewModelFactory(
     private val gameResourceRepository: GameResourceRepository,
+    private val gameScoreRepository: GameScoreRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        RunViewModel(gameResourceRepository) as T
+        RunViewModel(gameResourceRepository, gameScoreRepository) as T
 }

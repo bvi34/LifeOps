@@ -298,6 +298,14 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
         }
     }
 
+    // Log the run to the scoreboard once it ends. Keyed on status so it fires exactly on the
+    // transition into a terminal state; the ViewModel guards against a double write regardless.
+    androidx.compose.runtime.LaunchedEffect(snapshot.status) {
+        if (snapshot.status == RunStatus.VICTORY || snapshot.status == RunStatus.DEFEAT) {
+            viewModel.recordRunEnd(snapshot)
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(ARENA_BG)) {
         val joyMaxRadius = 130f
         Canvas(
@@ -532,6 +540,8 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
 
         when (snapshot.status) {
             RunStatus.LEVEL_UP -> LevelUpOverlay(snapshot) { engine.choose(it) }
+            RunStatus.SET_BONUS -> SetBonusOverlay(snapshot) { engine.chooseSetBonus(it) }
+            RunStatus.OVERFLOW -> OverflowOverlay(snapshot) { engine.chooseOverflow(it) }
             RunStatus.VICTORY, RunStatus.DEFEAT -> SummaryOverlay(
                 snapshot = snapshot,
                 onPlayAgain = { viewModel.exitRun() },
@@ -546,11 +556,29 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
 private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
     Column(modifier.padding(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HudChip("Tier", "${snapshot.tier + 1}")
+            HudChip("Set", "${snapshot.tier + 1}")
             HudChip("Wave", "${snapshot.wave}/${snapshot.totalWaves}")
             HudChip("Lvl", "${snapshot.level}/${snapshot.levelCap}")
             HudChip("Gold", "${snapshot.gold}")
             HudChip("Score", "${snapshot.score}")
+        }
+        if (snapshot.tempBuffs.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                snapshot.tempBuffs.forEach { b ->
+                    Box(
+                        Modifier
+                            .background(MUZZLE_COLOR.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            "${b.label}  ${b.secondsLeft.toInt() + 1}s",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
         }
         if (snapshot.challengeModeName != ChallengeMode.NONE.name) {
             Spacer(Modifier.height(6.dp))
@@ -660,6 +688,79 @@ private fun LevelUpOverlay(snapshot: RunSnapshot, onChoose: (com.lifeops.app.gam
 }
 
 @Composable
+private fun SetBonusOverlay(
+    snapshot: RunSnapshot,
+    onChoose: (com.lifeops.app.game.run.SetBonusOption) -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(Modifier.fillMaxWidth().padding(24.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Set ${snapshot.tier + 1}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "Draft a boon — but the enemies take the bane with it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                snapshot.setBonusOptions.forEach { opt ->
+                    FilledTonalButton(onClick = { onChoose(opt) }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text("↑ ${opt.boon.name}", fontWeight = FontWeight.Bold)
+                            Text(
+                                opt.boon.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
+                            )
+                            Text(
+                                "↓ Enemies: ${opt.bane.name} — ${opt.bane.description}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverflowOverlay(
+    snapshot: RunSnapshot,
+    onChoose: (com.lifeops.app.game.run.OverflowOption) -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(Modifier.fillMaxWidth().padding(24.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Overflow", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(
+                    "Past the level cap — take an instant boost.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                snapshot.overflowOptions.forEach { opt ->
+                    FilledTonalButton(onClick = { onChoose(opt) }, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Text(opt.label, fontWeight = FontWeight.Bold)
+                            Text(
+                                opt.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLeave: () -> Unit) {
     // Endless mode ends only in defeat — you hold out as long as you can.
     Box(
@@ -680,7 +781,7 @@ private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLea
                 )
                 Text("Score ${snapshot.score}", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Reached tier ${snapshot.tier + 1} · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
+                    "Reached set ${snapshot.tier + 1} · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )

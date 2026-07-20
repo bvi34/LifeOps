@@ -132,6 +132,21 @@ data class GameResourceMapping(
     val weight: Float = 1.0f
 )
 
+/** One finished run's scoreboard record (DESIGN.md §6). See GameScoreEntity for field meanings. */
+data class GameScore(
+    val id: String,
+    val weekKey: String,
+    val pointInvestment: Int,
+    val score: Long,
+    val setReached: Int,
+    val waveReached: Int,
+    val totalWaves: Int,
+    val levelReached: Int,
+    val weapon: String,
+    val challengeMode: String,
+    val createdAt: String,
+)
+
 data class ResourceTransaction(
     val id: String,
     val resourceId: String,

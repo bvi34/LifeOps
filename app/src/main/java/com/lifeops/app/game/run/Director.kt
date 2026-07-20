@@ -29,6 +29,11 @@ class Director(private val bus: EventBus) {
     private val baseline = HashMap<Pair<Stat, Scope>, Float>()
     private var stats: StatBlock = StatBlock(DIRECTOR_BASE)
 
+    /** Run-scoped enemy banes drafted at each set boundary (DESIGN.md §7). Same shape as a challenge
+     *  mode's director modifiers, layered on top and persistent for the rest of the run. */
+    private val runBanes = ArrayList<StatContribution>()
+    private var lastPlayerStats: StatBlock = StatBlock(DIRECTOR_BASE)
+
     /** Modifiers attached to each enemy as it spawns (Mob Boss). Same shape as player-held artifacts. */
     val enemyModifiers: List<HeldModifier> get() = mode.enemyModifiers
 
@@ -48,9 +53,18 @@ class Director(private val bus: EventBus) {
      * enemies keep their spawn-time stats; newly spawned ones pick up the new multipliers — the
      * lockstep inflation happens at the spawn boundary, never by retroactively mutating the field.
      */
+    /** Draft an enemy bane onto the run. Applied to every enemy spawned after this point (existing
+     *  live enemies keep their spawn-time stats — the lockstep inflation is at the spawn boundary). */
+    fun addRunBane(contribution: StatContribution) {
+        runBanes.add(contribution)
+        rebuild(lastPlayerStats)
+    }
+
     fun rebuild(playerStats: StatBlock) {
+        lastPlayerStats = playerStats
         val b = StatBlock(DIRECTOR_BASE)
         mode.directorModifiers.forEach { b.addAll(it.contributions()) }
+        runBanes.forEach { b.add(it) }
         mode.remaps.forEach { r ->
             val base = baseline[r.fromStat to r.fromScope] ?: return@forEach
             if (base <= EPS) return@forEach

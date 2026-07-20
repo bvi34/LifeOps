@@ -1,13 +1,19 @@
 package com.lifeops.app.game.run
 
 import com.lifeops.app.game.content.EnemyType
+import com.lifeops.app.game.content.SetBonuses
+import com.lifeops.app.game.content.TempBoosts
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
 
-enum class RunStatus { RUNNING, LEVEL_UP, VICTORY, DEFEAT }
+/**
+ * - [SET_BONUS] pauses at each set boundary for the boon/bane draft (DESIGN.md §7).
+ * - [OVERFLOW] pauses at cap for the gold/heal/temp-boost micro-pick (DESIGN.md §6).
+ */
+enum class RunStatus { RUNNING, LEVEL_UP, SET_BONUS, OVERFLOW, VICTORY, DEFEAT }
 
 /** One offered pick on level-up (DESIGN.md §6). Upgrades a held artifact or grants a new one. */
 data class LevelUpOption(
@@ -17,6 +23,30 @@ data class LevelUpOption(
 ) {
     val label: String get() = if (isNew) "New · ${modifier.name}" else "${modifier.name} → rank $resultingRank"
 }
+
+/**
+ * One paired offer in the per-set draft (DESIGN.md §7): a player [boon] and the [bane] that rides
+ * along with it. Choosing it powers the player up *and* the enemies — you cannot take the boon
+ * without the bane, which is what keeps the endless loop escalating in lockstep.
+ */
+data class SetBonusOption(
+    val boon: SetBonuses.Boon,
+    val bane: SetBonuses.Bane,
+)
+
+/** What an [OVERFLOW] micro-pick grants (DESIGN.md §6). All three are strictly in-run. */
+enum class OverflowKind { GOLD, HEAL, TEMP_BOOST }
+
+/** One of the 2–3 instant effects offered on an overflow fill past the level cap. */
+data class OverflowOption(
+    val kind: OverflowKind,
+    val label: String,
+    val description: String,
+    /** Gold added (GOLD) or hearts restored (HEAL). */
+    val amount: Int = 0,
+    /** The temporary surge granted (TEMP_BOOST only). */
+    val surge: TempBoosts.Surge? = null,
+)
 
 /** Immutable per-frame view handed to the renderer. Cheap value types only — no engine internals. */
 data class RunSnapshot(
@@ -59,13 +89,23 @@ data class RunSnapshot(
     val effects: List<EffectView>,
     val boss: BossView?,
     val levelUpOptions: List<LevelUpOption>,
+    /** The per-set boon/bane draft offers, shown while [status] is [RunStatus.SET_BONUS]. */
+    val setBonusOptions: List<SetBonusOption>,
+    /** The overflow micro-pick offers, shown while [status] is [RunStatus.OVERFLOW]. */
+    val overflowOptions: List<OverflowOption>,
     val weapon: StartingWeapon,
     val weaponName: String,
     val challengeModeName: String,
     val held: List<HeldView>,
+    /** Player boons drafted so far this run (set draft), for the HUD. */
+    val boons: List<String>,
+    /** Currently-active temporary surges (label + seconds left), for the HUD. */
+    val tempBuffs: List<TempBuffView>,
     /** The arena-expansion offer, or null at max size; drives the Expand button. */
     val expand: ExpandPrompt?,
 )
+
+data class TempBuffView(val label: String, val secondsLeft: Float)
 
 data class ExpandPrompt(val cost: Int, val affordable: Boolean, val stage: Int, val maxStage: Int)
 

@@ -81,6 +81,7 @@ class HitsTest {
         val e = RunEngine(config(hits = 999, waves = 1))
         var sawEnemyShot = false
         repeat(8000) {
+            resolvePauses(e)
             e.step(1f / 60f, RunInput())
             if (e.snapshot().enemyProjectiles.isNotEmpty()) sawEnemyShot = true
         }
@@ -95,6 +96,7 @@ class HitsTest {
         val e = RunEngine(config(hits = 999, waves = 1))
         var sawSpitterBoss = false
         repeat(9000) {
+            resolvePauses(e)
             e.step(1f / 60f, RunInput())
             if (e.enemies.any { it.type == EnemyType.SPITTER_BOSS }) sawSpitterBoss = true
         }

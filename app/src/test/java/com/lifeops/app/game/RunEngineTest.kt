@@ -23,12 +23,10 @@ class RunEngineTest {
         waves = 3,
     )
 
-    /** Step the engine [frames] times at a fixed dt, auto-picking the first level-up option. */
+    /** Step the engine [frames] times at a fixed dt, auto-resolving every pause with the first offer. */
     private fun drive(engine: RunEngine, frames: Int, input: RunInput = RunInput()) {
         repeat(frames) {
-            if (engine.status == RunStatus.LEVEL_UP) {
-                engine.snapshot().levelUpOptions.firstOrNull()?.let { engine.choose(it) }
-            }
+            resolvePauses(engine)
             engine.step(1f / 60f, input)
         }
     }

@@ -7,6 +7,7 @@ import com.lifeops.app.game.core.HeldModifier
 import com.lifeops.app.game.core.Scope
 import com.lifeops.app.game.core.Stat
 import com.lifeops.app.game.core.StatBlock
+import com.lifeops.app.game.core.StatContribution
 import com.lifeops.app.game.core.Vec2
 
 /**
@@ -15,10 +16,21 @@ import com.lifeops.app.game.core.Vec2
  * to avoid on Android. Rendering reads an immutable snapshot ([RunSnapshot]).
  */
 
+/**
+ * A temporary player buff granted by an overflow micro-pick (DESIGN.md §6). Its [contribution] folds
+ * into the stat block like any other, but only while [remaining] > 0 — the engine rebuilds stats
+ * when it expires so the surge cleanly falls off.
+ */
+class TempBuff(val contribution: StatContribution, val label: String, var remaining: Float)
+
 class Player(
     var pos: Vec2,
     val weapon: StartingWeapon,
     val held: MutableList<HeldModifier> = mutableListOf(),
+    /** Permanent (for the run) player boons drafted at each set boundary (DESIGN.md §7). */
+    val runBonuses: MutableList<StatContribution> = mutableListOf(),
+    /** Active temporary surges from overflow picks; expire and are pruned by the engine. */
+    val tempBuffs: MutableList<TempBuff> = mutableListOf(),
     /** Discrete hearts: the player survives [maxHits] contacts, losing one per hit (boss: three). */
     var hits: Int,
     var maxHits: Int,
@@ -44,6 +56,9 @@ class Player(
     fun buildStats(): StatBlock {
         val block = weapon.baseStatBlock()
         held.forEach { block.addAll(it.contributions()) }
+        // Drafted set boons (permanent for the run) and any active temp surges fold in the same way.
+        runBonuses.forEach { block.add(it) }
+        tempBuffs.forEach { block.add(it.contribution) }
         return block
     }
 

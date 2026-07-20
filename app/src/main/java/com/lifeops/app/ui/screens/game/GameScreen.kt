@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
@@ -28,6 +29,7 @@ fun GameScreen(
     onPlayRun: () -> Unit,
     onOpenResources: () -> Unit,
     onOpenArtifacts: () -> Unit,
+    onOpenScoreboard: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -43,6 +45,14 @@ fun GameScreen(
                     subtitle = "Spend Energy earned this week on a wave-based holdout",
                     icon = Icons.Default.SportsEsports,
                     onClick = onPlayRun
+                )
+            }
+            item {
+                HubCard(
+                    title = "Scoreboard",
+                    subtitle = "Every finished run: week, investment, score, set reached",
+                    icon = Icons.Default.EmojiEvents,
+                    onClick = onOpenScoreboard
                 )
             }
             item {
