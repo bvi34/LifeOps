@@ -98,6 +98,11 @@ class RunbookRepository(private val db: LifeOpsDatabase) {
     fun observeSubtasks(taskId: String): Flow<List<Subtask>> =
         db.subtaskDao().observeByTask(taskId).map { list -> list.map { it.toModel() } }
 
+    /** taskId -> (checked, total) subtask counts for the given tasks, live. */
+    fun observeSubtaskCountsByTasks(taskIds: List<String>): Flow<Map<String, Pair<Int, Int>>> =
+        db.subtaskDao().observeCountsByTasks(taskIds)
+            .map { rows -> rows.associate { it.taskId to (it.checked to it.total) } }
+
     suspend fun getSubtasks(taskId: String): List<Subtask> =
         db.subtaskDao().getByTask(taskId).map { it.toModel() }
 

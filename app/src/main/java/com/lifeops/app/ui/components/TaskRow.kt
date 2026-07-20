@@ -65,6 +65,10 @@ fun TaskRow(
     isPlanningMode: Boolean = false,
     projectName: String? = null,
     weatherFit: TaskWeatherFit? = null,
+    counterName: String? = null,
+    peopleNames: List<String> = emptyList(),
+    /** (checked, total) subtasks — shows a "2/5" progress chip when the task has a checklist. */
+    subtaskProgress: Pair<Int, Int>? = null,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit = {},
     onUnSkip: () -> Unit = {},
@@ -300,6 +304,36 @@ fun TaskRow(
                                     "est ${formatMinutes(est)}",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                                )
+                            }
+                            subtaskProgress?.let { (checked, total) ->
+                                if (total > 0) {
+                                    Text(
+                                        "☑ $checked/$total",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (checked == total) CompletedGreen.copy(alpha = 0.9f)
+                                                else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                            counterName?.let { name ->
+                                Text(
+                                    "# $name",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.8f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 90.dp)
+                                )
+                            }
+                            if (peopleNames.isNotEmpty()) {
+                                Text(
+                                    peopleGlyph(peopleNames),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.widthIn(max = 110.dp)
                                 )
                             }
                             if (isPending && weatherFit != null) {
@@ -576,6 +610,13 @@ private fun weatherFitDetail(fit: TaskWeatherFit): String = when {
         val reason = fit.notTodayReason?.let { ": $it" }.orEmpty()
         "No good weather window this week$reason"
     }
+}
+
+/** Compact people label for a row: "👤 Alex" or "👤 Alex +2" when several are involved. */
+private fun peopleGlyph(names: List<String>): String = when {
+    names.isEmpty() -> ""
+    names.size == 1 -> "👤 ${names.first()}"
+    else -> "👤 ${names.first()} +${names.size - 1}"
 }
 
 internal fun formatMinutes(totalMinutes: Int): String {

@@ -200,7 +200,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                             app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
                             app.costResourceRepository, app.projectRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
-                            app.weatherRepository
+                            app.weatherRepository, app.personRepository
                         )
                     )
                     val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
@@ -226,6 +226,9 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenRecipe = { id -> navController.navigate("recipe_detail/$id") },
                         onOpenBook = { id -> navController.navigate("book_detail/$id") },
                         onOpenFutureProject = { id -> navController.navigate("future_project_detail/$id") },
+                        onOpenProject = { id -> navController.navigate("project_detail/$id") },
+                        onOpenPerson = { id -> navController.navigate("person_detail/$id") },
+                        onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
                         sharedText = sharedText,
                         onImportShared = { text ->
                             taskManagerVm.onImportJsonChange(text)

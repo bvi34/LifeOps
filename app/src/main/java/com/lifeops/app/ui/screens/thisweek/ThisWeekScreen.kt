@@ -30,10 +30,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.CostResource
+import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Task
+import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.data.model.TemplateWithTasks
+import com.lifeops.app.data.model.WeatherAlert
 import com.lifeops.app.data.model.WeekProgress
+import com.lifeops.app.util.WeatherAdvisory
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
@@ -47,7 +52,12 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @Composable
-fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
+fun ThisWeekScreen(
+    viewModel: ThisWeekViewModel,
+    onOpenProject: (String) -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
+    onOpenCounter: (String) -> Unit = {}
+) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
     // intentionally NOT read at this scope — it's read via a deferred lambda inside the active
@@ -302,6 +312,15 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 stickyHeader(key = "progress_search") {
                     Column {
                         WeekProgressHeader(progress = state.weekProgress)
+                        WeekDashboard(
+                            advisories = state.weatherAdvisories,
+                            alerts = state.weatherAlerts,
+                            counters = state.counters,
+                            counterTotals = state.counterWeeklyTotals,
+                            costEntries = state.taskCostEntries,
+                            costResources = state.costResources,
+                            onOpenCounter = onOpenCounter
+                        )
                         AnimatedVisibility(visible = showSearch) {
                             SearchBar(
                                 query = state.searchQuery,
@@ -386,6 +405,10 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 isPlanningMode = false,
                                 projectName = task.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid }?.title },
                                 weatherFit = state.taskWeatherFit[task.id],
+                                counterName = task.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid }?.name },
+                                peopleNames = (state.taskPeople[task.id] ?: emptyList())
+                                    .mapNotNull { pid -> state.people.firstOrNull { it.id == pid }?.name },
+                                subtaskProgress = state.subtaskCounts[task.id],
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onUnComplete = { viewModel.onUnCompleteTask(task.id) },
                                 onUnSkip = { viewModel.onUnSkipTask(task.id) },
@@ -413,6 +436,9 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
             val isTimerActive = activeTimer?.taskId == taskId
             val isPomodoroActive = isTimerActive && activeTimer?.isPomodoro == true
             val detailProject = detailTask.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid } }
+            val detailCounter = detailTask.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid } }
+            val involvedIds = state.taskPeople[taskId] ?: emptyList()
+            val involvedPeople = state.people.filter { it.id in involvedIds }
             TaskDetailSheet(
                 task = detailTask,
                 notes = state.taskNotes[taskId] ?: emptyList(),
@@ -430,6 +456,16 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 runbooks = state.runbooks,
                 weatherFit = state.taskWeatherFit[taskId],
                 weatherRequirement = state.weatherRequirements[taskId],
+                involvedPeople = involvedPeople,
+                allPeople = state.people,
+                onAttachPerson = { personId -> viewModel.attachPerson(taskId, personId) },
+                onDetachPerson = { personId -> viewModel.detachPerson(taskId, personId) },
+                onOpenPerson = onOpenPerson,
+                counter = detailCounter,
+                counterWeeklyTotal = detailCounter?.let { state.counterWeeklyTotals[it.id] ?: 0 },
+                onLogCounter = { detailCounter?.let { viewModel.logCounter(it.id) } },
+                onOpenCounter = onOpenCounter,
+                onOpenProject = onOpenProject,
                 onToggleSubtask = viewModel::onToggleSubtask,
                 onAttachRunbook = { runbookId -> viewModel.onAttachRunbook(taskId, runbookId) },
                 onDeleteSubtask = viewModel::onDeleteSubtask,
@@ -646,6 +682,104 @@ private fun WeekProgressHeader(progress: WeekProgress) {
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary
                 )
+            }
+        }
+    }
+}
+
+/**
+ * The week "at a glance" strip under the progress bar: a severe-weather banner when there's an
+ * active alert/advisory, this week's counter totals, and a spend rollup — all pulled from data
+ * the app already tracks elsewhere, so This Week reads as a composite of the whole week.
+ */
+@Composable
+private fun WeekDashboard(
+    advisories: List<WeatherAdvisory>,
+    alerts: List<WeatherAlert>,
+    counters: List<Counter>,
+    counterTotals: Map<String, Int>,
+    costEntries: Map<String, List<TaskCostEntry>>,
+    costResources: List<CostResource>,
+    onOpenCounter: (String) -> Unit
+) {
+    // Severe-weather banner: prefer an actionable advisory, else the top active alert.
+    val advisory = advisories.maxByOrNull { it.severityRank }
+    val topAlert = alerts.maxByOrNull { it.severity.rank }
+    val bannerText = advisory?.let { adv ->
+        adv.delayHint?.let { "${adv.headline} · $it" } ?: adv.headline
+    } ?: topAlert?.event
+
+    // Counters that actually logged something this week, most-active first.
+    val activeCounters = counters
+        .mapNotNull { c -> counterTotals[c.id]?.takeIf { it > 0 }?.let { c to it } }
+        .sortedByDescending { it.second }
+
+    // Spend rollup: total per cost resource used this week.
+    val spendByResource = costEntries.values.flatten()
+        .groupBy { it.resourceId }
+        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
+    val resourceName = costResources.associate { it.id to it.name }
+
+    if (bannerText == null && activeCounters.isEmpty() && spendByResource.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        if (bannerText != null) {
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        bannerText,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+        if (activeCounters.isNotEmpty() || spendByResource.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                activeCounters.forEach { (counter, total) ->
+                    AssistChip(
+                        onClick = { onOpenCounter(counter.id) },
+                        label = { Text("${counter.name} $total", style = MaterialTheme.typography.labelSmall) }
+                    )
+                }
+                spendByResource.forEach { (resourceId, amount) ->
+                    val name = resourceName[resourceId] ?: "Spend"
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            "$name: $amount",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
         }
     }

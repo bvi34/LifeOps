@@ -68,6 +68,9 @@ fun WeekHubScreen(
     onOpenRecipe: (String) -> Unit,
     onOpenBook: (String) -> Unit,
     onOpenFutureProject: (String) -> Unit,
+    onOpenProject: (String) -> Unit = {},
+    onOpenPerson: (String) -> Unit = {},
+    onOpenCounter: (String) -> Unit = {},
     sharedText: String? = null,
     onImportShared: (String) -> Unit = {}
 ) {
@@ -117,7 +120,12 @@ fun WeekHubScreen(
         }
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
-                WeekHubTab.TASK_MANAGER -> ThisWeekScreen(taskManagerViewModel)
+                WeekHubTab.TASK_MANAGER -> ThisWeekScreen(
+                    taskManagerViewModel,
+                    onOpenProject = onOpenProject,
+                    onOpenPerson = onOpenPerson,
+                    onOpenCounter = onOpenCounter
+                )
                 WeekHubTab.DAILY_PLAN -> DailyPlanScreen(dailyPlanViewModel)
                 WeekHubTab.COLLECTION -> CollectionScreen(
                     recipeViewModel = recipeViewModel,
