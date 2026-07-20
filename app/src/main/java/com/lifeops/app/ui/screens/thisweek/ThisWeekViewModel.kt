@@ -8,8 +8,11 @@ import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.toSlug
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import com.lifeops.app.util.TaskWeatherFit
+import com.lifeops.app.util.TaskWeatherFitCalculator
 import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -77,9 +80,19 @@ data class ThisWeekUiState(
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
     val detailSubtasks: List<Subtask> = emptyList(),
-    val counters: List<Counter> = emptyList()
+    val counters: List<Counter> = emptyList(),
+    /** Daytime periods of the tracked location's cached forecast — powers the weekly forecast
+     *  strip above the task list. Empty when no weather location/report exists. */
+    val weeklyForecast: List<ForecastPeriod> = emptyList(),
+    /** Name of the location the forecast is for, shown as the strip's label. */
+    val weatherLocationName: String? = null,
+    /** Per-task weather requirements, kept so the fit can be recomputed as tasks change. */
+    val weatherRequirements: Map<String, TaskWeatherRequirement> = emptyMap(),
+    /** taskId → weather fit for tasks that carry a weather profile — drives the "not today" badge. */
+    val taskWeatherFit: Map<String, TaskWeatherFit> = emptyMap()
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ThisWeekViewModel(
     private val appContext: Context,
     private val saveScope: CoroutineScope,
@@ -95,7 +108,8 @@ class ThisWeekViewModel(
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
-    private val counterRepository: CounterRepository
+    private val counterRepository: CounterRepository,
+    private val weatherRepository: WeatherRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -130,6 +144,29 @@ class ThisWeekViewModel(
             projectRepository.observeActive().collectLatest { projects ->
                 _uiState.update { it.copy(projects = projects) }
             }
+        }
+        // Weather is read cache-only (never triggers a network refresh — the WeatherRefreshWorker
+        // owns that). We track the first tracked location's cached forecast and every task's weather
+        // requirement, so the list can show a weekly strip and per-task "best day" badges.
+        viewModelScope.launch {
+            weatherRepository.observeLocations()
+                .flatMapLatest { locs ->
+                    val primary = locs.firstOrNull()
+                    if (primary == null) flowOf(null)
+                    else weatherRepository.observeReport(primary.id)
+                }
+                .combine(weatherRepository.observeRequirements()) { report, reqs -> report to reqs }
+                .collectLatest { (report, reqs) ->
+                    val dayPeriods = report?.daily?.filter { it.isDaytime } ?: emptyList()
+                    _uiState.update { state ->
+                        state.copy(
+                            weeklyForecast = dayPeriods,
+                            weatherLocationName = report?.location?.name?.takeIf { it.isNotBlank() },
+                            weatherRequirements = reqs,
+                            taskWeatherFit = computeWeatherFit(state.rawTasks, reqs, dayPeriods)
+                        )
+                    }
+                }
         }
         viewModelScope.launch {
             // Refresh the runbook list (with steps) whenever runbooks change, so the
@@ -187,7 +224,8 @@ class ThisWeekViewModel(
                                 taskTimeMinutes = timeByTask,
                                 taskCostEntries = costByTask,
                                 isLoading = false,
-                                weekProgress = computeProgress(tasks, timeByTask)
+                                weekProgress = computeProgress(tasks, timeByTask),
+                                taskWeatherFit = computeWeatherFit(tasks, state.weatherRequirements, state.weeklyForecast)
                             )
                         }
                     }
@@ -219,6 +257,19 @@ class ThisWeekViewModel(
                 )
             }
         }
+    }
+
+    /** Build the per-task weather fit map for tasks that carry a (non-empty) weather profile. */
+    private fun computeWeatherFit(
+        tasks: List<Task>,
+        requirements: Map<String, TaskWeatherRequirement>,
+        dayPeriods: List<ForecastPeriod>
+    ): Map<String, TaskWeatherFit> {
+        if (requirements.isEmpty() || dayPeriods.isEmpty()) return emptyMap()
+        return tasks.mapNotNull { task ->
+            val req = requirements[task.id] ?: return@mapNotNull null
+            TaskWeatherFitCalculator.compute(req, dayPeriods)?.let { task.id to it }
+        }.toMap()
     }
 
     private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
@@ -722,13 +773,15 @@ class ThisWeekViewModelFactory(
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
-    private val counterRepository: CounterRepository
+    private val counterRepository: CounterRepository,
+    private val weatherRepository: WeatherRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository
+            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
+            weatherRepository
         ) as T
 }

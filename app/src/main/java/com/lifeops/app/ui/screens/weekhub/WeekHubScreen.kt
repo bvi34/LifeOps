@@ -3,13 +3,18 @@
 package com.lifeops.app.ui.screens.weekhub
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -23,7 +28,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.ForecastPeriod
+import com.lifeops.app.util.WeatherGlyph
 import com.lifeops.app.ui.screens.collection.BookViewModel
 import com.lifeops.app.ui.screens.collection.CollectionScreen
 import com.lifeops.app.ui.screens.collection.FutureProjectViewModel
@@ -96,6 +105,16 @@ fun WeekHubScreen(
                 }
             }
         }
+        // Weekly forecast fills the space between the tabs and the task list on the Tasks tab.
+        if (selectedTab == WeekHubTab.TASK_MANAGER) {
+            val taskState by taskManagerViewModel.uiState.collectAsStateWithLifecycle()
+            if (taskState.weeklyForecast.isNotEmpty()) {
+                WeeklyForecastStrip(
+                    periods = taskState.weeklyForecast,
+                    locationName = taskState.weatherLocationName
+                )
+            }
+        }
         Box(modifier = Modifier.weight(1f)) {
             when (selectedTab) {
                 WeekHubTab.TASK_MANAGER -> ThisWeekScreen(taskManagerViewModel)
@@ -145,3 +164,87 @@ private fun WeekNavRow(
 
 private fun Modifier.clickableToday(onToday: () -> Unit): Modifier =
     this.clickable(onClick = onToday)
+
+/** Compact, horizontally-scrollable weekly forecast — one cell per daytime period, drawn from the
+ *  tracked location's cached report. Sits in the gap between the tabs and the task list. */
+@Composable
+private fun WeeklyForecastStrip(periods: List<ForecastPeriod>, locationName: String?) {
+    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Weekly forecast",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                locationName?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                periods.forEachIndexed { index, period ->
+                    ForecastDayCell(period = period, isFirst = index == 0)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForecastDayCell(period: ForecastPeriod, isFirst: Boolean) {
+    val rain = period.precipitationProbabilityPct ?: 0
+    Column(
+        modifier = Modifier.width(56.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(
+            if (isFirst) "Today" else forecastDayLabel(period),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (isFirst) FontWeight.Bold else FontWeight.Normal,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (isFirst) 0.9f else 0.6f),
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
+        Text(WeatherGlyph.forShortForecast(period.shortForecast), style = MaterialTheme.typography.titleMedium)
+        Text(
+            "${period.temperatureF}°",
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            if (rain > 0) "$rain%" else " ",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (rain >= 40) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            maxLines = 1
+        )
+    }
+}
+
+/** Short day-of-week label ("Sat") parsed from the period's ISO start time; falls back to the
+ *  forecast period name if the timestamp can't be parsed. */
+private fun forecastDayLabel(period: ForecastPeriod): String =
+    runCatching {
+        java.time.OffsetDateTime.parse(period.startTime)
+            .dayOfWeek
+            .getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault())
+    }.getOrNull() ?: period.name.take(3)

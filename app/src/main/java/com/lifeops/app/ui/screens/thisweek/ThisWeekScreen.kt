@@ -385,6 +385,7 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                                 timerElapsedSeconds = { timerElapsedState.value },
                                 isPlanningMode = false,
                                 projectName = task.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid }?.title },
+                                weatherFit = state.taskWeatherFit[task.id],
                                 onComplete = { viewModel.onCompleteTask(task) },
                                 onUnComplete = { viewModel.onUnCompleteTask(task.id) },
                                 onUnSkip = { viewModel.onUnSkipTask(task.id) },

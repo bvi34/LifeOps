@@ -43,6 +43,7 @@ import com.lifeops.app.ui.theme.ExpiredRed
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.TaskWeatherFit
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -63,6 +64,7 @@ fun TaskRow(
     timerElapsedSeconds: () -> Int,
     isPlanningMode: Boolean = false,
     projectName: String? = null,
+    weatherFit: TaskWeatherFit? = null,
     onComplete: () -> Unit,
     onUnComplete: () -> Unit = {},
     onUnSkip: () -> Unit = {},
@@ -300,6 +302,9 @@ fun TaskRow(
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                 )
                             }
+                            if (isPending && weatherFit != null) {
+                                WeatherFitBadge(weatherFit)
+                            }
                         }
                     }
 
@@ -343,6 +348,15 @@ fun TaskRow(
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary,
                                     modifier = Modifier.padding(bottom = 4.dp)
+                                )
+                            }
+                            if (isPending && weatherFit != null) {
+                                Text(
+                                    weatherFitDetail(weatherFit),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (weatherFit.suitableToday) MaterialTheme.colorScheme.primary
+                                            else MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.padding(top = 2.dp, bottom = 2.dp)
                                 )
                             }
                             notes.forEach { note ->
@@ -515,6 +529,52 @@ private fun TaskStatusIcon(
                 modifier = Modifier.size(24.dp)
             )
         }
+    }
+}
+
+/** Inline weather read for a task with a weather profile: a subtle "good today" when conditions
+ *  fit, or an attention-drawing "not today" pill (with the best day when known) when they don't —
+ *  a condensed take on the Weather screen's recommendation card. */
+@Composable
+private fun WeatherFitBadge(fit: TaskWeatherFit) {
+    if (fit.suitableToday || fit.bestIsToday) {
+        Text(
+            "☀ Good today",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+        )
+    } else {
+        val label = fit.bestWindowLabel?.let { "Not today · $it" } ?: "Not this week"
+        Box(
+            modifier = Modifier
+                .background(
+                    MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f),
+                    RoundedCornerShape(4.dp)
+                )
+                .padding(horizontal = 6.dp, vertical = 1.dp)
+        ) {
+            Text(
+                "🌧 $label",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.tertiary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+/** Longer-form weather line for the expanded row. */
+private fun weatherFitDetail(fit: TaskWeatherFit): String = when {
+    fit.suitableToday || fit.bestIsToday ->
+        "Good weather today (${fit.todayMatchPercent}% match)"
+    fit.bestWindowLabel != null -> {
+        val reason = fit.notTodayReason?.let { " — $it" }.orEmpty()
+        "Better on ${fit.bestWindowLabel}$reason"
+    }
+    else -> {
+        val reason = fit.notTodayReason?.let { ": $it" }.orEmpty()
+        "No good weather window this week$reason"
     }
 }
 
