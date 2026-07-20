@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.repository.GrowthRepository
+import com.lifeops.app.util.GrowthBars
 import com.lifeops.app.util.GrowthColor
 import com.lifeops.app.util.GrowthData
 import com.lifeops.app.util.GrowthRings
@@ -21,8 +22,12 @@ data class GrowthLegendRow(
     val hours: Double
 )
 
+enum class GrowthView { RINGS, BARS }
+
 data class GrowthUiState(
     val scene: GrowthRings.Scene? = null,
+    val chart: GrowthBars.Chart? = null,
+    val view: GrowthView = GrowthView.RINGS,
     val legend: List<GrowthLegendRow> = emptyList(),
     val latestWeekLabel: String? = null,
     val totalWeeks: Int = 0,
@@ -61,11 +66,17 @@ class GrowthViewModel(
             colorByHours = state.colorByHours,
             glowEnabled = state.glowEnabled
         )
+        val chart = GrowthBars.computeChart(
+            aspects = assembled.aspects,
+            weeks = assembled.weeks,
+            colorByHours = state.colorByHours
+        )
         val latest = assembled.weeks.lastOrNull()
         val totalHours = assembled.weeks.sumOf { it.hoursByAspect.values.sum() }
         _uiState.update {
             it.copy(
                 scene = scene,
+                chart = chart,
                 legend = legendFor(latest?.hoursByAspect ?: emptyMap(), state.colorByHours),
                 latestWeekLabel = latest?.label,
                 totalWeeks = assembled.weeks.size,
@@ -96,6 +107,10 @@ class GrowthViewModel(
     fun setGlow(enabled: Boolean) {
         _uiState.update { it.copy(glowEnabled = enabled) }
         rebuildScene()
+    }
+
+    fun setView(view: GrowthView) {
+        _uiState.update { it.copy(view = view) }
     }
 
     fun selectWeek(weekId: String?) {
