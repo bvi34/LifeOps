@@ -428,6 +428,8 @@ fun ThisWeekScreen(viewModel: ThisWeekViewModel) {
                 onAssignProject = { projectId -> viewModel.onAssignProject(taskId, projectId) },
                 subtasks = state.detailSubtasks,
                 runbooks = state.runbooks,
+                weatherFit = state.taskWeatherFit[taskId],
+                weatherRequirement = state.weatherRequirements[taskId],
                 onToggleSubtask = viewModel::onToggleSubtask,
                 onAttachRunbook = { runbookId -> viewModel.onAttachRunbook(taskId, runbookId) },
                 onDeleteSubtask = viewModel::onDeleteSubtask,

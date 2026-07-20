@@ -37,8 +37,10 @@ import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
 import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.ui.theme.priorityColor
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.TaskWeatherFit
 
 @Composable
 fun TaskDetailSheet(
@@ -55,6 +57,8 @@ fun TaskDetailSheet(
     onAssignProject: ((String?) -> Unit)? = null,
     subtasks: List<Subtask> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
+    weatherFit: TaskWeatherFit? = null,
+    weatherRequirement: TaskWeatherRequirement? = null,
     onToggleSubtask: (id: String, checked: Boolean) -> Unit = { _, _ -> },
     onAttachRunbook: (runbookId: String) -> Unit = {},
     onDeleteSubtask: (id: String) -> Unit = {},
@@ -297,6 +301,13 @@ fun TaskDetailSheet(
                         }
                     )
                 }
+            }
+
+            // Weather section — only for tasks that carry a weather profile. Mirrors the row badge
+            // but fuller: the requirement summary plus today-vs-best-day read.
+            if (weatherRequirement != null && !weatherRequirement.isEmpty) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                WeatherSection(fit = weatherFit, requirement = weatherRequirement)
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -665,6 +676,57 @@ fun TaskDetailSheet(
         )
     }
 }
+
+@Composable
+private fun WeatherSection(fit: TaskWeatherFit?, requirement: TaskWeatherRequirement) {
+    Text("Weather", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(6.dp))
+    Text(
+        weatherRequirementSummary(requirement),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    )
+    if (fit != null) {
+        Spacer(Modifier.height(6.dp))
+        val goodToday = fit.suitableToday || fit.bestIsToday
+        val headline = when {
+            goodToday -> "☀ Good today · ${fit.todayMatchPercent}% match"
+            fit.bestWindowLabel != null -> "🌧 Not today · better on ${fit.bestWindowLabel}"
+            else -> "🌧 No good weather window this week"
+        }
+        Text(
+            headline,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = if (goodToday) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.tertiary
+        )
+        fit.notTodayReason?.takeIf { !goodToday }?.let { reason ->
+            Text(
+                reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
+    } else {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "No forecast available yet — add a location on the Weather screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+    }
+}
+
+/** Compact one-line summary of a task's weather constraints, e.g. "Outdoor · ≤85° · no rain". */
+private fun weatherRequirementSummary(req: TaskWeatherRequirement): String = buildList {
+    if (req.outdoorPreferred) add("Outdoor")
+    req.maxTempF?.let { add("≤${it}°") }
+    req.minTempF?.let { add("≥${it}°") }
+    if (req.avoidRain) add("no rain")
+    req.maxWindMph?.let { add("wind ≤${it}mph") }
+    req.durationMinutes?.let { add("${it}m") }
+}.joinToString(" · ").ifEmpty { "Weather-sensitive" }
 
 @Composable
 private fun AttachRunbookDialog(
