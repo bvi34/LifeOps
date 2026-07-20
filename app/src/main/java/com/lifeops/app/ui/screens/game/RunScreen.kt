@@ -202,7 +202,7 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
                     subtitle = "${Loadout.UNITS_PER_HEART} banked per extra heart · ${Loadout.heartsFor(ui.commitment.maxHealth)} hearts",
                     resource = Loadout.resolve(Loadout.Role.MAX_HEALTH, ui.resources),
                     committed = ui.commitment.maxHealth,
-                    step = 10,
+                    step = Loadout.UNITS_PER_HEART,
                     onChange = { viewModel.setCommitment(ui.commitment.copy(maxHealth = it)) }
                 )
             }

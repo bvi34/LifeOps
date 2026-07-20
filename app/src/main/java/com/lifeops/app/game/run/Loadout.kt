@@ -17,6 +17,14 @@ object Loadout {
 
     const val BASE_LEVEL_CAP = 12
 
+    /**
+     * Committing beyond these amounts cannot raise the stat any further — it is already clamped at
+     * its ceiling ([RunConfig.MAX_LEVEL_CAP] / [RunConfig.MAX_HITS]). The loadout caps commitments
+     * here so banked resources are never spent for zero benefit.
+     */
+    val MAX_USEFUL_LEVEL_CAP = (RunConfig.MAX_LEVEL_CAP - BASE_LEVEL_CAP) * UNITS_PER_LEVEL_CAP
+    val MAX_USEFUL_HEALTH = (RunConfig.MAX_HITS - RunConfig.BASE_HITS) * UNITS_PER_HEART
+
     /** A loadout slot bound to a resolved resource (or null if no resource fits the role). */
     data class Slot(val role: Role, val resource: GameResource?)
 
