@@ -47,6 +47,15 @@ fun GameResource.toEntity() = GameResourceEntity(id, name, currentValue, lifetim
 fun GameResourceMappingEntity.toModel() = GameResourceMapping(id, gameResourceId, aspectId, weight)
 fun GameResourceMapping.toEntity() = GameResourceMappingEntity(id, gameResourceId, aspectId, weight)
 
+fun GameScoreEntity.toModel() = GameScore(
+    id, weekKey, pointInvestment, score, setReached, waveReached, totalWaves,
+    levelReached, weapon, challengeMode, createdAt
+)
+fun GameScore.toEntity() = GameScoreEntity(
+    id, weekKey, pointInvestment, score, setReached, waveReached, totalWaves,
+    levelReached, weapon, challengeMode, createdAt
+)
+
 fun ResourceTransactionEntity.toModel() = ResourceTransaction(id, resourceId, amount, type, note, createdAt)
 fun ResourceTransaction.toEntity() = ResourceTransactionEntity(id, resourceId, amount, type, note, createdAt)
 

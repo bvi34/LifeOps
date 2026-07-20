@@ -369,17 +369,26 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     com.lifeops.app.ui.screens.game.GameScreen(
                         onPlayRun = { navController.navigate("game_run") },
                         onOpenResources = { navController.navigate("resources") },
-                        onOpenArtifacts = { navController.navigate("game_artifacts") }
+                        onOpenArtifacts = { navController.navigate("game_artifacts") },
+                        onOpenScoreboard = { navController.navigate("game_scoreboard") }
                     )
                 }
                 composable("game_run") {
                     val vm = viewModel<com.lifeops.app.ui.screens.game.RunViewModel>(
-                        factory = com.lifeops.app.ui.screens.game.RunViewModelFactory(app.gameResourceRepository)
+                        factory = com.lifeops.app.ui.screens.game.RunViewModelFactory(
+                            app.gameResourceRepository, app.gameScoreRepository
+                        )
                     )
                     com.lifeops.app.ui.screens.game.RunScreen(vm) { navController.navigateUp() }
                 }
                 composable("game_artifacts") {
                     com.lifeops.app.ui.screens.game.ArtifactCodexScreen { navController.navigateUp() }
+                }
+                composable("game_scoreboard") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.game.ScoreboardViewModel>(
+                        factory = com.lifeops.app.ui.screens.game.ScoreboardViewModelFactory(app.gameScoreRepository)
+                    )
+                    com.lifeops.app.ui.screens.game.ScoreboardScreen(vm) { navController.navigateUp() }
                 }
             }
 

@@ -147,12 +147,16 @@ this table is the seed of the whole modifier system.
 - In-run XP levels the player up to the run's Level Cap (funded from bank).
 - Every level-up offers a choice (artifact roll or small stat picks). Choice
   cadence is the run's pulse; it must never stop.
-- **At cap, the XP bar keeps filling.** Each overflow fill grants a micro-pick
-  of 2–3 instant effects (damage burst, heal, gold pile, short temp boost)
-  **and** adds score. Overflow rewards are strictly in-run — overflow gold dies
-  with the run (protects non-fungibility).
+- **At cap, the XP bar keeps filling.** Each overflow fill pauses for a
+  **player-chosen** micro-pick of three instant effects — **bonus gold**,
+  **healing**, or a **short temporary stat boost** (a timed surge that folds
+  into the stat block and cleanly falls off when it expires) — **and** adds
+  score. Overflow rewards are strictly in-run — overflow gold dies with the run
+  (protects non-fungibility).
 - Score is the arcade layer on top; week-seeded runs make the scoreboard a
-  record of which weeks were legendary.
+  record of which weeks were legendary. The **Scoreboard** (Game hub) logs every
+  finished run — Week seeded, points invested in the loadout, Score, and the
+  Set·Wave reached — best score first.
 - Target pacing: 4 artifacts × 4 ranks = 16 meaningful level-ups; cap in the
   low-20s means most runs cap out with a few overflow picks at the end.
 

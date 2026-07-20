@@ -750,6 +750,30 @@ private val MIGRATION_32_33 = object : Migration(32, 33) {
     }
 }
 
+private val MIGRATION_33_34 = object : Migration(33, 34) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Game scoreboard: one row per finished run (DESIGN.md §6). Standalone log table, no FK — a
+        // run's week key is stored as plain text, not a weeks() reference. No SQL DEFAULTs (the
+        // entity carries no @ColumnInfo defaults) so the CREATE must match Room's schema exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS game_scores (
+                id TEXT NOT NULL PRIMARY KEY,
+                weekKey TEXT NOT NULL,
+                pointInvestment INTEGER NOT NULL,
+                score INTEGER NOT NULL,
+                setReached INTEGER NOT NULL,
+                waveReached INTEGER NOT NULL,
+                totalWaves INTEGER NOT NULL,
+                levelReached INTEGER NOT NULL,
+                weapon TEXT NOT NULL,
+                challengeMode TEXT NOT NULL,
+                createdAt TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_game_scores_score ON game_scores(score)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -791,9 +815,10 @@ private val MIGRATION_32_33 = object : Migration(32, 33) {
         TaskPersonEntity::class,
         TaskWeatherRequirementEntity::class,
         ActivityTemplateEntity::class,
-        ActivityOverrideEntity::class
+        ActivityOverrideEntity::class,
+        GameScoreEntity::class
     ],
-    version = 33,
+    version = 34,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -824,6 +849,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun weatherDao(): WeatherDao
     abstract fun personDao(): PersonDao
     abstract fun activityTemplateDao(): ActivityTemplateDao
+    abstract fun gameScoreDao(): GameScoreDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -835,7 +861,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
                     .build()
                     .also { INSTANCE = it }
             }

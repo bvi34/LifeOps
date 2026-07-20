@@ -35,9 +35,7 @@ class EndlessTest {
             )
         )
         repeat(6000) { i ->
-            if (e.status == RunStatus.LEVEL_UP) {
-                e.snapshot().levelUpOptions.firstOrNull()?.let { e.choose(it) }
-            }
+            resolvePauses(e)
             val ang = i * 0.05f
             e.step(1f / 60f, RunInput(Vec2(cos(ang), sin(ang))))
         }
