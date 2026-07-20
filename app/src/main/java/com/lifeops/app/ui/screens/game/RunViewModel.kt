@@ -62,11 +62,15 @@ class RunViewModel(
         _uiState.update { it.copy(commitment = commitment.clampedTo(it.resources)) }
 
     private fun Commitment.clampedTo(resources: List<GameResource>): Commitment {
-        fun cap(role: Loadout.Role, v: Int) =
-            v.coerceIn(0, Loadout.resolve(role, resources)?.currentValue ?: 0)
+        // Bound each commitment by the banked balance and by the amount the stat can actually use
+        // (past a stat's ceiling, extra commitment is spent for no gain). Gold is 1:1 and uncapped.
+        fun cap(role: Loadout.Role, v: Int, maxUseful: Int = Int.MAX_VALUE): Int {
+            val balance = Loadout.resolve(role, resources)?.currentValue ?: 0
+            return v.coerceIn(0, minOf(balance, maxUseful))
+        }
         return Commitment(
-            levelCap = cap(Loadout.Role.LEVEL_CAP, levelCap),
-            maxHealth = cap(Loadout.Role.MAX_HEALTH, maxHealth),
+            levelCap = cap(Loadout.Role.LEVEL_CAP, levelCap, Loadout.MAX_USEFUL_LEVEL_CAP),
+            maxHealth = cap(Loadout.Role.MAX_HEALTH, maxHealth, Loadout.MAX_USEFUL_HEALTH),
             gold = cap(Loadout.Role.STARTING_GOLD, gold),
         )
     }

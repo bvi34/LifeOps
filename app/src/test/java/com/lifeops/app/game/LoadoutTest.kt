@@ -58,4 +58,14 @@ class LoadoutTest {
         assertEquals(RunConfig.BASE_HITS + 2, Loadout.heartsFor(2 * Loadout.UNITS_PER_HEART))
         assertEquals(RunConfig.MAX_HITS, Loadout.heartsFor(100_000))
     }
+
+    @Test
+    fun maxUsefulCommitmentsReachTheStatCeilingExactly() {
+        // Committing exactly the "max useful" amount hits the stat ceiling; a step less falls short,
+        // so nothing beyond these thresholds can raise the stat (and must not be spent for no gain).
+        assertEquals(RunConfig.MAX_HITS, Loadout.heartsFor(Loadout.MAX_USEFUL_HEALTH))
+        assertEquals(RunConfig.MAX_HITS - 1, Loadout.heartsFor(Loadout.MAX_USEFUL_HEALTH - Loadout.UNITS_PER_HEART))
+        assertEquals(RunConfig.MAX_LEVEL_CAP, Loadout.levelCapFor(Loadout.MAX_USEFUL_LEVEL_CAP))
+        assertEquals(RunConfig.MAX_LEVEL_CAP - 1, Loadout.levelCapFor(Loadout.MAX_USEFUL_LEVEL_CAP - Loadout.UNITS_PER_LEVEL_CAP))
+    }
 }
