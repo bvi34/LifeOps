@@ -5,6 +5,7 @@ package com.lifeops.app.ui.screens.collection
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,7 +42,7 @@ fun CollectionScreen(
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(CollectionTab.RECIPES) }
 
-    Scaffold(topBar = { AppHeader() }) { padding ->
+    Scaffold(topBar = { AppHeader(windowInsets = WindowInsets(0, 0, 0, 0)) }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             SingleChoiceSegmentedButtonRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)

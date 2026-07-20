@@ -106,6 +106,8 @@ fun ThisWeekScreen(
     Scaffold(
         topBar = {
             AppHeader(
+                // Nested inside the Week hub's Scaffold — don't re-apply the status-bar inset.
+                windowInsets = WindowInsets(0, 0, 0, 0),
                 actions = {
                     IconButton(onClick = {
                         showSearch = !showSearch
