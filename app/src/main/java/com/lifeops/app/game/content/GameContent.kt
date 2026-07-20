@@ -125,6 +125,9 @@ enum class EnemyType(
     val radius: Float,
     val xpValue: Int,
     val goldValue: Int,
+    /** Independent per-kill drop chances. Trash stays stingy; elites pay out more (bosses always). */
+    val xpDropChance: Float = 0.25f,
+    val goldDropChance: Float = 0.05f,
     /** Endless tier at which this type joins its pool (0 = from the start). For trash, this gates
      *  the spawn roll; for bosses, it gates the cumulative boss roster on the final wave. */
     val unlockTier: Int = 0,
@@ -141,21 +144,22 @@ enum class EnemyType(
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
 ) {
-    // Trash: cheap, fast, swarms — dies to one shot. Deals one heart.
+    // Trash: cheap, fast, swarms — dies to one shot. Deals one heart. Stingy drops (25% / 5%).
     SHAMBLER("Shambler", maxHealth = 8f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1,
         unlockTier = 0, spawnWeight = 10),
-    // Elite: tanky, takes several shots. Still one heart on contact.
+    // Elite: tanky, takes several shots. Still one heart on contact. Pays out more often.
     HUSK("Husk", maxHealth = 70f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4,
-        unlockTier = 0, spawnWeight = 3),
+        xpDropChance = 0.6f, goldDropChance = 0.3f, unlockTier = 0, spawnWeight = 3),
     // Ranged (tier 2+): hangs back and fires bursts — three quick spits, then a long recovery.
     SPITTER("Spitter", maxHealth = 24f, moveSpeed = 30f, contactHits = 1, radius = 15f, xpValue = 8, goldValue = 3,
+        xpDropChance = 0.6f, goldDropChance = 0.3f,
         unlockTier = 1, spawnWeight = 3, fireRate = 6f, burstCount = 3, burstCooldown = 2.4f, range = 320f, projectileSpeed = 300f),
-    // Rusher (tier 3+): fast, fragile — punishes standing still.
+    // Rusher (tier 3+): fast, fragile trash — punishes standing still. Stingy like the Shambler.
     RUSHER("Rusher", maxHealth = 6f, moveSpeed = 92f, contactHits = 1, radius = 11f, xpValue = 5, goldValue = 1,
         unlockTier = 2, spawnWeight = 5),
-    // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine.
+    // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine. Rich drops.
     BRUTE("Brute", maxHealth = 150f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
-        unlockTier = 3, spawnWeight = 2),
+        xpDropChance = 0.85f, goldDropChance = 0.5f, unlockTier = 3, spawnWeight = 2),
 
     // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
     // Tier 1: the original heavy melee sponge. A contact costs three hearts.

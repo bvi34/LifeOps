@@ -552,10 +552,9 @@ class RunEngine(
             pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
             pickups.add(Pickup(nextId++, e.pos, PickupKind.HEALTH, 1))
         } else {
-            // Stingy drop table (§7): 25% XP, 5% gold, 70% nothing.
-            val roll = rng.nextFloat()
-            if (roll < 0.25f) pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))
-            else if (roll < 0.30f && e.type.goldValue > 0) pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
+            // Per-type drop chances (§7): trash stays stingy, elites pay out more. Independent rolls.
+            if (rng.chance(e.type.xpDropChance)) pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))
+            if (e.type.goldValue > 0 && rng.chance(e.type.goldDropChance)) pickups.add(Pickup(nextId++, e.pos, PickupKind.GOLD, e.type.goldValue))
         }
         effects.add(RunEffect(pos = e.pos, kind = EffectKind.DEATH_BURST, worldRadius = e.type.radius, ttl = BURST_SECONDS))
     }
