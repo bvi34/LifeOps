@@ -8,8 +8,13 @@ import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.toSlug
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ImportParser
+import com.lifeops.app.util.SevereWeatherIntel
+import com.lifeops.app.util.TaskWeatherFit
+import com.lifeops.app.util.TaskWeatherFitCalculator
+import com.lifeops.app.util.WeatherAdvisory
 import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -77,9 +82,31 @@ data class ThisWeekUiState(
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
     val detailSubtasks: List<Subtask> = emptyList(),
-    val counters: List<Counter> = emptyList()
+    val counters: List<Counter> = emptyList(),
+    /** Daytime periods of the tracked location's cached forecast — powers the weekly forecast
+     *  strip above the task list. Empty when no weather location/report exists. */
+    val weeklyForecast: List<ForecastPeriod> = emptyList(),
+    /** Name of the location the forecast is for, shown as the strip's label. */
+    val weatherLocationName: String? = null,
+    /** Per-task weather requirements, kept so the fit can be recomputed as tasks change. */
+    val weatherRequirements: Map<String, TaskWeatherRequirement> = emptyMap(),
+    /** taskId → weather fit for tasks that carry a weather profile — drives the "not today" badge. */
+    val taskWeatherFit: Map<String, TaskWeatherFit> = emptyMap(),
+    /** Active severe-weather alerts for the tracked location — headlines the week's alert banner. */
+    val weatherAlerts: List<WeatherAlert> = emptyList(),
+    /** Actionable severe-weather advisories (e.g. "Storm approaching · delay ~90 min"). */
+    val weatherAdvisories: List<WeatherAdvisory> = emptyList(),
+    /** All (non-archived) household people, for the task detail people picker. */
+    val people: List<Person> = emptyList(),
+    /** taskId → involved person ids. */
+    val taskPeople: Map<String, List<String>> = emptyMap(),
+    /** counterId → total logged this week, for counter chips and the task counter section. */
+    val counterWeeklyTotals: Map<String, Int> = emptyMap(),
+    /** taskId → (checked, total) subtask counts, for the row progress chip. */
+    val subtaskCounts: Map<String, Pair<Int, Int>> = emptyMap()
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ThisWeekViewModel(
     private val appContext: Context,
     private val saveScope: CoroutineScope,
@@ -95,7 +122,9 @@ class ThisWeekViewModel(
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
-    private val counterRepository: CounterRepository
+    private val counterRepository: CounterRepository,
+    private val weatherRepository: WeatherRepository,
+    private val personRepository: PersonRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
@@ -130,6 +159,69 @@ class ThisWeekViewModel(
             projectRepository.observeActive().collectLatest { projects ->
                 _uiState.update { it.copy(projects = projects) }
             }
+        }
+        // Weather is read cache-only (never triggers a network refresh — the WeatherRefreshWorker
+        // owns that). We track the first tracked location's cached forecast and every task's weather
+        // requirement, so the list can show a weekly strip and per-task "best day" badges.
+        viewModelScope.launch {
+            weatherRepository.observeLocations()
+                .flatMapLatest { locs ->
+                    val primary = locs.firstOrNull()
+                    if (primary == null) flowOf(null)
+                    else weatherRepository.observeReport(primary.id)
+                }
+                .combine(weatherRepository.observeRequirements()) { report, reqs -> report to reqs }
+                .collectLatest { (report, reqs) ->
+                    val dayPeriods = report?.daily?.filter { it.isDaytime } ?: emptyList()
+                    val alerts = report?.alerts ?: emptyList()
+                    val advisories = if (report != null)
+                        SevereWeatherIntel.advise(alerts, report.hourly, DateUtil.now())
+                    else emptyList()
+                    _uiState.update { state ->
+                        state.copy(
+                            weeklyForecast = dayPeriods,
+                            weatherLocationName = report?.location?.name?.takeIf { it.isNotBlank() },
+                            weatherRequirements = reqs,
+                            taskWeatherFit = computeWeatherFit(state.rawTasks, reqs, dayPeriods),
+                            weatherAlerts = alerts,
+                            weatherAdvisories = advisories
+                        )
+                    }
+                }
+        }
+        // People: the roster (for the detail picker) and each task's involved-person links.
+        viewModelScope.launch {
+            personRepository.observeAll().collect { people ->
+                _uiState.update { it.copy(people = people.filter { p -> !p.isArchived }) }
+            }
+        }
+        viewModelScope.launch {
+            personRepository.observeTaskPeople().collect { links ->
+                _uiState.update { it.copy(taskPeople = links) }
+            }
+        }
+        // Weekly counter totals for the current week — powers the dashboard chips and the task
+        // counter section's "N this week".
+        viewModelScope.launch {
+            val weekKey = DateUtil.weekIndexFor(DateUtil.currentWeekStart())
+            counterRepository.observeWeeklyTotalsByCounter(weekKey).collect { totals ->
+                _uiState.update { it.copy(counterWeeklyTotals = totals) }
+            }
+        }
+        // Live subtask progress for every task in the week (re-subscribes as the task set changes).
+        viewModelScope.launch {
+            weekRepository.observeCurrentWeek()
+                .flatMapLatest { week ->
+                    if (week == null) flowOf(emptyList())
+                    else taskRepository.observeTasksForWeek(week.id)
+                }
+                .map { tasks -> tasks.map { it.id } }
+                .distinctUntilChanged()
+                .flatMapLatest { ids ->
+                    if (ids.isEmpty()) flowOf(emptyMap())
+                    else runbookRepository.observeSubtaskCountsByTasks(ids)
+                }
+                .collect { counts -> _uiState.update { it.copy(subtaskCounts = counts) } }
         }
         viewModelScope.launch {
             // Refresh the runbook list (with steps) whenever runbooks change, so the
@@ -187,7 +279,8 @@ class ThisWeekViewModel(
                                 taskTimeMinutes = timeByTask,
                                 taskCostEntries = costByTask,
                                 isLoading = false,
-                                weekProgress = computeProgress(tasks, timeByTask)
+                                weekProgress = computeProgress(tasks, timeByTask),
+                                taskWeatherFit = computeWeatherFit(tasks, state.weatherRequirements, state.weeklyForecast)
                             )
                         }
                     }
@@ -219,6 +312,19 @@ class ThisWeekViewModel(
                 )
             }
         }
+    }
+
+    /** Build the per-task weather fit map for tasks that carry a (non-empty) weather profile. */
+    private fun computeWeatherFit(
+        tasks: List<Task>,
+        requirements: Map<String, TaskWeatherRequirement>,
+        dayPeriods: List<ForecastPeriod>
+    ): Map<String, TaskWeatherFit> {
+        if (requirements.isEmpty() || dayPeriods.isEmpty()) return emptyMap()
+        return tasks.mapNotNull { task ->
+            val req = requirements[task.id] ?: return@mapNotNull null
+            TaskWeatherFitCalculator.compute(req, dayPeriods)?.let { task.id to it }
+        }.toMap()
     }
 
     private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
@@ -705,6 +811,21 @@ class ThisWeekViewModel(
             _uiState.update { it.copy(editingTask = null) }
         }
     }
+
+    // --- Task composite actions (people / counters) ---
+
+    fun attachPerson(taskId: String, personId: String) {
+        viewModelScope.launch { personRepository.attach(taskId, personId) }
+    }
+
+    fun detachPerson(taskId: String, personId: String) {
+        viewModelScope.launch { personRepository.detach(taskId, personId) }
+    }
+
+    /** Log one occurrence of the counter this task ticks — the composite "did it" action. */
+    fun logCounter(counterId: String) {
+        viewModelScope.launch { counterRepository.logEvent(counterId) }
+    }
 }
 
 class ThisWeekViewModelFactory(
@@ -722,13 +843,16 @@ class ThisWeekViewModelFactory(
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
-    private val counterRepository: CounterRepository
+    private val counterRepository: CounterRepository,
+    private val weatherRepository: WeatherRepository,
+    private val personRepository: PersonRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository
+            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
+            weatherRepository, personRepository
         ) as T
 }

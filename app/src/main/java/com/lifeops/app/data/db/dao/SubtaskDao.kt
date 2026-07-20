@@ -15,6 +15,13 @@ interface SubtaskDao {
     @Query("SELECT * FROM subtasks WHERE taskId IN (:taskIds) ORDER BY taskId, stepOrder")
     suspend fun getByTasks(taskIds: List<String>): List<SubtaskEntity>
 
+    /** Live checked/total counts per task, for the "2/5" progress chip on task rows. */
+    @Query(
+        "SELECT taskId AS taskId, COUNT(*) AS total, COALESCE(SUM(isChecked), 0) AS checked " +
+            "FROM subtasks WHERE taskId IN (:taskIds) GROUP BY taskId"
+    )
+    fun observeCountsByTasks(taskIds: List<String>): Flow<List<SubtaskCountRow>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(subtask: SubtaskEntity)
 
@@ -39,3 +46,10 @@ interface SubtaskDao {
     @Query("DELETE FROM subtasks WHERE taskId = :taskId")
     suspend fun deleteByTask(taskId: String)
 }
+
+/** Projection for [SubtaskDao.observeCountsByTasks]. */
+data class SubtaskCountRow(
+    val taskId: String,
+    val total: Int,
+    val checked: Int
+)

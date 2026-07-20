@@ -2,12 +2,15 @@
 
 package com.lifeops.app.ui.components
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Checklist
@@ -17,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EventNote
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Sms
 import androidx.compose.material3.*
@@ -28,6 +32,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.CarryForwardReason
 import com.lifeops.app.data.model.CostResource
+import com.lifeops.app.data.model.Counter
+import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Project
 import com.lifeops.app.data.model.RunbookWithSteps
@@ -37,8 +43,10 @@ import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskNote
 import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.data.model.TaskStatus
+import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.ui.theme.priorityColor
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.TaskWeatherFit
 
 @Composable
 fun TaskDetailSheet(
@@ -55,6 +63,18 @@ fun TaskDetailSheet(
     onAssignProject: ((String?) -> Unit)? = null,
     subtasks: List<Subtask> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
+    weatherFit: TaskWeatherFit? = null,
+    weatherRequirement: TaskWeatherRequirement? = null,
+    involvedPeople: List<Person> = emptyList(),
+    allPeople: List<Person> = emptyList(),
+    onAttachPerson: (personId: String) -> Unit = {},
+    onDetachPerson: (personId: String) -> Unit = {},
+    onOpenPerson: (personId: String) -> Unit = {},
+    counter: Counter? = null,
+    counterWeeklyTotal: Int? = null,
+    onLogCounter: () -> Unit = {},
+    onOpenCounter: (counterId: String) -> Unit = {},
+    onOpenProject: (projectId: String) -> Unit = {},
     onToggleSubtask: (id: String, checked: Boolean) -> Unit = { _, _ -> },
     onAttachRunbook: (runbookId: String) -> Unit = {},
     onDeleteSubtask: (id: String) -> Unit = {},
@@ -237,7 +257,9 @@ fun TaskDetailSheet(
                             project.title,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { onOpenProject(project.id) }
                         )
                         if (onAssignProject != null) {
                             IconButton(
@@ -297,6 +319,37 @@ fun TaskDetailSheet(
                         }
                     )
                 }
+            }
+
+            // Weather section — only for tasks that carry a weather profile. Mirrors the row badge
+            // but fuller: the requirement summary plus today-vs-best-day read.
+            if (weatherRequirement != null && !weatherRequirement.isEmpty) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                WeatherSection(fit = weatherFit, requirement = weatherRequirement)
+            }
+
+            // Counter section — the recurring metric this task ticks, with a one-tap log.
+            if (counter != null) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                CounterSection(
+                    counter = counter,
+                    weeklyTotal = counterWeeklyTotal ?: 0,
+                    onLog = onLogCounter,
+                    onOpen = { onOpenCounter(counter.id) }
+                )
+            }
+
+            // People section — who's involved, add/remove, and jump to a person. Hidden entirely
+            // for users who track no people at all.
+            if (allPeople.isNotEmpty() || involvedPeople.isNotEmpty()) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
+                PeopleSection(
+                    involved = involvedPeople,
+                    all = allPeople,
+                    onAttach = onAttachPerson,
+                    onDetach = onDetachPerson,
+                    onOpen = onOpenPerson
+                )
             }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 12.dp))
@@ -665,6 +718,153 @@ fun TaskDetailSheet(
         )
     }
 }
+
+@Composable
+private fun WeatherSection(fit: TaskWeatherFit?, requirement: TaskWeatherRequirement) {
+    Text("Weather", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(6.dp))
+    Text(
+        weatherRequirementSummary(requirement),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    )
+    if (fit != null) {
+        Spacer(Modifier.height(6.dp))
+        val goodToday = fit.suitableToday || fit.bestIsToday
+        val headline = when {
+            goodToday -> "☀ Good today · ${fit.todayMatchPercent}% match"
+            fit.bestWindowLabel != null -> "🌧 Not today · better on ${fit.bestWindowLabel}"
+            else -> "🌧 No good weather window this week"
+        }
+        Text(
+            headline,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = if (goodToday) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.tertiary
+        )
+        fit.notTodayReason?.takeIf { !goodToday }?.let { reason ->
+            Text(
+                reason,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+        }
+    } else {
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "No forecast available yet — add a location on the Weather screen.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+    }
+}
+
+@Composable
+private fun CounterSection(counter: Counter, weeklyTotal: Int, onLog: () -> Unit, onOpen: () -> Unit) {
+    Text("Counter", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+    Spacer(Modifier.height(6.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOpen)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(counter.name, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                "$weeklyTotal this week",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+        FilledTonalButton(onClick = onLog, contentPadding = PaddingValues(horizontal = 14.dp)) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text("Log")
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = "Open counter",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+        )
+    }
+}
+
+@Composable
+private fun PeopleSection(
+    involved: List<Person>,
+    all: List<Person>,
+    onAttach: (String) -> Unit,
+    onDetach: (String) -> Unit,
+    onOpen: (String) -> Unit
+) {
+    var pickerOpen by remember { mutableStateOf(false) }
+    val available = all.filter { p -> involved.none { it.id == p.id } }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("People", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.weight(1f))
+        Box {
+            TextButton(onClick = { pickerOpen = true }, enabled = available.isNotEmpty()) {
+                Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add")
+            }
+            DropdownMenu(expanded = pickerOpen, onDismissRequest = { pickerOpen = false }) {
+                available.forEach { person ->
+                    DropdownMenuItem(
+                        text = { Text(person.name) },
+                        onClick = { onAttach(person.id); pickerOpen = false }
+                    )
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    if (involved.isEmpty()) {
+        Text(
+            "No one assigned.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+        )
+    } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            involved.forEach { person ->
+                InputChip(
+                    selected = false,
+                    onClick = { onOpen(person.id) },
+                    label = { Text(person.name) },
+                    trailingIcon = {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Remove ${person.name}",
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable { onDetach(person.id) }
+                        )
+                    }
+                )
+            }
+        }
+    }
+}
+
+/** Compact one-line summary of a task's weather constraints, e.g. "Outdoor · ≤85° · no rain". */
+private fun weatherRequirementSummary(req: TaskWeatherRequirement): String = buildList {
+    if (req.outdoorPreferred) add("Outdoor")
+    req.maxTempF?.let { add("≤${it}°") }
+    req.minTempF?.let { add("≥${it}°") }
+    if (req.avoidRain) add("no rain")
+    req.maxWindMph?.let { add("wind ≤${it}mph") }
+    req.durationMinutes?.let { add("${it}m") }
+}.joinToString(" · ").ifEmpty { "Weather-sensitive" }
 
 @Composable
 private fun AttachRunbookDialog(
