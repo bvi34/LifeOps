@@ -4,12 +4,18 @@ package com.lifeops.app.ui.screens.growth
 
 import android.graphics.BlurMaskFilter
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
@@ -20,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -28,8 +35,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.lifeops.app.util.GrowthBars
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
@@ -53,6 +62,7 @@ fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
                 state = state,
                 onColorByHours = viewModel::setColorByHours,
                 onGlow = viewModel::setGlow,
+                onView = viewModel::setView,
                 onHelp = { showHelp = true }
             )
 
@@ -61,11 +71,18 @@ fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
                 state.scene == null || state.totalWeeks == 0 -> EmptyGrowthState()
                 else -> {
                     Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-                        RingCanvas(
-                            scene = state.scene!!,
-                            selectedWeekId = state.selectedWeekId,
-                            onSelectWeek = viewModel::selectWeek
-                        )
+                        when (state.view) {
+                            GrowthView.RINGS -> RingCanvas(
+                                scene = state.scene!!,
+                                selectedWeekId = state.selectedWeekId,
+                                onSelectWeek = viewModel::selectWeek
+                            )
+                            GrowthView.BARS -> BarChart(
+                                chart = state.chart!!,
+                                selectedWeekId = state.selectedWeekId,
+                                onSelectWeek = viewModel::selectWeek
+                            )
+                        }
                     }
                     SelectedWeekDetail(state)
                     Legend(state.legend, state.latestWeekLabel)
@@ -82,21 +99,40 @@ private fun GrowthControls(
     state: GrowthUiState,
     onColorByHours: (Boolean) -> Unit,
     onGlow: (Boolean) -> Unit,
+    onView: (GrowthView) -> Unit,
     onHelp: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Text(
-            buildString {
-                append("${state.totalWeeks} week${if (state.totalWeeks == 1) "" else "s"}")
-                val h = state.totalHours
-                if (h > 0) append(" · ${if (h % 1.0 == 0.0) h.toInt().toString() else String.format("%.1f", h)}h logged")
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                buildString {
+                    append("${state.totalWeeks} week${if (state.totalWeeks == 1) "" else "s"}")
+                    val h = state.totalHours
+                    if (h > 0) append(" · ${if (h % 1.0 == 0.0) h.toInt().toString() else String.format("%.1f", h)}h logged")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.weight(1f)
+            )
+            SingleChoiceSegmentedButtonRow {
+                SegmentedButton(
+                    selected = state.view == GrowthView.RINGS,
+                    onClick = { onView(GrowthView.RINGS) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
+                ) { Text("Rings") }
+                SegmentedButton(
+                    selected = state.view == GrowthView.BARS,
+                    onClick = { onView(GrowthView.BARS) },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
+                ) { Text("Bars") }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -107,12 +143,14 @@ private fun GrowthControls(
                 onClick = { onColorByHours(!state.colorByHours) },
                 label = { Text("Colour by hours") }
             )
-            FilterChip(
-                selected = state.glowEnabled,
-                enabled = state.colorByHours,
-                onClick = { onGlow(!state.glowEnabled) },
-                label = { Text("Glow") }
-            )
+            if (state.view == GrowthView.RINGS) {
+                FilterChip(
+                    selected = state.glowEnabled,
+                    enabled = state.colorByHours,
+                    onClick = { onGlow(!state.glowEnabled) },
+                    label = { Text("Glow") }
+                )
+            }
             Spacer(Modifier.weight(1f))
             IconButton(onClick = onHelp) {
                 Icon(Icons.Default.Info, contentDescription = "How the Growth Record works")
@@ -136,6 +174,7 @@ private fun RingsHelpDialog(onDismiss: () -> Unit) {
                 HelpLine("To grow a ring: log time against your tasks, then close the week on This Week. More hours → thicker, brighter bands (≈50h reads as \"full\", then it glows).")
                 HelpLine("Every aspect keeps the same track across all rings, so you can follow one outward through time.")
                 HelpLine("A week with zero logged hours leaves a permanent grey scar — never a gap.")
+                HelpLine("Prefer a timeline? Switch to \"Bars\": the same weeks as stacked bars, oldest on the left, taller = more hours. Tap a bar (or a ring) for that week's hours.")
                 HelpLine("\"Colour by hours\" and \"Glow\" only change how it looks, never the record.")
                 HelpLine("History is sealed at week-close: deleting, renaming or recolouring an aspect later won't repaint past rings. It can't be faked or ground.")
                 HelpLine("Pinch or use the slider to zoom, drag to pan, Fit to re-centre. Tap a ring for that week's hours. Export from Settings → Data.")
@@ -288,6 +327,116 @@ private fun RingCanvas(
             }
         }
     }
+}
+
+/**
+ * Stacked-bar timeline over the same sealed record the rings draw: one bar per week, oldest
+ * on the left, aspects stacked bottom-to-top in the stable order, height = hours. A zero-hour
+ * week is a short grey scar stub — never a gap. Tapping a bar selects that week (toggles off on
+ * a second tap), feeding the same [SelectedWeekDetail] panel the rings use.
+ */
+@Composable
+private fun BarChart(
+    chart: GrowthBars.Chart,
+    selectedWeekId: String?,
+    onSelectWeek: (String?) -> Unit
+) {
+    val bars = chart.bars
+    val listState = rememberLazyListState()
+    // Land on the newest week; growth reads left-to-right, so the latest is the far right.
+    LaunchedEffect(bars.size) {
+        if (bars.isNotEmpty()) listState.scrollToItem(bars.size - 1)
+    }
+    val step = maxOf(1, (bars.size + 7) / 8)   // ~8 x-axis labels, evenly spaced
+
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        val labelHeight = 24.dp
+        val plotHeight = (maxHeight - labelHeight - 6.dp).coerceAtLeast(48.dp)
+        LazyRow(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.Bottom
+        ) {
+            itemsIndexed(bars, key = { _, b -> b.weekId }) { index, bar ->
+                BarColumn(
+                    bar = bar,
+                    maxHours = chart.maxHours,
+                    plotHeight = plotHeight,
+                    labelHeight = labelHeight,
+                    showLabel = index % step == 0 || index == bars.lastIndex,
+                    selected = bar.weekId == selectedWeekId,
+                    onClick = { onSelectWeek(if (selectedWeekId == bar.weekId) null else bar.weekId) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BarColumn(
+    bar: GrowthBars.Bar,
+    maxHours: Double,
+    plotHeight: androidx.compose.ui.unit.Dp,
+    labelHeight: androidx.compose.ui.unit.Dp,
+    showLabel: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val barWidth = 24.dp
+    val barShape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier.height(plotHeight).width(barWidth),
+            contentAlignment = Alignment.BottomCenter
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(barWidth)
+                    .clip(barShape)
+                    .then(if (selected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, barShape) else Modifier),
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                if (bar.isScar) {
+                    Box(
+                        Modifier.width(barWidth).height(6.dp)
+                            .background(parseColor(GrowthBars.SCAR_COLOR).copy(alpha = 0.7f))
+                    )
+                } else {
+                    // segments are bottom-to-top; a top-down Column draws them in reverse.
+                    bar.segments.asReversed().forEach { seg ->
+                        val h = plotHeight * (seg.hours / maxHours).toFloat()
+                        Box(Modifier.width(barWidth).height(h).background(parseColor(seg.colorHex)))
+                    }
+                }
+            }
+        }
+        Box(
+            modifier = Modifier.width(barWidth + 8.dp).height(labelHeight),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            if (showLabel) {
+                Text(
+                    shortDate(bar.label),
+                    style = MaterialTheme.typography.labelSmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+/** "2026-01-05" -> "1/5"; falls back to the raw label if it isn't an ISO date. */
+private fun shortDate(label: String): String {
+    val parts = label.split("-")
+    if (parts.size != 3) return label
+    val month = parts[1].toIntOrNull() ?: return label
+    val day = parts[2].toIntOrNull() ?: return label
+    return "$month/$day"
 }
 
 @Composable
