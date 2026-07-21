@@ -1,6 +1,9 @@
 package com.lifeops.app
 
+import android.app.Activity
 import android.app.Application
+import android.os.Bundle
+import androidx.sqlite.db.SimpleSQLiteQuery
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +81,11 @@ class LifeOpsApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Fold the write-ahead log back into lifeops.db whenever the app leaves the
+        // foreground. Android's Auto Backup / device transfer copies the .db file only
+        // (see backup_rules.xml / data_extraction_rules.xml); without this, writes still
+        // sitting in the -wal sidecar would be missing from a fresh-device restore.
+        registerActivityLifecycleCallbacks(BackgroundWalCheckpoint())
         applicationScope.launch {
             if (!preferencesRepository.sameWeekCarryRepairDone) {
                 taskRepository.repairSameWeekCarries()
@@ -116,5 +124,37 @@ class LifeOpsApp : Application() {
         // Each fired slot re-schedules its own next occurrence; this seeds them from settings (and
         // clears them if the user has turned reminders off).
         wellnessRepository.rescheduleReminders()
+    }
+
+    /**
+     * Runs a TRUNCATE WAL checkpoint on a background coroutine once the last activity
+     * stops (app backgrounded). TRUNCATE empties the -wal file into the main db, so the
+     * file-based backup captures the latest state and never restores a mismatched sidecar.
+     */
+    private inner class BackgroundWalCheckpoint : ActivityLifecycleCallbacks {
+        private var startedActivities = 0
+
+        override fun onActivityStarted(activity: Activity) {
+            startedActivities++
+        }
+
+        override fun onActivityStopped(activity: Activity) {
+            startedActivities--
+            if (startedActivities <= 0) {
+                startedActivities = 0
+                applicationScope.launch {
+                    runCatching {
+                        database.query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
+                            .use { it.moveToFirst() }
+                    }
+                }
+            }
+        }
+
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityResumed(activity: Activity) {}
+        override fun onActivityPaused(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
     }
 }
