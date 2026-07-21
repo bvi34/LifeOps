@@ -67,6 +67,10 @@ FIELD RULES (use these exact keys; the app ignores any other key and flags it as
 - status — pending (default). Use "completed" for things I said are already done (logged as
   history, earns 0 points) or "skipped" for things I've decided to drop.
 - is_recurring — true for repeating/habit tasks ("every week", "daily"), else false.
+- recurrence_interval_weeks — optional; with is_recurring, how many weeks between occurrences
+  (1 = weekly [default], 2 = bi-weekly, 4 = every 4 weeks). Omit for weekly.
+- recurrence_day_of_month — optional; with is_recurring, set 1–31 for a monthly task that recurs on
+  that calendar day (e.g. "the 15th of each month"). When set, recurrence_interval_weeks is ignored.
 - time_logged_minutes — optional; include only if I mention time already spent on the task.
 - notes — array of strings capturing specifics: names, links, numbers, constraints. Use []
   or omit if none.
@@ -100,6 +104,8 @@ tasks always land in the current Monday–Sunday week.
 | `estimated_minutes`   | integer         | `60`        | Drives the point value (≈ minutes/6 up to 60 min, then 10 pts + 1/hr). |
 | `time_logged_minutes` | integer         | none        | Logs a time entry on import if > 0. |
 | `is_recurring`        | boolean         | `false`     | Marks the task as recurring. |
+| `recurrence_interval_weeks` | integer   | `1`         | Weeks between occurrences (1 = weekly, 2 = bi-weekly…). Ignored unless `is_recurring`. |
+| `recurrence_day_of_month`   | integer   | none        | 1–31 → monthly-by-date recurrence on that day (29–31 clamp to the month's last day). Ignored unless `is_recurring`; overrides the week interval. |
 | `notes`               | string or array | `[]`        | Array → one note each; a single string also works. |
 | anything else         | —               | —           | Captured and surfaced as **“Unknown fields”** in the preview; optionally appended as a note. |
 

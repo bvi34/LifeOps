@@ -69,5 +69,15 @@ data class TaskEntity(
     val carryForwardReason: String? = null,
     // Optional counter this task ticks when completed (no FK — mirrors projectId; counters are
     // archived, never deleted, so the reference can't dangle).
-    val counterId: String? = null
+    val counterId: String? = null,
+    // Recurrence cadence (only meaningful when isRecurring = true). Two modes:
+    //   • Week-interval: recurrenceDayOfMonth is null and the task reappears every
+    //     recurrenceIntervalWeeks weeks (1 = weekly, 2 = bi-weekly, …).
+    //   • Monthly-by-date: recurrenceDayOfMonth is set (1–31, clamped to the month's
+    //     length) and the task reappears in whichever week contains that calendar day;
+    //     recurrenceIntervalWeeks is ignored.
+    // Legacy recurring tasks default to weekly (interval 1), preserving prior behaviour.
+    @ColumnInfo(defaultValue = "1")
+    val recurrenceIntervalWeeks: Int = 1,
+    val recurrenceDayOfMonth: Int? = null
 )

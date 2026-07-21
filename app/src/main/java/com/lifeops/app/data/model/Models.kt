@@ -84,7 +84,10 @@ data class Task(
     val source: TaskSource = TaskSource.MANUAL,
     val slug: String = "",
     val carryForwardReason: CarryForwardReason? = null,
-    val counterId: String? = null
+    val counterId: String? = null,
+    // See TaskEntity: week-interval cadence (recurrenceDayOfMonth == null) or monthly-by-date.
+    val recurrenceIntervalWeeks: Int = 1,
+    val recurrenceDayOfMonth: Int? = null
 )
 
 data class CarryForwardEntry(

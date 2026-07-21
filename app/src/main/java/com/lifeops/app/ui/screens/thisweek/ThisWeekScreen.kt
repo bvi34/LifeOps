@@ -520,8 +520,8 @@ fun ThisWeekScreen(
             counters = state.counters,
             currentWeekEndDate = state.week?.endDate,
             onCreateProject = viewModel::onCreateProject,
-            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId ->
-                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId)
+            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
+                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::hideCreateTaskDialog
         )
@@ -535,8 +535,8 @@ fun ThisWeekScreen(
             projects = state.projects,
             counters = state.counters,
             onCreateProject = viewModel::onCreateProject,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId ->
-                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId)
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
+                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::cancelEditTask
         )

@@ -37,7 +37,9 @@ fun TaskEditDialog(
         aspectId: String?,
         categoryId: String?,
         projectId: String?,
-        counterId: String?
+        counterId: String?,
+        recurrenceIntervalWeeks: Int,
+        recurrenceDayOfMonth: Int?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -46,6 +48,8 @@ fun TaskEditDialog(
     var dueDate by remember(task.id) { mutableStateOf(task.dueDate) }
     var hardDeadline by remember(task.id) { mutableStateOf(task.hardDeadline) }
     var isRecurring by remember(task.id) { mutableStateOf(task.isRecurring) }
+    var recurrenceIntervalWeeks by remember(task.id) { mutableStateOf(task.recurrenceIntervalWeeks) }
+    var recurrenceDayOfMonth by remember(task.id) { mutableStateOf(task.recurrenceDayOfMonth) }
     var estimatedMinutes by remember(task.id) { mutableStateOf(task.estimatedMinutes?.toString() ?: "") }
     var selectedAspectId by remember(task.id) { mutableStateOf(task.aspectId) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
@@ -226,10 +230,16 @@ fun TaskEditDialog(
                     Checkbox(checked = hardDeadline, onCheckedChange = { hardDeadline = it })
                     Text("Hard deadline", style = MaterialTheme.typography.bodyMedium)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isRecurring, onCheckedChange = { isRecurring = it })
-                    Text("Repeat weekly", style = MaterialTheme.typography.bodyMedium)
-                }
+                RecurrenceControls(
+                    isRecurring = isRecurring,
+                    intervalWeeks = recurrenceIntervalWeeks,
+                    dayOfMonth = recurrenceDayOfMonth,
+                    onChange = { recurring, weeks, day ->
+                        isRecurring = recurring
+                        recurrenceIntervalWeeks = weeks
+                        recurrenceDayOfMonth = day
+                    }
+                )
             }
         },
         confirmButton = {
@@ -245,7 +255,9 @@ fun TaskEditDialog(
                         selectedAspectId,
                         selectedCategoryId,
                         selectedProjectId,
-                        selectedCounterId
+                        selectedCounterId,
+                        recurrenceIntervalWeeks,
+                        recurrenceDayOfMonth
                     )
                 },
                 enabled = title.isNotBlank()

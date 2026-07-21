@@ -40,7 +40,9 @@ fun CreateTaskDialog(
         estimatedMinutes: Int?,
         projectId: String?,
         runbookId: String?,
-        counterId: String?
+        counterId: String?,
+        recurrenceIntervalWeeks: Int,
+        recurrenceDayOfMonth: Int?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -53,6 +55,8 @@ fun CreateTaskDialog(
     var dueDate by remember { mutableStateOf("") }
     var hardDeadline by remember { mutableStateOf(false) }
     var isRecurring by remember { mutableStateOf(false) }
+    var recurrenceIntervalWeeks by remember { mutableStateOf(1) }
+    var recurrenceDayOfMonth by remember { mutableStateOf<Int?>(null) }
     var estimatedMinutes by remember { mutableStateOf("") }
     var selectedRunbookId by remember { mutableStateOf<String?>(null) }
     var selectedCounterId by remember { mutableStateOf<String?>(null) }
@@ -276,10 +280,16 @@ fun CreateTaskDialog(
                     Checkbox(checked = hardDeadline, onCheckedChange = { hardDeadline = it })
                     Text("Hard deadline", style = MaterialTheme.typography.bodyMedium)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = isRecurring, onCheckedChange = { isRecurring = it })
-                    Text("Repeat weekly", style = MaterialTheme.typography.bodyMedium)
-                }
+                RecurrenceControls(
+                    isRecurring = isRecurring,
+                    intervalWeeks = recurrenceIntervalWeeks,
+                    dayOfMonth = recurrenceDayOfMonth,
+                    onChange = { recurring, weeks, day ->
+                        isRecurring = recurring
+                        recurrenceIntervalWeeks = weeks
+                        recurrenceDayOfMonth = day
+                    }
+                )
 
                 OutlinedTextField(
                     value = note,
@@ -306,7 +316,9 @@ fun CreateTaskDialog(
                         estimatedMinutes.toIntOrNull(),
                         selectedProjectId,
                         selectedRunbookId,
-                        selectedCounterId
+                        selectedCounterId,
+                        recurrenceIntervalWeeks,
+                        recurrenceDayOfMonth
                     )
                 },
                 enabled = title.isNotBlank()

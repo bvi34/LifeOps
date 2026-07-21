@@ -419,15 +419,44 @@ class TaskRepository(
     suspend fun getTasksWithCarryHistory(): List<Task> =
         taskDao.getTasksWithCarryHistory().map { it.toModel() }
 
+    /**
+     * Seed the target week with any recurring series that fall due in it. [fromWeekId] is retained
+     * for call-site compatibility but no longer bounds the lookup: each series is anchored on its
+     * most recent instance across all weeks, so bi-weekly/monthly series survive their off-weeks
+     * (when the immediately previous week holds no instance). Idempotent — a series already present
+     * in the target week (matched by slug) is skipped, so re-running on every launch never dupes.
+     */
     suspend fun seedRecurringTasks(fromWeekId: String, toWeekId: String) {
-        // Only seed if the target week has no recurring tasks yet (prevents duplicate seeding on every launch)
-        val existingRecurring = taskDao.getRecurringByWeek(toWeekId)
-        if (existingRecurring.isNotEmpty()) return
-        val recurring = taskDao.getRecurringByWeek(fromWeekId)
-        if (recurring.isEmpty()) return
+        val weeksById = weekRepository.getAllWeeksSync().associateBy { it.id }
+        val toWeek = weeksById[toWeekId] ?: return
+        val toStart = LocalDate.parse(toWeek.startDate)
+        val toEnd = LocalDate.parse(toWeek.endDate)
+        val toIndex = DateUtil.weekIndexFor(toStart)
+
+        // Series already seeded into the target week — skip these (per-series idempotency, so a
+        // due weekly series and a not-due monthly series in the same week don't block each other).
+        fun seriesKey(t: com.lifeops.app.data.db.entities.TaskEntity) =
+            t.slug.ifBlank { t.title.toSlug() }
+        val presentKeys = taskDao.getRecurringByWeek(toWeekId).map(::seriesKey).toSet()
+
+        // Most recent instance per series, among weeks that start strictly before the target week.
+        val latestPerSeries = taskDao.getAllRecurring()
+            .mapNotNull { t -> weeksById[t.weekId]?.let { w -> t to LocalDate.parse(w.startDate) } }
+            .filter { (_, start) -> start.isBefore(toStart) }
+            .groupBy { (t, _) -> seriesKey(t) }
+            .mapValues { (_, list) -> list.maxByOrNull { (_, start) -> start }!! }
+
         val now = DateUtil.now()
         db.withTransaction {
-            for (entity in recurring) {
+            for ((key, pair) in latestPerSeries) {
+                if (key in presentKeys) continue
+                val (entity, lastStart) = pair
+                val due = entity.recurrenceDayOfMonth?.let { day ->
+                    Recurrence.weekContainsMonthlyDay(toStart, toEnd, day)
+                } ?: Recurrence.isWeeklyIntervalDue(
+                    DateUtil.weekIndexFor(lastStart), toIndex, entity.recurrenceIntervalWeeks
+                )
+                if (!due) continue
                 val newTask = entity.copy(
                     id = java.util.UUID.randomUUID().toString(),
                     weekId = toWeekId,

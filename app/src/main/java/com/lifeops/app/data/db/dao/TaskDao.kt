@@ -50,6 +50,12 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE weekId = :weekId AND isRecurring = 1 AND status != 'queued'")
     suspend fun getRecurringByWeek(weekId: String): List<TaskEntity>
 
+    // All recurring instances across every week. Interval-aware seeding groups these into series and
+    // anchors each on its most recent instance, so an off-week (no instance in the previous week)
+    // never loses the series the way a previous-week-only lookup would.
+    @Query("SELECT * FROM tasks WHERE isRecurring = 1 AND status != 'queued'")
+    suspend fun getAllRecurring(): List<TaskEntity>
+
     @Query("SELECT * FROM tasks WHERE status = 'queued' ORDER BY COALESCE(dueDate, '9999') ASC, createdAt ASC")
     fun observeQueued(): Flow<List<TaskEntity>>
 

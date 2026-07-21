@@ -22,6 +22,8 @@ data class ParsedTask(
     val timeLoggedMinutes: Int? = null,
     val estimatedMinutes: Int? = null,
     val isRecurring: Boolean = false,
+    val recurrenceIntervalWeeks: Int = 1,
+    val recurrenceDayOfMonth: Int? = null,
     val unknownFields: Map<String, String> = emptyMap(),
     // Phase 7: runbook to stamp after task creation. JSON uses "runbook" key (name);
     // template apply path supplies runbookId directly to skip the name lookup.
@@ -77,6 +79,8 @@ object ImportParser {
                     timeLoggedMinutes = obj.get("time_logged_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     estimatedMinutes = obj.get("estimated_minutes")?.takeIf { !it.isJsonNull }?.asInt,
                     isRecurring = obj.get("is_recurring")?.takeIf { !it.isJsonNull }?.asBoolean ?: false,
+                    recurrenceIntervalWeeks = obj.get("recurrence_interval_weeks")?.takeIf { !it.isJsonNull }?.asInt ?: 1,
+                    recurrenceDayOfMonth = obj.get("recurrence_day_of_month")?.takeIf { !it.isJsonNull }?.asInt,
                     unknownFields = unknown,
                     runbookName = obj.get("runbook")?.takeIf { !it.isJsonNull }?.asString
                 )

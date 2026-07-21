@@ -657,7 +657,9 @@ class ThisWeekViewModel(
         estimatedMinutes: Int? = null,
         projectId: String? = null,
         runbookId: String? = null,
-        counterId: String? = null
+        counterId: String? = null,
+        recurrenceIntervalWeeks: Int = 1,
+        recurrenceDayOfMonth: Int? = null
     ) {
         viewModelScope.launch {
             val week = weekRepository.getOrCreateCurrentWeek()
@@ -692,7 +694,9 @@ class ThisWeekViewModel(
                 isManuallyAdded = true,
                 projectId = projectId,
                 slug = slug,
-                counterId = counterId
+                counterId = counterId,
+                recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
+                recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
             )
             taskRepository.upsertTask(task)
             note?.let { taskNoteRepository.addNote(task.id, it) }
@@ -772,7 +776,9 @@ class ThisWeekViewModel(
         aspectId: String? = null,
         categoryId: String? = null,
         projectId: String? = null,
-        counterId: String? = null
+        counterId: String? = null,
+        recurrenceIntervalWeeks: Int = 1,
+        recurrenceDayOfMonth: Int? = null
     ) {
         val task = _uiState.value.editingTask ?: return
         viewModelScope.launch {
@@ -801,7 +807,9 @@ class ThisWeekViewModel(
                 aspectId = aspectId,
                 categoryId = categoryId,
                 projectId = projectId,
-                counterId = counterId
+                counterId = counterId,
+                recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
+                recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
             )
             taskRepository.updateTask(updatedTask)
             if (task.dueDate != validatedDueDate || task.hardDeadline != hardDeadline) {

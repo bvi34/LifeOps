@@ -18,7 +18,8 @@ fun TaskEntity.toModel() = Task(
     TaskStatus.from(status), resourceValue, completedAt, carriedFromTaskId, createdAt,
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
     TaskSource.from(source), slug,
-    CarryForwardReason.from(carryForwardReason), counterId
+    CarryForwardReason.from(carryForwardReason), counterId,
+    recurrenceIntervalWeeks, recurrenceDayOfMonth
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -27,7 +28,8 @@ fun Task.toEntity() = TaskEntity(
     status.value, resourceValue, completedAt, carriedFromTaskId, createdAt,
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
     source.name, slug.ifEmpty { title.toSlug() },
-    carryForwardReason?.value, counterId
+    carryForwardReason?.value, counterId,
+    recurrenceIntervalWeeks, recurrenceDayOfMonth
 )
 
 fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt)
