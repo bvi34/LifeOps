@@ -148,6 +148,7 @@ class RunEngine(
         updateArtifactTurrets(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
+        resolveEnemyProjectileBlocks()
         resolveProjectileHits()
         resolveContact(clamped)
         updatePickups(clamped)
@@ -337,11 +338,12 @@ class RunEngine(
 
     /** Turrets auto-fire at the nearest enemy in range; expired/dead structures are cleared. */
     private fun updateStructures(dt: Float) {
-        // Auto-turrets read the boosted turret stats; range/fire-rate/etc. are the same for all turrets.
-        val turretDamage = turretStats.resolve(Stat.DAMAGE, Scope.AUTO)
-        val turretRange = turretStats.resolve(Stat.RANGE, Scope.AUTO)
-        val turretFireRate = turretStats.resolve(Stat.FIRE_RATE, Scope.AUTO).coerceAtLeast(0.1f)
-        val turretSpeed = turretStats.resolve(Stat.PROJECTILE_SPEED, Scope.AUTO)
+        // Artifact auto-turrets read the boosted turret stats; static gold Sentries fire on their own
+        // fixed type stats, independent of the player's build.
+        val autoDamage = turretStats.resolve(Stat.DAMAGE, Scope.AUTO)
+        val autoRange = turretStats.resolve(Stat.RANGE, Scope.AUTO)
+        val autoFireRate = turretStats.resolve(Stat.FIRE_RATE, Scope.AUTO).coerceAtLeast(0.1f)
+        val autoSpeed = turretStats.resolve(Stat.PROJECTILE_SPEED, Scope.AUTO)
         val it = structures.iterator()
         while (it.hasNext()) {
             val s = it.next()
@@ -353,9 +355,13 @@ class RunEngine(
                 continue
             }
             if (!s.type.isTurret) continue
+            val damage = if (s.artifactTurret) autoDamage else s.type.damage
+            val range = if (s.artifactTurret) autoRange else s.type.range
+            val fireRate = if (s.artifactTurret) autoFireRate else s.type.fireRate.coerceAtLeast(0.1f)
+            val speed = if (s.artifactTurret) autoSpeed else s.type.projectileSpeed
             s.fireCooldown -= dt
             var target: Enemy? = null
-            var bestDist = turretRange
+            var bestDist = range
             for (en in enemies) {
                 val d = en.pos.distanceTo(s.pos)
                 if (d <= bestDist) { bestDist = d; target = en }
@@ -363,8 +369,8 @@ class RunEngine(
             val t = target ?: continue
             s.aim = (t.pos - s.pos).normalized()
             if (s.fireCooldown <= 0f) {
-                s.fireCooldown = 1f / turretFireRate
-                spawnFriendlyProjectile(s.pos, s.aim, turretDamage, s.id, turretSpeed, turretRange)
+                s.fireCooldown = 1f / fireRate
+                spawnFriendlyProjectile(s.pos, s.aim, damage, s.id, speed, range)
             }
         }
     }
@@ -664,6 +670,22 @@ class RunEngine(
 
     private fun outOfArena(p: Vec2): Boolean =
         p.x < -16f || p.y < -16f || p.x > arena.worldSize.x + 16f || p.y > arena.worldSize.y + 16f
+
+    /**
+     * Enemy shots are stopped dead by a blocking structure's cell (barricade / static Sentry) — a wall
+     * actually walls off incoming fire, so a Spitter can't shoot through it (DESIGN.md §7). Friendly
+     * shots pass over your own defenses so a Sentry never blocks its own (or the player's) fire.
+     */
+    private fun resolveEnemyProjectileBlocks() {
+        if (structures.isEmpty()) return
+        val it = projectiles.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
+            if (p.friendly) continue
+            val s = structureAt(p.pos) ?: continue
+            if (s.type.blocks) it.remove()
+        }
+    }
 
     // --- Collisions -------------------------------------------------------------------------
 

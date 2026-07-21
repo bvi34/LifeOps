@@ -5,6 +5,7 @@ import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.Vec2
+import com.lifeops.app.game.run.Projectile
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
@@ -39,12 +40,44 @@ class StructureTest {
     }
 
     @Test
-    fun turretIsNotAGoldBuy() {
-        // The turret is now the auto-deployed Turret artifact, not a placeable defense.
+    fun turretArtifactIsNotAGoldBuy() {
+        // The auto-deployed Turret artifact is not placeable; the gold turret is the static Sentry.
         val e = engine(gold = 500)
-        assertFalse("turrets can't be placed with gold anymore", e.placeStructure(StructureType.TURRET, nearby(e)))
+        assertFalse("the artifact turret can't be placed with gold", e.placeStructure(StructureType.TURRET, nearby(e)))
         assertEquals(500, e.player.gold)
         assertTrue(e.structures.isEmpty())
+    }
+
+    @Test
+    fun sentryIsAStaticGoldTurretThatFires() {
+        val e = engine(gold = 100)
+        assertTrue(e.placeStructure(StructureType.SENTRY, nearby(e)))
+        assertEquals(75, e.player.gold)
+        val s = e.structures.first()
+        // Static and permanent — not an auto-turret, no TTL, and it never moves off its cell.
+        assertFalse(s.artifactTurret)
+        assertEquals(Float.POSITIVE_INFINITY, s.ttl, 0f)
+        val where = s.pos
+        var fired = false
+        repeat(400) {
+            e.step(1f / 60f, RunInput())
+            if (e.projectiles.any { it.friendly && it.ownerId != RunEngine.PLAYER_ID }) fired = true
+        }
+        assertTrue("a static Sentry should shoot when enemies are in range", fired)
+        assertEquals("a Sentry stays exactly where it was placed", where, e.structures.firstOrNull { it.id == s.id }?.pos ?: where)
+    }
+
+    @Test
+    fun blockingStructuresStopEnemyShotsButNotFriendly() {
+        val e = engine(gold = 100)
+        assertTrue(e.placeStructure(StructureType.BARRICADE, nearby(e)))
+        val cell = e.structures.first().pos
+        // An enemy shot sitting on the barricade's cell is stopped; a friendly one passes over it.
+        e.projectiles.add(Projectile(id = 90001, ownerId = 1, pos = cell, vel = Vec2(1f, 0f), damage = 1f, crit = false, lifeRemaining = 5f, friendly = false))
+        e.projectiles.add(Projectile(id = 90002, ownerId = RunEngine.PLAYER_ID, pos = cell, vel = Vec2(1f, 0f), damage = 1f, crit = false, lifeRemaining = 5f, friendly = true))
+        e.step(1f / 60f, RunInput())
+        assertFalse("an enemy shot is stopped by the barricade", e.projectiles.any { it.id == 90001 })
+        assertTrue("a friendly shot passes over your own barricade", e.projectiles.any { it.id == 90002 })
     }
 
     @Test

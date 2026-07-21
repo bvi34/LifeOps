@@ -393,13 +393,17 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             val struct = snapshot.cellSize * scale
             snapshot.structures.forEach { s ->
                 val c = Offset(sx(s.pos.x), sy(s.pos.y))
-                val half = struct * (if (s.type == StructureType.TURRET) 0.34f else 0.42f)
-                val base = if (s.type == StructureType.TURRET) TURRET_COLOR else BARRICADE_COLOR
+                val half = struct * (if (s.type.isTurret) 0.34f else 0.42f)
+                val base = when (s.type) {
+                    StructureType.TURRET -> TURRET_COLOR    // artifact auto-turret
+                    StructureType.SENTRY -> SENTRY_COLOR    // static gold turret
+                    StructureType.BARRICADE -> BARRICADE_COLOR
+                }
                 // Auto-turrets fade toward transparent as their TTL runs out, telegraphing the despawn.
                 val alpha = if (s.artifactTurret) (0.35f + 0.65f * s.ttlFrac) else 1f
                 val col = lerp(Color(0xFF3A1010), base, s.healthFrac.coerceIn(0.15f, 1f)).copy(alpha = alpha)
                 drawRect(color = col, topLeft = Offset(c.x - half, c.y - half), size = androidx.compose.ui.geometry.Size(half * 2, half * 2))
-                if (s.type == StructureType.TURRET) {
+                if (s.type.isTurret) {
                     val a = atan2(s.aim.y, s.aim.x)
                     drawLine(Color(0xFFB0BEC5).copy(alpha = alpha), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
                 }
@@ -898,6 +902,7 @@ private val LOCKED_COLOR = Color(0xFF0C0C10)
 private val GRID_LINE = Color(0x14FFFFFF)
 private val ARENA_EDGE = Color(0xFF4FC3F7)
 private val TURRET_COLOR = Color(0xFF26A69A)
+private val SENTRY_COLOR = Color(0xFF5C6BC0)
 private val BARRICADE_COLOR = Color(0xFF8D6E63)
 private val PLAYER_COLOR = Color(0xFF42A5F5)
 private val PROJECTILE_COLOR = Color(0xFFFFF176)

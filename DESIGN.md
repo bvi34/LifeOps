@@ -199,13 +199,18 @@ and — soon — your own placed turrets and barricades.
   enemies are bounded by the current active edges; enemies enter at those edges
   and **beeline** at the player. A grid overlays the arena — the lattice
   player-placed turrets/obstacles snap to.
-- **Placed defenses (YAZD).** The player spends gold to build **barricades**
-  (block + soak) on the grid, snapped to cells — permanent for the run and
-  destructible (enemies blocked by one attack it until it falls). Select the tool
-  from the palette, tap the arena to place; drag still moves. **Turrets are no
-  longer a gold-buy**: they are the auto-deployed Turret combat-equipment artifact
-  (§4/§5), so offensive automation is earned through the level-up draft, while
-  gold buys defensive walls and arena space.
+- **Placed defenses (YAZD).** The player spends gold to build two static defenses
+  on the grid, snapped to cells — permanent for the run and destructible: the
+  **barricade** (a blocking wall) and the **Sentry** (a static gold turret that
+  stays put and fires on its own fixed stats). Select the tool from the palette,
+  tap the arena to place; drag still moves. The **auto-deployed Turret** (the
+  combat-equipment artifact, §4/§5) is the mobile counterpart — it redeploys near
+  the player and expires on a TTL — so gold buys *static* emplacements while the
+  draft grants *following* fire support.
+- **Blocking stops movement *and* fire.** A blocking structure (barricade or
+  Sentry) both halts enemies at its cell and **stops enemy shots** — a Spitter
+  can't fire through a wall. Friendly shots pass over your own defenses, so a
+  Sentry never blocks its own or the player's fire.
 - **Everything is hits, not HP bars.** The player has a small pool of **hearts**
   (baseline 3, buyable via the Max-Health loadout) with brief i-frames, so one
   contact costs one heart. A normal enemy hits for 1, a boss for 3 (one-shots a

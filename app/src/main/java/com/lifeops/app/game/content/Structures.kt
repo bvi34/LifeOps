@@ -2,12 +2,16 @@ package com.lifeops.app.game.content
 
 /**
  * Structures on the arena grid (the "yet another zombie defense" layer). Authored as data: cost, HP,
- * whether it blocks enemy movement, and — for turrets — its auto-fire stats. Two acquisition paths:
+ * whether it blocks enemy movement + shots, and — for turrets — its auto-fire stats. Three kinds,
+ * two acquisition paths:
  *
- * - **Barricade** is [buildable] — bought with gold from the palette and placed on the grid (§7).
- * - **Turret** is *not* buildable: it is the [Artifacts.TURRET] combat-equipment artifact (§4/§5),
- *   auto-deployed by the engine near the player on a cooldown with a limited TTL, then expiring.
- *   Its stat rows here are the turret's base auto-weapon stats, boosted by AUTO-scope artifacts.
+ * - **Barricade** — bought with gold ([buildable]), a blocking wall that stops enemies and soaks
+ *   enemy fire (§7).
+ * - **Sentry** — bought with gold ([buildable]), a *static* auto-turret: place it and it stays put,
+ *   blocks, and fires on its own fixed stats (independent of your build).
+ * - **Turret** — *not* buildable: it is the [Artifacts.TURRET] combat-equipment artifact (§4/§5),
+ *   auto-deployed near the player on a cooldown with a limited TTL, then expiring. Non-blocking
+ *   fire support; its stats are the turret base rows boosted by AUTO-scope artifacts.
  *
  * Adding a defense is a row.
  */
@@ -15,7 +19,7 @@ enum class StructureType(
     val displayName: String,
     val cost: Int,
     val maxHp: Float,
-    /** Whether enemies are blocked by (and attack) this structure. */
+    /** Whether enemies are blocked by (and attack) this structure, and its cell stops enemy shots. */
     val blocks: Boolean,
     /** Whether the player can buy + place this from the build palette (false → engine-deployed only). */
     val buildable: Boolean,
@@ -34,6 +38,18 @@ enum class StructureType(
         maxHp = 1f,
         blocks = false,
         buildable = false,
+        damage = 14f,
+        fireRate = 3f,
+        range = 260f,
+        projectileSpeed = 460f,
+    ),
+    // Static gold turret: permanent, blocks, and shoots on its own stats — doesn't follow the player.
+    SENTRY(
+        displayName = "Sentry",
+        cost = 25,
+        maxHp = 2f,
+        blocks = true,
+        buildable = true,
         damage = 14f,
         fireRate = 3f,
         range = 260f,
