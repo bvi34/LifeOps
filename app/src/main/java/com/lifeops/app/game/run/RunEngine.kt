@@ -5,6 +5,7 @@ import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.SetBonuses
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.content.TempBoosts
+import com.lifeops.app.game.content.TurretUpgrades
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -128,6 +129,7 @@ class RunEngine(
         player.held.forEach { block.addAll(it.contributions()) }
         player.runBonuses.forEach { block.add(it) }
         player.tempBuffs.forEach { block.add(it.contribution) }
+        player.equipmentUpgrades.forEach { block.add(it) } // rolled turret upgrades (Turret ranks 2-4)
         return block
     }
 
@@ -202,6 +204,8 @@ class RunEngine(
     /** Apply the chosen level-up option and resume. Ignored unless currently paused on level-up. */
     fun choose(option: LevelUpOption) {
         if (status != RunStatus.LEVEL_UP) return
+        // A combat-equipment rank past the first grants a rolled turret upgrade alongside the rank.
+        option.equipmentUpgrade?.let { player.equipmentUpgrades.add(it.contribution) }
         val existing = player.held.indexOfFirst { it.modifier.id == option.modifier.id }
         if (existing >= 0) {
             player.held[existing] = HeldModifier(option.modifier, option.resultingRank)
@@ -344,6 +348,7 @@ class RunEngine(
         val autoRange = turretStats.resolve(Stat.RANGE, Scope.AUTO)
         val autoFireRate = turretStats.resolve(Stat.FIRE_RATE, Scope.AUTO).coerceAtLeast(0.1f)
         val autoSpeed = turretStats.resolve(Stat.PROJECTILE_SPEED, Scope.AUTO)
+        val autoProjectiles = turretStats.resolve(Stat.PROJECTILES, Scope.AUTO).toInt().coerceAtLeast(1)
         val it = structures.iterator()
         while (it.hasNext()) {
             val s = it.next()
@@ -359,6 +364,8 @@ class RunEngine(
             val range = if (s.artifactTurret) autoRange else s.type.range
             val fireRate = if (s.artifactTurret) autoFireRate else s.type.fireRate.coerceAtLeast(0.1f)
             val speed = if (s.artifactTurret) autoSpeed else s.type.projectileSpeed
+            // Only artifact turrets gain extra projectiles (from a rolled upgrade); Sentries fire one.
+            val proj = if (s.artifactTurret) autoProjectiles else 1
             s.fireCooldown -= dt
             var target: Enemy? = null
             var bestDist = range
@@ -370,8 +377,25 @@ class RunEngine(
             s.aim = (t.pos - s.pos).normalized()
             if (s.fireCooldown <= 0f) {
                 s.fireCooldown = 1f / fireRate
-                spawnFriendlyProjectile(s.pos, s.aim, damage, s.id, speed, range)
+                fireTurretVolley(s.pos, s.aim, damage, s.id, speed, range, proj)
             }
+        }
+    }
+
+    /** Fire [count] friendly turret projectiles along [dir] with a small fan when there's more than one. */
+    private fun fireTurretVolley(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float, count: Int) {
+        val baseAngle = kotlin.math.atan2(dir.y, dir.x)
+        val spread = if (count > 1) 0.30f else 0f
+        for (i in 0 until count) {
+            val fanT = if (count == 1) 0f else (i / (count - 1f)) - 0.5f
+            val angle = baseAngle + fanT * spread
+            val vel = Vec2(cos(angle), sin(angle)) * speed
+            val p = Projectile(
+                id = nextId++, ownerId = ownerId, pos = origin, vel = vel,
+                damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
+            )
+            projectiles.add(p)
+            bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
         }
     }
 
@@ -423,15 +447,6 @@ class RunEngine(
             }
         }
         return null
-    }
-
-    private fun spawnFriendlyProjectile(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float) {
-        val p = Projectile(
-            id = nextId++, ownerId = ownerId, pos = origin, vel = dir * speed,
-            damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
-        )
-        projectiles.add(p)
-        bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
     }
 
     // --- Waves ------------------------------------------------------------------------------
@@ -944,7 +959,14 @@ class RunEngine(
             val held = player.held.firstOrNull { it.modifier.id == mod.id }
             val currentRank = held?.rank ?: 0
             if (currentRank >= mod.maxRank) null
-            else LevelUpOption(mod, currentRank + 1, isNew = held == null)
+            else {
+                val resultingRank = currentRank + 1
+                // Combat-equipment ranks past the first roll a random turret upgrade (DESIGN.md §5),
+                // so the offer shows exactly which improvement this pick would grant.
+                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT && resultingRank >= 2)
+                    TurretUpgrades.POOL[rng.nextInt(TurretUpgrades.POOL.size)] else null
+                LevelUpOption(mod, resultingRank, isNew = held == null, equipmentUpgrade = upgrade)
+            }
         }
         if (candidates.isEmpty()) return emptyList()
         // Shuffle deterministically via the run RNG and take up to 3 distinct offers.

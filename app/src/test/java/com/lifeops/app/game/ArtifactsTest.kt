@@ -52,12 +52,21 @@ class ArtifactsTest {
     }
 
     @Test
-    fun turretArtifactAddsConcurrentTurrets() {
-        // The combat-equipment turret grants +1 concurrent auto-turret per rank on the AUTO scope.
+    fun turretArtifactGrantsOneTurretAndRanksToFour() {
+        // Rank 1 deploys one turret; ranks 2-4 add rolled upgrades (applied by the engine), not fixed
+        // rows — so the modifier alone only ever contributes the single base turret on the AUTO scope.
+        assertEquals(4, Artifacts.TURRET.maxRank)
         val block = StartingWeapon.SNIPER.baseStatBlock()
-        block.addAll(Artifacts.TURRET.contributionsAt(3))
-        assertEquals(3f, block.resolve(Stat.TURRET_COUNT, Scope.AUTO), 0.001f)
+        block.addAll(Artifacts.TURRET.contributionsAt(4))
+        assertEquals(1f, block.resolve(Stat.TURRET_COUNT, Scope.AUTO), 0.001f)
         // Turret count is an AUTO stat — it does not bleed into the player's aimed weapon.
         assertEquals(0f, block.resolve(Stat.TURRET_COUNT, Scope.AIMED), 0.001f)
+    }
+
+    @Test
+    fun everyTurretUpgradeRollIsAutoScoped() {
+        // The rolled pool only ever lifts turret (AUTO) stats, never the aimed weapon.
+        assertTrue(com.lifeops.app.game.content.TurretUpgrades.POOL.isNotEmpty())
+        assertTrue(com.lifeops.app.game.content.TurretUpgrades.POOL.all { it.contribution.scope == Scope.AUTO })
     }
 }

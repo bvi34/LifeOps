@@ -20,8 +20,14 @@ data class LevelUpOption(
     val modifier: Modifier,
     val resultingRank: Int,
     val isNew: Boolean,
+    /** For a combat-equipment rank past the first: the random turret upgrade this pick rolls (§5). */
+    val equipmentUpgrade: com.lifeops.app.game.content.TurretUpgrades.Upgrade? = null,
 ) {
-    val label: String get() = if (isNew) "New · ${modifier.name}" else "${modifier.name} → rank $resultingRank"
+    val label: String get() = when {
+        isNew -> "New · ${modifier.name}"
+        equipmentUpgrade != null -> "${modifier.name} → rank $resultingRank · ${equipmentUpgrade.label}"
+        else -> "${modifier.name} → rank $resultingRank"
+    }
 }
 
 /**

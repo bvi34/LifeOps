@@ -145,9 +145,12 @@ draft (and the codex) reads as two faces:
   Adrenaline move speed), each with **4 pure-additive stacking ranks** (e.g.
   +10% → +20% → +30% → +40%).
 - **Combat equipment** — deploys an **automatic weapon**. The baseline example
-  is the **Turret**: each rank adds a concurrent auto-turret (`TURRET_COUNT`,
-  AUTO scope), which the engine keeps deployed near the player with a limited
-  TTL. It caps at 3 ranks because +1 turret is secretly multiplicative.
+  is the **Turret** (4 ranks): rank 1 deploys one auto-turret (`TURRET_COUNT`,
+  AUTO scope), kept near the player with a limited TTL; ranks 2–4 each roll a
+  **random** turret upgrade from the AUTO-scope pool (damage / fire rate /
+  projectiles / range / an extra turret), so the equipment grows a different way
+  each run. The random rolls are the engine's job — the artifact row itself only
+  carries the rank-1 turret grant, keeping "artifacts are data" intact.
 
 Rolling a duplicate upgrades its rank — no dead offers.
 

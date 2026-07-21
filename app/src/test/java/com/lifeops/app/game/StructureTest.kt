@@ -116,6 +116,32 @@ class StructureTest {
     }
 
     @Test
+    fun turretRankUpsRollAndApplyEquipmentUpgrades() {
+        // Always take the Turret; each rank past the first should apply exactly one rolled upgrade.
+        val e = engine(gold = 0)
+        var frames = 0
+        while (frames < 12000) {
+            when (e.status) {
+                RunStatus.LEVEL_UP -> {
+                    val opts = e.snapshot().levelUpOptions
+                    val pick = opts.firstOrNull { it.modifier.id == Artifacts.TURRET.id } ?: opts.first()
+                    e.choose(pick)
+                }
+                RunStatus.OVERFLOW -> e.snapshot().overflowOptions.firstOrNull()?.let { e.chooseOverflow(it) }
+                RunStatus.SET_BONUS -> e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                else -> {}
+            }
+            val rank = e.player.held.firstOrNull { it.modifier.id == Artifacts.TURRET.id }?.rank ?: 0
+            if (rank >= 2) break
+            e.step(1f / 60f, RunInput())
+            frames++
+        }
+        val rank = e.player.held.firstOrNull { it.modifier.id == Artifacts.TURRET.id }?.rank ?: 0
+        assertTrue("the turret should have ranked past 1", rank >= 2)
+        assertEquals("each rank past the first applies one rolled upgrade", rank - 1, e.player.equipmentUpgrades.size)
+    }
+
+    @Test
     fun barricadeCostIsFlat() {
         val e = engine(gold = 200)
         val c0 = e.buildCost(StructureType.BARRICADE)

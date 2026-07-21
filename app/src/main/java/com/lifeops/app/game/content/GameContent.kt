@@ -161,16 +161,23 @@ object Artifacts {
 
     // --- Combat equipment -----------------------------------------------------------------------
 
-    // The auto-turret (DESIGN.md §4). Each rank raises the number of turrets the engine keeps
-    // deployed around the player; +1 concurrent turret is secretly multiplicative (§5), so it caps
-    // at 3 rather than the supports' 4. AUTO scope: turret stats, not the player's aimed weapon.
+    // The auto-turret (DESIGN.md §4/§5). Rank 1 deploys one auto-turret; ranks 2-4 each roll a
+    // *random* turret improvement from [TurretUpgrades] (damage / fire rate / projectiles / range /
+    // an extra turret), so the equipment grows a different way each run. The modifier itself only
+    // carries the rank-1 turret grant (AUTO scope); the rolled upgrades are applied by the engine,
+    // which is why ranks 2-4 add nothing here. AUTO scope: turret stats, not the aimed weapon.
     val TURRET = Modifier(
         id = "turret",
         name = "Turret",
-        description = "+1 auto-deployed turret per rank. Turrets self-fire near you, then expire.",
+        description = "Rank 1 deploys an auto-turret; later ranks roll a random turret upgrade (damage, fire rate, projectiles…).",
         attachesTo = AttachTarget.ENTITY,
-        maxRank = 3,
-        rankContributions = ranks(Stat.TURRET_COUNT, Scope.AUTO, 1f, op = Op.FLAT, count = 3),
+        maxRank = 4,
+        rankContributions = listOf(
+            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 1f), // rank 1: the turret itself
+            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // ranks 2-4: power comes from
+            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // a rolled equipment upgrade,
+            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // not a fixed rank row.
+        ),
         category = ArtifactCategory.COMBAT_EQUIPMENT,
     )
 
@@ -181,6 +188,28 @@ object Artifacts {
     val STAT_SUPPORT: List<Modifier> = ALL.filter { it.category == ArtifactCategory.STAT_SUPPORT }
 
     fun byId(id: String): Modifier? = ALL.firstOrNull { it.id == id }
+}
+
+/**
+ * The pool the Turret combat-equipment artifact rolls from on each rank past the first (DESIGN.md
+ * §5). Every entry is an AUTO-scope stat row, so it lifts the deployed turrets (their stats) without
+ * touching the player's aimed weapon. Authored as data — adding a turret upgrade is a row here.
+ */
+object TurretUpgrades {
+    data class Upgrade(val id: String, val label: String, val contribution: StatContribution)
+
+    val POOL: List<Upgrade> = listOf(
+        Upgrade("t_damage", "+30% turret damage",
+            StatContribution(Stat.DAMAGE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
+        Upgrade("t_firerate", "+30% turret fire rate",
+            StatContribution(Stat.FIRE_RATE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
+        Upgrade("t_projectile", "+1 turret projectile",
+            StatContribution(Stat.PROJECTILES, Scope.AUTO, Op.FLAT, 1f)),
+        Upgrade("t_range", "+25% turret range",
+            StatContribution(Stat.RANGE, Scope.AUTO, Op.ADD_PERCENT, 0.25f)),
+        Upgrade("t_count", "+1 extra turret",
+            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 1f)),
+    )
 }
 
 /**

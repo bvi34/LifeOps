@@ -29,6 +29,8 @@ class Player(
     val held: MutableList<HeldModifier> = mutableListOf(),
     /** Permanent (for the run) player boons drafted at each set boundary (DESIGN.md §7). */
     val runBonuses: MutableList<StatContribution> = mutableListOf(),
+    /** Rolled AUTO-scope turret upgrades from Turret ranks 2-4 (DESIGN.md §5). Boost turrets only. */
+    val equipmentUpgrades: MutableList<StatContribution> = mutableListOf(),
     /** Active temporary surges from overflow picks; expire and are pruned by the engine. */
     val tempBuffs: MutableList<TempBuff> = mutableListOf(),
     /** Discrete hearts: the player survives [maxHits] contacts, losing one per hit (boss: three). */
@@ -63,6 +65,9 @@ class Player(
         // Drafted set boons (permanent for the run) and any active temp surges fold in the same way.
         runBonuses.forEach { block.add(it) }
         tempBuffs.forEach { block.add(it.contribution) }
+        // Rolled turret upgrades are AUTO-scope, so they're inert on the aimed weapon here but let
+        // the engine read the resulting TURRET_COUNT (extra-turret rolls) off the same block.
+        equipmentUpgrades.forEach { block.add(it) }
         return block
     }
 
