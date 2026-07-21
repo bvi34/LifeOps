@@ -74,6 +74,8 @@ class ImportRepository(
                                else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                 estimatedMinutes = parsed.estimatedMinutes,
                 isRecurring = parsed.isRecurring,
+                recurrenceIntervalWeeks = if (parsed.isRecurring) parsed.recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
+                recurrenceDayOfMonth = if (parsed.isRecurring) parsed.recurrenceDayOfMonth else null,
                 createdAt = DateUtil.now(),
                 source = TaskSource.PLANNED
             )
@@ -146,6 +148,8 @@ class ImportRepository(
                                    else ImportParser.computeResourceValue(parsed.priority, parsed.hardDeadline, parsed.estimatedMinutes, isManuallyAdded = false),
                     estimatedMinutes = parsed.estimatedMinutes,
                     isRecurring = parsed.isRecurring,
+                    recurrenceIntervalWeeks = if (parsed.isRecurring) parsed.recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
+                    recurrenceDayOfMonth = if (parsed.isRecurring) parsed.recurrenceDayOfMonth else null,
                     createdAt = DateUtil.now(),
                     source = TaskSource.PLANNED,
                     slug = slug

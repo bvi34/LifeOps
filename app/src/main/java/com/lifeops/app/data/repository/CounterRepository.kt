@@ -76,6 +76,16 @@ class CounterRepository(private val counterDao: CounterDao) {
     fun observeCumulativeTotalsByCounter(): Flow<Map<String, Int>> =
         counterDao.observeCumulativeTotalsByCounter().map { rows -> rows.associate { it.counterId to it.total } }
 
+    // --- Reports ---
+
+    /** Per-counter totals summed over events on/after [startIso] (a report-range cutoff). */
+    suspend fun sumByCounterSince(startIso: String): Map<String, Int> =
+        counterDao.sumByCounterSince(startIso).associate { it.counterId to it.total }
+
+    /** Active (non-archived) counters, for labelling report rows. */
+    suspend fun getActiveCountersSync(): List<Counter> =
+        counterDao.getActiveCountersSync().map { it.toModel() }
+
     // --- Logging ---
 
     /**

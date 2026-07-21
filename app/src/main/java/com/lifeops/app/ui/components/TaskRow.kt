@@ -237,12 +237,27 @@ fun TaskRow(
                             )
                         }
                         if (task.isRecurring) {
+                            // Cadence label: monthly-by-date, or every-N-weeks (weekly stays icon-only
+                            // since it's the default and a "1w" badge on most tasks would just be noise).
+                            val cadence = when {
+                                task.recurrenceDayOfMonth != null -> "Monthly"
+                                task.recurrenceIntervalWeeks > 1 -> "${task.recurrenceIntervalWeeks}w"
+                                else -> null
+                            }
                             Icon(
                                 Icons.Default.Redo,
-                                contentDescription = "Recurring",
+                                contentDescription = "Recurring" + (cadence?.let { ", $it" } ?: ""),
                                 tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.6f),
                                 modifier = Modifier.size(14.dp).padding(start = 2.dp)
                             )
+                            if (cadence != null) {
+                                Text(
+                                    text = cadence,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+                                    modifier = Modifier.padding(start = 2.dp)
+                                )
+                            }
                         }
                     }
                     task.dueDate?.let { date ->

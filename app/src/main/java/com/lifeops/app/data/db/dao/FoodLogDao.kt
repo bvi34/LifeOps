@@ -28,6 +28,10 @@ interface FoodLogDao {
     @Query("SELECT * FROM food_log_entries ORDER BY loggedAt DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<FoodLogEntryEntity>
 
+    // Reports: every entry logged on/after a cutoff instant, for range-based nutrition aggregation.
+    @Query("SELECT * FROM food_log_entries WHERE loggedAt >= :startIso ORDER BY loggedAt ASC")
+    suspend fun getSince(startIso: String): List<FoodLogEntryEntity>
+
     // Half-open [startIso, endIso) range — callers pass a day's start/next-day's start so a
     // local calendar day's entries are returned regardless of what hour they're stamped at.
     @Query("SELECT * FROM food_log_entries WHERE loggedAt >= :startIso AND loggedAt < :endIso ORDER BY loggedAt ASC")

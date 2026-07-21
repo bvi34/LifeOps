@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31+) backup/transfer rules. Governs both Google-account cloud
+  backup and device-to-device transfer; the legacy fullBackupContent rules still
+  cover pre-31 devices. Keep the two files in sync.
+
+  We back up the Room database file and shared prefs. A WAL checkpoint runs when
+  the app is backgrounded (see LifeOpsApp) so lifeops.db is current at backup time,
+  which is why the -wal / -shm sidecar files are intentionally not included.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="database" path="lifeops.db" />
+        <include domain="sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="database" path="lifeops.db" />
+        <include domain="sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

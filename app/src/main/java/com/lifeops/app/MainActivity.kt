@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lifeops.app.ui.components.AppHeaderViewModel
 import com.lifeops.app.ui.components.AppHeaderViewModelFactory
+import com.lifeops.app.ui.components.LocalGlobalSearch
 import com.lifeops.app.ui.components.LocalSardonicMessage
 import com.lifeops.app.ui.components.WelcomeDialog
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -166,7 +167,10 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
     )
     val sardonicMessage by headerVm.sardonicMessage.collectAsStateWithLifecycle()
 
-    CompositionLocalProvider(LocalSardonicMessage provides sardonicMessage) {
+    CompositionLocalProvider(
+        LocalSardonicMessage provides sardonicMessage,
+        LocalGlobalSearch provides { navController.navigate("search") { launchSingleTop = true } }
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -204,7 +208,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                             app,
                             app.applicationScope,
                             app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
-                            app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
+                            app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
                             app.costResourceRepository, app.projectRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
                             app.weatherRepository, app.personRepository
@@ -285,8 +289,17 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenCostResources = { navController.navigate("cost_resources") },
                         onOpenPeople = { navController.navigate("people") },
                         onOpenWeather = { navController.navigate("weather") },
-                        onOpenActivities = { navController.navigate("activities") }
+                        onOpenActivities = { navController.navigate("activities") },
+                        onOpenCalendar = { navController.navigate("calendar") }
                     )
+                }
+                composable("calendar") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.CalendarViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.CalendarViewModelFactory(
+                            app.busyBlockRepository, app.taskRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.CalendarScreen(vm) { navController.navigateUp() }
                 }
                 composable("future_tasks") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.FutureTasksViewModel>(
@@ -347,7 +360,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.PersonDetailViewModel>(
                         key = "person_detail_$personId",
                         factory = PersonDetailViewModelFactory(
-                            personId, app.personRepository, app.weekRepository, app.taskRepository
+                            personId, app.personRepository, app.weekRepository, app.taskRepository,
+                            app.busyBlockRepository
                         )
                     )
                     PersonDetailScreen(vm) { navController.navigateUp() }
@@ -356,7 +370,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     val vm = viewModel<com.lifeops.app.ui.screens.weather.WeatherViewModel>(
                         factory = WeatherViewModelFactory(
                             app.weatherRepository, app.weekRepository, app.taskRepository,
-                            app.personRepository, app.activityTemplateRepository
+                            app.personRepository, app.activityTemplateRepository, app.busyBlockRepository
                         )
                     )
                     WeatherScreen(vm) { navController.navigateUp() }
@@ -429,7 +443,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         factory = ReportsViewModelFactory(
                             app.weekRepository, app.aspectRepository,
                             app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
-                            app.projectRepository
+                            app.projectRepository, app.wellnessRepository, app.foodLogRepository,
+                            app.counterRepository, app.bookRepository
                         )
                     )
                     ReportsScreen(
@@ -463,6 +478,19 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.Settings.route) {
                 val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
                 SettingsScreen(vm)
+            }
+
+            composable("search") {
+                val vm = viewModel<com.lifeops.app.ui.screens.search.SearchViewModel>(
+                    factory = com.lifeops.app.ui.screens.search.SearchViewModelFactory(app.searchRepository)
+                )
+                com.lifeops.app.ui.screens.search.SearchScreen(
+                    viewModel = vm,
+                    onNavigate = { route ->
+                        navController.navigate(route) { launchSingleTop = true }
+                    },
+                    onBack = { navController.navigateUp() }
+                )
             }
         }
     }

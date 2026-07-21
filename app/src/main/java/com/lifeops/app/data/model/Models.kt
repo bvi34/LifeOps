@@ -84,7 +84,32 @@ data class Task(
     val source: TaskSource = TaskSource.MANUAL,
     val slug: String = "",
     val carryForwardReason: CarryForwardReason? = null,
-    val counterId: String? = null
+    val counterId: String? = null,
+    // See TaskEntity: week-interval cadence (recurrenceDayOfMonth == null) or monthly-by-date.
+    val recurrenceIntervalWeeks: Int = 1,
+    val recurrenceDayOfMonth: Int? = null
+)
+
+data class BusyBlock(
+    val id: String,
+    val title: String,
+    val startMinutes: Int,
+    val endMinutes: Int,
+    // Weekly recurrence bitmask (bit 0 = Monday … bit 6 = Sunday); 0 when one-off.
+    val daysMask: Int,
+    // yyyy-MM-dd for a one-off block; null = weekly-recurring via daysMask.
+    val specificDate: String? = null,
+    // null = the user's own schedule; otherwise the person whose schedule this belongs to.
+    val personId: String? = null,
+    val createdAt: String
+)
+
+data class TaskAttachment(
+    val id: String,
+    val taskId: String,
+    val imageData: String,
+    val caption: String? = null,
+    val createdAt: String
 )
 
 data class CarryForwardEntry(

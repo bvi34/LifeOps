@@ -30,6 +30,10 @@ interface CounterDao {
     @Query("SELECT * FROM counters WHERE isArchived = 0 ORDER BY sortOrder ASC, createdAt ASC")
     fun observeActive(): Flow<List<CounterEntity>>
 
+    /** All counters (own + archived) for global search. */
+    @Query("SELECT * FROM counters")
+    suspend fun getAllSync(): List<CounterEntity>
+
     @Query("SELECT * FROM counters ORDER BY isArchived ASC, sortOrder ASC, createdAt ASC")
     fun observeAll(): Flow<List<CounterEntity>>
 
@@ -65,4 +69,11 @@ interface CounterDao {
 
     @Query("SELECT counterId AS counterId, COALESCE(SUM(delta), 0) AS total FROM counter_events GROUP BY counterId")
     fun observeCumulativeTotalsByCounter(): Flow<List<CounterIdTotal>>
+
+    // Reports: per-counter totals summed over events on/after a cutoff instant.
+    @Query("SELECT counterId AS counterId, COALESCE(SUM(delta), 0) AS total FROM counter_events WHERE occurredAt >= :startIso GROUP BY counterId")
+    suspend fun sumByCounterSince(startIso: String): List<CounterIdTotal>
+
+    @Query("SELECT * FROM counters WHERE isArchived = 0 ORDER BY sortOrder ASC, createdAt ASC")
+    suspend fun getActiveCountersSync(): List<CounterEntity>
 }

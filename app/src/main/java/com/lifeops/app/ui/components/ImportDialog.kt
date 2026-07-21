@@ -29,7 +29,7 @@ fun ImportDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Paste AI-generated JSON. Each task: title, priority (low/medium/high/critical), aspect, category, due_date (YYYY-MM-DD), hard_deadline, notes, status (pending/completed/skipped), time_logged_minutes, estimated_minutes, is_recurring",
+                    "Paste AI-generated JSON. Each task: title, priority (low/medium/high/critical), aspect, category, due_date (YYYY-MM-DD), hard_deadline, notes, status (pending/completed/skipped), time_logged_minutes, estimated_minutes, is_recurring, recurrence_interval_weeks (1=weekly, 2=bi-weekly…), recurrence_day_of_month (1–31 for monthly)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )

@@ -3,10 +3,12 @@ package com.lifeops.app.ui.screens.planning
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.PersonNote
 import com.lifeops.app.data.model.SunSensitivity
 import com.lifeops.app.data.model.Task
+import com.lifeops.app.data.repository.BusyBlockRepository
 import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.WeekRepository
@@ -22,14 +24,17 @@ data class PersonDetailUiState(
     val notes: List<PersonNote> = emptyList(),
     val involvedTasks: List<Task> = emptyList(),
     /** Current-week tasks, the pool the "attach a task" picker draws from. */
-    val weekTasks: List<Task> = emptyList()
+    val weekTasks: List<Task> = emptyList(),
+    /** This person's busy schedule — the best-time engine treats it as unavailability. */
+    val schedule: List<BusyBlock> = emptyList()
 )
 
 class PersonDetailViewModel(
     private val personId: String,
     private val personRepository: PersonRepository,
     private val weekRepository: WeekRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val busyBlockRepository: BusyBlockRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PersonDetailUiState())
@@ -57,6 +62,19 @@ class PersonDetailViewModel(
                 _uiState.update { it.copy(weekTasks = tasks) }
             }
         }
+        viewModelScope.launch {
+            busyBlockRepository.observeForPerson(personId).collectLatest { blocks ->
+                _uiState.update { it.copy(schedule = blocks) }
+            }
+        }
+    }
+
+    fun saveBusyBlock(block: BusyBlock) {
+        viewModelScope.launch { busyBlockRepository.upsert(block) }
+    }
+
+    fun deleteBusyBlock(id: String) {
+        viewModelScope.launch { busyBlockRepository.delete(id) }
     }
 
     /** Save the full profile in one shot from the editor. Blank name is ignored. */
@@ -117,9 +135,10 @@ class PersonDetailViewModelFactory(
     private val personId: String,
     private val personRepository: PersonRepository,
     private val weekRepository: WeekRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val busyBlockRepository: BusyBlockRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        PersonDetailViewModel(personId, personRepository, weekRepository, taskRepository) as T
+        PersonDetailViewModel(personId, personRepository, weekRepository, taskRepository, busyBlockRepository) as T
 }

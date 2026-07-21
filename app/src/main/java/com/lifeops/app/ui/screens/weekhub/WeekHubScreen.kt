@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +36,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.ForecastPeriod
+import com.lifeops.app.ui.components.LocalGlobalSearch
 import com.lifeops.app.util.WeatherGlyph
 import com.lifeops.app.ui.screens.collection.BookViewModel
 import com.lifeops.app.ui.screens.collection.CollectionScreen
@@ -100,7 +102,8 @@ fun WeekHubScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 2.dp),
-            horizontalArrangement = Arrangement.spacedBy(20.dp)
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             WeekHubTab.entries.forEach { tab ->
                 val selected = selectedTab == tab
@@ -126,6 +129,11 @@ fun WeekHubScreen(
                             .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(1.dp))
                     )
                 }
+            }
+            Spacer(Modifier.weight(1f))
+            val onSearch = LocalGlobalSearch.current
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, contentDescription = "Search")
             }
         }
         // Weekly forecast fills the space between the tabs and the task list on the Tasks tab.

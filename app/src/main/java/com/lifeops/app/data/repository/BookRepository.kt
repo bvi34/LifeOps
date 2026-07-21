@@ -18,6 +18,12 @@ class BookRepository(private val bookDao: BookDao) {
     fun observeNotes(bookId: String): Flow<List<BookNote>> = bookDao.observeNotes(bookId).map { list -> list.map { it.toModel() } }
     fun observeTimeEntries(bookId: String): Flow<List<BookTimeEntry>> = bookDao.observeTimeEntries(bookId).map { list -> list.map { it.toModel() } }
 
+    // --- Reports ---
+    /** All books, for range-based reading stats (finished-in-range is derived from completedAt). */
+    suspend fun getAllBooks(): List<Book> = bookDao.getAll().map { it.toModel() }
+    /** All reading-time entries, filtered by recordedAt in the caller. */
+    suspend fun getAllTimeEntries(): List<BookTimeEntry> = bookDao.getAllTimeEntries().map { it.toModel() }
+
     suspend fun createBook(title: String, author: String?): Book {
         val book = Book(UUID.randomUUID().toString(), title, author, BookStatus.TO_READ, DateUtil.now())
         bookDao.upsert(book.toEntity())

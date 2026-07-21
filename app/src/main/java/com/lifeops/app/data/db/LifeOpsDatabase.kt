@@ -800,6 +800,56 @@ private val MIGRATION_34_35 = object : Migration(34, 35) {
     }
 }
 
+private val MIGRATION_35_36 = object : Migration(35, 36) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Recurrence cadence. recurrenceIntervalWeeks carries a NOT NULL DEFAULT 1 to match the
+        // entity's @ColumnInfo(defaultValue = "1") — existing recurring tasks stay weekly.
+        // recurrenceDayOfMonth is nullable with no default (monthly-by-date mode; null = week-interval).
+        db.execSQL("ALTER TABLE tasks ADD COLUMN recurrenceIntervalWeeks INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE tasks ADD COLUMN recurrenceDayOfMonth INTEGER")
+    }
+}
+
+private val MIGRATION_37_38 = object : Migration(37, 38) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // In-app free/busy blocks. personId is a nullable FK to persons (cascade); NULL = the
+        // user's own schedule. This CREATE must mirror Room's generated schema exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS busy_blocks (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                startMinutes INTEGER NOT NULL,
+                endMinutes INTEGER NOT NULL,
+                daysMask INTEGER NOT NULL,
+                specificDate TEXT,
+                personId TEXT,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_busy_blocks_personId ON busy_blocks(personId)")
+    }
+}
+
+private val MIGRATION_36_37 = object : Migration(36, 37) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Task image attachments: base64 JPEG stored inline (no FK-less file paths), cascade-deleted
+        // with the task. caption is nullable with no default, matching the entity. This CREATE must
+        // mirror Room's generated schema exactly or startup validation fails.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS task_attachments (
+                id TEXT NOT NULL PRIMARY KEY,
+                taskId TEXT NOT NULL,
+                imageData TEXT NOT NULL,
+                caption TEXT,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_task_attachments_taskId ON task_attachments(taskId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -843,9 +893,11 @@ private val MIGRATION_34_35 = object : Migration(34, 35) {
         ActivityTemplateEntity::class,
         ActivityOverrideEntity::class,
         GameScoreEntity::class,
-        WellnessCheckinEntity::class
+        WellnessCheckinEntity::class,
+        TaskAttachmentEntity::class,
+        BusyBlockEntity::class
     ],
-    version = 35,
+    version = 38,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -858,6 +910,8 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun gameResourceMappingDao(): GameResourceMappingDao
     abstract fun notificationDao(): NotificationDao
     abstract fun taskNoteDao(): TaskNoteDao
+    abstract fun taskAttachmentDao(): TaskAttachmentDao
+    abstract fun busyBlockDao(): BusyBlockDao
     abstract fun timeEntryDao(): TimeEntryDao
     abstract fun resourceTransactionDao(): ResourceTransactionDao
     abstract fun costResourceDao(): CostResourceDao
@@ -889,7 +943,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
                     .build()
                     .also { INSTANCE = it }
             }
