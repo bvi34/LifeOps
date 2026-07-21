@@ -168,13 +168,10 @@ fun BusyBlockEditorDialog(
                         }
                     }
                 } else {
-                    OutlinedTextField(
-                        value = dateText,
-                        onValueChange = { dateText = it },
-                        label = { Text("Date") },
-                        placeholder = { Text("YYYY-MM-DD") },
-                        isError = dateText.isNotBlank() && !DateUtil.isValidDate(dateText.trim()),
-                        singleLine = true,
+                    DatePickerButton(
+                        label = "date",
+                        selectedDateStr = dateText.ifBlank { null },
+                        onDateSelected = { dateText = it ?: "" },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
