@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 enum class ReportRange(val label: String, val days: Int) {
     DAYS_30("30 Days", 30),
@@ -24,6 +25,31 @@ data class CategorySlipRate(val categoryName: String, val rate: Float)
 data class AspectTimeRow(val aspectName: String, val color: String, val totalMinutes: Int)
 
 data class SelfRatingPoint(val weekLabel: String, val rating: Int, val note: String?)
+
+// New-domain report rows. These summarise the wellness / nutrition / counters / reading domains
+// over the selected range. Per the design, they inform reporting only — they never feed resources.
+data class WellnessSummary(
+    val avgEnergy: Float?,
+    val avgSensory: Float?,
+    val avgSleepMinutes: Int?,
+    val checkinCount: Int
+)
+
+data class NutritionSummary(
+    val daysLogged: Int,
+    val avgCalories: Int,
+    val avgCarbsG: Int,
+    val avgProteinG: Int,
+    val avgFatG: Int
+)
+
+data class CounterTotalRow(val name: String, val total: Int)
+
+data class ReadingSummary(
+    val totalMinutes: Int,
+    val sessions: Int,
+    val booksFinished: Int
+)
 
 data class ReportsUiState(
     val range: ReportRange = ReportRange.DAYS_30,
@@ -45,7 +71,11 @@ data class ReportsUiState(
     val scoringTrend: List<ScoringPoint> = emptyList(),
     val priorityBreakdown: List<PriorityCompletionRow> = emptyList(),
     val selfRatingPoints: List<SelfRatingPoint> = emptyList(),
-    val avgSelfRating: Float? = null
+    val avgSelfRating: Float? = null,
+    val wellnessSummary: WellnessSummary? = null,
+    val nutritionSummary: NutritionSummary? = null,
+    val counterTotals: List<CounterTotalRow> = emptyList(),
+    val readingSummary: ReadingSummary? = null
 )
 
 class ReportsViewModel(
@@ -54,7 +84,11 @@ class ReportsViewModel(
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository
+    private val projectRepository: ProjectRepository,
+    private val wellnessRepository: WellnessRepository,
+    private val foodLogRepository: FoodLogRepository,
+    private val counterRepository: CounterRepository,
+    private val bookRepository: BookRepository
 ) : ViewModel() {
 
     private var weeksById: Map<String, Week> = emptyMap()
@@ -263,6 +297,50 @@ class ReportsViewModel(
             .mapNotNull { snap -> snap.selfRating?.let { SelfRatingPoint(snap.createdAt.take(10), it, snap.selfRatingNote) } }
         val avgRating = ratingPoints.takeIf { it.isNotEmpty() }?.let { pts -> pts.sumOf { it.rating }.toFloat() / pts.size }
 
+        // --- New domains (reporting only; never feed resources) -----------------------------------
+        // All four reuse the same `cutoff` and compare on their own ISO timestamp columns, so the
+        // range selector governs them exactly as it does tasks/time/cost above.
+
+        // Wellness: averages across check-ins in range (each metric averaged over entries that have it).
+        val checkins = wellnessRepository.getAllCheckins().filter { it.recordedAt >= cutoff }
+        val energies = checkins.mapNotNull { it.energy }
+        val sensories = checkins.mapNotNull { it.sensory }
+        val sleeps = checkins.mapNotNull { it.sleepMinutes }
+        val wellnessSummary = if (checkins.isEmpty()) null else WellnessSummary(
+            avgEnergy = energies.takeIf { it.isNotEmpty() }?.let { it.average().toFloat() },
+            avgSensory = sensories.takeIf { it.isNotEmpty() }?.let { it.average().toFloat() },
+            avgSleepMinutes = sleeps.takeIf { it.isNotEmpty() }?.let { it.average().roundToInt() },
+            checkinCount = checkins.size
+        )
+
+        // Nutrition: per-day averages (totals ÷ distinct logged days) over the range.
+        val foodEntries = foodLogRepository.getEntriesSince(cutoff)
+        val nutritionSummary = if (foodEntries.isEmpty()) null else {
+            val days = foodEntries.map { it.loggedAt.take(10) }.distinct().size.coerceAtLeast(1)
+            NutritionSummary(
+                daysLogged = days,
+                avgCalories = (foodEntries.sumOf { it.calories } / days).roundToInt(),
+                avgCarbsG = (foodEntries.sumOf { it.carbsG } / days).roundToInt(),
+                avgProteinG = (foodEntries.sumOf { it.proteinG } / days).roundToInt(),
+                avgFatG = (foodEntries.sumOf { it.fatG } / days).roundToInt()
+            )
+        }
+
+        // Counters: per-counter totals over the range, labelled from the active counter list.
+        val counterTotalsMap = counterRepository.sumByCounterSince(cutoff)
+        val counterTotals = counterRepository.getActiveCountersSync()
+            .mapNotNull { c -> (counterTotalsMap[c.id] ?: 0).takeIf { it != 0 }?.let { CounterTotalRow(c.name, it) } }
+            .sortedByDescending { it.total }
+
+        // Reading: minutes logged and books finished within the range.
+        val bookTimes = bookRepository.getAllTimeEntries().filter { it.recordedAt >= cutoff }
+        val booksFinished = bookRepository.getAllBooks().count { it.completedAt != null && it.completedAt >= cutoff }
+        val readingSummary = if (bookTimes.isEmpty() && booksFinished == 0) null else ReadingSummary(
+            totalMinutes = bookTimes.sumOf { it.durationMinutes },
+            sessions = bookTimes.size,
+            booksFinished = booksFinished
+        )
+
         _uiState.update {
             it.copy(
                 completionTrend = trend,
@@ -279,7 +357,11 @@ class ReportsViewModel(
                 scoringTrend = scoringTrend,
                 priorityBreakdown = priorityStats,
                 selfRatingPoints = ratingPoints,
-                avgSelfRating = avgRating
+                avgSelfRating = avgRating,
+                wellnessSummary = wellnessSummary,
+                nutritionSummary = nutritionSummary,
+                counterTotals = counterTotals,
+                readingSummary = readingSummary
             )
         }
     }
@@ -297,9 +379,16 @@ class ReportsViewModelFactory(
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository
+    private val projectRepository: ProjectRepository,
+    private val wellnessRepository: WellnessRepository,
+    private val foodLogRepository: FoodLogRepository,
+    private val counterRepository: CounterRepository,
+    private val bookRepository: BookRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ReportsViewModel(weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository, projectRepository) as T
+        ReportsViewModel(
+            weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository,
+            projectRepository, wellnessRepository, foodLogRepository, counterRepository, bookRepository
+        ) as T
 }

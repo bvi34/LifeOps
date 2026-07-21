@@ -429,7 +429,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         factory = ReportsViewModelFactory(
                             app.weekRepository, app.aspectRepository,
                             app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
-                            app.projectRepository
+                            app.projectRepository, app.wellnessRepository, app.foodLogRepository,
+                            app.counterRepository, app.bookRepository
                         )
                     )
                     ReportsScreen(

@@ -24,6 +24,10 @@ class FoodLogRepository(
     private val foodLogDao: FoodLogDao,
     private val foodItemDao: FoodItemDao
 ) {
+    /** Reports: all diary entries logged on/after [startIso], for range-based nutrition stats. */
+    suspend fun getEntriesSince(startIso: String): List<FoodLogEntry> =
+        foodLogDao.getSince(startIso).map { it.toModel() }
+
     /** Logs a quantity of a saved FoodItem. Macros are snapshotted at log time so a later
      *  edit to the FoodItem (or a USDA re-sync) can't rewrite diary history. */
     suspend fun logFoodItem(foodItemId: String, quantity: Double, unit: IngredientUnit): FoodLogEntry? {

@@ -98,6 +98,12 @@ fun ReportsScreen(
                     if (state.selfRatingPoints.isNotEmpty()) {
                         item { SelfRatingCard(state.selfRatingPoints, state.avgSelfRating) }
                     }
+                    state.wellnessSummary?.let { item { WellnessSummaryCard(it) } }
+                    state.nutritionSummary?.let { item { NutritionSummaryCard(it) } }
+                    if (state.counterTotals.isNotEmpty()) {
+                        item { CountersSummaryCard(state.counterTotals) }
+                    }
+                    state.readingSummary?.let { item { ReadingSummaryCard(it) } }
                     if (state.carryHistory.isNotEmpty() || state.carryoverSummary.isNotEmpty()) {
                         item { CarryoverCard(state.carryHistory, state.carryoverSummary) }
                     }
@@ -679,6 +685,93 @@ private fun SelfRatingCard(points: List<SelfRatingPoint>, avg: Float?) {
                         modifier = Modifier.padding(start = 80.dp, bottom = 4.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+// --- New-domain report cards (wellness / nutrition / counters / reading) ----------------------
+// Summary-only: these surface the newer LifeOps domains in Reports without feeding the resource
+// economy. Each is emitted only when it has data for the selected range (see ReportsScreen).
+
+private fun fmtAvg(value: Float?): String = value?.let { "%.1f".format(it) } ?: "—"
+
+@Composable
+private fun WellnessSummaryCard(summary: WellnessSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Wellness", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "${summary.checkinCount} check-in${if (summary.checkinCount == 1) "" else "s"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatBox("Avg energy", fmtAvg(summary.avgEnergy))
+                StatBox("Avg sensory", fmtAvg(summary.avgSensory))
+                StatBox("Avg sleep", summary.avgSleepMinutes?.let { formatMinutes(it) } ?: "—")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NutritionSummaryCard(summary: NutritionSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Nutrition", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "Per-day average over ${summary.daysLogged} logged day${if (summary.daysLogged == 1) "" else "s"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatBox("Calories", summary.avgCalories.toString())
+                StatBox("Carbs", "${summary.avgCarbsG}g")
+                StatBox("Protein", "${summary.avgProteinG}g")
+                StatBox("Fat", "${summary.avgFatG}g")
+            }
+        }
+    }
+}
+
+@Composable
+private fun CountersSummaryCard(rows: List<CounterTotalRow>) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Counters", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            rows.forEach { row ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(row.name, style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        row.total.toString(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReadingSummaryCard(summary: ReadingSummary) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Reading", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                StatBox("Time", formatMinutes(summary.totalMinutes))
+                StatBox("Sessions", summary.sessions.toString())
+                StatBox("Finished", summary.booksFinished.toString())
             }
         }
     }

@@ -49,6 +49,9 @@ class WellnessRepository(
     fun observeSince(sinceWeekKey: Int): Flow<List<WellnessCheckin>> =
         dao.observeSince(sinceWeekKey).map { list -> list.map { it.toModel() } }
 
+    /** Reports: full check-in history, filtered by recordedAt in the caller. */
+    suspend fun getAllCheckins(): List<WellnessCheckin> = dao.getAll().map { it.toModel() }
+
     /** Persist a daytime check-in. */
     suspend fun logCheckin(energy: Int, sensory: Int, note: String?, at: Long = System.currentTimeMillis()) {
         insert(
