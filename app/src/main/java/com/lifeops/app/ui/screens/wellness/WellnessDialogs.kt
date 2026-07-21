@@ -34,8 +34,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 fun RatingRow(
     label: String,
     value: Int?,
-    onSelect: (Int) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(label, style = MaterialTheme.typography.bodyMedium)
