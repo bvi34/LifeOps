@@ -165,7 +165,7 @@ private fun DaySection(
                     "• $title (due)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                    modifier = Modifier.padding(start = 4.dp, vertical = 1.dp)
+                    modifier = Modifier.padding(start = 4.dp, top = 1.dp, bottom = 1.dp)
                 )
             }
         }
