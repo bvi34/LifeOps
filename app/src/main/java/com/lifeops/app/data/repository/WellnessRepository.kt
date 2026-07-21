@@ -8,6 +8,7 @@ import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ScreenTimeEstimator
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
+import com.lifeops.app.worker.WellnessCheckinWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -16,17 +17,30 @@ import java.util.UUID
  * Backs the wellness check-ins: the daytime energy/sensory pop-ups and the morning sleep report,
  * plus the daily/weekly aggregation the History report reads. Screen-time sleep estimation is
  * delegated to [ScreenTimeEstimator]; everything else is direct Room reads/writes (DESIGN §11:
- * no sync layer).
+ * no sync layer). Reminder cadence (on/off + slot hours) lives in [PreferencesRepository] so the
+ * scheduled notifications and the on-open prompts share one source of truth.
  */
 class WellnessRepository(
     private val context: Context,
-    private val dao: WellnessCheckinDao
+    private val dao: WellnessCheckinDao,
+    private val prefs: PreferencesRepository
 ) {
-    /** The daytime check-in slots (device-local hour). Also drives the scheduled notifications. */
-    val slotHours: List<Int> = listOf(10, 15, 21)
+    /** The daytime check-in slots (device-local hour), from settings. */
+    val slotHours: List<Int> get() = prefs.wellnessSlotHours
+
+    /** Master switch: when off, no notifications and no on-open prompts. */
+    val remindersEnabled: Boolean get() = prefs.wellnessRemindersEnabled
 
     /** Sleep report only prompts on the first app open at or after this local hour. */
     val sleepPromptFromHour: Int = 5
+
+    /** Cancel any queued wellness notifications and re-queue the current settings (or none if off). */
+    fun rescheduleReminders() {
+        WellnessCheckinWorker.cancelAll(context)
+        if (prefs.wellnessRemindersEnabled) {
+            WellnessCheckinWorker.scheduleAll(context, prefs.wellnessSlotHours)
+        }
+    }
 
     fun observeAll(): Flow<List<WellnessCheckin>> =
         dao.observeAll().map { list -> list.map { it.toModel() } }

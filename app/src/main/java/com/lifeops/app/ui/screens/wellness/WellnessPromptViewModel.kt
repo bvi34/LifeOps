@@ -37,6 +37,7 @@ class WellnessPromptViewModel(
     fun evaluate() {
         // Don't stomp a prompt the user is currently looking at.
         if (_state.value.kind != WellnessPromptKind.NONE) return
+        if (!repo.remindersEnabled) return
         viewModelScope.launch(Dispatchers.IO) {
             val now = System.currentTimeMillis()
             if (DateUtil.localHour(now) >= repo.sleepPromptFromHour && !repo.hasSleepForToday(now)) {

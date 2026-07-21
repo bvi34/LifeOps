@@ -239,6 +239,27 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         sb.toString()
     }
 
+    suspend fun buildWellnessCsvExport(): String = withContext(Dispatchers.IO) {
+        val rows = db.wellnessCheckinDao().getAll()
+        val sb = StringBuilder()
+        sb.append(Csv.row(listOf(
+            "Kind", "RecordedAt", "Day", "Energy", "Sensory", "Tired", "SleepMinutes", "Note"
+        ))).append('\n')
+        rows.forEach { r ->
+            sb.append(Csv.row(listOf(
+                r.kind,
+                r.recordedAt,
+                r.dayKey,
+                r.energy?.toString() ?: "",
+                r.sensory?.toString() ?: "",
+                r.tired?.toString() ?: "",
+                r.sleepMinutes?.toString() ?: "",
+                r.note ?: ""
+            ))).append('\n')
+        }
+        sb.toString()
+    }
+
     fun shareBackupFile(context: Context, uri: Uri) {
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/json"

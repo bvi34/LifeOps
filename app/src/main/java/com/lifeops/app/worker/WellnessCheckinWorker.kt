@@ -70,6 +70,11 @@ class WellnessCheckinWorker(
             slots.forEach { scheduleSlot(context, it) }
         }
 
+        /** Cancel all queued wellness slots (by shared tag), e.g. before rescheduling or when off. */
+        fun cancelAll(context: Context) {
+            WorkManager.getInstance(context).cancelAllWorkByTag("wellness_checkin")
+        }
+
         /** Enqueue the next occurrence of the [hour] slot (device local), replacing any pending one. */
         fun scheduleSlot(context: Context, hour: Int) {
             val delay = millisUntilNext(hour)

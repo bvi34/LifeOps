@@ -157,7 +157,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             app.aspectRepository, app.gameResourceRepository,
             app.preferencesRepository, app.backupRepository, app.taskRepository,
             app.costResourceRepository, app.projectRepository, app.growthRepository,
-            app.runbookRepository, app.templateRepository, app.foodItemRepository
+            app.runbookRepository, app.templateRepository, app.foodItemRepository,
+            app.wellnessRepository
         )
     }
     val headerVm = viewModel<AppHeaderViewModel>(
@@ -410,7 +411,10 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 }
                 composable("wellness") {
                     val vm = viewModel<com.lifeops.app.ui.screens.wellness.WellnessViewModel>(
-                        factory = com.lifeops.app.ui.screens.wellness.WellnessViewModelFactory(app.wellnessRepository)
+                        factory = com.lifeops.app.ui.screens.wellness.WellnessViewModelFactory(
+                            app.wellnessRepository, app.taskRepository,
+                            app.timeEntryRepository, app.aspectRepository
+                        )
                     )
                     com.lifeops.app.ui.screens.wellness.WellnessScreen(vm, onBack = { navController.navigateUp() })
                 }
