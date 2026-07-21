@@ -395,11 +395,13 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 val c = Offset(sx(s.pos.x), sy(s.pos.y))
                 val half = struct * (if (s.type == StructureType.TURRET) 0.34f else 0.42f)
                 val base = if (s.type == StructureType.TURRET) TURRET_COLOR else BARRICADE_COLOR
-                val col = lerp(Color(0xFF3A1010), base, s.healthFrac.coerceIn(0.15f, 1f))
+                // Auto-turrets fade toward transparent as their TTL runs out, telegraphing the despawn.
+                val alpha = if (s.artifactTurret) (0.35f + 0.65f * s.ttlFrac) else 1f
+                val col = lerp(Color(0xFF3A1010), base, s.healthFrac.coerceIn(0.15f, 1f)).copy(alpha = alpha)
                 drawRect(color = col, topLeft = Offset(c.x - half, c.y - half), size = androidx.compose.ui.geometry.Size(half * 2, half * 2))
                 if (s.type == StructureType.TURRET) {
                     val a = atan2(s.aim.y, s.aim.x)
-                    drawLine(Color(0xFFB0BEC5), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
+                    drawLine(Color(0xFFB0BEC5).copy(alpha = alpha), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
                 }
             }
 
@@ -462,15 +464,24 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             )
             drawCircle(color = Color.White.copy(alpha = 0.35f), radius = 3.5f * scale, center = guideEnd, style = Stroke(1.5f * scale))
 
-            // Weapon nub: Sniper = long thin barrel, Gatling = short wide barrel.
+            // Weapon nub: Sniper = long thin barrel, Gatling = short wide barrel, Shotgun = stubby double.
             val gatling = snapshot.weapon == StartingWeapon.GATLING
-            val nubLen = if (gatling) 1.35f else 1.95f
+            val nubLen = when (snapshot.weapon) {
+                StartingWeapon.SNIPER -> 1.95f
+                StartingWeapon.GATLING -> 1.35f
+                StartingWeapon.SHOTGUN -> 1.15f
+            }
             val nubTip = pc + aimDir * (pr * nubLen)
+            val nubWidth = when (snapshot.weapon) {
+                StartingWeapon.SNIPER -> 3f
+                StartingWeapon.GATLING -> 6f
+                StartingWeapon.SHOTGUN -> 8f
+            }
             drawLine(
                 color = Color(0xFFB0BEC5),
                 start = pc,
                 end = nubTip,
-                strokeWidth = (if (gatling) 6f else 3f) * scale
+                strokeWidth = nubWidth * scale
             )
 
             // Body silhouette (flashes red when hurt; dims while invulnerable), then a bright core.
@@ -509,7 +520,8 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                     .padding(start = 12.dp, bottom = 28.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                StructureType.values().forEach { type ->
+                // Only gold-buy defenses appear here; the turret is now the auto-deployed Turret artifact.
+                StructureType.values().filter { it.buildable }.forEach { type ->
                     val selected = buildType == type
                     val cost = snapshot.structureCosts[type] ?: type.cost
                     val affordable = snapshot.gold >= cost
@@ -520,6 +532,15 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                         OutlinedButton(onClick = onClick, enabled = affordable) { Text("${type.displayName} ${cost}g") }
                     }
                 }
+                // Reload on demand (auto-reload still fires on an empty magazine). Shows live progress.
+                val reloadLabel = when {
+                    snapshot.reloading -> "Reloading ${(snapshot.reloadFrac * 100).toInt()}%"
+                    else -> "Reload ${snapshot.ammo}/${snapshot.magazine}"
+                }
+                OutlinedButton(
+                    onClick = { engine.reload() },
+                    enabled = !snapshot.reloading && snapshot.ammo < snapshot.magazine
+                ) { Text(reloadLabel) }
             }
         }
 
@@ -605,6 +626,14 @@ private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
             color = XP_COLOR,
             label = "XP"
         )
+        Spacer(Modifier.height(4.dp))
+        // Ammo: while reloading, the bar fills with reload progress; otherwise it shows rounds left.
+        Meter(
+            fraction = if (snapshot.reloading) snapshot.reloadFrac
+            else if (snapshot.magazine > 0) snapshot.ammo.toFloat() / snapshot.magazine else 0f,
+            color = if (snapshot.reloading) MUZZLE_COLOR else AMMO_COLOR,
+            label = if (snapshot.reloading) "Reloading…" else "Ammo ${snapshot.ammo}/${snapshot.magazine}"
+        )
         if (snapshot.held.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -671,9 +700,18 @@ private fun LevelUpOverlay(snapshot: RunSnapshot, onChoose: (com.lifeops.app.gam
                 Text("Choose an upgrade", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 snapshot.levelUpOptions.forEach { opt ->
+                    val isEquipment = opt.modifier.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT
                     FilledTonalButton(onClick = { onChoose(opt) }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                            Text(opt.label, fontWeight = FontWeight.Bold)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(opt.label, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text(
+                                    if (isEquipment) "Equipment" else "Support",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isEquipment) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                                )
+                            }
                             Text(
                                 opt.modifier.description,
                                 style = MaterialTheme.typography.labelSmall,
@@ -872,3 +910,4 @@ private val HP_ARC_COLOR = Color(0xFFECEFF1)
 private val BOSS_COLOR = Color(0xFFAB47BC)
 private val MUZZLE_COLOR = Color(0xFFFFF59D)
 private val HURT_FLASH_COLOR = Color(0xFFEF5350)
+private val AMMO_COLOR = Color(0xFF90A4AE)

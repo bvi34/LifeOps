@@ -73,6 +73,13 @@ data class RunSnapshot(
     val xp: Float,
     val xpToNext: Float,
     val gold: Int,
+    /** Rounds left in the magazine / its capacity (DESIGN.md §4). */
+    val ammo: Int,
+    val magazine: Int,
+    /** True while a reload is in progress (weapon offline). */
+    val reloading: Boolean,
+    /** Reload progress 0→1 while [reloading]; 0 otherwise. */
+    val reloadFrac: Float,
     val wave: Int,
     val totalWaves: Int,
     /** Endless-mode loop/difficulty tier (0 = first loop). */
@@ -120,7 +127,16 @@ data class EnemyView(
     val facing: Vec2,
 )
 data class PickupView(val pos: Vec2, val kind: PickupKind)
-data class StructureView(val pos: Vec2, val type: StructureType, val healthFrac: Float, val aim: Vec2)
+data class StructureView(
+    val pos: Vec2,
+    val type: StructureType,
+    val healthFrac: Float,
+    val aim: Vec2,
+    /** True for engine-deployed auto-turrets; false for player-placed defenses. */
+    val artifactTurret: Boolean = false,
+    /** Auto-turret life remaining as a fraction of its lifespan (1 for permanent structures). */
+    val ttlFrac: Float = 1f,
+)
 data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
 data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)

@@ -41,6 +41,10 @@ class Player(
     var xpToNext: Float = 12f,
     var gold: Int = 0,
     var fireCooldown: Float = 0f,
+    /** Rounds left in the magazine. Refilled to [magazineSize] when a reload completes. */
+    var ammo: Int = 0,
+    /** Seconds left on an active reload; 0 = not reloading. Firing is held while > 0 (DESIGN.md §4). */
+    var reloadRemaining: Float = 0f,
     /** Current aim direction (unit), tracked every frame for the barrel/reticle. Visual + firing. */
     var aim: Vec2 = Vec2(1f, 0f),
     /** Seconds of remaining muzzle flash; set on each shot, decays each frame (visual only). */
@@ -62,8 +66,13 @@ class Player(
         return block
     }
 
+    /** The starting weapon's fixed magazine capacity (not a stat — reload *speed* is the artifact). */
+    val magazineSize: Int get() = weapon.magazineSize
+
     fun aimedDamage(stats: StatBlock): Float = stats.resolve(Stat.DAMAGE, Scope.AIMED)
     fun fireRate(stats: StatBlock): Float = stats.resolve(Stat.FIRE_RATE, Scope.AIMED).coerceAtLeast(0.1f)
+    /** Reload-speed multiplier (Autoloader raises it); effective reload = base seconds / this. */
+    fun reloadSpeed(stats: StatBlock): Float = stats.resolve(Stat.RELOAD_SPEED, Scope.AIMED).coerceAtLeast(0.1f)
     fun projectiles(stats: StatBlock): Int = stats.resolve(Stat.PROJECTILES, Scope.AIMED).toInt().coerceAtLeast(1)
     fun moveSpeed(stats: StatBlock): Float = stats.resolve(Stat.MOVE_SPEED, Scope.GLOBAL)
     fun pickupRadius(stats: StatBlock): Float = stats.resolve(Stat.PICKUP_RADIUS, Scope.GLOBAL)
@@ -143,8 +152,15 @@ class Structure(
     val maxHp: Float,
     var fireCooldown: Float = 0f,
     var aim: Vec2 = Vec2(1f, 0f),
+    /** True for engine-deployed auto-turrets (the Turret artifact); false for player-placed defenses. */
+    val artifactTurret: Boolean = false,
+    /** Seconds of life left. [Float.POSITIVE_INFINITY] for permanent placed defenses; finite for
+     *  auto-turrets, which expire when it runs out (DESIGN.md §4 — limited TTL). */
+    var ttl: Float = Float.POSITIVE_INFINITY,
+    /** Full lifespan the auto-turret was deployed with, for a fade-out as it ages (renderer only). */
+    val maxTtl: Float = Float.POSITIVE_INFINITY,
 ) {
-    val alive: Boolean get() = hp > 0f
+    val alive: Boolean get() = hp > 0f && ttl > 0f
 }
 
 class Pickup(

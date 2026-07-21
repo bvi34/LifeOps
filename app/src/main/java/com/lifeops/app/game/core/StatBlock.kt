@@ -19,6 +19,7 @@ enum class Scope { AIMED, AUTO, GLOBAL }
 enum class Stat {
     DAMAGE,          // per-hit damage
     FIRE_RATE,       // shots per second
+    RELOAD_SPEED,    // reload-speed multiplier (base 1.0; effective reload time = base / this)
     PROJECTILES,     // projectiles per shot (secretly multiplicative — DESIGN.md §5)
     PROJECTILE_SPEED,
     RANGE,
@@ -101,6 +102,7 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
         val DEFAULT_BASE: Map<Stat, Float> = mapOf(
             Stat.DAMAGE to 0f,
             Stat.FIRE_RATE to 1f,
+            Stat.RELOAD_SPEED to 1f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 320f,
             Stat.RANGE to 480f,

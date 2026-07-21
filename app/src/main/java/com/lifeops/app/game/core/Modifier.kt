@@ -9,6 +9,20 @@ package com.lifeops.app.game.core
 enum class AttachTarget { ENTITY, PLAYER, RUN_DIRECTOR }
 
 /**
+ * The two authored faces of an entity artifact (the level-up draft pool splits along this):
+ *
+ * - [COMBAT_EQUIPMENT] deploys an automatic weapon — the VS build layer (DESIGN.md §4). The turret
+ *   is the baseline example: its rank rows add [Stat.TURRET_COUNT], and the engine reads that stat
+ *   to keep that many auto-turrets deployed. Still "stat math only" (§5) — the behaviour is the
+ *   engine reading a stat, not code baked into the artifact.
+ * - [STAT_SUPPORT] does pure stat math on an existing weapon/entity (Overclock, Splitter, …).
+ *
+ * Challenge modes and other non-artifact modifiers leave this at its [STAT_SUPPORT] default; it is
+ * only consulted when a modifier is offered as a level-up artifact.
+ */
+enum class ArtifactCategory { COMBAT_EQUIPMENT, STAT_SUPPORT }
+
+/**
  * One authored modifier row. A baseline artifact is a set of these keyed by (id, rank): each rank
  * carries its own additive [contribution]. Rolling a duplicate raises the rank rather than
  * offering a dead pick (DESIGN.md §5). This is the seed table of the whole modifier system —
@@ -22,6 +36,8 @@ data class Modifier(
     val maxRank: Int,
     /** Additive stat contribution granted at each 1-based rank, index 0 == rank 1. */
     val rankContributions: List<StatContribution>,
+    /** Which draft face this artifact presents (DESIGN.md §5). Inert on non-artifact modifiers. */
+    val category: ArtifactCategory = ArtifactCategory.STAT_SUPPORT,
 ) {
     init {
         require(rankContributions.size == maxRank) {

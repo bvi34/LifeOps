@@ -22,13 +22,17 @@ class HitsTest {
 
     @Test
     fun playerLosesOneHeartPerHitThanksToIFrames() {
-        // Stationary with only three hearts, and waves far from any boss so contacts are 1-heart.
-        val e = RunEngine(config(hits = 3))
+        // Stationary with only three hearts, and waves far from any boss so contacts are 1-heart. A
+        // seed whose swarm reliably reaches the (stationary) player; level-up/overflow pauses are
+        // resolved so the loop keeps stepping until contact instead of halting on the first pick.
+        val e = RunEngine(config(hits = 3).copy(seed = 42L))
         var prev = e.snapshot().playerHits
         var maxDropPerFrame = 0
         var minHits = prev
         var frames = 0
-        while (e.status == RunStatus.RUNNING && frames < 3000) {
+        while (frames < 5000) {
+            resolvePauses(e)
+            if (e.status == RunStatus.DEFEAT || e.status == RunStatus.VICTORY) break
             e.step(1f / 60f, RunInput())
             frames++
             val h = e.snapshot().playerHits
