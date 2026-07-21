@@ -235,11 +235,16 @@ class RunEngine(
         xpToNext = player.xpToNext,
         gold = player.gold,
         ammo = player.ammo.coerceAtLeast(0),
-        magazine = player.magazineSize,
+        magazine = player.magazine(stats),
         reloading = player.reloadRemaining > 0f,
         reloadFrac = if (player.reloadRemaining > 0f && config.weapon.reloadSeconds > 0f)
             (1f - (player.reloadRemaining / (config.weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
         else 0f,
+        spinUp = config.weapon.spinUpAccel > 0f,
+        spinFrac = if (config.weapon.spinUpAccel > 0f) {
+            val ceiling = player.fireRate(stats)
+            ((effectiveFireRate() - config.weapon.spinUpFloor) / (ceiling - config.weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+        } else 0f,
         wave = wave + 1,
         totalWaves = config.waves,
         tier = tier,
@@ -586,24 +591,30 @@ class RunEngine(
 
     private fun fireWeapon(dt: Float, input: RunInput) {
         // Reload gate (DESIGN.md §4): while reloading, the weapon is offline. When it finishes, the
-        // magazine is refilled. Reload runs whether or not there is a target to shoot at.
+        // magazine is refilled. Reload runs whether or not there is a target to shoot at, and spins
+        // the Gatling back down.
         if (player.reloadRemaining > 0f) {
             player.reloadRemaining -= dt
             if (player.reloadRemaining <= 0f) {
                 player.reloadRemaining = 0f
-                player.ammo = player.magazineSize
+                player.ammo = player.magazine(stats)
             }
+            player.spin = 0f
             return
         }
 
         player.fireCooldown -= dt
+
+        // Empty magazine → auto-reload (no target needed to start the reload); spin resets.
+        if (player.ammo <= 0) { player.spin = 0f; beginReload(); return }
+
+        val aimDir = resolveAim(input)
+        if (aimDir == null) { player.spin = 0f; return } // disengaged → spin down ("reset on restart")
+
+        // Engaged this frame: wind the spin-up up (Gatling), then gate on the resulting cadence.
+        player.spin += dt
         if (player.fireCooldown > 0f) return
-
-        // Empty magazine → auto-reload (no target needed to start the reload).
-        if (player.ammo <= 0) { beginReload(); return }
-
-        val aimDir = resolveAim(input) ?: return // no target and no manual aim → hold fire
-        player.fireCooldown = 1f / player.fireRate(stats)
+        player.fireCooldown = 1f / effectiveFireRate()
         player.ammo -= 1 // one trigger-pull spends one round, however many projectiles it throws
 
         val count = player.projectiles(stats)
@@ -643,7 +654,7 @@ class RunEngine(
      * time taken is the weapon's base reload shortened by the Autoloader's RELOAD_SPEED multiplier.
      */
     private fun beginReload() {
-        if (player.reloadRemaining > 0f || player.ammo >= player.magazineSize) return
+        if (player.reloadRemaining > 0f || player.ammo >= player.magazine(stats)) return
         player.reloadRemaining = config.weapon.reloadSeconds / player.reloadSpeed(stats)
     }
 
@@ -651,6 +662,17 @@ class RunEngine(
     fun reload() {
         if (status != RunStatus.RUNNING) return
         beginReload()
+    }
+
+    /**
+     * The live fire rate. Flat for most weapons; for a spin-up weapon (Gatling) it ramps from
+     * [StartingWeapon.spinUpFloor] up toward the [Stat.FIRE_RATE] ceiling as [Player.spin] grows,
+     * so sustained fire accelerates and a pause resets it (DESIGN.md §4).
+     */
+    private fun effectiveFireRate(): Float {
+        val ceiling = player.fireRate(stats)
+        if (config.weapon.spinUpAccel <= 0f) return ceiling
+        return (config.weapon.spinUpFloor + config.weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
     }
 
     /** Track the aim direction every frame so the barrel/reticle follows the nearest target even

@@ -34,10 +34,19 @@ enum class StartingWeapon(
     val unlimitedRange: Boolean,
     /** Fan angle (radians) across a multi-projectile shot. Shotgun spreads wide; the rest stay tight. */
     val spread: Float,
-    /** Rounds per magazine before a reload is needed. One trigger-pull spends one round. */
+    /** Base rounds per magazine before a reload is needed. One trigger-pull spends one round. This is
+     *  the base of [Stat.MAGAZINE], which the Extended Mag artifact raises. */
     val magazineSize: Int,
     /** Base seconds to reload an empty magazine, before the [Stat.RELOAD_SPEED] multiplier (§4). */
     val reloadSeconds: Float,
+    /**
+     * Spin-up (DESIGN.md §4). When [spinUpAccel] > 0 the fire rate ramps during continuous fire: it
+     * starts at [spinUpFloor] shots/s and climbs [spinUpAccel] shots/s for every second engaged, up
+     * to the weapon's [Stat.FIRE_RATE] ceiling, and resets the moment fire stops (the Gatling's
+     * wind-up). Zero accel = a flat fire rate (Sniper, Shotgun).
+     */
+    val spinUpFloor: Float = 0f,
+    val spinUpAccel: Float = 0f,
 ) {
     SNIPER(
         displayName = "Sniper",
@@ -59,7 +68,7 @@ enum class StartingWeapon(
     ),
     GATLING(
         displayName = "Gatling",
-        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. DPS normalized across projectiles.",
+        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. Winds up: fire rate climbs the longer you hold fire, resets when you stop. DPS normalized across projectiles.",
         baseStats = mapOf(
             Stat.DAMAGE to 16f,
             Stat.FIRE_RATE to 7f,
@@ -74,6 +83,10 @@ enum class StartingWeapon(
         spread = 0.28f,
         magazineSize = 60,
         reloadSeconds = 2.3f,
+        // Winds up: 1 shot/s from a standstill, +2 shots/s for every second of sustained fire, up to
+        // the 7/s ceiling above (~3s to spin up); resets the instant it stops firing.
+        spinUpFloor = 1f,
+        spinUpAccel = 2f,
     ),
     SHOTGUN(
         displayName = "Shotgun",
@@ -94,7 +107,9 @@ enum class StartingWeapon(
         reloadSeconds = 1.9f,
     );
 
-    fun baseStatBlock(): StatBlock = StatBlock(baseStats)
+    // Magazine lives in the stat block (so Extended Mag can scale it) but its base is this weapon
+    // field — inject it here rather than duplicating the number in every baseStats map.
+    fun baseStatBlock(): StatBlock = StatBlock(baseStats + (Stat.MAGAZINE to magazineSize.toFloat()))
 }
 
 /**
@@ -159,6 +174,17 @@ object Artifacts {
         category = ArtifactCategory.STAT_SUPPORT,
     )
 
+    // Extended Mag (§4): +20% magazine capacity per rank, so you fire longer between reloads.
+    val EXTENDED_MAG = Modifier(
+        id = "extended_mag",
+        name = "Extended Mag",
+        description = "+20% magazine capacity per rank.",
+        attachesTo = AttachTarget.ENTITY,
+        maxRank = 4,
+        rankContributions = ranks(Stat.MAGAZINE, Scope.AIMED, 0.20f),
+        category = ArtifactCategory.STAT_SUPPORT,
+    )
+
     // --- Combat equipment -----------------------------------------------------------------------
 
     // The auto-turret (DESIGN.md §4/§5). Rank 1 deploys one auto-turret; ranks 2-4 each roll a
@@ -181,7 +207,7 @@ object Artifacts {
         category = ArtifactCategory.COMBAT_EQUIPMENT,
     )
 
-    val ALL: List<Modifier> = listOf(OVERCLOCK, AUTOLOADER, SPLITTER, ADRENALINE, TURRET)
+    val ALL: List<Modifier> = listOf(OVERCLOCK, AUTOLOADER, SPLITTER, ADRENALINE, EXTENDED_MAG, TURRET)
 
     /** The draft pool split by face, for the codex and any category-aware UI. */
     val COMBAT_EQUIPMENT: List<Modifier> = ALL.filter { it.category == ArtifactCategory.COMBAT_EQUIPMENT }

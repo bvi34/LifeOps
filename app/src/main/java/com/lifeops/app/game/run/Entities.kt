@@ -43,10 +43,12 @@ class Player(
     var xpToNext: Float = 12f,
     var gold: Int = 0,
     var fireCooldown: Float = 0f,
-    /** Rounds left in the magazine. Refilled to [magazineSize] when a reload completes. */
+    /** Rounds left in the magazine. Refilled to the resolved magazine when a reload completes. */
     var ammo: Int = 0,
     /** Seconds left on an active reload; 0 = not reloading. Firing is held while > 0 (DESIGN.md §4). */
     var reloadRemaining: Float = 0f,
+    /** Seconds of continuous engaged fire, for the Gatling's spin-up. Resets when fire stops (§4). */
+    var spin: Float = 0f,
     /** Current aim direction (unit), tracked every frame for the barrel/reticle. Visual + firing. */
     var aim: Vec2 = Vec2(1f, 0f),
     /** Seconds of remaining muzzle flash; set on each shot, decays each frame (visual only). */
@@ -71,10 +73,14 @@ class Player(
         return block
     }
 
-    /** The starting weapon's fixed magazine capacity (not a stat — reload *speed* is the artifact). */
+    /** The weapon's base magazine capacity (before the Extended Mag artifact scales it). */
     val magazineSize: Int get() = weapon.magazineSize
 
+    /** Resolved magazine capacity: the weapon base lifted by any Extended Mag ranks (DESIGN.md §4). */
+    fun magazine(stats: StatBlock): Int = stats.resolve(Stat.MAGAZINE, Scope.AIMED).toInt().coerceAtLeast(1)
+
     fun aimedDamage(stats: StatBlock): Float = stats.resolve(Stat.DAMAGE, Scope.AIMED)
+    /** The fire-rate ceiling; for the Gatling the live cadence spins up toward this (DESIGN.md §4). */
     fun fireRate(stats: StatBlock): Float = stats.resolve(Stat.FIRE_RATE, Scope.AIMED).coerceAtLeast(0.1f)
     /** Reload-speed multiplier (Autoloader raises it); effective reload = base seconds / this. */
     fun reloadSpeed(stats: StatBlock): Float = stats.resolve(Stat.RELOAD_SPEED, Scope.AIMED).coerceAtLeast(0.1f)

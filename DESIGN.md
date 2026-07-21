@@ -108,9 +108,12 @@ Two classes:
     auto-aim locks on anywhere on the field). Deletes elites, weak vs trash.
     Small magazine. Drafts toward swarm-clearing automatics.
   - **Gatling**: sustained stream, **medium range** (bullets expire at their
-    reach). Total DPS **normalized across projectile count** (more projectiles =
-    same DPS as more, smaller hits). Projectile ranks buy coverage/smoothness,
-    not throughput; damage% is its premium artifact. Large magazine.
+    reach). **Spins up**: the fire rate starts low and climbs the longer you hold
+    continuous fire (1 shot/s + 2/s per second engaged, up to its `FIRE_RATE`
+    ceiling), and **resets the moment fire stops** — reward for sustained bursts.
+    Total DPS **normalized across projectile count** (more projectiles = same DPS
+    as more, smaller hits). Projectile ranks buy coverage/smoothness, not
+    throughput; damage% is its premium artifact. Large magazine.
   - ⚠️ Note in the gatling weapon def: DPS-normalization is a baseline-era
     truce. Any future per-hit proc modifier (on-hit heal, on-hit chance) scales
     with hit count and makes the gatling the proc platform. Price Phase-2
@@ -118,12 +121,13 @@ Two classes:
   - **Shotgun**: a **short-range** cone of pellets — devastating up close,
     useless at distance. Each pellet hits full (not DPS-normalized). Small
     magazine, wide spread.
-- **Magazine + reload.** Every starting weapon fires from a fixed-size magazine;
-  one trigger-pull spends one round however many projectiles it throws. Emptying
-  the magazine **auto-reloads**; the player can also **reload on demand**. Reload
-  time is the weapon's base reload divided by the `RELOAD_SPEED` stat — the
-  **Autoloader** artifact is what raises it (shorter reloads), so Autoloader is
-  now a *reload* artifact, not a raw fire-rate one.
+- **Magazine + reload.** Every starting weapon fires from a magazine sized by the
+  `MAGAZINE` stat (weapon base, raised by the **Extended Mag** artifact at +20%
+  per rank); one trigger-pull spends one round however many projectiles it
+  throws. Emptying the magazine **auto-reloads**; the player can also **reload on
+  demand**. Reload time is the weapon's base reload divided by the `RELOAD_SPEED`
+  stat — the **Autoloader** artifact raises it (shorter reloads), so Autoloader
+  is now a *reload* artifact, not a raw fire-rate one.
 - **Artifact weapons — automatic.** The VS build layer. Run themselves; player
   attention stays on one aim stick. The baseline example is the **turret**: it
   is the [`Turret` combat-equipment artifact](#5-artifacts-baseline-pool-2-faces),
@@ -141,9 +145,9 @@ Rolled as choices on level-up. Every artifact carries a **category** so the
 draft (and the codex) reads as two faces:
 
 - **Stat support** — pure stat math on the weapon/entity you already carry.
-  Four of them (Overclock damage, Autoloader reload speed, Splitter projectiles,
-  Adrenaline move speed), each with **4 pure-additive stacking ranks** (e.g.
-  +10% → +20% → +30% → +40%).
+  Five of them (Overclock damage, Autoloader reload speed, Splitter projectiles,
+  Adrenaline move speed, Extended Mag magazine size), each with **4 pure-additive
+  stacking ranks** (e.g. +10% → +20% → +30% → +40%).
 - **Combat equipment** — deploys an **automatic weapon**. The baseline example
   is the **Turret** (4 ranks): rank 1 deploys one auto-turret (`TURRET_COUNT`,
   AUTO scope), kept near the player with a limited TTL; ranks 2–4 each roll a

@@ -18,8 +18,9 @@ enum class Scope { AIMED, AUTO, GLOBAL }
  */
 enum class Stat {
     DAMAGE,          // per-hit damage
-    FIRE_RATE,       // shots per second
+    FIRE_RATE,       // shots per second (for the Gatling this is the spin-up ceiling — DESIGN.md §4)
     RELOAD_SPEED,    // reload-speed multiplier (base 1.0; effective reload time = base / this)
+    MAGAZINE,        // rounds per magazine (Extended Mag raises it — DESIGN.md §4)
     PROJECTILES,     // projectiles per shot (secretly multiplicative — DESIGN.md §5)
     PROJECTILE_SPEED,
     RANGE,
@@ -103,6 +104,7 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.DAMAGE to 0f,
             Stat.FIRE_RATE to 1f,
             Stat.RELOAD_SPEED to 1f,
+            Stat.MAGAZINE to 10f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 320f,
             Stat.RANGE to 480f,

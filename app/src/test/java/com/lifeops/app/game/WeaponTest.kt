@@ -71,6 +71,36 @@ class WeaponTest {
     }
 
     @Test
+    fun gatlingWindsUpDuringSustainedFire() {
+        val e = RunEngine(config(StartingWeapon.GATLING))
+        // Fire continuously; record the frame of each shot (ammo ticking down) within the first mag.
+        var prevAmmo = e.snapshot().ammo
+        val shotFrames = ArrayList<Int>()
+        var f = 0
+        while (f < 600 && shotFrames.size < 12) {
+            e.step(1f / 60f, fireInput); f++
+            if (e.snapshot().reloading) break
+            val a = e.snapshot().ammo
+            if (a < prevAmmo) shotFrames.add(f)
+            prevAmmo = a
+        }
+        assertTrue("need several shots to compare cadence", shotFrames.size >= 6)
+        val earlyGap = shotFrames[1] - shotFrames[0]
+        val lateGap = shotFrames[shotFrames.size - 1] - shotFrames[shotFrames.size - 2]
+        assertTrue("the Gatling fires faster once wound up (early $earlyGap > late $lateGap)", earlyGap > lateGap)
+    }
+
+    @Test
+    fun gatlingSpinResetsOnReload() {
+        val e = RunEngine(config(StartingWeapon.GATLING))
+        repeat(180) { e.step(1f / 60f, fireInput) } // ~3s sustained fire → fully wound up
+        assertTrue("should have wound up", e.snapshot().spinFrac > 0.5f)
+        e.reload()
+        e.step(1f / 60f, fireInput)
+        assertEquals("reloading spins it back down", 0f, e.snapshot().spinFrac, 0.001f)
+    }
+
+    @Test
     fun shotRangeIsShortForShotgunMediumForGatlingUnlimitedForSniper() {
         val shotgun = firstShotLife(StartingWeapon.SHOTGUN)  // 210 / 380 ≈ 0.55s
         val gatling = firstShotLife(StartingWeapon.GATLING)  // 460 / 420 ≈ 1.10s

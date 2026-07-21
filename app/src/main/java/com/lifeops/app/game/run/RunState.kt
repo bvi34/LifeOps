@@ -86,6 +86,10 @@ data class RunSnapshot(
     val reloading: Boolean,
     /** Reload progress 0→1 while [reloading]; 0 otherwise. */
     val reloadFrac: Float,
+    /** True if the weapon spins up (Gatling). */
+    val spinUp: Boolean,
+    /** Spin-up progress 0→1 (floor→ceiling fire rate) for a spin-up weapon; 0 otherwise. */
+    val spinFrac: Float,
     val wave: Int,
     val totalWaves: Int,
     /** Endless-mode loop/difficulty tier (0 = first loop). */

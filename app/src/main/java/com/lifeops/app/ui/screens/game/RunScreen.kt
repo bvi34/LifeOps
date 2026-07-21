@@ -638,6 +638,11 @@ private fun RunHud(snapshot: RunSnapshot, modifier: Modifier = Modifier) {
             color = if (snapshot.reloading) MUZZLE_COLOR else AMMO_COLOR,
             label = if (snapshot.reloading) "Reloading…" else "Ammo ${snapshot.ammo}/${snapshot.magazine}"
         )
+        // Spin-up bar (Gatling): shows the fire-rate wind-up while engaged.
+        if (snapshot.spinUp && snapshot.spinFrac > 0.01f) {
+            Spacer(Modifier.height(4.dp))
+            Meter(fraction = snapshot.spinFrac, color = SPIN_COLOR, label = "Spin ${(snapshot.spinFrac * 100).toInt()}%")
+        }
         if (snapshot.held.isNotEmpty()) {
             Spacer(Modifier.height(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -916,3 +921,4 @@ private val BOSS_COLOR = Color(0xFFAB47BC)
 private val MUZZLE_COLOR = Color(0xFFFFF59D)
 private val HURT_FLASH_COLOR = Color(0xFFEF5350)
 private val AMMO_COLOR = Color(0xFF90A4AE)
+private val SPIN_COLOR = Color(0xFFFFB300)

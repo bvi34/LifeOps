@@ -13,12 +13,20 @@ class ArtifactsTest {
 
     @Test
     fun poolSplitsIntoStatSupportAndCombatEquipment() {
-        // Four stat-support artifacts (4 ranks each) + the Turret combat-equipment artifact.
-        assertEquals(4, Artifacts.STAT_SUPPORT.size)
+        // Five stat-support artifacts (4 ranks each) + the Turret combat-equipment artifact.
+        assertEquals(5, Artifacts.STAT_SUPPORT.size)
         assertTrue(Artifacts.STAT_SUPPORT.all { it.maxRank == 4 })
         assertEquals(1, Artifacts.COMBAT_EQUIPMENT.size)
         assertEquals(Artifacts.STAT_SUPPORT + Artifacts.COMBAT_EQUIPMENT, Artifacts.ALL)
         assertEquals(ArtifactCategory.COMBAT_EQUIPMENT, Artifacts.TURRET.category)
+    }
+
+    @Test
+    fun extendedMagRaisesMagazineCapacity() {
+        // Extended Mag: +20% magazine per rank. Gatling base 60 → +40% at rank 2 = 84.
+        val block = StartingWeapon.GATLING.baseStatBlock()
+        block.addAll(Artifacts.EXTENDED_MAG.contributionsAt(2))
+        assertEquals(84f, block.resolve(Stat.MAGAZINE, Scope.AIMED), 0.01f)
     }
 
     @Test

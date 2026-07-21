@@ -106,10 +106,16 @@ class VisualStateTest {
 
     @Test
     fun playerHurtFlashesWhenTouched() {
+        // Stationary: enemies reach the player and deal touch damage. Resolve level-up pauses so the
+        // sim keeps running until a contact lands (leveling can pause it before the first touch).
         val e = RunEngine(cfg())
         var hurt = false
-        repeat(900) {
-            e.step(1f / 60f, RunInput()) // stationary: enemies reach the player and deal touch damage
+        var f = 0
+        while (f < 2000 && !hurt) {
+            resolvePauses(e)
+            if (e.snapshot().status == RunStatus.DEFEAT || e.snapshot().status == RunStatus.VICTORY) break
+            e.step(1f / 60f, RunInput())
+            f++
             if (e.snapshot().playerHurtFrac > 0f) hurt = true
         }
         assertTrue("the player should flash when taking touch damage", hurt)
