@@ -271,32 +271,34 @@ enum class EnemyType(
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
 ) {
-    // Trash: cheap, fast, swarms — dies to one shot. Deals one heart. Stingy drops (25% / 5%).
-    SHAMBLER("Shambler", maxHealth = 8f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1,
+    // Trash: cheap, fast, swarms. Tuned to 20 HP so the Gatling's base 16-damage shot needs two hits
+    // (a Sniper still one-shots it). Deals one heart. Stingy drops (25% / 5%). Every other enemy's HP
+    // is pulled up by the same ×2.5 so the difficulty curve keeps its shape.
+    SHAMBLER("Shambler", maxHealth = 20f, moveSpeed = 48f, contactHits = 1, radius = 13f, xpValue = 3, goldValue = 1,
         unlockTier = 0, spawnWeight = 10),
     // Elite: tanky, takes several shots. Still one heart on contact. Pays out more often.
-    HUSK("Husk", maxHealth = 70f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4,
+    HUSK("Husk", maxHealth = 175f, moveSpeed = 34f, contactHits = 1, radius = 18f, xpValue = 10, goldValue = 4,
         xpDropChance = 0.6f, goldDropChance = 0.3f, unlockTier = 0, spawnWeight = 3),
     // Ranged (tier 2+): hangs back and fires bursts — three quick spits, then a long recovery.
-    SPITTER("Spitter", maxHealth = 24f, moveSpeed = 30f, contactHits = 1, radius = 15f, xpValue = 8, goldValue = 3,
+    SPITTER("Spitter", maxHealth = 60f, moveSpeed = 30f, contactHits = 1, radius = 15f, xpValue = 8, goldValue = 3,
         xpDropChance = 0.6f, goldDropChance = 0.3f,
         unlockTier = 1, spawnWeight = 3, fireRate = 6f, burstCount = 3, burstCooldown = 2.4f, range = 320f, projectileSpeed = 300f),
     // Rusher (tier 3+): fast, fragile trash — punishes standing still. Stingy like the Shambler.
-    RUSHER("Rusher", maxHealth = 6f, moveSpeed = 92f, contactHits = 1, radius = 11f, xpValue = 5, goldValue = 1,
+    RUSHER("Rusher", maxHealth = 15f, moveSpeed = 92f, contactHits = 1, radius = 11f, xpValue = 5, goldValue = 1,
         unlockTier = 2, spawnWeight = 5),
     // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine. Rich drops.
-    BRUTE("Brute", maxHealth = 150f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
+    BRUTE("Brute", maxHealth = 375f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
         xpDropChance = 0.85f, goldDropChance = 0.5f, unlockTier = 3, spawnWeight = 2),
 
     // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
     // Tier 1: the original heavy melee sponge. A contact costs three hearts.
-    ABOMINATION("Abomination", maxHealth = 900f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40,
+    ABOMINATION("Abomination", maxHealth = 2250f, moveSpeed = 28f, contactHits = 3, radius = 34f, xpValue = 80, goldValue = 40,
         isBoss = true, unlockTier = 0),
     // Tier 2: a ranged boss that fires without pause — a relentless stream, not bursts.
-    SPITTER_BOSS("Spitter Boss", maxHealth = 620f, moveSpeed = 26f, contactHits = 3, radius = 30f, xpValue = 70, goldValue = 34,
+    SPITTER_BOSS("Spitter Boss", maxHealth = 1550f, moveSpeed = 26f, contactHits = 3, radius = 30f, xpValue = 70, goldValue = 34,
         isBoss = true, unlockTier = 1, fireRate = 5f, burstCount = 100000, burstCooldown = 0f, range = 400f, projectileSpeed = 320f),
     // Tier 3: a swarm of fast, dangerous rusher-bosses that arrive together.
-    RUSHER_BOSS("Rusher Swarm", maxHealth = 240f, moveSpeed = 80f, contactHits = 2, radius = 22f, xpValue = 40, goldValue = 16,
+    RUSHER_BOSS("Rusher Swarm", maxHealth = 600f, moveSpeed = 80f, contactHits = 2, radius = 22f, xpValue = 40, goldValue = 16,
         isBoss = true, unlockTier = 2, bossCount = 3),
     ;
 
