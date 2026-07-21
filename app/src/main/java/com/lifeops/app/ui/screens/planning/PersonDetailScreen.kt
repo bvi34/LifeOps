@@ -22,12 +22,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.PersonNote
 import com.lifeops.app.data.model.SunSensitivity
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
+import com.lifeops.app.ui.components.BusyBlockEditorDialog
+import com.lifeops.app.ui.components.BusyBlockRow
 import com.lifeops.app.util.DateUtil
 
 @Composable
@@ -41,6 +44,8 @@ fun PersonDetailScreen(
     var editing by remember { mutableStateOf(false) }
     var attaching by remember { mutableStateOf(false) }
     var confirmingDelete by remember { mutableStateOf(false) }
+    var addingBlock by remember { mutableStateOf(false) }
+    var editingBlock by remember { mutableStateOf<BusyBlock?>(null) }
 
     Scaffold(
         topBar = { AppHeader(navigationIcon = { BackNavIcon(onBack) }) }
@@ -86,6 +91,35 @@ fun PersonDetailScreen(
                 }
             }
 
+            item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    SectionHeader("Schedule")
+                    TextButton(onClick = { addingBlock = true }) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add")
+                    }
+                }
+            }
+            item {
+                EmptyLine("Busy times block ${person.name} from outdoor-task suggestions during those hours.")
+            }
+            if (state.schedule.isEmpty()) {
+                item { EmptyLine("No busy times yet.") }
+            } else {
+                items(state.schedule, key = { it.id }) { block ->
+                    BusyBlockRow(
+                        block = block,
+                        onEdit = { editingBlock = block },
+                        onDelete = { viewModel.deleteBusyBlock(block.id) }
+                    )
+                }
+            }
+
             item { SectionHeader("Notes") }
             item { AddNoteField(onAdd = { viewModel.addNote(it) }) }
             if (state.notes.isEmpty()) {
@@ -128,6 +162,18 @@ fun PersonDetailScreen(
             candidates = state.weekTasks.filter { it.id !in involvedIds },
             onAttach = { taskId -> viewModel.attachTask(taskId) },
             onDismiss = { attaching = false }
+        )
+    }
+
+    if ((addingBlock || editingBlock != null) && person != null) {
+        BusyBlockEditorDialog(
+            existing = editingBlock,
+            personId = person.id,
+            onSave = { block ->
+                viewModel.saveBusyBlock(block)
+                addingBlock = false; editingBlock = null
+            },
+            onDismiss = { addingBlock = false; editingBlock = null }
         )
     }
 

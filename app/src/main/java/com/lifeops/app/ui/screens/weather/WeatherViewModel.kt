@@ -4,17 +4,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.ActivityTemplate
+import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskWeatherRequirement
 import com.lifeops.app.data.model.WeatherLocation
 import com.lifeops.app.data.model.WeatherReport
 import com.lifeops.app.data.repository.ActivityTemplateRepository
+import com.lifeops.app.data.repository.BusyBlockRepository
 import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.WeatherRepository
 import com.lifeops.app.data.repository.WeekRepository
 import com.lifeops.app.util.BestTime
+import com.lifeops.app.util.BusyBlocks
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.OutdoorAssessment
 import com.lifeops.app.util.OutdoorScore
@@ -40,6 +43,7 @@ data class WeatherUiState(
     val requirements: Map<String, TaskWeatherRequirement> = emptyMap(),
     val people: List<Person> = emptyList(),
     val taskPeople: Map<String, List<String>> = emptyMap(),
+    val busyBlocks: List<BusyBlock> = emptyList(),
     val activityTemplates: List<ActivityTemplate> = emptyList(),
     val isRefreshing: Boolean = false,
     val message: String? = null,
@@ -53,7 +57,8 @@ class WeatherViewModel(
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val personRepository: PersonRepository,
-    private val activityTemplateRepository: ActivityTemplateRepository
+    private val activityTemplateRepository: ActivityTemplateRepository,
+    private val busyBlockRepository: BusyBlockRepository
 ) : ViewModel() {
 
     private val selectedId = MutableStateFlow<String?>(null)
@@ -102,6 +107,11 @@ class WeatherViewModel(
                 _uiState.update { it.copy(activityTemplates = templates) }
             }
         }
+        viewModelScope.launch {
+            busyBlockRepository.observeAll().collect { blocks ->
+                _uiState.update { it.copy(busyBlocks = blocks) }; recompute()
+            }
+        }
     }
 
     /** Recompute the outdoor rating, best-window, and cards from the current cached state. */
@@ -115,8 +125,13 @@ class WeatherViewModel(
         val assessment = OutdoorScore.forCurrent(report.current, report.alerts)
         val dayPeriods = report.daily.filter { it.isDaytime }
 
+        // The user's own schedule gates every window; a task also inherits the schedules of the
+        // people it involves, so a "best time with Person" must clear weather AND everyone's time.
+        val myBlocks = s.busyBlocks.filter { it.personId == null }
+        val myBusyLabels = BusyBlocks.conflictingPeriodNames(myBlocks, dayPeriods)
+
         val generalBest = if (dayPeriods.isNotEmpty()) {
-            BestTime.best(TaskWeatherRequirement(taskId = ""), dayPeriods)?.label
+            BestTime.best(TaskWeatherRequirement(taskId = ""), dayPeriods, busyLabels = myBusyLabels)?.label
         } else null
 
         val taskCards = s.weekTasks.mapNotNull { task ->
@@ -124,7 +139,9 @@ class WeatherViewModel(
             if (!req.outdoorPreferred) return@mapNotNull null
             val involvedIds = s.taskPeople[task.id] ?: emptyList()
             val involvedPeople = s.people.filter { it.id in involvedIds }
-            val window = BestTime.best(req, dayPeriods, involvedPeople) ?: return@mapNotNull null
+            val relevantBlocks = myBlocks + s.busyBlocks.filter { it.personId in involvedIds }
+            val busyLabels = BusyBlocks.conflictingPeriodNames(relevantBlocks, dayPeriods)
+            val window = BestTime.best(req, dayPeriods, involvedPeople, busyLabels) ?: return@mapNotNull null
             WeatherCard.TaskRecommendation(
                 taskTitle = task.title,
                 windowLabel = window.label,
@@ -220,11 +237,13 @@ class WeatherViewModelFactory(
     private val weekRepository: WeekRepository,
     private val taskRepository: TaskRepository,
     private val personRepository: PersonRepository,
-    private val activityTemplateRepository: ActivityTemplateRepository
+    private val activityTemplateRepository: ActivityTemplateRepository,
+    private val busyBlockRepository: BusyBlockRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         WeatherViewModel(
-            weatherRepository, weekRepository, taskRepository, personRepository, activityTemplateRepository
+            weatherRepository, weekRepository, taskRepository, personRepository, activityTemplateRepository,
+            busyBlockRepository
         ) as T
 }

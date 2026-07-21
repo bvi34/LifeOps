@@ -43,6 +43,9 @@ fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtask
 fun TaskAttachmentEntity.toModel() = TaskAttachment(id, taskId, imageData, caption, createdAt)
 fun TaskAttachment.toEntity() = TaskAttachmentEntity(id, taskId, imageData, caption, createdAt)
 
+fun BusyBlockEntity.toModel() = BusyBlock(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt)
+fun BusyBlock.toEntity() = BusyBlockEntity(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt)
+
 fun TimeEntryEntity.toModel() = TimeEntry(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 fun TimeEntry.toEntity() = TimeEntryEntity(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 

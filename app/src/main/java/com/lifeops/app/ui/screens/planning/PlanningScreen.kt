@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.LocalActivity
 import androidx.compose.material.icons.filled.MenuBook
@@ -40,6 +41,7 @@ fun PlanningScreen(
     onOpenPeople: () -> Unit,
     onOpenWeather: () -> Unit,
     onOpenActivities: () -> Unit,
+    onOpenCalendar: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -49,6 +51,14 @@ fun PlanningScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                HubCard(
+                    title = "Calendar",
+                    subtitle = "Your week, busy times & free/busy for planning",
+                    icon = Icons.Default.CalendarMonth,
+                    onClick = onOpenCalendar
+                )
+            }
             item {
                 HubCard(
                     title = "Future Tasks",

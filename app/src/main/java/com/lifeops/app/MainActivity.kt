@@ -285,8 +285,17 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenCostResources = { navController.navigate("cost_resources") },
                         onOpenPeople = { navController.navigate("people") },
                         onOpenWeather = { navController.navigate("weather") },
-                        onOpenActivities = { navController.navigate("activities") }
+                        onOpenActivities = { navController.navigate("activities") },
+                        onOpenCalendar = { navController.navigate("calendar") }
                     )
+                }
+                composable("calendar") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.CalendarViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.CalendarViewModelFactory(
+                            app.busyBlockRepository, app.taskRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.CalendarScreen(vm) { navController.navigateUp() }
                 }
                 composable("future_tasks") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.FutureTasksViewModel>(
@@ -347,7 +356,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.PersonDetailViewModel>(
                         key = "person_detail_$personId",
                         factory = PersonDetailViewModelFactory(
-                            personId, app.personRepository, app.weekRepository, app.taskRepository
+                            personId, app.personRepository, app.weekRepository, app.taskRepository,
+                            app.busyBlockRepository
                         )
                     )
                     PersonDetailScreen(vm) { navController.navigateUp() }
@@ -356,7 +366,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     val vm = viewModel<com.lifeops.app.ui.screens.weather.WeatherViewModel>(
                         factory = WeatherViewModelFactory(
                             app.weatherRepository, app.weekRepository, app.taskRepository,
-                            app.personRepository, app.activityTemplateRepository
+                            app.personRepository, app.activityTemplateRepository, app.busyBlockRepository
                         )
                     )
                     WeatherScreen(vm) { navController.navigateUp() }

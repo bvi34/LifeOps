@@ -90,6 +90,20 @@ data class Task(
     val recurrenceDayOfMonth: Int? = null
 )
 
+data class BusyBlock(
+    val id: String,
+    val title: String,
+    val startMinutes: Int,
+    val endMinutes: Int,
+    // Weekly recurrence bitmask (bit 0 = Monday … bit 6 = Sunday); 0 when one-off.
+    val daysMask: Int,
+    // yyyy-MM-dd for a one-off block; null = weekly-recurring via daysMask.
+    val specificDate: String? = null,
+    // null = the user's own schedule; otherwise the person whose schedule this belongs to.
+    val personId: String? = null,
+    val createdAt: String
+)
+
 data class TaskAttachment(
     val id: String,
     val taskId: String,

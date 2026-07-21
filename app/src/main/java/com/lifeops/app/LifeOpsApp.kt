@@ -33,6 +33,7 @@ class LifeOpsApp : Application() {
     val gameScoreRepository by lazy { GameScoreRepository(database.gameScoreDao()) }
     val taskNoteRepository by lazy { TaskNoteRepository(database.taskNoteDao()) }
     val taskAttachmentRepository by lazy { TaskAttachmentRepository(database.taskAttachmentDao()) }
+    val busyBlockRepository by lazy { BusyBlockRepository(database.busyBlockDao()) }
     val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
     val preferencesRepository by lazy { PreferencesRepository(this) }
     val notificationRepository by lazy {
