@@ -19,15 +19,16 @@ import com.lifeops.app.data.repository.WellnessRepository
  * or a daytime check-in. Rendered once, above the nav content, so a prompt can appear on any screen.
  */
 @Composable
-fun WellnessPromptHost(repo: WellnessRepository) {
+fun WellnessPromptHost(repo: WellnessRepository, enabled: Boolean = true) {
     val vm: WellnessPromptViewModel = viewModel(factory = WellnessPromptViewModelFactory(repo))
     val state by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, enabled) {
+        // Gated on [enabled] so a wellness prompt never stacks over the first-launch welcome dialog.
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) vm.evaluate()
+            if (enabled && event == Lifecycle.Event.ON_RESUME) vm.evaluate()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

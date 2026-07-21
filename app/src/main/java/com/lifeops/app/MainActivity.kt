@@ -120,7 +120,10 @@ class MainActivity : ComponentActivity() {
                 LifeOpsNavHost(app, sharedText)
                 // Above the nav content so an energy/sensory check-in or the morning sleep prompt
                 // can surface on whatever screen the app opened to.
-                com.lifeops.app.ui.screens.wellness.WellnessPromptHost(app.wellnessRepository)
+                com.lifeops.app.ui.screens.wellness.WellnessPromptHost(
+                    app.wellnessRepository,
+                    enabled = app.preferencesRepository.onboardingShown
+                )
                 var showWelcome by remember { mutableStateOf(!app.preferencesRepository.onboardingShown) }
                 if (showWelcome) {
                     WelcomeDialog(onDismiss = {

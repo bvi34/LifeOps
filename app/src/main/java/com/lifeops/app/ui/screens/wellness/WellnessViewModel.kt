@@ -63,6 +63,11 @@ class WellnessViewModel(
         }
     }
 
+    /** Log a check-in on demand (the report's "+" — not tied to a scheduled slot). */
+    fun logCheckin(energy: Int, sensory: Int, why: String) {
+        viewModelScope.launch { repo.logCheckin(energy, sensory, why) }
+    }
+
     private fun aggregate(entries: List<WellnessCheckin>): WellnessReportState {
         val byDay = entries.groupBy { it.dayKey }
         val days = byDay.keys.sortedDescending().map { dayKey -> dailyFor(dayKey, byDay.getValue(dayKey)) }

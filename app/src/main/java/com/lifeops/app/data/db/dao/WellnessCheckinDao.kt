@@ -23,4 +23,8 @@ interface WellnessCheckinDao {
 
     @Query("SELECT * FROM wellness_checkins WHERE dayKey = :dayKey ORDER BY recordedAt ASC")
     suspend fun getForDay(dayKey: String): List<WellnessCheckinEntity>
+
+    /** Full-table snapshot for backup export. */
+    @Query("SELECT * FROM wellness_checkins ORDER BY recordedAt ASC")
+    suspend fun getAll(): List<WellnessCheckinEntity>
 }

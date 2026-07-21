@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 11,
+    val version: Int = 12,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -50,6 +50,8 @@ private data class BackupData(
     val activityTemplates: List<ActivityTemplateEntity> = emptyList(),
     // v11: learned manual overrides of activity defaults.
     val activityOverrides: List<ActivityOverrideEntity> = emptyList(),
+    // v12: wellness check-ins (daytime energy/sensory + morning sleep reports). Standalone, no FK.
+    val wellnessCheckins: List<WellnessCheckinEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -83,6 +85,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             taskWeatherRequirements = db.weatherDao().getAllRequirements(),
             activityTemplates = db.activityTemplateDao().getAll(),
             activityOverrides = db.activityTemplateDao().getAllOverrides(),
+            wellnessCheckins = db.wellnessCheckinDao().getAll(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -161,6 +164,8 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 // Saved activities (standalone, no FKs).
                 for (at in data.activityTemplates) db.activityTemplateDao().upsert(at)
                 for (ao in data.activityOverrides) db.activityTemplateDao().insertOverride(ao)
+                // Wellness check-ins (standalone, no FKs). REPLACE on id makes re-restore idempotent.
+                for (wc in data.wellnessCheckins) db.wellnessCheckinDao().insert(wc)
                 // Backups written before v7 carried one long-form content blob per future
                 // project; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring
