@@ -1,28 +1,55 @@
 package com.lifeops.app.game.content
 
 /**
- * Player-buildable defenses (the "yet another zombie defense" layer). Authored as data: cost, HP,
- * whether it blocks enemy movement, and — for turrets — its auto-fire stats. Placed on the arena
- * grid, permanent for the run, and destructible (enemies attack them). Adding a defense is a row.
+ * Structures on the arena grid (the "yet another zombie defense" layer). Authored as data: cost, HP,
+ * whether it blocks enemy movement + shots, and — for turrets — its auto-fire stats. Three kinds,
+ * two acquisition paths:
+ *
+ * - **Barricade** — bought with gold ([buildable]), a blocking wall that stops enemies and soaks
+ *   enemy fire (§7).
+ * - **Sentry** — bought with gold ([buildable]), a *static* auto-turret: place it and it stays put,
+ *   blocks, and fires on its own fixed stats (independent of your build).
+ * - **Turret** — *not* buildable: it is the [Artifacts.TURRET] combat-equipment artifact (§4/§5),
+ *   auto-deployed near the player on a cooldown with a limited TTL, then expiring. Non-blocking
+ *   fire support; its stats are the turret base rows boosted by AUTO-scope artifacts.
+ *
+ * Adding a defense is a row.
  */
 enum class StructureType(
     val displayName: String,
     val cost: Int,
     val maxHp: Float,
-    /** Whether enemies are blocked by (and attack) this structure. */
+    /** Whether enemies are blocked by (and attack) this structure, and its cell stops enemy shots. */
     val blocks: Boolean,
+    /** Whether the player can buy + place this from the build palette (false → engine-deployed only). */
+    val buildable: Boolean,
     // Turret auto-fire stats (zero/unused for non-turrets).
     val damage: Float = 0f,
     val fireRate: Float = 0f,
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
 ) {
-    // Durability is measured in hits now: a turret falls to one enemy blow, a barricade takes three.
+    // Durability is measured in hits: a turret falls to one enemy blow, a barricade takes three.
+    // The auto-turret does not block — it is fragile fire support that expires on its TTL, not a wall,
+    // so it never boxes the player in.
     TURRET(
         displayName = "Turret",
-        cost = 25,
+        cost = 0,
         maxHp = 1f,
+        blocks = false,
+        buildable = false,
+        damage = 14f,
+        fireRate = 3f,
+        range = 260f,
+        projectileSpeed = 460f,
+    ),
+    // Static gold turret: permanent, blocks, and shoots on its own stats — doesn't follow the player.
+    SENTRY(
+        displayName = "Sentry",
+        cost = 25,
+        maxHp = 2f,
         blocks = true,
+        buildable = true,
         damage = 14f,
         fireRate = 3f,
         range = 260f,
@@ -33,6 +60,7 @@ enum class StructureType(
         cost = 10,
         maxHp = 3f,
         blocks = true,
+        buildable = true,
     );
 
     val isTurret: Boolean get() = fireRate > 0f

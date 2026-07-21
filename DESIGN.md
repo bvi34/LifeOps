@@ -101,20 +101,37 @@ tables are designable content rows, not code.
 
 Two classes:
 
-- **Starting weapon — player-aimed.** The SAS skill layer. Two unlocks:
-  - **Sniper**: burst / precision / single-target. Deletes elites, weak vs
-    trash. Drafts toward swarm-clearing automatics.
-  - **Gatling**: sustained stream, total DPS **normalized across projectile
-    count** (more projectiles = same DPS as more, smaller hits). Projectile
-    ranks buy coverage/smoothness, not throughput; damage% is its premium
-    artifact.
+- **Starting weapon — player-aimed.** The SAS skill layer. Three unlocks, each
+  with a distinct **range** and a **magazine + reload** cadence:
+  - **Sniper**: burst / precision / single-target. **Unlimited range** — its
+    shots never fall short (they fly until they hit or leave the arena, and
+    auto-aim locks on anywhere on the field). Deletes elites, weak vs trash.
+    Small magazine. Drafts toward swarm-clearing automatics.
+  - **Gatling**: sustained stream, **medium range** (bullets expire at their
+    reach). **Spins up**: the fire rate starts low and climbs the longer you hold
+    continuous fire (1 shot/s + 2/s per second engaged, up to its `FIRE_RATE`
+    ceiling), and **resets the moment fire stops** — reward for sustained bursts.
+    Total DPS **normalized across projectile count** (more projectiles = same DPS
+    as more, smaller hits). Projectile ranks buy coverage/smoothness, not
+    throughput; damage% is its premium artifact. Large magazine.
   - ⚠️ Note in the gatling weapon def: DPS-normalization is a baseline-era
     truce. Any future per-hit proc modifier (on-hit heal, on-hit chance) scales
     with hit count and makes the gatling the proc platform. Price Phase-2
     on-hit modifiers with the gatling in mind.
+  - **Shotgun**: a **short-range** cone of pellets — devastating up close,
+    useless at distance. Each pellet hits full (not DPS-normalized). Small
+    magazine, wide spread.
+- **Magazine + reload.** Every starting weapon fires from a magazine sized by the
+  `MAGAZINE` stat (weapon base, raised by the **Extended Mag** artifact at +20%
+  per rank); one trigger-pull spends one round however many projectiles it
+  throws. Emptying the magazine **auto-reloads**; the player can also **reload on
+  demand**. Reload time is the weapon's base reload divided by the `RELOAD_SPEED`
+  stat — the **Autoloader** artifact raises it (shorter reloads), so Autoloader
+  is now a *reload* artifact, not a raw fire-rate one.
 - **Artifact weapons — automatic.** The VS build layer. Run themselves; player
-  attention stays on one aim stick. Example: auto-deployed turret on cooldown
-  with limited TTL.
+  attention stays on one aim stick. The baseline example is the **turret**: it
+  is the [`Turret` combat-equipment artifact](#5-artifacts-baseline-pool-2-faces),
+  auto-deployed near the player on a cooldown with a limited TTL, then expiring.
 
 Input: hybrid — auto-fire at nearest target with a manual aim-override stick
 and strong aim magnetism. One-handed playable; twin-stick feel when wanted.
@@ -122,20 +139,35 @@ Decide feel details on-device; do not bury aiming under build complexity.
 
 ---
 
-## 5. Artifacts (baseline pool: 4)
+## 5. Artifacts (baseline pool: 2 faces)
 
-Rolled as choices on level-up. Each has **4 pure-additive stacking ranks**
-(e.g. +10% → +20% → +30% → +40% damage; +1 → +2 projectiles). Rolling a
-duplicate upgrades its rank — no dead offers.
+Rolled as choices on level-up. Every artifact carries a **category** so the
+draft (and the codex) reads as two faces:
+
+- **Stat support** — pure stat math on the weapon/entity you already carry.
+  Five of them (Overclock damage, Autoloader reload speed, Splitter projectiles,
+  Adrenaline move speed, Extended Mag magazine size), each with **4 pure-additive
+  stacking ranks** (e.g. +10% → +20% → +30% → +40%).
+- **Combat equipment** — deploys an **automatic weapon**. The baseline example
+  is the **Turret** (4 ranks): rank 1 deploys one auto-turret (`TURRET_COUNT`,
+  AUTO scope), kept near the player with a limited TTL; ranks 2–4 each roll a
+  **random** turret upgrade from the AUTO-scope pool (damage / fire rate /
+  projectiles / range / an extra turret), so the equipment grows a different way
+  each run. The random rolls are the engine's job — the artifact row itself only
+  carries the rank-1 turret grant, keeping "artifacts are data" intact.
+
+Rolling a duplicate upgrades its rank — no dead offers.
 
 Balance warnings (treat knowingly, don't balance as peers of flat %):
 - **+projectile count** is secretly multiplicative (1→2 is +100%, and each
   projectile multiplies with damage/crit/on-hit).
-- **+1 concurrent turret** is the same stat in disguise.
+- **+1 concurrent turret** is the same stat in disguise — hence the combat-
+  equipment turret's smaller rank cap.
 
-Baseline artifacts do **stat math only**. Behavior (event hooks, conditionals,
-multiplicative weirdness) is Phase-2 shop territory. Keep the vanilla game
-legible so shop modifiers land as transformative.
+Baseline artifacts do **stat math only** — including the turret, whose "behaviour"
+is just the engine reading `TURRET_COUNT`. Real behaviour (event hooks,
+conditionals, multiplicative weirdness) is Phase-2 shop territory. Keep the
+vanilla game legible so shop modifiers land as transformative.
 
 Store ranks as data rows now: `(artifact_id, rank, stat, scope, value)` —
 this table is the seed of the whole modifier system.
@@ -174,11 +206,18 @@ and — soon — your own placed turrets and barricades.
   enemies are bounded by the current active edges; enemies enter at those edges
   and **beeline** at the player. A grid overlays the arena — the lattice
   player-placed turrets/obstacles snap to.
-- **Placed defenses (YAZD).** The player spends gold to build turrets (auto-fire
-  friendly shots) and barricades (block + soak) on the grid, snapped to cells.
-  Permanent for the run and destructible — enemies blocked by one attack it until
-  it falls. Select a tool from the palette, tap the arena to place; drag still
-  moves.
+- **Placed defenses (YAZD).** The player spends gold to build two static defenses
+  on the grid, snapped to cells — permanent for the run and destructible: the
+  **barricade** (a blocking wall) and the **Sentry** (a static gold turret that
+  stays put and fires on its own fixed stats). Select the tool from the palette,
+  tap the arena to place; drag still moves. The **auto-deployed Turret** (the
+  combat-equipment artifact, §4/§5) is the mobile counterpart — it redeploys near
+  the player and expires on a TTL — so gold buys *static* emplacements while the
+  draft grants *following* fire support.
+- **Blocking stops movement *and* fire.** A blocking structure (barricade or
+  Sentry) both halts enemies at its cell and **stops enemy shots** — a Spitter
+  can't fire through a wall. Friendly shots pass over your own defenses, so a
+  Sentry never blocks its own or the player's fire.
 - **Everything is hits, not HP bars.** The player has a small pool of **hearts**
   (baseline 3, buyable via the Max-Health loadout) with brief i-frames, so one
   contact costs one heart. A normal enemy hits for 1, a boss for 3 (one-shots a

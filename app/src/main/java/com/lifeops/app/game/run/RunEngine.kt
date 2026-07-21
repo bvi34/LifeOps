@@ -5,6 +5,7 @@ import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.SetBonuses
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.content.TempBoosts
+import com.lifeops.app.game.content.TurretUpgrades
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -46,6 +47,7 @@ class RunEngine(
         hits = config.maxHits,
         maxHits = config.maxHits,
         gold = config.startingGold,
+        ammo = config.weapon.magazineSize, // start with a full magazine
     )
 
     val enemies = ArrayList<Enemy>()
@@ -73,7 +75,11 @@ class RunEngine(
         private set
 
     private var stats: StatBlock = player.buildStats()
+    /** The auto-turret's effective stats: its base auto-weapon rows + the player's AUTO-scope build. */
+    private var turretStats: StatBlock = buildTurretStats()
     private var nextId = 1
+    /** Cooldown between auto-turret deployments, so the Turret artifact drips them in (not all at once). */
+    private var turretDeployTimer = 0f
 
     /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
      *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
@@ -100,8 +106,31 @@ class RunEngine(
 
     private fun rebuildStats() {
         stats = player.buildStats()
+        turretStats = buildTurretStats()
         // Keep the Director tracking the player's build so Mirror inflates in lockstep (§8).
         director.rebuild(stats)
+    }
+
+    /**
+     * The auto-turret's effective stats (DESIGN.md §3/§4): the turret's own base auto-weapon rows,
+     * boosted by the player's AUTO-scope build. Resolving at [Scope.AUTO] reads AUTO + GLOBAL rows,
+     * so equipment artifacts lift the turret while the aimed weapon's AIMED rows stay inert on it.
+     */
+    private fun buildTurretStats(): StatBlock {
+        val t = StructureType.TURRET
+        val block = StatBlock(
+            mapOf(
+                Stat.DAMAGE to t.damage,
+                Stat.FIRE_RATE to t.fireRate,
+                Stat.RANGE to t.range,
+                Stat.PROJECTILE_SPEED to t.projectileSpeed,
+            )
+        )
+        player.held.forEach { block.addAll(it.contributions()) }
+        player.runBonuses.forEach { block.add(it) }
+        player.tempBuffs.forEach { block.add(it.contribution) }
+        player.equipmentUpgrades.forEach { block.add(it) } // rolled turret upgrades (Turret ranks 2-4)
+        return block
     }
 
     // --- Public API -------------------------------------------------------------------------
@@ -118,8 +147,10 @@ class RunEngine(
         updateEnemyFire(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
+        updateArtifactTurrets(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
+        resolveEnemyProjectileBlocks()
         resolveProjectileHits()
         resolveContact(clamped)
         updatePickups(clamped)
@@ -135,6 +166,7 @@ class RunEngine(
      */
     fun placeStructure(type: StructureType, worldPos: Vec2): Boolean {
         if (status != RunStatus.RUNNING) return false
+        if (!type.buildable) return false // turrets are the auto-deployed Turret artifact, not a gold-buy
         val cost = buildCost(type)
         if (player.gold < cost) return false
         val col = colOf(worldPos.x)
@@ -172,6 +204,8 @@ class RunEngine(
     /** Apply the chosen level-up option and resume. Ignored unless currently paused on level-up. */
     fun choose(option: LevelUpOption) {
         if (status != RunStatus.LEVEL_UP) return
+        // A combat-equipment rank past the first grants a rolled turret upgrade alongside the rank.
+        option.equipmentUpgrade?.let { player.equipmentUpgrades.add(it.contribution) }
         val existing = player.held.indexOfFirst { it.modifier.id == option.modifier.id }
         if (existing >= 0) {
             player.held[existing] = HeldModifier(option.modifier, option.resultingRank)
@@ -200,6 +234,17 @@ class RunEngine(
         xp = player.xp,
         xpToNext = player.xpToNext,
         gold = player.gold,
+        ammo = player.ammo.coerceAtLeast(0),
+        magazine = player.magazine(stats),
+        reloading = player.reloadRemaining > 0f,
+        reloadFrac = if (player.reloadRemaining > 0f && config.weapon.reloadSeconds > 0f)
+            (1f - (player.reloadRemaining / (config.weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
+        else 0f,
+        spinUp = config.weapon.spinUpAccel > 0f,
+        spinFrac = if (config.weapon.spinUpAccel > 0f) {
+            val ceiling = player.fireRate(stats)
+            ((effectiveFireRate() - config.weapon.spinUpFloor) / (ceiling - config.weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+        } else 0f,
         wave = wave + 1,
         totalWaves = config.waves,
         tier = tier,
@@ -218,7 +263,13 @@ class RunEngine(
         },
         projectiles = projectiles.filter { it.friendly }.map { it.pos },
         enemyProjectiles = projectiles.filter { !it.friendly }.map { it.pos },
-        structures = structures.map { StructureView(it.pos, it.type, (it.hp / it.maxHp).coerceIn(0f, 1f), it.aim) },
+        structures = structures.map {
+            StructureView(
+                it.pos, it.type, (it.hp / it.maxHp).coerceIn(0f, 1f), it.aim,
+                artifactTurret = it.artifactTurret,
+                ttlFrac = if (it.maxTtl != Float.POSITIVE_INFINITY) (it.ttl / it.maxTtl).coerceIn(0f, 1f) else 1f,
+            )
+        },
         structureCosts = StructureType.values().associateWith { buildCost(it) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
@@ -294,11 +345,19 @@ class RunEngine(
         }
     }
 
-    /** Turrets auto-fire at the nearest enemy in range; dead structures are cleared. */
+    /** Turrets auto-fire at the nearest enemy in range; expired/dead structures are cleared. */
     private fun updateStructures(dt: Float) {
+        // Artifact auto-turrets read the boosted turret stats; static gold Sentries fire on their own
+        // fixed type stats, independent of the player's build.
+        val autoDamage = turretStats.resolve(Stat.DAMAGE, Scope.AUTO)
+        val autoRange = turretStats.resolve(Stat.RANGE, Scope.AUTO)
+        val autoFireRate = turretStats.resolve(Stat.FIRE_RATE, Scope.AUTO).coerceAtLeast(0.1f)
+        val autoSpeed = turretStats.resolve(Stat.PROJECTILE_SPEED, Scope.AUTO)
+        val autoProjectiles = turretStats.resolve(Stat.PROJECTILES, Scope.AUTO).toInt().coerceAtLeast(1)
         val it = structures.iterator()
         while (it.hasNext()) {
             val s = it.next()
+            if (s.ttl != Float.POSITIVE_INFINITY) s.ttl -= dt // auto-turrets age toward expiry
             if (!s.alive) {
                 occupancy.remove(cellKey(s.col, s.row))
                 effects.add(RunEffect(s.pos, EffectKind.DEATH_BURST, worldRadius = arena.cellSize * 0.5f, ttl = BURST_SECONDS))
@@ -306,9 +365,15 @@ class RunEngine(
                 continue
             }
             if (!s.type.isTurret) continue
+            val damage = if (s.artifactTurret) autoDamage else s.type.damage
+            val range = if (s.artifactTurret) autoRange else s.type.range
+            val fireRate = if (s.artifactTurret) autoFireRate else s.type.fireRate.coerceAtLeast(0.1f)
+            val speed = if (s.artifactTurret) autoSpeed else s.type.projectileSpeed
+            // Only artifact turrets gain extra projectiles (from a rolled upgrade); Sentries fire one.
+            val proj = if (s.artifactTurret) autoProjectiles else 1
             s.fireCooldown -= dt
             var target: Enemy? = null
-            var bestDist = s.type.range
+            var bestDist = range
             for (en in enemies) {
                 val d = en.pos.distanceTo(s.pos)
                 if (d <= bestDist) { bestDist = d; target = en }
@@ -316,19 +381,77 @@ class RunEngine(
             val t = target ?: continue
             s.aim = (t.pos - s.pos).normalized()
             if (s.fireCooldown <= 0f) {
-                s.fireCooldown = 1f / s.type.fireRate
-                spawnFriendlyProjectile(s.pos, s.aim, s.type.damage, s.id, s.type.projectileSpeed, s.type.range)
+                s.fireCooldown = 1f / fireRate
+                fireTurretVolley(s.pos, s.aim, damage, s.id, speed, range, proj)
             }
         }
     }
 
-    private fun spawnFriendlyProjectile(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float) {
-        val p = Projectile(
-            id = nextId++, ownerId = ownerId, pos = origin, vel = dir * speed,
-            damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
+    /** Fire [count] friendly turret projectiles along [dir] with a small fan when there's more than one. */
+    private fun fireTurretVolley(origin: Vec2, dir: Vec2, damage: Float, ownerId: Int, speed: Float, range: Float, count: Int) {
+        val baseAngle = kotlin.math.atan2(dir.y, dir.x)
+        val spread = if (count > 1) 0.30f else 0f
+        for (i in 0 until count) {
+            val fanT = if (count == 1) 0f else (i / (count - 1f)) - 0.5f
+            val angle = baseAngle + fanT * spread
+            val vel = Vec2(cos(angle), sin(angle)) * speed
+            val p = Projectile(
+                id = nextId++, ownerId = ownerId, pos = origin, vel = vel,
+                damage = damage, crit = false, lifeRemaining = range / speed, friendly = true,
+            )
+            projectiles.add(p)
+            bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
+        }
+    }
+
+    /**
+     * Keep the number of auto-turrets the Turret artifact grants deployed near the player (DESIGN.md
+     * §4). Turrets drip in on a cooldown and expire on their TTL, so at rank N you cycle N turrets.
+     */
+    private fun updateArtifactTurrets(dt: Float) {
+        val desired = stats.resolve(Stat.TURRET_COUNT, Scope.AUTO).toInt()
+        if (desired <= 0) return
+        if (turretDeployTimer > 0f) turretDeployTimer -= dt
+        val current = structures.count { it.artifactTurret }
+        if (current < desired && turretDeployTimer <= 0f) {
+            if (deployArtifactTurret()) turretDeployTimer = TURRET_DEPLOY_INTERVAL
+        }
+    }
+
+    /** Deploy one auto-turret at the nearest free grid cell to the player. Returns whether it placed. */
+    private fun deployArtifactTurret(): Boolean {
+        val cell = freeCellNearPlayer() ?: return false
+        val (col, row) = cell
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        val ttl = turretStats.resolve(Stat.TURRET_TTL, Scope.AUTO).coerceAtLeast(2f)
+        val s = Structure(
+            id = nextId++, type = StructureType.TURRET, col = col, row = row, pos = center,
+            hp = StructureType.TURRET.maxHp, maxHp = StructureType.TURRET.maxHp,
+            artifactTurret = true, ttl = ttl, maxTtl = ttl,
         )
-        projectiles.add(p)
-        bus.emit(GameEvent.OnProjectileSpawn(p.id, ownerId))
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
+        bus.emit(GameEvent.OnSpawn(s.id, EntityKind.TURRET))
+        return true
+    }
+
+    /** Search grid cells outward from the player's cell for the first free, in-arena, non-player cell. */
+    private fun freeCellNearPlayer(): Pair<Int, Int>? {
+        val pcol = colOf(player.pos.x)
+        val prow = rowOf(player.pos.y)
+        for (ring in 1..4) {
+            for (dc in -ring..ring) for (dr in -ring..ring) {
+                if (kotlin.math.max(kotlin.math.abs(dc), kotlin.math.abs(dr)) != ring) continue // ring edge only
+                val col = pcol + dc
+                val row = prow + dr
+                if (col == pcol && row == prow) continue
+                if (occupancy.containsKey(cellKey(col, row))) continue
+                val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+                if (!arena.contains(center)) continue
+                return col to row
+            }
+        }
+        return null
     }
 
     // --- Waves ------------------------------------------------------------------------------
@@ -467,11 +590,32 @@ class RunEngine(
     // --- Weapon fire ------------------------------------------------------------------------
 
     private fun fireWeapon(dt: Float, input: RunInput) {
-        player.fireCooldown -= dt
-        if (player.fireCooldown > 0f) return
+        // Reload gate (DESIGN.md §4): while reloading, the weapon is offline. When it finishes, the
+        // magazine is refilled. Reload runs whether or not there is a target to shoot at, and spins
+        // the Gatling back down.
+        if (player.reloadRemaining > 0f) {
+            player.reloadRemaining -= dt
+            if (player.reloadRemaining <= 0f) {
+                player.reloadRemaining = 0f
+                player.ammo = player.magazine(stats)
+            }
+            player.spin = 0f
+            return
+        }
 
-        val aimDir = resolveAim(input) ?: return // no target and no manual aim → hold fire
-        player.fireCooldown = 1f / player.fireRate(stats)
+        player.fireCooldown -= dt
+
+        // Empty magazine → auto-reload (no target needed to start the reload); spin resets.
+        if (player.ammo <= 0) { player.spin = 0f; beginReload(); return }
+
+        val aimDir = resolveAim(input)
+        if (aimDir == null) { player.spin = 0f; return } // disengaged → spin down ("reset on restart")
+
+        // Engaged this frame: wind the spin-up up (Gatling), then gate on the resulting cadence.
+        player.spin += dt
+        if (player.fireCooldown > 0f) return
+        player.fireCooldown = 1f / effectiveFireRate()
+        player.ammo -= 1 // one trigger-pull spends one round, however many projectiles it throws
 
         val count = player.projectiles(stats)
         var perHit = player.aimedDamage(stats)
@@ -480,9 +624,11 @@ class RunEngine(
         if (config.weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
 
         val baseAngle = kotlin.math.atan2(aimDir.y, aimDir.x)
-        val spread = if (count > 1) 0.28f else 0f // ~16° fan
+        val spread = if (count > 1) config.weapon.spread else 0f // per-weapon fan (Shotgun spreads wide)
         val speed = player.projectileSpeed(stats)
-        val life = player.range(stats) / speed
+        // Sniper never falls short (DESIGN.md §4): its shots live long enough to cross the arena and
+        // only die on a hit or at the edge. The others expire at their range.
+        val life = if (config.weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
         val critChance = player.critChance(stats)
         val critMult = player.critMult(stats)
 
@@ -500,6 +646,33 @@ class RunEngine(
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
         }
         player.muzzleFlash = MUZZLE_SECONDS
+        if (player.ammo <= 0) beginReload() // that was the last round — start the auto-reload now
+    }
+
+    /**
+     * Begin a reload if one isn't already running and the magazine isn't full (DESIGN.md §4). The
+     * time taken is the weapon's base reload shortened by the Autoloader's RELOAD_SPEED multiplier.
+     */
+    private fun beginReload() {
+        if (player.reloadRemaining > 0f || player.ammo >= player.magazine(stats)) return
+        player.reloadRemaining = config.weapon.reloadSeconds / player.reloadSpeed(stats)
+    }
+
+    /** Reload on demand (DESIGN.md §4). Ignored while paused/over, mid-reload, or on a full magazine. */
+    fun reload() {
+        if (status != RunStatus.RUNNING) return
+        beginReload()
+    }
+
+    /**
+     * The live fire rate. Flat for most weapons; for a spin-up weapon (Gatling) it ramps from
+     * [StartingWeapon.spinUpFloor] up toward the [Stat.FIRE_RATE] ceiling as [Player.spin] grows,
+     * so sustained fire accelerates and a pause resets it (DESIGN.md §4).
+     */
+    private fun effectiveFireRate(): Float {
+        val ceiling = player.fireRate(stats)
+        if (config.weapon.spinUpAccel <= 0f) return ceiling
+        return (config.weapon.spinUpFloor + config.weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
     }
 
     /** Track the aim direction every frame so the barrel/reticle follows the nearest target even
@@ -511,7 +684,8 @@ class RunEngine(
     /** Manual aim wins if given; otherwise auto-aim the nearest enemy within range (DESIGN.md §4). */
     private fun resolveAim(input: RunInput): Vec2? {
         input.aimOverride?.let { if (it.length() > Vec2.EPSILON) return it.normalized() }
-        val range = player.range(stats)
+        // The Sniper locks on anywhere (unlimited range, §4); the others only auto-aim within reach.
+        val range = if (config.weapon.unlimitedRange) UNLIMITED_AIM_RANGE else player.range(stats)
         var best: Enemy? = null
         var bestDist = Float.MAX_VALUE
         for (e in enemies) {
@@ -533,6 +707,22 @@ class RunEngine(
 
     private fun outOfArena(p: Vec2): Boolean =
         p.x < -16f || p.y < -16f || p.x > arena.worldSize.x + 16f || p.y > arena.worldSize.y + 16f
+
+    /**
+     * Enemy shots are stopped dead by a blocking structure's cell (barricade / static Sentry) — a wall
+     * actually walls off incoming fire, so a Spitter can't shoot through it (DESIGN.md §7). Friendly
+     * shots pass over your own defenses so a Sentry never blocks its own (or the player's) fire.
+     */
+    private fun resolveEnemyProjectileBlocks() {
+        if (structures.isEmpty()) return
+        val it = projectiles.iterator()
+        while (it.hasNext()) {
+            val p = it.next()
+            if (p.friendly) continue
+            val s = structureAt(p.pos) ?: continue
+            if (s.type.blocks) it.remove()
+        }
+    }
 
     // --- Collisions -------------------------------------------------------------------------
 
@@ -791,7 +981,14 @@ class RunEngine(
             val held = player.held.firstOrNull { it.modifier.id == mod.id }
             val currentRank = held?.rank ?: 0
             if (currentRank >= mod.maxRank) null
-            else LevelUpOption(mod, currentRank + 1, isNew = held == null)
+            else {
+                val resultingRank = currentRank + 1
+                // Combat-equipment ranks past the first roll a random turret upgrade (DESIGN.md §5),
+                // so the offer shows exactly which improvement this pick would grant.
+                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT && resultingRank >= 2)
+                    TurretUpgrades.POOL[rng.nextInt(TurretUpgrades.POOL.size)] else null
+                LevelUpOption(mod, resultingRank, isNew = held == null, equipmentUpgrade = upgrade)
+            }
         }
         if (candidates.isEmpty()) return emptyList()
         // Shuffle deterministically via the run RNG and take up to 3 distinct offers.
@@ -820,5 +1017,10 @@ class RunEngine(
         const val HURT_SECONDS = 0.16f
         const val INVULN_SECONDS = 0.8f    // i-frames after a hit — one contact = one heart
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
+        const val TURRET_DEPLOY_INTERVAL = 1.5f // seconds between auto-turret deployments
+        // Sniper "never reaches end of range" (§4): a lifetime long enough to cross the max arena at
+        // its projectile speed, so range never clips its shots — only a hit or the arena edge does.
+        const val UNLIMITED_LIFE = 6f
+        const val UNLIMITED_AIM_RANGE = 4000f
     }
 }

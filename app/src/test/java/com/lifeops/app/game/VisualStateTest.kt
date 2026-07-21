@@ -69,12 +69,20 @@ class VisualStateTest {
 
     @Test
     fun everyEnemyViewCarriesAFacingDirection() {
+        // Sample across the run rather than at one exact frame (which can momentarily be enemy-free):
+        // enemies must appear at some point, and every enemy view ever seen carries a unit facing.
         val e = RunEngine(cfg())
-        repeat(400) { e.step(1f / 60f, RunInput()) }
-        val views = e.snapshot().enemies
-        assertTrue(views.isNotEmpty())
-        // Facing points from the enemy toward the player, so it is a (near) unit vector.
-        assertTrue(views.all { it.facing.length() <= 1.01f })
+        var sawAnyEnemy = false
+        var allUnitFacings = true
+        repeat(600) {
+            e.step(1f / 60f, RunInput())
+            val views = e.snapshot().enemies
+            if (views.isNotEmpty()) sawAnyEnemy = true
+            // Facing points from the enemy toward the player, so it is a (near) unit vector.
+            if (views.any { it.facing.length() > 1.01f }) allUnitFacings = false
+        }
+        assertTrue("enemies should have appeared during the run", sawAnyEnemy)
+        assertTrue("every enemy view should carry a unit facing", allUnitFacings)
     }
 
     @Test
@@ -98,10 +106,16 @@ class VisualStateTest {
 
     @Test
     fun playerHurtFlashesWhenTouched() {
+        // Stationary: enemies reach the player and deal touch damage. Resolve level-up pauses so the
+        // sim keeps running until a contact lands (leveling can pause it before the first touch).
         val e = RunEngine(cfg())
         var hurt = false
-        repeat(900) {
-            e.step(1f / 60f, RunInput()) // stationary: enemies reach the player and deal touch damage
+        var f = 0
+        while (f < 2000 && !hurt) {
+            resolvePauses(e)
+            if (e.snapshot().status == RunStatus.DEFEAT || e.snapshot().status == RunStatus.VICTORY) break
+            e.step(1f / 60f, RunInput())
+            f++
             if (e.snapshot().playerHurtFrac > 0f) hurt = true
         }
         assertTrue("the player should flash when taking touch damage", hurt)

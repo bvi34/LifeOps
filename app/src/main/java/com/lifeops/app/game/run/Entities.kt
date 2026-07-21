@@ -29,6 +29,8 @@ class Player(
     val held: MutableList<HeldModifier> = mutableListOf(),
     /** Permanent (for the run) player boons drafted at each set boundary (DESIGN.md §7). */
     val runBonuses: MutableList<StatContribution> = mutableListOf(),
+    /** Rolled AUTO-scope turret upgrades from Turret ranks 2-4 (DESIGN.md §5). Boost turrets only. */
+    val equipmentUpgrades: MutableList<StatContribution> = mutableListOf(),
     /** Active temporary surges from overflow picks; expire and are pruned by the engine. */
     val tempBuffs: MutableList<TempBuff> = mutableListOf(),
     /** Discrete hearts: the player survives [maxHits] contacts, losing one per hit (boss: three). */
@@ -41,6 +43,12 @@ class Player(
     var xpToNext: Float = 12f,
     var gold: Int = 0,
     var fireCooldown: Float = 0f,
+    /** Rounds left in the magazine. Refilled to the resolved magazine when a reload completes. */
+    var ammo: Int = 0,
+    /** Seconds left on an active reload; 0 = not reloading. Firing is held while > 0 (DESIGN.md §4). */
+    var reloadRemaining: Float = 0f,
+    /** Seconds of continuous engaged fire, for the Gatling's spin-up. Resets when fire stops (§4). */
+    var spin: Float = 0f,
     /** Current aim direction (unit), tracked every frame for the barrel/reticle. Visual + firing. */
     var aim: Vec2 = Vec2(1f, 0f),
     /** Seconds of remaining muzzle flash; set on each shot, decays each frame (visual only). */
@@ -59,11 +67,23 @@ class Player(
         // Drafted set boons (permanent for the run) and any active temp surges fold in the same way.
         runBonuses.forEach { block.add(it) }
         tempBuffs.forEach { block.add(it.contribution) }
+        // Rolled turret upgrades are AUTO-scope, so they're inert on the aimed weapon here but let
+        // the engine read the resulting TURRET_COUNT (extra-turret rolls) off the same block.
+        equipmentUpgrades.forEach { block.add(it) }
         return block
     }
 
+    /** The weapon's base magazine capacity (before the Extended Mag artifact scales it). */
+    val magazineSize: Int get() = weapon.magazineSize
+
+    /** Resolved magazine capacity: the weapon base lifted by any Extended Mag ranks (DESIGN.md §4). */
+    fun magazine(stats: StatBlock): Int = stats.resolve(Stat.MAGAZINE, Scope.AIMED).toInt().coerceAtLeast(1)
+
     fun aimedDamage(stats: StatBlock): Float = stats.resolve(Stat.DAMAGE, Scope.AIMED)
+    /** The fire-rate ceiling; for the Gatling the live cadence spins up toward this (DESIGN.md §4). */
     fun fireRate(stats: StatBlock): Float = stats.resolve(Stat.FIRE_RATE, Scope.AIMED).coerceAtLeast(0.1f)
+    /** Reload-speed multiplier (Autoloader raises it); effective reload = base seconds / this. */
+    fun reloadSpeed(stats: StatBlock): Float = stats.resolve(Stat.RELOAD_SPEED, Scope.AIMED).coerceAtLeast(0.1f)
     fun projectiles(stats: StatBlock): Int = stats.resolve(Stat.PROJECTILES, Scope.AIMED).toInt().coerceAtLeast(1)
     fun moveSpeed(stats: StatBlock): Float = stats.resolve(Stat.MOVE_SPEED, Scope.GLOBAL)
     fun pickupRadius(stats: StatBlock): Float = stats.resolve(Stat.PICKUP_RADIUS, Scope.GLOBAL)
@@ -143,8 +163,15 @@ class Structure(
     val maxHp: Float,
     var fireCooldown: Float = 0f,
     var aim: Vec2 = Vec2(1f, 0f),
+    /** True for engine-deployed auto-turrets (the Turret artifact); false for player-placed defenses. */
+    val artifactTurret: Boolean = false,
+    /** Seconds of life left. [Float.POSITIVE_INFINITY] for permanent placed defenses; finite for
+     *  auto-turrets, which expire when it runs out (DESIGN.md §4 — limited TTL). */
+    var ttl: Float = Float.POSITIVE_INFINITY,
+    /** Full lifespan the auto-turret was deployed with, for a fade-out as it ages (renderer only). */
+    val maxTtl: Float = Float.POSITIVE_INFINITY,
 ) {
-    val alive: Boolean get() = hp > 0f
+    val alive: Boolean get() = hp > 0f && ttl > 0f
 }
 
 class Pickup(
