@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Scaffold
@@ -28,6 +29,7 @@ fun HistoryScreen(
     onOpenGrowth: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenResources: () -> Unit,
+    onOpenWellness: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -51,6 +53,14 @@ fun HistoryScreen(
                     subtitle = "Trends and breakdowns over a range",
                     icon = Icons.Default.BarChart,
                     onClick = onOpenReports
+                )
+            }
+            item {
+                HubCard(
+                    title = "Wellness",
+                    subtitle = "Energy, sensory load, and sleep — day by day",
+                    icon = Icons.Default.Favorite,
+                    onClick = onOpenWellness
                 )
             }
             item {

@@ -26,6 +26,9 @@ data class SettingsUiState(
     val newAspectForCategoryId: String? = null,
     val defaultReminderHour: Int = 9,
     val showReminderTimePicker: Boolean = false,
+    val wellnessRemindersEnabled: Boolean = true,
+    val wellnessSlotHours: List<Int> = listOf(10, 15, 21),
+    val wellnessPickerSlot: Int? = null,
     val showRestoreDialog: Boolean = false,
     val restoreJson: String = "",
     val restoreError: String? = null,
@@ -44,6 +47,7 @@ data class SettingsUiState(
     val pendingExportCsv: String? = null,
     val pendingExportRingsCsv: String? = null,
     val pendingExportRingsSvg: String? = null,
+    val pendingExportWellnessCsv: String? = null,
     val runbooks: List<RunbookWithSteps> = emptyList(),
     val templates: List<TemplateWithTasks> = emptyList(),
     val showNewRunbookDialog: Boolean = false,
@@ -66,7 +70,8 @@ class SettingsViewModel(
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
     private val templateRepository: TemplateRepository? = null,
-    private val foodItemRepository: FoodItemRepository? = null
+    private val foodItemRepository: FoodItemRepository? = null,
+    private val wellnessRepository: WellnessRepository? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SettingsUiState())
@@ -77,7 +82,9 @@ class SettingsViewModel(
             it.copy(
                 themePreset = preferencesRepository.themePreset,
                 isDarkMode = preferencesRepository.isDarkMode,
-                customPalette = preferencesRepository.customPalette
+                customPalette = preferencesRepository.customPalette,
+                wellnessRemindersEnabled = preferencesRepository.wellnessRemindersEnabled,
+                wellnessSlotHours = preferencesRepository.wellnessSlotHours
             )
         }
         foodItemRepository?.let { repo ->
@@ -226,6 +233,45 @@ class SettingsViewModel(
     fun showReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = true) }
     fun hideReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = false) }
 
+    // --- Wellness check-in reminders ---
+
+    fun setWellnessRemindersEnabled(enabled: Boolean) {
+        preferencesRepository.wellnessRemindersEnabled = enabled
+        wellnessRepository?.rescheduleReminders()
+        _uiState.update { it.copy(wellnessRemindersEnabled = enabled) }
+    }
+
+    fun showWellnessSlotPicker(index: Int) = _uiState.update { it.copy(wellnessPickerSlot = index) }
+    fun hideWellnessSlotPicker() = _uiState.update { it.copy(wellnessPickerSlot = null) }
+
+    fun setWellnessSlot(index: Int, hour: Int) {
+        val hours = _uiState.value.wellnessSlotHours.toMutableList()
+        if (index in hours.indices) hours[index] = hour
+        saveWellnessSlots(hours)
+    }
+
+    fun addWellnessSlot() {
+        val hours = _uiState.value.wellnessSlotHours.toMutableList()
+        if (hours.size >= 3) return
+        val next = (6..23).firstOrNull { it !in hours } ?: return
+        hours.add(next)
+        saveWellnessSlots(hours)
+    }
+
+    fun removeWellnessSlot(index: Int) {
+        val hours = _uiState.value.wellnessSlotHours.toMutableList()
+        if (hours.size <= 1 || index !in hours.indices) return
+        hours.removeAt(index)
+        saveWellnessSlots(hours)
+    }
+
+    private fun saveWellnessSlots(hours: List<Int>) {
+        preferencesRepository.wellnessSlotHours = hours
+        val saved = preferencesRepository.wellnessSlotHours // normalized (clamped/distinct/sorted)
+        wellnessRepository?.rescheduleReminders()
+        _uiState.update { it.copy(wellnessSlotHours = saved, wellnessPickerSlot = null) }
+    }
+
     fun showNewAspectDialog() = _uiState.update {
         it.copy(
             showNewAspectDialog = true,
@@ -297,6 +343,24 @@ class SettingsViewModel(
         }
     }
 
+    fun prepareExportWellnessCsv() {
+        val repo = backupRepository ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(pendingExportWellnessCsv = repo.buildWellnessCsvExport()) }
+        }
+    }
+
+    fun writeWellnessCsvToUri(context: Context, uri: Uri) {
+        val csv = _uiState.value.pendingExportWellnessCsv ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+            } finally {
+                _uiState.update { it.copy(pendingExportWellnessCsv = null) }
+            }
+        }
+    }
+
     fun prepareExportRingsCsv() {
         val repo = growthRepository ?: return
         viewModelScope.launch {
@@ -339,7 +403,8 @@ class SettingsViewModel(
                 pendingExportJson = null,
                 pendingExportCsv = null,
                 pendingExportRingsCsv = null,
-                pendingExportRingsSvg = null
+                pendingExportRingsSvg = null,
+                pendingExportWellnessCsv = null
             )
         }
     }
@@ -518,9 +583,10 @@ class SettingsViewModelFactory(
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
     private val templateRepository: TemplateRepository? = null,
-    private val foodItemRepository: FoodItemRepository? = null
+    private val foodItemRepository: FoodItemRepository? = null,
+    private val wellnessRepository: WellnessRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository, foodItemRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository, foodItemRepository, wellnessRepository) as T
 }

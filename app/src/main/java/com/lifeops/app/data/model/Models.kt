@@ -657,3 +657,27 @@ data class ActivityOverride(
     val userValue: Int?,
     val createdAt: String
 )
+
+/** Whether a wellness data point is a daytime check-in or a morning sleep report. */
+enum class WellnessKind(val value: String) {
+    CHECKIN("CHECKIN"),
+    SLEEP("SLEEP");
+    companion object { fun from(value: String?) = entries.firstOrNull { it.value == value } ?: CHECKIN }
+}
+
+/**
+ * Domain view of a WellnessCheckinEntity. See the entity KDoc for how the two [kind]s share one
+ * shape; [sleepMinutes] is the screen-time-estimated sleep duration for SLEEP rows only.
+ */
+data class WellnessCheckin(
+    val id: String,
+    val kind: WellnessKind,
+    val recordedAt: String,
+    val weekKey: Int,
+    val dayKey: String,
+    val energy: Int? = null,
+    val sensory: Int? = null,
+    val tired: Int? = null,
+    val sleepMinutes: Int? = null,
+    val note: String? = null
+)

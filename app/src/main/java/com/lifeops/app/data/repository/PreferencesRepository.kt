@@ -16,6 +16,23 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
         set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }
 
+    // Master switch for the wellness pop-ups/notifications (daytime check-ins + morning sleep).
+    var wellnessRemindersEnabled: Boolean
+        get() = prefs.getBoolean("wellness_reminders_enabled", true)
+        set(value) { prefs.edit().putBoolean("wellness_reminders_enabled", value).apply() }
+
+    // The three daytime check-in slot hours (device-local). Stored as a comma list; always three,
+    // clamped 0-23 and de-duplicated/sorted on read so scheduling and report gating stay coherent.
+    var wellnessSlotHours: List<Int>
+        get() = (prefs.getString("wellness_slot_hours", "10,15,21") ?: "10,15,21")
+            .split(",").mapNotNull { it.trim().toIntOrNull() }
+            .filter { it in 0..23 }.distinct().sorted()
+            .ifEmpty { listOf(10, 15, 21) }
+        set(value) {
+            val cleaned = value.filter { it in 0..23 }.distinct().sorted().ifEmpty { listOf(10, 15, 21) }
+            prefs.edit().putString("wellness_slot_hours", cleaned.joinToString(",")).apply()
+        }
+
     var sameWeekCarryRepairDone: Boolean
         get() = prefs.getBoolean("same_week_carry_repair_done", false)
         set(value) { prefs.edit().putBoolean("same_week_carry_repair_done", value).apply() }

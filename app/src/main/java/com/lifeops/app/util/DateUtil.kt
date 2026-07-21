@@ -79,4 +79,25 @@ object DateUtil {
         val date = LocalDate.now().minusDays(daysAgo.toLong())
         return date.atStartOfDay(ZoneOffset.UTC).toInstant().toString()
     }
+
+    /** Local ISO date (yyyy-MM-dd) of the day containing [millis], in the system zone. */
+    fun localDateKey(millis: Long): String =
+        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+
+    /** Local ISO date (yyyy-MM-dd) for today, in the system zone. */
+    fun todayKey(): String = LocalDate.now().toString()
+
+    /** Local hour-of-day (0-23) for [millis] in the system zone. */
+    fun localHour(millis: Long): Int =
+        Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).hour
+
+    private val dateTimeFormatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+
+    /** Format an ISO-8601 instant string as a local "MMM d, h:mm a"; echoes input on failure. */
+    fun formatInstant(iso: String?): String {
+        if (iso == null) return ""
+        return try {
+            Instant.parse(iso).atZone(ZoneId.systemDefault()).format(dateTimeFormatter)
+        } catch (_: Exception) { iso }
+    }
 }

@@ -72,6 +72,9 @@ class LifeOpsApp : Application() {
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
     val activityTemplateRepository by lazy { ActivityTemplateRepository(database.activityTemplateDao()) }
+    val wellnessRepository by lazy {
+        WellnessRepository(this, database.wellnessCheckinDao(), preferencesRepository)
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -109,5 +112,9 @@ class LifeOpsApp : Application() {
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(this)
+        // Daytime wellness check-in reminders at the configured slots (default 10:00/15:00/21:00).
+        // Each fired slot re-schedules its own next occurrence; this seeds them from settings (and
+        // clears them if the user has turned reminders off).
+        wellnessRepository.rescheduleReminders()
     }
 }

@@ -57,6 +57,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         else viewModel.cancelPendingExport()
     }
 
+    val createWellnessCsvLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) viewModel.writeWellnessCsvToUri(context, uri)
+        else viewModel.cancelPendingExport()
+    }
+
     val createRingsCsvLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
@@ -90,6 +97,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     }
     LaunchedEffect(state.pendingExportCsv) {
         if (state.pendingExportCsv != null) createCsvLauncher.launch("lifeops_tasks.csv")
+    }
+    LaunchedEffect(state.pendingExportWellnessCsv) {
+        if (state.pendingExportWellnessCsv != null) createWellnessCsvLauncher.launch("lifeops_wellness.csv")
     }
     LaunchedEffect(state.pendingExportRingsCsv) {
         if (state.pendingExportRingsCsv != null) createRingsCsvLauncher.launch("growth_rings.csv")
@@ -142,6 +152,20 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Wellness check-ins", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                WellnessReminderSection(
+                    enabled = state.wellnessRemindersEnabled,
+                    slotHours = state.wellnessSlotHours,
+                    onToggle = viewModel::setWellnessRemindersEnabled,
+                    onEditSlot = viewModel::showWellnessSlotPicker,
+                    onRemoveSlot = viewModel::removeWellnessSlot,
+                    onAddSlot = viewModel::addWellnessSlot
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
                 ThemeSection(
@@ -162,6 +186,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     onBackup = { viewModel.prepareBackupExport() },
                     onRestore = viewModel::showRestoreDialog,
                     onExportCsv = { viewModel.prepareExportCsv() },
+                    onExportWellnessCsv = { viewModel.prepareExportWellnessCsv() },
                     onExportRingsCsv = { viewModel.prepareExportRingsCsv() },
                     onExportRingsSvg = { viewModel.prepareExportRingsSvg() }
                 )
@@ -218,6 +243,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             currentHour = state.defaultReminderHour,
             onSelect = { hour -> viewModel.setDefaultReminderHour(hour); viewModel.hideReminderTimePicker() },
             onDismiss = viewModel::hideReminderTimePicker
+        )
+    }
+
+    state.wellnessPickerSlot?.let { slot ->
+        val current = state.wellnessSlotHours.getOrNull(slot) ?: 10
+        HourPickerDialog(
+            title = "Check-in time",
+            currentHour = current,
+            onSelect = { hour -> viewModel.setWellnessSlot(slot, hour) },
+            onDismiss = viewModel::hideWellnessSlotPicker
         )
     }
 
@@ -431,6 +466,7 @@ private fun DataActionsSection(
     onBackup: () -> Unit,
     onRestore: () -> Unit,
     onExportCsv: () -> Unit,
+    onExportWellnessCsv: () -> Unit,
     onExportRingsCsv: () -> Unit,
     onExportRingsSvg: () -> Unit
 ) {
@@ -455,6 +491,11 @@ private fun DataActionsSection(
                 Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
                 Text("Export Tasks CSV")
+            }
+            OutlinedButton(onClick = onExportWellnessCsv, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Export Wellness CSV")
             }
             Text(
                 "Growth Record",
@@ -797,6 +838,91 @@ private fun ReminderTimePickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Default reminder time") },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 320.dp)
+                .verticalScroll(rememberScrollState())) {
+                hours.forEach { h ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = h == currentHour, onClick = { onSelect(h) })
+                        Text(hourLabel(h), style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(start = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
+}
+
+@Composable
+private fun WellnessReminderSection(
+    enabled: Boolean,
+    slotHours: List<Int>,
+    onToggle: (Boolean) -> Unit,
+    onEditSlot: (Int) -> Unit,
+    onRemoveSlot: (Int) -> Unit,
+    onAddSlot: () -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Daytime & sleep prompts", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (enabled) "Energy/sensory check-ins plus the morning sleep report"
+                        else "Turned off — no pop-ups or notifications",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+            if (enabled) {
+                slotHours.forEachIndexed { index, hour ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Schedule, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text(hourLabel(hour), style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onEditSlot(index) }) { Text("Change") }
+                        if (slotHours.size > 1) {
+                            IconButton(onClick = { onRemoveSlot(index) }) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove",
+                                    modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+                if (slotHours.size < 3) {
+                    TextButton(onClick = onAddSlot) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add a time")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HourPickerDialog(
+    title: String,
+    currentHour: Int,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val hours = (0..23).toList()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
         text = {
             Column(modifier = Modifier.heightIn(max = 320.dp)
                 .verticalScroll(rememberScrollState())) {

@@ -118,6 +118,12 @@ class MainActivity : ComponentActivity() {
             val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
             LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
                 LifeOpsNavHost(app, sharedText)
+                // Above the nav content so an energy/sensory check-in or the morning sleep prompt
+                // can surface on whatever screen the app opened to.
+                com.lifeops.app.ui.screens.wellness.WellnessPromptHost(
+                    app.wellnessRepository,
+                    enabled = app.preferencesRepository.onboardingShown
+                )
                 var showWelcome by remember { mutableStateOf(!app.preferencesRepository.onboardingShown) }
                 if (showWelcome) {
                     WelcomeDialog(onDismiss = {
@@ -151,7 +157,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             app.aspectRepository, app.gameResourceRepository,
             app.preferencesRepository, app.backupRepository, app.taskRepository,
             app.costResourceRepository, app.projectRepository, app.growthRepository,
-            app.runbookRepository, app.templateRepository, app.foodItemRepository
+            app.runbookRepository, app.templateRepository, app.foodItemRepository,
+            app.wellnessRepository
         )
     }
     val headerVm = viewModel<AppHeaderViewModel>(
@@ -398,8 +405,18 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     HistoryScreen(
                         onOpenGrowth = { navController.navigate("growth") },
                         onOpenReports = { navController.navigate("reports") },
-                        onOpenResources = { navController.navigate("resources") }
+                        onOpenResources = { navController.navigate("resources") },
+                        onOpenWellness = { navController.navigate("wellness") }
                     )
+                }
+                composable("wellness") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.wellness.WellnessViewModel>(
+                        factory = com.lifeops.app.ui.screens.wellness.WellnessViewModelFactory(
+                            app.wellnessRepository, app.taskRepository,
+                            app.timeEntryRepository, app.aspectRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.wellness.WellnessScreen(vm, onBack = { navController.navigateUp() })
                 }
                 composable("growth") {
                     val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(

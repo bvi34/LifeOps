@@ -166,3 +166,10 @@ fun ActivityTemplate.toEntity() = ActivityTemplateEntity(
 
 fun ActivityOverrideEntity.toModel() = ActivityOverride(id, activityId, field, templateValue, userValue, createdAt)
 fun ActivityOverride.toEntity() = ActivityOverrideEntity(id, activityId, field, templateValue, userValue, createdAt)
+
+fun WellnessCheckinEntity.toModel() = WellnessCheckin(
+    id, WellnessKind.from(kind), recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note
+)
+fun WellnessCheckin.toEntity() = WellnessCheckinEntity(
+    id, kind.value, recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note
+)
