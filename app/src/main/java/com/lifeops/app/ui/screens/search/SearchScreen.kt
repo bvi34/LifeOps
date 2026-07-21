@@ -31,8 +31,9 @@ import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 
 /**
- * Global search across tasks, projects, people, counters, books, recipes, and future projects.
- * Tapping a result opens its detail (via [onNavigate]); task hits jump to This Week.
+ * Global search across tasks, notes, projects, people, counters, books, recipes, future projects,
+ * runbooks, templates, activities, foods, and weather locations. Tapping a result opens its detail
+ * when one exists (via [onNavigate]); dashboard-level hits jump to their hub screen.
  */
 @Composable
 fun SearchScreen(
@@ -65,7 +66,7 @@ fun SearchScreen(
             )
 
             when {
-                query.trim().length < 2 -> Hint("Type at least 2 characters to search tasks, projects, people, counters, books, recipes, and future projects.")
+                query.trim().length < 2 -> Hint("Type at least 2 characters to search tasks, notes, planning items, collections, foods, and weather locations.")
                 results.isEmpty() -> Hint("No matches for \"${query.trim()}\".")
                 else -> LazyColumn(
                     modifier = Modifier.fillMaxSize(),
