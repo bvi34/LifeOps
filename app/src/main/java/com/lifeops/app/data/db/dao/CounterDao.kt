@@ -30,6 +30,10 @@ interface CounterDao {
     @Query("SELECT * FROM counters WHERE isArchived = 0 ORDER BY sortOrder ASC, createdAt ASC")
     fun observeActive(): Flow<List<CounterEntity>>
 
+    /** All counters (own + archived) for global search. */
+    @Query("SELECT * FROM counters")
+    suspend fun getAllSync(): List<CounterEntity>
+
     @Query("SELECT * FROM counters ORDER BY isArchived ASC, sortOrder ASC, createdAt ASC")
     fun observeAll(): Flow<List<CounterEntity>>
 

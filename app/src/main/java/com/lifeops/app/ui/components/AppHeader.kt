@@ -5,6 +5,7 @@ package com.lifeops.app.ui.components
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.compositionLocalOf
@@ -15,6 +16,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
 val LocalSardonicMessage = compositionLocalOf { "Surveying the damage..." }
+
+/** Provided once at the app root; AppHeader renders a global-search action that invokes it. */
+val LocalGlobalSearch = compositionLocalOf<() -> Unit> { {} }
 
 /** Standard back arrow for [AppHeader.navigationIcon] on drill-down screens. */
 @Composable
@@ -34,6 +38,7 @@ fun AppHeader(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     val message = LocalSardonicMessage.current
+    val onGlobalSearch = LocalGlobalSearch.current
     TopAppBar(
         modifier = modifier,
         windowInsets = windowInsets,
@@ -59,6 +64,11 @@ fun AppHeader(
                 }
             }
         },
-        actions = actions,
+        actions = {
+            IconButton(onClick = onGlobalSearch) {
+                Icon(Icons.Default.Search, contentDescription = "Search")
+            }
+            actions()
+        },
     )
 }

@@ -24,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lifeops.app.ui.components.AppHeaderViewModel
 import com.lifeops.app.ui.components.AppHeaderViewModelFactory
+import com.lifeops.app.ui.components.LocalGlobalSearch
 import com.lifeops.app.ui.components.LocalSardonicMessage
 import com.lifeops.app.ui.components.WelcomeDialog
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -166,7 +167,10 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
     )
     val sardonicMessage by headerVm.sardonicMessage.collectAsStateWithLifecycle()
 
-    CompositionLocalProvider(LocalSardonicMessage provides sardonicMessage) {
+    CompositionLocalProvider(
+        LocalSardonicMessage provides sardonicMessage,
+        LocalGlobalSearch provides { navController.navigate("search") { launchSingleTop = true } }
+    ) {
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -474,6 +478,19 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
             composable(Screen.Settings.route) {
                 val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
                 SettingsScreen(vm)
+            }
+
+            composable("search") {
+                val vm = viewModel<com.lifeops.app.ui.screens.search.SearchViewModel>(
+                    factory = com.lifeops.app.ui.screens.search.SearchViewModelFactory(app.searchRepository)
+                )
+                com.lifeops.app.ui.screens.search.SearchScreen(
+                    viewModel = vm,
+                    onNavigate = { route ->
+                        navController.navigate(route) { launchSingleTop = true }
+                    },
+                    onBack = { navController.navigateUp() }
+                )
             }
         }
     }
