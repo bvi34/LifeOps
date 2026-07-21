@@ -40,6 +40,9 @@ fun CounterEventEntity.toModel() = CounterEvent(id, counterId, weekKey, occurred
 fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt, subtaskId)
 fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtaskId)
 
+fun TaskAttachmentEntity.toModel() = TaskAttachment(id, taskId, imageData, caption, createdAt)
+fun TaskAttachment.toEntity() = TaskAttachmentEntity(id, taskId, imageData, caption, createdAt)
+
 fun TimeEntryEntity.toModel() = TimeEntry(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 fun TimeEntry.toEntity() = TimeEntryEntity(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 

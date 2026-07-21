@@ -1,6 +1,7 @@
 package com.lifeops.app.ui.screens.thisweek
 
 import android.content.Context
+import android.net.Uri
 import androidx.glance.appwidget.updateAll
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
@@ -82,6 +83,7 @@ data class ThisWeekUiState(
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
     val detailSubtasks: List<Subtask> = emptyList(),
+    val detailAttachments: List<TaskAttachment> = emptyList(),
     val counters: List<Counter> = emptyList(),
     /** Daytime periods of the tracked location's cached forecast — powers the weekly forecast
      *  strip above the task list. Empty when no weather location/report exists. */
@@ -115,6 +117,7 @@ class ThisWeekViewModel(
     private val aspectRepository: AspectRepository,
     private val importRepository: ImportRepository,
     private val taskNoteRepository: TaskNoteRepository,
+    private val taskAttachmentRepository: TaskAttachmentRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
@@ -578,13 +581,20 @@ class ThisWeekViewModel(
 
     // Detail sheet
     private var subtaskJob: Job? = null
+    private var attachmentJob: Job? = null
 
     fun openDetail(taskId: String) {
-        _uiState.update { it.copy(detailTaskId = taskId, detailSubtasks = emptyList()) }
+        _uiState.update { it.copy(detailTaskId = taskId, detailSubtasks = emptyList(), detailAttachments = emptyList()) }
         subtaskJob?.cancel()
         subtaskJob = viewModelScope.launch {
             runbookRepository.observeSubtasks(taskId).collectLatest { subs ->
                 _uiState.update { it.copy(detailSubtasks = subs) }
+            }
+        }
+        attachmentJob?.cancel()
+        attachmentJob = viewModelScope.launch {
+            taskAttachmentRepository.observeByTask(taskId).collectLatest { atts ->
+                _uiState.update { it.copy(detailAttachments = atts) }
             }
         }
     }
@@ -592,7 +602,17 @@ class ThisWeekViewModel(
     fun closeDetail() {
         subtaskJob?.cancel()
         subtaskJob = null
-        _uiState.update { it.copy(detailTaskId = null, detailSubtasks = emptyList()) }
+        attachmentJob?.cancel()
+        attachmentJob = null
+        _uiState.update { it.copy(detailTaskId = null, detailSubtasks = emptyList(), detailAttachments = emptyList()) }
+    }
+
+    fun onAddAttachment(taskId: String, uri: Uri) {
+        viewModelScope.launch { taskAttachmentRepository.addFromUri(appContext, taskId, uri) }
+    }
+
+    fun onDeleteAttachment(id: String) {
+        viewModelScope.launch { taskAttachmentRepository.delete(id) }
     }
 
     fun onToggleSubtask(subtaskId: String, checked: Boolean) {
@@ -844,6 +864,7 @@ class ThisWeekViewModelFactory(
     private val aspectRepository: AspectRepository,
     private val importRepository: ImportRepository,
     private val taskNoteRepository: TaskNoteRepository,
+    private val taskAttachmentRepository: TaskAttachmentRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
@@ -859,7 +880,7 @@ class ThisWeekViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
-            taskNoteRepository, timeEntryRepository, notificationRepository, costResourceRepository,
+            taskNoteRepository, taskAttachmentRepository, timeEntryRepository, notificationRepository, costResourceRepository,
             projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
             weatherRepository, personRepository
         ) as T

@@ -2,13 +2,25 @@
 
 package com.lifeops.app.ui.components
 
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.AccessTime
@@ -40,6 +52,7 @@ import com.lifeops.app.data.model.RunbookWithSteps
 import com.lifeops.app.data.model.Subtask
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskCostEntry
+import com.lifeops.app.data.model.TaskAttachment
 import com.lifeops.app.data.model.TaskNote
 import com.lifeops.app.data.model.TaskSource
 import com.lifeops.app.data.model.TaskStatus
@@ -80,6 +93,9 @@ fun TaskDetailSheet(
     onDeleteSubtask: (id: String) -> Unit = {},
     onDismiss: () -> Unit,
     onAddNote: (String) -> Unit,
+    attachments: List<TaskAttachment> = emptyList(),
+    onAddAttachment: (Uri) -> Unit = {},
+    onDeleteAttachment: (id: String) -> Unit = {},
     onEdit: () -> Unit,
     onCarryForward: (CarryForwardReason) -> Unit,
     onUnCarryForward: (() -> Unit)? = null,
@@ -96,6 +112,9 @@ fun TaskDetailSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var newNoteText by remember { mutableStateOf("") }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { onAddAttachment(it) }
+    }
     var showLogManuallyDialog by remember { mutableStateOf(false) }
     var showLogCostDialog by remember { mutableStateOf(false) }
     var showRunbookPicker by remember { mutableStateOf(false) }
@@ -682,6 +701,76 @@ fun TaskDetailSheet(
                     enabled = newNoteText.isNotBlank()
                 ) { Icon(Icons.Default.Add, "Add note") }
             }
+
+            // Attachments section — images kept deliberately compact (capped height) so a photo
+            // never dwarfs the surrounding notes; they scroll horizontally when there are several.
+            Spacer(Modifier.height(16.dp))
+            Text("Attachments", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(8.dp))
+            if (attachments.isEmpty()) {
+                Text(
+                    "No images yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+            } else {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    attachments.forEach { att ->
+                        val bitmap = rememberAttachmentBitmap(att.imageData)
+                        Box {
+                            if (bitmap != null) {
+                                // Fixed compact height; width follows the image's aspect ratio but is
+                                // clamped so neither tall-portrait nor wide-panorama shots blow out the row.
+                                val aspect = bitmap.width.toFloat() / bitmap.height.toFloat().coerceAtLeast(1f)
+                                Image(
+                                    bitmap = bitmap,
+                                    contentDescription = att.caption ?: "Attachment",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .height(110.dp)
+                                        .width((110f * aspect).dp.coerceIn(70.dp, 180.dp))
+                                        .clip(RoundedCornerShape(8.dp))
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier
+                                        .size(110.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("!", style = MaterialTheme.typography.titleMedium)
+                                }
+                            }
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f),
+                                modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { onDeleteAttachment(att.id) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Remove attachment",
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = { imagePicker.launch("image/*") }) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Add image")
+            }
         }
     }
 
@@ -718,6 +807,20 @@ fun TaskDetailSheet(
         )
     }
 }
+
+/**
+ * Decode a base64 JPEG attachment into an ImageBitmap, cached per image string so it is decoded
+ * once while the sheet is open. Attachments are downscaled on import, so decoding here is cheap;
+ * a corrupt/unsupported payload yields null (rendered as a small placeholder).
+ */
+@Composable
+private fun rememberAttachmentBitmap(data: String): ImageBitmap? =
+    remember(data) {
+        runCatching {
+            val bytes = Base64.decode(data, Base64.NO_WRAP)
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+        }.getOrNull()
+    }
 
 @Composable
 private fun WeatherSection(fit: TaskWeatherFit?, requirement: TaskWeatherRequirement) {

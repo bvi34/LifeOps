@@ -204,7 +204,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                             app,
                             app.applicationScope,
                             app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
-                            app.taskNoteRepository, app.timeEntryRepository, app.notificationRepository,
+                            app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
                             app.costResourceRepository, app.projectRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
                             app.weatherRepository, app.personRepository

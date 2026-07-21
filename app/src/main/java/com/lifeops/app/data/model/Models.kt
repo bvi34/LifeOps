@@ -90,6 +90,14 @@ data class Task(
     val recurrenceDayOfMonth: Int? = null
 )
 
+data class TaskAttachment(
+    val id: String,
+    val taskId: String,
+    val imageData: String,
+    val caption: String? = null,
+    val createdAt: String
+)
+
 data class CarryForwardEntry(
     val taskTitle: String,
     val carriedCount: Int,
