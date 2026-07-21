@@ -774,6 +774,32 @@ private val MIGRATION_33_34 = object : Migration(33, 34) {
     }
 }
 
+private val MIGRATION_34_35 = object : Migration(34, 35) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Wellness check-ins: the daytime energy/sensory pop-ups and the morning sleep report share
+        // one standalone log table, no FK (same shape as game_scores). Nullable columns carry no SQL
+        // DEFAULT — the entity has no @ColumnInfo(defaultValue), so Room's generated schema has none
+        // and this CREATE must match exactly or startup validation fails.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS wellness_checkins (
+                id TEXT NOT NULL PRIMARY KEY,
+                kind TEXT NOT NULL,
+                recordedAt TEXT NOT NULL,
+                weekKey INTEGER NOT NULL,
+                dayKey TEXT NOT NULL,
+                energy INTEGER,
+                sensory INTEGER,
+                tired INTEGER,
+                sleepMinutes INTEGER,
+                note TEXT
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_wellness_checkins_weekKey ON wellness_checkins(weekKey)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_wellness_checkins_recordedAt ON wellness_checkins(recordedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_wellness_checkins_dayKey ON wellness_checkins(dayKey)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -816,9 +842,10 @@ private val MIGRATION_33_34 = object : Migration(33, 34) {
         TaskWeatherRequirementEntity::class,
         ActivityTemplateEntity::class,
         ActivityOverrideEntity::class,
-        GameScoreEntity::class
+        GameScoreEntity::class,
+        WellnessCheckinEntity::class
     ],
-    version = 34,
+    version = 35,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -850,6 +877,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun personDao(): PersonDao
     abstract fun activityTemplateDao(): ActivityTemplateDao
     abstract fun gameScoreDao(): GameScoreDao
+    abstract fun wellnessCheckinDao(): WellnessCheckinDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -861,7 +889,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
                     .build()
                     .also { INSTANCE = it }
             }

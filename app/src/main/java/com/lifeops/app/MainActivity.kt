@@ -118,6 +118,9 @@ class MainActivity : ComponentActivity() {
             val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
             LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
                 LifeOpsNavHost(app, sharedText)
+                // Above the nav content so an energy/sensory check-in or the morning sleep prompt
+                // can surface on whatever screen the app opened to.
+                com.lifeops.app.ui.screens.wellness.WellnessPromptHost(app.wellnessRepository)
                 var showWelcome by remember { mutableStateOf(!app.preferencesRepository.onboardingShown) }
                 if (showWelcome) {
                     WelcomeDialog(onDismiss = {
@@ -398,8 +401,15 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     HistoryScreen(
                         onOpenGrowth = { navController.navigate("growth") },
                         onOpenReports = { navController.navigate("reports") },
-                        onOpenResources = { navController.navigate("resources") }
+                        onOpenResources = { navController.navigate("resources") },
+                        onOpenWellness = { navController.navigate("wellness") }
                     )
+                }
+                composable("wellness") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.wellness.WellnessViewModel>(
+                        factory = com.lifeops.app.ui.screens.wellness.WellnessViewModelFactory(app.wellnessRepository)
+                    )
+                    com.lifeops.app.ui.screens.wellness.WellnessScreen(vm, onBack = { navController.navigateUp() })
                 }
                 composable("growth") {
                     val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
