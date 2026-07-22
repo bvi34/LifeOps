@@ -3,6 +3,7 @@ package com.lifeops.app.ui.screens.counters
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.data.db.dao.CounterDailyTotal
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
@@ -15,14 +16,39 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 import java.util.UUID
+
+data class CounterDashboardHabit(
+    val counter: Counter,
+    val todayTotal: Int,
+    val weekTotal: Int,
+    val cumulativeTotal: Int,
+    val streakDays: Int,
+    val last7Days: List<Int>
+)
+
+private data class CounterSources(
+    val counters: List<Counter>,
+    val aspects: List<Aspect>,
+    val categories: List<Category>,
+    val weekly: Map<String, Int>,
+    val cumulative: Map<String, Int>
+)
 
 data class CountersUiState(
     val counters: List<Counter> = emptyList(),
     val aspects: List<Aspect> = emptyList(),
     val categoriesByAspect: Map<String, List<Category>> = emptyMap(),
     val weeklyTotals: Map<String, Int> = emptyMap(),   // counterId -> count this week
-    val cumulativeTotals: Map<String, Int> = emptyMap() // counterId -> all-time count
+    val cumulativeTotals: Map<String, Int> = emptyMap(), // counterId -> all-time count
+    val todayTotals: Map<String, Int> = emptyMap(),
+    val dashboardHabits: List<CounterDashboardHabit> = emptyList(),
+    val activeHabitCount: Int = 0,
+    val touchedTodayCount: Int = 0,
+    val totalToday: Int = 0,
+    val bestStreakDays: Int = 0,
+    val last7DayTotals: List<Int> = List(7) { 0 }
 )
 
 class CountersViewModel(
@@ -33,6 +59,8 @@ class CountersViewModel(
 
     // Stable within the current week; the VM is recreated on navigation, which re-reads it.
     private val weekKey = DateUtil.weekIndexFor(System.currentTimeMillis())
+    private val today = LocalDate.now()
+    private val dashboardStart = today.minusDays(29).atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toString()
 
     private val _uiState = MutableStateFlow(CountersUiState())
     val uiState: StateFlow<CountersUiState> = _uiState.asStateFlow()
@@ -40,21 +68,72 @@ class CountersViewModel(
     init {
         viewModelScope.launch {
             combine(
-                counterRepository.observeAll(),
-                aspectRepository.observeAspects(),
-                aspectRepository.observeCategories(),
-                counterRepository.observeWeeklyTotalsByCounter(weekKey),
-                counterRepository.observeCumulativeTotalsByCounter()
-            ) { counters, aspects, categories, weekly, cumulative ->
+                combine(
+                    counterRepository.observeAll(),
+                    aspectRepository.observeAspects(),
+                    aspectRepository.observeCategories(),
+                    counterRepository.observeWeeklyTotalsByCounter(weekKey),
+                    counterRepository.observeCumulativeTotalsByCounter()
+                ) { counters, aspects, categories, weekly, cumulative ->
+                    CounterSources(counters, aspects, categories, weekly, cumulative)
+                },
+                counterRepository.observeDailyTotalsSince(dashboardStart)
+            ) { sources, daily ->
+                val counters = sources.counters
+                val aspects = sources.aspects
+                val categories = sources.categories
+                val weekly = sources.weekly
+                val cumulative = sources.cumulative
+                val activeCounters = counters.filterNot { it.isArchived }
+                val todayKey = today.toString()
+                val todayTotals = daily.filter { it.dayKey == todayKey }.associate { it.counterId to it.total }
+                val dailyByCounter = daily.groupBy { it.counterId }
+                val dashboardHabits = activeCounters.map { counter ->
+                    val rows = dailyByCounter[counter.id].orEmpty()
+                    CounterDashboardHabit(
+                        counter = counter,
+                        todayTotal = todayTotals[counter.id] ?: 0,
+                        weekTotal = weekly[counter.id] ?: 0,
+                        cumulativeTotal = cumulative[counter.id] ?: 0,
+                        streakDays = streakDays(today, rows),
+                        last7Days = lastNDays(today, rows, 7)
+                    )
+                }.sortedWith(compareByDescending<CounterDashboardHabit> { it.todayTotal > 0 }.thenByDescending { it.streakDays }.thenBy { it.counter.sortOrder })
                 CountersUiState(
                     counters = counters,
                     aspects = aspects,
                     categoriesByAspect = categories.groupBy { it.aspectId },
                     weeklyTotals = weekly,
-                    cumulativeTotals = cumulative
+                    cumulativeTotals = cumulative,
+                    todayTotals = todayTotals,
+                    dashboardHabits = dashboardHabits,
+                    activeHabitCount = activeCounters.size,
+                    touchedTodayCount = dashboardHabits.count { it.todayTotal > 0 },
+                    totalToday = todayTotals.values.sum(),
+                    bestStreakDays = dashboardHabits.maxOfOrNull { it.streakDays } ?: 0,
+                    last7DayTotals = (6 downTo 0).map { offset ->
+                        val key = today.minusDays(offset.toLong()).toString()
+                        daily.filter { it.dayKey == key }.sumOf { it.total }
+                    }
                 )
             }.collect { _uiState.value = it }
         }
+    }
+
+    private fun lastNDays(today: LocalDate, rows: List<CounterDailyTotal>, days: Int): List<Int> {
+        val totals = rows.associate { it.dayKey to it.total }
+        return ((days - 1) downTo 0).map { offset -> totals[today.minusDays(offset.toLong()).toString()] ?: 0 }
+    }
+
+    private fun streakDays(today: LocalDate, rows: List<CounterDailyTotal>): Int {
+        val activeDays = rows.filter { it.total > 0 }.map { it.dayKey }.toSet()
+        var cursor = today
+        var streak = 0
+        while (activeDays.contains(cursor.toString())) {
+            streak += 1
+            cursor = cursor.minusDays(1)
+        }
+        return streak
     }
 
     fun createCounter(name: String, categoryId: String?) {

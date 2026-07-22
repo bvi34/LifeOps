@@ -14,6 +14,9 @@ data class CounterCategoryTotal(val categoryId: String?, val total: Int)
 /** Per-counter total, used to populate the counters list in one query instead of N. */
 data class CounterIdTotal(val counterId: String, val total: Int)
 
+/** Daily total for a counter, keyed by local yyyy-MM-dd derived from its stored instant. */
+data class CounterDailyTotal(val counterId: String, val dayKey: String, val total: Int)
+
 @Dao
 interface CounterDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -69,6 +72,15 @@ interface CounterDao {
 
     @Query("SELECT counterId AS counterId, COALESCE(SUM(delta), 0) AS total FROM counter_events GROUP BY counterId")
     fun observeCumulativeTotalsByCounter(): Flow<List<CounterIdTotal>>
+
+    @Query("""
+        SELECT counterId AS counterId, date(occurredAt, 'localtime') AS dayKey, COALESCE(SUM(delta), 0) AS total
+        FROM counter_events
+        WHERE occurredAt >= :startIso
+        GROUP BY counterId, dayKey
+        ORDER BY dayKey DESC
+    """)
+    fun observeDailyTotalsSince(startIso: String): Flow<List<CounterDailyTotal>>
 
     // Reports: per-counter totals summed over events on/after a cutoff instant.
     @Query("SELECT counterId AS counterId, COALESCE(SUM(delta), 0) AS total FROM counter_events WHERE occurredAt >= :startIso GROUP BY counterId")
