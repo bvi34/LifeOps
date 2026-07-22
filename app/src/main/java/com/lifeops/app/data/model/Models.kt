@@ -247,7 +247,9 @@ data class Counter(
     val categoryId: String? = null,
     val isArchived: Boolean = false,
     val sortOrder: Int = 0,
-    val createdAt: String
+    val createdAt: String,
+    val isHabit: Boolean = false,
+    val reminderHour: Int? = null
 )
 
 data class CounterEvent(

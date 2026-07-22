@@ -32,8 +32,8 @@ fun Task.toEntity() = TaskEntity(
     recurrenceIntervalWeeks, recurrenceDayOfMonth
 )
 
-fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt)
-fun Counter.toEntity() = CounterEntity(id, name, categoryId, isArchived, sortOrder, createdAt)
+fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt, isHabit, reminderHour)
+fun Counter.toEntity() = CounterEntity(id, name, categoryId, isArchived, sortOrder, createdAt, isHabit, reminderHour)
 
 fun CounterEventEntity.toModel() = CounterEvent(id, counterId, weekKey, occurredAt, delta, note)
 

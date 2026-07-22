@@ -8,7 +8,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
@@ -111,9 +113,13 @@ fun CountersScreen(
             title = "New counter",
             initialName = "",
             initialCategoryId = null,
+            initialIsHabit = false,
+            initialReminderHour = null,
             aspects = state.aspects,
             categoriesByAspect = state.categoriesByAspect,
-            onConfirm = { name, categoryId -> viewModel.createCounter(name, categoryId); showCreate = false },
+            onConfirm = { name, categoryId, isHabit, reminderHour ->
+                viewModel.createCounter(name, categoryId, isHabit, reminderHour); showCreate = false
+            },
             onDismiss = { showCreate = false }
         )
     }
@@ -123,9 +129,13 @@ fun CountersScreen(
             title = "Edit counter",
             initialName = counter.name,
             initialCategoryId = counter.categoryId,
+            initialIsHabit = counter.isHabit,
+            initialReminderHour = counter.reminderHour,
             aspects = state.aspects,
             categoriesByAspect = state.categoriesByAspect,
-            onConfirm = { name, categoryId -> viewModel.saveCounter(counter, name, categoryId); editing = null },
+            onConfirm = { name, categoryId, isHabit, reminderHour ->
+                viewModel.saveCounter(counter, name, categoryId, isHabit, reminderHour); editing = null
+            },
             onDismiss = { editing = null }
         )
     }
@@ -292,6 +302,14 @@ private fun CounterCard(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = dim)
                     )
+                    if (counter.isHabit) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "habit",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = dim)
+                        )
+                    }
                     if (counter.isArchived) {
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -336,12 +354,17 @@ private fun CounterEditorDialog(
     title: String,
     initialName: String,
     initialCategoryId: String?,
+    initialIsHabit: Boolean,
+    initialReminderHour: Int?,
     aspects: List<Aspect>,
     categoriesByAspect: Map<String, List<Category>>,
-    onConfirm: (name: String, categoryId: String?) -> Unit,
+    onConfirm: (name: String, categoryId: String?, isHabit: Boolean, reminderHour: Int?) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(initialName) }
+    var isHabit by remember { mutableStateOf(initialIsHabit) }
+    var reminderHour by remember { mutableStateOf(initialReminderHour) }
+    var showReminderPicker by remember { mutableStateOf(false) }
     // A counter stores only categoryId; derive the owning aspect so the dropdowns prefill.
     val initialAspectId = remember(initialCategoryId, categoriesByAspect) {
         categoriesByAspect.entries.firstOrNull { entry -> entry.value.any { it.id == initialCategoryId } }?.key
@@ -367,6 +390,38 @@ private fun CounterEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // Habit flag: promotes this counter onto the habit dashboard and unlocks its
+                // own daily reminder.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Track as habit", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Show on the habit dashboard with streaks",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                    Switch(checked = isHabit, onCheckedChange = { isHabit = it })
+                }
+                // Per-habit daily reminder — only meaningful for a habit.
+                if (isHabit) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Daily reminder", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                reminderHour?.let { formatReminderHour(it) } ?: "Off",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        if (reminderHour != null) {
+                            TextButton(onClick = { reminderHour = null }) { Text("Clear") }
+                        }
+                        TextButton(onClick = { showReminderPicker = true }) {
+                            Text(if (reminderHour == null) "Set" else "Change")
+                        }
+                    }
+                }
                 ExposedDropdownMenuBox(expanded = aspectExpanded, onExpandedChange = { aspectExpanded = it }) {
                     OutlinedTextField(
                         value = selectedAspect?.name ?: "No aspect",
@@ -417,11 +472,61 @@ private fun CounterEditorDialog(
         },
         confirmButton = {
             Button(
-                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedCategoryId) },
+                onClick = { if (name.isNotBlank()) onConfirm(name.trim(), selectedCategoryId, isHabit, reminderHour) },
                 enabled = name.isNotBlank()
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+
+    if (showReminderPicker) {
+        ReminderHourPickerDialog(
+            currentHour = reminderHour,
+            onSelect = { reminderHour = it; showReminderPicker = false },
+            onDismiss = { showReminderPicker = false }
+        )
+    }
+}
+
+/** hour-of-day (0-23) as a friendly "8:00 AM", matching the settings reminder pickers. */
+private fun formatReminderHour(hour: Int): String {
+    val h = if (hour % 12 == 0) 12 else hour % 12
+    val suffix = if (hour < 12) "AM" else "PM"
+    return "$h:00 $suffix"
+}
+
+/** Single-hour radio picker for a habit's daily reminder (same shape as the settings dialogs). */
+@Composable
+private fun ReminderHourPickerDialog(
+    currentHour: Int?,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reminder time") },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                (5..22).forEach { h ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { onSelect(h) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(selected = h == currentHour, onClick = { onSelect(h) })
+                        Text(
+                            formatReminderHour(h),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
 }
 
