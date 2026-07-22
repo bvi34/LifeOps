@@ -43,6 +43,7 @@ data class CountersUiState(
     val weeklyTotals: Map<String, Int> = emptyMap(),   // counterId -> count this week
     val cumulativeTotals: Map<String, Int> = emptyMap(), // counterId -> all-time count
     val todayTotals: Map<String, Int> = emptyMap(),
+    val last7DaysByCounter: Map<String, List<Int>> = emptyMap(), // counterId -> oldest..today, for every counter's list dots
     val dashboardHabits: List<CounterDashboardHabit> = emptyList(),
     val activeHabitCount: Int = 0,
     val touchedTodayCount: Int = 0,
@@ -93,6 +94,10 @@ class CountersViewModel(
                 val todayKey = today.toString()
                 val todayTotals = daily.filter { it.dayKey == todayKey }.associate { it.counterId to it.total }
                 val dailyByCounter = daily.groupBy { it.counterId }
+                // 7-day dots for every counter (habit or not), so the list surfaces patterns too.
+                val last7DaysByCounter = counters.associate { counter ->
+                    counter.id to lastNDays(today, dailyByCounter[counter.id].orEmpty(), 7)
+                }
                 val dashboardHabits = activeHabits.map { counter ->
                     val rows = dailyByCounter[counter.id].orEmpty()
                     CounterDashboardHabit(
@@ -111,6 +116,7 @@ class CountersViewModel(
                     weeklyTotals = weekly,
                     cumulativeTotals = cumulative,
                     todayTotals = todayTotals,
+                    last7DaysByCounter = last7DaysByCounter,
                     dashboardHabits = dashboardHabits,
                     activeHabitCount = activeHabits.size,
                     touchedTodayCount = dashboardHabits.count { it.todayTotal > 0 },

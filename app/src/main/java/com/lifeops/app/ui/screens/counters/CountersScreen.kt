@@ -97,6 +97,7 @@ fun CountersScreen(
                         categoryName = categoriesFlat.firstOrNull { it.id == counter.categoryId }?.name,
                         weekCount = state.weeklyTotals[counter.id] ?: 0,
                         totalCount = state.cumulativeTotals[counter.id] ?: 0,
+                        last7Days = state.last7DaysByCounter[counter.id] ?: List(7) { 0 },
                         onIncrement = { viewModel.increment(counter) },
                         onOpen = { onOpenCounter(counter.id) },
                         onEdit = { editing = counter },
@@ -241,18 +242,28 @@ private fun HabitMomentumRow(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    habit.last7Days.forEach { total ->
-                        val color = if (total > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-                        Box(Modifier.size(18.dp).background(color, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
-                            if (total > 1) Text(total.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
-                        }
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    WeeklyDots(habit.last7Days)
                     Spacer(Modifier.width(8.dp))
                     Text("${habit.streakDays}d", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
                 }
             }
             FilledTonalButton(onClick = { onIncrement(habit.counter) }) { Text("+1") }
+        }
+    }
+}
+
+/** The shared 7-day activity dots: one square per day, oldest first, filled on active days.
+ *  Used on both the habit momentum rows and every counter card so patterns read the same way. */
+@Composable
+private fun WeeklyDots(values: List<Int>, dim: Float = 1f) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        values.forEach { total ->
+            val color = if (total > 0) MaterialTheme.colorScheme.primary.copy(alpha = dim)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = dim)
+            Box(Modifier.size(18.dp).background(color, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                if (total > 1) Text(total.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+            }
         }
     }
 }
@@ -280,6 +291,7 @@ private fun CounterCard(
     categoryName: String?,
     weekCount: Int,
     totalCount: Int,
+    last7Days: List<Int>,
     onIncrement: () -> Unit,
     onOpen: () -> Unit,
     onEdit: () -> Unit,
@@ -327,6 +339,8 @@ private fun CounterCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
+                Spacer(Modifier.height(8.dp))
+                WeeklyDots(last7Days, dim = dim)
             }
             if (!counter.isArchived) {
                 FilledTonalButton(onClick = onIncrement) { Text("+1") }
