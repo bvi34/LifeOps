@@ -2,6 +2,8 @@
 
 package com.lifeops.app.ui.screens.counters
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,9 +16,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlin.math.max
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
@@ -63,6 +67,28 @@ fun CountersScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item {
+                    HabitDashboard(
+                        activeHabitCount = state.activeHabitCount,
+                        touchedTodayCount = state.touchedTodayCount,
+                        totalToday = state.totalToday,
+                        bestStreakDays = state.bestStreakDays,
+                        last7DayTotals = state.last7DayTotals,
+                        habits = state.dashboardHabits,
+                        categoryNameFor = { id -> categoriesFlat.firstOrNull { it.id == id }?.name },
+                        onIncrement = { viewModel.increment(it) },
+                        onOpenCounter = { onOpenCounter(it.id) }
+                    )
+                }
+
+                item {
+                    Text(
+                        "All counters",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
                 items(state.counters, key = { it.id }) { counter ->
                     CounterCard(
                         counter = counter,
@@ -110,6 +136,131 @@ fun CountersScreen(
             onConfirm = { occurredAtMillis, delta -> viewModel.logBackdated(counter, occurredAtMillis, delta); backdating = null },
             onDismiss = { backdating = null }
         )
+    }
+}
+
+
+@Composable
+private fun HabitDashboard(
+    activeHabitCount: Int,
+    touchedTodayCount: Int,
+    totalToday: Int,
+    bestStreakDays: Int,
+    last7DayTotals: List<Int>,
+    habits: List<CounterDashboardHabit>,
+    categoryNameFor: (String?) -> String?,
+    onIncrement: (Counter) -> Unit,
+    onOpenCounter: (Counter) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Habit dashboard", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "Today you touched $touchedTodayCount of $activeHabitCount active habits.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    DashboardMetric("Today", totalToday.toString(), Modifier.weight(1f))
+                    DashboardMetric("Active", "$touchedTodayCount/$activeHabitCount", Modifier.weight(1f))
+                    DashboardMetric("Best streak", "${bestStreakDays}d", Modifier.weight(1f))
+                }
+                WeeklySparkline(last7DayTotals, MaterialTheme.colorScheme.primary)
+            }
+        }
+
+        val attention = habits.filter { it.todayTotal == 0 }.take(3)
+        if (attention.isNotEmpty()) {
+            Card {
+                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Still open today", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    attention.forEach { habit ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(Modifier.weight(1f)) {
+                                Text(habit.counter.name, fontWeight = FontWeight.Medium)
+                                Text(
+                                    listOfNotNull(categoryNameFor(habit.counter.categoryId), "${habit.weekTotal} this week", "${habit.streakDays}d streak").joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                            FilledTonalButton(onClick = { onIncrement(habit.counter) }) { Text("Log") }
+                        }
+                    }
+                }
+            }
+        }
+
+        Text("Habit momentum", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        habits.take(5).forEach { habit ->
+            HabitMomentumRow(habit, categoryNameFor(habit.counter.categoryId), onIncrement, onOpenCounter)
+        }
+    }
+}
+
+@Composable
+private fun DashboardMetric(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.55f), shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        }
+    }
+}
+
+@Composable
+private fun HabitMomentumRow(
+    habit: CounterDashboardHabit,
+    categoryName: String?,
+    onIncrement: (Counter) -> Unit,
+    onOpenCounter: (Counter) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth().clickable { onOpenCounter(habit.counter) }) {
+        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(habit.counter.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    if (habit.todayTotal > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text("done today", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(
+                    listOfNotNull(categoryName, "${habit.weekTotal} this week", "${habit.cumulativeTotal} total").joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    habit.last7Days.forEach { total ->
+                        val color = if (total > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        Box(Modifier.size(18.dp).background(color, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                            if (total > 1) Text(total.toString(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
+                        }
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("${habit.streakDays}d", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                }
+            }
+            FilledTonalButton(onClick = { onIncrement(habit.counter) }) { Text("+1") }
+        }
+    }
+}
+
+@Composable
+private fun WeeklySparkline(values: List<Int>, color: Color) {
+    val maxValue = max(1, values.maxOrNull() ?: 0)
+    Canvas(modifier = Modifier.fillMaxWidth().height(48.dp)) {
+        val barWidth = size.width / (values.size * 2f - 1f)
+        values.forEachIndexed { index, value ->
+            val height = size.height * (value.toFloat() / maxValue.toFloat()).coerceAtLeast(if (value > 0) 0.12f else 0.04f)
+            drawRoundRect(
+                color = color.copy(alpha = if (value > 0) 0.9f else 0.22f),
+                topLeft = androidx.compose.ui.geometry.Offset(index * barWidth * 2f, size.height - height),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f)
+            )
+        }
     }
 }
 

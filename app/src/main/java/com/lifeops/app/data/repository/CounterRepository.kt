@@ -1,6 +1,7 @@
 package com.lifeops.app.data.repository
 
 import com.lifeops.app.data.db.dao.CounterDao
+import com.lifeops.app.data.db.dao.CounterDailyTotal
 import com.lifeops.app.data.db.dao.CounterWeeklyTotal
 import com.lifeops.app.data.db.entities.CounterEntity
 import com.lifeops.app.data.db.entities.CounterEventEntity
@@ -75,6 +76,10 @@ class CounterRepository(private val counterDao: CounterDao) {
     /** counterId -> all-time total, for the counters list. */
     fun observeCumulativeTotalsByCounter(): Flow<Map<String, Int>> =
         counterDao.observeCumulativeTotalsByCounter().map { rows -> rows.associate { it.counterId to it.total } }
+
+    /** Daily totals for dashboard widgets and streak calculations. */
+    fun observeDailyTotalsSince(startIso: String): Flow<List<CounterDailyTotal>> =
+        counterDao.observeDailyTotalsSince(startIso)
 
     // --- Reports ---
 
