@@ -66,7 +66,7 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
-    val counterRepository by lazy { CounterRepository(database.counterDao()) }
+    val counterRepository by lazy { CounterRepository(this, database.counterDao()) }
     val growthRepository by lazy {
         GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
     }
@@ -120,6 +120,9 @@ class LifeOpsApp : Application() {
             gameResourceRepository.ensureDefaultSlots()
             activityTemplateRepository.ensureDefaults()
             notificationRepository.scheduleWeekCloseReminder()
+            // Re-arm per-habit daily reminders from the database (WorkManager's queue can be lost
+            // across reinstall/device transfer while the reminder hours persist in Room).
+            counterRepository.rescheduleAllReminders()
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(this)

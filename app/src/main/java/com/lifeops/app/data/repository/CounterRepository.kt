@@ -1,5 +1,6 @@
 package com.lifeops.app.data.repository
 
+import android.content.Context
 import com.lifeops.app.data.db.dao.CounterDao
 import com.lifeops.app.data.db.dao.CounterDailyTotal
 import com.lifeops.app.data.db.dao.CounterWeeklyTotal
@@ -10,11 +11,15 @@ import com.lifeops.app.data.model.CounterEvent
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
+import com.lifeops.app.worker.HabitReminderWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
-class CounterRepository(private val counterDao: CounterDao) {
+class CounterRepository(
+    private val context: Context,
+    private val counterDao: CounterDao
+) {
 
     // --- Counters list / lifecycle (same shape as ProjectRepository) ---
 
@@ -29,23 +34,72 @@ class CounterRepository(private val counterDao: CounterDao) {
 
     suspend fun getById(id: String): Counter? = counterDao.getById(id)?.toModel()
 
-    /** Create a counter, optionally attached to a category. Mirrors createProject. */
-    suspend fun createCounter(id: String, name: String, categoryId: String? = null): Counter {
-        val entity = CounterEntity(id = id, name = name, categoryId = categoryId, createdAt = DateUtil.now())
+    /** Create a counter, optionally a habit with its own daily reminder. Mirrors createProject. */
+    suspend fun createCounter(
+        id: String,
+        name: String,
+        categoryId: String? = null,
+        isHabit: Boolean = false,
+        reminderHour: Int? = null
+    ): Counter {
+        val entity = CounterEntity(
+            id = id,
+            name = name,
+            categoryId = categoryId,
+            createdAt = DateUtil.now(),
+            isHabit = isHabit,
+            reminderHour = reminderHour
+        )
         counterDao.insertCounter(entity)
-        return entity.toModel()
+        val model = entity.toModel()
+        syncReminder(model)
+        return model
     }
 
     /**
-     * Persist an edited counter (rename, archive, attach/detach category). Attach is just
-     * update(counter.copy(categoryId = ...)), exactly how projects do it — categoryId is
-     * nullable and null detaches. Categories are the same shared set projects/imports use
-     * (AspectRepository.findOrCreateCategory), so counters and projects can't fork categories.
+     * Persist an edited counter (rename, archive, attach/detach category, habit flag, reminder).
+     * Attach is just update(counter.copy(categoryId = ...)), exactly how projects do it —
+     * categoryId is nullable and null detaches. Categories are the same shared set projects/imports
+     * use (AspectRepository.findOrCreateCategory), so counters and projects can't fork categories.
+     * The habit reminder is re-synced from the saved state so a changed hour / cleared reminder /
+     * un-flagged habit takes effect immediately.
      */
-    suspend fun update(counter: Counter) = counterDao.update(counter.toEntity())
+    suspend fun update(counter: Counter) {
+        counterDao.update(counter.toEntity())
+        syncReminder(counter)
+    }
 
-    suspend fun setArchived(counter: Counter, archived: Boolean) =
-        counterDao.update(counter.copy(isArchived = archived).toEntity())
+    suspend fun setArchived(counter: Counter, archived: Boolean) {
+        val updated = counter.copy(isArchived = archived)
+        counterDao.update(updated.toEntity())
+        // Archiving silences the reminder without discarding the chosen hour; unarchiving restores it.
+        syncReminder(updated)
+    }
+
+    // --- Habit reminders ---
+
+    /** Queue or cancel [counter]'s daily reminder to match its current habit/reminder/archive state. */
+    private fun syncReminder(counter: Counter) {
+        val hour = counter.reminderHour
+        if (counter.isHabit && !counter.isArchived && hour != null) {
+            HabitReminderWorker.schedule(context, counter.id, counter.name, hour)
+        } else {
+            HabitReminderWorker.cancel(context, counter.id)
+        }
+    }
+
+    /**
+     * Reconcile all habit reminders against the database — called at app start, since WorkManager's
+     * queue can be lost across reinstall/device-transfer while the reminder settings live in Room.
+     * Clears the queue and re-schedules one reminder per eligible habit.
+     */
+    suspend fun rescheduleAllReminders() {
+        HabitReminderWorker.cancelAll(context)
+        counterDao.getAllSync()
+            .map { it.toModel() }
+            .filter { it.isHabit && !it.isArchived && it.reminderHour != null }
+            .forEach { HabitReminderWorker.schedule(context, it.id, it.name, it.reminderHour!!) }
+    }
 
     // --- Reporting (the five DAO queries, surfaced as models) ---
 

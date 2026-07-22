@@ -850,6 +850,18 @@ private val MIGRATION_36_37 = object : Migration(36, 37) {
     }
 }
 
+private val MIGRATION_38_39 = object : Migration(38, 39) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Counters gain a habit flag and an optional per-habit daily reminder hour. isHabit is
+        // NOT NULL with DEFAULT 0 (SQLite requires a default to ALTER-add a NOT NULL column to a
+        // populated table) and the entity carries a matching @ColumnInfo(defaultValue = "0") so
+        // Room's schema validation passes. reminderHour is nullable — no default, and null means
+        // "no reminder". Purely additive; existing counters stay non-habit with no reminder.
+        db.execSQL("ALTER TABLE counters ADD COLUMN isHabit INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE counters ADD COLUMN reminderHour INTEGER")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -897,7 +909,7 @@ private val MIGRATION_36_37 = object : Migration(36, 37) {
         TaskAttachmentEntity::class,
         BusyBlockEntity::class
     ],
-    version = 38,
+    version = 39,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -943,7 +955,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
                     .build()
                     .also { INSTANCE = it }
             }

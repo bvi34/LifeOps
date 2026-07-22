@@ -43,6 +43,7 @@ data class CountersUiState(
     val weeklyTotals: Map<String, Int> = emptyMap(),   // counterId -> count this week
     val cumulativeTotals: Map<String, Int> = emptyMap(), // counterId -> all-time count
     val todayTotals: Map<String, Int> = emptyMap(),
+    val last7DaysByCounter: Map<String, List<Int>> = emptyMap(), // counterId -> oldest..today, for every counter's list dots
     val dashboardHabits: List<CounterDashboardHabit> = emptyList(),
     val activeHabitCount: Int = 0,
     val touchedTodayCount: Int = 0,
@@ -85,10 +86,19 @@ class CountersViewModel(
                 val weekly = sources.weekly
                 val cumulative = sources.cumulative
                 val activeCounters = counters.filterNot { it.isArchived }
+                // The dashboard is habit-only: a plain tally counter no longer inflates the streak
+                // and "active habits" numbers. Counters without the flag still appear in the full
+                // "All counters" list below.
+                val activeHabits = activeCounters.filter { it.isHabit }
+                val habitIds = activeHabits.map { it.id }.toSet()
                 val todayKey = today.toString()
                 val todayTotals = daily.filter { it.dayKey == todayKey }.associate { it.counterId to it.total }
                 val dailyByCounter = daily.groupBy { it.counterId }
-                val dashboardHabits = activeCounters.map { counter ->
+                // 7-day dots for every counter (habit or not), so the list surfaces patterns too.
+                val last7DaysByCounter = counters.associate { counter ->
+                    counter.id to lastNDays(today, dailyByCounter[counter.id].orEmpty(), 7)
+                }
+                val dashboardHabits = activeHabits.map { counter ->
                     val rows = dailyByCounter[counter.id].orEmpty()
                     CounterDashboardHabit(
                         counter = counter,
@@ -106,14 +116,15 @@ class CountersViewModel(
                     weeklyTotals = weekly,
                     cumulativeTotals = cumulative,
                     todayTotals = todayTotals,
+                    last7DaysByCounter = last7DaysByCounter,
                     dashboardHabits = dashboardHabits,
-                    activeHabitCount = activeCounters.size,
+                    activeHabitCount = activeHabits.size,
                     touchedTodayCount = dashboardHabits.count { it.todayTotal > 0 },
-                    totalToday = todayTotals.values.sum(),
+                    totalToday = todayTotals.filterKeys { it in habitIds }.values.sum(),
                     bestStreakDays = dashboardHabits.maxOfOrNull { it.streakDays } ?: 0,
                     last7DayTotals = (6 downTo 0).map { offset ->
                         val key = today.minusDays(offset.toLong()).toString()
-                        daily.filter { it.dayKey == key }.sumOf { it.total }
+                        daily.filter { it.dayKey == key && it.counterId in habitIds }.sumOf { it.total }
                     }
                 )
             }.collect { _uiState.value = it }
@@ -136,14 +147,23 @@ class CountersViewModel(
         return streak
     }
 
-    fun createCounter(name: String, categoryId: String?) {
+    fun createCounter(name: String, categoryId: String?, isHabit: Boolean, reminderHour: Int?) {
         if (name.isBlank()) return
-        viewModelScope.launch { counterRepository.createCounter(UUID.randomUUID().toString(), name.trim(), categoryId) }
+        // A reminder only makes sense for a habit; drop it otherwise so state can't go inconsistent.
+        val hour = reminderHour?.takeIf { isHabit }
+        viewModelScope.launch {
+            counterRepository.createCounter(UUID.randomUUID().toString(), name.trim(), categoryId, isHabit, hour)
+        }
     }
 
-    fun saveCounter(counter: Counter, name: String, categoryId: String?) {
+    fun saveCounter(counter: Counter, name: String, categoryId: String?, isHabit: Boolean, reminderHour: Int?) {
         if (name.isBlank()) return
-        viewModelScope.launch { counterRepository.update(counter.copy(name = name.trim(), categoryId = categoryId)) }
+        val hour = reminderHour?.takeIf { isHabit }
+        viewModelScope.launch {
+            counterRepository.update(
+                counter.copy(name = name.trim(), categoryId = categoryId, isHabit = isHabit, reminderHour = hour)
+            )
+        }
     }
 
     fun setArchived(counter: Counter, archived: Boolean) {
