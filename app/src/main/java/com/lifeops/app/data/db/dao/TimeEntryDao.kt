@@ -24,6 +24,9 @@ interface TimeEntryDao {
     @Query("SELECT * FROM time_entries WHERE taskId = :taskId")
     suspend fun getByTask(taskId: String): List<TimeEntryEntity>
 
+    @Query("SELECT * FROM time_entries WHERE taskId = :taskId")
+    fun observeByTask(taskId: String): Flow<List<TimeEntryEntity>>
+
     @Query("SELECT * FROM time_entries WHERE taskId IN (:taskIds)")
     suspend fun getByTaskIds(taskIds: List<String>): List<TimeEntryEntity>
 

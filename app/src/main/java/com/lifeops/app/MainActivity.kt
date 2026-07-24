@@ -211,7 +211,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                             app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
                             app.costResourceRepository, app.projectRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
-                            app.weatherRepository, app.personRepository
+                            app.weatherRepository, app.personRepository, app.timerController
                         )
                     )
                     val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
@@ -240,6 +240,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenProject = { id -> navController.navigate("project_detail/$id") },
                         onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                         onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
+                        onOpenTask = { id -> navController.navigate("task_detail/$id") },
                         sharedText = sharedText,
                         onImportShared = { text ->
                             taskManagerVm.onImportJsonChange(text)
@@ -489,6 +490,29 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     onNavigate = { route ->
                         navController.navigate(route) { launchSingleTop = true }
                     },
+                    onBack = { navController.navigateUp() }
+                )
+            }
+
+            // Standalone, read-only task detail — a task opened as its own screen (e.g. from search),
+            // including tasks from past, closed weeks. Dismissing (Back) returns to the caller.
+            composable("task_detail/{taskId}") { backStackEntry ->
+                val taskId = backStackEntry.arguments?.getString("taskId") ?: return@composable
+                val vm = viewModel<com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModel>(
+                    key = "task_detail_$taskId",
+                    factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
+                        app, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
+                        app.costResourceRepository, app.runbookRepository, app.projectRepository,
+                        app.counterRepository, app.personRepository, app.taskAttachmentRepository,
+                        app.weatherRepository, app.weekRepository, app.aspectRepository,
+                        app.notificationRepository, app.timerController
+                    )
+                )
+                com.lifeops.app.ui.screens.taskdetail.TaskDetailScreen(
+                    viewModel = vm,
+                    onOpenProject = { id -> navController.navigate("project_detail/$id") },
+                    onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
+                    onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                     onBack = { navController.navigateUp() }
                 )
             }

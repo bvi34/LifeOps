@@ -16,6 +16,12 @@ class TimeEntryRepository(private val timeEntryDao: TimeEntryDao) {
     suspend fun getAllSince(since: String): List<TimeEntry> =
         timeEntryDao.getAllSince(since).map { it.toModel() }
 
+    suspend fun getByTask(taskId: String): List<TimeEntry> =
+        timeEntryDao.getByTask(taskId).map { it.toModel() }
+
+    fun observeByTask(taskId: String): Flow<List<TimeEntry>> =
+        timeEntryDao.observeByTask(taskId).map { list -> list.map { it.toModel() } }
+
     suspend fun logTime(taskId: String, durationMinutes: Int, note: String? = null, subtaskId: String? = null) {
         timeEntryDao.insert(
             TimeEntryEntity(

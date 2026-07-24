@@ -12,6 +12,9 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE id = :id")
     suspend fun getById(id: String): TaskEntity?
 
+    @Query("SELECT * FROM tasks WHERE id = :id")
+    fun observeById(id: String): Flow<TaskEntity?>
+
     @Query("SELECT * FROM tasks WHERE weekId = :weekId AND status = 'pending'")
     suspend fun getPendingByWeek(weekId: String): List<TaskEntity>
 

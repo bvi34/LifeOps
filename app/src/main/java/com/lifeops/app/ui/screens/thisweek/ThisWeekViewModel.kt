@@ -16,9 +16,7 @@ import com.lifeops.app.util.WeatherAdvisory
 import com.lifeops.app.widget.LifeOpsWidget
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -31,12 +29,6 @@ enum class SortOrder(val label: String) {
     PRIORITY_LOW("Priority ↑"),
     PLANNING("Planning")
 }
-
-data class ActiveTimer(
-    val taskId: String,
-    val startMillis: Long,
-    val isPomodoro: Boolean = false
-)
 
 data class GroupedTasks(
     val aspect: Aspect?,
@@ -71,7 +63,6 @@ data class ThisWeekUiState(
     val includeUnknownAsNotes: Boolean = false,
     val editingTask: Task? = null,
     val showCreateTaskDialog: Boolean = false,
-    val detailTaskId: String? = null,
     val sortOrder: SortOrder = SortOrder.DEFAULT,
     val searchQuery: String = "",
     val weekProgress: WeekProgress = WeekProgress(0, 0, 0),
@@ -82,8 +73,6 @@ data class ThisWeekUiState(
     val showTemplatePickerDialog: Boolean = false,
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
-    val detailSubtasks: List<Subtask> = emptyList(),
-    val detailAttachments: List<TaskAttachment> = emptyList(),
     val counters: List<Counter> = emptyList(),
     /** Daytime periods of the tracked location's cached forecast — powers the weekly forecast
      *  strip above the task list. Empty when no weather location/report exists. */
@@ -127,22 +116,19 @@ class ThisWeekViewModel(
     private val templateRepository: TemplateRepository,
     private val counterRepository: CounterRepository,
     private val weatherRepository: WeatherRepository,
-    private val personRepository: PersonRepository
+    private val personRepository: PersonRepository,
+    private val timerController: TimerController
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
 
-    // The running timer is kept out of uiState so its per-second tick doesn't churn the whole
-    // screen state. `activeTimer` changes only on start/stop; `timerElapsedSeconds` ticks every
-    // second and is read with a deferred lambda so only the active row's clock recomposes.
-    private val _activeTimer = MutableStateFlow<ActiveTimer?>(null)
-    val activeTimer: StateFlow<ActiveTimer?> = _activeTimer.asStateFlow()
-
-    private val _timerElapsedSeconds = MutableStateFlow(0)
-    val timerElapsedSeconds: StateFlow<Int> = _timerElapsedSeconds.asStateFlow()
-
-    private var timerJob: Job? = null
+    // The running timer lives in the app-scoped TimerController so it survives navigation to the
+    // task detail screen and both surfaces observe one clock. `activeTimer` changes only on
+    // start/stop; `timerElapsedSeconds` ticks every second and is read with a deferred lambda so
+    // only the active row's clock recomposes.
+    val activeTimer: StateFlow<ActiveTimer?> = timerController.activeTimer
+    val timerElapsedSeconds: StateFlow<Int> = timerController.elapsedSeconds
 
     private val _undoChannel = Channel<UndoEvent>(Channel.CONFLATED)
     val undoEvents = _undoChannel.receiveAsFlow()
@@ -546,66 +532,11 @@ class ThisWeekViewModel(
         }
     }
 
-    // Timer
-    fun startTimer(taskId: String, isPomodoro: Boolean = false) {
-        stopTimer(saveEntry = true)
-        val startMillis = System.currentTimeMillis()
-        _activeTimer.value = ActiveTimer(taskId, startMillis, isPomodoro = isPomodoro)
-        _timerElapsedSeconds.value = 0
-        timerJob = viewModelScope.launch {
-            while (true) {
-                delay(1000)
-                val elapsed = ((System.currentTimeMillis() - startMillis) / 1000).toInt()
-                _timerElapsedSeconds.value = elapsed
-                // Auto-stop Pomodoro at 25 minutes
-                if (isPomodoro && elapsed >= 1500) {
-                    stopTimer(saveEntry = true)
-                    break
-                }
-            }
-        }
-    }
+    // Timer — delegates to the app-scoped controller so it keeps running across navigation.
+    fun startTimer(taskId: String, isPomodoro: Boolean = false) =
+        timerController.start(taskId, isPomodoro)
 
-    fun stopTimer(saveEntry: Boolean = true) {
-        val timer = _activeTimer.value ?: return
-        timerJob?.cancel()
-        timerJob = null
-        // Always log actual elapsed time. For a completed Pomodoro elapsed ≈ 1500s → 25min.
-        val minutes = _timerElapsedSeconds.value / 60
-        if (saveEntry && minutes > 0) {
-            viewModelScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
-        }
-        _activeTimer.value = null
-        _timerElapsedSeconds.value = 0
-    }
-
-    // Detail sheet
-    private var subtaskJob: Job? = null
-    private var attachmentJob: Job? = null
-
-    fun openDetail(taskId: String) {
-        _uiState.update { it.copy(detailTaskId = taskId, detailSubtasks = emptyList(), detailAttachments = emptyList()) }
-        subtaskJob?.cancel()
-        subtaskJob = viewModelScope.launch {
-            runbookRepository.observeSubtasks(taskId).collectLatest { subs ->
-                _uiState.update { it.copy(detailSubtasks = subs) }
-            }
-        }
-        attachmentJob?.cancel()
-        attachmentJob = viewModelScope.launch {
-            taskAttachmentRepository.observeByTask(taskId).collectLatest { atts ->
-                _uiState.update { it.copy(detailAttachments = atts) }
-            }
-        }
-    }
-
-    fun closeDetail() {
-        subtaskJob?.cancel()
-        subtaskJob = null
-        attachmentJob?.cancel()
-        attachmentJob = null
-        _uiState.update { it.copy(detailTaskId = null, detailSubtasks = emptyList(), detailAttachments = emptyList()) }
-    }
+    fun stopTimer(saveEntry: Boolean = true) = timerController.stop(saveEntry)
 
     fun onAddAttachment(taskId: String, uri: Uri) {
         viewModelScope.launch { taskAttachmentRepository.addFromUri(appContext, taskId, uri) }
@@ -772,17 +703,6 @@ class ThisWeekViewModel(
         viewModelScope.launch { costResourceRepository.deleteCostEntry(id) }
     }
 
-    override fun onCleared() {
-        super.onCleared()
-        val timer = _activeTimer.value ?: return
-        timerJob?.cancel()
-        timerJob = null
-        val minutes = _timerElapsedSeconds.value / 60
-        if (minutes > 0) {
-            saveScope.launch { timeEntryRepository.logTime(timer.taskId, minutes) }
-        }
-    }
-
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
     fun cancelEditTask() = _uiState.update { it.copy(editingTask = null) }
 
@@ -874,7 +794,8 @@ class ThisWeekViewModelFactory(
     private val templateRepository: TemplateRepository,
     private val counterRepository: CounterRepository,
     private val weatherRepository: WeatherRepository,
-    private val personRepository: PersonRepository
+    private val personRepository: PersonRepository,
+    private val timerController: TimerController
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
@@ -882,6 +803,6 @@ class ThisWeekViewModelFactory(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, taskAttachmentRepository, timeEntryRepository, notificationRepository, costResourceRepository,
             projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
-            weatherRepository, personRepository
+            weatherRepository, personRepository, timerController
         ) as T
 }

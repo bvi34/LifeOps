@@ -24,8 +24,8 @@ enum class SearchCategory(val label: String) {
 
 /**
  * A single result. [route] is the nav destination to open on tap; null means informational only.
- * Tasks have no standalone detail route (they open in the This Week sheet), so they point at the
- * This Week tab as a best-effort jump rather than deep-linking an arbitrary week's task.
+ * Tasks (and task notes) open the standalone read-only `task_detail/{id}` screen, so a hit resolves
+ * to the actual task — including tasks from past, closed weeks — rather than just jumping to the tab.
  */
 data class SearchResult(
     val category: SearchCategory,
@@ -78,7 +78,7 @@ class SearchRepository(private val db: LifeOpsDatabase) {
             .sortedByDescending { it.createdAt }
             .take(PER_CATEGORY)
             .forEach {
-                results += SearchResult(SearchCategory.TASK, it.id, it.title, taskSubtitle(it.id), "this_week")
+                results += SearchResult(SearchCategory.TASK, it.id, it.title, taskSubtitle(it.id), "task_detail/${it.id}")
             }
 
         db.taskNoteDao().getAll()
@@ -92,7 +92,7 @@ class SearchRepository(private val db: LifeOpsDatabase) {
                     "task_note_${note.id}",
                     task?.title ?: "Task note",
                     snippet(note.content, taskSubtitle(note.taskId, "Task note") ?: "Task note"),
-                    "this_week"
+                    task?.let { "task_detail/${it.id}" }
                 )
             }
 

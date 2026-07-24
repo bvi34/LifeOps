@@ -30,6 +30,9 @@ class TaskNoteRepository(private val taskNoteDao: TaskNoteDao) {
     suspend fun getByTask(taskId: String): List<TaskNote> =
         taskNoteDao.getByTask(taskId).map { it.toModel() }
 
+    fun observeByTask(taskId: String): Flow<List<TaskNote>> =
+        taskNoteDao.observeByTask(taskId).map { list -> list.map { it.toModel() } }
+
     suspend fun getByTaskIds(taskIds: List<String>): List<TaskNote> =
         taskNoteDao.getByTaskIds(taskIds).map { it.toModel() }
 }

@@ -42,7 +42,6 @@ import com.lifeops.app.util.WeatherAdvisory
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
-import com.lifeops.app.ui.components.TaskDetailSheet
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
@@ -56,7 +55,8 @@ fun ThisWeekScreen(
     viewModel: ThisWeekViewModel,
     onOpenProject: (String) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
-    onOpenCounter: (String) -> Unit = {}
+    onOpenCounter: (String) -> Unit = {},
+    onOpenTask: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
@@ -419,7 +419,7 @@ fun ThisWeekScreen(
                                 onEdit = { viewModel.startEditTask(task) },
                                 onStartTimer = { viewModel.startTimer(task.id) },
                                 onStopTimer = { viewModel.stopTimer(saveEntry = true) },
-                                onOpenDetail = { viewModel.openDetail(task.id) },
+                                onOpenDetail = { onOpenTask(task.id) },
                                 onMoveUp = { viewModel.movePlanningTask(task.id, -1) },
                                 onMoveDown = { viewModel.movePlanningTask(task.id, 1) },
                                 onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) }
@@ -428,67 +428,6 @@ fun ThisWeekScreen(
                     }
                 }
             }
-        }
-    }
-
-    state.detailTaskId?.let { taskId ->
-        val allTasks = state.groupedTasks.flatMap { g -> g.categories.flatMap { it.tasks } }
-        val detailTask = allTasks.firstOrNull { it.id == taskId }
-        if (detailTask != null) {
-            val isTimerActive = activeTimer?.taskId == taskId
-            val isPomodoroActive = isTimerActive && activeTimer?.isPomodoro == true
-            val detailProject = detailTask.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid } }
-            val detailCounter = detailTask.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid } }
-            val involvedIds = state.taskPeople[taskId] ?: emptyList()
-            val involvedPeople = state.people.filter { it.id in involvedIds }
-            TaskDetailSheet(
-                task = detailTask,
-                notes = state.taskNotes[taskId] ?: emptyList(),
-                ancestorNotes = state.ancestorNotesByTask[taskId] ?: emptyList(),
-                totalTimeMinutes = state.taskTimeMinutes[taskId] ?: 0,
-                isTimerActive = isTimerActive,
-                timerElapsedSeconds = { timerElapsedState.value },
-                isPomodoroActive = isPomodoroActive,
-                costEntries = state.taskCostEntries[taskId] ?: emptyList(),
-                costResources = state.costResources,
-                project = detailProject,
-                projects = state.projects.filter { it.status == com.lifeops.app.data.model.ProjectStatus.ACTIVE },
-                onAssignProject = { projectId -> viewModel.onAssignProject(taskId, projectId) },
-                subtasks = state.detailSubtasks,
-                runbooks = state.runbooks,
-                weatherFit = state.taskWeatherFit[taskId],
-                weatherRequirement = state.weatherRequirements[taskId],
-                involvedPeople = involvedPeople,
-                allPeople = state.people,
-                onAttachPerson = { personId -> viewModel.attachPerson(taskId, personId) },
-                onDetachPerson = { personId -> viewModel.detachPerson(taskId, personId) },
-                onOpenPerson = onOpenPerson,
-                counter = detailCounter,
-                counterWeeklyTotal = detailCounter?.let { state.counterWeeklyTotals[it.id] ?: 0 },
-                onLogCounter = { detailCounter?.let { viewModel.logCounter(it.id) } },
-                onOpenCounter = onOpenCounter,
-                onOpenProject = onOpenProject,
-                onToggleSubtask = viewModel::onToggleSubtask,
-                onAttachRunbook = { runbookId -> viewModel.onAttachRunbook(taskId, runbookId) },
-                onDeleteSubtask = viewModel::onDeleteSubtask,
-                onDismiss = viewModel::closeDetail,
-                onAddNote = { content -> viewModel.onAddNote(taskId, content) },
-                attachments = state.detailAttachments,
-                onAddAttachment = { uri -> viewModel.onAddAttachment(taskId, uri) },
-                onDeleteAttachment = { id -> viewModel.onDeleteAttachment(id) },
-                onEdit = { viewModel.startEditTask(detailTask); viewModel.closeDetail() },
-                onCarryForward = { reason -> viewModel.closeDetail(); viewModel.onCarryForward(detailTask, reason) },
-                onUnCarryForward = { viewModel.onUnCarryForward(taskId) },
-                onUnsuccessful = { viewModel.closeDetail(); viewModel.onUnsuccessTask(taskId) },
-                onUnUnsuccessful = { viewModel.onUnUnsuccessTask(taskId) },
-                onPromoteToProject = { viewModel.onPromoteToProject(taskId) },
-                onStartTimer = { viewModel.startTimer(taskId) },
-                onStopTimer = { viewModel.stopTimer(saveEntry = true) },
-                onStartPomodoro = { viewModel.startTimer(taskId, isPomodoro = true) },
-                onLogTime = { minutes, note -> viewModel.onLogTime(taskId, minutes, note) },
-                onLogCost = { resourceId, amount, note -> viewModel.onLogCost(taskId, resourceId, amount, note) },
-                onDeleteCostEntry = viewModel::onDeleteCostEntry
-            )
         }
     }
 
