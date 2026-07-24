@@ -48,11 +48,6 @@ interface TaskDao {
     @Query("DELETE FROM tasks WHERE id = :id")
     suspend fun delete(id: String)
 
-    // Queued tasks are excluded so a future-dated recurring task neither gets seeded as a
-    // pending duplicate nor suppresses seeding of the target week's other recurring tasks.
-    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND isRecurring = 1 AND status != 'queued'")
-    suspend fun getRecurringByWeek(weekId: String): List<TaskEntity>
-
     // All recurring instances across every week. Interval-aware seeding groups these into series and
     // anchors each on its most recent instance, so an off-week (no instance in the previous week)
     // never loses the series the way a previous-week-only lookup would.

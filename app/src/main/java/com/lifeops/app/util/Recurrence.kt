@@ -18,6 +18,22 @@ import java.time.LocalDate
 object Recurrence {
 
     /**
+     * The instance a series is anchored on when deciding whether to seed the next week, or null
+     * when the series has ended and nothing should be seeded.
+     *
+     * The anchor is the series' **most recent** prior instance (by [weekIndexOf]). If that instance
+     * is no longer flagged recurring ([isRecurringOf] is false) the series was turned off, so this
+     * returns null — even when older instances are still flagged recurring. That last part is the
+     * whole point: anchoring on the latest instance regardless of its flag is what stops stale
+     * earlier weeks from resurrecting a series the user un-checked on the newest instance. An empty
+     * list (no prior instance) likewise anchors on nothing.
+     */
+    fun <T> activeAnchor(instances: List<T>, weekIndexOf: (T) -> Int, isRecurringOf: (T) -> Boolean): T? {
+        val latest = instances.maxByOrNull(weekIndexOf) ?: return null
+        return if (isRecurringOf(latest)) latest else null
+    }
+
+    /**
      * Week-interval cadence. Due when the target week is a positive whole-multiple of
      * [intervalWeeks] weeks after the last instance's week. Weekly (interval 1) is due every week;
      * bi-weekly (2) every other week, etc. [intervalWeeks] is coerced to at least 1 so a legacy or
