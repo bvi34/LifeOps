@@ -43,6 +43,41 @@ class RecurrenceTest {
         assertTrue(Recurrence.isWeeklyIntervalDue(100, 102, 0))
     }
 
+    // --- Series anchoring / turn-off -------------------------------------------------------
+
+    private data class Inst(val weekIndex: Int, val recurring: Boolean)
+
+    private fun anchor(vararg instances: Inst) =
+        Recurrence.activeAnchor(instances.toList(), { it.weekIndex }, { it.recurring })
+
+    @Test
+    fun `anchor is the most recent instance`() {
+        val a = anchor(Inst(100, true), Inst(102, true), Inst(101, true))
+        assertEquals(102, a?.weekIndex)
+    }
+
+    @Test
+    fun `series with no prior instance anchors on nothing`() {
+        assertNull(anchor())
+    }
+
+    @Test
+    fun `turning recurrence off on the newest instance ends the series`() {
+        // The regression: weeks 100 and 101 are still flagged recurring, but the user un-checked
+        // "Repeats" on the newest instance (week 102). The series must stop — the stale earlier
+        // weeks must NOT resurrect it.
+        assertNull(anchor(Inst(100, true), Inst(101, true), Inst(102, false)))
+    }
+
+    @Test
+    fun `an older non-recurring instance does not stop a still-recurring series`() {
+        // Week 100 was a one-off (recurrence off), but the series was (re)started and weeks 101/102
+        // are recurring again. The latest instance still recurs, so the series continues.
+        val a = anchor(Inst(100, false), Inst(101, true), Inst(102, true))
+        assertEquals(102, a?.weekIndex)
+        assertTrue(a!!.recurring)
+    }
+
     // --- Monthly-by-date cadence -----------------------------------------------------------
 
     private fun week(monday: String) = LocalDate.parse(monday) to LocalDate.parse(monday).plusDays(6)
