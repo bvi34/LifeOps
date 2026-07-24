@@ -39,6 +39,9 @@ class TaskRepository(
     fun observeTasksForWeek(weekId: String): Flow<List<Task>> =
         taskDao.observeByWeek(weekId).map { list -> list.map { it.toModel() } }
 
+    fun observeById(id: String): Flow<Task?> =
+        taskDao.observeById(id).map { it?.toModel() }
+
     suspend fun completeTask(task: Task) {
         if (taskDao.getChildOf(task.id) != null) return
         db.withTransaction {

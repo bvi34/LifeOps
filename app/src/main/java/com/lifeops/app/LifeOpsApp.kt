@@ -36,6 +36,9 @@ class LifeOpsApp : Application() {
     val busyBlockRepository by lazy { BusyBlockRepository(database.busyBlockDao()) }
     val searchRepository by lazy { SearchRepository(database) }
     val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
+    // App-scoped so a running task timer survives navigation between This Week and the task
+    // detail screen, and both observe the same clock.
+    val timerController by lazy { TimerController(applicationScope, timeEntryRepository) }
     val preferencesRepository by lazy { PreferencesRepository(this) }
     val notificationRepository by lazy {
         NotificationRepository(this, database.notificationDao(), preferencesRepository)

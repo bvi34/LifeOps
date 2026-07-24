@@ -21,6 +21,9 @@ interface TaskNoteDao {
     @Query("SELECT * FROM task_notes WHERE taskId = :taskId ORDER BY createdAt ASC")
     suspend fun getByTask(taskId: String): List<TaskNoteEntity>
 
+    @Query("SELECT * FROM task_notes WHERE taskId = :taskId ORDER BY createdAt ASC")
+    fun observeByTask(taskId: String): Flow<List<TaskNoteEntity>>
+
     @Query("SELECT * FROM task_notes WHERE taskId IN (:taskIds) ORDER BY createdAt ASC")
     suspend fun getByTaskIds(taskIds: List<String>): List<TaskNoteEntity>
 
