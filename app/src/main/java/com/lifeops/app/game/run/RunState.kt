@@ -96,6 +96,8 @@ data class RunSnapshot(
     val tier: Int,
     val score: Long,
     val status: RunStatus,
+    /** Times the player bought back into this run after a defeat (DESIGN.md §7). */
+    val revives: Int,
     val strained: Boolean,
     val enemies: List<EnemyView>,
     val projectiles: List<Vec2>,

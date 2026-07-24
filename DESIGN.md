@@ -60,7 +60,7 @@ re-derive periodically so the economy tracks real life:
   (at +25/week observed → ~10 energy per run)
 - Modifier draft: ~1 draft per week of full Personal completion (~5 units at
   observed rates)
-- Level cap conversion: ~10 banked units per in-run level of ceiling
+- Level cap conversion: 1 banked unit per in-run level of ceiling (1:1)
 - Manual override multipliers allowed on top; observed income sets baseline.
 
 **Gold is the comfort resource.** Home income is legitimately lumpy. Runs must
@@ -241,6 +241,12 @@ and — soon — your own placed turrets and barricades.
   order/composition is a fingerprint of the week (geometry is not seeded).
 - Entry: debit run's energy price. Loadout draws on banked Level Cap, Max
   Health, Starting Gold. All committed resources are expended by the run.
+- **Revive.** On death you can buy back into the same run for **2× the entry
+  price** (energy), restoring full hearts, granting a grace window of
+  invulnerability, and clearing the swarm around you so the revive isn't
+  instantly undone (bosses stay). There's no per-run count cap — banked energy,
+  the scarce resource, is the only gate, so it self-limits. The run is scored
+  once, at its true end, with the final (higher) score.
 
 ---
 

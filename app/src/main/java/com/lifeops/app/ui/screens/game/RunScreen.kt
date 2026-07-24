@@ -301,7 +301,12 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
     // Log the run to the scoreboard once it ends. Keyed on status so it fires exactly on the
     // transition into a terminal state; the ViewModel guards against a double write regardless.
     androidx.compose.runtime.LaunchedEffect(snapshot.status) {
-        if (snapshot.status == RunStatus.VICTORY || snapshot.status == RunStatus.DEFEAT) {
+        // A win is final; a defeat is final only once the player can no longer buy back into it —
+        // while a revive is still affordable the write waits, so a revived run logs once, with its
+        // final score. Accepting the defeat (leaving the summary) records it via the exit handlers.
+        if (snapshot.status == RunStatus.VICTORY ||
+            (snapshot.status == RunStatus.DEFEAT && !viewModel.canRevive())
+        ) {
             viewModel.recordRunEnd(snapshot)
         }
     }
@@ -569,8 +574,14 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             RunStatus.OVERFLOW -> OverflowOverlay(snapshot) { engine.chooseOverflow(it) }
             RunStatus.VICTORY, RunStatus.DEFEAT -> SummaryOverlay(
                 snapshot = snapshot,
-                onPlayAgain = { viewModel.exitRun() },
-                onLeave = { viewModel.exitRun(); onBack() }
+                // Revive is offered only on a defeat the player can still afford to buy back into.
+                reviveCost = if (snapshot.status == RunStatus.DEFEAT && viewModel.canRevive())
+                    viewModel.reviveCost else null,
+                onRevive = { viewModel.revive() },
+                // Leaving the summary accepts the defeat: record before exiting (guarded, so a run
+                // already logged as final is not written twice).
+                onPlayAgain = { viewModel.recordRunEnd(snapshot); viewModel.exitRun() },
+                onLeave = { viewModel.recordRunEnd(snapshot); viewModel.exitRun(); onBack() }
             )
             RunStatus.RUNNING -> {}
         }
@@ -808,7 +819,14 @@ private fun OverflowOverlay(
 }
 
 @Composable
-private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLeave: () -> Unit) {
+private fun SummaryOverlay(
+    snapshot: RunSnapshot,
+    /** Non-null only on a defeat the player can still afford to revive from; the button's price. */
+    reviveCost: Int?,
+    onRevive: () -> Unit,
+    onPlayAgain: () -> Unit,
+    onLeave: () -> Unit,
+) {
     // Endless mode ends only in defeat — you hold out as long as you can.
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)),
@@ -832,7 +850,19 @@ private fun SummaryOverlay(snapshot: RunSnapshot, onPlayAgain: () -> Unit, onLea
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
+                if (snapshot.revives > 0) {
+                    Text(
+                        "Revived ${snapshot.revives}×",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
                 Spacer(Modifier.height(6.dp))
+                if (reviveCost != null) {
+                    Button(onClick = onRevive, modifier = Modifier.fillMaxWidth()) {
+                        Text("Revive — $reviveCost⚡")
+                    }
+                }
                 Button(onClick = onPlayAgain, modifier = Modifier.fillMaxWidth()) { Text("Back to Loadout") }
                 OutlinedButton(onClick = onLeave, modifier = Modifier.fillMaxWidth()) { Text("Leave") }
             }

@@ -5,6 +5,7 @@ import com.lifeops.app.data.model.PhoneActivityEvent
 import com.lifeops.app.data.model.PhoneActivityType
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.SleepInferenceService
+import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import java.time.LocalDateTime
 import java.time.ZoneId
