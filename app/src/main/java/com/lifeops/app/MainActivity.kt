@@ -492,6 +492,28 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                     onBack = { navController.navigateUp() }
                 )
             }
+
+            // Standalone, read-only task detail — a task opened as its own screen (e.g. from search),
+            // including tasks from past, closed weeks. Dismissing (Back) returns to the caller.
+            composable("task_detail/{taskId}") { backStackEntry ->
+                val taskId = backStackEntry.arguments?.getString("taskId") ?: return@composable
+                val vm = viewModel<com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModel>(
+                    key = "task_detail_$taskId",
+                    factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
+                        taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
+                        app.costResourceRepository, app.runbookRepository, app.projectRepository,
+                        app.counterRepository, app.personRepository, app.taskAttachmentRepository,
+                        app.weatherRepository, app.weekRepository
+                    )
+                )
+                com.lifeops.app.ui.screens.taskdetail.TaskDetailScreen(
+                    viewModel = vm,
+                    onOpenProject = { id -> navController.navigate("project_detail/$id") },
+                    onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
+                    onOpenPerson = { id -> navController.navigate("person_detail/$id") },
+                    onBack = { navController.navigateUp() }
+                )
+            }
         }
     }
     } // CompositionLocalProvider
