@@ -51,6 +51,34 @@ class HitsTest {
     }
 
     @Test
+    fun reviveRestoresHeartsAndResumesTheRun() {
+        // Stationary with three hearts on the swarm-heavy seed until the pile overruns the player.
+        val e = RunEngine(config(hits = 3).copy(seed = 42L))
+        var frames = 0
+        while (frames < 5000 && e.status != RunStatus.DEFEAT) {
+            resolvePauses(e)
+            e.step(1f / 60f, RunInput())
+            frames++
+        }
+        assertEquals("the swarm should have overrun the player", RunStatus.DEFEAT, e.status)
+
+        e.revive()
+        assertEquals("reviving resumes the same run", RunStatus.RUNNING, e.status)
+        assertEquals("revive restores full hearts", e.player.maxHits, e.snapshot().playerHits)
+        assertEquals("the revive is counted", 1, e.snapshot().revives)
+        assertTrue("revive grants a grace window of invulnerability", e.snapshot().playerInvuln)
+    }
+
+    @Test
+    fun reviveIsANoOpWhileTheRunIsLive() {
+        val e = RunEngine(config(hits = 3))
+        e.step(1f / 60f, RunInput())
+        e.revive()
+        assertEquals("a live run cannot be revived", 0, e.snapshot().revives)
+        assertTrue(e.status != RunStatus.DEFEAT)
+    }
+
+    @Test
     fun elitesDropMoreOftenThanTrash() {
         assertTrue(EnemyType.HUSK.xpDropChance > EnemyType.SHAMBLER.xpDropChance)
         assertTrue(EnemyType.SPITTER.goldDropChance > EnemyType.RUSHER.goldDropChance)
