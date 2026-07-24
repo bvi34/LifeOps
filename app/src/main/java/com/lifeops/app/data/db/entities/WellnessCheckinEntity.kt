@@ -17,6 +17,11 @@ import androidx.room.PrimaryKey
  * and counters. [weekKey] is stamped from [recordedAt] via DateUtil.weekIndexFor so weekly rollups
  * agree with the rest of the app; [dayKey] is the local ISO date used for daily grouping and for
  * the "already logged today?" checks that gate the pop-ups.
+ *
+ * SLEEP rows may also carry the overnight reconstruction ([SleepInferenceService]): [sleepBedtime]
+ * and [sleepWakeTime] are ISO instants, [sleepInterruptions] is the count of ≥60s wake-ups during
+ * the night, and [longestSleepMinutes] is the longest uninterrupted stretch. All four stay null
+ * when the report was hand-entered or only screen-time-estimated.
  */
 @Entity(
     tableName = "wellness_checkins",
@@ -36,5 +41,9 @@ data class WellnessCheckinEntity(
     val sensory: Int? = null,
     val tired: Int? = null,
     val sleepMinutes: Int? = null,
-    val note: String? = null
+    val note: String? = null,
+    val sleepBedtime: String? = null,
+    val sleepWakeTime: String? = null,
+    val sleepInterruptions: Int? = null,
+    val longestSleepMinutes: Int? = null
 )

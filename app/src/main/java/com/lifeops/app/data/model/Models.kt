@@ -694,7 +694,10 @@ enum class WellnessKind(val value: String) {
 
 /**
  * Domain view of a WellnessCheckinEntity. See the entity KDoc for how the two [kind]s share one
- * shape; [sleepMinutes] is the screen-time-estimated sleep duration for SLEEP rows only.
+ * shape. For SLEEP rows only: [sleepMinutes] is the reconstructed total sleep, and the
+ * [sleepBedtime]/[sleepWakeTime]/[sleepInterruptions]/[longestSleepMinutes] fields hold the rest of
+ * the overnight reconstruction (see [com.lifeops.app.util.SleepInferenceService]) when the raw
+ * phone-activity events supported one; they stay null on hand-entered or estimate-only reports.
  */
 data class WellnessCheckin(
     val id: String,
@@ -706,5 +709,29 @@ data class WellnessCheckin(
     val sensory: Int? = null,
     val tired: Int? = null,
     val sleepMinutes: Int? = null,
-    val note: String? = null
+    val note: String? = null,
+    val sleepBedtime: String? = null,
+    val sleepWakeTime: String? = null,
+    val sleepInterruptions: Int? = null,
+    val longestSleepMinutes: Int? = null
+)
+
+/** The raw device signals sleep reconstruction is built from. Stored as [value] in phone_activity_events.type. */
+enum class PhoneActivityType(val value: String) {
+    SCREEN_ON("SCREEN_ON"),
+    SCREEN_OFF("SCREEN_OFF"),
+    CHARGING_START("CHARGING_START"),
+    CHARGING_STOP("CHARGING_STOP");
+
+    companion object {
+        fun from(value: String?): PhoneActivityType? = entries.firstOrNull { it.value == value }
+    }
+}
+
+/** Domain view of a PhoneActivityEventEntity: one timestamped device signal. */
+data class PhoneActivityEvent(
+    val id: String,
+    val type: PhoneActivityType,
+    val occurredAt: Long,
+    val dayKey: String
 )

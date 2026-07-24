@@ -78,8 +78,11 @@ class LifeOpsApp : Application() {
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
     val activityTemplateRepository by lazy { ActivityTemplateRepository(database.activityTemplateDao()) }
+    val phoneActivityRepository by lazy {
+        PhoneActivityRepository(database.phoneActivityEventDao())
+    }
     val wellnessRepository by lazy {
-        WellnessRepository(this, database.wellnessCheckinDao(), preferencesRepository)
+        WellnessRepository(this, database.wellnessCheckinDao(), phoneActivityRepository, preferencesRepository)
     }
 
     override fun onCreate() {
@@ -130,6 +133,11 @@ class LifeOpsApp : Application() {
         // Each fired slot re-schedules its own next occurrence; this seeds them from settings (and
         // clears them if the user has turned reminders off).
         wellnessRepository.rescheduleReminders()
+        // Keep the background sleep tracker running so screen/charging events are captured overnight
+        // (see SleepTrackingService). No-op when the user has turned tracking off.
+        if (preferencesRepository.sleepTrackingEnabled) {
+            runCatching { com.lifeops.app.service.SleepTrackingService.start(this) }
+        }
     }
 
     /**

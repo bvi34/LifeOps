@@ -42,6 +42,7 @@ fun WellnessPromptHost(repo: WellnessRepository, enabled: Boolean = true) {
         WellnessPromptKind.SLEEP -> SleepCheckInDialog(
             estimatedMinutes = state.sleepEstimateMinutes,
             hasUsageAccess = state.hasUsageAccess,
+            reconstruction = state.reconstruction,
             onGrantAccess = {
                 runCatching {
                     context.startActivity(

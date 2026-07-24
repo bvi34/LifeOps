@@ -163,6 +163,11 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     onAddSlot = viewModel::addWellnessSlot
                 )
                 Spacer(Modifier.height(8.dp))
+                SleepTrackingSection(
+                    enabled = state.sleepTrackingEnabled,
+                    onToggle = viewModel::setSleepTrackingEnabled
+                )
+                Spacer(Modifier.height(8.dp))
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
@@ -855,6 +860,31 @@ private fun ReminderTimePickerDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
     )
+}
+
+@Composable
+private fun SleepTrackingSection(
+    enabled: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Sleep tracking", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (enabled)
+                            "Records screen & charging activity in the background to reconstruct your sleep. Shows an ongoing notification."
+                        else
+                            "Off — the morning report falls back to a rough screen-time estimate",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = onToggle)
+            }
+        }
+    }
 }
 
 @Composable

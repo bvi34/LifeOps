@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Sleep tracking: a foreground service keeps a live process so the screen on/off receiver
+         (which the OS only delivers to a runtime-registered receiver) can capture activity overnight.
+         SPECIAL_USE — no standard FGS type fits "infer sleep from on-device screen/charging activity". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
     <!-- Wellness: estimate sleep from screen-time (last phone use → wake). Special access the user
          grants once in Settings; the sleep prompt degrades to hand-entered duration without it. -->
     <uses-permission
@@ -67,6 +73,24 @@
                 android:resource="@xml/life_ops_widget_info" />
         </receiver>
 
+        <!-- Keeps the process alive so the screen/charging receiver can capture activity overnight. -->
+        <service
+            android:name=".service.SleepTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="sleep_activity_tracking" />
+        </service>
+
+        <!-- Restart sleep tracking after a reboot (the process and its runtime receiver don't survive one). -->
+        <receiver
+            android:name=".receiver.SleepBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
