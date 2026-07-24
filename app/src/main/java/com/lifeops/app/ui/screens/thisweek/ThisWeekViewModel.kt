@@ -94,7 +94,9 @@ data class ThisWeekUiState(
     /** counterId → total logged this week, for counter chips and the task counter section. */
     val counterWeeklyTotals: Map<String, Int> = emptyMap(),
     /** taskId → (checked, total) subtask counts, for the row progress chip. */
-    val subtaskCounts: Map<String, Pair<Int, Int>> = emptyMap()
+    val subtaskCounts: Map<String, Pair<Int, Int>> = emptyMap(),
+    /** The user's own calendar/busy blocks — powers the "happening today" event banner. */
+    val busyBlocks: List<BusyBlock> = emptyList()
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -117,6 +119,7 @@ class ThisWeekViewModel(
     private val counterRepository: CounterRepository,
     private val weatherRepository: WeatherRepository,
     private val personRepository: PersonRepository,
+    private val busyBlockRepository: BusyBlockRepository,
     private val timerController: TimerController
 ) : ViewModel() {
 
@@ -177,6 +180,13 @@ class ThisWeekViewModel(
                         )
                     }
                 }
+        }
+        // Calendar/busy blocks (the user's own schedule) — the event banner rotates through the
+        // ones occurring today alongside tasks due today.
+        viewModelScope.launch {
+            busyBlockRepository.observeMine().collect { blocks ->
+                _uiState.update { it.copy(busyBlocks = blocks) }
+            }
         }
         // People: the roster (for the detail picker) and each task's involved-person links.
         viewModelScope.launch {
@@ -795,6 +805,7 @@ class ThisWeekViewModelFactory(
     private val counterRepository: CounterRepository,
     private val weatherRepository: WeatherRepository,
     private val personRepository: PersonRepository,
+    private val busyBlockRepository: BusyBlockRepository,
     private val timerController: TimerController
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
@@ -803,6 +814,6 @@ class ThisWeekViewModelFactory(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, taskAttachmentRepository, timeEntryRepository, notificationRepository, costResourceRepository,
             projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
-            weatherRepository, personRepository, timerController
+            weatherRepository, personRepository, busyBlockRepository, timerController
         ) as T
 }

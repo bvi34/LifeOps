@@ -436,24 +436,46 @@ class TaskRepository(
         val toEnd = LocalDate.parse(toWeek.endDate)
         val toIndex = DateUtil.weekIndexFor(toStart)
 
-        // Series already seeded into the target week — skip these (per-series idempotency, so a
+        // Series already present in the target week — skip these (per-series idempotency, so a
         // due weekly series and a not-due monthly series in the same week don't block each other).
+        // This looks at ALL non-queued instances, not just recurring ones: after the user turns
+        // "Repeats" off on the current week's instance it is no longer recurring, and if we only
+        // matched recurring instances the next launch would re-seed a fresh recurring copy right
+        // back into the same week. Queued instances are excluded so a future-dated recurring task
+        // doesn't suppress seeding a pending one.
         fun seriesKey(t: com.lifeops.app.data.db.entities.TaskEntity) =
             t.slug.ifBlank { t.title.toSlug() }
-        val presentKeys = taskDao.getRecurringByWeek(toWeekId).map(::seriesKey).toSet()
+        val presentKeys = taskDao.getAllByWeek(toWeekId)
+            .filter { it.status != TaskStatus.QUEUED.value }
+            .map(::seriesKey).toSet()
 
-        // Most recent instance per series, among weeks that start strictly before the target week.
-        val latestPerSeries = taskDao.getAllRecurring()
+        // Series identities that carry a recurring instance in at least one week.
+        val recurringKeys = taskDao.getAllRecurring().map(::seriesKey).toSet()
+
+        // Every prior instance (weeks starting strictly before the target) of each series that is
+        // recurring in at least one week, grouped by series. Queued instances are excluded to
+        // mirror the recurring-instance queries above. Note this deliberately gathers ALL such
+        // instances — recurring or not — because Recurrence.activeAnchor anchors each series on its
+        // most recent instance regardless of the flag: when the user un-checks "Repeats" on the
+        // newest instance, that cleared instance ends the series even though older weeks still hold
+        // recurring instances of it (the previous behaviour kept re-seeding those forever).
+        val instancesPerSeries = taskDao.getAll()
+            .filter { it.status != TaskStatus.QUEUED.value && seriesKey(it) in recurringKeys }
             .mapNotNull { t -> weeksById[t.weekId]?.let { w -> t to LocalDate.parse(w.startDate) } }
             .filter { (_, start) -> start.isBefore(toStart) }
             .groupBy { (t, _) -> seriesKey(t) }
-            .mapValues { (_, list) -> list.maxByOrNull { (_, start) -> start }!! }
 
         val now = DateUtil.now()
         db.withTransaction {
-            for ((key, pair) in latestPerSeries) {
+            for ((key, instances) in instancesPerSeries) {
                 if (key in presentKeys) continue
-                val (entity, lastStart) = pair
+                // Anchor on the most recent instance; null means the series was turned off.
+                val anchor = Recurrence.activeAnchor(
+                    instances,
+                    weekIndexOf = { (_, start) -> DateUtil.weekIndexFor(start) },
+                    isRecurringOf = { (entity, _) -> entity.isRecurring }
+                ) ?: continue
+                val (entity, lastStart) = anchor
                 val due = entity.recurrenceDayOfMonth?.let { day ->
                     Recurrence.weekContainsMonthlyDay(toStart, toEnd, day)
                 } ?: Recurrence.isWeeklyIntervalDue(

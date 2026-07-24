@@ -2,17 +2,17 @@
 
 package com.lifeops.app.ui.screens.thisweek
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -20,7 +20,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -30,16 +29,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeops.app.data.model.CostResource
-import com.lifeops.app.data.model.Counter
+import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Task
-import com.lifeops.app.data.model.TaskCostEntry
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.WeatherAlert
 import com.lifeops.app.data.model.WeekProgress
+import com.lifeops.app.util.TodayEvents
 import com.lifeops.app.util.WeatherAdvisory
-import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskEditDialog
@@ -47,8 +44,8 @@ import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
-import sh.calvin.reorderable.ReorderableItem
-import sh.calvin.reorderable.rememberReorderableLazyListState
+import java.time.LocalDate
+import kotlinx.coroutines.delay
 
 @Composable
 fun ThisWeekScreen(
@@ -66,7 +63,6 @@ fun ThisWeekScreen(
     val timerElapsedState = viewModel.timerElapsedSeconds.collectAsStateWithLifecycle()
     var showCloseConfirm by remember { mutableStateOf(false) }
     var fabExpanded by remember { mutableStateOf(false) }
-    var showSearch by remember { mutableStateOf(false) }
     // Per-aspect expand/collapse. The default follows whether the aspect still has open
     // work (expanded when it does); an explicit user tap is remembered here and overrides it.
     val aspectExpanded = remember { mutableStateMapOf<String, Boolean>() }
@@ -101,46 +97,7 @@ fun ThisWeekScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val isPlanningMode = state.sortOrder == SortOrder.PLANNING
-
     Scaffold(
-        topBar = {
-            AppHeader(
-                // Nested inside the Week hub's Scaffold — don't re-apply the status-bar inset.
-                windowInsets = WindowInsets(0, 0, 0, 0),
-                actions = {
-                    // Inline filter over THIS week's list only. The header's global search
-                    // (magnifier) is the one that finds and opens tasks from past weeks, so this
-                    // uses a filter icon to avoid reading as a second search action.
-                    IconButton(onClick = {
-                        showSearch = !showSearch
-                        if (!showSearch) viewModel.setSearchQuery("")
-                    }) {
-                        Icon(
-                            if (showSearch) Icons.Default.FilterListOff else Icons.Default.FilterList,
-                            contentDescription = if (showSearch) "Clear filter" else "Filter tasks"
-                        )
-                    }
-                    IconButton(onClick = {
-                        viewModel.setSortOrder(if (isPlanningMode) SortOrder.DEFAULT else SortOrder.PLANNING)
-                    }) {
-                        Icon(
-                            Icons.Default.Reorder,
-                            contentDescription = "Planning mode",
-                            tint = if (isPlanningMode) MaterialTheme.colorScheme.primary
-                                   else LocalContentColor.current
-                        )
-                    }
-                    state.week?.let { week ->
-                        if (!week.isClosed) {
-                            IconButton(onClick = { showCloseConfirm = true }) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = "Close week")
-                            }
-                        }
-                    }
-                }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             Column(
@@ -189,122 +146,34 @@ fun ThisWeekScreen(
                 CircularProgressIndicator()
             }
         } else if (state.groupedTasks.isEmpty()) {
-            if (showSearch) {
-                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    Text(
-                        "No tasks match \"${state.searchQuery}\"",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                    )
-                }
-            } else {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CalendarToday,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
-                        )
-                        Text(
-                            "No tasks this week",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                        Text(
-                            "Tap + to add tasks or import from JSON",
-                            style = MaterialTheme.typography.bodySmall,
-                            textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                        )
-                    }
-                }
-            }
-        } else if (isPlanningMode) {
-            // Flat drag-to-reorder list for planning
-            val flatTasks = remember(state.rawTasks) {
-                state.rawTasks.sortedWith(compareBy<Task> { it.sortOrder }.thenBy { it.createdAt })
-            }
-            val lazyListState = rememberLazyListState()
-            val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
-                viewModel.onReorderTask(from.index, to.index, flatTasks)
-            }
-            LazyColumn(
-                state = lazyListState,
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(vertical = 8.dp)
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
             ) {
-                items(flatTasks, key = { it.id }) { task ->
-                    ReorderableItem(reorderableState, key = task.id) { isDragging ->
-                        val elevation by animateDpAsState(if (isDragging) 4.dp else 0.dp)
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                                .shadow(elevation),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isDragging)
-                                    MaterialTheme.colorScheme.surfaceVariant
-                                else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.DragHandle,
-                                    contentDescription = "Drag to reorder",
-                                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .draggableHandle()
-                                )
-                                Spacer(Modifier.width(12.dp))
-                                val aspect = state.aspects[task.aspectId]
-                                Box(
-                                    modifier = Modifier
-                                        .width(4.dp)
-                                        .height(40.dp)
-                                        .background(
-                                            parseColor(aspect?.color ?: "#6200EE"),
-                                            RoundedCornerShape(2.dp)
-                                        )
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        task.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    val categoryName = task.categoryId?.let { state.categories[it]?.name }
-                                    val subtitleParts = listOfNotNull(
-                                        aspect?.name,
-                                        categoryName,
-                                        task.priority.label.replaceFirstChar { it.uppercase() }
-                                    )
-                                    Text(
-                                        subtitleParts.joinToString(" · "),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CalendarToday,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f)
+                    )
+                    Text(
+                        "No tasks this week",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        "Tap + to add tasks or import from JSON",
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                    )
                 }
             }
         } else {
@@ -314,57 +183,25 @@ fun ThisWeekScreen(
                     .padding(padding),
                 contentPadding = PaddingValues(bottom = 120.dp)
             ) {
-                stickyHeader(key = "progress_search") {
-                    Column {
-                        WeekProgressHeader(progress = state.weekProgress)
-                        WeekDashboard(
-                            advisories = state.weatherAdvisories,
-                            alerts = state.weatherAlerts,
-                            counters = state.counters,
-                            counterTotals = state.counterWeeklyTotals,
-                            costEntries = state.taskCostEntries,
-                            costResources = state.costResources,
-                            onOpenCounter = onOpenCounter
-                        )
-                        AnimatedVisibility(visible = showSearch) {
-                            FilterBar(
-                                query = state.searchQuery,
-                                onQueryChange = viewModel::setSearchQuery
+                // Pinned header, in the order the app leads with: weather alerts, then the
+                // "happening today" event banner, then the weekly task + time summary. The forecast
+                // strip and tab/search row sit above this list in the Week hub shell.
+                stickyHeader(key = "week_header") {
+                    Surface {
+                        Column {
+                            WeatherAlertsBanner(
+                                advisories = state.weatherAdvisories,
+                                alerts = state.weatherAlerts
                             )
-                        }
-                        SortBar(selected = state.sortOrder, onSelect = viewModel::setSortOrder)
-                        // Overdue/Due-today filter chip
-                        if (state.week?.isClosed == false && state.rawTasks.isNotEmpty()) {
-                            val showOverdueOnly = state.showOverdueOnly
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                FilterChip(
-                                    selected = showOverdueOnly,
-                                    onClick = viewModel::toggleOverdueFilter,
-                                    label = { Text("Overdue / Due today") },
-                                    leadingIcon = if (showOverdueOnly) {
-                                        { Icon(Icons.Default.AccessTime, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (state.groupedTasks.isEmpty() && state.searchQuery.isNotBlank()) {
-                    item {
-                        Box(
-                            Modifier.fillMaxWidth().padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                "No tasks match \"${state.searchQuery}\"",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            EventBanner(
+                                tasks = state.rawTasks,
+                                busyBlocks = state.busyBlocks,
+                                onOpenTask = onOpenTask
+                            )
+                            WeekProgressHeader(
+                                progress = state.weekProgress,
+                                canCloseWeek = state.week?.isClosed == false,
+                                onCloseWeek = { showCloseConfirm = true }
                             )
                         }
                     }
@@ -599,15 +436,21 @@ fun ThisWeekScreen(
     }
 }
 
+/** Weekly task + time summary: completed/total, a progress bar, total logged time, and the
+ *  close-week action (the only place the week is closed now that the old top app bar is gone). */
 @Composable
-private fun WeekProgressHeader(progress: WeekProgress) {
+private fun WeekProgressHeader(
+    progress: WeekProgress,
+    canCloseWeek: Boolean = false,
+    onCloseWeek: () -> Unit = {}
+) {
     if (progress.totalCount == 0) return
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
@@ -619,9 +462,11 @@ private fun WeekProgressHeader(progress: WeekProgress) {
             if (progress.totalCount > 0) {
                 LinearProgressIndicator(
                     progress = { progress.completedCount.toFloat() / progress.totalCount },
-                    modifier = Modifier.width(80.dp).height(4.dp),
+                    modifier = Modifier.weight(1f).height(4.dp),
                     color = MaterialTheme.colorScheme.primary
                 )
+            } else {
+                Spacer(Modifier.weight(1f))
             }
             if (progress.totalTimeMinutes > 0) {
                 Text(
@@ -630,147 +475,152 @@ private fun WeekProgressHeader(progress: WeekProgress) {
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
+            if (canCloseWeek) {
+                IconButton(onClick = onCloseWeek, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Close week",
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
     }
 }
 
 /**
- * The week "at a glance" strip under the progress bar: a severe-weather banner when there's an
- * active alert/advisory, this week's counter totals, and a spend rollup — all pulled from data
- * the app already tracks elsewhere, so This Week reads as a composite of the whole week.
+ * Weather alerts banner: the highest-severity active alert/advisory for the tracked location,
+ * shown as a persistent error-coloured strip so a storm or warning is visible above the task list.
+ * Prefers an actionable advisory (with its delay hint) over the raw alert headline.
  */
 @Composable
-private fun WeekDashboard(
+private fun WeatherAlertsBanner(
     advisories: List<WeatherAdvisory>,
-    alerts: List<WeatherAlert>,
-    counters: List<Counter>,
-    counterTotals: Map<String, Int>,
-    costEntries: Map<String, List<TaskCostEntry>>,
-    costResources: List<CostResource>,
-    onOpenCounter: (String) -> Unit
+    alerts: List<WeatherAlert>
 ) {
-    // Severe-weather banner: prefer an actionable advisory, else the top active alert.
     val advisory = advisories.maxByOrNull { it.severityRank }
     val topAlert = alerts.maxByOrNull { it.severity.rank }
     val bannerText = advisory?.let { adv ->
         adv.delayHint?.let { "${adv.headline} · $it" } ?: adv.headline
-    } ?: topAlert?.event
+    } ?: topAlert?.event ?: return
 
-    // Counters that actually logged something this week, most-active first.
-    val activeCounters = counters
-        .mapNotNull { c -> counterTotals[c.id]?.takeIf { it > 0 }?.let { c to it } }
-        .sortedByDescending { it.second }
-
-    // Spend rollup: total per cost resource used this week.
-    val spendByResource = costEntries.values.flatten()
-        .groupBy { it.resourceId }
-        .mapValues { (_, entries) -> entries.sumOf { it.amount } }
-    val resourceName = costResources.associate { it.id to it.name }
-
-    if (bannerText == null && activeCounters.isEmpty() && spendByResource.isEmpty()) return
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (bannerText != null) {
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        bannerText,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-        if (activeCounters.isNotEmpty() || spendByResource.isNotEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                activeCounters.forEach { (counter, total) ->
-                    AssistChip(
-                        onClick = { onOpenCounter(counter.id) },
-                        label = { Text("${counter.name} $total", style = MaterialTheme.typography.labelSmall) }
-                    )
-                }
-                spendByResource.forEach { (resourceId, amount) ->
-                    val name = resourceName[resourceId] ?: "Spend"
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.secondaryContainer,
-                        modifier = Modifier.padding(vertical = 2.dp)
-                    ) {
-                        Text(
-                            "$name: $amount",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
-                    }
-                }
-            }
+    Surface(
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                Icons.Default.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp)
+            )
+            Text(
+                bannerText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
+/**
+ * "Happening today" banner: a single always-visible line that rotates through today's calendar
+ * events (busy blocks) and the tasks due today, so whatever needs attention today is glanceable
+ * without scrolling or opening anything. Hidden entirely when nothing is on for today. Tapping a
+ * task item opens it; a small dot pager hints at how many items are in the rotation.
+ */
 @Composable
-private fun FilterBar(query: String, onQueryChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
+private fun EventBanner(
+    tasks: List<Task>,
+    busyBlocks: List<BusyBlock>,
+    onOpenTask: (String) -> Unit
+) {
+    val items = remember(tasks, busyBlocks) {
+        TodayEvents.forDate(tasks, busyBlocks, LocalDate.now())
+    }
+    if (items.isEmpty()) return
+
+    var index by remember(items.size) { mutableStateOf(0) }
+    // Auto-advance the rotation once there's more than one thing on today.
+    LaunchedEffect(items.size) {
+        if (items.size > 1) {
+            while (true) {
+                delay(4000)
+                index = (index + 1) % items.size
+            }
+        }
+    }
+    val current = items[index.coerceIn(0, items.lastIndex)]
+    val isTask = current.kind == TodayEvents.Kind.TASK_DUE
+
+    Surface(
+        color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        placeholder = { Text("Filter this week…") },
-        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Clear, contentDescription = "Clear")
-                }
+            .clickable(enabled = current.taskId != null) {
+                current.taskId?.let(onOpenTask)
             }
-        },
-        singleLine = true
-    )
-}
-
-@Composable
-private fun SortBar(selected: SortOrder, onSelect: (SortOrder) -> Unit) {
-    Surface(
-        tonalElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SortOrder.entries.forEach { order ->
-                FilterChip(
-                    selected = selected == order,
-                    onClick = { onSelect(order) },
-                    label = { Text(order.label, style = MaterialTheme.typography.labelSmall) }
-                )
+            Icon(
+                if (isTask) Icons.Default.Assignment else Icons.Default.Event,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(18.dp)
+            )
+            AnimatedContent(
+                targetState = current,
+                transitionSpec = { fadeIn() togetherWith fadeOut() },
+                label = "today-event",
+                modifier = Modifier.weight(1f)
+            ) { item ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        item.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    item.detail?.let {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.75f),
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+            if (items.size > 1) {
+                Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    items.forEachIndexed { i, _ ->
+                        Box(
+                            modifier = Modifier
+                                .size(5.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onPrimaryContainer
+                                        .copy(alpha = if (i == index) 0.9f else 0.3f),
+                                    RoundedCornerShape(50)
+                                )
+                        )
+                    }
+                }
             }
         }
     }

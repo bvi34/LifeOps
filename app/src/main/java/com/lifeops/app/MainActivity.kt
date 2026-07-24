@@ -211,7 +211,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                             app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
                             app.costResourceRepository, app.projectRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
-                            app.weatherRepository, app.personRepository, app.timerController
+                            app.weatherRepository, app.personRepository, app.busyBlockRepository, app.timerController
                         )
                     )
                     val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
