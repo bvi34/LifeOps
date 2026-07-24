@@ -107,14 +107,17 @@ fun CheckInDialog(
 }
 
 /**
- * Morning sleep pop-up (first open after 5am): the screen-time sleep estimate (editable), plus
- * tired 1–10, energy 1–10, and an optional "why". [estimatedMinutes] pre-fills the duration; when
- * [hasUsageAccess] is false the estimate is blank and [onGrantAccess] offers the Settings shortcut.
+ * Morning sleep pop-up (first open after 5am): a pre-filled, editable sleep duration plus tired 1–10,
+ * energy 1–10, and an optional "why". [estimatedMinutes] pre-fills the duration. When [reconstruction]
+ * is present the night was reconstructed from tracked screen/charging events (the accurate path) and a
+ * bedtime → wake summary is shown; otherwise the value is a coarser screen-time estimate, and when
+ * [hasUsageAccess] is false even that is blank and [onGrantAccess] offers the Settings shortcut.
  */
 @Composable
 fun SleepCheckInDialog(
     estimatedMinutes: Int?,
     hasUsageAccess: Boolean,
+    reconstruction: com.lifeops.app.util.SleepInferenceService.SleepReconstruction?,
     onGrantAccess: () -> Unit,
     onSubmit: (energy: Int, tired: Int, sleepMinutes: Int?, why: String) -> Unit,
     onDismiss: () -> Unit
@@ -132,11 +135,29 @@ fun SleepCheckInDialog(
         title = { Text("Good morning") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (reconstruction != null) {
+                    Text(
+                        buildString {
+                            append("Bed ")
+                            append(formatClock(reconstruction.bedtimeMillis))
+                            append(" → up ")
+                            append(formatClock(reconstruction.wakeMillis))
+                            if (reconstruction.interruptions > 0) {
+                                append(" · ")
+                                append(reconstruction.interruptions)
+                                append(if (reconstruction.interruptions == 1) " interruption" else " interruptions")
+                            }
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
                 Text(
-                    if (hasUsageAccess && estimatedMinutes != null)
-                        "Estimated from your last phone use. Adjust if it's off."
-                    else
-                        "How long did you sleep?",
+                    when {
+                        reconstruction != null -> "Reconstructed from your device activity. Adjust if it's off."
+                        hasUsageAccess && estimatedMinutes != null -> "Estimated from your last phone use. Adjust if it's off."
+                        else -> "How long did you sleep?"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
@@ -148,7 +169,7 @@ fun SleepCheckInDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (!hasUsageAccess) {
+                if (reconstruction == null && !hasUsageAccess) {
                     TextButton(
                         onClick = onGrantAccess,
                         modifier = Modifier.padding(top = 0.dp)
@@ -180,3 +201,9 @@ fun SleepCheckInDialog(
         }
     )
 }
+
+/** Epoch millis → a short local clock time, e.g. "11:15 PM". */
+private fun formatClock(millis: Long): String =
+    java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("h:mm a"))

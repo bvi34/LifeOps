@@ -12,6 +12,7 @@ import com.lifeops.app.data.repository.TimeEntryRepository
 import com.lifeops.app.data.repository.WellnessRepository
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ScreenTimeEstimator
+import com.lifeops.app.util.SleepInferenceService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -103,6 +104,10 @@ class WellnessViewModel(
     private val _sleepEstimate = MutableStateFlow<ScreenTimeEstimator.SleepEstimate?>(null)
     val sleepEstimate: StateFlow<ScreenTimeEstimator.SleepEstimate?> = _sleepEstimate.asStateFlow()
 
+    // The accurate event-based reconstruction for the manual path, when enough was captured.
+    private val _sleepReconstruction = MutableStateFlow<SleepInferenceService.SleepReconstruction?>(null)
+    val sleepReconstruction: StateFlow<SleepInferenceService.SleepReconstruction?> = _sleepReconstruction.asStateFlow()
+
     init {
         viewModelScope.launch {
             combine(
@@ -125,15 +130,18 @@ class WellnessViewModel(
         viewModelScope.launch { repo.logCheckin(energy, sensory, why) }
     }
 
-    /** Log a sleep report on demand. */
+    /** Log a sleep report on demand. Keeps the reconstruction only when the user didn't override the total. */
     fun logSleep(energy: Int, tired: Int, sleepMinutes: Int?, why: String) {
-        viewModelScope.launch { repo.logSleep(energy, tired, sleepMinutes, why) }
+        val reconstruction = _sleepReconstruction.value?.takeIf { it.totalSleepMinutes == sleepMinutes }
+        viewModelScope.launch { repo.logSleep(energy, tired, sleepMinutes, why, reconstruction) }
     }
 
-    /** Compute a fresh screen-time sleep estimate for the manual sleep dialog. */
+    /** Prepare the manual sleep dialog: reconstruct from tracked events, with the screen-time estimate as fallback. */
     fun prepareSleepEstimate() {
         _sleepEstimate.value = null
+        _sleepReconstruction.value = null
         viewModelScope.launch(Dispatchers.IO) {
+            _sleepReconstruction.value = repo.reconstructLastNight()
             _sleepEstimate.value = repo.estimateSleep()
         }
     }

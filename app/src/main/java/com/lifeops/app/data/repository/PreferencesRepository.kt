@@ -21,6 +21,13 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getBoolean("wellness_reminders_enabled", true)
         set(value) { prefs.edit().putBoolean("wellness_reminders_enabled", value).apply() }
 
+    // Whether the background sleep tracker runs (a foreground service capturing screen/charging
+    // events overnight, shown as a low-priority ongoing notification). When off, the morning sleep
+    // prompt falls back to the screen-time estimate / hand entry.
+    var sleepTrackingEnabled: Boolean
+        get() = prefs.getBoolean("sleep_tracking_enabled", true)
+        set(value) { prefs.edit().putBoolean("sleep_tracking_enabled", value).apply() }
+
     // The three daytime check-in slot hours (device-local). Stored as a comma list; always three,
     // clamped 0-23 and de-duplicated/sorted on read so scheduling and report gating stay coherent.
     var wellnessSlotHours: List<Int>

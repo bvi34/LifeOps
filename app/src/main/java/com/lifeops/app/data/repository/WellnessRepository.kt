@@ -4,8 +4,10 @@ import android.content.Context
 import com.lifeops.app.data.db.dao.WellnessCheckinDao
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.service.SleepTrackingService
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ScreenTimeEstimator
+import com.lifeops.app.util.SleepInferenceService
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import com.lifeops.app.worker.WellnessCheckinWorker
@@ -15,14 +17,17 @@ import java.util.UUID
 
 /**
  * Backs the wellness check-ins: the daytime energy/sensory pop-ups and the morning sleep report,
- * plus the daily/weekly aggregation the History report reads. Screen-time sleep estimation is
- * delegated to [ScreenTimeEstimator]; everything else is direct Room reads/writes (DESIGN §11:
- * no sync layer). Reminder cadence (on/off + slot hours) lives in [PreferencesRepository] so the
- * scheduled notifications and the on-open prompts share one source of truth.
+ * plus the daily/weekly aggregation the History report reads. The morning sleep duration is
+ * reconstructed from tracked phone-activity events via [PhoneActivityRepository] (the accurate path),
+ * falling back to the coarser [ScreenTimeEstimator] when too little was captured; everything else is
+ * direct Room reads/writes (DESIGN §11: no sync layer). Reminder cadence (on/off + slot hours) lives
+ * in [PreferencesRepository] so the scheduled notifications and the on-open prompts share one source
+ * of truth.
  */
 class WellnessRepository(
     private val context: Context,
     private val dao: WellnessCheckinDao,
+    private val phoneActivity: PhoneActivityRepository,
     private val prefs: PreferencesRepository
 ) {
     /** The daytime check-in slots (device-local hour), from settings. */
@@ -33,6 +38,15 @@ class WellnessRepository(
 
     /** Sleep report only prompts on the first app open at or after this local hour. */
     val sleepPromptFromHour: Int = 5
+
+    /** Whether the background sleep tracker (screen/charging capture) is running. */
+    val sleepTrackingEnabled: Boolean get() = prefs.sleepTrackingEnabled
+
+    /** Turn the background sleep tracker on/off: flips the pref and starts/stops the service. */
+    fun setSleepTrackingEnabled(enabled: Boolean) {
+        prefs.sleepTrackingEnabled = enabled
+        if (enabled) SleepTrackingService.start(context) else SleepTrackingService.stop(context)
+    }
 
     /** Cancel any queued wellness notifications and re-queue the current settings (or none if off). */
     fun rescheduleReminders() {
@@ -68,12 +82,17 @@ class WellnessRepository(
         )
     }
 
-    /** Persist a morning sleep report. [sleepMinutes] may be null when it couldn't be estimated. */
+    /**
+     * Persist a morning sleep report. [sleepMinutes] may be null when it couldn't be estimated. When
+     * the overnight reconstruction produced [reconstruction], its bedtime/wake/interruptions/longest
+     * are stored alongside so the full picture is retained (and not just the total).
+     */
     suspend fun logSleep(
         energy: Int,
         tired: Int,
         sleepMinutes: Int?,
         note: String?,
+        reconstruction: SleepInferenceService.SleepReconstruction? = null,
         at: Long = System.currentTimeMillis()
     ) {
         insert(
@@ -86,7 +105,11 @@ class WellnessRepository(
                 energy = energy,
                 tired = tired,
                 sleepMinutes = sleepMinutes,
-                note = note?.takeIf { it.isNotBlank() }
+                note = note?.takeIf { it.isNotBlank() },
+                sleepBedtime = reconstruction?.let { DateUtil.isoFromEpoch(it.bedtimeMillis) },
+                sleepWakeTime = reconstruction?.let { DateUtil.isoFromEpoch(it.wakeMillis) },
+                sleepInterruptions = reconstruction?.interruptions,
+                longestSleepMinutes = reconstruction?.longestSleepMinutes
             )
         )
     }
@@ -114,4 +137,13 @@ class WellnessRepository(
         ScreenTimeEstimator.estimate(context, now)
 
     fun hasUsageAccess(): Boolean = ScreenTimeEstimator.hasUsageAccess(context)
+
+    /**
+     * Reconstruct last night's sleep from the captured phone-activity events (the accurate path).
+     * Null when there aren't enough events to be confident — the caller then falls back to the
+     * screen-time estimate.
+     */
+    suspend fun reconstructLastNight(
+        now: Long = System.currentTimeMillis()
+    ): SleepInferenceService.SleepReconstruction? = phoneActivity.reconstructLastNight(now)
 }

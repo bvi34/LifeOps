@@ -862,6 +862,32 @@ private val MIGRATION_38_39 = object : Migration(38, 39) {
     }
 }
 
+private val MIGRATION_39_40 = object : Migration(39, 40) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Sleep-tracking foundation. `phone_activity_events` is the raw device stream (screen on/off,
+        // charging) the overnight reconstruction reads back — standalone log table, no FK, same shape
+        // as counter_events; no SQL DEFAULTs since the entity carries no @ColumnInfo(defaultValue), so
+        // this CREATE must match Room's generated schema exactly.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS phone_activity_events (
+                id TEXT NOT NULL PRIMARY KEY,
+                type TEXT NOT NULL,
+                occurredAt INTEGER NOT NULL,
+                dayKey TEXT NOT NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_phone_activity_events_occurredAt ON phone_activity_events(occurredAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_phone_activity_events_dayKey ON phone_activity_events(dayKey)")
+
+        // wellness_checkins gains the rest of the overnight reconstruction alongside the existing
+        // sleepMinutes. All nullable with no default — SLEEP rows only, null when hand-entered.
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN sleepBedtime TEXT")
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN sleepWakeTime TEXT")
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN sleepInterruptions INTEGER")
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN longestSleepMinutes INTEGER")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -907,9 +933,10 @@ private val MIGRATION_38_39 = object : Migration(38, 39) {
         GameScoreEntity::class,
         WellnessCheckinEntity::class,
         TaskAttachmentEntity::class,
-        BusyBlockEntity::class
+        BusyBlockEntity::class,
+        PhoneActivityEventEntity::class
     ],
-    version = 39,
+    version = 40,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -944,6 +971,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun activityTemplateDao(): ActivityTemplateDao
     abstract fun gameScoreDao(): GameScoreDao
     abstract fun wellnessCheckinDao(): WellnessCheckinDao
+    abstract fun phoneActivityEventDao(): PhoneActivityEventDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -955,7 +983,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
                     .build()
                     .also { INSTANCE = it }
             }

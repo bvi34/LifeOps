@@ -63,6 +63,7 @@ fun WellnessScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sleepEstimate by viewModel.sleepEstimate.collectAsStateWithLifecycle()
+    val sleepReconstruction by viewModel.sleepReconstruction.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var showChooser by remember { mutableStateOf(false) }
     var showCheckIn by remember { mutableStateOf(false) }
@@ -87,10 +88,12 @@ fun WellnessScreen(
     // field pre-fills with the estimate instead of appearing blank then jumping.
     if (showSleep && sleepEstimate != null) {
         SleepCheckInDialog(
-            estimatedMinutes = sleepEstimate?.lastUseMillis?.let {
-                com.lifeops.app.util.ScreenTimeEstimator.sleepMinutes(it)
-            },
+            estimatedMinutes = sleepReconstruction?.totalSleepMinutes
+                ?: sleepEstimate?.lastUseMillis?.let {
+                    com.lifeops.app.util.ScreenTimeEstimator.sleepMinutes(it)
+                },
             hasUsageAccess = sleepEstimate?.hasAccess ?: true,
+            reconstruction = sleepReconstruction,
             onGrantAccess = {
                 runCatching {
                     context.startActivity(

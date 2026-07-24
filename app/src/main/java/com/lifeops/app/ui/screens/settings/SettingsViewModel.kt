@@ -27,6 +27,7 @@ data class SettingsUiState(
     val defaultReminderHour: Int = 9,
     val showReminderTimePicker: Boolean = false,
     val wellnessRemindersEnabled: Boolean = true,
+    val sleepTrackingEnabled: Boolean = true,
     val wellnessSlotHours: List<Int> = listOf(10, 15, 21),
     val wellnessPickerSlot: Int? = null,
     val showRestoreDialog: Boolean = false,
@@ -84,6 +85,7 @@ class SettingsViewModel(
                 isDarkMode = preferencesRepository.isDarkMode,
                 customPalette = preferencesRepository.customPalette,
                 wellnessRemindersEnabled = preferencesRepository.wellnessRemindersEnabled,
+                sleepTrackingEnabled = preferencesRepository.sleepTrackingEnabled,
                 wellnessSlotHours = preferencesRepository.wellnessSlotHours
             )
         }
@@ -239,6 +241,13 @@ class SettingsViewModel(
         preferencesRepository.wellnessRemindersEnabled = enabled
         wellnessRepository?.rescheduleReminders()
         _uiState.update { it.copy(wellnessRemindersEnabled = enabled) }
+    }
+
+    fun setSleepTrackingEnabled(enabled: Boolean) {
+        // Falls back to the preference write when the repo isn't wired (e.g. previews/tests).
+        wellnessRepository?.setSleepTrackingEnabled(enabled)
+            ?: run { preferencesRepository.sleepTrackingEnabled = enabled }
+        _uiState.update { it.copy(sleepTrackingEnabled = enabled) }
     }
 
     fun showWellnessSlotPicker(index: Int) = _uiState.update { it.copy(wellnessPickerSlot = index) }

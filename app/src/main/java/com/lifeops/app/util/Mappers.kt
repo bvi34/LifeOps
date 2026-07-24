@@ -176,8 +176,15 @@ fun ActivityOverrideEntity.toModel() = ActivityOverride(id, activityId, field, t
 fun ActivityOverride.toEntity() = ActivityOverrideEntity(id, activityId, field, templateValue, userValue, createdAt)
 
 fun WellnessCheckinEntity.toModel() = WellnessCheckin(
-    id, WellnessKind.from(kind), recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note
+    id, WellnessKind.from(kind), recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note,
+    sleepBedtime, sleepWakeTime, sleepInterruptions, longestSleepMinutes
 )
 fun WellnessCheckin.toEntity() = WellnessCheckinEntity(
-    id, kind.value, recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note
+    id, kind.value, recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note,
+    sleepBedtime, sleepWakeTime, sleepInterruptions, longestSleepMinutes
 )
+
+fun PhoneActivityEventEntity.toModel() = PhoneActivityEvent(
+    id, PhoneActivityType.from(type) ?: PhoneActivityType.SCREEN_OFF, occurredAt, dayKey
+)
+fun PhoneActivityEvent.toEntity() = PhoneActivityEventEntity(id, type.value, occurredAt, dayKey)
