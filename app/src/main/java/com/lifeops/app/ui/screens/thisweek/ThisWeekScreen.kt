@@ -109,13 +109,16 @@ fun ThisWeekScreen(
                 // Nested inside the Week hub's Scaffold — don't re-apply the status-bar inset.
                 windowInsets = WindowInsets(0, 0, 0, 0),
                 actions = {
+                    // Inline filter over THIS week's list only. The header's global search
+                    // (magnifier) is the one that finds and opens tasks from past weeks, so this
+                    // uses a filter icon to avoid reading as a second search action.
                     IconButton(onClick = {
                         showSearch = !showSearch
                         if (!showSearch) viewModel.setSearchQuery("")
                     }) {
                         Icon(
-                            if (showSearch) Icons.Default.SearchOff else Icons.Default.Search,
-                            contentDescription = "Search"
+                            if (showSearch) Icons.Default.FilterListOff else Icons.Default.FilterList,
+                            contentDescription = if (showSearch) "Clear filter" else "Filter tasks"
                         )
                     }
                     IconButton(onClick = {
@@ -324,7 +327,7 @@ fun ThisWeekScreen(
                             onOpenCounter = onOpenCounter
                         )
                         AnimatedVisibility(visible = showSearch) {
-                            SearchBar(
+                            FilterBar(
                                 query = state.searchQuery,
                                 onQueryChange = viewModel::setSearchQuery
                             )
@@ -730,15 +733,15 @@ private fun WeekDashboard(
 }
 
 @Composable
-private fun SearchBar(query: String, onQueryChange: (String) -> Unit) {
+private fun FilterBar(query: String, onQueryChange: (String) -> Unit) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 4.dp),
-        placeholder = { Text("Search tasks…") },
-        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+        placeholder = { Text("Filter this week…") },
+        leadingIcon = { Icon(Icons.Default.FilterList, contentDescription = null) },
         trailingIcon = {
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
