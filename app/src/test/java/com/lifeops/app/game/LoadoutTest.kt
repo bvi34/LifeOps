@@ -35,6 +35,16 @@ class LoadoutTest {
     }
 
     @Test
+    fun reviveNeedsTwiceTheEntryPrice() {
+        assertEquals(2 * Loadout.ENERGY_COST, Loadout.REVIVE_COST)
+        // Enough energy to enter but not to revive: entry yes, revive no.
+        val thin = listOf(res("Energy", Loadout.REVIVE_COST - 1, 1))
+        assertTrue(Loadout.canAfford(thin))
+        assertFalse(Loadout.canRevive(thin))
+        assertTrue(Loadout.canRevive(listOf(res("Energy", Loadout.REVIVE_COST, 1))))
+    }
+
+    @Test
     fun rolesFallBackToSlotIndexWhenNamesDoNotMatch() {
         val opaque = listOf(
             res("Alpha", 10, 0),
@@ -51,7 +61,8 @@ class LoadoutTest {
 
     @Test
     fun committedUnitsConvertWithinBounds() {
-        assertEquals(Loadout.BASE_LEVEL_CAP + 3, Loadout.levelCapFor(30))
+        // Level cap is 1:1 — each banked unit is one level of ceiling.
+        assertEquals(Loadout.BASE_LEVEL_CAP + 3, Loadout.levelCapFor(3 * Loadout.UNITS_PER_LEVEL_CAP))
         assertEquals(RunConfig.MAX_LEVEL_CAP, Loadout.levelCapFor(100_000))
         // Hearts: baseline 3, +1 per UNITS_PER_HEART banked, capped.
         assertEquals(RunConfig.BASE_HITS, Loadout.heartsFor(0))

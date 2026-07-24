@@ -95,6 +95,33 @@ class RunViewModel(
 
     fun canAfford(): Boolean = Loadout.canAfford(_uiState.value.resources)
 
+    /** Whether the player has the banked Energy to buy back into a lost run (2× entry). */
+    fun canRevive(): Boolean = Loadout.canRevive(_uiState.value.resources)
+
+    /** The banked-Energy price of a revive (2× run entry), for the defeat screen. */
+    val reviveCost: Int get() = Loadout.REVIVE_COST
+
+    /**
+     * Buy back into a lost run for [reviveCost] banked Energy (DESIGN.md §7). Debits the ledger and
+     * tells the engine to revive; a no-op (with a message) if the player can't afford it. The
+     * scoreboard write is deferred by the screen while a revive is affordable, so a revived run is
+     * still logged exactly once — with its final, higher score.
+     */
+    fun revive() {
+        val engine = _engine.value ?: return
+        val state = _uiState.value
+        if (!Loadout.canRevive(state.resources)) {
+            _uiState.update { it.copy(message = "Not enough Energy to revive.") }
+            return
+        }
+        viewModelScope.launch {
+            Loadout.energyResource(state.resources)?.let {
+                gameResourceRepository.spendResource(it.id, Loadout.REVIVE_COST, "Run revive")
+            }
+            engine.revive()
+        }
+    }
+
     /**
      * Debit the ledger and start a run. Locked out at zero energy (invariant #6): if the player
      * can't pay the entry cost, no run begins. Committed loadout resources are spent here too, so

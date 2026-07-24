@@ -73,6 +73,9 @@ class RunEngine(
     /** Endless-mode loop counter: every full waves+boss clear bumps it, scaling all enemies (§7). */
     var tier: Int = 0
         private set
+    /** How many times the player has bought back into this run after a defeat (DESIGN.md §7). */
+    var revives: Int = 0
+        private set
 
     private var stats: StatBlock = player.buildStats()
     /** The auto-turret's effective stats: its base auto-weapon rows + the player's AUTO-scope build. */
@@ -250,6 +253,7 @@ class RunEngine(
         tier = tier,
         score = score,
         status = status,
+        revives = revives,
         strained = resolver.strained,
         enemies = enemies.map {
             EnemyView(
@@ -1006,6 +1010,25 @@ class RunEngine(
         bus.emit(GameEvent.OnRunEnd(victory, score))
     }
 
+    /**
+     * Buy back into the same run after a defeat (DESIGN.md §7). Restores full hearts, grants a grace
+     * window of invulnerability, and clears the swarm (and enemy fire) around the player so the
+     * revive lands in breathing room instead of straight back into the pile that overran them.
+     * Bosses are left standing — the i-frames are the time to reposition, not a free boss wipe.
+     * The energy price is charged by the caller against the bank; the engine never touches banked
+     * resources. No-op unless the run is currently in defeat.
+     */
+    fun revive() {
+        if (status != RunStatus.DEFEAT) return
+        revives++
+        player.hits = player.maxHits
+        player.invuln = REVIVE_INVULN
+        player.hurtFlash = 0f
+        enemies.removeAll { !it.type.isBoss && it.pos.distanceTo(player.pos) <= REVIVE_CLEAR_RADIUS }
+        projectiles.removeAll { !it.friendly && it.pos.distanceTo(player.pos) <= REVIVE_CLEAR_RADIUS }
+        status = RunStatus.RUNNING
+    }
+
     companion object {
         const val PLAYER_ID = 0
         const val SPAWN_INTERVAL = 0.30f   // faster drip — the open arena wants a real swarm
@@ -1016,6 +1039,8 @@ class RunEngine(
         const val MUZZLE_SECONDS = 0.06f
         const val HURT_SECONDS = 0.16f
         const val INVULN_SECONDS = 0.8f    // i-frames after a hit — one contact = one heart
+        const val REVIVE_INVULN = 2.0f     // long grace window on revive, to escape the pile (§7)
+        const val REVIVE_CLEAR_RADIUS = 220f // enemies/fire cleared around the player on revive (§7)
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
         const val TURRET_DEPLOY_INTERVAL = 1.5f // seconds between auto-turret deployments
         // Sniper "never reaches end of range" (§4): a lifetime long enough to cross the max arena at

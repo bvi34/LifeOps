@@ -12,7 +12,8 @@ import com.lifeops.app.data.model.GameResource
  */
 object Loadout {
     const val ENERGY_COST = 10          // run entry price (DESIGN.md §2: ~10 energy/run)
-    const val UNITS_PER_LEVEL_CAP = 10  // banked units per in-run level of ceiling (§2)
+    const val REVIVE_COST = ENERGY_COST * 2 // buy back into a lost run: 2× the entry price (§7)
+    const val UNITS_PER_LEVEL_CAP = 1   // banked units per in-run level of ceiling — 1:1 (§2)
     const val UNITS_PER_HEART = 25      // banked Max-Health units per extra heart
 
     const val BASE_LEVEL_CAP = 12
@@ -56,6 +57,11 @@ object Loadout {
 
     fun canAfford(resources: List<GameResource>): Boolean =
         (energyResource(resources)?.currentValue ?: 0) >= ENERGY_COST
+
+    /** Whether the player has the banked Energy to revive (2× entry). The scarce resource is the
+     *  only gate on reviving — no per-run count cap (DESIGN.md §7). */
+    fun canRevive(resources: List<GameResource>): Boolean =
+        (energyResource(resources)?.currentValue ?: 0) >= REVIVE_COST
 
     fun levelCapFor(committed: Int): Int =
         (BASE_LEVEL_CAP + committed / UNITS_PER_LEVEL_CAP)
