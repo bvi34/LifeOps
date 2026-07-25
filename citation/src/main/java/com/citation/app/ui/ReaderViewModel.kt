@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
 import com.citation.core.model.Book
+import com.citation.core.note.Note
+import com.citation.core.note.NoteResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,6 +23,10 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     val books: StateFlow<List<CitationRepository.BookSummary>> =
         repository.books.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Every captured note, newest first, for the Notes screen. */
+    val notes: StateFlow<List<Note>> =
+        repository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
@@ -47,20 +53,22 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun open(bookKey: String) {
         viewModelScope.launch {
-            openRrFictionId = null
-            _openBook.value = repository.loadBook(bookKey)
+            val result = repository.openBook(bookKey)
+            openRrFictionId = result?.rrFictionId
+            _openBook.value = result?.book
             _chapterOrdinal.value = 0
         }
     }
 
     /**
      * Open a Royal Road serial *through the reader* — the WebView is only for skimming/catalog, so
-     * even chapter 1 comes back as internal-model text here, identical to every later chapter.
+     * even chapter 1 comes back as internal-model text here, identical to every later chapter. The
+     * serial is registered as a sovereign book, so notes on it work like any other source.
      */
     fun openRoyalRoad(fictionId: Long) {
         viewModelScope.launch {
             _status.value = "Fetching Royal Road catalog…"
-            runCatching { repository.royalRoad.openStory(fictionId) }
+            runCatching { repository.openRoyalRoad(fictionId) }
                 .onSuccess { book ->
                     openRrFictionId = fictionId
                     _openBook.value = book
@@ -103,11 +111,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** Capture a highlight over the current chapter's selection and attach a note. */
     fun captureNote(selectionStart: Int, selectionEnd: Int, body: String) {
         val book = _openBook.value ?: return
-        if (book.key == null) {
-            // Notes on borrowed sources (Royal Road) are milestone 4; degrade instead of crashing.
-            _status.value = "Notes on Royal Road serials arrive in a later milestone."
-            return
-        }
+        if (book.key == null) return // unkeyed book — shouldn't happen once opened via the repository
         viewModelScope.launch {
             val note = repository.captureNote(
                 book = book,
@@ -134,6 +138,44 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             return
         }
         captureNote(start, start + quote.length, body)
+    }
+
+    /**
+     * Capture a freestanding synthesis note over the open book, citing zero or more exact quotes
+     * (each located and anchored where found). Your own artifact, kept distinct from a passage note.
+     */
+    fun captureSynthesis(citedQuotes: List<String>, body: String) {
+        val book = _openBook.value ?: return
+        if (book.key == null) return
+        viewModelScope.launch {
+            val note = repository.captureSynthesis(book, citedQuotes.filter { it.isNotBlank() }, body)
+            _status.value = "Synthesis note ${note.key} captured (${note.references.size} citations)."
+        }
+    }
+
+    /** Resolve a note's overall degradation state for the Notes list badge. */
+    suspend fun overallState(note: Note): NoteResolver.State =
+        NoteResolver.overallState(repository.resolveNote(note))
+
+    /**
+     * Jump from a note back to its live context: open the source book and land on the resolved
+     * chapter. Best-effort for borrowed sources — an orphaned/unavailable note just opens the book.
+     */
+    fun jumpToNote(note: Note) {
+        val bookKey = note.source.bookKey?.toString() ?: return
+        viewModelScope.launch {
+            val result = repository.openBook(bookKey) ?: run {
+                _status.value = "That source is no longer available — the note still holds its snapshot."
+                return@launch
+            }
+            openRrFictionId = result.rrFictionId
+            _openBook.value = result.book
+            val target = repository.resolveNote(note).firstOrNull { it.chapterOrdinal != null && it.state.canJump }
+            _chapterOrdinal.value = target?.chapterOrdinal ?: 0
+            if (target == null) {
+                _status.value = "Passage not found in the current text — opened the book at the start."
+            }
+        }
     }
 
     fun clearStatus() { _status.value = null }

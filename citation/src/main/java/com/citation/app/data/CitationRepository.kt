@@ -1,24 +1,32 @@
 package com.citation.app.data
 
+import com.citation.app.data.db.BookEntity
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
 import com.citation.app.data.rr.RoyalRoadClient
 import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
+import com.citation.core.anchor.TextAnchor
 import com.citation.core.epub.EpubParser
 import com.citation.core.identity.IdentityKey
+import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.key.KeyAllocator
 import com.citation.core.model.Book
+import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
 import com.citation.core.note.Note
+import com.citation.core.note.NoteResolver
+import com.citation.core.note.PassageReference
 import com.citation.core.note.SourceDescriptor
 import com.citation.core.store.Ownership
 import com.citation.core.store.Store
+import com.citation.core.sync.AcquisitionState
 import com.citation.core.sync.BookLifecycle
 import com.citation.core.sync.Mailbox
 import com.citation.core.sync.NotePacket
+import com.citation.core.sync.ReadingState
 import com.citation.core.sync.UpPacket
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -86,6 +94,54 @@ class CitationRepository private constructor(
         return CitationMappers.bookFromEntities(entity, chapters)
     }
 
+    /** The result of opening a book from the library: the keyed [Book] and, if it's a serial, its id. */
+    data class OpenResult(val book: Book, val rrFictionId: Long?)
+
+    /**
+     * Open a library entry, routing a Royal Road serial through its own loader (chapter bodies live
+     * in the disposable cache, not the `chapters` table) and an owned book through the plain loader.
+     */
+    suspend fun openBook(bookKey: String): OpenResult? {
+        val entity = db.bookDao().get(bookKey) ?: return null
+        return if (entity.sourceType == SourceType.ROYAL_ROAD.name) {
+            val fictionId = entity.sourceId?.toLongOrNull() ?: return null
+            OpenResult(openRoyalRoad(fictionId), fictionId)
+        } else {
+            OpenResult(CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey)), null)
+        }
+    }
+
+    /**
+     * Open a Royal Road serial and register it as a **sovereign** [BookEntity] (minting a book key on
+     * first open), so notes/highlights on it are keyed and survive eviction of its borrowed chapter
+     * bodies. Returns the keyed [Book]; its chapters come from the RR loader.
+     */
+    suspend fun openRoyalRoad(fictionId: Long, now: Long = System.currentTimeMillis()): Book {
+        val book = royalRoad.openStory(fictionId)
+        val fiction = db.royalRoadDao().fiction(fictionId)
+        val key = fiction?.bookKey?.let { EntityKey.parse(it) } ?: run {
+            val minted = keys.next(EntityType.BOOK)
+            db.bookDao().upsert(
+                BookEntity(
+                    key = minted.toString(),
+                    title = book.metadata.title,
+                    author = book.metadata.author,
+                    sourceType = SourceType.ROYAL_ROAD.name,
+                    sourceId = fictionId.toString(),
+                    language = null,
+                    // Borrowed but readable: acquired on the acquisition axis, reading on the other.
+                    acquisitionState = AcquisitionState.ACQUIRED.name,
+                    readingState = ReadingState.READING.name,
+                    createdAt = now
+                )
+            )
+            db.royalRoadDao().setBookKey(fictionId, minted.toString())
+            checkpointKey(EntityType.BOOK)
+            minted
+        }
+        return book.copy(key = key)
+    }
+
     /** Persist the reader's last position for restore-on-reopen. */
     suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
@@ -103,15 +159,8 @@ class CitationRepository private constructor(
         noteBody: String,
         now: Long = System.currentTimeMillis()
     ): Note {
-        val bookKey = book.key!!
         val chapter = book.chapterAt(chapterOrdinal) ?: error("no chapter $chapterOrdinal")
-        val descriptor = SourceDescriptor(
-            bookKey = bookKey,
-            sourceType = book.metadata.source,
-            sourceId = null,
-            title = book.metadata.title,
-            author = book.metadata.author
-        )
+        val descriptor = descriptorFor(book)
         val highlight = Highlight.captureFlowing(
             key = keys.next(EntityType.HIGHLIGHT),
             source = descriptor,
@@ -133,8 +182,90 @@ class CitationRepository private constructor(
         return note
     }
 
+    /**
+     * Capture a **freestanding synthesis** note — your own artifact that may cite several passages.
+     * Each quote is located in the book and anchored; quotes that aren't found are dropped (the
+     * synthesis still stands on its own text). The note is queued and persisted like any other.
+     */
+    suspend fun captureSynthesis(
+        book: Book,
+        citedQuotes: List<String>,
+        body: String,
+        now: Long = System.currentTimeMillis()
+    ): Note {
+        val references = citedQuotes.mapNotNull { quote -> anchorQuoteInBook(book, quote) }
+        val note = Note.synthesis(
+            key = keys.next(EntityType.NOTE),
+            body = body,
+            source = descriptorFor(book),
+            references = references,
+            createdAt = now
+        )
+        val versioned = outbox.post(NotePacket.of(note))
+        db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        checkpointKey(EntityType.NOTE)
+        persistSyncState()
+        return note
+    }
+
+    /**
+     * Resolve a note's references against the current state of its source, yielding each reference's
+     * degradation state (resolved / fuzzy / orphaned / source-unavailable) and jump target. This is
+     * how the Notes UI shows whether a note can still jump to live context or only display its frozen
+     * snapshot.
+     */
+    suspend fun resolveNote(note: Note): List<NoteResolver.RefResolution> {
+        // Pre-load the chapter texts the note's anchors need, keyed by chapter ordinal.
+        val bookKey = note.source.bookKey?.toString()
+        val entity = bookKey?.let { db.bookDao().get(it) }
+        val textByOrdinal: Map<Int, String> = when {
+            entity == null -> emptyMap()
+            entity.sourceType == SourceType.ROYAL_ROAD.name -> {
+                val fictionId = entity.sourceId ?: ""
+                note.references.mapNotNull { (it.anchor as? TextAnchor.Flowing)?.chapterOrdinal }
+                    .distinct()
+                    .mapNotNull { ord -> files.readBorrowedChapter(fictionId, ord)?.let { ord to it } }
+                    .toMap()
+            }
+            else -> db.chapterDao().forBook(entity.key)
+                .mapNotNull { ch -> ch.text?.let { ch.ordinal to it } }.toMap()
+        }
+        return NoteResolver.resolveNote(note) { anchor ->
+            (anchor as? TextAnchor.Flowing)?.let { textByOrdinal[it.chapterOrdinal] }
+        }
+    }
+
     /** Outbound packets LifeOps hasn't acknowledged yet — what a sync pass would deliver. */
     fun pendingUpPackets(): List<UpPacket> = outbox.outboxSince(0).map { it.payload }
+
+    /** Build a note's frozen source descriptor from the book's stored identity (title/author/id). */
+    private suspend fun descriptorFor(book: Book): SourceDescriptor {
+        val entity = book.key?.let { db.bookDao().get(it.toString()) }
+        return SourceDescriptor(
+            bookKey = book.key,
+            sourceType = book.metadata.source,
+            sourceId = entity?.sourceId,
+            title = book.metadata.title,
+            author = book.metadata.author
+        )
+    }
+
+    /** Find [quote] in [book] and build a flowing anchor with surrounding context, or null if absent. */
+    private fun anchorQuoteInBook(book: Book, quote: String): PassageReference? {
+        for (chapter in book.chapters) {
+            val idx = chapter.text.indexOf(quote)
+            if (idx >= 0) {
+                val prefix = chapter.text.substring(maxOf(0, idx - 32), idx)
+                val end = idx + quote.length
+                val suffix = chapter.text.substring(end, minOf(chapter.text.length, end + 32))
+                return PassageReference(
+                    quotedSnapshot = quote,
+                    anchor = TextAnchor.Flowing(chapter.ordinal, idx, quote, prefix, suffix)
+                )
+            }
+        }
+        return null
+    }
 
     private suspend fun checkpointKey(type: String) {
         db.syncStateDao().saveWatermark(KeyWatermarkEntity(type, keys.highWater(type)))

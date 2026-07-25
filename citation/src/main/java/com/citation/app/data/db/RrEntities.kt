@@ -20,7 +20,10 @@ data class RrFictionEntity(
     val isFavorite: Boolean = false,
     val currentOrdinal: Int = 0,
     val expectedCount: Int = 0,
-    val lastReadAt: Long = 0
+    val lastReadAt: Long = 0,
+    // The sovereign BookEntity key this fiction is registered under, so notes/highlights on an RR
+    // serial live in the sovereign store and survive eviction of its (disposable) chapter bodies.
+    val bookKey: String? = null
 )
 
 @Entity(tableName = "rr_chapters", primaryKeys = ["fictionId", "ordinal"])
@@ -64,6 +67,9 @@ interface RoyalRoadDao {
 
     @Query("UPDATE rr_fictions SET expectedCount = :count WHERE fictionId = :id")
     suspend fun setExpectedCount(id: Long, count: Int)
+
+    @Query("UPDATE rr_fictions SET bookKey = :bookKey WHERE fictionId = :id")
+    suspend fun setBookKey(id: Long, bookKey: String)
 
     @Query("DELETE FROM rr_chapters WHERE fictionId = :id")
     suspend fun deleteChapters(id: Long)

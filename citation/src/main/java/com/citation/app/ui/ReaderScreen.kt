@@ -56,18 +56,23 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val status by vm.status.collectAsStateWithLifecycle()
 
     var browsingRoyalRoad by remember { mutableStateOf(false) }
+    var viewingNotes by remember { mutableStateOf(false) }
 
     if (openBook == null) {
-        if (browsingRoyalRoad) {
-            RoyalRoadCatalogScreen(
+        when {
+            browsingRoyalRoad -> RoyalRoadCatalogScreen(
                 onOpenFiction = { fictionId ->
                     browsingRoyalRoad = false
                     vm.openRoyalRoad(fictionId)
                 },
                 onBack = { browsingRoyalRoad = false }
             )
-        } else {
-            LibraryView(vm, status, onBrowseRoyalRoad = { browsingRoyalRoad = true })
+            viewingNotes -> NotesScreen(vm, onBack = { viewingNotes = false })
+            else -> LibraryView(
+                vm, status,
+                onBrowseRoyalRoad = { browsingRoyalRoad = true },
+                onViewNotes = { viewingNotes = true }
+            )
         }
     } else {
         val ordinal by vm.chapterOrdinal.collectAsStateWithLifecycle()
@@ -121,6 +126,11 @@ fun ReaderScreen(vm: ReaderViewModel) {
                         onBody = { noteBody = it },
                         onSave = {
                             vm.captureNoteForQuote(noteQuote, noteBody)
+                            noteQuote = ""; noteBody = ""; showNote = false
+                        },
+                        onSaveSynthesis = {
+                            // Freestanding synthesis: your own text, optionally citing the quote.
+                            vm.captureSynthesis(listOf(noteQuote), noteBody)
                             noteQuote = ""; noteBody = ""; showNote = false
                         },
                         onCancel = { showNote = false }
@@ -183,13 +193,14 @@ private fun NoteComposer(
     onQuote: (String) -> Unit,
     onBody: (String) -> Unit,
     onSave: () -> Unit,
+    onSaveSynthesis: () -> Unit,
     onCancel: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
         OutlinedTextField(
             value = quote,
             onValueChange = onQuote,
-            label = { Text("Passage to highlight (paste the exact quote)") },
+            label = { Text("Passage to cite (paste the exact quote)") },
             modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
@@ -200,18 +211,30 @@ private fun NoteComposer(
         )
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel) { Text("Cancel") }
+            // Synthesis: your own artifact; the quote is an optional citation, so body is enough.
+            TextButton(
+                onClick = onSaveSynthesis,
+                enabled = body.isNotBlank(),
+                modifier = Modifier.padding(start = 8.dp)
+            ) { Text("Save as synthesis") }
+            // Passage-anchored: hangs off exactly one highlight, so the quote is required.
             Button(
                 onClick = onSave,
                 enabled = quote.isNotBlank() && body.isNotBlank(),
                 modifier = Modifier.padding(start = 8.dp)
-            ) { Text("Save note") }
+            ) { Text("Save passage note") }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryView(vm: ReaderViewModel, status: String?, onBrowseRoyalRoad: () -> Unit) {
+private fun LibraryView(
+    vm: ReaderViewModel,
+    status: String?,
+    onBrowseRoyalRoad: () -> Unit,
+    onViewNotes: () -> Unit
+) {
     val books by vm.books.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -231,6 +254,10 @@ private fun LibraryView(vm: ReaderViewModel, status: String?, onBrowseRoyalRoad:
                 onClick = onBrowseRoyalRoad,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse Royal Road") }
+            OutlinedButton(
+                onClick = onViewNotes,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Notes") }
             status?.let {
                 Text(
                     it,

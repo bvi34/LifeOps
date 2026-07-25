@@ -51,8 +51,8 @@ other feature bolts onto this spine.
 | **Ownership** | `store/Ownership`, `Store` | The two-store split as policy: only borrowed (RR) content is `DISPOSABLE`/evictable; owned files and all notes are `SOVEREIGN`. Eviction structurally cannot reach owned data. |
 | **Sync** | `sync/Mailbox`, `Packets`, `BookLifecycle`, `BindOrCreate` | Mailbox pattern (state/outbox + inbox, **monotonic version**, idempotent + resumable). Up: telemetry + note packets carrying `{sourceType, sourceId, frozen-context}`. Down: acquire-book intents. **Bind-or-create** reconciles a fuzzy center-authored book to a resolved artifact at one checkpoint. **Two orthogonal state machines** — acquisition (`wanted→resolving→acquired/unavailable`) and reading (`to-read→reading→done`) — never collapsed. |
 
-The walking skeleton is covered by JVM unit tests; together with the Royal Road engine below,
-**`:core` has 83 passing JVM unit tests** across 16 suites (run `gradle :core:test`).
+The walking skeleton is covered by JVM unit tests; together with the Royal Road engine and the note
+resolver below, **`:core` has 90 passing JVM unit tests** across 17 suites (run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -95,10 +95,31 @@ budgets + file store + catalog persistence), three WorkManager jobs (favourites 
 eviction), and a WebView **skim/catalog** screen that intercepts a `/fiction/{id}` tap and opens the
 story *through the reader* instead of loading the live page.
 
-## Roadmap (task-list milestones 4–7, not yet built)
+## Notes complete (milestone 4 — core built + verified)
 
-4. **Notes complete** — selection toolbar → anchor, both note types surfaced, orphaned-note UI,
-   note capture on borrowed (RR) sources.
+The note **degradation/resolution engine** lives in `:core` as `note/NoteResolver` (unit-tested): it
+turns a frozen note plus the current (maybe-changed, maybe-absent) source into a per-reference state
+and jump target —
+
+| State | Meaning | Jump |
+|---|---|---|
+| `RESOLVED` | source present, passage still matches | reliable jump |
+| `FUZZY` | present but the passage was edited | probable jump, flagged |
+| `ORPHANED` | present but the passage is gone | snapshot only, no jump |
+| `SOURCE_UNAVAILABLE` | source evicted/absent | snapshot only, no jump |
+
+Only the last two are "degraded", and both keep the note fully readable — *degraded, not lost*.
+Jump reliability is tagged by source type (`RELIABLE` for owned/internal, `BEST_EFFORT` for borrowed
+Royal Road / O'Reilly), and a synthesis note's overall state is the **best** across its references.
+
+**Android wiring:** the reader's composer now saves either a **passage-anchored** note (quote
+required) or a **freestanding synthesis** note (quote optional, cites where found); Royal Road
+serials are registered as sovereign books on open, so **notes on borrowed sources work** and survive
+eviction of their chapter bodies. A **Notes screen** lists every note with its state badge and the
+frozen snapshot, and tapping one **jumps back to live context** (best-effort for borrowed).
+
+## Roadmap (task-list milestones 5–7, not yet built)
+
 5. **Sync seam** — the transport that drains the outbox to LifeOps and consumes acquire intents;
    bind-or-create at resolution; both state machines surfaced.
 6. **PDF + O'Reilly** — PDF render track (positioned glyphs, page+quads anchors); O'Reilly
