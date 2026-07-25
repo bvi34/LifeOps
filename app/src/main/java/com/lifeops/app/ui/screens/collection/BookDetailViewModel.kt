@@ -30,6 +30,8 @@ class BookDetailViewModel(
     private val bookId: String,
     private val bookRepository: BookRepository
 ) : ViewModel() {
+    private val bookService = com.lifeops.app.connection.service.BookService(bookRepository)
+
     private val _uiState = MutableStateFlow(BookDetailUiState())
     val uiState: StateFlow<BookDetailUiState> = _uiState.asStateFlow()
 
@@ -59,19 +61,19 @@ class BookDetailViewModel(
     fun update(title: String, author: String?) {
         val book = _uiState.value.book ?: return
         viewModelScope.launch {
-            bookRepository.updateBook(book, title, author)
+            bookService.update(book, title, author)
             _uiState.update { it.copy(showEditDialog = false) }
         }
     }
 
     fun setStatus(status: BookStatus) {
         val book = _uiState.value.book ?: return
-        viewModelScope.launch { bookRepository.setStatus(book, status) }
+        viewModelScope.launch { bookService.setStatus(book.id, status) }
     }
 
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
-            bookRepository.deleteBook(bookId)
+            bookService.delete(bookId)
             onDeleted()
         }
     }
@@ -81,13 +83,13 @@ class BookDetailViewModel(
 
     fun addNote(content: String) {
         viewModelScope.launch {
-            bookRepository.addNote(bookId, content)
+            bookService.addNote(bookId, content)
             _uiState.update { it.copy(showAddNoteDialog = false) }
         }
     }
 
     fun deleteNote(id: String) {
-        viewModelScope.launch { bookRepository.deleteNote(id) }
+        viewModelScope.launch { bookService.deleteNote(id) }
     }
 
     fun showAddTimeDialog() = _uiState.update { it.copy(showAddTimeDialog = true) }
@@ -95,13 +97,13 @@ class BookDetailViewModel(
 
     fun addTimeEntry(minutes: Int, note: String?) {
         viewModelScope.launch {
-            bookRepository.addTimeEntry(bookId, minutes, note)
+            bookService.logTime(bookId, minutes, note)
             _uiState.update { it.copy(showAddTimeDialog = false) }
         }
     }
 
     fun deleteTimeEntry(id: String) {
-        viewModelScope.launch { bookRepository.deleteTimeEntry(id) }
+        viewModelScope.launch { bookService.deleteTimeEntry(id) }
     }
 }
 

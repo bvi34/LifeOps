@@ -35,6 +35,8 @@ class RecipeDetailViewModel(
     private val recipeRepository: RecipeRepository,
     private val foodItemRepository: FoodItemRepository
 ) : ViewModel() {
+    private val recipeService = com.lifeops.app.connection.service.RecipeService(recipeRepository)
+
     private val _uiState = MutableStateFlow(RecipeDetailUiState())
     val uiState: StateFlow<RecipeDetailUiState> = _uiState.asStateFlow()
 
@@ -61,14 +63,14 @@ class RecipeDetailViewModel(
     fun rename(name: String, servings: Double) {
         val recipe = _uiState.value.recipe ?: return
         viewModelScope.launch {
-            recipeRepository.updateRecipe(recipe, name, servings)
+            recipeService.update(recipe, name, servings)
             _uiState.update { it.copy(showEditDialog = false) }
         }
     }
 
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
-            recipeRepository.deleteRecipe(recipeId)
+            recipeService.delete(recipeId)
             onDeleted()
         }
     }
@@ -86,13 +88,13 @@ class RecipeDetailViewModel(
 
     fun addIngredient(foodItemId: String, quantity: Double, unit: IngredientUnit) {
         viewModelScope.launch {
-            recipeRepository.addIngredient(recipeId, foodItemId, quantity, unit)
+            recipeService.addIngredient(recipeId, foodItemId, quantity, unit)
             _uiState.update { it.copy(showAddIngredientDialog = false) }
         }
     }
 
     fun removeIngredient(id: String) {
-        viewModelScope.launch { recipeRepository.removeIngredient(id) }
+        viewModelScope.launch { recipeService.removeIngredient(id) }
     }
 }
 

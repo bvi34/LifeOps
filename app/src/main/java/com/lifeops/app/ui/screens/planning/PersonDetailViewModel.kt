@@ -37,6 +37,9 @@ class PersonDetailViewModel(
     private val busyBlockRepository: BusyBlockRepository
 ) : ViewModel() {
 
+    private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
+    private val busyBlockService = com.lifeops.app.connection.service.BusyBlockService(busyBlockRepository)
+
     private val _uiState = MutableStateFlow(PersonDetailUiState())
     val uiState: StateFlow<PersonDetailUiState> = _uiState.asStateFlow()
 
@@ -70,11 +73,11 @@ class PersonDetailViewModel(
     }
 
     fun saveBusyBlock(block: BusyBlock) {
-        viewModelScope.launch { busyBlockRepository.upsert(block) }
+        viewModelScope.launch { busyBlockService.save(block) }
     }
 
     fun deleteBusyBlock(id: String) {
-        viewModelScope.launch { busyBlockRepository.delete(id) }
+        viewModelScope.launch { busyBlockService.delete(id) }
     }
 
     /** Save the full profile in one shot from the editor. Blank name is ignored. */
@@ -91,7 +94,7 @@ class PersonDetailViewModel(
         val person = _uiState.value.person ?: return
         if (name.isBlank()) return
         viewModelScope.launch {
-            personRepository.update(
+            personService.update(
                 person.copy(
                     name = name.trim(),
                     heatToleranceMaxF = heatToleranceMaxF,
@@ -107,25 +110,25 @@ class PersonDetailViewModel(
     }
 
     fun addNote(content: String) {
-        viewModelScope.launch { personRepository.addNote(personId, content) }
+        viewModelScope.launch { personService.addNote(personId, content) }
     }
 
     fun deleteNote(noteId: String) {
-        viewModelScope.launch { personRepository.deleteNote(noteId) }
+        viewModelScope.launch { personService.deleteNote(noteId) }
     }
 
     fun attachTask(taskId: String) {
-        viewModelScope.launch { personRepository.attach(taskId, personId) }
+        viewModelScope.launch { personService.attach(taskId, personId) }
     }
 
     fun detachTask(taskId: String) {
-        viewModelScope.launch { personRepository.detach(taskId, personId) }
+        viewModelScope.launch { personService.detach(taskId, personId) }
     }
 
     fun delete(onDeleted: () -> Unit) {
-        val person = _uiState.value.person ?: return
+        _uiState.value.person ?: return
         viewModelScope.launch {
-            personRepository.delete(person)
+            personService.delete(personId)
             onDeleted()
         }
     }

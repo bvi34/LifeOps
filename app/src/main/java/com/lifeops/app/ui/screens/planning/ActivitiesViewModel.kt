@@ -22,6 +22,8 @@ class ActivitiesViewModel(
     private val repository: ActivityTemplateRepository
 ) : ViewModel() {
 
+    private val activityService = com.lifeops.app.connection.service.ActivityService(repository)
+
     private val _uiState = MutableStateFlow(ActivitiesUiState())
     val uiState: StateFlow<ActivitiesUiState> = _uiState.asStateFlow()
 
@@ -40,11 +42,11 @@ class ActivitiesViewModel(
     }
 
     fun applySuggestion(suggestion: PreferenceSuggestion) {
-        viewModelScope.launch { repository.applySuggestion(suggestion) }
+        viewModelScope.launch { activityService.applySuggestion(suggestion) }
     }
 
     fun dismissSuggestion(suggestion: PreferenceSuggestion) {
-        viewModelScope.launch { repository.dismissSuggestion(suggestion.activityId, suggestion.field) }
+        viewModelScope.launch { activityService.dismissSuggestion(suggestion.activityId, suggestion.field) }
     }
 
     fun create(
@@ -58,18 +60,18 @@ class ActivitiesViewModel(
     ) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            repository.create(name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph)
+            activityService.create(name, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph)
         }
     }
 
     /** Save an edit to an existing (built-in or custom) template. */
     fun save(template: ActivityTemplate) {
         if (template.name.isBlank()) return
-        viewModelScope.launch { repository.update(template) }
+        viewModelScope.launch { activityService.update(template) }
     }
 
     fun delete(template: ActivityTemplate) {
-        viewModelScope.launch { repository.delete(template) }
+        viewModelScope.launch { activityService.delete(template.id) }
     }
 }
 

@@ -19,6 +19,9 @@ data class FutureProjectListUiState(
 )
 
 class FutureProjectViewModel(private val futureProjectRepository: FutureProjectRepository) : ViewModel() {
+    private val futureProjectService =
+        com.lifeops.app.connection.service.FutureProjectService(futureProjectRepository)
+
     private val _uiState = MutableStateFlow(FutureProjectListUiState())
     val uiState: StateFlow<FutureProjectListUiState> = _uiState.asStateFlow()
 
@@ -33,13 +36,13 @@ class FutureProjectViewModel(private val futureProjectRepository: FutureProjectR
 
     fun createProject(title: String) {
         viewModelScope.launch {
-            futureProjectRepository.create(title)
+            futureProjectService.create(title)
             _uiState.update { it.copy(showCreateDialog = false) }
         }
     }
 
     fun setStatus(projectId: String, status: FutureProjectStatus) {
-        viewModelScope.launch { futureProjectRepository.setStatus(projectId, status) }
+        viewModelScope.launch { futureProjectService.setStatus(projectId, status) }
     }
 }
 

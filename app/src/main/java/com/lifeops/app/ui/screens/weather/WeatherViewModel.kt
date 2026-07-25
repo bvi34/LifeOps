@@ -61,6 +61,9 @@ class WeatherViewModel(
     private val busyBlockRepository: BusyBlockRepository
 ) : ViewModel() {
 
+    private val activityService =
+        com.lifeops.app.connection.service.ActivityService(activityTemplateRepository)
+
     private val selectedId = MutableStateFlow<String?>(null)
     private val _uiState = MutableStateFlow(WeatherUiState())
     val uiState: StateFlow<WeatherUiState> = _uiState.asStateFlow()
@@ -207,7 +210,7 @@ class WeatherViewModel(
 
     private suspend fun maybeRecord(activityId: String, field: String, templateValue: Int?, userValue: Int?) {
         if (userValue != null && userValue != templateValue) {
-            activityTemplateRepository.recordOverride(activityId, field, templateValue, userValue)
+            activityService.recordOverride(activityId, field, templateValue, userValue)
         }
     }
 

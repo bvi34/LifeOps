@@ -27,6 +27,8 @@ class CounterDetailViewModel(
     private val counterRepository: CounterRepository
 ) : ViewModel() {
 
+    private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
+
     private val weekKey = DateUtil.weekIndexFor(System.currentTimeMillis())
 
     private val _uiState = MutableStateFlow(CounterDetailUiState())
@@ -47,7 +49,7 @@ class CounterDetailViewModel(
     }
 
     fun increment() {
-        viewModelScope.launch { counterRepository.logEvent(counterId) }
+        viewModelScope.launch { counterService.log(counterId) }
     }
 }
 

@@ -88,6 +88,86 @@ class LifeOpsApp : Application() {
         WellnessRepository(this, database.wellnessCheckinDao(), phoneActivityRepository, preferencesRepository)
     }
 
+    // --- Connection layer (in-process command dispatch) ---
+    // Addresses of the form /v1/LifeOps/{connection}/{resource}/{action}; `local` is internal app
+    // comms, named connections are reserved for future integrations. See package `connection`.
+    val taskService by lazy {
+        com.lifeops.app.connection.service.TaskService(
+            taskRepository, taskNoteRepository, notificationRepository, weekRepository
+        )
+    }
+    val weekService by lazy {
+        com.lifeops.app.connection.service.WeekService(weekRepository, taskRepository)
+    }
+    val projectService by lazy {
+        com.lifeops.app.connection.service.ProjectService(projectRepository)
+    }
+    val counterService by lazy {
+        com.lifeops.app.connection.service.CounterService(counterRepository)
+    }
+    val noteService by lazy {
+        com.lifeops.app.connection.service.NoteService(taskNoteRepository)
+    }
+    val aspectService by lazy {
+        com.lifeops.app.connection.service.AspectService(aspectRepository)
+    }
+    val personService by lazy {
+        com.lifeops.app.connection.service.PersonService(personRepository)
+    }
+    val busyBlockService by lazy {
+        com.lifeops.app.connection.service.BusyBlockService(busyBlockRepository)
+    }
+    val timeEntryService by lazy {
+        com.lifeops.app.connection.service.TimeEntryService(timeEntryRepository, taskRepository)
+    }
+    val bookService by lazy {
+        com.lifeops.app.connection.service.BookService(bookRepository)
+    }
+    val recipeService by lazy {
+        com.lifeops.app.connection.service.RecipeService(recipeRepository)
+    }
+    val foodService by lazy {
+        com.lifeops.app.connection.service.FoodService(foodItemRepository, foodLogRepository)
+    }
+    val futureProjectService by lazy {
+        com.lifeops.app.connection.service.FutureProjectService(futureProjectRepository)
+    }
+    val costService by lazy {
+        com.lifeops.app.connection.service.CostService(costResourceRepository)
+    }
+    val activityService by lazy {
+        com.lifeops.app.connection.service.ActivityService(activityTemplateRepository)
+    }
+    val runbookService by lazy {
+        com.lifeops.app.connection.service.RunbookService(runbookRepository)
+    }
+    val wellnessService by lazy {
+        com.lifeops.app.connection.service.WellnessService(wellnessRepository)
+    }
+    val connectionDispatcher by lazy {
+        com.lifeops.app.connection.Connections.buildDispatcher(
+            com.lifeops.app.connection.Connections.Services(
+                task = taskService,
+                week = weekService,
+                project = projectService,
+                counter = counterService,
+                note = noteService,
+                aspect = aspectService,
+                person = personService,
+                busyBlock = busyBlockService,
+                timeEntry = timeEntryService,
+                book = bookService,
+                recipe = recipeService,
+                food = foodService,
+                futureProject = futureProjectService,
+                cost = costService,
+                activity = activityService,
+                runbook = runbookService,
+                wellness = wellnessService
+            )
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Fold the write-ahead log back into lifeops.db whenever the app leaves the

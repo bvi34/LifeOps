@@ -123,6 +123,24 @@ class ThisWeekViewModel(
     private val timerController: TimerController
 ) : ViewModel() {
 
+    // Task lifecycle policy lives in the connection service layer (the same TaskService the
+    // /v1/LifeOps/local/task/* connection routes call), so a task created from this screen and one
+    // created via a connection function follow identical rules.
+    private val taskService = com.lifeops.app.connection.service.TaskService(
+        taskRepository, taskNoteRepository, notificationRepository, weekRepository
+    )
+    private val weekService = com.lifeops.app.connection.service.WeekService(
+        weekRepository, taskRepository
+    )
+    private val noteService = com.lifeops.app.connection.service.NoteService(taskNoteRepository)
+    private val timeEntryService =
+        com.lifeops.app.connection.service.TimeEntryService(timeEntryRepository, taskRepository)
+    private val costService = com.lifeops.app.connection.service.CostService(costResourceRepository)
+    private val runbookService = com.lifeops.app.connection.service.RunbookService(runbookRepository)
+    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+    private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
+    private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
+
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
 
@@ -521,11 +539,11 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             weekCloseInFlight = true
             try {
-                val week = _uiState.value.week ?: return@launch
+                _uiState.value.week ?: return@launch
                 stopTimer(saveEntry = true)
-                val newWeek = weekRepository.createNextWeek(week)
-                taskRepository.closeWeek(week.id, newWeek.id, selfRating, selfRatingNote)
-                taskRepository.seedRecurringTasks(week.id, newWeek.id)
+                // Mint-next-week + snapshot/settle + seed-recurring is owned by WeekService (the
+                // same close path the /v1/LifeOps/local/week/close connection route drives).
+                weekService.close(selfRating, selfRatingNote)
                 refreshWidget()
             } finally {
                 weekCloseInFlight = false
@@ -537,7 +555,7 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
             val projectId = java.util.UUID.randomUUID().toString()
-            projectRepository.createProject(projectId, task.title, task.aspectId)
+            projectService.create(title = task.title, aspectId = task.aspectId, id = projectId)
             taskRepository.promoteTaskToProject(taskId, projectId)
         }
     }
@@ -557,15 +575,15 @@ class ThisWeekViewModel(
     }
 
     fun onToggleSubtask(subtaskId: String, checked: Boolean) {
-        viewModelScope.launch { runbookRepository.setSubtaskChecked(subtaskId, checked) }
+        viewModelScope.launch { runbookService.setSubtaskChecked(subtaskId, checked) }
     }
 
     fun onAttachRunbook(taskId: String, runbookId: String) {
-        viewModelScope.launch { runbookRepository.stampRunbookById(taskId, runbookId) }
+        viewModelScope.launch { runbookService.stamp(taskId, runbookId) }
     }
 
     fun onDeleteSubtask(subtaskId: String) {
-        viewModelScope.launch { runbookRepository.deleteSubtask(subtaskId) }
+        viewModelScope.launch { runbookService.deleteSubtask(subtaskId) }
     }
 
     // Import
@@ -623,47 +641,30 @@ class ThisWeekViewModel(
         recurrenceDayOfMonth: Int? = null
     ) {
         viewModelScope.launch {
-            val week = weekRepository.getOrCreateCurrentWeek()
-            val slug = title.toSlug()
-            // Phase 4 merge: incumbent survives
-            if (slug in taskRepository.getSlugsByWeek(week.id)) {
-                _uiState.update { it.copy(showCreateTaskDialog = false) }
-                return@launch
+            // Current-week resolution, slug de-dup, scoring, queued-vs-pending placement, note and
+            // notification are all owned by TaskService (see the connection layer).
+            val outcome = taskService.create(
+                com.lifeops.app.connection.service.TaskService.CreateInput(
+                    title = title,
+                    note = note,
+                    aspectId = aspectId,
+                    categoryId = categoryId,
+                    priority = priority,
+                    dueDate = dueDate,
+                    hardDeadline = hardDeadline,
+                    isRecurring = isRecurring,
+                    estimatedMinutes = estimatedMinutes,
+                    projectId = projectId,
+                    counterId = counterId,
+                    recurrenceIntervalWeeks = recurrenceIntervalWeeks,
+                    recurrenceDayOfMonth = recurrenceDayOfMonth
+                )
+            )
+            // Phase 8: optional runbook stamp on one-off tasks — a UI-only concern the connection
+            // payload doesn't carry, so it stays here, applied only to a freshly created task.
+            if (outcome is com.lifeops.app.connection.service.TaskService.CreateOutcome.Created) {
+                runbookId?.let { runbookService.stamp(outcome.task.id, it) }
             }
-            val resourceValue = ImportParser.computeResourceValue(
-                priority.label, hardDeadline, estimatedMinutes, isManuallyAdded = true
-            )
-            // Due beyond this week? Park it in the Future Tasks queue; it becomes pending
-            // once a week containing its due date opens (see TaskRepository.closeWeek).
-            val validDueDate = dueDate?.takeIf { DateUtil.isValidDate(it) }
-            val status = if (validDueDate != null && validDueDate > week.endDate) TaskStatus.QUEUED
-                         else TaskStatus.PENDING
-            val task = Task(
-                id = UUID.randomUUID().toString(),
-                weekId = week.id,
-                title = title,
-                aspectId = aspectId,
-                categoryId = categoryId,
-                priority = priority,
-                dueDate = validDueDate,
-                hardDeadline = hardDeadline,
-                status = status,
-                resourceValue = resourceValue,
-                createdAt = DateUtil.now(),
-                isRecurring = isRecurring,
-                estimatedMinutes = estimatedMinutes,
-                isManuallyAdded = true,
-                projectId = projectId,
-                slug = slug,
-                counterId = counterId,
-                recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
-                recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
-            )
-            taskRepository.upsertTask(task)
-            note?.let { taskNoteRepository.addNote(task.id, it) }
-            // Phase 8: optional runbook stamp on one-off tasks
-            runbookId?.let { runbookRepository.stampRunbookById(task.id, it) }
-            notificationRepository.scheduleForTask(task)
             _uiState.update { it.copy(showCreateTaskDialog = false) }
         }
     }
@@ -687,7 +688,7 @@ class ThisWeekViewModel(
     }
 
     fun onCreateProject(id: String, title: String, aspectId: String?) {
-        viewModelScope.launch { projectRepository.createProject(id, title, aspectId) }
+        viewModelScope.launch { projectService.create(title = title, aspectId = aspectId, id = id) }
     }
 
     fun onAssignProject(taskId: String, projectId: String?) {
@@ -698,19 +699,19 @@ class ThisWeekViewModel(
     }
 
     fun onAddNote(taskId: String, content: String) {
-        viewModelScope.launch { taskNoteRepository.addNote(taskId, content) }
+        viewModelScope.launch { noteService.add(taskId, content) }
     }
 
     fun onLogTime(taskId: String, minutes: Int, note: String?) {
-        viewModelScope.launch { timeEntryRepository.logTime(taskId, minutes, note) }
+        viewModelScope.launch { timeEntryService.log(taskId, minutes, note) }
     }
 
     fun onLogCost(taskId: String, resourceId: String, amount: Int, note: String?) {
-        viewModelScope.launch { costResourceRepository.logCost(taskId, resourceId, amount, note) }
+        viewModelScope.launch { costService.logCost(taskId, resourceId, amount, note) }
     }
 
     fun onDeleteCostEntry(id: String) {
-        viewModelScope.launch { costResourceRepository.deleteCostEntry(id) }
+        viewModelScope.launch { costService.deleteEntry(id) }
     }
 
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
@@ -773,16 +774,16 @@ class ThisWeekViewModel(
     // --- Task composite actions (people / counters) ---
 
     fun attachPerson(taskId: String, personId: String) {
-        viewModelScope.launch { personRepository.attach(taskId, personId) }
+        viewModelScope.launch { personService.attach(taskId, personId) }
     }
 
     fun detachPerson(taskId: String, personId: String) {
-        viewModelScope.launch { personRepository.detach(taskId, personId) }
+        viewModelScope.launch { personService.detach(taskId, personId) }
     }
 
     /** Log one occurrence of the counter this task ticks — the composite "did it" action. */
     fun logCounter(counterId: String) {
-        viewModelScope.launch { counterRepository.logEvent(counterId) }
+        viewModelScope.launch { counterService.log(counterId) }
     }
 }
 

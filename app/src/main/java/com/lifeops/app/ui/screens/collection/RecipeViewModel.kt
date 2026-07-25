@@ -18,6 +18,8 @@ data class RecipeListUiState(
 )
 
 class RecipeViewModel(private val recipeRepository: RecipeRepository) : ViewModel() {
+    private val recipeService = com.lifeops.app.connection.service.RecipeService(recipeRepository)
+
     private val _uiState = MutableStateFlow(RecipeListUiState())
     val uiState: StateFlow<RecipeListUiState> = _uiState.asStateFlow()
 
@@ -32,7 +34,7 @@ class RecipeViewModel(private val recipeRepository: RecipeRepository) : ViewMode
 
     fun createRecipe(name: String, servings: Double) {
         viewModelScope.launch {
-            recipeRepository.createRecipe(name, servings)
+            recipeService.create(name, servings)
             _uiState.update { it.copy(showCreateDialog = false) }
         }
     }

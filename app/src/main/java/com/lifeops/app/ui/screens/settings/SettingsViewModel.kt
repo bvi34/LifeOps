@@ -75,6 +75,11 @@ class SettingsViewModel(
     private val wellnessRepository: WellnessRepository? = null
 ) : ViewModel() {
 
+    private val aspectService = com.lifeops.app.connection.service.AspectService(aspectRepository)
+    // These repos are optional on this screen, so their services are too.
+    private val costService = costResourceRepository?.let { com.lifeops.app.connection.service.CostService(it) }
+    private val runbookService = runbookRepository?.let { com.lifeops.app.connection.service.RunbookService(it) }
+
     private val _uiState = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
@@ -145,12 +150,12 @@ class SettingsViewModel(
     fun addAspect(name: String, color: String, icon: String) {
         viewModelScope.launch {
             val aspect = Aspect(UUID.randomUUID().toString(), name, color, icon)
-            aspectRepository.upsertAspect(aspect)
+            aspectService.upsertAspect(aspect)
         }
     }
 
     fun updateAspect(aspect: Aspect) {
-        viewModelScope.launch { aspectRepository.updateAspect(aspect) }
+        viewModelScope.launch { aspectService.updateAspect(aspect) }
     }
 
     fun showEditAspectDialog(aspect: Aspect) = _uiState.update { it.copy(editingAspect = aspect) }
@@ -158,7 +163,7 @@ class SettingsViewModel(
 
     fun saveAspectEdit(aspect: Aspect, name: String, color: String, icon: String) {
         viewModelScope.launch {
-            aspectRepository.updateAspect(aspect.copy(name = name, color = color, icon = icon))
+            aspectService.updateAspect(aspect.copy(name = name, color = color, icon = icon))
             _uiState.update { it.copy(editingAspect = null) }
         }
     }
@@ -167,14 +172,14 @@ class SettingsViewModel(
         if (archive) {
             _uiState.update { it.copy(pendingArchiveAspectId = id) }
         } else {
-            viewModelScope.launch { aspectRepository.setAspectArchived(id, false) }
+            viewModelScope.launch { aspectService.setAspectArchived(id, false) }
         }
     }
 
     fun addCategory(aspectId: String, name: String) {
         viewModelScope.launch {
             val category = Category(UUID.randomUUID().toString(), aspectId, name)
-            aspectRepository.upsertCategory(category)
+            aspectService.upsertCategory(category)
         }
     }
 
@@ -183,7 +188,7 @@ class SettingsViewModel(
 
     fun saveCategoryEdit(category: Category, name: String, aspectId: String) {
         viewModelScope.launch {
-            aspectRepository.updateCategory(category.copy(name = name, aspectId = aspectId))
+            aspectService.updateCategory(category.copy(name = name, aspectId = aspectId))
             _uiState.update { it.copy(editingCategory = null) }
         }
     }
@@ -192,7 +197,7 @@ class SettingsViewModel(
         if (archive) {
             _uiState.update { it.copy(pendingArchiveCategoryId = id) }
         } else {
-            viewModelScope.launch { aspectRepository.setCategoryArchived(id, false) }
+            viewModelScope.launch { aspectService.setCategoryArchived(id, false) }
         }
     }
 
@@ -200,12 +205,13 @@ class SettingsViewModel(
         val state = _uiState.value
         viewModelScope.launch {
             state.pendingArchiveAspectId?.let { id ->
-                aspectRepository.setAspectArchived(id, true)
+                aspectService.setAspectArchived(id, true)
             }
             state.pendingArchiveCategoryId?.let { id ->
-                // Null out tasks' categoryId so they appear as Uncategorized
+                // Null out tasks' categoryId so they appear as Uncategorized (cross-domain, stays
+                // on TaskRepository), then archive the category via the service.
                 taskRepository?.clearCategoryFromTasks(id)
-                aspectRepository.setCategoryArchived(id, true)
+                aspectService.setCategoryArchived(id, true)
             }
             _uiState.update { it.copy(pendingArchiveAspectId = null, pendingArchiveCategoryId = null) }
         }
@@ -297,15 +303,15 @@ class SettingsViewModel(
     fun hideNewCostResourceDialog() = _uiState.update { it.copy(showNewCostResourceDialog = false) }
 
     fun addCostResource(name: String, resetCycle: String, capacity: Int?) {
-        val repo = costResourceRepository ?: return
+        val svc = costService ?: return
         viewModelScope.launch {
-            repo.addResource(name, resetCycle, capacity)
+            svc.createResource(name, resetCycle, capacity)
             _uiState.update { it.copy(showNewCostResourceDialog = false) }
         }
     }
 
     fun setCostResourceActive(id: String, active: Boolean) {
-        viewModelScope.launch { costResourceRepository?.setActive(id, active) }
+        viewModelScope.launch { costService?.setResourceActive(id, active) }
     }
 
     fun setCustomPalette(palette: CustomPalette) {
@@ -500,9 +506,9 @@ class SettingsViewModel(
     fun hideNewRunbookDialog() = _uiState.update { it.copy(showNewRunbookDialog = false) }
 
     fun addRunbook(name: String, steps: List<String>) {
-        val repo = runbookRepository ?: return
+        val svc = runbookService ?: return
         viewModelScope.launch {
-            repo.createRunbook(name, steps)
+            svc.create(name, steps)
             _uiState.update { it.copy(showNewRunbookDialog = false) }
         }
     }
@@ -511,15 +517,15 @@ class SettingsViewModel(
     fun hideEditRunbookDialog() = _uiState.update { it.copy(editingRunbook = null) }
 
     fun saveRunbookEdit(rb: RunbookWithSteps, name: String, steps: List<String>) {
-        val repo = runbookRepository ?: return
+        val svc = runbookService ?: return
         viewModelScope.launch {
-            repo.updateRunbook(rb.runbook.copy(name = name), steps)
+            svc.update(rb.runbook.copy(name = name), steps)
             _uiState.update { it.copy(editingRunbook = null) }
         }
     }
 
     fun deleteRunbook(id: String) {
-        viewModelScope.launch { runbookRepository?.deleteRunbook(id) }
+        viewModelScope.launch { runbookService?.delete(id) }
     }
 
     // Template CRUD

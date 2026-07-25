@@ -36,6 +36,9 @@ class DailyPlanViewModel(
     private val foodItemRepository: FoodItemRepository
 ) : ViewModel() {
 
+    private val foodService =
+        com.lifeops.app.connection.service.FoodService(foodItemRepository, foodLogRepository)
+
     private val _weekStartDate = MutableStateFlow(DateUtil.currentWeekStart().toString())
     private val _selectedDate = MutableStateFlow(LocalDate.now().toString())
 
@@ -79,7 +82,7 @@ class DailyPlanViewModel(
     }
 
     fun confirmEntry(entryId: String) {
-        viewModelScope.launch { foodLogRepository.confirmEntry(entryId) }
+        viewModelScope.launch { foodService.confirmEntry(entryId) }
     }
 
     fun startAdjusting(entryId: String) = _uiState.update { it.copy(adjustingEntryId = entryId) }
@@ -87,7 +90,7 @@ class DailyPlanViewModel(
 
     fun adjustEntry(entryId: String, quantity: Double, unit: IngredientUnit) {
         viewModelScope.launch {
-            foodLogRepository.adjustEntry(entryId, quantity, unit)
+            foodService.adjustEntry(entryId, quantity, unit)
             _uiState.update { it.copy(adjustingEntryId = null) }
         }
     }
@@ -105,14 +108,14 @@ class DailyPlanViewModel(
 
     fun addFoodItem(foodItemId: String, quantity: Double, unit: IngredientUnit) {
         viewModelScope.launch {
-            foodLogRepository.logFoodItem(foodItemId, quantity, unit)
+            foodService.logFood(foodItemId, quantity, unit)
             _uiState.update { it.copy(showAddDialog = false) }
         }
     }
 
     fun addAdHoc(name: String, quantity: Double, unit: IngredientUnit, calories: Double, carbsG: Double, proteinG: Double, fatG: Double) {
         viewModelScope.launch {
-            foodLogRepository.logAdHoc(name, quantity, unit, calories, carbsG, proteinG, fatG)
+            foodService.logAdHoc(name, quantity, unit, calories, carbsG, proteinG, fatG)
             _uiState.update { it.copy(showAddDialog = false) }
         }
     }

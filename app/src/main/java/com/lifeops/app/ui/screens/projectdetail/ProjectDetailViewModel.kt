@@ -30,6 +30,8 @@ class ProjectDetailViewModel(
     private val futureProjectRepository: FutureProjectRepository
 ) : ViewModel() {
 
+    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+
     private val _uiState = MutableStateFlow(ProjectDetailUiState())
     val uiState: StateFlow<ProjectDetailUiState> = _uiState.asStateFlow()
 
@@ -91,7 +93,7 @@ class ProjectDetailViewModel(
 
     fun setProjectStatus(status: ProjectStatus) {
         viewModelScope.launch {
-            projectRepository.setProjectStatus(projectId, status)
+            projectService.setStatus(projectId, status)
             load()
         }
     }
