@@ -12,13 +12,22 @@ class BookService(private val bookRepository: BookRepository) {
         return bookRepository.createBook(title.trim(), author?.takeIf { it.isNotBlank() })
     }
 
-    /** Rename / re-attribute a book. Null if [id] is unknown. */
+    /** Rename / re-attribute a book by id (partial: null keeps the field). Null if [id] is unknown. */
     suspend fun update(id: String, title: String? = null, author: String? = null): Book? {
         val current = load(id) ?: return null
         val newTitle = title?.trim()?.takeIf { it.isNotBlank() } ?: current.title
         val newAuthor = if (author != null) author.takeIf { it.isNotBlank() } else current.author
         bookRepository.updateBook(current, newTitle, newAuthor)
         return current.copy(title = newTitle, author = newAuthor)
+    }
+
+    /**
+     * Full-replace edit used by the detail screen, which already holds the [book] and supplies both
+     * fields from the edit form (a blank author clears it). Mirrors the repository exactly.
+     */
+    suspend fun update(book: Book, title: String, author: String?): Book {
+        bookRepository.updateBook(book, title, author)
+        return book.copy(title = title, author = author)
     }
 
     /** Set reading status (stamps completedAt on DONE). False if [id] is unknown. */
@@ -47,6 +56,10 @@ class BookService(private val bookRepository: BookRepository) {
         bookRepository.addTimeEntry(bookId, durationMinutes, note)
         return true
     }
+
+    suspend fun deleteNote(noteId: String) = bookRepository.deleteNote(noteId)
+
+    suspend fun deleteTimeEntry(entryId: String) = bookRepository.deleteTimeEntry(entryId)
 
     // BookRepository exposes no single-id getter; the reading list is small, so resolve from the
     // full set. If that ever grows, add a suspend getById to the repository instead.

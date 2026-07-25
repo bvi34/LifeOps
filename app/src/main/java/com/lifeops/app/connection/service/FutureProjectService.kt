@@ -12,6 +12,12 @@ class FutureProjectService(private val futureProjectRepository: FutureProjectRep
         return futureProjectRepository.create(title.trim())
     }
 
+    /** Rename a future project. The detail screen already holds the [project]. */
+    suspend fun saveTitle(project: FutureProject, title: String) {
+        require(title.isNotBlank()) { "Title must not be blank" }
+        futureProjectRepository.saveTitle(project, title.trim())
+    }
+
     /** Append a note (also bumps the project's recency). False if [content] is blank. */
     suspend fun addNote(projectId: String, content: String): Boolean {
         if (content.isBlank()) return false

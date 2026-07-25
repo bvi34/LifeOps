@@ -19,6 +19,10 @@ data class BookListUiState(
 )
 
 class BookViewModel(private val bookRepository: BookRepository) : ViewModel() {
+    // Book lifecycle policy lives in the connection service layer (same BookService the
+    // /v1/LifeOps/local/book/* routes call), so screen and connection paths behave identically.
+    private val bookService = com.lifeops.app.connection.service.BookService(bookRepository)
+
     private val _uiState = MutableStateFlow(BookListUiState())
     val uiState: StateFlow<BookListUiState> = _uiState.asStateFlow()
 
@@ -33,13 +37,13 @@ class BookViewModel(private val bookRepository: BookRepository) : ViewModel() {
 
     fun createBook(title: String, author: String?) {
         viewModelScope.launch {
-            bookRepository.createBook(title, author)
+            bookService.create(title, author)
             _uiState.update { it.copy(showCreateDialog = false) }
         }
     }
 
     fun setStatus(book: Book, status: BookStatus) {
-        viewModelScope.launch { bookRepository.setStatus(book, status) }
+        viewModelScope.launch { bookService.setStatus(book.id, status) }
     }
 }
 

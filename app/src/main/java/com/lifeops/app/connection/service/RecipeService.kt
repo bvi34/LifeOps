@@ -13,6 +13,14 @@ class RecipeService(private val recipeRepository: RecipeRepository) {
         return recipeRepository.createRecipe(name.trim(), servings.coerceAtLeast(0.0))
     }
 
+    /** Rename / re-portion a recipe. The detail screen already holds the [recipe]. */
+    suspend fun update(recipe: Recipe, name: String, servings: Double): Recipe {
+        require(name.isNotBlank()) { "Recipe name must not be blank" }
+        val newName = name.trim()
+        recipeRepository.updateRecipe(recipe, newName, servings.coerceAtLeast(0.0))
+        return recipe.copy(name = newName, servings = servings.coerceAtLeast(0.0))
+    }
+
     suspend fun delete(id: String) = recipeRepository.deleteRecipe(id)
 
     suspend fun addIngredient(

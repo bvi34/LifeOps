@@ -26,6 +26,9 @@ class FutureProjectDetailViewModel(
     private val futureProjectRepository: FutureProjectRepository,
     private val projectRepository: ProjectRepository
 ) : ViewModel() {
+    private val futureProjectService =
+        com.lifeops.app.connection.service.FutureProjectService(futureProjectRepository)
+
     private val _uiState = MutableStateFlow(FutureProjectDetailUiState())
     val uiState: StateFlow<FutureProjectDetailUiState> = _uiState.asStateFlow()
 
@@ -44,20 +47,21 @@ class FutureProjectDetailViewModel(
 
     fun saveTitle(title: String) {
         val project = _uiState.value.project ?: return
-        viewModelScope.launch { futureProjectRepository.saveTitle(project, title) }
+        viewModelScope.launch { futureProjectService.saveTitle(project, title) }
     }
 
     fun addNote(content: String) {
-        viewModelScope.launch { futureProjectRepository.addNote(projectId, content) }
+        viewModelScope.launch { futureProjectService.addNote(projectId, content) }
     }
 
     fun setStatus(status: FutureProjectStatus) {
-        viewModelScope.launch { futureProjectRepository.setStatus(projectId, status) }
+        viewModelScope.launch { futureProjectService.setStatus(projectId, status) }
     }
 
     /** Turn this idea into a real (current) project, then archive it here. The notes stay
      *  on the archived future project; the link lets the promoted project's detail screen
-     *  surface them as its brainstorm history. */
+     *  surface them as its brainstorm history. The project-creation half is a cross-domain op
+     *  (it stamps a sourceFutureProjectId link) and stays on ProjectRepository. */
     fun promote() {
         val project = _uiState.value.project ?: return
         viewModelScope.launch {
@@ -65,13 +69,13 @@ class FutureProjectDetailViewModel(
                 UUID.randomUUID().toString(), project.title,
                 aspectId = null, sourceFutureProjectId = projectId
             )
-            futureProjectRepository.setStatus(projectId, FutureProjectStatus.ARCHIVED)
+            futureProjectService.setStatus(projectId, FutureProjectStatus.ARCHIVED)
         }
     }
 
     fun delete(onDeleted: () -> Unit) {
         viewModelScope.launch {
-            futureProjectRepository.delete(projectId)
+            futureProjectService.delete(projectId)
             onDeleted()
         }
     }
