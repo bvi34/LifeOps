@@ -1,0 +1,87 @@
+package com.citation.app.data.db
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface BookDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(book: BookEntity)
+
+    @Update
+    suspend fun update(book: BookEntity)
+
+    @Query("SELECT * FROM books ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<BookEntity>>
+
+    @Query("SELECT * FROM books WHERE key = :key")
+    suspend fun get(key: String): BookEntity?
+
+    @Query("UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset WHERE key = :key")
+    suspend fun savePosition(key: String, ordinal: Int, offset: Int)
+
+    @Query("SELECT * FROM books")
+    suspend fun getAll(): List<BookEntity>
+}
+
+@Dao
+interface ChapterDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(chapters: List<ChapterEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(chapter: ChapterEntity)
+
+    @Query("SELECT * FROM chapters WHERE bookKey = :bookKey ORDER BY ordinal ASC")
+    suspend fun forBook(bookKey: String): List<ChapterEntity>
+
+    @Query("SELECT ordinal FROM chapters WHERE bookKey = :bookKey")
+    suspend fun cachedOrdinals(bookKey: String): List<Int>
+
+    @Query("DELETE FROM chapters WHERE bookKey = :bookKey AND ordinal = :ordinal")
+    suspend fun evict(bookKey: String, ordinal: Int)
+}
+
+@Dao
+interface HighlightDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(highlight: HighlightEntity)
+
+    @Query("SELECT * FROM highlights WHERE bookKey = :bookKey ORDER BY createdAt ASC")
+    fun observeForBook(bookKey: String): Flow<List<HighlightEntity>>
+}
+
+@Dao
+interface NoteDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(note: NoteEntity)
+
+    @Query("SELECT * FROM notes ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<NoteEntity>>
+
+    @Query("SELECT * FROM notes WHERE bookKey = :bookKey ORDER BY createdAt ASC")
+    fun observeForBook(bookKey: String): Flow<List<NoteEntity>>
+
+    /** Notes not yet acknowledged by LifeOps (queued in the outbox), for the sync worker. */
+    @Query("SELECT * FROM notes WHERE syncVersion IS NOT NULL ORDER BY syncVersion ASC")
+    suspend fun pendingSync(): List<NoteEntity>
+}
+
+@Dao
+interface SyncStateDao {
+    @Query("SELECT * FROM key_watermarks")
+    suspend fun watermarks(): List<KeyWatermarkEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveWatermark(mark: KeyWatermarkEntity)
+
+    @Query("SELECT * FROM sync_state WHERE id = 0")
+    suspend fun syncState(): SyncStateEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun saveSyncState(state: SyncStateEntity)
+}
