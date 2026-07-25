@@ -43,6 +43,18 @@ class ConnectionParams(private val values: Map<String, Any?>) {
         else -> null
     }
 
+    fun getDouble(key: String): Double? = when (val v = values[key]) {
+        null -> null
+        is Double -> v
+        is Number -> v.toDouble()
+        is String -> v.trim().toDoubleOrNull()
+        else -> null
+    }
+
+    fun requireDouble(key: String): Double = getDouble(key) ?: throw MissingParamException(key)
+
+    fun requireInt(key: String): Int = getInt(key) ?: throw MissingParamException(key)
+
     fun getBoolean(key: String, default: Boolean = false): Boolean = when (val v = values[key]) {
         null -> default
         is Boolean -> v

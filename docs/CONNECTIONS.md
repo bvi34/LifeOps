@@ -96,8 +96,28 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
 | `project` | `create`, `update`, `complete`, `reopen` | `ProjectService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |
+| `note` | `add`, `delete` | `NoteService` | Task notes. |
+| `aspect` | `create`, `rename`, `archive` | `AspectService` | `create` is find-or-create. |
+| `category` | `create`, `archive` | `AspectService` | `create` needs `aspectId`; find-or-create. |
+| `person` | `create`, `rename`, `archive`, `delete`, `addNote`, `attach`, `detach` | `PersonService` | `attach`/`detach` link a person to a task. |
+| `busyBlock` | `create`, `delete` | `BusyBlockService` | `daysMask` bitmask for weekly recurrence; `specificDate` for one-off. |
+| `timeEntry` | `log` | `TimeEntryService` | Logs minutes against a task. |
+| `book` | `create`, `update`, `setStatus`, `delete`, `addNote`, `logTime` | `BookService` | `setStatus`: `to_read`/`reading`/`done`. |
+| `food` | `createCustom`, `log`, `logAdHoc`, `confirm`, `adjust`, `promote` | `FoodService` | `unit`: `gram`/`serving`; macros are `Double`. |
+| `recipe` | `create`, `delete`, `addIngredient`, `removeIngredient` | `RecipeService` | — |
+| `futureProject` | `create`, `addNote`, `archive`, `delete` | `FutureProjectService` | The "someday" backlog. |
+| `costResource` | `create`, `archive` | `CostService` | Budgets/quotas. |
+| `cost` | `log`, `delete` | `CostService` | Per-task cost entries. |
+| `activity` | `create`, `delete` | `ActivityService` | Saved outdoor activities. |
+| `runbook` | `create`, `delete`, `stamp` | `RunbookService` | `stamp` writes a runbook's steps as subtasks on a task. |
+| `subtask` | `check`, `delete` | `RunbookService` | — |
+| `wellness` | `checkin`, `sleep` | `WellnessService` | Daytime check-in and morning sleep report. |
 
 Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does not.
+
+**Deliberately not routed:** task image attachments (creation is bound to an Android photo-picker
+`Uri`/`Context`, not a serialisable payload), and read-only/reporting/infra surfaces (search,
+growth rings, weather cache, notifications, backup, preferences) — these aren't command-shaped.
 
 ## Reference implementation
 
