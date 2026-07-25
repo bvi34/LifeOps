@@ -44,7 +44,10 @@ caller ──▶ ConnectionDispatcher ──▶ RouteHandler ──▶ Service (
   delegates to a service. It never contains business logic.
 - **Service layer** (e.g. `TaskService`) owns the *policy* of a resource's lifecycle
   (current-week resolution, de-duplication, scoring, notification scheduling). Both the connection
-  routes and the UI (`ThisWeekViewModel`) call it, so every path behaves identically.
+  routes and the screen ViewModels call it, so every path behaves identically. Each ViewModel
+  constructs the service(s) it needs inline from the repositories it already holds; reads and
+  genuinely cross-domain steps (task↔project promotion, clearing a category off tasks) stay on the
+  repositories.
 - **Repositories** remain the single source of truth for persistence.
 
 ## Calling a route
