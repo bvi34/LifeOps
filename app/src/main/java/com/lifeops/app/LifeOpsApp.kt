@@ -96,8 +96,24 @@ class LifeOpsApp : Application() {
             taskRepository, taskNoteRepository, notificationRepository, weekRepository
         )
     }
+    val weekService by lazy {
+        com.lifeops.app.connection.service.WeekService(weekRepository, taskRepository)
+    }
+    val projectService by lazy {
+        com.lifeops.app.connection.service.ProjectService(projectRepository)
+    }
+    val counterService by lazy {
+        com.lifeops.app.connection.service.CounterService(counterRepository)
+    }
     val connectionDispatcher by lazy {
-        com.lifeops.app.connection.Connections.buildDispatcher(taskService)
+        com.lifeops.app.connection.Connections.buildDispatcher(
+            com.lifeops.app.connection.Connections.Services(
+                task = taskService,
+                week = weekService,
+                project = projectService,
+                counter = counterService
+            )
+        )
     }
 
     override fun onCreate() {

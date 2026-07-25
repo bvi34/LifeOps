@@ -129,6 +129,9 @@ class ThisWeekViewModel(
     private val taskService = com.lifeops.app.connection.service.TaskService(
         taskRepository, taskNoteRepository, notificationRepository, weekRepository
     )
+    private val weekService = com.lifeops.app.connection.service.WeekService(
+        weekRepository, taskRepository
+    )
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
@@ -528,11 +531,11 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             weekCloseInFlight = true
             try {
-                val week = _uiState.value.week ?: return@launch
+                _uiState.value.week ?: return@launch
                 stopTimer(saveEntry = true)
-                val newWeek = weekRepository.createNextWeek(week)
-                taskRepository.closeWeek(week.id, newWeek.id, selfRating, selfRatingNote)
-                taskRepository.seedRecurringTasks(week.id, newWeek.id)
+                // Mint-next-week + snapshot/settle + seed-recurring is owned by WeekService (the
+                // same close path the /v1/LifeOps/local/week/close connection route drives).
+                weekService.close(selfRating, selfRatingNote)
                 refreshWidget()
             } finally {
                 weekCloseInFlight = false

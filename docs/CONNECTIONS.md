@@ -86,9 +86,23 @@ when (result) {
 `requireString` (and peers) throw on missing input; the dispatcher turns that into
 `INVALID_PARAMS`, so handlers stay boilerplate-free.
 
+## Registered routes
+
+All under the `local` connection today (`/v1/LifeOps/local/…`):
+
+| Resource | Actions | Service | Notes |
+|---|---|---|---|
+| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. |
+| `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
+| `project` | `create`, `update`, `complete`, `reopen` | `ProjectService` | `complete`/`reopen` flip status. |
+| `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |
+
+Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does not.
+
 ## Reference implementation
 
 `local/task` is the worked example end-to-end: `LocalTaskConnection` → `TaskService` →
-`TaskRepository`. New resources should mirror it. The routing core
-(`ConnectionAddress`, `ConnectionParams`, `ConnectionRegistry`, `ConnectionDispatcher`) is pure
-JVM and unit-tested under `app/src/test/java/com/lifeops/app/connection/`.
+`TaskRepository`, with `week`/`project`/`counter` following the same shape. New resources should
+mirror it. The routing core (`ConnectionAddress`, `ConnectionParams`, `ConnectionRegistry`,
+`ConnectionDispatcher`) is pure JVM and unit-tested under
+`app/src/test/java/com/lifeops/app/connection/`.

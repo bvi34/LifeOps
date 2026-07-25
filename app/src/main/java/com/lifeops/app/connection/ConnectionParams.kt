@@ -35,6 +35,14 @@ class ConnectionParams(private val values: Map<String, Any?>) {
         else -> null
     }
 
+    fun getLong(key: String): Long? = when (val v = values[key]) {
+        null -> null
+        is Long -> v
+        is Number -> v.toLong()
+        is String -> v.trim().toLongOrNull()
+        else -> null
+    }
+
     fun getBoolean(key: String, default: Boolean = false): Boolean = when (val v = values[key]) {
         null -> default
         is Boolean -> v
