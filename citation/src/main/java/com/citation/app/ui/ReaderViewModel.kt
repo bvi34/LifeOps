@@ -31,6 +31,9 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
+    // Non-null while a Royal Road serial is open, so page turns can slide its prefetch buffer.
+    private var openRrFictionId: Long? = null
+
     fun importEpub(bytes: ByteArray) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
@@ -44,26 +47,67 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun open(bookKey: String) {
         viewModelScope.launch {
+            openRrFictionId = null
             _openBook.value = repository.loadBook(bookKey)
             _chapterOrdinal.value = 0
         }
     }
 
+    /**
+     * Open a Royal Road serial *through the reader* — the WebView is only for skimming/catalog, so
+     * even chapter 1 comes back as internal-model text here, identical to every later chapter.
+     */
+    fun openRoyalRoad(fictionId: Long) {
+        viewModelScope.launch {
+            _status.value = "Fetching Royal Road catalog…"
+            runCatching { repository.royalRoad.openStory(fictionId) }
+                .onSuccess { book ->
+                    openRrFictionId = fictionId
+                    _openBook.value = book
+                    _chapterOrdinal.value = 0
+                    _status.value = "Opened “${book.metadata.title}”."
+                }
+                .onFailure { _status.value = "Couldn’t open that Royal Road story." }
+        }
+    }
+
+    fun favoriteRoyalRoad() {
+        val fictionId = openRrFictionId ?: return
+        viewModelScope.launch {
+            repository.royalRoad.markFavorite(fictionId, true)
+            _status.value = "Favourited — full backfill queued, kept indefinitely."
+        }
+    }
+
     fun closeBook() {
+        openRrFictionId = null
         _openBook.value = null
     }
 
     fun goToChapter(ordinal: Int) {
         val book = _openBook.value ?: return
-        _chapterOrdinal.value = ordinal.coerceIn(0, book.chapters.lastIndex)
+        val target = ordinal.coerceIn(0, book.chapters.lastIndex)
+        _chapterOrdinal.value = target
         viewModelScope.launch {
-            book.key?.let { repository.savePosition(it.toString(), _chapterOrdinal.value, 0) }
+            val rr = openRrFictionId
+            if (rr != null) {
+                repository.royalRoad.advance(rr, target) // slide the prefetch buffer forward
+            } else {
+                book.key?.let { repository.savePosition(it.toString(), target, 0) }
+            }
         }
     }
+
+    val isRoyalRoadOpen: Boolean get() = openRrFictionId != null
 
     /** Capture a highlight over the current chapter's selection and attach a note. */
     fun captureNote(selectionStart: Int, selectionEnd: Int, body: String) {
         val book = _openBook.value ?: return
+        if (book.key == null) {
+            // Notes on borrowed sources (Royal Road) are milestone 4; degrade instead of crashing.
+            _status.value = "Notes on Royal Road serials arrive in a later milestone."
+            return
+        }
         viewModelScope.launch {
             val note = repository.captureNote(
                 book = book,

@@ -3,6 +3,8 @@ package com.citation.app.data
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
+import com.citation.app.data.rr.RoyalRoadClient
+import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
 import com.citation.core.epub.EpubParser
 import com.citation.core.identity.IdentityKey
@@ -34,7 +36,9 @@ class CitationRepository private constructor(
     private val db: CitationDatabase,
     private val files: FileStores,
     private val keys: KeyAllocator,
-    private val outbox: Mailbox<UpPacket, Nothing>
+    private val outbox: Mailbox<UpPacket, Nothing>,
+    /** The Royal Road read loop (skim → buffer → cache → backfill → poll → evict). */
+    val royalRoad: RoyalRoadCoordinator
 ) {
 
     val books: Flow<List<BookSummary>> =
@@ -157,7 +161,8 @@ class CitationRepository private constructor(
             val keys = KeyAllocator(seed = watermarks)
             val outbox = Mailbox<UpPacket, Nothing>()
             db.syncStateDao().syncState()?.let { outbox.restore(it.outVersion, it.inboxCursor) }
-            return CitationRepository(db, files, keys, outbox)
+            val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
+            return CitationRepository(db, files, keys, outbox, royalRoad)
         }
     }
 }

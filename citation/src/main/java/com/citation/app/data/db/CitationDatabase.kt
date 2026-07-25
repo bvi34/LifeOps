@@ -18,7 +18,9 @@ import androidx.room.RoomDatabase
         HighlightEntity::class,
         NoteEntity::class,
         KeyWatermarkEntity::class,
-        SyncStateEntity::class
+        SyncStateEntity::class,
+        RrFictionEntity::class,
+        RrChapterMetaEntity::class
     ],
     version = 1,
     exportSchema = true
@@ -29,6 +31,7 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun highlightDao(): HighlightDao
     abstract fun noteDao(): NoteDao
     abstract fun syncStateDao(): SyncStateDao
+    abstract fun royalRoadDao(): RoyalRoadDao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null

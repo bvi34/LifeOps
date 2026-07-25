@@ -17,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,8 +55,20 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val openBook by vm.openBook.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
 
+    var browsingRoyalRoad by remember { mutableStateOf(false) }
+
     if (openBook == null) {
-        LibraryView(vm, status)
+        if (browsingRoyalRoad) {
+            RoyalRoadCatalogScreen(
+                onOpenFiction = { fictionId ->
+                    browsingRoyalRoad = false
+                    vm.openRoyalRoad(fictionId)
+                },
+                onBack = { browsingRoyalRoad = false }
+            )
+        } else {
+            LibraryView(vm, status, onBrowseRoyalRoad = { browsingRoyalRoad = true })
+        }
     } else {
         val ordinal by vm.chapterOrdinal.collectAsStateWithLifecycle()
         val book = openBook!!
@@ -75,6 +88,11 @@ fun ReaderScreen(vm: ReaderViewModel) {
                         }
                     },
                     actions = {
+                        if (vm.isRoyalRoadOpen) {
+                            IconButton(onClick = { vm.favoriteRoyalRoad() }) {
+                                Icon(Icons.Default.Star, contentDescription = "Favourite (full backfill)")
+                            }
+                        }
                         IconButton(onClick = { showNote = !showNote }) {
                             Icon(Icons.Default.Add, contentDescription = "Add note")
                         }
@@ -193,7 +211,7 @@ private fun NoteComposer(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LibraryView(vm: ReaderViewModel, status: String?) {
+private fun LibraryView(vm: ReaderViewModel, status: String?, onBrowseRoyalRoad: () -> Unit) {
     val books by vm.books.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -209,6 +227,10 @@ private fun LibraryView(vm: ReaderViewModel, status: String?) {
             Button(onClick = { picker.launch("application/epub+zip") }, modifier = Modifier.fillMaxWidth()) {
                 Text("Import EPUB")
             }
+            OutlinedButton(
+                onClick = onBrowseRoyalRoad,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Browse Royal Road") }
             status?.let {
                 Text(
                     it,

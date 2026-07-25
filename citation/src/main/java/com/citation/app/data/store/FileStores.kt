@@ -47,4 +47,10 @@ class FileStores(context: Context) {
         val file = File(File(disposableDir, bookKey), "$ordinal.txt")
         return if (file.exists()) file.readText() else null
     }
+
+    /** Reclaim one borrowed chapter body from the disposable cache. Deletes succeed even when full. */
+    fun deleteBorrowedChapter(bookKey: String, ordinal: Int): Boolean {
+        val file = File(File(disposableDir, bookKey), "$ordinal.txt")
+        return file.exists() && file.delete()
+    }
 }
