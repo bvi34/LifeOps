@@ -53,6 +53,29 @@ class CounterService(private val counterRepository: CounterRepository) {
         return true
     }
 
+    /**
+     * Full-replace edit used by the counters screen, which already holds the [counter] and supplies
+     * every field from the edit form (a null [categoryId] detaches the category, a null
+     * [reminderHour] clears the reminder). Mirrors the repository, which re-syncs the habit reminder.
+     */
+    suspend fun save(
+        counter: Counter,
+        name: String,
+        categoryId: String?,
+        isHabit: Boolean,
+        reminderHour: Int?
+    ): Counter {
+        require(name.isNotBlank()) { "Counter name must not be blank" }
+        val updated = counter.copy(
+            name = name.trim(),
+            categoryId = categoryId,
+            isHabit = isHabit,
+            reminderHour = reminderHour
+        )
+        counterRepository.update(updated)
+        return updated
+    }
+
     /** Partial update; each non-null field replaces the current value. Null if [counterId] unknown. */
     suspend fun update(
         counterId: String,

@@ -58,6 +58,8 @@ class CountersViewModel(
     private val weekRepository: WeekRepository
 ) : ViewModel() {
 
+    private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
+
     // Stable within the current week; the VM is recreated on navigation, which re-reads it.
     private val weekKey = DateUtil.weekIndexFor(System.currentTimeMillis())
     private val today = LocalDate.now()
@@ -152,7 +154,7 @@ class CountersViewModel(
         // A reminder only makes sense for a habit; drop it otherwise so state can't go inconsistent.
         val hour = reminderHour?.takeIf { isHabit }
         viewModelScope.launch {
-            counterRepository.createCounter(UUID.randomUUID().toString(), name.trim(), categoryId, isHabit, hour)
+            counterService.create(name.trim(), categoryId, isHabit, hour)
         }
     }
 
@@ -160,25 +162,23 @@ class CountersViewModel(
         if (name.isBlank()) return
         val hour = reminderHour?.takeIf { isHabit }
         viewModelScope.launch {
-            counterRepository.update(
-                counter.copy(name = name.trim(), categoryId = categoryId, isHabit = isHabit, reminderHour = hour)
-            )
+            counterService.save(counter, name.trim(), categoryId, isHabit, hour)
         }
     }
 
     fun setArchived(counter: Counter, archived: Boolean) {
-        viewModelScope.launch { counterRepository.setArchived(counter, archived) }
+        viewModelScope.launch { counterService.setArchived(counter.id, archived) }
     }
 
     /** Tap-to-increment: a single tick stamped at now. */
     fun increment(counter: Counter) {
-        viewModelScope.launch { counterRepository.logEvent(counter.id) }
+        viewModelScope.launch { counterService.log(counter.id) }
     }
 
     /** Backdate / bulk: one event of [delta] stamped at [occurredAtMillis]. */
     fun logBackdated(counter: Counter, occurredAtMillis: Long, delta: Int) {
         if (delta == 0) return
-        viewModelScope.launch { counterRepository.logBulk(counter.id, occurredAtMillis, delta) }
+        viewModelScope.launch { counterService.log(counter.id, delta = delta, occurredAt = occurredAtMillis) }
     }
 
     fun categoryNameFor(categoryId: String?): String? {

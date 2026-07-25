@@ -20,6 +20,8 @@ class PeopleViewModel(
     private val personRepository: PersonRepository
 ) : ViewModel() {
 
+    private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
+
     private val _uiState = MutableStateFlow(PeopleUiState())
     val uiState: StateFlow<PeopleUiState> = _uiState.asStateFlow()
 
@@ -36,15 +38,15 @@ class PeopleViewModel(
 
     fun createPerson(name: String) {
         if (name.isBlank()) return
-        viewModelScope.launch { personRepository.createPerson(name) }
+        viewModelScope.launch { personService.create(name) }
     }
 
     fun setArchived(person: Person, archived: Boolean) {
-        viewModelScope.launch { personRepository.setArchived(person, archived) }
+        viewModelScope.launch { personService.setArchived(person.id, archived) }
     }
 
     fun delete(person: Person) {
-        viewModelScope.launch { personRepository.delete(person) }
+        viewModelScope.launch { personService.delete(person.id) }
     }
 }
 

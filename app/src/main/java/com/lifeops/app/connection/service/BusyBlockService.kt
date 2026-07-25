@@ -35,5 +35,11 @@ class BusyBlockService(private val busyBlockRepository: BusyBlockRepository) {
         return block
     }
 
+    /**
+     * Upsert a fully-formed [block] — the schedule editor builds it (new or edited, id preserved)
+     * and hands it over. Mirrors the repository.
+     */
+    suspend fun save(block: BusyBlock) = busyBlockRepository.upsert(block)
+
     suspend fun delete(id: String) = busyBlockRepository.delete(id)
 }

@@ -19,6 +19,12 @@ class PersonService(private val personRepository: PersonRepository) {
         return updated
     }
 
+    /**
+     * Persist a fully-assembled [person] — the detail screen's profile editor builds the copy
+     * (name plus weather-tolerance preferences) and hands it over. Mirrors the repository.
+     */
+    suspend fun update(person: Person) = personRepository.update(person)
+
     suspend fun setArchived(id: String, archived: Boolean): Boolean {
         val person = personRepository.getById(id) ?: return false
         personRepository.setArchived(person, archived)
