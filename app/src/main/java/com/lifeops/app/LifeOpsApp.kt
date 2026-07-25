@@ -88,6 +88,18 @@ class LifeOpsApp : Application() {
         WellnessRepository(this, database.wellnessCheckinDao(), phoneActivityRepository, preferencesRepository)
     }
 
+    // --- Connection layer (in-process command dispatch) ---
+    // Addresses of the form /v1/LifeOps/{connection}/{resource}/{action}; `local` is internal app
+    // comms, named connections are reserved for future integrations. See package `connection`.
+    val taskService by lazy {
+        com.lifeops.app.connection.service.TaskService(
+            taskRepository, taskNoteRepository, notificationRepository, weekRepository
+        )
+    }
+    val connectionDispatcher by lazy {
+        com.lifeops.app.connection.Connections.buildDispatcher(taskService)
+    }
+
     override fun onCreate() {
         super.onCreate()
         // Fold the write-ahead log back into lifeops.db whenever the app leaves the

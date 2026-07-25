@@ -123,6 +123,13 @@ class ThisWeekViewModel(
     private val timerController: TimerController
 ) : ViewModel() {
 
+    // Task lifecycle policy lives in the connection service layer (the same TaskService the
+    // /v1/LifeOps/local/task/* connection routes call), so a task created from this screen and one
+    // created via a connection function follow identical rules.
+    private val taskService = com.lifeops.app.connection.service.TaskService(
+        taskRepository, taskNoteRepository, notificationRepository, weekRepository
+    )
+
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
 
@@ -623,47 +630,30 @@ class ThisWeekViewModel(
         recurrenceDayOfMonth: Int? = null
     ) {
         viewModelScope.launch {
-            val week = weekRepository.getOrCreateCurrentWeek()
-            val slug = title.toSlug()
-            // Phase 4 merge: incumbent survives
-            if (slug in taskRepository.getSlugsByWeek(week.id)) {
-                _uiState.update { it.copy(showCreateTaskDialog = false) }
-                return@launch
+            // Current-week resolution, slug de-dup, scoring, queued-vs-pending placement, note and
+            // notification are all owned by TaskService (see the connection layer).
+            val outcome = taskService.create(
+                com.lifeops.app.connection.service.TaskService.CreateInput(
+                    title = title,
+                    note = note,
+                    aspectId = aspectId,
+                    categoryId = categoryId,
+                    priority = priority,
+                    dueDate = dueDate,
+                    hardDeadline = hardDeadline,
+                    isRecurring = isRecurring,
+                    estimatedMinutes = estimatedMinutes,
+                    projectId = projectId,
+                    counterId = counterId,
+                    recurrenceIntervalWeeks = recurrenceIntervalWeeks,
+                    recurrenceDayOfMonth = recurrenceDayOfMonth
+                )
+            )
+            // Phase 8: optional runbook stamp on one-off tasks — a UI-only concern the connection
+            // payload doesn't carry, so it stays here, applied only to a freshly created task.
+            if (outcome is com.lifeops.app.connection.service.TaskService.CreateOutcome.Created) {
+                runbookId?.let { runbookRepository.stampRunbookById(outcome.task.id, it) }
             }
-            val resourceValue = ImportParser.computeResourceValue(
-                priority.label, hardDeadline, estimatedMinutes, isManuallyAdded = true
-            )
-            // Due beyond this week? Park it in the Future Tasks queue; it becomes pending
-            // once a week containing its due date opens (see TaskRepository.closeWeek).
-            val validDueDate = dueDate?.takeIf { DateUtil.isValidDate(it) }
-            val status = if (validDueDate != null && validDueDate > week.endDate) TaskStatus.QUEUED
-                         else TaskStatus.PENDING
-            val task = Task(
-                id = UUID.randomUUID().toString(),
-                weekId = week.id,
-                title = title,
-                aspectId = aspectId,
-                categoryId = categoryId,
-                priority = priority,
-                dueDate = validDueDate,
-                hardDeadline = hardDeadline,
-                status = status,
-                resourceValue = resourceValue,
-                createdAt = DateUtil.now(),
-                isRecurring = isRecurring,
-                estimatedMinutes = estimatedMinutes,
-                isManuallyAdded = true,
-                projectId = projectId,
-                slug = slug,
-                counterId = counterId,
-                recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
-                recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
-            )
-            taskRepository.upsertTask(task)
-            note?.let { taskNoteRepository.addNote(task.id, it) }
-            // Phase 8: optional runbook stamp on one-off tasks
-            runbookId?.let { runbookRepository.stampRunbookById(task.id, it) }
-            notificationRepository.scheduleForTask(task)
             _uiState.update { it.copy(showCreateTaskDialog = false) }
         }
     }
