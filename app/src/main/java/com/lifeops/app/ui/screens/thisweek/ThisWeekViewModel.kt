@@ -132,6 +132,14 @@ class ThisWeekViewModel(
     private val weekService = com.lifeops.app.connection.service.WeekService(
         weekRepository, taskRepository
     )
+    private val noteService = com.lifeops.app.connection.service.NoteService(taskNoteRepository)
+    private val timeEntryService =
+        com.lifeops.app.connection.service.TimeEntryService(timeEntryRepository, taskRepository)
+    private val costService = com.lifeops.app.connection.service.CostService(costResourceRepository)
+    private val runbookService = com.lifeops.app.connection.service.RunbookService(runbookRepository)
+    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+    private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
+    private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
 
     private val _uiState = MutableStateFlow(ThisWeekUiState())
     val uiState: StateFlow<ThisWeekUiState> = _uiState.asStateFlow()
@@ -547,7 +555,7 @@ class ThisWeekViewModel(
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
             val projectId = java.util.UUID.randomUUID().toString()
-            projectRepository.createProject(projectId, task.title, task.aspectId)
+            projectService.create(title = task.title, aspectId = task.aspectId, id = projectId)
             taskRepository.promoteTaskToProject(taskId, projectId)
         }
     }
@@ -567,15 +575,15 @@ class ThisWeekViewModel(
     }
 
     fun onToggleSubtask(subtaskId: String, checked: Boolean) {
-        viewModelScope.launch { runbookRepository.setSubtaskChecked(subtaskId, checked) }
+        viewModelScope.launch { runbookService.setSubtaskChecked(subtaskId, checked) }
     }
 
     fun onAttachRunbook(taskId: String, runbookId: String) {
-        viewModelScope.launch { runbookRepository.stampRunbookById(taskId, runbookId) }
+        viewModelScope.launch { runbookService.stamp(taskId, runbookId) }
     }
 
     fun onDeleteSubtask(subtaskId: String) {
-        viewModelScope.launch { runbookRepository.deleteSubtask(subtaskId) }
+        viewModelScope.launch { runbookService.deleteSubtask(subtaskId) }
     }
 
     // Import
@@ -655,7 +663,7 @@ class ThisWeekViewModel(
             // Phase 8: optional runbook stamp on one-off tasks — a UI-only concern the connection
             // payload doesn't carry, so it stays here, applied only to a freshly created task.
             if (outcome is com.lifeops.app.connection.service.TaskService.CreateOutcome.Created) {
-                runbookId?.let { runbookRepository.stampRunbookById(outcome.task.id, it) }
+                runbookId?.let { runbookService.stamp(outcome.task.id, it) }
             }
             _uiState.update { it.copy(showCreateTaskDialog = false) }
         }
@@ -680,7 +688,7 @@ class ThisWeekViewModel(
     }
 
     fun onCreateProject(id: String, title: String, aspectId: String?) {
-        viewModelScope.launch { projectRepository.createProject(id, title, aspectId) }
+        viewModelScope.launch { projectService.create(title = title, aspectId = aspectId, id = id) }
     }
 
     fun onAssignProject(taskId: String, projectId: String?) {
@@ -691,19 +699,19 @@ class ThisWeekViewModel(
     }
 
     fun onAddNote(taskId: String, content: String) {
-        viewModelScope.launch { taskNoteRepository.addNote(taskId, content) }
+        viewModelScope.launch { noteService.add(taskId, content) }
     }
 
     fun onLogTime(taskId: String, minutes: Int, note: String?) {
-        viewModelScope.launch { timeEntryRepository.logTime(taskId, minutes, note) }
+        viewModelScope.launch { timeEntryService.log(taskId, minutes, note) }
     }
 
     fun onLogCost(taskId: String, resourceId: String, amount: Int, note: String?) {
-        viewModelScope.launch { costResourceRepository.logCost(taskId, resourceId, amount, note) }
+        viewModelScope.launch { costService.logCost(taskId, resourceId, amount, note) }
     }
 
     fun onDeleteCostEntry(id: String) {
-        viewModelScope.launch { costResourceRepository.deleteCostEntry(id) }
+        viewModelScope.launch { costService.deleteEntry(id) }
     }
 
     fun startEditTask(task: Task) = _uiState.update { it.copy(editingTask = task) }
@@ -766,16 +774,16 @@ class ThisWeekViewModel(
     // --- Task composite actions (people / counters) ---
 
     fun attachPerson(taskId: String, personId: String) {
-        viewModelScope.launch { personRepository.attach(taskId, personId) }
+        viewModelScope.launch { personService.attach(taskId, personId) }
     }
 
     fun detachPerson(taskId: String, personId: String) {
-        viewModelScope.launch { personRepository.detach(taskId, personId) }
+        viewModelScope.launch { personService.detach(taskId, personId) }
     }
 
     /** Log one occurrence of the counter this task ticks — the composite "did it" action. */
     fun logCounter(counterId: String) {
-        viewModelScope.launch { counterRepository.logEvent(counterId) }
+        viewModelScope.launch { counterService.log(counterId) }
     }
 }
 

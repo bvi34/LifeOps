@@ -1,5 +1,6 @@
 package com.lifeops.app.connection.service
 
+import com.lifeops.app.data.model.Runbook
 import com.lifeops.app.data.model.RunbookWithSteps
 import com.lifeops.app.data.repository.RunbookRepository
 
@@ -8,9 +9,16 @@ class RunbookService(private val runbookRepository: RunbookRepository) {
 
     suspend fun create(name: String, steps: List<String>): RunbookWithSteps {
         require(name.isNotBlank()) { "Runbook name must not be blank" }
+        // Blank steps are dropped; an empty list is allowed (the repository permits a step-less
+        // runbook). Callers that require at least one step gate on that themselves.
         val cleanSteps = steps.map { it.trim() }.filter { it.isNotBlank() }
-        require(cleanSteps.isNotEmpty()) { "A runbook needs at least one step" }
         return runbookRepository.createRunbook(name.trim(), cleanSteps)
+    }
+
+    /** Replace a runbook's name and steps. The settings editor holds the [runbook]. */
+    suspend fun update(runbook: Runbook, steps: List<String>) {
+        val cleanSteps = steps.map { it.trim() }.filter { it.isNotBlank() }
+        runbookRepository.updateRunbook(runbook, cleanSteps)
     }
 
     suspend fun delete(runbookId: String) = runbookRepository.deleteRunbook(runbookId)

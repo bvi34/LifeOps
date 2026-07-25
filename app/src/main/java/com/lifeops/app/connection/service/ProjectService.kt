@@ -16,14 +16,17 @@ class ProjectService(private val projectRepository: ProjectRepository) {
         title: String,
         aspectId: String? = null,
         categoryId: String? = null,
-        description: String? = null
+        description: String? = null,
+        id: String = UUID.randomUUID().toString(),
+        sourceFutureProjectId: String? = null
     ): Project {
         require(title.isNotBlank()) { "Project title must not be blank" }
         val project = projectRepository.createProject(
-            id = UUID.randomUUID().toString(),
+            id = id,
             title = title.trim(),
             aspectId = aspectId,
-            categoryId = categoryId
+            categoryId = categoryId,
+            sourceFutureProjectId = sourceFutureProjectId
         )
         // createProject doesn't take a description; apply it in a follow-up update when supplied.
         return description?.takeIf { it.isNotBlank() }?.let {

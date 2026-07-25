@@ -33,6 +33,8 @@ class WellnessPromptViewModel(
     private val repo: WellnessRepository
 ) : ViewModel() {
 
+    private val wellnessService = com.lifeops.app.connection.service.WellnessService(repo)
+
     private val _state = MutableStateFlow(WellnessPromptState())
     val state: StateFlow<WellnessPromptState> = _state.asStateFlow()
 
@@ -73,7 +75,7 @@ class WellnessPromptViewModel(
 
     fun submitCheckin(energy: Int, sensory: Int, why: String) {
         viewModelScope.launch {
-            repo.logCheckin(energy, sensory, why)
+            wellnessService.checkin(energy, sensory, why)
             _state.value = WellnessPromptState(WellnessPromptKind.NONE)
         }
     }
@@ -83,7 +85,7 @@ class WellnessPromptViewModel(
         // edited duration invalidates the derived bedtime/wake/interruptions, so drop them.
         val reconstruction = _state.value.reconstruction?.takeIf { it.totalSleepMinutes == sleepMinutes }
         viewModelScope.launch {
-            repo.logSleep(energy, tired, sleepMinutes, why, reconstruction)
+            wellnessService.sleep(energy, tired, sleepMinutes, why, reconstruction)
             _state.value = WellnessPromptState(WellnessPromptKind.NONE)
         }
     }

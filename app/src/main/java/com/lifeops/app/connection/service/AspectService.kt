@@ -33,6 +33,12 @@ class AspectService(private val aspectRepository: AspectRepository) {
         aspectRepository.setAspectArchived(id, archived)
     }
 
+    /** Insert/replace a fully-assembled [aspect] — the settings editor builds it (name/color/icon). */
+    suspend fun upsertAspect(aspect: Aspect) = aspectRepository.upsertAspect(aspect)
+
+    /** Persist an edited [aspect] (name/color/icon), from the settings editor. */
+    suspend fun updateAspect(aspect: Aspect) = aspectRepository.updateAspect(aspect)
+
     suspend fun createCategory(aspectId: String, name: String): Category {
         require(name.isNotBlank()) { "Category name must not be blank" }
         return aspectRepository.findOrCreateCategory(aspectId, name.trim())
@@ -41,4 +47,10 @@ class AspectService(private val aspectRepository: AspectRepository) {
     suspend fun setCategoryArchived(id: String, archived: Boolean) {
         aspectRepository.setCategoryArchived(id, archived)
     }
+
+    /** Insert/replace a fully-assembled [category] — the settings editor builds it. */
+    suspend fun upsertCategory(category: Category) = aspectRepository.upsertCategory(category)
+
+    /** Persist an edited [category] (rename / re-parent), from the settings editor. */
+    suspend fun updateCategory(category: Category) = aspectRepository.updateCategory(category)
 }

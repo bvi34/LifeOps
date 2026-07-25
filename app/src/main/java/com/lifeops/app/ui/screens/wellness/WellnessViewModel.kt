@@ -93,6 +93,8 @@ class WellnessViewModel(
     private val aspectRepository: AspectRepository
 ) : ViewModel() {
 
+    private val wellnessService = com.lifeops.app.connection.service.WellnessService(repo)
+
     private val currentWeekKey = DateUtil.weekIndexFor(System.currentTimeMillis())
     private val sinceWeekKey = currentWeekKey - 8
     private val sparkDays = 21
@@ -127,13 +129,13 @@ class WellnessViewModel(
 
     /** Log a check-in on demand (the report's "+" — not tied to a scheduled slot). */
     fun logCheckin(energy: Int, sensory: Int, why: String) {
-        viewModelScope.launch { repo.logCheckin(energy, sensory, why) }
+        viewModelScope.launch { wellnessService.checkin(energy, sensory, why) }
     }
 
     /** Log a sleep report on demand. Keeps the reconstruction only when the user didn't override the total. */
     fun logSleep(energy: Int, tired: Int, sleepMinutes: Int?, why: String) {
         val reconstruction = _sleepReconstruction.value?.takeIf { it.totalSleepMinutes == sleepMinutes }
-        viewModelScope.launch { repo.logSleep(energy, tired, sleepMinutes, why, reconstruction) }
+        viewModelScope.launch { wellnessService.sleep(energy, tired, sleepMinutes, why, reconstruction) }
     }
 
     /** Prepare the manual sleep dialog: reconstruct from tracked events, with the screen-time estimate as fallback. */
