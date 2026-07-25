@@ -6,7 +6,7 @@ import com.lifeops.app.connection.service.TaskService
 import com.lifeops.app.data.model.Priority
 
 /**
- * The reference connection: registers the `local/task/*` routes. Each handler is a thin adapter —
+ * The reference connection: registers the `local/task` routes. Each handler is a thin adapter —
  * it reads and coerces the payload, then delegates to [TaskService]. This is the pattern every
  * other resource (week, counter, wellness, …) should follow when it is migrated onto the
  * connection layer.

@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.NoteService
 
 /**
- * The `local/note/*` routes (task notes).
+ * The `local/note` routes (task notes).
  *
  *  - `/v1/LifeOps/local/note/add`    — params: taskId (required), content (required), subtaskId.
  *  - `/v1/LifeOps/local/note/delete` — params: id (required).

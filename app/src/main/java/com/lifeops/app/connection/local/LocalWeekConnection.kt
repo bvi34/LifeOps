@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.WeekService
 
 /**
- * The `local/week/*` routes.
+ * The `local/week` routes.
  *
  *  - `/v1/LifeOps/local/week/current` — resolve (creating if needed) the open week; returns
  *    `id`, `startDate`, `endDate`.

@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.CounterService
 
 /**
- * The `local/counter/*` routes.
+ * The `local/counter` routes.
  *
  *  - `/v1/LifeOps/local/counter/create`  — params: name (required), categoryId, isHabit,
  *    reminderHour. Returns the new counter id.

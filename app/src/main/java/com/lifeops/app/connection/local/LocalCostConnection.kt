@@ -5,7 +5,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.CostService
 
 /**
- * Cost-tracking routes: `local/costResource/*` (budgets) and `local/cost/*` (per-task entries).
+ * Cost-tracking routes: `local/costResource` (budgets) and `local/cost` (per-task entries).
  *
  *  - `costResource/create`  — params: name (required), resetCycle (default "monthly"), capacity (int).
  *  - `costResource/archive` — params: id (required), active is set to !archived (default archived true).

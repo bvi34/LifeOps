@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.ActivityService
 
 /**
- * The `local/activity/*` routes (saved outdoor activities).
+ * The `local/activity` routes (saved outdoor activities).
  *
  *  - `create` — params: name (required), outdoorPreferred (bool, default true), durationMinutes,
  *    maxTempF, minTempF, avoidRain (bool), maxWindMph.

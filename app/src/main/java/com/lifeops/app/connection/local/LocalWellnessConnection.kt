@@ -5,7 +5,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.WellnessService
 
 /**
- * The `local/wellness/*` routes.
+ * The `local/wellness` routes.
  *
  *  - `checkin` — params: energy (int, required), sensory (int, required), note, at (epoch millis).
  *  - `sleep`   — params: energy (int, required), tired (int, required), sleepMinutes (int), note,

@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.RunbookService
 
 /**
- * Runbook routes: `local/runbook/*` and `local/subtask/*`.
+ * Runbook routes: `local/runbook` and `local/subtask`.
  *
  *  - `runbook/create` — params: name (required), steps (string list, required).
  *  - `runbook/delete` — params: id (required).

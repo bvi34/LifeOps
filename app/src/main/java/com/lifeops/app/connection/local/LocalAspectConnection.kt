@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.AspectService
 
 /**
- * The `local/aspect/*` and `local/category/*` routes.
+ * The `local/aspect` and `local/category` routes.
  *
  *  - `/v1/LifeOps/local/aspect/create`   — params: name (required), color, icon. Find-or-create.
  *  - `/v1/LifeOps/local/aspect/rename`   — params: id (required), name (required).

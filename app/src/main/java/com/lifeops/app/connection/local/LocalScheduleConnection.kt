@@ -7,7 +7,7 @@ import com.lifeops.app.connection.service.BusyBlockService
 import com.lifeops.app.connection.service.TimeEntryService
 
 /**
- * Scheduling-adjacent routes: `local/busyBlock/*` and `local/timeEntry/*`.
+ * Scheduling-adjacent routes: `local/busyBlock` and `local/timeEntry`.
  *
  *  - `busyBlock/create` — params: title (required), startMinutes (int, required), endMinutes (int,
  *    required), daysMask (int; weekly recurrence bitmask, 0 = one-off), specificDate (yyyy-MM-dd
