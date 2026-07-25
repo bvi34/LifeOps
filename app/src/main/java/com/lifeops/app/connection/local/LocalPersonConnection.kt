@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.PersonService
 
 /**
- * The `local/person/*` routes.
+ * The `local/person` routes.
  *
  *  - `create`  — params: name (required).
  *  - `rename`  — params: id (required), name (required).

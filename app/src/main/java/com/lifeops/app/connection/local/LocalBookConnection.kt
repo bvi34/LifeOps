@@ -7,7 +7,7 @@ import com.lifeops.app.connection.service.BookService
 import com.lifeops.app.data.model.BookStatus
 
 /**
- * The `local/book/*` routes.
+ * The `local/book` routes.
  *
  *  - `create`   — params: title (required), author.
  *  - `update`   — params: id (required), title, author.

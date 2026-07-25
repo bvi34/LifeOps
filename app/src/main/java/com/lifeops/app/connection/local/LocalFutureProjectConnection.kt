@@ -7,7 +7,7 @@ import com.lifeops.app.connection.service.FutureProjectService
 import com.lifeops.app.data.model.FutureProjectStatus
 
 /**
- * The `local/futureProject/*` routes.
+ * The `local/futureProject` routes.
  *
  *  - `create`  — params: title (required).
  *  - `addNote` — params: id (required), content (required).

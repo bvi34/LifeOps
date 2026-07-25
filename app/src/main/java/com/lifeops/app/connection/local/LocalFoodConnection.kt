@@ -9,7 +9,7 @@ import com.lifeops.app.connection.service.RecipeService
 import com.lifeops.app.data.model.IngredientUnit
 
 /**
- * Nutrition routes: `local/food/*` (the food database + diary) and `local/recipe/*`.
+ * Nutrition routes: `local/food` (the food database + diary) and `local/recipe`.
  *
  *  - `food/createCustom` — params: name (required), brand, servingSize (double, required),
  *    servingUnit (required), servingSizeGrams, calories/carbsG/proteinG/fatG (double, required),

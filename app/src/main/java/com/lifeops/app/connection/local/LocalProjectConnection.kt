@@ -6,7 +6,7 @@ import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.ProjectService
 
 /**
- * The `local/project/*` routes.
+ * The `local/project` routes.
  *
  *  - `/v1/LifeOps/local/project/create`   — params: title (required), aspectId, categoryId,
  *    description. Returns the new project id.
