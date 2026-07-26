@@ -47,15 +47,18 @@ class ManualCaptureActivity : ComponentActivity() {
         }
         val app = application as CitationApplication
         lifecycleScope.launch {
-            val repo = app.repository.await()
-            repo.captureManual(
-                RawCapture(
-                    text = text.trim(),
-                    appPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) referrer?.host else callingPackage,
-                    capturedAt = System.currentTimeMillis()
+            val message = runCatching {
+                val repo = app.repository.await()
+                repo.captureManual(
+                    RawCapture(
+                        text = text.trim(),
+                        appPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) referrer?.host else callingPackage,
+                        capturedAt = System.currentTimeMillis()
+                    )
                 )
-            )
-            Toast.makeText(this@ManualCaptureActivity, "Saved to Citation.", Toast.LENGTH_SHORT).show()
+                "Saved to Citation."
+            }.getOrElse { "Couldn't save to Citation." }
+            Toast.makeText(this@ManualCaptureActivity, message, Toast.LENGTH_SHORT).show()
             finish()
         }
     }
