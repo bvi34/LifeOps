@@ -30,5 +30,20 @@ data class CounterEventEntity(
     val weekKey: Int,
     val occurredAt: String,
     val delta: Int = 1,
-    val note: String? = null
+    val note: String? = null,
+    // --- Weather at the moment of the tick (all nullable) ---------------------------------------
+    // Captured from the freshest cached conditions for the user's primary weather location when a
+    // *live* tick is logged (never backdated/bulk entries — we don't have historical weather, and
+    // stamping "now" onto a past day would lie). All null when no location is tracked, nothing has
+    // been cached yet, the cache is stale, or the tick was backdated. No @ColumnInfo(defaultValue)
+    // on any of these, so MIGRATION_40_41 must add them as plain nullable columns (no SQL DEFAULT)
+    // to match Room's generated schema exactly — same rule the rest of this schema follows.
+    val weatherTempF: Int? = null,
+    val weatherFeelsLikeF: Int? = null,
+    val weatherHumidityPct: Int? = null,
+    val weatherWindMph: Int? = null,
+    val weatherConditions: String? = null,
+    val weatherLocationName: String? = null,
+    // The snapshot's observedAt, so the UI can show how current the reading actually was.
+    val weatherObservedAt: String? = null
 )

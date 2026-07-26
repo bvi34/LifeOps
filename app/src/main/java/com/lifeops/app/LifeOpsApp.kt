@@ -5,6 +5,7 @@ import android.app.Application
 import android.os.Bundle
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.lifeops.app.data.db.LifeOpsDatabase
+import com.lifeops.app.data.model.CounterEventWeather
 import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +70,27 @@ class LifeOpsApp : Application() {
     }
     val backupRepository by lazy { BackupRepository(database) }
     val projectRepository by lazy { ProjectRepository(database.projectDao()) }
-    val counterRepository by lazy { CounterRepository(this, database.counterDao()) }
+    // Stamps each live counter tick with the freshest cached conditions for the primary weather
+    // location (cache-only, so logging never blocks on the network); yields null when there's no
+    // tracked location or the cache is empty/stale, in which case the tick records no weather.
+    val counterRepository by lazy {
+        CounterRepository(
+            database.counterDao(),
+            com.lifeops.app.worker.WorkManagerHabitReminderScheduler(this)
+        ) {
+            weatherRepository.primaryCurrentConditions()?.let { (location, conditions) ->
+                CounterEventWeather(
+                    temperatureF = conditions.temperatureF,
+                    feelsLikeF = conditions.feelsLikeF,
+                    humidityPct = conditions.humidityPct,
+                    windMph = conditions.wind.speedMph,
+                    conditions = conditions.shortForecast,
+                    locationName = location.name.ifBlank { null },
+                    observedAt = conditions.observedAt
+                )
+            }
+        }
+    }
     val growthRepository by lazy {
         GrowthRepository(weekRepository, aspectRepository, taskRepository, timeEntryRepository)
     }
