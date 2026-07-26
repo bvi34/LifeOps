@@ -165,7 +165,12 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch {
             val rr = openRrFictionId
             if (rr != null) {
-                repository.royalRoad.advance(rr, target) // slide the prefetch buffer forward
+                // Fetch the target chapter + slide the prefetch buffer, then re-read the book so the
+                // freshly-cached bodies replace their "Fetching…" placeholders. Without this refresh
+                // the reader would keep the stale snapshot captured at open time and reading would
+                // dead-end at the initially-buffered window.
+                repository.royalRoad.advance(rr, target)
+                _openBook.value = repository.royalRoad.loadBook(rr).copy(key = book.key)
             } else {
                 book.key?.let { repository.savePosition(it.toString(), target, 0) }
             }
