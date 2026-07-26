@@ -25,6 +25,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -100,6 +101,30 @@ fun ReaderScreen(vm: ReaderViewModel) {
                         }
                     }
                 )
+            },
+            // Chapter paging lives in the Scaffold's bottomBar, not inside the content Column. Pinned
+            // here it is laid out independently of the chapter text and can never be pushed below the
+            // viewport by a long passage — the failure that made "Previous/Next" vanish for long
+            // chapters. The scrolling text is inset above it automatically.
+            bottomBar = {
+                Surface(tonalElevation = 3.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        OutlinedButton(onClick = { vm.goToChapter(ordinal - 1) }, enabled = ordinal > 0) {
+                            Text("Previous")
+                        }
+                        Text(
+                            "Chapter ${ordinal + 1} / ${book.chapters.size}",
+                            Modifier.align(Alignment.CenterVertically)
+                        )
+                        OutlinedButton(
+                            onClick = { vm.goToChapter(ordinal + 1) },
+                            enabled = ordinal < book.chapters.lastIndex
+                        ) { Text("Next") }
+                    }
+                }
             }
         ) { padding ->
             Column(Modifier.padding(padding).fillMaxSize()) {
@@ -193,21 +218,6 @@ fun ReaderScreen(vm: ReaderViewModel) {
                             color = MaterialTheme.colorScheme.onBackground
                         )
                     }
-                }
-
-                // Chapter paging.
-                Row(
-                    Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    OutlinedButton(onClick = { vm.goToChapter(ordinal - 1) }, enabled = ordinal > 0) {
-                        Text("Previous")
-                    }
-                    Text("Chapter ${ordinal + 1} / ${book.chapters.size}", Modifier.align(Alignment.CenterVertically))
-                    OutlinedButton(
-                        onClick = { vm.goToChapter(ordinal + 1) },
-                        enabled = ordinal < book.chapters.lastIndex
-                    ) { Text("Next") }
                 }
             }
         }
