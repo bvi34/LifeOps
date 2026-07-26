@@ -75,6 +75,9 @@ interface NoteDao {
     /** Notes not yet acknowledged by LifeOps (queued in the outbox), for the sync worker. */
     @Query("SELECT * FROM notes WHERE syncVersion IS NOT NULL ORDER BY syncVersion ASC")
     suspend fun pendingSync(): List<NoteEntity>
+
+    @Query("SELECT * FROM notes")
+    suspend fun getAllSync(): List<NoteEntity>
 }
 
 @Dao

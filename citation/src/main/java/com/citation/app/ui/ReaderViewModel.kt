@@ -236,6 +236,9 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
+    /** Load the storage report for the visibility screen (per-item + aggregate, recoverability-tagged). */
+    suspend fun storageReport(): com.citation.core.manifest.StorageReport = repository.storageReport()
+
     /** Run a sync round with LifeOps on demand (drain outbox, consume acquire intents). */
     fun sync() {
         viewModelScope.launch {

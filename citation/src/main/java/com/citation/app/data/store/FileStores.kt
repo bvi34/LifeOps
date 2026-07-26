@@ -53,4 +53,12 @@ class FileStores(context: Context) {
         val file = File(File(disposableDir, bookKey), "$ordinal.txt")
         return file.exists() && file.delete()
     }
+
+    /** Size (bytes) of an owned file (EPUB/PDF) in the sovereign store, or 0 if absent. */
+    fun ownedFileSize(bookKey: String, extension: String): Long =
+        File(sovereignDir, "$bookKey.$extension").let { if (it.exists()) it.length() else 0L }
+
+    /** Total bytes of a serial's cached chapter bodies in the disposable store. */
+    fun borrowedTotalSize(bookKey: String): Long =
+        File(disposableDir, bookKey).listFiles()?.sumOf { it.length() } ?: 0L
 }

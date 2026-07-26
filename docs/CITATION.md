@@ -52,8 +52,8 @@ other feature bolts onto this spine.
 | **Sync** | `sync/Mailbox`, `Packets`, `BookLifecycle`, `BindOrCreate` | Mailbox pattern (state/outbox + inbox, **monotonic version**, idempotent + resumable). Up: telemetry + note packets carrying `{sourceType, sourceId, frozen-context}`. Down: acquire-book intents. **Bind-or-create** reconciles a fuzzy center-authored book to a resolved artifact at one checkpoint. **Two orthogonal state machines** — acquisition (`wanted→resolving→acquired/unavailable`) and reading (`to-read→reading→done`) — never collapsed. |
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
-resolver, the sync protocol, and the PDF/O'Reilly pieces below, **`:core` has 120 passing JVM unit
-tests** across 24 suites (run `gradle :core:test`).
+resolver, the sync protocol, the PDF/O'Reilly pieces, and the storage aggregator below, **`:core`
+has 125 passing JVM unit tests** across 25 suites (run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -153,10 +153,28 @@ the URL, and captures **annotations only** (quote + location token as an `Extern
 sovereign store. Library gains "Import PDF" and "Add O'Reilly book"; opens route by source type to the
 right track.
 
-## Roadmap (task-list milestone 7, not yet built)
+## Storage visibility (milestone 7 — core built + verified)
 
-7. **Storage visibility** — per-item + aggregate size, recoverability-tagged; visibility only, no
-   auto-eviction of favourites/owned.
+The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does
+nothing else** — the design's rule is *visibility only, no ceilings, no auto-eviction of favourites
+or owned files*. It classifies each item by recoverability (a property of the source: a Royal Road
+serial is reclaimable because refetchable, a research PDF irreplaceable), aggregates into a
+`StorageReport`, can raise an advisory `shouldWarn` past a soft threshold, and lists the reclaimable
+items largest-first — but never returns anything to delete. (Auto-eviction of borrowed, non-favourite
+cache is the separately-scoped `rr/EvictionPolicy`, not this.)
+
+**Android wiring:** the repository sums owned-file sizes, RR disposable-cache sizes, and note text
+into a report; a **Storage screen** shows the reclaimable-vs-irreplaceable split, per-item footprints
+with a recoverability badge, and states plainly that nothing is auto-deleted — you decide what to
+prune.
+
+## Status
+
+All seven task-list milestones are implemented. The framework-independent spine — internal model,
+keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes + degradation, the sync seam, and storage
+visibility — lives in `:core` and is fully JVM-tested; the Android reader (`:citation`) adds Room
+storage, the Compose readers, WorkManager jobs, and the sync transport on top (buildable with the
+Android SDK).
 
 ## Cross-cutting principles (already encoded in `:core`)
 

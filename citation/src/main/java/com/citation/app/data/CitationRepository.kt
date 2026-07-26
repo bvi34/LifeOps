@@ -14,6 +14,8 @@ import com.citation.core.identity.IdentitySet
 import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.key.KeyAllocator
+import com.citation.core.manifest.StorageInventory
+import com.citation.core.manifest.StorageReport
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
@@ -411,6 +413,40 @@ class CitationRepository private constructor(
 
     /** Outbound packets LifeOps hasn't acknowledged yet — what a sync pass would deliver. */
     fun pendingUpPackets(): List<UpPacket> = mailbox.outboxSince(0).map { it.payload }
+
+    /**
+     * Build the storage picture: per-item footprints tagged by recoverability (borrowed serials
+     * read as reclaimable, owned files + notes as irreplaceable). **Visibility only** — this reports,
+     * it never prunes.
+     */
+    suspend fun storageReport(): StorageReport {
+        val items = ArrayList<StorageInventory.StorageItem>()
+        db.bookDao().getAll().forEach { b ->
+            val bytes = when (b.sourceType) {
+                SourceType.PDF.name -> files.ownedFileSize(b.key, "pdf")
+                SourceType.EPUB.name -> files.ownedFileSize(b.key, "epub")
+                SourceType.ROYAL_ROAD.name -> b.sourceId?.let { files.borrowedTotalSize(it) } ?: 0L
+                else -> 0L // O'Reilly caches nothing; INTERNAL "wanted" has no content yet
+            }
+            if (bytes > 0) {
+                items.add(
+                    StorageInventory.StorageItem(
+                        label = "${b.title} (${b.sourceType.lowercase()})",
+                        sourceType = SourceType.valueOf(b.sourceType),
+                        bytes = bytes
+                    )
+                )
+            }
+        }
+        // All notes/highlights are sovereign and irreplaceable — surfaced as one line.
+        val noteBytes = db.noteDao().getAllSync().sumOf {
+            (it.body.length + it.frozenTitle.length + it.referencesJson.length).toLong()
+        }
+        if (noteBytes > 0) {
+            items.add(StorageInventory.StorageItem("Notes & highlights", SourceType.INTERNAL, noteBytes))
+        }
+        return StorageInventory.report(items)
+    }
 
     /**
      * Run one sync round with LifeOps over the file-drop mailbox: write our unacked packets up,

@@ -59,6 +59,7 @@ fun ReaderScreen(vm: ReaderViewModel) {
 
     var browsingRoyalRoad by remember { mutableStateOf(false) }
     var viewingNotes by remember { mutableStateOf(false) }
+    var viewingStorage by remember { mutableStateOf(false) }
 
     // The PDF and O'Reilly tracks preempt the flowing reader and the library.
     if (pdfSession != null) {
@@ -80,10 +81,12 @@ fun ReaderScreen(vm: ReaderViewModel) {
                 onBack = { browsingRoyalRoad = false }
             )
             viewingNotes -> NotesScreen(vm, onBack = { viewingNotes = false })
+            viewingStorage -> StorageScreen(vm, onBack = { viewingStorage = false })
             else -> LibraryView(
                 vm, status,
                 onBrowseRoyalRoad = { browsingRoyalRoad = true },
-                onViewNotes = { viewingNotes = true }
+                onViewNotes = { viewingNotes = true },
+                onViewStorage = { viewingStorage = true }
             )
         }
     } else {
@@ -280,7 +283,8 @@ private fun LibraryView(
     vm: ReaderViewModel,
     status: String?,
     onBrowseRoyalRoad: () -> Unit,
-    onViewNotes: () -> Unit
+    onViewNotes: () -> Unit,
+    onViewStorage: () -> Unit
 ) {
     val books by vm.books.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -327,6 +331,10 @@ private fun LibraryView(
                 onClick = onViewNotes,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Notes") }
+            OutlinedButton(
+                onClick = onViewStorage,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Storage") }
             OutlinedButton(
                 onClick = { vm.sync() },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
