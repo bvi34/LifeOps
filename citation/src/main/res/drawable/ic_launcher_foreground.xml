@@ -1,0 +1,16 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- An open book, centred in the adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#FBF9F4"
+        android:pathData="M54,40 C46,35 34,35 26,38 L26,76 C34,73 46,73 54,78 Z" />
+    <path
+        android:fillColor="#FBF9F4"
+        android:pathData="M54,40 C62,35 74,35 82,38 L82,76 C74,73 62,73 54,78 Z" />
+    <path
+        android:fillColor="#4A5568"
+        android:pathData="M53,42 L55,42 L55,78 L53,78 Z" />
+</vector>
