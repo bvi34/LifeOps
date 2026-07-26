@@ -11,12 +11,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,6 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteType
+import java.text.DateFormat
+import java.util.Date
 
 /**
  * The Notes list: every captured note, each showing its **degradation state** and — when it can —
@@ -40,11 +49,13 @@ import com.citation.core.note.NoteType
 @Composable
 fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
     val notes by vm.notes.collectAsStateWithLifecycle()
+    // The note currently open in the detail/edit sheet (tap a row to open).
+    var editing by remember { mutableStateOf<Note?>(null) }
 
     if (notes.isEmpty()) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
-                "No notes yet. Highlight a passage while reading to capture one.",
+                "No notes yet. Highlight a passage while reading, or use “Save to Citation” from any app.",
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(24.dp)
             )
@@ -52,14 +63,23 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
     } else {
         LazyColumn(modifier.fillMaxSize()) {
             items(notes, key = { it.key.toString() }) { note ->
-                NoteRow(note, vm)
+                NoteRow(note, vm, onClick = { editing = note })
             }
         }
+    }
+
+    editing?.let { note ->
+        NoteDetailDialog(
+            note = note,
+            onSave = { body -> vm.editNote(note.key.toString(), body); editing = null },
+            onJump = { vm.jumpToNote(note); editing = null },
+            onDismiss = { editing = null }
+        )
     }
 }
 
 @Composable
-private fun NoteRow(note: Note, vm: ReaderViewModel) {
+private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
     // Resolve the note's state off the UI thread; default to the most optimistic while loading.
     val state by produceState(initialValue = NoteResolver.State.RESOLVED, note) {
         value = vm.overallState(note)
@@ -68,7 +88,7 @@ private fun NoteRow(note: Note, vm: ReaderViewModel) {
     Column(
         Modifier
             .fillMaxWidth()
-            .clickable { vm.jumpToNote(note) }
+            .clickable(onClick = onClick)
             .padding(16.dp)
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -91,20 +111,88 @@ private fun NoteRow(note: Note, vm: ReaderViewModel) {
                 color = MaterialTheme.colorScheme.onBackground
             )
         }
+        if (note.body.isNotBlank()) {
+            Text(
+                text = note.body,
+                fontSize = 14.sp,
+                modifier = Modifier.padding(top = 6.dp),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        } else {
+            Text(
+                text = "Tap to add a note",
+                fontSize = 13.sp,
+                fontStyle = FontStyle.Italic,
+                modifier = Modifier.padding(top = 6.dp),
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
         Text(
-            text = note.body,
-            fontSize = 14.sp,
-            modifier = Modifier.padding(top = 6.dp),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Text(
-            text = note.source.title,
+            text = "${note.source.title} · ${formatWhen(note.createdAt)}",
             fontSize = 12.sp,
             color = MaterialTheme.colorScheme.secondary,
             modifier = Modifier.padding(top = 6.dp)
         )
     }
 }
+
+/**
+ * Open one note to read it in full and **add your own words**. A captured quote arrives with an empty
+ * body; this is where you annotate it. When the note is bound to a source, a "Jump to source" button
+ * appears; otherwise you just read the frozen snapshot and write your note.
+ */
+@Composable
+private fun NoteDetailDialog(
+    note: Note,
+    onSave: (String) -> Unit,
+    onJump: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var body by remember(note.key) { mutableStateOf(note.body) }
+    val canJump = note.source.bookKey != null
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(note.source.title) },
+        text = {
+            Column {
+                note.references.firstOrNull()?.let { ref ->
+                    Text(
+                        "“${ref.quotedSnapshot}”",
+                        fontStyle = FontStyle.Italic,
+                        fontFamily = FontFamily.Serif,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+                Text(
+                    "Captured ${formatWhen(note.createdAt)}",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = body,
+                    onValueChange = { body = it },
+                    label = { Text("Your note") },
+                    minLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (canJump) {
+                    TextButton(onClick = onJump, modifier = Modifier.padding(top = 4.dp)) {
+                        Text("Jump to source")
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(body) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** A friendly absolute date+time for when a note was captured. */
+private fun formatWhen(epochMillis: Long): String =
+    DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(epochMillis))
 
 @Composable
 private fun StateBadge(state: NoteResolver.State) {

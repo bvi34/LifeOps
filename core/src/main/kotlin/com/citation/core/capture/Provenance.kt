@@ -85,7 +85,9 @@ enum class ProvenanceRung(val tag: String, val strength: ProvenanceStrength) {
  * @property author a human author when known (Kindle export carries it).
  * @property url the page/document URL, if any.
  * @property filename the document filename, if any.
- * @property appPackage the sharing app's package name, if the OS surfaced it.
+ * @property appPackage the sharing app's package name, if the OS surfaced it. Used as the cluster key.
+ * @property appLabel a human name for [appPackage] ("Chrome") when it can be resolved, used only for
+ *   display — the cluster still keys on the package, so the friendly name never affects grouping.
  * @property location an opaque in-source position token (Kindle location, page fragment) for the
  *   note's anchor — provenance-independent, carried through untouched.
  * @property capturedAt epoch millis; the ladder's guaranteed floor.
@@ -98,6 +100,7 @@ data class RawCapture(
     val url: String? = null,
     val filename: String? = null,
     val appPackage: String? = null,
+    val appLabel: String? = null,
     val location: String? = null,
     val capturedAt: Long
 )

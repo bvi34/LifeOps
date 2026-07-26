@@ -57,6 +57,8 @@ object ProvenanceLadder {
         !raw.title.isNullOrBlank() -> raw.title.trim()
         !raw.url.isNullOrBlank() -> raw.url.trim()
         !raw.filename.isNullOrBlank() -> raw.filename.trim()
+        // Prefer the friendly app label ("Chrome") over the bare package for display.
+        !raw.appLabel.isNullOrBlank() -> raw.appLabel.trim()
         !raw.appPackage.isNullOrBlank() -> raw.appPackage.trim()
         else -> snippet(raw.text)
     }

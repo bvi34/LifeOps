@@ -487,6 +487,21 @@ class CitationRepository private constructor(
         return filed
     }
 
+    /**
+     * Edit a note's body — the way you **add your own words onto a captured quote**. A capture lands
+     * with an empty body (just the quote + its source); this lets you annotate it afterward. The
+     * edited note is re-posted up the mailbox so LifeOps sees the new text. Returns the updated note,
+     * or `null` if the key is unknown.
+     */
+    suspend fun editNoteBody(noteKey: String, body: String): Note? {
+        val entity = db.noteDao().get(noteKey) ?: return null
+        val updated = CitationMappers.noteFromEntity(entity).copy(body = body)
+        val versioned = mailbox.post(NotePacket.of(updated))
+        db.noteDao().upsert(CitationMappers.noteToEntity(updated, versioned.version))
+        persistSyncState()
+        return updated
+    }
+
     /** Persist a captured highlight + its note and queue the note up the mailbox. */
     private suspend fun persistCapture(highlight: Highlight, note: Note) {
         val versioned = mailbox.post(NotePacket.of(note))

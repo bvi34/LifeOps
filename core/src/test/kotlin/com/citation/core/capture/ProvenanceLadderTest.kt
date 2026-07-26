@@ -100,6 +100,16 @@ class ProvenanceLadderTest {
     }
 
     @Test
+    fun appLabelIsShownButClusterStaysKeyedByPackage() {
+        val p = ProvenanceLadder.resolve(
+            RawCapture(text = "clip", appPackage = "com.android.chrome", appLabel = "Chrome", capturedAt = now)
+        )
+        assertEquals(ProvenanceRung.APP_PACKAGE, p.rung)
+        assertEquals("app:com.android.chrome", p.clusterId) // grouping unaffected by the label
+        assertEquals("Chrome", p.displayTitle)              // but the friendly name is shown
+    }
+
+    @Test
     fun longSnippetIsEllipsized() {
         val long = "word ".repeat(40)
         val title = ProvenanceLadder.resolve(RawCapture(long, capturedAt = now)).displayTitle

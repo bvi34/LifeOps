@@ -251,6 +251,17 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
+    /**
+     * Add or edit your own words on a note — the annotation on a captured quote. Captures arrive with
+     * an empty body; this is how you make something of them.
+     */
+    fun editNote(noteKey: String, body: String) {
+        viewModelScope.launch {
+            repository.editNoteBody(noteKey, body)
+            _status.value = "Note updated."
+        }
+    }
+
     /** Resolve a note's overall degradation state for the Notes list badge. */
     suspend fun overallState(note: Note): NoteResolver.State =
         NoteResolver.overallState(repository.resolveNote(note))
