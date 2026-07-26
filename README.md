@@ -12,6 +12,10 @@ the receipts.
 > **New here?** The full end-user manual is **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** —
 > written for someone who just installed the app and wants to know how to use it.
 
+> **Citation** (the companion reading app) is a separate module and a peer on the sync spine —
+> see **[docs/CITATION.md](docs/CITATION.md)**. Its framework-independent core lives in `:core`
+> (pure JVM, unit-tested); the Android reader is `:citation`.
+
 ---
 
 ## What it does

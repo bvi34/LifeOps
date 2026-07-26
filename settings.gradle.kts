@@ -17,3 +17,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "LifeOps"
 include(":app")
+include(":core")
+include(":citation")
