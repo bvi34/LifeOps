@@ -33,6 +33,9 @@ data class BookEntity(
     // Read-in-place (O'Reilly) position token — the source reader's own opaque location.
     val externalLocation: String? = null,
     val isFavorite: Boolean = false,
+    // Wall-clock of the last time this book was opened in a reader, so the Read tab can resume the
+    // most recent thing where you left off. Null until first opened.
+    val lastOpenedAt: Long? = null,
     val createdAt: Long
 )
 

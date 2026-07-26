@@ -9,17 +9,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Divider
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -33,64 +26,51 @@ import com.citation.core.manifest.StorageInventory
 import com.citation.core.manifest.StorageReport
 
 /**
- * The storage-visibility screen. It shows every item's footprint and the reclaimable-vs-irreplaceable
+ * The storage-visibility body. It shows every item's footprint and the reclaimable-vs-irreplaceable
  * split, and **nothing more** — no ceilings, no auto-eviction of favourites or owned files. It can
  * point out what's *safe* to prune (reclaimable, refetchable cache), but pruning is always your call.
+ * Rendered content-only so the Settings tab can host it as a section.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StorageScreen(vm: ReaderViewModel, onBack: () -> Unit) {
+fun StorageReportBody(vm: ReaderViewModel, modifier: Modifier = Modifier) {
     val report by produceState<StorageReport?>(initialValue = null) { value = vm.storageReport() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Storage") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+    val r = report
+    Column(modifier.fillMaxSize()) {
+        if (r == null) {
+            Text("Measuring…", Modifier.padding(16.dp))
+            return@Column
+        }
+
+        // Aggregate summary.
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            SummaryRow("Total", StorageInventory.formatBytes(r.totalBytes), FontWeight.Bold)
+            SummaryRow("Reclaimable (refetchable)", StorageInventory.formatBytes(r.reclaimableBytes))
+            SummaryRow("Irreplaceable (won't auto-delete)", StorageInventory.formatBytes(r.irreplaceableBytes))
+            Text(
+                "Visibility only — Citation never auto-deletes favourites or owned files. You decide what to prune.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 8.dp)
             )
         }
-    ) { padding ->
-        val r = report
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            if (r == null) {
-                Text("Measuring…", Modifier.padding(16.dp))
-                return@Column
-            }
+        Divider()
 
-            // Aggregate summary.
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                SummaryRow("Total", StorageInventory.formatBytes(r.totalBytes), FontWeight.Bold)
-                SummaryRow("Reclaimable (refetchable)", StorageInventory.formatBytes(r.reclaimableBytes))
-                SummaryRow("Irreplaceable (won't auto-delete)", StorageInventory.formatBytes(r.irreplaceableBytes))
-                Text(
-                    "Visibility only — Citation never auto-deletes favourites or owned files. You decide what to prune.",
-                    fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-            Divider()
-
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(r.entries.sortedByDescending { it.bytes }, key = { it.label }) { entry ->
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text(entry.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
-                            RecoverabilityBadge(entry.recoverability)
-                        }
-                        Text(
-                            StorageInventory.formatBytes(entry.bytes),
-                            fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(r.entries.sortedByDescending { it.bytes }, key = { it.label }) { entry ->
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(entry.label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onBackground)
+                        RecoverabilityBadge(entry.recoverability)
                     }
+                    Text(
+                        StorageInventory.formatBytes(entry.bytes),
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
                 }
             }
         }

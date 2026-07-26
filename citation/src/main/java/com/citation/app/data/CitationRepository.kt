@@ -60,8 +60,12 @@ class CitationRepository private constructor(
 
     val books: Flow<List<BookSummary>> =
         db.bookDao().observeAll().map { list ->
-            list.map { BookSummary(it.key, it.title, it.author, it.readingState, it.acquisitionState) }
+            list.map { CitationMappers.summaryFromEntity(it) }
         }
+
+    /** The most recently opened book, for the Read tab's "pick up where you left off". */
+    val lastOpened: Flow<BookSummary?> =
+        db.bookDao().observeLastOpened().map { it?.let(CitationMappers::summaryFromEntity) }
 
     val notes: Flow<List<Note>> =
         db.noteDao().observeAll().map { list -> list.map(CitationMappers::noteFromEntity) }
@@ -106,6 +110,11 @@ class CitationRepository private constructor(
     /** The source kind of a stored book, so the UI can route to the right reader track. */
     suspend fun sourceTypeOf(bookKey: String): SourceType? =
         db.bookDao().get(bookKey)?.let { SourceType.valueOf(it.sourceType) }
+
+    /** Stamp a book as just-opened so the Read tab resumes it. Called whenever any reader is entered. */
+    suspend fun markOpened(bookKey: String, now: Long = System.currentTimeMillis()) {
+        db.bookDao().touchOpened(bookKey, now)
+    }
 
     /** The result of opening a book from the library: the keyed [Book] and, if it's a serial, its id. */
     data class OpenResult(val book: Book, val rrFictionId: Long?)
@@ -560,7 +569,10 @@ class CitationRepository private constructor(
         val title: String,
         val author: String?,
         val readingState: String,
-        val acquisitionState: String
+        val acquisitionState: String,
+        val sourceType: String,
+        val lastChapterOrdinal: Int,
+        val lastOpenedAt: Long?
     )
 
     companion object {

@@ -65,6 +65,18 @@ object CitationMappers {
             }
         )
 
+    fun summaryFromEntity(book: BookEntity): CitationRepository.BookSummary =
+        CitationRepository.BookSummary(
+            key = book.key,
+            title = book.title,
+            author = book.author,
+            readingState = book.readingState,
+            acquisitionState = book.acquisitionState,
+            sourceType = book.sourceType,
+            lastChapterOrdinal = book.lastChapterOrdinal,
+            lastOpenedAt = book.lastOpenedAt
+        )
+
     fun lifecycleOf(book: BookEntity): BookLifecycle =
         BookLifecycle(
             acquisition = AcquisitionState.valueOf(book.acquisitionState),

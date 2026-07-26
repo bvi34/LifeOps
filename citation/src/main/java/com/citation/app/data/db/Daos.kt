@@ -24,6 +24,14 @@ interface BookDao {
     @Query("UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset WHERE key = :key")
     suspend fun savePosition(key: String, ordinal: Int, offset: Int)
 
+    /** Stamp the book as just-opened, so the Read tab can resume the most recent one. */
+    @Query("UPDATE books SET lastOpenedAt = :openedAt WHERE key = :key")
+    suspend fun touchOpened(key: String, openedAt: Long)
+
+    /** The most recently opened book (the Read tab's "pick up where you left off"), or null. */
+    @Query("SELECT * FROM books WHERE lastOpenedAt IS NOT NULL ORDER BY lastOpenedAt DESC LIMIT 1")
+    fun observeLastOpened(): Flow<BookEntity?>
+
     @Query("UPDATE books SET externalLocation = :location WHERE key = :key")
     suspend fun saveExternalLocation(key: String, location: String)
 

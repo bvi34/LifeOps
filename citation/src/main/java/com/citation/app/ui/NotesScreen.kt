@@ -11,16 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -38,37 +31,28 @@ import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteType
 
 /**
- * The Notes surface: every captured note, each showing its **degradation state** and — when it can —
+ * The Notes list: every captured note, each showing its **degradation state** and — when it can —
  * a jump back to live context. The frozen snapshot is always shown, so even an orphaned or
  * source-unavailable note reads fully; the badge just tells you whether the jump is live, shaky, or
- * gone. This is where "a note outlives its source" is visible to the reader.
+ * gone. This is where "a note outlives its source" is visible to the reader. Rendered content-only so
+ * the Personal tab can host it beneath its reading stats.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NotesScreen(vm: ReaderViewModel, onBack: () -> Unit) {
+fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
     val notes by vm.notes.collectAsStateWithLifecycle()
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Notes") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+    if (notes.isEmpty()) {
+        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                "No notes yet. Highlight a passage while reading to capture one.",
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(24.dp)
             )
         }
-    ) { padding ->
-        if (notes.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No notes yet. Highlight a passage while reading to capture one.")
-            }
-        } else {
-            LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-                items(notes, key = { it.key.toString() }) { note ->
-                    NoteRow(note, vm)
-                }
+    } else {
+        LazyColumn(modifier.fillMaxSize()) {
+            items(notes, key = { it.key.toString() }) { note ->
+                NoteRow(note, vm)
             }
         }
     }
