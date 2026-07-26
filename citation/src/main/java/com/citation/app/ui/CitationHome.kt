@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.core.capture.CaptureClusterer
 import com.citation.core.sync.ReadingState
 
 /**
@@ -136,6 +137,11 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit) {
         val title = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".pdf") ?: "PDF"
         if (bytes != null) vm.importPdf(bytes, title)
     }
+    val kindlePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val html = context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
+        if (html != null) vm.importKindleNotebook(html)
+    }
 
     if (showOreilly) {
         AddOreillyDialog(
@@ -166,6 +172,17 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit) {
                 onClick = onBrowseRoyalRoad,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse Royal Road") }
+            OutlinedButton(
+                onClick = { kindlePicker.launch("text/html") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Import Kindle notebook") }
+            Text(
+                "Kindle: export your notebook (highlights sync to your Amazon account) and pick the " +
+                    "HTML here. Non-realtime, and bounded by Amazon's per-book clipping limit.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
             status?.let {
                 Text(
                     it,
@@ -184,6 +201,7 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit) {
 private fun PersonalTab(vm: ReaderViewModel) {
     val books by vm.books.collectAsStateWithLifecycle()
     val notes by vm.notes.collectAsStateWithLifecycle()
+    val triage by vm.triage.collectAsStateWithLifecycle()
 
     val reading = books.count { it.readingState == ReadingState.READING.name }
     val finished = books.count { it.readingState == ReadingState.DONE.name }
@@ -206,6 +224,9 @@ private fun PersonalTab(vm: ReaderViewModel) {
                     }
                 }
             }
+            if (triage.isNotEmpty()) {
+                TriageBanner(triage)
+            }
             Divider()
             Text(
                 "Notes",
@@ -215,6 +236,39 @@ private fun PersonalTab(vm: ReaderViewModel) {
                 modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
             )
             NotesList(vm, Modifier.weight(1f))
+        }
+    }
+}
+
+/**
+ * The thin-context triage prompt: captures whose only identifier is an app name or a timestamp, so
+ * you can tag them while you still remember the context. Read-only nudge — nothing is lost if ignored.
+ */
+@Composable
+private fun TriageBanner(clusters: List<CaptureClusterer.ProvisionalSource>) {
+    val count = clusters.sumOf { it.memberKeys.size }
+    Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "$count capture${if (count == 1) "" else "s"} need context",
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                "Saved with only an app name or a timestamp. Tag them while you still remember.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            clusters.take(4).forEach { cluster ->
+                Text(
+                    "• ${cluster.displayTitle}",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
         }
     }
 }
@@ -340,6 +394,7 @@ private fun LibraryTab(vm: ReaderViewModel) {
 @Composable
 private fun SettingsTab(vm: ReaderViewModel) {
     val status by vm.status.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Scaffold(topBar = { TopAppBar(title = { Text("Settings") }) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -356,6 +411,32 @@ private fun SettingsTab(vm: ReaderViewModel) {
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+            }
+            Divider()
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Text("Quick capture", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                Text(
+                    "A floating bubble to jot a note over any app. Captures what you type, never what's " +
+                        "on screen. Selections and shares don't need this — only the catch-all bubble does.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                OutlinedButton(
+                    onClick = {
+                        if (com.citation.app.QuickCaptureBubbleService.canDraw(context)) {
+                            com.citation.app.QuickCaptureBubbleService.ensureRunning(context)
+                        } else {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Text("Enable quick-capture bubble") }
             }
             Divider()
             Text(

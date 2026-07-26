@@ -168,13 +168,46 @@ into a report; a **Storage screen** shows the reclaimable-vs-irreplaceable split
 with a recoverability badge, and states plainly that nothing is auto-deleted — you decide what to
 prune.
 
+## Cross-app highlight capture (core built + verified)
+
+Capture something from **another app** — a browser selection, an article, a Kindle highlight — and
+have it land in Citation with its source attached, without stopping to open Citation. The rule that
+shapes it: **build toward apps handing content to Citation, never toward reading another app's page.**
+(A live overlay that reads the screen underneath is explicitly out of scope — Kindle renders book
+pages as a canvas behind a secure-window flag, so the text isn't in the accessibility tree and a
+screen grab comes back black. That's blocked by design and crosses the DRM line.)
+
+A capture is just a **note packet with a source**, so it reuses the note model and the same
+fuzzy-to-concrete `BindOrCreate` lifecycle as center-authored book intents. The `:core` spine
+(`capture/`, `kindle/`) is fully JVM-tested:
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Provenance ladder** | `capture/ProvenanceLadder`, `Provenance`, `ClusterId` | At capture time, walk an ordered ladder and attach the **best identifier available, never unassigned**: stable book identity (ISBN/RR-id) → URL → filename → title → app package → timestamp (the floor). Marks each **hard** (a real work identity) vs **provisional**. The identifier is a self-describing `tag:value` cluster id (`book:isbn:…`, `url:…`, `title:…`, `app:…`, `ts:…`) frozen as the note's source id — so no extra columns, and rung + identity are re-derivable offline. |
+| **Note construction** | `capture/CaptureBuilder` | Maps a provenance into records: a **quoted** capture (browser/Kindle) → `External`-anchored passage note; a **manual** capture (bubble) → freestanding synthesis note. Pure, so the whole mapping is unit-tested without keys or storage. |
+| **Retroactive clustering** | `capture/CaptureClusterer` | Groups captures sharing an identifier (same URL, same title) under one **provisional source** — a derived view, before that source is ever a real record. |
+| **Promotion** | `capture/CapturePromotion` | When a hard identity later appears (you add the book with an ISBN), **bind** the matching provisional cluster to the real record instead of stranding it — reusing `BindOrCreate` so hard-identity, fuzzy-title, and edition-safety rules all carry over verbatim. |
+| **Triage** | `capture/CaptureTriage` | The unresolved / **thin-context view**: surfaces captures whose best identifier is only an app name or a timestamp, so you tag them while you remember. Read-only, derived, optional-and-later — never at capture time. |
+| **Kindle import** | `kindle/KindleNotebook` | Parses the Kindle **notebook export** (HTML) into per-highlight captures — a highlight-*import* source, not a live one. **Non-realtime** and bounded by Amazon's per-book clipping limit; ingests exactly what the file holds. Clusters on the book title (the export carries no ISBN) and promotes like any other capture. |
+
+**Android wiring:** a chromeless `CaptureActivity` backs the sanctioned entry points — a `PROCESS_TEXT`
+"Save to Citation" item in the system text-selection toolbar (any app with selectable text), a
+`text/plain` + `text/html` **share target** (including Kindle's highlight-share and notebook export) —
+resolves provenance and finishes with a toast, no app switch. A `QuickCaptureBubbleService` +
+`ManualCaptureActivity` provide the "display over other apps" **floating bubble** for typing a note
+over anything (the catch-all; captures what you type, never the screen). The repository files captures
+offline, and importing an EPUB/PDF/RR serial runs **promotion** to adopt any waiting provisional
+captures. The Personal tab shows a **triage banner**; New has "Import Kindle notebook"; Settings gates
+the bubble behind the overlay permission.
+
 ## Status
 
-All seven task-list milestones are implemented. The framework-independent spine — internal model,
-keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes + degradation, the sync seam, and storage
-visibility — lives in `:core` and is fully JVM-tested; the Android reader (`:citation`) adds Room
-storage, the Compose readers, WorkManager jobs, and the sync transport on top (buildable with the
-Android SDK).
+All seven task-list milestones plus cross-app highlight capture are implemented. The
+framework-independent spine — internal model, keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes +
+degradation, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
+logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested; the Android reader
+(`:citation`) adds Room storage, the Compose readers, the capture entry points, WorkManager jobs, and
+the sync transport on top (buildable with the Android SDK).
 
 ## Cross-cutting principles (already encoded in `:core`)
 

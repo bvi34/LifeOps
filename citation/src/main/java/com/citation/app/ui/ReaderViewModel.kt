@@ -3,6 +3,8 @@ package com.citation.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
+import com.citation.core.capture.CaptureClusterer
+import com.citation.core.capture.CaptureTriage
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.note.Note
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,6 +35,15 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** The most recently opened book, driving the Read tab's resume card. */
     val lastOpened: StateFlow<CitationRepository.BookSummary?> =
         repository.lastOpened.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * The thin-context triage queue: cross-app captures whose best identifier is only an app name or
+     * a timestamp, still unbound. Derived reactively from the notes stream, so it clears itself as
+     * captures get promoted or tagged. Drives the Personal tab's triage prompt.
+     */
+    val triage: StateFlow<List<CaptureClusterer.ProvisionalSource>> =
+        repository.notes.map { CaptureTriage.queue(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
@@ -86,6 +98,21 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             repository.markOpened(key)
             _status.value = "Imported PDF “$title”."
             _pdfSession.value = repository.pdfSession(key)
+        }
+    }
+
+    /**
+     * Import a Kindle notebook export (the HTML you get from "Export notebook"). Each highlight/note
+     * becomes a provisional capture, promotable to the real book when you add it properly.
+     */
+    fun importKindleNotebook(html: String) {
+        viewModelScope.launch {
+            val count = repository.importKindleNotebook(html)
+            _status.value = when {
+                count == null -> "That didn’t look like a Kindle notebook export."
+                count == 0 -> "No highlights found in that export."
+                else -> "Imported $count Kindle highlight${if (count == 1) "" else "s"}."
+            }
         }
     }
 

@@ -78,7 +78,7 @@ object Html {
 
     private val NAMED = mapOf(
         "amp" to "&", "lt" to "<", "gt" to ">", "quot" to "\"", "apos" to "'",
-        "nbsp" to " ", "mdash" to "—", "ndash" to "–",
+        "nbsp" to " ", "mdash" to "—", "ndash" to "–", "middot" to "·",
         "hellip" to "…", "rsquo" to "’", "lsquo" to "‘",
         "rdquo" to "”", "ldquo" to "“", "copy" to "©", "trade" to "™"
     )

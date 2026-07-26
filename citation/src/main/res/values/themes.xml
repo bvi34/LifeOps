@@ -3,4 +3,19 @@
     <!-- Compose supplies the real theme (see ui/theme). This is only the launch/base theme the
          Material3 Compose setup expects. -->
     <style name="Theme.Citation" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Chromeless theme for the capture entry points: they receive text, file it, toast, and
+         finish, so they must never flash a window. Translucent + no title/animation. -->
+    <style name="Theme.Citation.Capture" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowNoDisplay">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
+    <!-- Manual quick-capture (from the floating bubble): a translucent host for a small input
+         dialog, so you type a note *over* whatever app you're in without a full screen switch. -->
+    <style name="Theme.Citation.ManualCapture" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+    </style>
 </resources>

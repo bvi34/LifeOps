@@ -6,6 +6,10 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- The floating quick-capture bubble draws a chat-head over other apps. Opt-in and gated at
+         runtime (Settings.canDrawOverlays); the bubble never appears until the user grants it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:name=".CitationApplication"
         android:allowBackup="true"
@@ -32,6 +36,44 @@
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
         </activity>
+
+        <!-- Sanctioned capture entry points. A chromeless activity that receives text from another
+             app, files it via the provenance ladder, and finishes — no app switch, no overlay. -->
+        <activity
+            android:name=".CaptureActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Citation.Capture"
+            android:excludeFromRecents="true"
+            android:taskAffinity="">
+            <!-- "Save to Citation" in the system text-selection toolbar (any app with selectable text). -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <!-- Share target: any app's share sheet can push a passage or link (incl. Kindle's
+                 highlight-share and its notebook export) into Citation. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="text/html" />
+            </intent-filter>
+        </activity>
+
+        <!-- The floating bubble's typed-note input. Launched by the bubble; never a launcher icon. -->
+        <activity
+            android:name=".ManualCaptureActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Citation.ManualCapture"
+            android:excludeFromRecents="true"
+            android:taskAffinity="" />
+
+        <!-- The floating quick-capture bubble overlay service (started only once the overlay
+             permission is granted). -->
+        <service
+            android:name=".QuickCaptureBubbleService"
+            android:exported="false" />
     </application>
 
 </manifest>
