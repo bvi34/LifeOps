@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -140,7 +141,12 @@ fun ReaderScreen(vm: ReaderViewModel) {
                 }
 
                 // Flowing chapter text. SelectionContainer lets the reader pick a passage to quote.
+                // Reset to the top of the text on every chapter change: the scroll state outlives an
+                // individual chapter, so without this a page turn from a scrolled-down long chapter
+                // would leave the reader pinned at the *bottom* of the next one — the navigation would
+                // appear to do nothing once chapters grew long enough to scroll.
                 val scroll = rememberScrollState()
+                LaunchedEffect(ordinal) { scroll.scrollTo(0) }
                 SelectionContainer(Modifier.weight(1f)) {
                     Column(Modifier.verticalScroll(scroll).padding(20.dp)) {
                         Text(
