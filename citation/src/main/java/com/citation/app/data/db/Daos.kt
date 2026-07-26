@@ -86,6 +86,13 @@ interface NoteDao {
 
     @Query("SELECT * FROM notes")
     suspend fun getAllSync(): List<NoteEntity>
+
+    @Query("SELECT * FROM notes WHERE key = :key")
+    suspend fun get(key: String): NoteEntity?
+
+    /** Cross-app capture notes (sourceType = CAPTURE), for clustering and triage. */
+    @Query("SELECT * FROM notes WHERE sourceType = 'CAPTURE' ORDER BY createdAt DESC")
+    suspend fun captures(): List<NoteEntity>
 }
 
 @Dao

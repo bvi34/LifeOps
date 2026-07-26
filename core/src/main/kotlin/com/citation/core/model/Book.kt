@@ -81,13 +81,18 @@ data class BookMetadata(
  * - [OREILLY] — **licensed**, read-in-place; no local content cache, only your annotations.
  * - [INTERNAL] — a LifeOps center-authored placeholder (a "wanted" book) not yet bound to an
  *   artifact.
+ * - [CAPTURE] — a fragment handed to Citation from *another app* (a browser selection, shared text,
+ *   a typed quick-note). Its provenance is a URL / filename / app package / timestamp rather than one
+ *   of the reader's own tracks, so jump-back is best-effort and the note may start life *provisional*
+ *   (no bound book) until a hard identity later promotes it. See [com.citation.core.capture].
  */
 enum class SourceType {
     EPUB,
     PDF,
     ROYAL_ROAD,
     OREILLY,
-    INTERNAL;
+    INTERNAL,
+    CAPTURE;
 
     /**
      * Whether content from this source is *borrowed* (safe to auto-evict; refetchable but not

@@ -8,7 +8,14 @@ import com.citation.app.data.rr.RoyalRoadClient
 import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
 import com.citation.core.anchor.TextAnchor
+import com.citation.core.capture.CaptureBuilder
+import com.citation.core.capture.CaptureClusterer
+import com.citation.core.capture.CapturePromotion
+import com.citation.core.capture.CaptureTriage
+import com.citation.core.capture.ProvenanceLadder
+import com.citation.core.capture.RawCapture
 import com.citation.core.epub.EpubParser
+import com.citation.core.kindle.KindleNotebook
 import com.citation.core.identity.IdentityKey
 import com.citation.core.identity.IdentitySet
 import com.citation.core.key.EntityKey
@@ -97,6 +104,15 @@ class CitationRepository private constructor(
         // Keep the raw file too, so re-parse / re-export stays possible.
         files.writeOwned(bookKey.toString(), "epub", bytes)
         checkpointKey(EntityType.BOOK)
+        // A hard identity just appeared: adopt any provisional captures that were waiting for it.
+        promoteCapturesTo(
+            CapturePromotion.PromotableRecord(
+                bookKey = bookKey,
+                identity = isbn?.let { IdentitySet(IdentityKey.Isbn(it)) } ?: IdentitySet(emptyList()),
+                title = book.metadata.title,
+                author = book.metadata.author
+            )
+        )
         return book
     }
 
@@ -159,6 +175,12 @@ class CitationRepository private constructor(
             )
             db.royalRoadDao().setBookKey(fictionId, minted.toString())
             checkpointKey(EntityType.BOOK)
+            promoteCapturesTo(
+                CapturePromotion.PromotableRecord(
+                    minted, IdentitySet(IdentityKey.RoyalRoadId(fictionId)),
+                    book.metadata.title, book.metadata.author
+                )
+            )
             minted
         }
         return book.copy(key = key)
@@ -204,6 +226,9 @@ class CitationRepository private constructor(
             )
         )
         checkpointKey(EntityType.BOOK)
+        promoteCapturesTo(
+            CapturePromotion.PromotableRecord(key, IdentitySet(IdentityKey.PdfSha(sha)), title, null)
+        )
         return key.toString()
     }
 
@@ -391,6 +416,115 @@ class CitationRepository private constructor(
         checkpointKey(EntityType.NOTE)
         persistSyncState()
         return note
+    }
+
+    // --- Cross-app capture (PROCESS_TEXT / share target / floating bubble / Kindle import) ---------
+
+    /**
+     * File a **quoted capture** handed in from another app — a browser selection, a shared passage, a
+     * Kindle highlight. The [raw] material is run through the [ProvenanceLadder] to attach the best
+     * identifier available (never unassigned), then frozen as a [SourceType.CAPTURE] note anchored by
+     * an opaque location token. [annotation] is your optional note *about* the quote (blank ⇒ a plain
+     * saved highlight). Fully offline; queued up the mailbox like any other note.
+     */
+    suspend fun captureQuoted(
+        raw: RawCapture,
+        quote: String,
+        annotation: String = "",
+        location: String? = raw.location ?: raw.url,
+        now: Long = System.currentTimeMillis()
+    ): Note {
+        val provenance = ProvenanceLadder.resolve(raw)
+        val highlight = CaptureBuilder.highlight(keys.next(EntityType.HIGHLIGHT), provenance, quote, location, now)
+        val note = CaptureBuilder.quotedNote(keys.next(EntityType.NOTE), highlight, annotation, now)
+        persistCapture(highlight, note)
+        return note
+    }
+
+    /**
+     * File a **manual quick-capture** — text you typed over some app via the floating bubble, with
+     * nothing on screen to quote. Lands as a freestanding note whose provenance is whatever the ladder
+     * could attach (often just the app package or a timestamp — i.e. thin, and headed for triage).
+     */
+    suspend fun captureManual(raw: RawCapture, now: Long = System.currentTimeMillis()): Note {
+        val provenance = ProvenanceLadder.resolve(raw)
+        val note = CaptureBuilder.manualNote(keys.next(EntityType.NOTE), provenance, raw.text, now)
+        val versioned = mailbox.post(NotePacket.of(note))
+        db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        checkpointKey(EntityType.NOTE)
+        persistSyncState()
+        return note
+    }
+
+    /**
+     * Import a Kindle **notebook export** (HTML). Each highlight/note becomes a provisional capture on
+     * the book's title cluster (the export carries no ISBN), so they behave like any other capture and
+     * get promoted to the real book when you add it properly. Non-realtime and bounded by Amazon's
+     * per-book clipping limit — this ingests exactly what the file contains. Returns the count filed,
+     * or `null` if the HTML isn't a Kindle notebook.
+     */
+    suspend fun importKindleNotebook(html: String, now: Long = System.currentTimeMillis()): Int? {
+        val export = KindleNotebook.parse(html) ?: return null
+        val provenance = export.provenance(now)
+        var filed = 0
+        export.entries.forEach { entry ->
+            if (entry.isStandaloneNote) {
+                val note = CaptureBuilder.manualNote(keys.next(EntityType.NOTE), provenance, entry.annotation.orEmpty(), now)
+                val versioned = mailbox.post(NotePacket.of(note))
+                db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+            } else {
+                val highlight = CaptureBuilder.highlight(
+                    keys.next(EntityType.HIGHLIGHT), provenance, entry.quote, entry.locationToken, now
+                )
+                val note = CaptureBuilder.quotedNote(keys.next(EntityType.NOTE), highlight, entry.annotation.orEmpty(), now)
+                persistCapture(highlight, note)
+            }
+            filed++
+        }
+        checkpointKey(EntityType.NOTE)
+        checkpointKey(EntityType.HIGHLIGHT)
+        persistSyncState()
+        return filed
+    }
+
+    /** Persist a captured highlight + its note and queue the note up the mailbox. */
+    private suspend fun persistCapture(highlight: Highlight, note: Note) {
+        val versioned = mailbox.post(NotePacket.of(note))
+        db.highlightDao().upsert(CitationMappers.highlightToEntity(highlight))
+        db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        checkpointKey(EntityType.HIGHLIGHT)
+        checkpointKey(EntityType.NOTE)
+        persistSyncState()
+    }
+
+    /** All provisional-source clusters over captured notes — the retroactive grouping view. */
+    suspend fun provisionalSources(): List<CaptureClusterer.ProvisionalSource> =
+        CaptureClusterer.clusterNotes(db.noteDao().captures().map(CitationMappers::noteFromEntity))
+
+    /** The thin-context triage queue: captures whose best identifier is only an app name/timestamp. */
+    suspend fun triageQueue(): List<CaptureClusterer.ProvisionalSource> =
+        CaptureTriage.queue(db.noteDao().captures().map(CitationMappers::noteFromEntity))
+
+    /**
+     * When a real book record appears, bind any provisional capture clusters it matches to it —
+     * **promotion**. Re-points each promoted note's frozen descriptor at [bookKey] and re-posts it so
+     * LifeOps sees the binding. Returns the number of notes promoted.
+     */
+    private suspend fun promoteCapturesTo(record: CapturePromotion.PromotableRecord): Int {
+        val clusters = provisionalSources()
+        val promotions = CapturePromotion.promote(record, clusters)
+        var moved = 0
+        promotions.forEach { promotion ->
+            promotion.memberKeys.forEach { noteKey ->
+                val entity = db.noteDao().get(noteKey.toString()) ?: return@forEach
+                val rebound = CaptureBuilder.bind(CitationMappers.noteFromEntity(entity), promotion.bookKey)
+                val versioned = mailbox.post(NotePacket.of(rebound))
+                db.noteDao().upsert(CitationMappers.noteToEntity(rebound, versioned.version))
+                moved++
+            }
+        }
+        if (moved > 0) persistSyncState()
+        return moved
     }
 
     /**

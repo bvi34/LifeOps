@@ -140,7 +140,9 @@ object NoteResolver {
 
     private fun reliabilityOf(sourceType: SourceType): Reliability = when (sourceType) {
         SourceType.EPUB, SourceType.PDF, SourceType.INTERNAL -> Reliability.RELIABLE
-        SourceType.ROYAL_ROAD, SourceType.OREILLY -> Reliability.BEST_EFFORT
+        // A cross-app capture points back into someone else's app (a URL, a Kindle location); even
+        // when the target is present the jump is a deep link we don't control, so it's best-effort.
+        SourceType.ROYAL_ROAD, SourceType.OREILLY, SourceType.CAPTURE -> Reliability.BEST_EFFORT
     }
 
     private fun anchorChapter(anchor: TextAnchor): Int? =
