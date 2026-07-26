@@ -61,6 +61,13 @@ class RoyalRoadCoordinator(
     /** Advance the read position and slide the prefetch window forward. */
     suspend fun advance(fictionId: Long, newOrdinal: Int) {
         dao.setProgress(fictionId, newOrdinal, System.currentTimeMillis())
+        // The chapter you're turning *to* is the active reading position — it must be readable now,
+        // not merely queued behind the scrape budget. Force it in like chapter 1 if the buffer hasn't
+        // reached it yet (a fast jump, an exhausted budget). The look-ahead below still respects the
+        // budget. Without this the reader would land on a chapter whose body never arrives.
+        if (newOrdinal !in dao.cachedOrdinals(fictionId)) {
+            runCatching { fetchAndCache(fictionId, newOrdinal, forceBudgetBypass = true) }
+        }
         refillBuffer(fictionId, newOrdinal)
         drainQueue()
     }
@@ -150,13 +157,31 @@ class RoyalRoadCoordinator(
         }
     }
 
-    /** Assemble a readable [Book] from the cached RR chapters (format-blind, like any other source). */
+    /**
+     * Assemble a readable [Book] from the RR catalog (format-blind, like any other source).
+     *
+     * The book carries the **whole known spine**, not just the chapters whose bodies are cached: the
+     * reader must see the serial's real length and keep "Next" live all the way to the end, and the
+     * body of the chapter you turn to is fetched on demand by [advance]. A chapter whose body isn't
+     * cached yet renders [PENDING_CHAPTER] until a subsequent [loadBook] picks up its fetched text.
+     *
+     * Building the list positionally (index == ordinal) also keeps [Book.chapterAt] — which indexes
+     * by position — correctly aligned; the old cached-only filter silently shifted every chapter
+     * after the first gap onto the wrong ordinal.
+     */
     suspend fun loadBook(fictionId: Long): Book {
         val fiction = dao.fiction(fictionId)
-        val metas = dao.chapters(fictionId)
-        val chapters = metas.mapNotNull { meta ->
-            val text = files.readBorrowedChapter(fictionId.toString(), meta.ordinal) ?: return@mapNotNull null
-            Chapter(ordinal = meta.ordinal, title = meta.title, sourceRef = meta.url, text = text)
+        val byOrdinal = dao.chapters(fictionId).associateBy { it.ordinal }
+        val lastOrdinal = byOrdinal.keys.maxOrNull() ?: -1
+        val chapters = (0..lastOrdinal).map { ordinal ->
+            val meta = byOrdinal[ordinal]
+            val text = meta?.let { files.readBorrowedChapter(fictionId.toString(), ordinal) }
+            Chapter(
+                ordinal = ordinal,
+                title = meta?.title ?: "Chapter ${ordinal + 1}",
+                sourceRef = meta?.url.orEmpty(),
+                text = text ?: PENDING_CHAPTER
+            )
         }
         return Book(
             key = null,
@@ -209,5 +234,10 @@ class RoyalRoadCoordinator(
         )
         files.writeBorrowedChapter(fictionId.toString(), ordinal, chapter.text)
         dao.setCached(fictionId, ordinal, true)
+    }
+
+    companion object {
+        /** Placeholder body for a spine chapter whose text hasn't been fetched into cache yet. */
+        const val PENDING_CHAPTER = "Fetching this chapter…"
     }
 }
