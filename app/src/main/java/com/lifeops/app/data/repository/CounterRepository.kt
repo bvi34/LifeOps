@@ -1,6 +1,5 @@
 package com.lifeops.app.data.repository
 
-import android.content.Context
 import com.lifeops.app.data.db.dao.CounterDao
 import com.lifeops.app.data.db.dao.CounterDailyTotal
 import com.lifeops.app.data.db.dao.CounterWeeklyTotal
@@ -12,7 +11,6 @@ import com.lifeops.app.data.model.CounterEventWeather
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
-import com.lifeops.app.worker.HabitReminderWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
@@ -28,8 +26,8 @@ fun interface CounterWeatherProvider {
 }
 
 class CounterRepository(
-    private val context: Context,
     private val counterDao: CounterDao,
+    private val reminderScheduler: HabitReminderScheduler = NoopHabitReminderScheduler,
     private val weatherProvider: CounterWeatherProvider? = null
 ) {
 
@@ -94,9 +92,9 @@ class CounterRepository(
     private fun syncReminder(counter: Counter) {
         val hour = counter.reminderHour
         if (counter.isHabit && !counter.isArchived && hour != null) {
-            HabitReminderWorker.schedule(context, counter.id, counter.name, hour)
+            reminderScheduler.schedule(counter.id, counter.name, hour)
         } else {
-            HabitReminderWorker.cancel(context, counter.id)
+            reminderScheduler.cancel(counter.id)
         }
     }
 
@@ -106,11 +104,11 @@ class CounterRepository(
      * Clears the queue and re-schedules one reminder per eligible habit.
      */
     suspend fun rescheduleAllReminders() {
-        HabitReminderWorker.cancelAll(context)
+        reminderScheduler.cancelAll()
         counterDao.getAllSync()
             .map { it.toModel() }
             .filter { it.isHabit && !it.isArchived && it.reminderHour != null }
-            .forEach { HabitReminderWorker.schedule(context, it.id, it.name, it.reminderHour!!) }
+            .forEach { reminderScheduler.schedule(it.id, it.name, it.reminderHour!!) }
     }
 
     // --- Reporting (the five DAO queries, surfaced as models) ---

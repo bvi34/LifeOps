@@ -74,7 +74,10 @@ class LifeOpsApp : Application() {
     // location (cache-only, so logging never blocks on the network); yields null when there's no
     // tracked location or the cache is empty/stale, in which case the tick records no weather.
     val counterRepository by lazy {
-        CounterRepository(this, database.counterDao()) {
+        CounterRepository(
+            database.counterDao(),
+            com.lifeops.app.worker.WorkManagerHabitReminderScheduler(this)
+        ) {
             weatherRepository.primaryCurrentConditions()?.let { (location, conditions) ->
                 CounterEventWeather(
                     temperatureF = conditions.temperatureF,
