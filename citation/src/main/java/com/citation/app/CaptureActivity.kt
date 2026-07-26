@@ -54,11 +54,13 @@ class CaptureActivity : ComponentActivity() {
             }
         }
         val url = firstUrlIn(text)
+        val pkg = referrerPackage()
         val raw = RawCapture(
             text = text,
             title = intent.getStringExtra(Intent.EXTRA_SUBJECT)?.takeIf { it.isNotBlank() },
             url = url,
-            appPackage = referrerPackage(),
+            appPackage = pkg,
+            appLabel = pkg?.let { appLabelOf(it) },
             location = url,
             capturedAt = System.currentTimeMillis()
         )
@@ -86,6 +88,11 @@ class CaptureActivity : ComponentActivity() {
 
     private fun firstUrlIn(text: String): String? =
         Patterns.WEB_URL.matcher(text).let { if (it.find()) text.substring(it.start(), it.end()) else null }
+
+    /** Resolve a package name to its human label ("com.android.chrome" → "Chrome"), best-effort. */
+    private fun appLabelOf(pkg: String): String? = runCatching {
+        packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+    }.getOrNull()
 
     private fun looksLikeKindleNotebook(text: String): Boolean =
         text.contains("class=\"bookTitle", ignoreCase = true) && text.contains("noteText", ignoreCase = true)

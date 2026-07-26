@@ -49,10 +49,16 @@ class ManualCaptureActivity : ComponentActivity() {
         lifecycleScope.launch {
             val message = runCatching {
                 val repo = app.repository.await()
+                val pkg = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) referrer?.host else callingPackage
                 repo.captureManual(
                     RawCapture(
                         text = text.trim(),
-                        appPackage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) referrer?.host else callingPackage,
+                        appPackage = pkg,
+                        appLabel = pkg?.let { p ->
+                            runCatching {
+                                packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString()
+                            }.getOrNull()
+                        },
                         capturedAt = System.currentTimeMillis()
                     )
                 )
