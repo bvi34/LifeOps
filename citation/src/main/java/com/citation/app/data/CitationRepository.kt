@@ -101,6 +101,10 @@ class CitationRepository private constructor(
         return CitationMappers.bookFromEntities(entity, chapters)
     }
 
+    /** The source kind of a stored book, so the UI can route to the right reader track. */
+    suspend fun sourceTypeOf(bookKey: String): SourceType? =
+        db.bookDao().get(bookKey)?.let { SourceType.valueOf(it.sourceType) }
+
     /** The result of opening a book from the library: the keyed [Book] and, if it's a serial, its id. */
     data class OpenResult(val book: Book, val rrFictionId: Long?)
 
@@ -152,6 +156,169 @@ class CitationRepository private constructor(
     /** Persist the reader's last position for restore-on-reopen. */
     suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
+    }
+
+    // --- PDF (own render track) ---------------------------------------------------------------
+
+    /** A PDF opened for the paged reader: the owned file on disk (rendered page-by-page, never reflowed). */
+    data class PdfSession(val bookKey: String, val file: java.io.File)
+
+    /**
+     * Import a PDF into the **owned** (sovereign) store: hash it for identity, dedup against an
+     * existing copy of the same file, persist the bytes, and register a [BookEntity]. Returns the
+     * book key. PDFs render as pages (see [PdfSession]), so no flowing chapters are stored.
+     */
+    suspend fun importPdf(
+        bytes: ByteArray,
+        title: String,
+        now: Long = System.currentTimeMillis()
+    ): String {
+        val sha = com.citation.core.pdf.PdfTrack.sha256(bytes)
+        // PDF SHA is a strong positive: identical bytes ⇒ same file, so dedup rather than re-import.
+        db.bookDao().findBySource(sha, SourceType.PDF.name)?.let { return it.key }
+
+        val key = keys.next(EntityType.BOOK)
+        files.writeOwned(key.toString(), "pdf", bytes)
+        db.bookDao().upsert(
+            BookEntity(
+                key = key.toString(),
+                title = title,
+                author = null,
+                sourceType = SourceType.PDF.name,
+                sourceId = sha,
+                language = null,
+                acquisitionState = AcquisitionState.ACQUIRED.name,
+                readingState = ReadingState.TO_READ.name,
+                createdAt = now
+            )
+        )
+        checkpointKey(EntityType.BOOK)
+        return key.toString()
+    }
+
+    /** The owned PDF file for [bookKey], for the paged reader to render. */
+    fun pdfSession(bookKey: String): PdfSession =
+        PdfSession(bookKey, java.io.File(files.sovereignDir, "$bookKey.pdf"))
+
+    /**
+     * Capture a note on a PDF page. Anchored with a [TextAnchor.Pdf] (page + quads + quote); when the
+     * caller has no glyph rectangles it passes an empty [quads] for a page-level anchor.
+     */
+    suspend fun capturePdfNote(
+        bookKey: String,
+        page: Int,
+        quote: String,
+        body: String,
+        quads: List<TextAnchor.Quad> = emptyList(),
+        now: Long = System.currentTimeMillis()
+    ): Note {
+        val entity = db.bookDao().get(bookKey) ?: error("no book $bookKey")
+        val descriptor = SourceDescriptor(
+            bookKey = EntityKey.parse(bookKey),
+            sourceType = SourceType.PDF,
+            sourceId = entity.sourceId,
+            title = entity.title,
+            author = entity.author
+        )
+        val highlight = Highlight(
+            key = keys.next(EntityType.HIGHLIGHT),
+            source = descriptor,
+            quotedSnapshot = quote,
+            anchor = com.citation.core.pdf.PdfTrack.anchor(page, quote, quads),
+            createdAt = now
+        )
+        val note = Note.anchored(keys.next(EntityType.NOTE), body, highlight, now)
+        val versioned = mailbox.post(NotePacket.of(note))
+        db.highlightDao().upsert(CitationMappers.highlightToEntity(highlight))
+        db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        checkpointKey(EntityType.HIGHLIGHT)
+        checkpointKey(EntityType.NOTE)
+        persistSyncState()
+        return note
+    }
+
+    // --- O'Reilly (read-in-place) -------------------------------------------------------------
+
+    /** A read-in-place session: the deep link to open in O'Reilly's own reader, and the book id. */
+    data class OreillySession(val bookKey: String, val bookId: String, val deepLink: String)
+
+    /**
+     * Register an O'Reilly book for read-in-place. **No content is cached** — it's licensed — only a
+     * sovereign [BookEntity] holding your layer (id, title, last position, notes). Deduped by book id.
+     */
+    suspend fun addOreillyBook(
+        bookId: String,
+        title: String,
+        author: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): String {
+        db.bookDao().findBySource(bookId, SourceType.OREILLY.name)?.let { return it.key }
+        val key = keys.next(EntityType.BOOK)
+        db.bookDao().upsert(
+            BookEntity(
+                key = key.toString(),
+                title = title,
+                author = author,
+                sourceType = SourceType.OREILLY.name,
+                sourceId = bookId,
+                language = null,
+                acquisitionState = AcquisitionState.ACQUIRED.name,
+                readingState = ReadingState.READING.name,
+                createdAt = now
+            )
+        )
+        checkpointKey(EntityType.BOOK)
+        return key.toString()
+    }
+
+    /** Build the deep link that lands you at your saved O'Reilly position in one tap (else the cover). */
+    suspend fun oreillySession(bookKey: String): OreillySession? {
+        val entity = db.bookDao().get(bookKey) ?: return null
+        val bookId = entity.sourceId ?: return null
+        val link = com.citation.core.oreilly.OreillyLink.deepLink(bookId, entity.externalLocation)
+        return OreillySession(bookKey, bookId, link)
+    }
+
+    /** Persist the O'Reilly reader's last position token so reopening lands at your spot. */
+    suspend fun saveExternalPosition(bookKey: String, location: String) {
+        db.bookDao().saveExternalLocation(bookKey, location)
+    }
+
+    /**
+     * Capture a note on a read-in-place source (O'Reilly): your layer only — a frozen quote plus the
+     * reader's location token as an [TextAnchor.External] anchor. Content stays theirs; the note is
+     * yours and sovereign.
+     */
+    suspend fun captureExternalNote(
+        bookKey: String,
+        location: String,
+        quote: String,
+        body: String,
+        now: Long = System.currentTimeMillis()
+    ): Note {
+        val entity = db.bookDao().get(bookKey) ?: error("no book $bookKey")
+        val descriptor = SourceDescriptor(
+            bookKey = EntityKey.parse(bookKey),
+            sourceType = SourceType.valueOf(entity.sourceType),
+            sourceId = entity.sourceId,
+            title = entity.title,
+            author = entity.author
+        )
+        val highlight = Highlight(
+            key = keys.next(EntityType.HIGHLIGHT),
+            source = descriptor,
+            quotedSnapshot = quote,
+            anchor = TextAnchor.External(location = location, quote = quote, bookRef = entity.sourceId),
+            createdAt = now
+        )
+        val note = Note.anchored(keys.next(EntityType.NOTE), body, highlight, now)
+        val versioned = mailbox.post(NotePacket.of(note))
+        db.highlightDao().upsert(CitationMappers.highlightToEntity(highlight))
+        db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        checkpointKey(EntityType.HIGHLIGHT)
+        checkpointKey(EntityType.NOTE)
+        persistSyncState()
+        return note
     }
 
     /**

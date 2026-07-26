@@ -5,6 +5,7 @@ import com.citation.core.key.EntityKey
 import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
 import com.citation.core.note.Note
+import com.citation.core.note.PassageReference
 import com.citation.core.note.SourceDescriptor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -51,6 +52,33 @@ class SyncCodecTest {
         val anchor = decoded.note.references[0].anchor as TextAnchor.Flowing
         assertEquals(2, anchor.chapterOrdinal)
         assertTrue(decoded.note.references[0].quotedSnapshot.isNotBlank())
+    }
+
+    @Test
+    fun notePacketWithExternalAnchorRoundTrips() {
+        val note = Note.synthesis(
+            key = EntityKey("ER", "Note", 5),
+            body = "from the O'Reilly copy",
+            source = SourceDescriptor(
+                bookKey = EntityKey("ER", "Book", 9),
+                sourceType = SourceType.OREILLY,
+                sourceId = "9781492082279",
+                title = "Designing Data-Intensive Applications",
+                author = "Kleppmann"
+            ),
+            references = listOf(
+                PassageReference(
+                    "quoted from a book we don't hold",
+                    TextAnchor.External("epubcfi(/6/14)", "quoted from a book", "9781492082279")
+                )
+            ),
+            createdAt = 1L
+        )
+        val packet = NotePacket.of(note)
+        val decoded = SyncCodec.decodeUpPacket(SyncCodec.encodeUpPacket(packet)) as NotePacket
+        assertEquals(packet, decoded)
+        val anchor = decoded.note.references[0].anchor as TextAnchor.External
+        assertEquals("epubcfi(/6/14)", anchor.location)
     }
 
     @Test

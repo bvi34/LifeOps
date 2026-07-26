@@ -52,8 +52,8 @@ other feature bolts onto this spine.
 | **Sync** | `sync/Mailbox`, `Packets`, `BookLifecycle`, `BindOrCreate` | Mailbox pattern (state/outbox + inbox, **monotonic version**, idempotent + resumable). Up: telemetry + note packets carrying `{sourceType, sourceId, frozen-context}`. Down: acquire-book intents. **Bind-or-create** reconciles a fuzzy center-authored book to a resolved artifact at one checkpoint. **Two orthogonal state machines** — acquisition (`wanted→resolving→acquired/unavailable`) and reading (`to-read→reading→done`) — never collapsed. |
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
-resolver, and the sync protocol below, **`:core` has 105 passing JVM unit tests** across 21 suites
-(run `gradle :core:test`).
+resolver, the sync protocol, and the PDF/O'Reilly pieces below, **`:core` has 120 passing JVM unit
+tests** across 24 suites (run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -136,10 +136,25 @@ envelope, applies LifeOps' response, and persists newly-`wanted` books (both sta
 `BookLifecycle.wanted()`). A `SyncWorker` runs it periodically, and a "Sync with LifeOps" action runs
 it on demand.
 
-## Roadmap (task-list milestones 6–7, not yet built)
+## PDF + O'Reilly (milestone 6 — core built + verified)
 
-6. **PDF + O'Reilly** — PDF render track (positioned glyphs, page+quads anchors); O'Reilly
-   read-in-place (their WebView is the reader, no local content cache, deep-link back to position).
+Two more sources, each on its own track (core pieces unit-tested):
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **PDF render track** | `pdf/PdfTrack` | Positioned glyphs don't reflow, so a PDF renders *pages*, never through the flowing reader. View↔PDF coordinate transform (Y-flip, **zoom-stable quads**), page/quad anchor construction, and the SHA-256 import identity (strong-positive dedup). |
+| **External anchor** | `anchor/TextAnchor.External` | A read-in-place anchor for content Citation never holds: the source reader's opaque **location token** + the frozen quote. Resolves via deep link (best-effort), not text matching; `NoteResolver` + `SyncCodec` handle it. |
+| **O'Reilly deep-link** | `oreilly/OreillyLink` | Build/parse the URL to a book + position, so reopening lands one tap from your spot; re-auth is left to the WebView by design. |
+
+**Android wiring:** `PdfReaderScreen` renders pages via the platform `PdfRenderer` (own track, page
+nav, page-anchored notes); PDF import hashes + dedups into the owned store. `OreillyReaderScreen`
+hosts O'Reilly's own reader in a WebView (**no content cache** — licensed), tracks your position from
+the URL, and captures **annotations only** (quote + location token as an `External` anchor) into the
+sovereign store. Library gains "Import PDF" and "Add O'Reilly book"; opens route by source type to the
+right track.
+
+## Roadmap (task-list milestone 7, not yet built)
+
 7. **Storage visibility** — per-item + aggregate size, recoverability-tagged; visibility only, no
    auto-eviction of favourites/owned.
 

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
 import com.citation.core.model.Book
+import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +41,14 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     // Non-null while a Royal Road serial is open, so page turns can slide its prefetch buffer.
     private var openRrFictionId: Long? = null
 
+    // The PDF paged reader and the O'Reilly read-in-place reader are separate tracks from the
+    // flowing reader; when one is set the UI shows that track instead.
+    private val _pdfSession = MutableStateFlow<CitationRepository.PdfSession?>(null)
+    val pdfSession: StateFlow<CitationRepository.PdfSession?> = _pdfSession.asStateFlow()
+
+    private val _oreillySession = MutableStateFlow<CitationRepository.OreillySession?>(null)
+    val oreillySession: StateFlow<CitationRepository.OreillySession?> = _oreillySession.asStateFlow()
+
     fun importEpub(bytes: ByteArray) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
@@ -53,10 +62,59 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun open(bookKey: String) {
         viewModelScope.launch {
-            val result = repository.openBook(bookKey)
-            openRrFictionId = result?.rrFictionId
-            _openBook.value = result?.book
-            _chapterOrdinal.value = 0
+            when (repository.sourceTypeOf(bookKey)) {
+                SourceType.PDF -> _pdfSession.value = repository.pdfSession(bookKey)
+                SourceType.OREILLY -> _oreillySession.value = repository.oreillySession(bookKey)
+                else -> {
+                    val result = repository.openBook(bookKey)
+                    openRrFictionId = result?.rrFictionId
+                    _openBook.value = result?.book
+                    _chapterOrdinal.value = 0
+                }
+            }
+        }
+    }
+
+    fun importPdf(bytes: ByteArray, title: String) {
+        viewModelScope.launch {
+            val key = repository.importPdf(bytes, title)
+            _status.value = "Imported PDF “$title”."
+            _pdfSession.value = repository.pdfSession(key)
+        }
+    }
+
+    fun addOreillyBook(bookId: String, title: String) {
+        viewModelScope.launch {
+            val key = repository.addOreillyBook(bookId, title)
+            _oreillySession.value = repository.oreillySession(key)
+        }
+    }
+
+    /** Capture a page-anchored note on the open PDF (quote located by the reader on that page). */
+    fun capturePdfNote(page: Int, quote: String, body: String) {
+        val session = _pdfSession.value ?: return
+        viewModelScope.launch {
+            val note = repository.capturePdfNote(session.bookKey, page, quote, body)
+            _status.value = "Note ${note.key} captured on page ${page + 1}."
+        }
+    }
+
+    fun closePdf() { _pdfSession.value = null }
+
+    fun closeOreilly() { _oreillySession.value = null }
+
+    /** Persist the O'Reilly reader's position so the next open lands one tap from your spot. */
+    fun saveOreillyPosition(location: String) {
+        val session = _oreillySession.value ?: return
+        viewModelScope.launch { repository.saveExternalPosition(session.bookKey, location) }
+    }
+
+    /** Capture a note on the open O'Reilly book — your layer only (quote + location token). */
+    fun captureOreillyNote(location: String, quote: String, body: String) {
+        val session = _oreillySession.value ?: return
+        viewModelScope.launch {
+            val note = repository.captureExternalNote(session.bookKey, location, quote, body)
+            _status.value = "Note ${note.key} captured on O'Reilly book."
         }
     }
 

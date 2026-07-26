@@ -46,6 +46,23 @@ sealed interface TextAnchor {
         override val quote: String
     ) : TextAnchor
 
+    /**
+     * Anchor into a **read-in-place** source whose content Citation never holds (O'Reilly via a
+     * library licence). There is no local text to re-resolve against and no page to render — the
+     * "anchor" is the source reader's own opaque **location token** (an epubcfi, a fragment id, a
+     * scroll position) plus the extracted quote. Jump-to-context means handing that token back to
+     * their reader via a deep link, so it is inherently best-effort; the frozen quote is what makes
+     * the note stand on its own regardless.
+     *
+     * @property location the source reader's opaque position token.
+     * @property bookRef the source's own book identifier (O'Reilly ISBN/urn), for building the link.
+     */
+    data class External(
+        val location: String,
+        override val quote: String,
+        val bookRef: String? = null
+    ) : TextAnchor
+
     /** A selection rectangle in PDF user-space coordinates. */
     data class Quad(val x0: Float, val y0: Float, val x1: Float, val y1: Float)
 }

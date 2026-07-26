@@ -57,6 +57,11 @@ object AnchorCodec {
                     put(JSONObject().put("x0", q.x0).put("y0", q.y0).put("x1", q.x1).put("y1", q.y1))
                 }
             })
+        is TextAnchor.External -> JSONObject()
+            .put("type", "external")
+            .put("location", anchor.location)
+            .put("quote", anchor.quote)
+            .put("bookRef", anchor.bookRef)
     }
 
     private fun jsonToAnchor(obj: JSONObject): TextAnchor = when (obj.getString("type")) {
@@ -78,6 +83,11 @@ object AnchorCodec {
             }
             TextAnchor.Pdf(obj.getInt("page"), quads, obj.getString("quote"))
         }
+        "external" -> TextAnchor.External(
+            location = obj.getString("location"),
+            quote = obj.getString("quote"),
+            bookRef = obj.opt("bookRef")?.takeUnless { it === JSONObject.NULL }?.toString()
+        )
         else -> error("Unknown anchor type in $obj")
     }
 }

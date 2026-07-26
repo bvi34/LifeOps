@@ -195,6 +195,12 @@ object SyncCodec {
                 }
             })
         }
+        is TextAnchor.External -> JsonObject().apply {
+            addProperty("type", "external")
+            addProperty("location", anchor.location)
+            addProperty("quote", anchor.quote)
+            addProperty("bookRef", anchor.bookRef)
+        }
     }
 
     private fun anchorFromJson(obj: JsonObject): TextAnchor = when (obj.get("type").asString) {
@@ -214,6 +220,11 @@ object SyncCodec {
                 )
             },
             quote = obj.get("quote").asString
+        )
+        "external" -> TextAnchor.External(
+            location = obj.get("location").asString,
+            quote = obj.get("quote").asString,
+            bookRef = obj.stringOrNull("bookRef")
         )
         else -> error("Unknown anchor type in $obj")
     }

@@ -24,6 +24,12 @@ interface BookDao {
     @Query("UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset WHERE key = :key")
     suspend fun savePosition(key: String, ordinal: Int, offset: Int)
 
+    @Query("UPDATE books SET externalLocation = :location WHERE key = :key")
+    suspend fun saveExternalLocation(key: String, location: String)
+
+    @Query("SELECT * FROM books WHERE sourceId = :sourceId AND sourceType = :sourceType LIMIT 1")
+    suspend fun findBySource(sourceId: String, sourceType: String): BookEntity?
+
     @Query("SELECT * FROM books")
     suspend fun getAll(): List<BookEntity>
 }

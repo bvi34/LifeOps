@@ -71,17 +71,34 @@ object NoteResolver {
     ): RefResolution {
         val reliability = reliabilityOf(sourceType)
         val anchor = ref.anchor
+
+        // Read-in-place (O'Reilly): there is no local text to match. The jump is a deep link to the
+        // source reader's own location token, so a present token means "jumpable" (best-effort).
+        if (anchor is TextAnchor.External) {
+            val state = if (anchor.location.isNotBlank()) State.RESOLVED else State.ORPHANED
+            return RefResolution(
+                state = state,
+                chapterOrdinal = null,
+                page = null,
+                range = null,
+                score = if (state == State.RESOLVED) 1.0 else 0.0,
+                frozenSnapshot = ref.quotedSnapshot,
+                reliability = Reliability.BEST_EFFORT
+            )
+        }
+
         if (sourceText == null) {
             return RefResolution(
                 State.SOURCE_UNAVAILABLE, anchorChapter(anchor), anchorPage(anchor),
                 null, 0.0, ref.quotedSnapshot, reliability
             )
         }
-        // Reuse the fuzzy resolver for both anchor kinds: a PDF anchor's quote is matched as flowing
-        // text on the page (positioned-glyph page/quads still drive the actual on-screen jump).
+        // Reuse the fuzzy resolver for the text-bearing kinds: a PDF anchor's quote is matched as
+        // flowing text on the page (positioned-glyph page/quads still drive the on-screen jump).
         val flowing = when (anchor) {
             is TextAnchor.Flowing -> anchor
             is TextAnchor.Pdf -> TextAnchor.Flowing(0, 0, anchor.quote)
+            is TextAnchor.External -> error("unreachable: External handled above")
         }
         val r = FuzzyAnchor.resolve(flowing, sourceText, minFuzzyScore)
         val state = when (r.confidence) {

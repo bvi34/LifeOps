@@ -54,9 +54,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun ReaderScreen(vm: ReaderViewModel) {
     val openBook by vm.openBook.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
+    val pdfSession by vm.pdfSession.collectAsStateWithLifecycle()
+    val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
 
     var browsingRoyalRoad by remember { mutableStateOf(false) }
     var viewingNotes by remember { mutableStateOf(false) }
+
+    // The PDF and O'Reilly tracks preempt the flowing reader and the library.
+    if (pdfSession != null) {
+        PdfReaderScreen(pdfSession!!, vm)
+        return
+    }
+    if (oreillySession != null) {
+        OreillyReaderScreen(oreillySession!!, vm)
+        return
+    }
 
     if (openBook == null) {
         when {
@@ -227,6 +239,41 @@ private fun NoteComposer(
     }
 }
 
+@Composable
+private fun AddOreillyDialog(onAdd: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var bookId by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add an O'Reilly book") },
+        text = {
+            Column {
+                Text(
+                    "Read-in-place: nothing is downloaded. We keep only a link to your spot and your notes.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                OutlinedTextField(
+                    value = bookId, onValueChange = { bookId = it },
+                    label = { Text("O'Reilly book id / ISBN") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    value = title, onValueChange = { title = it },
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onAdd(bookId.trim(), title.trim()) }, enabled = bookId.isNotBlank() && title.isNotBlank()) {
+                Text("Add")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryView(
@@ -237,19 +284,41 @@ private fun LibraryView(
 ) {
     val books by vm.books.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    var showOreilly by remember { mutableStateOf(false) }
+    val epubPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         if (bytes != null) vm.importEpub(bytes)
+    }
+    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        val title = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".pdf") ?: "PDF"
+        if (bytes != null) vm.importPdf(bytes, title)
+    }
+
+    if (showOreilly) {
+        AddOreillyDialog(
+            onAdd = { id, title -> vm.addOreillyBook(id, title); showOreilly = false },
+            onDismiss = { showOreilly = false }
+        )
     }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("Citation") }) }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
-            Button(onClick = { picker.launch("application/epub+zip") }, modifier = Modifier.fillMaxWidth()) {
+            Button(onClick = { epubPicker.launch("application/epub+zip") }, modifier = Modifier.fillMaxWidth()) {
                 Text("Import EPUB")
             }
+            OutlinedButton(
+                onClick = { pdfPicker.launch("application/pdf") },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Import PDF") }
+            OutlinedButton(
+                onClick = { showOreilly = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Add O'Reilly book") }
             OutlinedButton(
                 onClick = onBrowseRoyalRoad,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

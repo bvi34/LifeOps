@@ -30,6 +30,8 @@ data class BookEntity(
     // Reader position restore.
     val lastChapterOrdinal: Int = 0,
     val lastCharOffset: Int = 0,
+    // Read-in-place (O'Reilly) position token — the source reader's own opaque location.
+    val externalLocation: String? = null,
     val isFavorite: Boolean = false,
     val createdAt: Long
 )
