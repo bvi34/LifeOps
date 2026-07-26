@@ -38,8 +38,10 @@ class CaptureActivity : ComponentActivity() {
         }
         val app = application as CitationApplication
         lifecycleScope.launch {
-            val repo = app.repository.await()
-            val message = fileCapture(repo, text)
+            val message = runCatching {
+                val repo = app.repository.await()
+                fileCapture(repo, text)
+            }.getOrElse { "Couldn't save to Citation." }
             toastAndFinish(message)
         }
     }

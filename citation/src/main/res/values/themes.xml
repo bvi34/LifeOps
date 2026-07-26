@@ -5,11 +5,17 @@
     <style name="Theme.Citation" parent="android:Theme.Material.Light.NoActionBar" />
 
     <!-- Chromeless theme for the capture entry points: they receive text, file it, toast, and
-         finish, so they must never flash a window. Translucent + no title/animation. -->
+         finish, so they must never show visible chrome. It must be *translucent*, NOT
+         windowNoDisplay: the activity files the capture asynchronously (awaits the repository) and
+         finishes in that callback, but a windowNoDisplay activity is required to call finish() before
+         onResume() completes — doing async work under it crashes with "did not call finish() prior to
+         onResume() completing". A fully-transparent window shows nothing and lets the async work run. -->
     <style name="Theme.Citation.Capture" parent="android:Theme.Translucent.NoTitleBar">
-        <item name="android:windowNoDisplay">true</item>
         <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 
     <!-- Manual quick-capture (from the floating bubble): a translucent host for a small input
