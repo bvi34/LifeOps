@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Citation's **sovereign** database: books, chapters, notes, highlights, key watermarks, and sync
@@ -22,7 +24,7 @@ import androidx.room.RoomDatabase
         RrFictionEntity::class,
         RrChapterMetaEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class CitationDatabase : RoomDatabase() {
@@ -36,13 +38,20 @@ abstract class CitationDatabase : RoomDatabase() {
     companion object {
         @Volatile private var instance: CitationDatabase? = null
 
+        /** v1 → v2: add the nullable `lastOpenedAt` column that powers the Read tab's resume. */
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN lastOpenedAt INTEGER")
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }

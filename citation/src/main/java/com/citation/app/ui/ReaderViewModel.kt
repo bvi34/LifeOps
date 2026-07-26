@@ -29,6 +29,10 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     val notes: StateFlow<List<Note>> =
         repository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** The most recently opened book, driving the Read tab's resume card. */
+    val lastOpened: StateFlow<CitationRepository.BookSummary?> =
+        repository.lastOpened.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
 
@@ -62,6 +66,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun open(bookKey: String) {
         viewModelScope.launch {
+            repository.markOpened(bookKey) // stamp for the Read tab's resume
             when (repository.sourceTypeOf(bookKey)) {
                 SourceType.PDF -> _pdfSession.value = repository.pdfSession(bookKey)
                 SourceType.OREILLY -> _oreillySession.value = repository.oreillySession(bookKey)
@@ -78,6 +83,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     fun importPdf(bytes: ByteArray, title: String) {
         viewModelScope.launch {
             val key = repository.importPdf(bytes, title)
+            repository.markOpened(key)
             _status.value = "Imported PDF “$title”."
             _pdfSession.value = repository.pdfSession(key)
         }
@@ -86,6 +92,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     fun addOreillyBook(bookId: String, title: String) {
         viewModelScope.launch {
             val key = repository.addOreillyBook(bookId, title)
+            repository.markOpened(key)
             _oreillySession.value = repository.oreillySession(key)
         }
     }
@@ -129,6 +136,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             runCatching { repository.openRoyalRoad(fictionId) }
                 .onSuccess { book ->
                     openRrFictionId = fictionId
+                    book.key?.let { repository.markOpened(it.toString()) }
                     _openBook.value = book
                     _chapterOrdinal.value = 0
                     _status.value = "Opened “${book.metadata.title}”."
@@ -227,6 +235,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 return@launch
             }
             openRrFictionId = result.rrFictionId
+            repository.markOpened(bookKey)
             _openBook.value = result.book
             val target = repository.resolveNote(note).firstOrNull { it.chapterOrdinal != null && it.state.canJump }
             _chapterOrdinal.value = target?.chapterOrdinal ?: 0

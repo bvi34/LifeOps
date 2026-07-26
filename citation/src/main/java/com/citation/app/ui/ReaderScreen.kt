@@ -1,11 +1,8 @@
 package com.citation.app.ui
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -57,11 +54,8 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val pdfSession by vm.pdfSession.collectAsStateWithLifecycle()
     val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
 
-    var browsingRoyalRoad by remember { mutableStateOf(false) }
-    var viewingNotes by remember { mutableStateOf(false) }
-    var viewingStorage by remember { mutableStateOf(false) }
-
-    // The PDF and O'Reilly tracks preempt the flowing reader and the library.
+    // The immersive readers (PDF, O'Reilly, flowing text) each preempt the tab shell. When none is
+    // open, the app lands on the consolidated home with its bottom tabs.
     if (pdfSession != null) {
         PdfReaderScreen(pdfSession!!, vm)
         return
@@ -72,23 +66,7 @@ fun ReaderScreen(vm: ReaderViewModel) {
     }
 
     if (openBook == null) {
-        when {
-            browsingRoyalRoad -> RoyalRoadCatalogScreen(
-                onOpenFiction = { fictionId ->
-                    browsingRoyalRoad = false
-                    vm.openRoyalRoad(fictionId)
-                },
-                onBack = { browsingRoyalRoad = false }
-            )
-            viewingNotes -> NotesScreen(vm, onBack = { viewingNotes = false })
-            viewingStorage -> StorageScreen(vm, onBack = { viewingStorage = false })
-            else -> LibraryView(
-                vm, status,
-                onBrowseRoyalRoad = { browsingRoyalRoad = true },
-                onViewNotes = { viewingNotes = true },
-                onViewStorage = { viewingStorage = true }
-            )
-        }
+        CitationHome(vm)
     } else {
         val ordinal by vm.chapterOrdinal.collectAsStateWithLifecycle()
         val book = openBook!!
@@ -238,135 +216,6 @@ private fun NoteComposer(
                 enabled = quote.isNotBlank() && body.isNotBlank(),
                 modifier = Modifier.padding(start = 8.dp)
             ) { Text("Save passage note") }
-        }
-    }
-}
-
-@Composable
-private fun AddOreillyDialog(onAdd: (String, String) -> Unit, onDismiss: () -> Unit) {
-    var bookId by remember { mutableStateOf("") }
-    var title by remember { mutableStateOf("") }
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add an O'Reilly book") },
-        text = {
-            Column {
-                Text(
-                    "Read-in-place: nothing is downloaded. We keep only a link to your spot and your notes.",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-                OutlinedTextField(
-                    value = bookId, onValueChange = { bookId = it },
-                    label = { Text("O'Reilly book id / ISBN") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
-                OutlinedTextField(
-                    value = title, onValueChange = { title = it },
-                    label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = {
-            Button(onClick = { onAdd(bookId.trim(), title.trim()) }, enabled = bookId.isNotBlank() && title.isNotBlank()) {
-                Text("Add")
-            }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun LibraryView(
-    vm: ReaderViewModel,
-    status: String?,
-    onBrowseRoyalRoad: () -> Unit,
-    onViewNotes: () -> Unit,
-    onViewStorage: () -> Unit
-) {
-    val books by vm.books.collectAsStateWithLifecycle()
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var showOreilly by remember { mutableStateOf(false) }
-    val epubPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        if (bytes != null) vm.importEpub(bytes)
-    }
-    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-        val title = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".pdf") ?: "PDF"
-        if (bytes != null) vm.importPdf(bytes, title)
-    }
-
-    if (showOreilly) {
-        AddOreillyDialog(
-            onAdd = { id, title -> vm.addOreillyBook(id, title); showOreilly = false },
-            onDismiss = { showOreilly = false }
-        )
-    }
-
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Citation") }) }
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
-            Button(onClick = { epubPicker.launch("application/epub+zip") }, modifier = Modifier.fillMaxWidth()) {
-                Text("Import EPUB")
-            }
-            OutlinedButton(
-                onClick = { pdfPicker.launch("application/pdf") },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Import PDF") }
-            OutlinedButton(
-                onClick = { showOreilly = true },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Add O'Reilly book") }
-            OutlinedButton(
-                onClick = onBrowseRoyalRoad,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Browse Royal Road") }
-            OutlinedButton(
-                onClick = onViewNotes,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Notes") }
-            OutlinedButton(
-                onClick = onViewStorage,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Storage") }
-            OutlinedButton(
-                onClick = { vm.sync() },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Sync with LifeOps") }
-            status?.let {
-                Text(
-                    it,
-                    Modifier.fillMaxWidth().padding(top = 12.dp).clickable { vm.clearStatus() },
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-            if (books.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Your library is empty. Import an EPUB to start reading.")
-                }
-            } else {
-                Column(Modifier.padding(top = 16.dp)) {
-                    books.forEach { b ->
-                        Column(
-                            Modifier.fillMaxWidth().clickable { vm.open(b.key) }.padding(vertical = 12.dp)
-                        ) {
-                            Text(b.title, fontSize = 18.sp, fontFamily = FontFamily.Serif)
-                            b.author?.let { Text(it, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary) }
-                            Text(
-                                "${b.readingState} · ${b.acquisitionState}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }
