@@ -178,5 +178,18 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
+    /** Run a sync round with LifeOps on demand (drain outbox, consume acquire intents). */
+    fun sync() {
+        viewModelScope.launch {
+            _status.value = "Syncing with LifeOps…"
+            runCatching { repository.sync() }
+                .onSuccess { s ->
+                    _status.value = "Synced: ${s.sent} packet(s) up" +
+                        if (s.intentsCreated > 0) ", ${s.intentsCreated} book(s) added to wanted" else ""
+                }
+                .onFailure { _status.value = "Sync failed — will retry in the background." }
+        }
+    }
+
     fun clearStatus() { _status.value = null }
 }

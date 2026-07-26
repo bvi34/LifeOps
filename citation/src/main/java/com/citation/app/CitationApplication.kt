@@ -5,6 +5,7 @@ import com.citation.app.data.CitationRepository
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.store.FileStores
 import com.citation.app.work.RoyalRoadScheduler
+import com.citation.app.work.SyncWorker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
@@ -29,5 +30,7 @@ class CitationApplication : Application() {
         repository = appScope.async { CitationRepository.create(db, files) }
         // Register the periodic RR jobs (poll favourites, advance backfill, evict stale cache).
         RoyalRoadScheduler.schedule(this)
+        // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).
+        SyncWorker.schedule(this)
     }
 }

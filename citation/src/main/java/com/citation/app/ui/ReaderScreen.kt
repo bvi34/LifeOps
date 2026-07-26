@@ -258,6 +258,10 @@ private fun LibraryView(
                 onClick = onViewNotes,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Notes") }
+            OutlinedButton(
+                onClick = { vm.sync() },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Sync with LifeOps") }
             status?.let {
                 Text(
                     it,

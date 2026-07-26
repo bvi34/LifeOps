@@ -51,8 +51,9 @@ other feature bolts onto this spine.
 | **Ownership** | `store/Ownership`, `Store` | The two-store split as policy: only borrowed (RR) content is `DISPOSABLE`/evictable; owned files and all notes are `SOVEREIGN`. Eviction structurally cannot reach owned data. |
 | **Sync** | `sync/Mailbox`, `Packets`, `BookLifecycle`, `BindOrCreate` | Mailbox pattern (state/outbox + inbox, **monotonic version**, idempotent + resumable). Up: telemetry + note packets carrying `{sourceType, sourceId, frozen-context}`. Down: acquire-book intents. **Bind-or-create** reconciles a fuzzy center-authored book to a resolved artifact at one checkpoint. **Two orthogonal state machines** — acquisition (`wanted→resolving→acquired/unavailable`) and reading (`to-read→reading→done`) — never collapsed. |
 
-The walking skeleton is covered by JVM unit tests; together with the Royal Road engine and the note
-resolver below, **`:core` has 90 passing JVM unit tests** across 17 suites (run `gradle :core:test`).
+The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
+resolver, and the sync protocol below, **`:core` has 105 passing JVM unit tests** across 21 suites
+(run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -118,10 +119,25 @@ serials are registered as sovereign books on open, so **notes on borrowed source
 eviction of their chapter bodies. A **Notes screen** lists every note with its state badge and the
 frozen snapshot, and tapping one **jumps back to live context** (best-effort for borrowed).
 
-## Roadmap (task-list milestones 5–7, not yet built)
+## Sync seam (milestone 5 — core built + verified)
 
-5. **Sync seam** — the transport that drains the outbox to LifeOps and consumes acquire intents;
-   bind-or-create at resolution; both state machines surfaced.
+Citation is a peer on the LifeOps spine. The whole protocol is pure/JVM-tested in `:core`:
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Wire codec** | `sync/SyncCodec` | JSON for packets, intents, and envelopes (Gson tree model, explicit type tags). A note packet is **legible without the source** — the frozen `{sourceType, sourceId, title, author, snapshot, anchor}` is right on the wire. |
+| **Envelopes** | `sync/SyncEnvelope` | Outbound (unacked up-packets + our intent cursor) and inbound (new intents + their packet ack) — each carries the ack cursor that makes the monotonic-version protocol converge. |
+| **Engine** | `sync/SyncEngine` | `buildOutbound` snapshots what to send; `applyInbound` prunes the outbox to their ack, delivers intents, runs reconcile, and advances the cursor. Re-applying the same envelope is a no-op (safe retry). |
+| **Intent reconciler** | `sync/IntentReconciler` | Down-intent bind-or-create: fuzzy-match "acquire X by Y" to an existing book (dedup) or create a `wanted` one — and **never** flips a book to acquired (that's the reader's axis). |
+| **Transport** | `sync/FileEnvelopeStore` | The mailbox as two JSON files in a shared folder — no server; works offline; JVM-tested end to end. |
+
+**Android wiring:** the repository's mailbox now carries both directions; `sync()` writes the outbound
+envelope, applies LifeOps' response, and persists newly-`wanted` books (both state machines set from
+`BookLifecycle.wanted()`). A `SyncWorker` runs it periodically, and a "Sync with LifeOps" action runs
+it on demand.
+
+## Roadmap (task-list milestones 6–7, not yet built)
+
 6. **PDF + O'Reilly** — PDF render track (positioned glyphs, page+quads anchors); O'Reilly
    read-in-place (their WebView is the reader, no local content cache, deep-link back to position).
 7. **Storage visibility** — per-item + aggregate size, recoverability-tagged; visibility only, no

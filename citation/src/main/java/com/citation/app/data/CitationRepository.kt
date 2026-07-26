@@ -10,6 +10,7 @@ import com.citation.app.data.store.FileStores
 import com.citation.core.anchor.TextAnchor
 import com.citation.core.epub.EpubParser
 import com.citation.core.identity.IdentityKey
+import com.citation.core.identity.IdentitySet
 import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.key.KeyAllocator
@@ -22,11 +23,16 @@ import com.citation.core.note.PassageReference
 import com.citation.core.note.SourceDescriptor
 import com.citation.core.store.Ownership
 import com.citation.core.store.Store
+import com.citation.core.sync.AcquireBookIntent
 import com.citation.core.sync.AcquisitionState
+import com.citation.core.sync.BindOrCreate
 import com.citation.core.sync.BookLifecycle
+import com.citation.core.sync.FileEnvelopeStore
+import com.citation.core.sync.IntentReconciler
 import com.citation.core.sync.Mailbox
 import com.citation.core.sync.NotePacket
 import com.citation.core.sync.ReadingState
+import com.citation.core.sync.SyncEngine
 import com.citation.core.sync.UpPacket
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -44,7 +50,8 @@ class CitationRepository private constructor(
     private val db: CitationDatabase,
     private val files: FileStores,
     private val keys: KeyAllocator,
-    private val outbox: Mailbox<UpPacket, Nothing>,
+    // The mailbox now carries both directions: up-packets out, acquire intents in.
+    private val mailbox: Mailbox<UpPacket, AcquireBookIntent>,
     /** The Royal Road read loop (skim → buffer → cache → backfill → poll → evict). */
     val royalRoad: RoyalRoadCoordinator
 ) {
@@ -172,7 +179,7 @@ class CitationRepository private constructor(
         )
         val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now)
 
-        val versioned = outbox.post(NotePacket.of(note))
+        val versioned = mailbox.post(NotePacket.of(note))
 
         db.highlightDao().upsert(CitationMappers.highlightToEntity(highlight))
         db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
@@ -201,7 +208,7 @@ class CitationRepository private constructor(
             references = references,
             createdAt = now
         )
-        val versioned = outbox.post(NotePacket.of(note))
+        val versioned = mailbox.post(NotePacket.of(note))
         db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
         checkpointKey(EntityType.NOTE)
         persistSyncState()
@@ -236,7 +243,75 @@ class CitationRepository private constructor(
     }
 
     /** Outbound packets LifeOps hasn't acknowledged yet — what a sync pass would deliver. */
-    fun pendingUpPackets(): List<UpPacket> = outbox.outboxSince(0).map { it.payload }
+    fun pendingUpPackets(): List<UpPacket> = mailbox.outboxSince(0).map { it.payload }
+
+    /**
+     * Run one sync round with LifeOps over the file-drop mailbox: write our unacked packets up,
+     * then apply LifeOps' response — prune the acked packets and reconcile each acquire intent via
+     * **bind-or-create** (matching an existing book, or minting a new `wanted` one). Offline-safe:
+     * with no response file yet, it just leaves the outbound envelope for LifeOps to pick up.
+     */
+    suspend fun sync(now: Long = System.currentTimeMillis()): SyncSummary {
+        val engine = SyncEngine(mailbox)
+        val store = FileEnvelopeStore(java.io.File(files.sovereignDir, "sync"))
+        val sent = mailbox.outboxSince(0).size
+        store.writeOutbound(engine.buildOutbound())
+
+        val inbound = store.readInbound() ?: return SyncSummary(sent, intentsCreated = 0, intentsKnown = 0)
+
+        // Candidates for bind-or-create, snapshotted before applying (reconcile runs synchronously).
+        val candidates = db.bookDao().getAll().map(::toCandidate)
+        val toCreate = ArrayList<AcquireBookIntent>()
+        var known = 0
+        engine.applyInbound(inbound) { intent ->
+            when (IntentReconciler.reconcile(intent, candidates)) {
+                is IntentReconciler.Outcome.AlreadyKnown -> known++
+                is IntentReconciler.Outcome.CreateWanted -> toCreate.add(intent)
+            }
+        }
+        // Persist newly-wanted books (a fuzzy, center-authored placeholder on both state machines).
+        toCreate.forEach { intent ->
+            val key = keys.next(EntityType.BOOK)
+            val lifecycle = BookLifecycle.wanted()
+            db.bookDao().upsert(
+                BookEntity(
+                    key = key.toString(),
+                    title = intent.title,
+                    author = intent.author,
+                    sourceType = SourceType.INTERNAL.name,
+                    sourceId = null,
+                    language = null,
+                    acquisitionState = lifecycle.acquisition.name,
+                    readingState = lifecycle.reading.name,
+                    createdAt = now
+                )
+            )
+        }
+        checkpointKey(EntityType.BOOK)
+        persistSyncState()
+        return SyncSummary(sent, intentsCreated = toCreate.size, intentsKnown = known)
+    }
+
+    /** Build a bind-or-create candidate from a stored book, recovering its identity by source type. */
+    private fun toCandidate(e: BookEntity): BindOrCreate.Candidate {
+        val identity = when (e.sourceType) {
+            SourceType.EPUB.name -> e.sourceId?.let { IdentitySet(IdentityKey.Isbn(it)) }
+            SourceType.PDF.name -> e.sourceId?.let { IdentitySet(IdentityKey.PdfSha(it)) }
+            SourceType.ROYAL_ROAD.name ->
+                e.sourceId?.toLongOrNull()?.let { IdentitySet(IdentityKey.RoyalRoadId(it)) }
+            else -> null
+        } ?: IdentitySet(emptyList())
+        return BindOrCreate.Candidate(
+            key = EntityKey.parse(e.key)!!,
+            identity = identity,
+            title = e.title,
+            author = e.author,
+            lifecycle = CitationMappers.lifecycleOf(e)
+        )
+    }
+
+    /** Outcome of a sync round, for status display. */
+    data class SyncSummary(val sent: Int, val intentsCreated: Int, val intentsKnown: Int)
 
     /** Build a note's frozen source descriptor from the book's stored identity (title/author/id). */
     private suspend fun descriptorFor(book: Book): SourceDescriptor {
@@ -273,7 +348,7 @@ class CitationRepository private constructor(
 
     private suspend fun persistSyncState() {
         db.syncStateDao().saveSyncState(
-            SyncStateEntity(0, outbox.currentOutVersion, outbox.inboxCursor)
+            SyncStateEntity(0, mailbox.currentOutVersion, mailbox.inboxCursor)
         )
     }
 
@@ -290,10 +365,10 @@ class CitationRepository private constructor(
         suspend fun create(db: CitationDatabase, files: FileStores): CitationRepository {
             val watermarks = db.syncStateDao().watermarks().associate { it.type to it.highWater }
             val keys = KeyAllocator(seed = watermarks)
-            val outbox = Mailbox<UpPacket, Nothing>()
-            db.syncStateDao().syncState()?.let { outbox.restore(it.outVersion, it.inboxCursor) }
+            val mailbox = Mailbox<UpPacket, AcquireBookIntent>()
+            db.syncStateDao().syncState()?.let { mailbox.restore(it.outVersion, it.inboxCursor) }
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, outbox, royalRoad)
+            return CitationRepository(db, files, keys, mailbox, royalRoad)
         }
     }
 }

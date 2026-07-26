@@ -14,6 +14,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
+    // Gson is pure JVM (used only for the sync wire codec), so :core stays Android-free + testable.
+    implementation(libs.gson)
 }
 
 java {
