@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.db.dao.CounterWeeklyTotal
 import com.lifeops.app.data.model.CounterEvent
+import com.lifeops.app.data.model.CounterEventWeather
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.util.DateUtil
 import java.time.Instant
@@ -32,6 +33,25 @@ private fun formatInstant(iso: String): String = try {
 
 private fun formatWeek(weekKey: Int): String =
     "Week of " + DateUtil.weekStartForIndex(weekKey).format(WEEK_DAY_FMT)
+
+/**
+ * A compact one-line summary of the conditions captured with an event — temperature (with
+ * "feels like" when it differs), the short forecast, wind, humidity, and the location it came
+ * from. Returns null when nothing meaningful was recorded, so the row can omit the line entirely.
+ */
+private fun formatWeather(w: CounterEventWeather): String? {
+    val parts = mutableListOf<String>()
+    w.temperatureF?.let { temp ->
+        val feels = w.feelsLikeF
+        parts += if (feels != null && feels != temp) "$temp°F (feels $feels°)" else "$temp°F"
+    }
+    w.conditions?.takeIf { it.isNotBlank() }?.let { parts += it }
+    w.windMph?.takeIf { it > 0 }?.let { parts += "$it mph wind" }
+    w.humidityPct?.let { parts += "$it% humidity" }
+    if (parts.isEmpty()) return null
+    val summary = parts.joinToString("  ·  ")
+    return w.locationName?.takeIf { it.isNotBlank() }?.let { "$summary  ·  $it" } ?: summary
+}
 
 @Composable
 fun CounterDetailScreen(
@@ -124,6 +144,13 @@ private fun EventRow(event: CounterEvent) {
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(formatInstant(event.occurredAt), style = MaterialTheme.typography.bodyMedium)
+            event.weather?.let { formatWeather(it) }?.let { summary ->
+                Text(
+                    summary,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
             if (!event.note.isNullOrBlank()) {
                 Text(event.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
             }

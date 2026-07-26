@@ -92,6 +92,39 @@ class WeatherRepository(
             assembleReport(location, snapshot, alerts.map { it.toModel() })
         }
 
+    /**
+     * The freshest cached conditions for the user's primary (first-sorted) tracked location, paired
+     * with that location, or null when no location is tracked, nothing has been cached yet, or the
+     * newest snapshot is staler than [maxAgeMinutes]. Cache-only — never touches the network — so
+     * callers on a hot path (e.g. stamping weather onto a counter tick) never block or fail. The
+     * staleness guard keeps a long-stale reading (device offline for a while) from being recorded as
+     * if it were the conditions right now.
+     */
+    suspend fun primaryCurrentConditions(
+        maxAgeMinutes: Long = STAMP_MAX_AGE_MINUTES
+    ): Pair<WeatherLocation, CurrentConditions>? {
+        val location = weatherDao.getAllLocations().firstOrNull() ?: return null
+        val snapshot = weatherDao.getLatestSnapshot(location.id) ?: return null
+        if (snapshotAgeMinutes(snapshot.fetchedAt) > maxAgeMinutes) return null
+        val current = CurrentConditions(
+            temperatureF = snapshot.temperatureF,
+            feelsLikeF = snapshot.feelsLikeF,
+            humidityPct = snapshot.humidityPct,
+            wind = Wind(snapshot.windSpeedMph, snapshot.windDirection, snapshot.windGustMph),
+            precipitationProbabilityPct = snapshot.precipitationProbabilityPct,
+            uvIndex = snapshot.uvIndex,
+            shortForecast = snapshot.shortForecast,
+            observedAt = snapshot.observedAt
+        )
+        return location.toModel() to current
+    }
+
+    /** Minutes since [fetchedAtIso]; treats an unparseable stamp as infinitely old (never used). */
+    private fun snapshotAgeMinutes(fetchedAtIso: String): Long = runCatching {
+        java.time.Duration.between(java.time.Instant.parse(fetchedAtIso), java.time.Instant.now())
+            .toMinutes()
+    }.getOrDefault(Long.MAX_VALUE)
+
     suspend fun getCachedReport(locationId: String): WeatherReport? {
         val location = weatherDao.getLocation(locationId) ?: return null
         val snapshot = weatherDao.getLatestSnapshot(locationId) ?: return null
@@ -234,5 +267,12 @@ class WeatherRepository(
     companion object {
         /** Retain a short snapshot history per location; the newest is what the UI reads. */
         const val SNAPSHOTS_KEPT = 8
+
+        /**
+         * How stale a cached snapshot may be and still be recorded as the conditions "right now"
+         * when stamping a counter tick. Three hours comfortably spans the refresh worker's 2-hour
+         * cadence (one missed cycle) without letting a genuinely old reading masquerade as current.
+         */
+        const val STAMP_MAX_AGE_MINUTES = 180L
     }
 }

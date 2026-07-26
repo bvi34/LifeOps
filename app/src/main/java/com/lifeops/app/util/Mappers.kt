@@ -35,7 +35,18 @@ fun Task.toEntity() = TaskEntity(
 fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt, isHabit, reminderHour)
 fun Counter.toEntity() = CounterEntity(id, name, categoryId, isArchived, sortOrder, createdAt, isHabit, reminderHour)
 
-fun CounterEventEntity.toModel() = CounterEvent(id, counterId, weekKey, occurredAt, delta, note)
+fun CounterEventEntity.toModel(): CounterEvent {
+    val weather = CounterEventWeather(
+        temperatureF = weatherTempF,
+        feelsLikeF = weatherFeelsLikeF,
+        humidityPct = weatherHumidityPct,
+        windMph = weatherWindMph,
+        conditions = weatherConditions,
+        locationName = weatherLocationName,
+        observedAt = weatherObservedAt
+    )
+    return CounterEvent(id, counterId, weekKey, occurredAt, delta, note, weather.takeUnless { it.isEmpty })
+}
 
 fun TaskNoteEntity.toModel() = TaskNote(id, taskId, content, createdAt, subtaskId)
 fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtaskId)

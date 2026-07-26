@@ -8,6 +8,7 @@ import com.lifeops.app.data.db.entities.CounterEntity
 import com.lifeops.app.data.db.entities.CounterEventEntity
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.CounterEvent
+import com.lifeops.app.data.model.CounterEventWeather
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
@@ -16,9 +17,20 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.UUID
 
+/**
+ * Supplies the conditions to stamp onto a live counter tick. Kept as a tiny functional seam (rather
+ * than a direct WeatherRepository dependency) so the counter layer stays weather-source-agnostic and
+ * testable, and so a null provider simply means "don't capture weather". Returns null whenever no
+ * usable reading is available — the repository then records the tick with no weather.
+ */
+fun interface CounterWeatherProvider {
+    suspend fun currentConditions(): CounterEventWeather?
+}
+
 class CounterRepository(
     private val context: Context,
-    private val counterDao: CounterDao
+    private val counterDao: CounterDao,
+    private val weatherProvider: CounterWeatherProvider? = null
 ) {
 
     // --- Counters list / lifecycle (same shape as ProjectRepository) ---
@@ -160,8 +172,17 @@ class CounterRepository(
         delta: Int = 1,
         note: String? = null
     ) {
-        counterDao.insertEvent(buildEvent(counterId, occurredAt, delta, note))
+        // Only a live tick gets weather — a backdated/bulk entry ([occurredAt] far from now) has no
+        // matching current conditions, and stamping "now" onto a past day would be a lie. The
+        // provider is also allowed to return null (no location, empty/stale cache), in which case
+        // the event simply carries no weather.
+        val weather = if (isLiveTick(occurredAt)) weatherProvider?.currentConditions() else null
+        counterDao.insertEvent(buildEvent(counterId, occurredAt, delta, note, weather))
     }
+
+    /** True when [occurredAt] is close enough to now that current conditions describe it. */
+    private fun isLiveTick(occurredAt: Long): Boolean =
+        kotlin.math.abs(System.currentTimeMillis() - occurredAt) <= LIVE_TICK_WINDOW_MS
 
     /**
      * Backfill convenience: logEvent with an explicit [delta] — "five times Tuesday" is
@@ -176,13 +197,35 @@ class CounterRepository(
         note: String? = null
     ) = logEvent(counterId, occurredAt, delta, note)
 
-    private fun buildEvent(counterId: String, occurredAt: Long, delta: Int, note: String?) =
+    private fun buildEvent(
+        counterId: String,
+        occurredAt: Long,
+        delta: Int,
+        note: String?,
+        weather: CounterEventWeather?
+    ) =
         CounterEventEntity(
             id = UUID.randomUUID().toString(),
             counterId = counterId,
             weekKey = DateUtil.weekIndexFor(occurredAt),
             occurredAt = DateUtil.isoFromEpoch(occurredAt),
             delta = delta,
-            note = note
+            note = note,
+            weatherTempF = weather?.temperatureF,
+            weatherFeelsLikeF = weather?.feelsLikeF,
+            weatherHumidityPct = weather?.humidityPct,
+            weatherWindMph = weather?.windMph,
+            weatherConditions = weather?.conditions,
+            weatherLocationName = weather?.locationName,
+            weatherObservedAt = weather?.observedAt
         )
+
+    companion object {
+        /**
+         * How near "now" an event's [occurredAt] must be to count as a live tick worth stamping with
+         * current weather. Ten minutes tolerates entry lag and clock skew while still excluding
+         * deliberately backdated or bulk-backfilled entries.
+         */
+        private const val LIVE_TICK_WINDOW_MS = 10 * 60 * 1000L
+    }
 }
