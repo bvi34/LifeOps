@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -85,6 +86,7 @@ fun RunScreen(viewModel: RunViewModel, onBack: () -> Unit) {
 
 // --- Loadout -------------------------------------------------------------------------------------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
@@ -314,6 +316,7 @@ private fun CommitCard(
 
 // --- Live run ------------------------------------------------------------------------------------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Unit) {
     val ui by viewModel.uiState.collectAsStateWithLifecycle()
