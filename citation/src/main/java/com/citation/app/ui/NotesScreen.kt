@@ -73,6 +73,7 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); editing = null },
             onJump = { vm.jumpToNote(note); editing = null },
+            onDelete = { vm.deleteNote(note.key.toString()); editing = null },
             onDismiss = { editing = null }
         )
     }
@@ -142,11 +143,12 @@ private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
  * appears; otherwise you just read the frozen snapshot and write your note.
  */
 @Composable
-private fun NoteDetailDialog(
+fun NoteDetailDialog(
     note: Note,
     onSave: (String) -> Unit,
     onJump: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null
 ) {
     var body by remember(note.key) { mutableStateOf(note.body) }
     val canJump = note.source.bookKey != null
@@ -178,9 +180,14 @@ private fun NoteDetailDialog(
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
-                if (canJump) {
-                    TextButton(onClick = onJump, modifier = Modifier.padding(top = 4.dp)) {
-                        Text("Jump to source")
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                    if (canJump) {
+                        TextButton(onClick = onJump) { Text("Jump to source") }
+                    }
+                    onDelete?.let {
+                        TextButton(onClick = it) {
+                            Text("Delete", color = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }

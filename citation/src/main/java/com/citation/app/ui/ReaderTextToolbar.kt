@@ -74,16 +74,22 @@ class ReaderTextToolbar(private val view: View) : TextToolbar {
     }
 
     /**
-     * Read the current selection by borrowing the copy the menu already exposes. Returns "" if there
-     * is nothing selected, so callers can no-op gracefully.
+     * Read the current selection by borrowing the copy the menu already exposes, then put the
+     * clipboard back the way we found it — extracting the passage shouldn't quietly overwrite whatever
+     * the reader had copied. Returns "" if there is nothing selected, so callers can no-op gracefully.
      */
     private fun selectedText(): String {
         val copy = onCopyRequested ?: return ""
-        copy() // places the selection on the clipboard (synchronous on Android)
         val clipboard = view.context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-        val clip = clipboard?.primaryClip ?: return ""
-        if (clip.itemCount == 0) return ""
-        return clip.getItemAt(0)?.coerceToText(view.context)?.toString().orEmpty()
+        val previous = clipboard?.primaryClip
+        copy() // places the selection on the clipboard (synchronous on Android)
+        val clip = clipboard?.primaryClip
+        val text = if (clip != null && clip.itemCount > 0) {
+            clip.getItemAt(0)?.coerceToText(view.context)?.toString().orEmpty()
+        } else ""
+        // Restore the reader's prior clipboard contents (best effort; nothing to restore if empty).
+        if (previous != null) runCatching { clipboard.setPrimaryClip(previous) }
+        return text
     }
 
     private inner class Callback(private var rect: Rect) : ActionMode.Callback2() {
