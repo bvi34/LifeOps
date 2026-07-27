@@ -45,10 +45,23 @@ object EquipmentUpgrades {
             StatContribution(Stat.MINE_TRIGGER, Scope.GLOBAL, Op.ADD_PERCENT, 0.40f)),
     )
 
+    /** Decoy pool — dedicated DECOY_* stats. Grows the lure's numbers and can arm a death blast. */
+    val DECOY: List<Upgrade> = listOf(
+        Upgrade("d_count", "+1 decoy",
+            StatContribution(Stat.DECOY_COUNT, Scope.GLOBAL, Op.FLAT, 1f)),
+        Upgrade("d_hp", "+60% decoy durability",
+            StatContribution(Stat.DECOY_HP, Scope.GLOBAL, Op.ADD_PERCENT, 0.60f)),
+        Upgrade("d_range", "+35% decoy lure range",
+            StatContribution(Stat.DECOY_RANGE, Scope.GLOBAL, Op.ADD_PERCENT, 0.35f)),
+        Upgrade("d_blast", "decoys detonate when destroyed",
+            StatContribution(Stat.DECOY_BLAST_RADIUS, Scope.GLOBAL, Op.FLAT, 55f)),
+    )
+
     /** The pool an equipment artifact rolls from, by its modifier id. Empty for non-equipment. */
     fun poolFor(equipmentId: String): List<Upgrade> = when (equipmentId) {
         "turret", "sentry_array" -> TURRET
         "mines" -> MINES
+        "decoy" -> DECOY
         else -> emptyList()
     }
 }

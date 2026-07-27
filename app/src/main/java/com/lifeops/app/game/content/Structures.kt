@@ -61,6 +61,16 @@ enum class StructureType(
         maxHp = 3f,
         blocks = true,
         buildable = true,
+    ),
+    // The Decoy equipment (DESIGN.md §9): engine-deployed, non-blocking, no fire. A lure that soaks
+    // aggro — enemies path to it and smash it. Deployed with build-scaled HP (DECOY_HP), not this
+    // base, which is only a floor. Persists until destroyed, then the equipment redeploys it.
+    DECOY(
+        displayName = "Decoy",
+        cost = 0,
+        maxHp = 5f,
+        blocks = false,
+        buildable = false,
     );
 
     val isTurret: Boolean get() = fireRate > 0f

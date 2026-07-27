@@ -193,6 +193,21 @@ object StoreCatalog {
             category = ArtifactCategory.COMBAT_EQUIPMENT,
         ),
     )
+    private val DECOY = Item.ArtifactItem(
+        id = "decoy", category = Category.EQUIPMENT,
+        modifier = Modifier(
+            id = "decoy", name = "Decoy",
+            description = "Rank 1 plants a decoy that lures distant enemies off you; later ranks roll a random decoy upgrade.",
+            attachesTo = AttachTarget.ENTITY, maxRank = 4,
+            rankContributions = listOf(
+                StatContribution(Stat.DECOY_COUNT, Scope.GLOBAL, Op.FLAT, 1f), // rank 1: the first decoy
+                StatContribution(Stat.DECOY_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // ranks 2-4: a rolled
+                StatContribution(Stat.DECOY_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // decoy upgrade from
+                StatContribution(Stat.DECOY_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // EquipmentUpgrades.DECOY.
+            ),
+            category = ArtifactCategory.COMBAT_EQUIPMENT,
+        ),
+    )
 
     // --- Guns (§4). Fully data-authored weapons; picked → swap, owned → loadout. -----------------------
     private val SMG = Item.GunItem(
@@ -229,7 +244,7 @@ object StoreCatalog {
         RAPID_FIRE, MUZZLE_VELOCITY, GUNSLINGER, PREDATOR, QUARTERMASTER,
         PENETRATION, RICOCHET, EXPLOSIVE_ROUNDS,
         // Equipment (100)
-        SENTRY_ARRAY, MINES,
+        SENTRY_ARRAY, MINES, DECOY,
         // Guns (150)
         SMG, HAND_CANNON,
     )

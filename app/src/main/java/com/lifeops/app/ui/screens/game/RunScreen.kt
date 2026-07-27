@@ -442,6 +442,7 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                     StructureType.TURRET -> TURRET_COLOR    // artifact auto-turret
                     StructureType.SENTRY -> SENTRY_COLOR    // static gold turret
                     StructureType.BARRICADE -> BARRICADE_COLOR
+                    StructureType.DECOY -> DECOY_COLOR      // aggro lure
                 }
                 // Auto-turrets fade toward transparent as their TTL runs out, telegraphing the despawn.
                 val alpha = if (s.artifactTurret) (0.35f + 0.65f * s.ttlFrac) else 1f
@@ -450,6 +451,10 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 if (s.type.isTurret) {
                     val a = atan2(s.aim.y, s.aim.x)
                     drawLine(Color(0xFFB0BEC5).copy(alpha = alpha), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
+                }
+                // Decoy: a bright beacon core so it reads as a lure, not a wall.
+                if (s.type == StructureType.DECOY) {
+                    drawCircle(color = Color.White.copy(alpha = 0.85f), radius = half * 0.45f, center = c)
                 }
             }
 
@@ -1079,6 +1084,7 @@ private val BOSS_COLOR = Color(0xFFAB47BC)
 private val MUZZLE_COLOR = Color(0xFFFFF59D)
 private val EXPLOSION_COLOR = Color(0xFFFF7043)
 private val MINE_COLOR = Color(0xFFFFA726)
+private val DECOY_COLOR = Color(0xFFAB47BC)
 private val HURT_FLASH_COLOR = Color(0xFFEF5350)
 private val AMMO_COLOR = Color(0xFF90A4AE)
 private val SPIN_COLOR = Color(0xFFFFB300)

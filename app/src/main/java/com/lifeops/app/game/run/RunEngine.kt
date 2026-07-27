@@ -90,6 +90,8 @@ class RunEngine(
     private var turretDeployTimer = 0f
     /** Cooldown between mine deployments, so the Mines equipment sows them in over time. */
     private var mineDeployTimer = 0f
+    /** Cooldown between decoy deployments, so the Decoy equipment replants them as they're torn down. */
+    private var decoyDeployTimer = 0f
 
     /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
      *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
@@ -171,6 +173,7 @@ class RunEngine(
         fireWeapon(clamped, input)
         updateArtifactTurrets(clamped)
         updateMines(clamped)
+        updateDecoys(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
         resolveEnemyProjectileBlocks()
@@ -324,20 +327,57 @@ class RunEngine(
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
-            // Open arena: beeline straight at the player (Geometry Wars), bounded by the active edges,
-            // but blocked by placed structures — which the enemy attacks instead of walking through.
-            val dir = (player.pos - e.pos).normalized()
-            val delta = dir * (e.moveSpeed * dt)
-            var p = e.pos
-            val here = structureAt(p)
-            val tryX = Vec2(p.x + delta.x, p.y)
-            val sX = structureAt(tryX)
-            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e) else p = tryX
-            val tryY = Vec2(p.x, p.y + delta.y)
-            val sY = structureAt(tryY)
-            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
-            e.pos = arena.clamp(p, e.type.radius)
+            // Most enemies beeline the player (Geometry Wars); rushers make for the nearest base, and
+            // a decoy pulls any enemy that has strayed beyond its lure range. A targeted structure in
+            // reach is smashed on the spot rather than orbited.
+            val targetStructure = targetStructureFor(e)
+            if (targetStructure != null &&
+                e.pos.distanceTo(targetStructure.pos) <= e.type.radius + arena.cellSize * 0.6f) {
+                attackStructure(targetStructure, e)
+                continue
+            }
+            moveEnemyToward(e, targetStructure?.pos ?: player.pos, dt)
         }
+    }
+
+    /** Slide [e] toward [target] one axis at a time, attacking any *blocking* structure in the way. */
+    private fun moveEnemyToward(e: Enemy, target: Vec2, dt: Float) {
+        val dir = (target - e.pos).normalized()
+        val delta = dir * (e.moveSpeed * dt)
+        var p = e.pos
+        val here = structureAt(p)
+        val tryX = Vec2(p.x + delta.x, p.y)
+        val sX = structureAt(tryX)
+        if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e) else p = tryX
+        val tryY = Vec2(p.x, p.y + delta.y)
+        val sY = structureAt(tryY)
+        if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
+        e.pos = arena.clamp(p, e.type.radius)
+    }
+
+    /**
+     * Which structure [e] is hunting, or null to chase the player (DESIGN.md §9). Rushers prioritise
+     * the nearest base — they're the base-breakers — so they'll tear down turrets/decoys before the
+     * player. Everyone else is pulled to the nearest decoy only once they've strayed beyond its lure
+     * range from the player, so close pressure still lands on you while the outer swarm peels off.
+     */
+    private fun targetStructureFor(e: Enemy): Structure? {
+        if (structures.isEmpty()) return null
+        if (e.type == EnemyType.RUSHER) return nearestStructure(e.pos) { true }
+        val decoy = nearestStructure(e.pos) { it.type == StructureType.DECOY } ?: return null
+        val lure = stats.resolve(Stat.DECOY_RANGE)
+        return if (e.pos.distanceTo(player.pos) > lure) decoy else null
+    }
+
+    private inline fun nearestStructure(from: Vec2, predicate: (Structure) -> Boolean): Structure? {
+        var best: Structure? = null
+        var bestDist = Float.MAX_VALUE
+        for (s in structures) {
+            if (!s.alive || !predicate(s)) continue
+            val d = from.distanceTo(s.pos)
+            if (d < bestDist) { bestDist = d; best = s }
+        }
+        return best
     }
 
     private fun attackStructure(s: Structure, e: Enemy) {
@@ -386,6 +426,11 @@ class RunEngine(
             if (s.ttl != Float.POSITIVE_INFINITY) s.ttl -= dt // auto-turrets age toward expiry
             if (!s.alive) {
                 occupancy.remove(cellKey(s.col, s.row))
+                // A destroyed decoy detonates if the death-blast upgrade is owned (DESIGN.md §9).
+                if (s.type == StructureType.DECOY) {
+                    val blast = stats.resolve(Stat.DECOY_BLAST_RADIUS)
+                    if (blast > 0f) explode(s.pos, blast, DECOY_BLAST_DAMAGE, directTargetId = -1)
+                }
                 effects.add(RunEffect(s.pos, EffectKind.DEATH_BURST, worldRadius = arena.cellSize * 0.5f, ttl = BURST_SECONDS))
                 it.remove()
                 continue
@@ -496,6 +541,36 @@ class RunEngine(
         val dist = rng.nextFloat(MINE_MIN_DIST, MINE_MAX_DIST)
         val pos = arena.clamp(Vec2(player.pos.x + cos(ang) * dist, player.pos.y + sin(ang) * dist), 6f)
         mines.add(Mine(id = nextId++, pos = pos, arming = MINE_ARM_TIME))
+    }
+
+    /**
+     * The Decoy equipment (DESIGN.md §9): keep [Stat.DECOY_COUNT] decoys planted near the player,
+     * replanting on a cooldown as enemies tear them down. Each is a non-blocking structure deployed
+     * with build-scaled HP; the targeting layer routes distant aggro onto it.
+     */
+    private fun updateDecoys(dt: Float) {
+        val desired = stats.resolve(Stat.DECOY_COUNT).toInt()
+        if (desired <= 0) return
+        if (decoyDeployTimer > 0f) decoyDeployTimer -= dt
+        val current = structures.count { it.type == StructureType.DECOY }
+        if (current < desired && decoyDeployTimer <= 0f) {
+            if (deployDecoy()) decoyDeployTimer = DECOY_DEPLOY_INTERVAL
+        }
+    }
+
+    /** Plant one decoy at the nearest free grid cell to the player, with build-scaled durability. */
+    private fun deployDecoy(): Boolean {
+        val cell = freeCellNearPlayer() ?: return false
+        val (col, row) = cell
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        val hp = stats.resolve(Stat.DECOY_HP).coerceAtLeast(1f)
+        val s = Structure(
+            id = nextId++, type = StructureType.DECOY, col = col, row = row, pos = center,
+            hp = hp, maxHp = hp,
+        )
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
+        return true
     }
 
     /** Search grid cells outward from the player's cell for the first free, in-arena, non-player cell. */
@@ -1257,6 +1332,8 @@ class RunEngine(
         const val MINE_MIN_DIST = 45f           // ring around the player a mine is sown within
         const val MINE_MAX_DIST = 120f
         const val TWO_PI = (2.0 * Math.PI).toFloat()
+        const val DECOY_DEPLOY_INTERVAL = 2.0f  // seconds between (re)planting a decoy (§9)
+        const val DECOY_BLAST_DAMAGE = 60f       // damage of a destroyed decoy's death blast, if upgraded
         // Sniper "never reaches end of range" (§4): a lifetime long enough to cross the max arena at
         // its projectile speed, so range never clips its shots — only a hit or the arena edge does.
         const val UNLIMITED_LIFE = 6f

@@ -332,6 +332,19 @@ engine keeps stocked near the player and detonates for an area blast on contact;
 ranks 2+ roll from `EquipmentUpgrades.MINES`. A new equipment is a deploy/behaviour
 in the engine reading its own stat + a pool in the registry.
 
+**Enemy targeting + the Decoy.** Enemies used to hardcode "beeline the player";
+now each enemy resolves a target each frame (`targetStructureFor`). **Rushers**
+are base-breakers — they make for the nearest structure (turret / sentry /
+barricade / decoy) before the player, so defences actually draw them. The
+**Decoy** is the third equipment: a non-blocking `StructureType.DECOY` the engine
+plants near the player (build-scaled `DECOY_HP`, replanted as it's torn down) that
+**hijacks aggro** — any *non-rusher* enemy that has strayed beyond `DECOY_RANGE`
+of the player peels off to attack the nearest decoy, so close pressure still lands
+on you while the outer swarm is pulled off. Its pool (`EquipmentUpgrades.DECOY`)
+rolls +count / +durability / +lure range / detonate-on-death. A targeted
+non-blocking structure is attacked on reach (it can't be walked-through-and-hit
+like a wall), so a decoy only takes damage from enemies that *chose* it.
+
 ---
 
 ## 10. Build order
