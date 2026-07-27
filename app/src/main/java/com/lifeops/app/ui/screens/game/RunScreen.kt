@@ -9,6 +9,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -521,13 +522,18 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
 
         RunHud(snapshot, Modifier.align(Alignment.TopStart))
 
-        // Build palette: pick a tool, then tap the arena to place it. Tap the active tool to clear it.
+        // Bottom control cluster: the build palette, on-demand reload, and the optional
+        // arena-expansion buy all share one bottom-aligned FlowRow. Keeping them in a single
+        // wrapping row lets the buttons flow onto extra lines on narrow screens instead of
+        // overlapping (the palette and the expansion buy previously collided in the center).
         if (snapshot.status == RunStatus.RUNNING) {
-            Row(
+            FlowRow(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
-                    .padding(start = 12.dp, bottom = 28.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 28.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 // Only gold-buy defenses appear here; the turret is now the auto-deployed Turret artifact.
                 StructureType.values().filter { it.buildable }.forEach { type ->
@@ -550,20 +556,15 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                     onClick = { engine.reload() },
                     enabled = !snapshot.reloading && snapshot.ammo < snapshot.magazine
                 ) { Text(reloadLabel) }
-            }
-        }
 
-        // Widen the arena for gold (the "unlock to widen the space" §7 sink).
-        snapshot.expand?.let { prompt ->
-            if (snapshot.status == RunStatus.RUNNING) {
-                Button(
-                    onClick = { engine.buyExpansion() },
-                    enabled = prompt.affordable,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 28.dp)
-                ) {
-                    Text("Expand Arena — ${prompt.cost}g")
+                // Widen the arena for gold (the "unlock to widen the space" §7 sink).
+                snapshot.expand?.let { prompt ->
+                    Button(
+                        onClick = { engine.buyExpansion() },
+                        enabled = prompt.affordable
+                    ) {
+                        Text("Expand Arena — ${prompt.cost}g")
+                    }
                 }
             }
         }
