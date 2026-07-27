@@ -91,6 +91,22 @@ object StoreCatalog {
             ),
         )
 
+    /**
+     * A passive whose ranks lift *different* stats in turn, so one artifact grows two axes at once
+     * (the rank count is the number of rows). Still pure additive stat math (§5) — just a richer
+     * shape than the single-stat [passive] above.
+     */
+    private fun multiPassive(id: String, name: String, description: String, contributions: List<StatContribution>) =
+        Item.ArtifactItem(
+            id = id, category = Category.PASSIVE,
+            modifier = Modifier(
+                id = id, name = name, description = description,
+                attachesTo = AttachTarget.ENTITY, maxRank = contributions.size,
+                rankContributions = contributions,
+                category = ArtifactCategory.STAT_SUPPORT,
+            ),
+        )
+
     private val EAGLE_EYE = passive("eagle_eye", "Eagle Eye", "+5% crit chance per rank.",
         Stat.CRIT_CHANCE, Scope.AIMED, 0.05f, op = Op.FLAT)
     private val SOFT_POINT = passive("soft_point", "Soft Point", "+20% crit damage per rank.",
@@ -101,6 +117,40 @@ object StoreCatalog {
         Stat.PICKUP_RADIUS, Scope.GLOBAL, 0.20f)
     private val QUICK_STUDY = passive("quick_study", "Quick Study", "+15% XP gain per rank.",
         Stat.XP_GAIN, Scope.GLOBAL, 0.15f)
+    // Stats the baseline artifacts don't cover yet — fire rate and projectile speed on the aimed weapon.
+    private val RAPID_FIRE = passive("rapid_fire", "Rapid Fire", "+12% fire rate per rank.",
+        Stat.FIRE_RATE, Scope.AIMED, 0.12f)
+    private val MUZZLE_VELOCITY = passive("muzzle_velocity", "Muzzle Velocity", "+15% projectile speed per rank.",
+        Stat.PROJECTILE_SPEED, Scope.AIMED, 0.15f)
+
+    // Multi-axis passives — one artifact, two growing stats. Richer picks for a build to lean into.
+    private val GUNSLINGER = multiPassive(
+        "gunslinger", "Gunslinger", "Alternates +15% aimed damage and +15% fire rate each rank.",
+        listOf(
+            StatContribution(Stat.DAMAGE, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+            StatContribution(Stat.FIRE_RATE, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+            StatContribution(Stat.DAMAGE, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+            StatContribution(Stat.FIRE_RATE, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+        ),
+    )
+    private val PREDATOR = multiPassive(
+        "predator", "Predator", "Alternates +8% crit chance and +30% crit damage each rank.",
+        listOf(
+            StatContribution(Stat.CRIT_CHANCE, Scope.AIMED, Op.FLAT, 0.08f),
+            StatContribution(Stat.CRIT_MULT, Scope.AIMED, Op.ADD_PERCENT, 0.30f),
+            StatContribution(Stat.CRIT_CHANCE, Scope.AIMED, Op.FLAT, 0.08f),
+            StatContribution(Stat.CRIT_MULT, Scope.AIMED, Op.ADD_PERCENT, 0.30f),
+        ),
+    )
+    private val QUARTERMASTER = multiPassive(
+        "quartermaster", "Quartermaster", "Alternates +18% magazine and +15% reload speed each rank.",
+        listOf(
+            StatContribution(Stat.MAGAZINE, Scope.AIMED, Op.ADD_PERCENT, 0.18f),
+            StatContribution(Stat.RELOAD_SPEED, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+            StatContribution(Stat.MAGAZINE, Scope.AIMED, Op.ADD_PERCENT, 0.18f),
+            StatContribution(Stat.RELOAD_SPEED, Scope.AIMED, Op.ADD_PERCENT, 0.15f),
+        ),
+    )
 
     // --- Equipment (COMBAT_EQUIPMENT, §5). Reads TURRET_COUNT; the engine deploys that many. ---------
     private val SENTRY_ARRAY = Item.ArtifactItem(
@@ -151,6 +201,7 @@ object StoreCatalog {
         HORDE, BERSERK,
         // Passives (50)
         EAGLE_EYE, SOFT_POINT, LONG_BARREL, SCAVENGER, QUICK_STUDY,
+        RAPID_FIRE, MUZZLE_VELOCITY, GUNSLINGER, PREDATOR, QUARTERMASTER,
         // Equipment (100)
         SENTRY_ARRAY,
         // Guns (150)
