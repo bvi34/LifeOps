@@ -340,7 +340,12 @@ class RunEngine(
         }
     }
 
-    /** Slide [e] toward [target] one axis at a time, attacking any *blocking* structure in the way. */
+    /**
+     * Slide [e] toward [target] one axis at a time. *Any* structure in the next step is an obstacle:
+     * the enemy stops and smashes it rather than passing through (DESIGN.md §9) — turrets and decoys
+     * are struck the same as walls. [StructureType.blocks] now only governs whether the cell also
+     * stops enemy *fire*, not movement.
+     */
     private fun moveEnemyToward(e: Enemy, target: Vec2, dt: Float) {
         val dir = (target - e.pos).normalized()
         val delta = dir * (e.moveSpeed * dt)
@@ -348,10 +353,10 @@ class RunEngine(
         val here = structureAt(p)
         val tryX = Vec2(p.x + delta.x, p.y)
         val sX = structureAt(tryX)
-        if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e) else p = tryX
+        if (sX != null && sX !== here) attackStructure(sX, e) else p = tryX
         val tryY = Vec2(p.x, p.y + delta.y)
         val sY = structureAt(tryY)
-        if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
+        if (sY != null && sY !== here) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
         e.pos = arena.clamp(p, e.type.radius)
     }
 

@@ -2,12 +2,14 @@ package com.lifeops.app.game
 
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.Vec2
 import com.lifeops.app.game.run.Enemy
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
+import com.lifeops.app.game.run.RunStatus
 import com.lifeops.app.game.run.Structure
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,5 +59,51 @@ class DecoyTest {
         repeat(300) { e.step(1f / 60f, RunInput()) }
         assertTrue("a decoy should lure an enemy that has strayed beyond its range off the player",
             decoy.hp < decoy.maxHp)
+    }
+
+    @Test
+    fun anEnemyStopsToSmashAnyStructureInItsPath() {
+        // A non-blocking structure that the enemy is NOT targeting (it's chasing the player) still
+        // stops the enemy and takes damage — no walking through it. Own a Decoy so one is planted
+        // into the grid (occupancy), which the path check reads.
+        val e = driveToStore(StoreCatalog.ITEMS.map { it.id }.toSet() - "decoy")
+        e.applyStorePurchase("decoy")
+        var planted: Structure? = null
+        var f = 0
+        while (planted == null && f < 300) {
+            e.step(1f / 60f, RunInput())
+            planted = e.structures.firstOrNull { it.type == StructureType.DECOY }
+            f++
+        }
+        val decoy = requireNotNull(planted) { "the Decoy equipment should have planted a decoy" }
+        e.player.reloadRemaining = 999f // mute the gun so only a path-attack can damage the decoy
+
+        // Put a player-chasing enemy on the far side of the decoy, collinear, close enough to target
+        // the player (inside the lure range) so it beelines straight through the decoy's cell.
+        e.enemies.clear()
+        val away = (decoy.pos - e.player.pos).normalized()
+        e.enemies.add(Enemy(id = 99001, type = EnemyType.SHAMBLER, pos = decoy.pos + away * 26f,
+            health = 100_000f, maxHealth = 100_000f, moveSpeed = 60f))
+        val hpBefore = decoy.hp
+        repeat(150) { e.step(1f / 60f, RunInput()) }
+        assertTrue("an enemy chasing the player still smashes a structure sitting in its path",
+            decoy.hp < hpBefore)
+    }
+
+    private fun driveToStore(unlockedIds: Set<String>): RunEngine {
+        val e = RunEngine(RunConfig(StartingWeapon.GATLING, levelCap = 30, maxHits = 999, startingGold = 0, seed = 5L, waves = 1,
+            unlockedIds = unlockedIds))
+        repeat(12000) { i ->
+            when (e.status) {
+                RunStatus.STORE -> return e
+                RunStatus.LEVEL_UP -> e.snapshot().levelUpOptions.firstOrNull()?.let { e.choose(it) }
+                RunStatus.SET_BONUS -> e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                RunStatus.OVERFLOW -> e.snapshot().overflowOptions.firstOrNull()?.let { e.chooseOverflow(it) }
+                else -> {}
+            }
+            val ang = i * 0.05f
+            e.step(1f / 60f, RunInput(Vec2(kotlin.math.cos(ang), kotlin.math.sin(ang))))
+        }
+        error("the run never reached the store")
     }
 }
