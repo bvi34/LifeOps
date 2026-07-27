@@ -58,6 +58,7 @@ import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
+import com.lifeops.app.game.run.EffectKind
 import com.lifeops.app.game.run.Loadout
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
@@ -475,16 +476,24 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 }
             }
 
-            // Death bursts: an expanding, fading ring where an enemy fell.
+            // Transient effects: an expanding white ring where an enemy fell, or a filled orange
+            // fireball for an explosive round's blast (sized to its actual radius).
             snapshot.effects.forEach { fx ->
                 val c = Offset(sx(fx.pos.x), sy(fx.pos.y))
-                val r = fx.worldRadius * scale * (0.6f + fx.ageFrac * 1.7f)
-                drawCircle(
-                    color = Color.White.copy(alpha = (1f - fx.ageFrac) * 0.6f),
-                    radius = r,
-                    center = c,
-                    style = Stroke(width = 2f * scale)
-                )
+                when (fx.kind) {
+                    EffectKind.EXPLOSION -> {
+                        val r = fx.worldRadius * scale * (0.7f + fx.ageFrac * 0.35f)
+                        drawCircle(color = EXPLOSION_COLOR.copy(alpha = (1f - fx.ageFrac) * 0.5f), radius = r, center = c)
+                        drawCircle(color = EXPLOSION_COLOR.copy(alpha = 1f - fx.ageFrac), radius = r, center = c, style = Stroke(width = 2.5f * scale))
+                    }
+                    EffectKind.DEATH_BURST -> {
+                        val r = fx.worldRadius * scale * (0.6f + fx.ageFrac * 1.7f)
+                        drawCircle(
+                            color = Color.White.copy(alpha = (1f - fx.ageFrac) * 0.6f),
+                            radius = r, center = c, style = Stroke(width = 2f * scale)
+                        )
+                    }
+                }
             }
 
             snapshot.projectiles.forEach { p ->
@@ -1057,6 +1066,7 @@ private val STRAIN_TINT = Color(0x22FF00FF)
 private val HP_ARC_COLOR = Color(0xFFECEFF1)
 private val BOSS_COLOR = Color(0xFFAB47BC)
 private val MUZZLE_COLOR = Color(0xFFFFF59D)
+private val EXPLOSION_COLOR = Color(0xFFFF7043)
 private val HURT_FLASH_COLOR = Color(0xFFEF5350)
 private val AMMO_COLOR = Color(0xFF90A4AE)
 private val SPIN_COLOR = Color(0xFFFFB300)

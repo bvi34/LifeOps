@@ -292,8 +292,17 @@ granted to the current run immediately — a passive/equipment joins the build (
 the level-up draft), a gun swaps the aimed weapon, a mutator applies its run-scoped
 effect — and is unlocked **permanently** (`game_unlocks`), so future runs get it
 back: passives/equipment rejoin the level-up draft pool, guns rejoin the loadout
-roster, mutators become loadout opt-ins. Adding content (mines, arc thrower,
-drones, more skulls…) is appending a `StoreCatalog.Item`, not engine code.
+roster, mutators become loadout opt-ins. Adding stat-only content is appending a
+`StoreCatalog.Item`, not engine code.
+
+**On-hit behaviour passives.** Pierce, Ricochet and Explosive Rounds change how a
+shot *behaves* for any gun. They follow the same "stat, not code" rule as the
+turret: each adds a stat (`PIERCE` / `RICOCHET` / `EXPLOSION_RADIUS`) resolved
+once at fire time and stamped onto every pellet, and the projectile-resolution
+step reads those fields — a shot survives a hit while it has pierce budget (goes
+straight through), then bounces to a fresh target while it has ricochet budget,
+and splashes `EXPLOSION_DAMAGE_FRAC` of its damage in-radius when explosive. New
+on-hit behaviours are a new stat + a few lines in the collision step.
 
 ---
 

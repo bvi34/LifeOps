@@ -651,6 +651,11 @@ class RunEngine(
         val life = if (weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
         val critChance = player.critChance(stats)
         val critMult = player.critMult(stats)
+        // On-hit passives (DESIGN.md §9): resolved once from the aimed build and stamped onto every
+        // pellet, so pierce/ricochet/explosive transform whatever gun is equipped.
+        val pierce = stats.resolve(Stat.PIERCE, Scope.AIMED).toInt().coerceAtLeast(0)
+        val bounces = stats.resolve(Stat.RICOCHET, Scope.AIMED).toInt().coerceAtLeast(0)
+        val boom = stats.resolve(Stat.EXPLOSION_RADIUS, Scope.AIMED).coerceAtLeast(0f)
 
         for (i in 0 until count) {
             val t = if (count == 1) 0f else (i / (count - 1f)) - 0.5f
@@ -661,6 +666,7 @@ class RunEngine(
             val p = Projectile(
                 id = nextId++, ownerId = PLAYER_ID, pos = player.pos, vel = vel,
                 damage = dmg, crit = crit, lifeRemaining = life, friendly = true,
+                pierceLeft = pierce, bouncesLeft = bounces, explosionRadius = boom,
             )
             projectiles.add(p)
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
@@ -751,21 +757,71 @@ class RunEngine(
         while (pit.hasNext()) {
             val p = pit.next()
             if (!p.friendly) continue // only player/turret shots damage enemies
-            var hitEnemy: Enemy? = null
+            // The first enemy in range this shot hasn't already struck — pierce/ricochet keep a shot
+            // alive across frames, so a shot must never re-hit a body it already passed through.
+            var target: Enemy? = null
             for (e in enemies) {
-                if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { hitEnemy = e; break }
+                if (!e.alive || e.id in p.hitIds) continue // dead-but-not-yet-culled bodies aren't targets
+                if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { target = e; break }
             }
-            val target = hitEnemy ?: continue
+            val t = target ?: continue
             // Every hit is an event routed through the resolver's frame budget (invariants #2/#3).
             resolver.resolve {
-                target.health -= p.damage
-                target.hitFlash = HIT_FLASH_SECONDS
-                bus.emit(GameEvent.OnHit(PLAYER_ID, target.id, p.damage, p.crit))
-                if (!target.alive) killEnemy(target)
+                t.health -= p.damage
+                t.hitFlash = HIT_FLASH_SECONDS
+                p.hitIds.add(t.id)
+                bus.emit(GameEvent.OnHit(PLAYER_ID, t.id, p.damage, p.crit))
+                if (!t.alive) killEnemy(t)
+                if (p.explosionRadius > 0f) explode(p.pos, p.explosionRadius, p.damage * EXPLOSION_DAMAGE_FRAC, t.id)
             }
-            pit.remove()
+            // Survive the hit via pierce first (straight through), then ricochet (bounce to a new
+            // target); a shot with neither budget is spent on impact.
+            when {
+                p.pierceLeft > 0 -> p.pierceLeft--
+                p.bouncesLeft > 0 -> {
+                    p.bouncesLeft--
+                    if (!redirectToNearest(p)) pit.remove()
+                }
+                else -> pit.remove()
+            }
         }
         enemies.removeAll { !it.alive }
+    }
+
+    /**
+     * An explosive shot's blast (DESIGN.md §9): splash [damage] to every enemy within [radius] of
+     * [center], skipping the projectile's direct target (already damaged this hit). Each splash hit
+     * goes through the resolver so a chain of explosions still respects the frame budget.
+     */
+    private fun explode(center: Vec2, radius: Float, damage: Float, directTargetId: Int) {
+        effects.add(RunEffect(pos = center, kind = EffectKind.EXPLOSION, worldRadius = radius, ttl = BURST_SECONDS))
+        for (e in enemies) {
+            if (!e.alive || e.id == directTargetId) continue
+            if (center.distanceTo(e.pos) > radius + e.type.radius) continue
+            resolver.resolve {
+                e.health -= damage
+                e.hitFlash = HIT_FLASH_SECONDS
+                bus.emit(GameEvent.OnHit(PLAYER_ID, e.id, damage, false))
+                if (!e.alive) killEnemy(e)
+            }
+        }
+    }
+
+    /** Point [p] at the nearest enemy it hasn't hit yet (a ricochet). Returns false if none remain. */
+    private fun redirectToNearest(p: Projectile): Boolean {
+        var best: Enemy? = null
+        var bestDist = Float.MAX_VALUE
+        for (e in enemies) {
+            if (!e.alive || e.id in p.hitIds) continue
+            val d = e.pos.distanceTo(p.pos)
+            if (d < bestDist) { bestDist = d; best = e }
+        }
+        val target = best ?: return false
+        val speed = p.vel.length()
+        p.vel = (target.pos - p.pos).normalized() * speed
+        // A fresh leg of travel, so a bounced shot doesn't die to the previous target's range clock.
+        p.lifeRemaining = maxOf(p.lifeRemaining, RICOCHET_LIFE)
+        return true
     }
 
     private fun killEnemy(e: Enemy) {
@@ -1137,6 +1193,8 @@ class RunEngine(
     companion object {
         const val PLAYER_ID = 0
         const val STORE_OFFER_COUNT = 4    // the between-set store shows four random offers (§9)
+        const val EXPLOSION_DAMAGE_FRAC = 0.6f // splash damage as a fraction of the direct hit (§9)
+        const val RICOCHET_LIFE = 1.2f     // seconds of travel a bounced shot is guaranteed for its new leg
         const val SPAWN_INTERVAL = 0.30f   // faster drip — the open arena wants a real swarm
         const val BREATHER_SECONDS = 2.5f
         const val BOSS_STAGGER = 1.2f      // seconds between multiple bosses entering

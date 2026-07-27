@@ -120,7 +120,7 @@ class Enemy(
 }
 
 /** Kind of transient visual effect. Visual-only; never affects the simulation. */
-enum class EffectKind { DEATH_BURST }
+enum class EffectKind { DEATH_BURST, EXPLOSION }
 
 /**
  * A short-lived visual effect (e.g. an enemy death burst). The sim spawns and ages these so the
@@ -140,13 +140,20 @@ class Projectile(
     val id: Int,
     val ownerId: Int,
     var pos: Vec2,
-    val vel: Vec2,
+    /** Heading × speed. Mutable so a ricochet can redirect the shot toward a new target. */
+    var vel: Vec2,
     val damage: Float,
     val crit: Boolean,
     var lifeRemaining: Float,
     /** True for player/turret shots (they hit enemies). Enemy shots would be false. */
     val friendly: Boolean = false,
     val radius: Float = 5f,
+    /** On-hit passives (DESIGN.md §9), stamped from the shooter's stats at fire time. */
+    var pierceLeft: Int = 0,
+    var bouncesLeft: Int = 0,
+    val explosionRadius: Float = 0f,
+    /** Enemies this shot has already struck, so pierce/ricochet never double-hits the same body. */
+    val hitIds: MutableSet<Int> = HashSet(),
 )
 
 /**

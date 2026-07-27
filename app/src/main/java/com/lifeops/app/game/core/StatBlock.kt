@@ -33,6 +33,13 @@ enum class Stat {
     TURRET_COUNT,    // concurrent artifact turrets (also secretly multiplicative)
     TURRET_TTL,      // seconds a turret lives
 
+    // On-hit projectile behaviours (DESIGN.md §9 store passives). Read at fire time and stamped onto
+    // each shot, so they transform *any* weapon's projectiles — the engine reads the stat, no
+    // per-weapon code (the same "stat, not code" rule as TURRET_COUNT).
+    PIERCE,          // extra enemies a shot passes through before it's spent
+    RICOCHET,        // times a spent shot bounces to a new nearby target
+    EXPLOSION_RADIUS,// world-unit blast radius on impact (0 = no explosion)
+
     // Director-scoped stats (DESIGN.md §8). Inert on the player/enemies — only the run's Director
     // reads them. Remap tables feed player stats into these; challenge-mode modifiers set them
     // directly. Adding a challenge variant is authoring these values, not writing engine code.
@@ -116,6 +123,9 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.XP_GAIN to 1f,
             Stat.TURRET_COUNT to 0f,
             Stat.TURRET_TTL to 8f,
+            Stat.PIERCE to 0f,
+            Stat.RICOCHET to 0f,
+            Stat.EXPLOSION_RADIUS to 0f,
             Stat.SPAWN_MULT to 1f,
             Stat.ENEMY_HP_MULT to 1f,
             Stat.ENEMY_SPEED_MULT to 1f,

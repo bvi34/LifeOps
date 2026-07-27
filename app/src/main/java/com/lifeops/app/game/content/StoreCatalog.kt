@@ -80,13 +80,13 @@ object StoreCatalog {
     }
 
     // --- Passives (STAT_SUPPORT artifacts, §5). Pure stat math, 4 additive ranks each. ---------------
-    private fun passive(id: String, name: String, description: String, stat: Stat, scope: Scope, perRank: Float, op: Op = Op.ADD_PERCENT) =
+    private fun passive(id: String, name: String, description: String, stat: Stat, scope: Scope, perRank: Float, op: Op = Op.ADD_PERCENT, maxRank: Int = 4) =
         Item.ArtifactItem(
             id = id, category = Category.PASSIVE,
             modifier = Modifier(
                 id = id, name = name, description = description,
-                attachesTo = AttachTarget.ENTITY, maxRank = 4,
-                rankContributions = List(4) { StatContribution(stat, scope, op, perRank) },
+                attachesTo = AttachTarget.ENTITY, maxRank = maxRank,
+                rankContributions = List(maxRank) { StatContribution(stat, scope, op, perRank) },
                 category = ArtifactCategory.STAT_SUPPORT,
             ),
         )
@@ -122,6 +122,16 @@ object StoreCatalog {
         Stat.FIRE_RATE, Scope.AIMED, 0.12f)
     private val MUZZLE_VELOCITY = passive("muzzle_velocity", "Muzzle Velocity", "+15% projectile speed per rank.",
         Stat.PROJECTILE_SPEED, Scope.AIMED, 0.15f)
+
+    // On-hit behaviour passives — the "real impact" tier (like Splitter, they change how a shot
+    // behaves, not just its numbers). They stamp onto the aimed weapon's projectiles, so they
+    // transform whatever gun is equipped (DESIGN.md §9). maxRank 3: each rank is a big swing.
+    private val PENETRATION = passive("pierce", "Penetration", "Shots pass through +1 enemy per rank.",
+        Stat.PIERCE, Scope.AIMED, 1f, op = Op.FLAT, maxRank = 3)
+    private val RICOCHET = passive("ricochet", "Ricochet", "Shots bounce to +1 more nearby enemy per rank.",
+        Stat.RICOCHET, Scope.AIMED, 1f, op = Op.FLAT, maxRank = 3)
+    private val EXPLOSIVE_ROUNDS = passive("explosive", "Explosive Rounds", "Shots detonate on impact — +22 blast radius per rank.",
+        Stat.EXPLOSION_RADIUS, Scope.AIMED, 22f, op = Op.FLAT, maxRank = 3)
 
     // Multi-axis passives — one artifact, two growing stats. Richer picks for a build to lean into.
     private val GUNSLINGER = multiPassive(
@@ -202,6 +212,7 @@ object StoreCatalog {
         // Passives (50)
         EAGLE_EYE, SOFT_POINT, LONG_BARREL, SCAVENGER, QUICK_STUDY,
         RAPID_FIRE, MUZZLE_VELOCITY, GUNSLINGER, PREDATOR, QUARTERMASTER,
+        PENETRATION, RICOCHET, EXPLOSIVE_ROUNDS,
         // Equipment (100)
         SENTRY_ARRAY,
         // Guns (150)
