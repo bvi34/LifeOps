@@ -67,8 +67,11 @@ Built on `:core`, following LifeOps' Screen → ViewModel → Repository shape:
   (minting and sync versions survive restarts), then drives import → persist → capture → queue.
   Offline-first throughout.
 - **Reader** (`ui/ReaderScreen`, `ReaderViewModel`): renders the internal model — format-blind —
-  with typography (font size), chapter paging, position save/restore, and note capture over a text
-  selection.
+  with typography (font size), chapter paging (swipe committed on release, plus buttons),
+  position save/restore, and note capture over a text selection. Selecting a passage is first-class:
+  a custom `ReaderTextToolbar` adds **Add note** and **Highlight** straight into the text-selection
+  bar (`LocalTextToolbar`), so a selection becomes a passage note or an annotatable bare highlight
+  without re-pasting the quote.
 
 > **Build note:** `:citation` is a standard Android module and needs the Android SDK to build
 > (`gradle :citation:assembleDebug`). `:core` is pure JVM and builds/tests with no SDK

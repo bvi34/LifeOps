@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -40,6 +41,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalTextToolbar
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -176,47 +179,62 @@ fun ReaderScreen(vm: ReaderViewModel) {
                 val scroll = rememberScrollState()
                 LaunchedEffect(ordinal) { scroll.scrollTo(0) }
 
-                // Swipe to turn the page, in addition to the buttons below. The gesture lives on the
-                // text surface: a deliberate horizontal drag past the threshold pages, while vertical
-                // drags still scroll and a long-press still selects text to quote. Buttons remain the
-                // reliable fallback, so this is purely additive.
-                val turnThreshold = with(LocalDensity.current) { 56.dp.toPx() }
-                var dragAccum by remember(ordinal) { mutableFloatStateOf(0f) }
-                SelectionContainer(
-                    Modifier
-                        .weight(1f)
-                        .pointerInput(ordinal, book.chapters.lastIndex) {
-                            detectHorizontalDragGestures(
-                                onDragEnd = { dragAccum = 0f },
-                                onDragCancel = { dragAccum = 0f }
-                            ) { change, dragAmount ->
-                                dragAccum += dragAmount
-                                when {
-                                    dragAccum <= -turnThreshold && ordinal < book.chapters.lastIndex -> {
-                                        change.consume(); dragAccum = 0f; vm.goToChapter(ordinal + 1)
+                // Selecting a passage is a first-class action: our own text-selection toolbar adds
+                // "Add note" and "Highlight" beside the platform verbs, so a selection turns straight
+                // into a note or an annotatable highlight without re-pasting the quote. The toolbar is
+                // remembered (one ActionMode across recompositions); its callbacks are reassigned each
+                // frame so they never capture stale UI state.
+                val view = LocalView.current
+                val toolbar = remember(view) { ReaderTextToolbar(view) }
+                toolbar.onAddNote = { quote -> noteQuote = quote; noteBody = ""; showNote = true }
+                toolbar.onHighlight = { quote -> vm.captureNoteForQuote(quote, "") }
+
+                // Swipe to turn the page, in addition to the buttons below. A horizontal drag is
+                // committed on release, once, from its net distance — so a decisive flick pages while a
+                // hesitant or diagonal wobble that nets out short does nothing. Each horizontal change
+                // is consumed so the drag can't also be read as a vertical scroll; vertical drags never
+                // cross the horizontal slop and keep scrolling, and a long-press still selects text.
+                // Buttons remain the reliable fallback, so this is purely additive.
+                val turnThreshold = with(LocalDensity.current) { 64.dp.toPx() }
+                CompositionLocalProvider(LocalTextToolbar provides toolbar) {
+                    SelectionContainer(
+                        Modifier
+                            .weight(1f)
+                            .pointerInput(ordinal, book.chapters.lastIndex) {
+                                var total = 0f
+                                detectHorizontalDragGestures(
+                                    onDragStart = { total = 0f },
+                                    onDragCancel = { total = 0f },
+                                    onDragEnd = {
+                                        when {
+                                            total <= -turnThreshold && ordinal < book.chapters.lastIndex ->
+                                                vm.goToChapter(ordinal + 1)
+                                            total >= turnThreshold && ordinal > 0 ->
+                                                vm.goToChapter(ordinal - 1)
+                                        }
                                     }
-                                    dragAccum >= turnThreshold && ordinal > 0 -> {
-                                        change.consume(); dragAccum = 0f; vm.goToChapter(ordinal - 1)
-                                    }
+                                ) { change, dragAmount ->
+                                    total += dragAmount
+                                    change.consume()
                                 }
                             }
+                    ) {
+                        Column(Modifier.verticalScroll(scroll).padding(20.dp)) {
+                            Text(
+                                text = chapter?.title ?: "",
+                                fontSize = (fontSize + 6).sp,
+                                fontFamily = FontFamily.Serif,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = chapter?.text ?: "(chapter unavailable)",
+                                fontSize = fontSize.sp,
+                                lineHeight = (fontSize * 1.6f).sp,
+                                fontFamily = FontFamily.Serif,
+                                modifier = Modifier.padding(top = 12.dp),
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
                         }
-                ) {
-                    Column(Modifier.verticalScroll(scroll).padding(20.dp)) {
-                        Text(
-                            text = chapter?.title ?: "",
-                            fontSize = (fontSize + 6).sp,
-                            fontFamily = FontFamily.Serif,
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = chapter?.text ?: "(chapter unavailable)",
-                            fontSize = fontSize.sp,
-                            lineHeight = (fontSize * 1.6f).sp,
-                            fontFamily = FontFamily.Serif,
-                            modifier = Modifier.padding(top = 12.dp),
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
                     }
                 }
             }
@@ -238,7 +256,7 @@ private fun NoteComposer(
         OutlinedTextField(
             value = quote,
             onValueChange = onQuote,
-            label = { Text("Passage to cite (paste the exact quote)") },
+            label = { Text("Passage to cite (select text to fill, or type it)") },
             modifier = Modifier.fillMaxWidth()
         )
         OutlinedTextField(
