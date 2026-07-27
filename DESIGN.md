@@ -295,6 +295,22 @@ back: passives/equipment rejoin the level-up draft pool, guns rejoin the loadout
 roster, mutators become loadout opt-ins. Adding stat-only content is appending a
 `StoreCatalog.Item`, not engine code.
 
+**What each tier is _for_** (the design intent that keeps the four faces distinct
+— author new content to its tier's promise, not just its price):
+
+- **Modifiers** change the *run itself* — they affect both the player and the
+  enemies (a boon riding a bane, a "skull"). They reshape the whole fight, up or
+  down, for everyone on the field.
+- **Passives (artifacts)** boost the *player and their weapon*. Their job is to
+  make climbing **possible** — the raw stat/behaviour headroom a build needs to
+  survive higher sets.
+- **Equipment** gives the player a real **edge or support** on the battlefield
+  (something fighting *alongside* you, not just better numbers). Its job is to
+  make climbing **easier**.
+- **Guns** are *player identity*. Each one must be worth building an entire run
+  around — a distinct playstyle, not a stat swap. If a new gun wouldn't change how
+  you'd draft and position for the whole run, it isn't a gun, it's a passive.
+
 **On-hit behaviour passives.** Pierce, Ricochet and Explosive Rounds change how a
 shot *behaves* for any gun. They follow the same "stat, not code" rule as the
 turret: each adds a stat (`PIERCE` / `RICOCHET` / `EXPLOSION_RADIUS`) resolved
