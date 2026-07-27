@@ -66,9 +66,21 @@ Built on `:core`, following LifeOps' Screen → ViewModel → Repository shape:
 - **Repository** (`data/CitationRepository`): restores the key allocator + mailbox from the DB
   (minting and sync versions survive restarts), then drives import → persist → capture → queue.
   Offline-first throughout.
-- **Reader** (`ui/ReaderScreen`, `ReaderViewModel`): renders the internal model — format-blind —
-  with typography (font size), chapter paging, position save/restore, and note capture over a text
-  selection.
+- **Reader** (`ui/ReaderScreen`, `ReaderViewModel`): renders the internal model — format-blind — as a
+  first-class reader:
+  - **Highlights are visible.** Passage notes are drawn back into the chapter as inline highlights
+    (resolved live by `FuzzyAnchor`, so an edited/re-fetched chapter still lights the right words), and
+    a tap opens the note to read, annotate, jump, or delete.
+  - **Selection is first-class.** A custom `ReaderTextToolbar` adds **Add note** and **Highlight** into
+    the text-selection bar (`LocalTextToolbar`); a selection becomes a passage note or an annotatable
+    bare highlight without re-pasting the quote (and without clobbering the clipboard). A repeated
+    passage anchors to the occurrence nearest the viewport, not blindly the first.
+  - **Paging** is a swipe committed on release, edge tap-zones, or the pinned buttons — with an
+    animated page turn — and a **chapter drawer** (TOC) plus a progress bar.
+  - **Resume** actually restores: reopening lands on the saved chapter *and* scroll offset, persisted
+    as you read.
+  - **Reading comfort:** a format sheet with text size, line spacing, margins, serif/sans, and Paper /
+    Sepia / Night / System themes.
 
 > **Build note:** `:citation` is a standard Android module and needs the Android SDK to build
 > (`gradle :citation:assembleDebug`). `:core` is pure JVM and builds/tests with no SDK

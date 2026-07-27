@@ -9,13 +9,16 @@ import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
+import com.citation.core.note.NoteType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * Drives the library + reader. Kept thin: it holds UI state as [StateFlow]s and delegates all
@@ -48,8 +51,24 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
 
+    /**
+     * The passage-anchored notes of the open book — the reader renders these as inline highlights, and
+     * a tap on one opens it. Derived from the notes stream so a fresh capture appears under your finger
+     * immediately, and clears when you close the book.
+     */
+    val openHighlights: StateFlow<List<Note>> =
+        combine(_openBook, repository.notes) { book, notes ->
+            val key = book?.key?.toString() ?: return@combine emptyList<Note>()
+            notes.filter { it.type == NoteType.PASSAGE_ANCHORED && it.source.bookKey?.toString() == key }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private val _chapterOrdinal = MutableStateFlow(0)
     val chapterOrdinal: StateFlow<Int> = _chapterOrdinal.asStateFlow()
+
+    // Scroll position to restore on the first paint of a reopened book: the chapter it belongs to and
+    // the pixel offset within it. Consumed once by the reader, so a page turn doesn't re-apply it.
+    private var pendingScrollChapter = -1
+    private var pendingScrollOffset = 0
 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
@@ -86,7 +105,15 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     val result = repository.openBook(bookKey)
                     openRrFictionId = result?.rrFictionId
                     _openBook.value = result?.book
-                    _chapterOrdinal.value = 0
+                    // Land where you left off: restore the saved chapter, and stage the scroll offset
+                    // for the reader to apply on first paint. Royal Road needs its buffer slid to the
+                    // resumed chapter, so route through goToChapter for that side.
+                    val lastIndex = (result?.book?.chapters?.lastIndex ?: 0).coerceAtLeast(0)
+                    val savedChapter = (result?.chapterOrdinal ?: 0).coerceIn(0, lastIndex)
+                    pendingScrollChapter = savedChapter
+                    pendingScrollOffset = result?.charOffset ?: 0
+                    _chapterOrdinal.value = savedChapter
+                    if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
                 }
             }
         }
@@ -223,19 +250,36 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     }
 
     /**
-     * Convenience for the UI: locate [quote] in the current chapter and capture a note anchored to
-     * it. Real text-selection would supply offsets directly; this keeps the skeleton UI usable
-     * without a full selection toolbar.
+     * Locate [quote] in the current chapter and capture a note anchored to it. When a passage repeats
+     * in one chapter, the plain first-match would anchor the wrong copy (and freeze the wrong
+     * prefix/suffix); [nearOffset] — the character offset near the reader's viewport at capture — breaks
+     * the tie toward the occurrence you were actually looking at.
      */
-    fun captureNoteForQuote(quote: String, body: String) {
+    fun captureNoteForQuote(quote: String, body: String, nearOffset: Int = 0) {
         val book = _openBook.value ?: return
         val chapter = book.chapterAt(_chapterOrdinal.value) ?: return
-        val start = chapter.text.indexOf(quote)
+        val start = nearestIndexOf(chapter.text, quote, nearOffset)
         if (start < 0) {
             _status.value = "Couldn’t find that passage in this chapter."
             return
         }
         captureNote(start, start + quote.length, body)
+    }
+
+    /** First index of [sub] in [text] closest to [near]; −1 if absent. */
+    private fun nearestIndexOf(text: String, sub: String, near: Int): Int {
+        if (sub.isEmpty()) return -1
+        var from = 0
+        var best = -1
+        var bestDist = Long.MAX_VALUE
+        while (true) {
+            val i = text.indexOf(sub, from)
+            if (i < 0) break
+            val dist = abs(i - near).toLong()
+            if (dist < bestDist) { bestDist = dist; best = i }
+            from = i + 1
+        }
+        return best
     }
 
     /**
@@ -261,6 +305,30 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             _status.value = "Note updated."
         }
     }
+
+    /** Delete a note (its inline highlight goes with it). Local-only — see the repository. */
+    fun deleteNote(noteKey: String) {
+        viewModelScope.launch {
+            repository.deleteNote(noteKey)
+            _status.value = "Note deleted."
+        }
+    }
+
+    /** Persist the reader's live position (current chapter + in-chapter scroll offset in px). */
+    fun savePosition(chapterOrdinal: Int, charOffset: Int) {
+        val key = _openBook.value?.key?.toString() ?: return
+        viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset) }
+    }
+
+    /**
+     * The one-time scroll offset to restore for [chapter], or 0 if there is none for it. Cleared on
+     * read so turning the page doesn't snap you back to the resumed spot.
+     */
+    fun consumePendingScroll(chapter: Int): Int =
+        if (chapter == pendingScrollChapter && pendingScrollOffset > 0) {
+            pendingScrollChapter = -1
+            pendingScrollOffset.also { pendingScrollOffset = 0 }
+        } else 0
 
     /** Resolve a note's overall degradation state for the Notes list badge. */
     suspend fun overallState(note: Note): NoteResolver.State =

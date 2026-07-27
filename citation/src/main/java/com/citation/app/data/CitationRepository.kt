@@ -132,21 +132,31 @@ class CitationRepository private constructor(
         db.bookDao().touchOpened(bookKey, now)
     }
 
-    /** The result of opening a book from the library: the keyed [Book] and, if it's a serial, its id. */
-    data class OpenResult(val book: Book, val rrFictionId: Long?)
+    /**
+     * The result of opening a book from the library: the keyed [Book], its serial id if borrowed, and
+     * the reader's **saved position** so a reopen lands where you left off rather than at chapter one.
+     */
+    data class OpenResult(
+        val book: Book,
+        val rrFictionId: Long?,
+        val chapterOrdinal: Int = 0,
+        val charOffset: Int = 0
+    )
 
     /**
      * Open a library entry, routing a Royal Road serial through its own loader (chapter bodies live
      * in the disposable cache, not the `chapters` table) and an owned book through the plain loader.
+     * The stored last position rides along so the ViewModel can restore chapter + scroll.
      */
     suspend fun openBook(bookKey: String): OpenResult? {
         val entity = db.bookDao().get(bookKey) ?: return null
-        return if (entity.sourceType == SourceType.ROYAL_ROAD.name) {
+        val book = if (entity.sourceType == SourceType.ROYAL_ROAD.name) {
             val fictionId = entity.sourceId?.toLongOrNull() ?: return null
-            OpenResult(openRoyalRoad(fictionId), fictionId)
+            return OpenResult(openRoyalRoad(fictionId), fictionId, entity.lastChapterOrdinal, entity.lastCharOffset)
         } else {
-            OpenResult(CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey)), null)
+            CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey))
         }
+        return OpenResult(book, null, entity.lastChapterOrdinal, entity.lastCharOffset)
     }
 
     /**
@@ -189,6 +199,15 @@ class CitationRepository private constructor(
     /** Persist the reader's last position for restore-on-reopen. */
     suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
+    }
+
+    /**
+     * Delete a note (and its passage highlight vanishes with it, since the reader renders highlights
+     * from their notes). Local-only: LifeOps keeps the copy it already acked — a delete-tombstone on
+     * the sync seam is deliberately out of scope, so this removes your local record, not the world's.
+     */
+    suspend fun deleteNote(noteKey: String) {
+        db.noteDao().delete(noteKey)
     }
 
     // --- PDF (own render track) ---------------------------------------------------------------
