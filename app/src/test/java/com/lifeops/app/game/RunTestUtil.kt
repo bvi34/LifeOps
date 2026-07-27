@@ -12,6 +12,8 @@ fun resolvePauses(engine: RunEngine) {
     when (engine.status) {
         RunStatus.LEVEL_UP -> engine.snapshot().levelUpOptions.firstOrNull()?.let { engine.choose(it) }
         RunStatus.SET_BONUS -> engine.snapshot().setBonusOptions.firstOrNull()?.let { engine.chooseSetBonus(it) }
+        // The between-set store follows the set draft; skip it (no banked spend in the pure engine).
+        RunStatus.STORE -> engine.skipStore()
         RunStatus.OVERFLOW -> engine.snapshot().overflowOptions.firstOrNull()?.let { engine.chooseOverflow(it) }
         else -> {}
     }

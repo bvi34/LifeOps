@@ -279,6 +279,72 @@ effort goes here.
 - One modifier system, three faces: artifacts (entity-attached), shop items
   (player-attached, permanent), challenge modes (run/director-attached).
 
+**Implemented — the between-set store.** After each set's boon/bane draft the run
+pauses on a **store** (`RunStatus.STORE`) that offers **4 random** unowned picks
+from a data-authored catalog (`content/StoreCatalog.kt`), **pick one or skip**.
+It is paid in banked **Modifier Budget** — the Personal-aspect resource
+(`Loadout.Role.MODIFIER_BUDGET`, the 5th "Spirit" slot); the spend + the permanent
+unlock record are brokered by the ViewModel against the bank, never the pure engine
+(the same contract as revive). Four tiers, steep fixed prices: **Modifiers 25**
+(run-wide mutators / "skulls"), **Passives 50** (stat-support artifacts),
+**Equipment 100** (turret-family), **Guns 150** (new aimed weapons). A purchase is
+granted to the current run immediately — a passive/equipment joins the build (and
+the level-up draft), a gun swaps the aimed weapon, a mutator applies its run-scoped
+effect — and is unlocked **permanently** (`game_unlocks`), so future runs get it
+back: passives/equipment rejoin the level-up draft pool, guns rejoin the loadout
+roster, mutators become loadout opt-ins. Adding stat-only content is appending a
+`StoreCatalog.Item`, not engine code.
+
+**What each tier is _for_** (the design intent that keeps the four faces distinct
+— author new content to its tier's promise, not just its price):
+
+- **Modifiers** change the *run itself* — they affect both the player and the
+  enemies (a boon riding a bane, a "skull"). They reshape the whole fight, up or
+  down, for everyone on the field.
+- **Passives (artifacts)** boost the *player and their weapon*. Their job is to
+  make climbing **possible** — the raw stat/behaviour headroom a build needs to
+  survive higher sets.
+- **Equipment** gives the player a real **edge or support** on the battlefield
+  (something fighting *alongside* you, not just better numbers). Its job is to
+  make climbing **easier**.
+- **Guns** are *player identity*. Each one must be worth building an entire run
+  around — a distinct playstyle, not a stat swap. If a new gun wouldn't change how
+  you'd draft and position for the whole run, it isn't a gun, it's a passive.
+
+**On-hit behaviour passives.** Pierce, Ricochet and Explosive Rounds change how a
+shot *behaves* for any gun. They follow the same "stat, not code" rule as the
+turret: each adds a stat (`PIERCE` / `RICOCHET` / `EXPLOSION_RADIUS`) resolved
+once at fire time and stamped onto every pellet, and the projectile-resolution
+step reads those fields — a shot survives a hit while it has pierce budget (goes
+straight through), then bounces to a fresh target while it has ricochet budget,
+and splashes `EXPLOSION_DAMAGE_FRAC` of its damage in-radius when explosive. New
+on-hit behaviours are a new stat + a few lines in the collision step.
+
+**Equipment upgrade pools.** Every combat-equipment artifact rolls a *variable*
+upgrade on each rank past the first (the turret's original trick, generalised).
+`content/EquipmentUpgrades` is one registry of per-equipment pools —
+`poolFor(id)` maps an equipment's modifier id to its list of authored upgrade
+rows — and the level-up roll draws from the pool for *that* equipment. Turret
+upgrades are AUTO-scope weapon stats; **Mines** upgrades are dedicated `MINE_*`
+stats (count / damage / blast radius / trigger range) so the two never bleed into
+each other. Mines are the second equipment: rank 1 sows proximity mines that the
+engine keeps stocked near the player and detonates for an area blast on contact;
+ranks 2+ roll from `EquipmentUpgrades.MINES`. A new equipment is a deploy/behaviour
+in the engine reading its own stat + a pool in the registry.
+
+**Enemy targeting + the Decoy.** Enemies used to hardcode "beeline the player";
+now each enemy resolves a target each frame (`targetStructureFor`). **Rushers**
+are base-breakers — they make for the nearest structure (turret / sentry /
+barricade / decoy) before the player, so defences actually draw them. The
+**Decoy** is the third equipment: a non-blocking `StructureType.DECOY` the engine
+plants near the player (build-scaled `DECOY_HP`, replanted as it's torn down) that
+**hijacks aggro** — any *non-rusher* enemy that has strayed beyond `DECOY_RANGE`
+of the player peels off to attack the nearest decoy, so close pressure still lands
+on you while the outer swarm is pulled off. Its pool (`EquipmentUpgrades.DECOY`)
+rolls +count / +durability / +lure range / detonate-on-death. A targeted
+non-blocking structure is attacked on reach (it can't be walked-through-and-hit
+like a wall), so a decoy only takes damage from enemies that *chose* it.
+
 ---
 
 ## 10. Build order

@@ -73,8 +73,25 @@ class ArtifactsTest {
 
     @Test
     fun everyTurretUpgradeRollIsAutoScoped() {
-        // The rolled pool only ever lifts turret (AUTO) stats, never the aimed weapon.
-        assertTrue(com.lifeops.app.game.content.TurretUpgrades.POOL.isNotEmpty())
-        assertTrue(com.lifeops.app.game.content.TurretUpgrades.POOL.all { it.contribution.scope == Scope.AUTO })
+        // The turret's rolled pool only ever lifts turret (AUTO) stats, never the aimed weapon.
+        assertTrue(com.lifeops.app.game.content.EquipmentUpgrades.TURRET.isNotEmpty())
+        assertTrue(com.lifeops.app.game.content.EquipmentUpgrades.TURRET.all { it.contribution.scope == Scope.AUTO })
+    }
+
+    @Test
+    fun eachEquipmentRollsFromItsOwnPool() {
+        // Turret and Mines draw from different pools that touch disjoint stats — an upgrade for one
+        // never bleeds into the other (DESIGN.md §9).
+        val turretStats = com.lifeops.app.game.content.EquipmentUpgrades.TURRET.map { it.contribution.stat }.toSet()
+        val mineStats = com.lifeops.app.game.content.EquipmentUpgrades.MINES.map { it.contribution.stat }.toSet()
+        assertTrue(com.lifeops.app.game.content.EquipmentUpgrades.MINES.isNotEmpty())
+        assertTrue("turret and mine upgrades touch disjoint stats", turretStats.intersect(mineStats).isEmpty())
+        assertTrue("mine upgrades only touch MINE_* stats",
+            mineStats.all { it.name.startsWith("MINE_") })
+        // The registry maps each equipment id to its pool.
+        assertEquals(com.lifeops.app.game.content.EquipmentUpgrades.MINES,
+            com.lifeops.app.game.content.EquipmentUpgrades.poolFor("mines"))
+        assertEquals(com.lifeops.app.game.content.EquipmentUpgrades.TURRET,
+            com.lifeops.app.game.content.EquipmentUpgrades.poolFor("turret"))
     }
 }

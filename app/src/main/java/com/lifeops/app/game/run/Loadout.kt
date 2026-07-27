@@ -33,7 +33,10 @@ object Loadout {
         ENERGY("Energy", listOf("energy", "stamina", "family")),
         LEVEL_CAP("Level Cap", listOf("level", "cap", "wisdom", "beacon")),
         MAX_HEALTH("Max Health", listOf("health", "hp", "strength", "vigor", "swca")),
-        STARTING_GOLD("Starting Gold", listOf("gold", "coin", "home", "money"));
+        STARTING_GOLD("Starting Gold", listOf("gold", "coin", "home", "money")),
+        // The permanent draft-shop currency (DESIGN.md §2/§9): spent at the between-set store to
+        // unlock real content. Defaults to the "Spirit" 5th slot (mapped to the Personal aspect).
+        MODIFIER_BUDGET("Modifier Budget", listOf("modifier", "budget", "spirit", "personal", "essence"));
 
         fun matches(name: String): Boolean {
             val n = name.lowercase()
@@ -49,11 +52,16 @@ object Loadout {
             Role.ENERGY -> 1
             Role.LEVEL_CAP -> 2
             Role.MAX_HEALTH -> 3
+            Role.MODIFIER_BUDGET -> 4
         }
         return resources.firstOrNull { it.slotIndex == fallbackIndex }
     }
 
     fun energyResource(resources: List<GameResource>): GameResource? = resolve(Role.ENERGY, resources)
+
+    /** The banked resource that funds the between-set store (DESIGN.md §9), or null if none fits. */
+    fun modifierBudgetResource(resources: List<GameResource>): GameResource? =
+        resolve(Role.MODIFIER_BUDGET, resources)
 
     fun canAfford(resources: List<GameResource>): Boolean =
         (energyResource(resources)?.currentValue ?: 0) >= ENERGY_COST

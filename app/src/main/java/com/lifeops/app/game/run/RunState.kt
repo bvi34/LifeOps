@@ -13,15 +13,15 @@ import com.lifeops.app.game.core.Vec2
  * - [SET_BONUS] pauses at each set boundary for the boon/bane draft (DESIGN.md §7).
  * - [OVERFLOW] pauses at cap for the gold/heal/temp-boost micro-pick (DESIGN.md §6).
  */
-enum class RunStatus { RUNNING, LEVEL_UP, SET_BONUS, OVERFLOW, VICTORY, DEFEAT }
+enum class RunStatus { RUNNING, LEVEL_UP, SET_BONUS, STORE, OVERFLOW, VICTORY, DEFEAT }
 
 /** One offered pick on level-up (DESIGN.md §6). Upgrades a held artifact or grants a new one. */
 data class LevelUpOption(
     val modifier: Modifier,
     val resultingRank: Int,
     val isNew: Boolean,
-    /** For a combat-equipment rank past the first: the random turret upgrade this pick rolls (§5). */
-    val equipmentUpgrade: com.lifeops.app.game.content.TurretUpgrades.Upgrade? = null,
+    /** For a combat-equipment rank past the first: the random upgrade this pick rolls (§5/§9). */
+    val equipmentUpgrade: com.lifeops.app.game.content.EquipmentUpgrades.Upgrade? = null,
 ) {
     val label: String get() = when {
         isNew -> "New · ${modifier.name}"
@@ -38,6 +38,21 @@ data class LevelUpOption(
 data class SetBonusOption(
     val boon: SetBonuses.Boon,
     val bane: SetBonuses.Bane,
+)
+
+/**
+ * One offer in the between-set draft shop (DESIGN.md §9). A flattened view of a
+ * [com.lifeops.app.game.content.StoreCatalog.Item] — enough for the overlay to render and price it.
+ * Buying spends banked Modifier Budget (brokered by the ViewModel, never the pure engine).
+ */
+data class StoreOffer(
+    val itemId: String,
+    val name: String,
+    val description: String,
+    /** Tier label ("Passive", "Gun", …) for the badge. */
+    val categoryLabel: String,
+    /** Banked Modifier-Budget price. */
+    val cost: Int,
 )
 
 /** What an [OVERFLOW] micro-pick grants (DESIGN.md §6). All three are strictly in-run. */
@@ -104,12 +119,16 @@ data class RunSnapshot(
     val enemyProjectiles: List<Vec2>,
     val structures: List<StructureView>,
     val structureCosts: Map<StructureType, Int>,
+    /** Sown proximity mines (the Mines equipment, §9). */
+    val mines: List<MineView>,
     val pickups: List<PickupView>,
     val effects: List<EffectView>,
     val boss: BossView?,
     val levelUpOptions: List<LevelUpOption>,
     /** The per-set boon/bane draft offers, shown while [status] is [RunStatus.SET_BONUS]. */
     val setBonusOptions: List<SetBonusOption>,
+    /** The between-set store offers (up to 4), shown while [status] is [RunStatus.STORE] (§9). */
+    val storeOptions: List<StoreOffer>,
     /** The overflow micro-pick offers, shown while [status] is [RunStatus.OVERFLOW]. */
     val overflowOptions: List<OverflowOption>,
     val weapon: StartingWeapon,
@@ -150,6 +169,7 @@ data class StructureView(
     val ttlFrac: Float = 1f,
 )
 data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
+data class MineView(val pos: Vec2, val armed: Boolean, val triggerRadius: Float)
 data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)
 

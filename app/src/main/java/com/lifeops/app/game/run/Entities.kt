@@ -25,7 +25,8 @@ class TempBuff(val contribution: StatContribution, val label: String, var remain
 
 class Player(
     var pos: Vec2,
-    val weapon: StartingWeapon,
+    /** The aimed weapon. Mutable so a store gun can swap it mid-run (DESIGN.md §9). */
+    var weapon: StartingWeapon,
     val held: MutableList<HeldModifier> = mutableListOf(),
     /** Permanent (for the run) player boons drafted at each set boundary (DESIGN.md §7). */
     val runBonuses: MutableList<StatContribution> = mutableListOf(),
@@ -119,7 +120,7 @@ class Enemy(
 }
 
 /** Kind of transient visual effect. Visual-only; never affects the simulation. */
-enum class EffectKind { DEATH_BURST }
+enum class EffectKind { DEATH_BURST, EXPLOSION }
 
 /**
  * A short-lived visual effect (e.g. an enemy death burst). The sim spawns and ages these so the
@@ -139,13 +140,20 @@ class Projectile(
     val id: Int,
     val ownerId: Int,
     var pos: Vec2,
-    val vel: Vec2,
+    /** Heading × speed. Mutable so a ricochet can redirect the shot toward a new target. */
+    var vel: Vec2,
     val damage: Float,
     val crit: Boolean,
     var lifeRemaining: Float,
     /** True for player/turret shots (they hit enemies). Enemy shots would be false. */
     val friendly: Boolean = false,
     val radius: Float = 5f,
+    /** On-hit passives (DESIGN.md §9), stamped from the shooter's stats at fire time. */
+    var pierceLeft: Int = 0,
+    var bouncesLeft: Int = 0,
+    val explosionRadius: Float = 0f,
+    /** Enemies this shot has already struck, so pierce/ricochet never double-hits the same body. */
+    val hitIds: MutableSet<Int> = HashSet(),
 )
 
 /**
@@ -172,6 +180,20 @@ class Structure(
     val maxTtl: Float = Float.POSITIVE_INFINITY,
 ) {
     val alive: Boolean get() = hp > 0f && ttl > 0f
+}
+
+/**
+ * A sown proximity mine (DESIGN.md §9 — the Mines equipment). Sits on the field until an enemy
+ * comes within its trigger radius, then detonates for an area blast. [arming] counts down before it
+ * can trigger, so a mine dropped into a crowd doesn't pop the same instant it lands. Blast damage /
+ * radius / trigger are read from the live build at detonation, so mid-run upgrades apply.
+ */
+class Mine(
+    val id: Int,
+    val pos: Vec2,
+    var arming: Float,
+) {
+    val armed: Boolean get() = arming <= 0f
 }
 
 class Pickup(

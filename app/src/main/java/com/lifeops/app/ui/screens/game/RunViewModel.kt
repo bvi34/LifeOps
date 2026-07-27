@@ -7,8 +7,11 @@ import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.GameScore
 import com.lifeops.app.data.repository.GameResourceRepository
 import com.lifeops.app.data.repository.GameScoreRepository
+import com.lifeops.app.data.repository.GameUnlockRepository
 import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StoreCatalog
+import com.lifeops.app.game.run.StoreOffer
 import com.lifeops.app.game.core.RunSeed
 import com.lifeops.app.game.run.Loadout
 import com.lifeops.app.game.run.RunConfig
@@ -31,8 +34,16 @@ data class RunUiState(
     val weapon: StartingWeapon = StartingWeapon.GATLING,
     val challengeMode: ChallengeMode = ChallengeMode.NONE,
     val commitment: Commitment = Commitment(),
+    /** Store items unlocked in previous runs (DESIGN.md §9) — gates loadout guns/mutators + the pool. */
+    val unlockedIds: Set<String> = emptySet(),
+    /** Unlocked mutators the player has toggled on for the next run in the loadout. */
+    val activeMutatorIds: Set<String> = emptySet(),
     val message: String? = null,
-)
+) {
+    /** Weapons offered in the loadout: the always-on baseline plus any unlocked store guns. */
+    val availableWeapons: List<StartingWeapon>
+        get() = StartingWeapon.values().filter { !it.unlockable } + StoreCatalog.unlockedGuns(unlockedIds)
+}
 
 /**
  * Owns the run lifecycle: the pre-run loadout (weapon + committed resources), the one-shot resource
@@ -43,6 +54,7 @@ data class RunUiState(
 class RunViewModel(
     private val gameResourceRepository: GameResourceRepository,
     private val gameScoreRepository: GameScoreRepository,
+    private val gameUnlockRepository: GameUnlockRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(RunUiState())
@@ -70,9 +82,32 @@ class RunViewModel(
                 _uiState.update { it.copy(resources = resources, commitment = it.commitment.clampedTo(resources)) }
             }
         }
+        viewModelScope.launch {
+            gameUnlockRepository.observeUnlockedIds().collectLatest { ids ->
+                _uiState.update { state ->
+                    // Keep the loadout coherent if the currently-selected gun is somehow no longer
+                    // owned, and drop any toggled mutators that were cleared.
+                    val weaponOk = !state.weapon.unlockable || StoreCatalog.unlockedGuns(ids).contains(state.weapon)
+                    state.copy(
+                        unlockedIds = ids,
+                        activeMutatorIds = state.activeMutatorIds.intersect(ids),
+                        weapon = if (weaponOk) state.weapon else StartingWeapon.GATLING,
+                    )
+                }
+            }
+        }
     }
 
     fun selectWeapon(weapon: StartingWeapon) = _uiState.update { it.copy(weapon = weapon) }
+
+    /** Toggle an owned mutator on/off for the next run (loadout opt-in — DESIGN.md §9). */
+    fun toggleMutator(id: String) = _uiState.update { state ->
+        if (id !in state.unlockedIds) state
+        else state.copy(
+            activeMutatorIds = if (id in state.activeMutatorIds) state.activeMutatorIds - id
+            else state.activeMutatorIds + id
+        )
+    }
 
     fun selectChallengeMode(mode: ChallengeMode) = _uiState.update { it.copy(challengeMode = mode) }
 
@@ -152,6 +187,8 @@ class RunViewModel(
                 startingGold = commitment.gold,
                 seed = RunSeed.fromWeek(weekKey),
                 challengeMode = state.challengeMode,
+                unlockedIds = state.unlockedIds,
+                activeMutatorIds = state.activeMutatorIds,
             )
             // Point investment = every banked point the run spent: the energy gate plus each
             // committed loadout resource (no cross-conversion — this is just their sum for display).
@@ -193,6 +230,39 @@ class RunViewModel(
         }
     }
 
+    /** The banked Modifier-Budget balance that funds the store (DESIGN.md §9), for the overlay. */
+    fun modifierBudgetBalance(): Int =
+        Loadout.modifierBudgetResource(_uiState.value.resources)?.currentValue ?: 0
+
+    val modifierBudgetName: String
+        get() = Loadout.modifierBudgetResource(_uiState.value.resources)?.name ?: "Modifier Budget"
+
+    /**
+     * Buy a store offer (DESIGN.md §9): debit banked Modifier Budget, record the permanent unlock,
+     * and tell the engine to grant it to the run. A no-op with a message if unaffordable — the engine
+     * never touches the bank (the same contract as [revive]).
+     */
+    fun purchaseStore(offer: StoreOffer) {
+        val engine = _engine.value ?: return
+        val state = _uiState.value
+        val budget = Loadout.modifierBudgetResource(state.resources)
+        if ((budget?.currentValue ?: 0) < offer.cost) {
+            _uiState.update { it.copy(message = "Not enough ${budget?.name ?: "Modifier Budget"} to buy ${offer.name}.") }
+            return
+        }
+        viewModelScope.launch {
+            budget?.let { gameResourceRepository.spendResource(it.id, offer.cost, "Store: ${offer.name}") }
+            gameUnlockRepository.unlock(offer.itemId)
+            engine.applyStorePurchase(offer.itemId)
+            _uiState.update { it.copy(message = null) }
+        }
+    }
+
+    /** Decline the store this set and roll on. */
+    fun skipStore() {
+        _engine.value?.skipStore()
+    }
+
     private suspend fun spendCommitment(role: Loadout.Role, amount: Int, resources: List<GameResource>) {
         if (amount <= 0) return
         Loadout.resolve(role, resources)?.let {
@@ -214,8 +284,9 @@ class RunViewModel(
 class RunViewModelFactory(
     private val gameResourceRepository: GameResourceRepository,
     private val gameScoreRepository: GameScoreRepository,
+    private val gameUnlockRepository: GameUnlockRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        RunViewModel(gameResourceRepository, gameScoreRepository) as T
+        RunViewModel(gameResourceRepository, gameScoreRepository, gameUnlockRepository) as T
 }

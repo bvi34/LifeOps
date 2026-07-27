@@ -47,6 +47,12 @@ enum class StartingWeapon(
      */
     val spinUpFloor: Float = 0f,
     val spinUpAccel: Float = 0f,
+    /**
+     * Baseline weapons are always in the loadout; unlockable ones only appear once the player has
+     * bought them from the between-set store (DESIGN.md §9). A store gun swaps the run's aimed weapon
+     * on purchase and joins the loadout roster for future runs. See [com.lifeops.app.game.content.StoreCatalog].
+     */
+    val unlockable: Boolean = false,
 ) {
     SNIPER(
         displayName = "Sniper",
@@ -105,6 +111,47 @@ enum class StartingWeapon(
         spread = 0.85f,
         magazineSize = 6,
         reloadSeconds = 1.9f,
+    ),
+
+    // --- Store-unlockable guns (DESIGN.md §9). Authored purely as data, same as the baseline three;
+    //     they only reach the loadout/level-up once bought from the between-set store. ---
+    SMG(
+        displayName = "SMG",
+        blurb = "A cheap bullet hose — very high fire rate, low per-hit damage, big magazine. Medium range; melts trash, chews reloads.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 9f,
+            Stat.FIRE_RATE to 11f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 440f,
+            Stat.RANGE to 400f,
+            Stat.CRIT_CHANCE to 0.04f,
+            Stat.CRIT_MULT to 2f,
+        ),
+        dpsNormalized = false,
+        unlimitedRange = false,
+        spread = 0.14f,
+        magazineSize = 40,
+        reloadSeconds = 2.1f,
+        unlockable = true,
+    ),
+    HAND_CANNON(
+        displayName = "Hand Cannon",
+        blurb = "A slow, brutal single shot — huge damage, tiny magazine, punishing reload. Rewards aim over spray.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 72f,
+            Stat.FIRE_RATE to 1.1f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 520f,
+            Stat.RANGE to 500f,
+            Stat.CRIT_CHANCE to 0.2f,
+            Stat.CRIT_MULT to 2.5f,
+        ),
+        dpsNormalized = false,
+        unlimitedRange = false,
+        spread = 0.2f,
+        magazineSize = 4,
+        reloadSeconds = 2.0f,
+        unlockable = true,
     );
 
     // Magazine lives in the stat block (so Extended Mag can scale it) but its base is this weapon
@@ -188,8 +235,8 @@ object Artifacts {
     // --- Combat equipment -----------------------------------------------------------------------
 
     // The auto-turret (DESIGN.md §4/§5). Rank 1 deploys one auto-turret; ranks 2-4 each roll a
-    // *random* turret improvement from [TurretUpgrades] (damage / fire rate / projectiles / range /
-    // an extra turret), so the equipment grows a different way each run. The modifier itself only
+    // *random* turret improvement from [EquipmentUpgrades.TURRET] (damage / fire rate / projectiles /
+    // range / an extra turret), so the equipment grows a different way each run. The modifier only
     // carries the rank-1 turret grant (AUTO scope); the rolled upgrades are applied by the engine,
     // which is why ranks 2-4 add nothing here. AUTO scope: turret stats, not the aimed weapon.
     val TURRET = Modifier(
@@ -214,28 +261,6 @@ object Artifacts {
     val STAT_SUPPORT: List<Modifier> = ALL.filter { it.category == ArtifactCategory.STAT_SUPPORT }
 
     fun byId(id: String): Modifier? = ALL.firstOrNull { it.id == id }
-}
-
-/**
- * The pool the Turret combat-equipment artifact rolls from on each rank past the first (DESIGN.md
- * §5). Every entry is an AUTO-scope stat row, so it lifts the deployed turrets (their stats) without
- * touching the player's aimed weapon. Authored as data — adding a turret upgrade is a row here.
- */
-object TurretUpgrades {
-    data class Upgrade(val id: String, val label: String, val contribution: StatContribution)
-
-    val POOL: List<Upgrade> = listOf(
-        Upgrade("t_damage", "+30% turret damage",
-            StatContribution(Stat.DAMAGE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
-        Upgrade("t_firerate", "+30% turret fire rate",
-            StatContribution(Stat.FIRE_RATE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
-        Upgrade("t_projectile", "+1 turret projectile",
-            StatContribution(Stat.PROJECTILES, Scope.AUTO, Op.FLAT, 1f)),
-        Upgrade("t_range", "+25% turret range",
-            StatContribution(Stat.RANGE, Scope.AUTO, Op.ADD_PERCENT, 0.25f)),
-        Upgrade("t_count", "+1 extra turret",
-            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 1f)),
-    )
 }
 
 /**

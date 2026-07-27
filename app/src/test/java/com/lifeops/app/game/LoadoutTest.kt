@@ -45,6 +45,18 @@ class LoadoutTest {
     }
 
     @Test
+    fun modifierBudgetResolvesTheSpiritSlot() {
+        // The store currency (DESIGN.md §2/§9) is the Personal-aspect "Spirit" slot by name…
+        assertEquals("Spirit", Loadout.modifierBudgetResource(defaultSlots)?.name)
+        // …and falls back to the 5th slot (index 4) when the name gives no keyword hit.
+        val opaque = listOf(
+            res("Alpha", 10, 0), res("Bravo", 10, 1), res("Charlie", 10, 2),
+            res("Delta", 10, 3), res("Echo", 10, 4),
+        )
+        assertEquals("Echo", Loadout.modifierBudgetResource(opaque)?.name)
+    }
+
+    @Test
     fun rolesFallBackToSlotIndexWhenNamesDoNotMatch() {
         val opaque = listOf(
             res("Alpha", 10, 0),

@@ -3,9 +3,12 @@ package com.lifeops.app.game.run
 import com.lifeops.app.game.content.Artifacts
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.SetBonuses
+import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
+import com.lifeops.app.game.content.EquipmentUpgrades
 import com.lifeops.app.game.content.TempBoosts
-import com.lifeops.app.game.content.TurretUpgrades
+import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -55,6 +58,8 @@ class RunEngine(
     val pickups = ArrayList<Pickup>()
     val effects = ArrayList<RunEffect>()
     val structures = ArrayList<Structure>()
+    /** Sown proximity mines from the Mines equipment (DESIGN.md §9). */
+    val mines = ArrayList<Mine>()
     /** Grid-cell occupancy for placed structures, keyed by [cellKey]. One structure per cell. */
     private val occupancy = HashMap<Int, Structure>()
     private val worldCols = (arena.worldSize.x / arena.cellSize).toInt().coerceAtLeast(1)
@@ -83,6 +88,10 @@ class RunEngine(
     private var nextId = 1
     /** Cooldown between auto-turret deployments, so the Turret artifact drips them in (not all at once). */
     private var turretDeployTimer = 0f
+    /** Cooldown between mine deployments, so the Mines equipment sows them in over time. */
+    private var mineDeployTimer = 0f
+    /** Cooldown between decoy deployments, so the Decoy equipment replants them as they're torn down. */
+    private var decoyDeployTimer = 0f
 
     /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
      *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
@@ -101,9 +110,21 @@ class RunEngine(
     private var levelUpOptions: List<LevelUpOption> = emptyList()
     private var setBonusOptions: List<SetBonusOption> = emptyList()
     private var overflowOptions: List<OverflowOption> = emptyList()
+    private var storeOptions: List<StoreOffer> = emptyList()
+
+    /** Store items owned this run (DESIGN.md §9): the persisted unlocks, plus anything bought at a set
+     *  boundary so far. Seeds the level-up draft pool and gates the store from re-offering owned items. */
+    private val runUnlockedIds: MutableSet<String> = config.unlockedIds.toMutableSet()
+
+    /** The live aimed weapon — a store gun can swap it mid-run, so read it, never [config].weapon. */
+    private val weapon: StartingWeapon get() = player.weapon
 
     init {
         director.configure(config.challengeMode, stats)
+        // Loadout-toggled mutators the player owns (DESIGN.md §9) apply from the first frame.
+        config.activeMutatorIds.forEach { id ->
+            (StoreCatalog.byId(id) as? StoreCatalog.Item.MutatorItem)?.let { applyMutator(it) }
+        }
         beginWave(0)
     }
 
@@ -151,6 +172,8 @@ class RunEngine(
         updateAim(input)
         fireWeapon(clamped, input)
         updateArtifactTurrets(clamped)
+        updateMines(clamped)
+        updateDecoys(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
         resolveEnemyProjectileBlocks()
@@ -240,13 +263,13 @@ class RunEngine(
         ammo = player.ammo.coerceAtLeast(0),
         magazine = player.magazine(stats),
         reloading = player.reloadRemaining > 0f,
-        reloadFrac = if (player.reloadRemaining > 0f && config.weapon.reloadSeconds > 0f)
-            (1f - (player.reloadRemaining / (config.weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
+        reloadFrac = if (player.reloadRemaining > 0f && weapon.reloadSeconds > 0f)
+            (1f - (player.reloadRemaining / (weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
         else 0f,
-        spinUp = config.weapon.spinUpAccel > 0f,
-        spinFrac = if (config.weapon.spinUpAccel > 0f) {
+        spinUp = weapon.spinUpAccel > 0f,
+        spinFrac = if (weapon.spinUpAccel > 0f) {
             val ceiling = player.fireRate(stats)
-            ((effectiveFireRate() - config.weapon.spinUpFloor) / (ceiling - config.weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+            ((effectiveFireRate() - weapon.spinUpFloor) / (ceiling - weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
         } else 0f,
         wave = wave + 1,
         totalWaves = config.waves,
@@ -275,15 +298,17 @@ class RunEngine(
             )
         },
         structureCosts = StructureType.values().associateWith { buildCost(it) },
+        mines = mines.map { MineView(it.pos, it.armed, stats.resolve(Stat.MINE_TRIGGER)) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
             ?.let { BossView((it.health / it.maxHealth).coerceIn(0f, 1f), it.type.displayName) },
         levelUpOptions = levelUpOptions,
         setBonusOptions = setBonusOptions,
+        storeOptions = storeOptions,
         overflowOptions = overflowOptions,
-        weapon = config.weapon,
-        weaponName = config.weapon.displayName,
+        weapon = weapon,
+        weaponName = weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
         boons = player.runBonuses.mapNotNull { c -> SetBonuses.BOONS.firstOrNull { it.contribution == c }?.name },
@@ -302,20 +327,62 @@ class RunEngine(
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
-            // Open arena: beeline straight at the player (Geometry Wars), bounded by the active edges,
-            // but blocked by placed structures — which the enemy attacks instead of walking through.
-            val dir = (player.pos - e.pos).normalized()
-            val delta = dir * (e.moveSpeed * dt)
-            var p = e.pos
-            val here = structureAt(p)
-            val tryX = Vec2(p.x + delta.x, p.y)
-            val sX = structureAt(tryX)
-            if (sX != null && sX !== here && sX.type.blocks) attackStructure(sX, e) else p = tryX
-            val tryY = Vec2(p.x, p.y + delta.y)
-            val sY = structureAt(tryY)
-            if (sY != null && sY !== here && sY.type.blocks) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
-            e.pos = arena.clamp(p, e.type.radius)
+            // Most enemies beeline the player (Geometry Wars); rushers make for the nearest base, and
+            // a decoy pulls any enemy that has strayed beyond its lure range. A targeted structure in
+            // reach is smashed on the spot rather than orbited.
+            val targetStructure = targetStructureFor(e)
+            if (targetStructure != null &&
+                e.pos.distanceTo(targetStructure.pos) <= e.type.radius + arena.cellSize * 0.6f) {
+                attackStructure(targetStructure, e)
+                continue
+            }
+            moveEnemyToward(e, targetStructure?.pos ?: player.pos, dt)
         }
+    }
+
+    /**
+     * Slide [e] toward [target] one axis at a time. *Any* structure in the next step is an obstacle:
+     * the enemy stops and smashes it rather than passing through (DESIGN.md §9) — turrets and decoys
+     * are struck the same as walls. [StructureType.blocks] now only governs whether the cell also
+     * stops enemy *fire*, not movement.
+     */
+    private fun moveEnemyToward(e: Enemy, target: Vec2, dt: Float) {
+        val dir = (target - e.pos).normalized()
+        val delta = dir * (e.moveSpeed * dt)
+        var p = e.pos
+        val here = structureAt(p)
+        val tryX = Vec2(p.x + delta.x, p.y)
+        val sX = structureAt(tryX)
+        if (sX != null && sX !== here) attackStructure(sX, e) else p = tryX
+        val tryY = Vec2(p.x, p.y + delta.y)
+        val sY = structureAt(tryY)
+        if (sY != null && sY !== here) attackStructure(sY, e) else p = Vec2(p.x, tryY.y)
+        e.pos = arena.clamp(p, e.type.radius)
+    }
+
+    /**
+     * Which structure [e] is hunting, or null to chase the player (DESIGN.md §9). Rushers prioritise
+     * the nearest base — they're the base-breakers — so they'll tear down turrets/decoys before the
+     * player. Everyone else is pulled to the nearest decoy only once they've strayed beyond its lure
+     * range from the player, so close pressure still lands on you while the outer swarm peels off.
+     */
+    private fun targetStructureFor(e: Enemy): Structure? {
+        if (structures.isEmpty()) return null
+        if (e.type == EnemyType.RUSHER) return nearestStructure(e.pos) { true }
+        val decoy = nearestStructure(e.pos) { it.type == StructureType.DECOY } ?: return null
+        val lure = stats.resolve(Stat.DECOY_RANGE)
+        return if (e.pos.distanceTo(player.pos) > lure) decoy else null
+    }
+
+    private inline fun nearestStructure(from: Vec2, predicate: (Structure) -> Boolean): Structure? {
+        var best: Structure? = null
+        var bestDist = Float.MAX_VALUE
+        for (s in structures) {
+            if (!s.alive || !predicate(s)) continue
+            val d = from.distanceTo(s.pos)
+            if (d < bestDist) { bestDist = d; best = s }
+        }
+        return best
     }
 
     private fun attackStructure(s: Structure, e: Enemy) {
@@ -364,6 +431,11 @@ class RunEngine(
             if (s.ttl != Float.POSITIVE_INFINITY) s.ttl -= dt // auto-turrets age toward expiry
             if (!s.alive) {
                 occupancy.remove(cellKey(s.col, s.row))
+                // A destroyed decoy detonates if the death-blast upgrade is owned (DESIGN.md §9).
+                if (s.type == StructureType.DECOY) {
+                    val blast = stats.resolve(Stat.DECOY_BLAST_RADIUS)
+                    if (blast > 0f) explode(s.pos, blast, DECOY_BLAST_DAMAGE, directTargetId = -1)
+                }
                 effects.add(RunEffect(s.pos, EffectKind.DEATH_BURST, worldRadius = arena.cellSize * 0.5f, ttl = BURST_SECONDS))
                 it.remove()
                 continue
@@ -436,6 +508,73 @@ class RunEngine(
         structures.add(s)
         occupancy[cellKey(col, row)] = s
         bus.emit(GameEvent.OnSpawn(s.id, EntityKind.TURRET))
+        return true
+    }
+
+    /**
+     * The Mines equipment (DESIGN.md §9): keep [Stat.MINE_COUNT] proximity mines sown near the player,
+     * dripping them in on a cooldown; detonate any armed mine an enemy wanders onto for an area blast.
+     * Blast damage / radius / trigger are read from the live build, so rolled mine upgrades apply.
+     */
+    private fun updateMines(dt: Float) {
+        // Age arming timers, then detonate any armed mine with an enemy in trigger range.
+        val trigger = stats.resolve(Stat.MINE_TRIGGER)
+        val radius = stats.resolve(Stat.MINE_RADIUS)
+        val damage = stats.resolve(Stat.MINE_DAMAGE)
+        val it = mines.iterator()
+        while (it.hasNext()) {
+            val m = it.next()
+            if (m.arming > 0f) { m.arming -= dt; continue }
+            val triggered = enemies.any { e -> e.alive && e.pos.distanceTo(m.pos) <= trigger + e.type.radius }
+            if (triggered) {
+                explode(m.pos, radius, damage, directTargetId = -1) // -1: no direct target, whole blast splashes
+                it.remove()
+            }
+        }
+        // Keep MINE_COUNT mines sown, dripping them in near the player on a cooldown.
+        val desired = stats.resolve(Stat.MINE_COUNT).toInt()
+        if (mineDeployTimer > 0f) mineDeployTimer -= dt
+        if (desired > 0 && mines.size < desired && mineDeployTimer <= 0f) {
+            deployMine()
+            mineDeployTimer = MINE_DEPLOY_INTERVAL
+        }
+    }
+
+    /** Sow one mine at a random in-arena point ringing the player. */
+    private fun deployMine() {
+        val ang = rng.nextFloat(0f, TWO_PI)
+        val dist = rng.nextFloat(MINE_MIN_DIST, MINE_MAX_DIST)
+        val pos = arena.clamp(Vec2(player.pos.x + cos(ang) * dist, player.pos.y + sin(ang) * dist), 6f)
+        mines.add(Mine(id = nextId++, pos = pos, arming = MINE_ARM_TIME))
+    }
+
+    /**
+     * The Decoy equipment (DESIGN.md §9): keep [Stat.DECOY_COUNT] decoys planted near the player,
+     * replanting on a cooldown as enemies tear them down. Each is a non-blocking structure deployed
+     * with build-scaled HP; the targeting layer routes distant aggro onto it.
+     */
+    private fun updateDecoys(dt: Float) {
+        val desired = stats.resolve(Stat.DECOY_COUNT).toInt()
+        if (desired <= 0) return
+        if (decoyDeployTimer > 0f) decoyDeployTimer -= dt
+        val current = structures.count { it.type == StructureType.DECOY }
+        if (current < desired && decoyDeployTimer <= 0f) {
+            if (deployDecoy()) decoyDeployTimer = DECOY_DEPLOY_INTERVAL
+        }
+    }
+
+    /** Plant one decoy at the nearest free grid cell to the player, with build-scaled durability. */
+    private fun deployDecoy(): Boolean {
+        val cell = freeCellNearPlayer() ?: return false
+        val (col, row) = cell
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        val hp = stats.resolve(Stat.DECOY_HP).coerceAtLeast(1f)
+        val s = Structure(
+            id = nextId++, type = StructureType.DECOY, col = col, row = row, pos = center,
+            hp = hp, maxHp = hp,
+        )
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
         return true
     }
 
@@ -625,16 +764,21 @@ class RunEngine(
         var perHit = player.aimedDamage(stats)
         // Gatling normalizes total DPS across projectile count (DESIGN.md §4): splitting into more
         // projectiles must not multiply throughput, so per-hit damage is divided by the count.
-        if (config.weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
+        if (weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
 
         val baseAngle = kotlin.math.atan2(aimDir.y, aimDir.x)
-        val spread = if (count > 1) config.weapon.spread else 0f // per-weapon fan (Shotgun spreads wide)
+        val spread = if (count > 1) weapon.spread else 0f // per-weapon fan (Shotgun spreads wide)
         val speed = player.projectileSpeed(stats)
         // Sniper never falls short (DESIGN.md §4): its shots live long enough to cross the arena and
         // only die on a hit or at the edge. The others expire at their range.
-        val life = if (config.weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
+        val life = if (weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
         val critChance = player.critChance(stats)
         val critMult = player.critMult(stats)
+        // On-hit passives (DESIGN.md §9): resolved once from the aimed build and stamped onto every
+        // pellet, so pierce/ricochet/explosive transform whatever gun is equipped.
+        val pierce = stats.resolve(Stat.PIERCE, Scope.AIMED).toInt().coerceAtLeast(0)
+        val bounces = stats.resolve(Stat.RICOCHET, Scope.AIMED).toInt().coerceAtLeast(0)
+        val boom = stats.resolve(Stat.EXPLOSION_RADIUS, Scope.AIMED).coerceAtLeast(0f)
 
         for (i in 0 until count) {
             val t = if (count == 1) 0f else (i / (count - 1f)) - 0.5f
@@ -645,6 +789,7 @@ class RunEngine(
             val p = Projectile(
                 id = nextId++, ownerId = PLAYER_ID, pos = player.pos, vel = vel,
                 damage = dmg, crit = crit, lifeRemaining = life, friendly = true,
+                pierceLeft = pierce, bouncesLeft = bounces, explosionRadius = boom,
             )
             projectiles.add(p)
             bus.emit(GameEvent.OnProjectileSpawn(p.id, PLAYER_ID))
@@ -659,7 +804,7 @@ class RunEngine(
      */
     private fun beginReload() {
         if (player.reloadRemaining > 0f || player.ammo >= player.magazine(stats)) return
-        player.reloadRemaining = config.weapon.reloadSeconds / player.reloadSpeed(stats)
+        player.reloadRemaining = weapon.reloadSeconds / player.reloadSpeed(stats)
     }
 
     /** Reload on demand (DESIGN.md §4). Ignored while paused/over, mid-reload, or on a full magazine. */
@@ -675,8 +820,8 @@ class RunEngine(
      */
     private fun effectiveFireRate(): Float {
         val ceiling = player.fireRate(stats)
-        if (config.weapon.spinUpAccel <= 0f) return ceiling
-        return (config.weapon.spinUpFloor + config.weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
+        if (weapon.spinUpAccel <= 0f) return ceiling
+        return (weapon.spinUpFloor + weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
     }
 
     /** Track the aim direction every frame so the barrel/reticle follows the nearest target even
@@ -689,7 +834,7 @@ class RunEngine(
     private fun resolveAim(input: RunInput): Vec2? {
         input.aimOverride?.let { if (it.length() > Vec2.EPSILON) return it.normalized() }
         // The Sniper locks on anywhere (unlimited range, §4); the others only auto-aim within reach.
-        val range = if (config.weapon.unlimitedRange) UNLIMITED_AIM_RANGE else player.range(stats)
+        val range = if (weapon.unlimitedRange) UNLIMITED_AIM_RANGE else player.range(stats)
         var best: Enemy? = null
         var bestDist = Float.MAX_VALUE
         for (e in enemies) {
@@ -735,21 +880,71 @@ class RunEngine(
         while (pit.hasNext()) {
             val p = pit.next()
             if (!p.friendly) continue // only player/turret shots damage enemies
-            var hitEnemy: Enemy? = null
+            // The first enemy in range this shot hasn't already struck — pierce/ricochet keep a shot
+            // alive across frames, so a shot must never re-hit a body it already passed through.
+            var target: Enemy? = null
             for (e in enemies) {
-                if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { hitEnemy = e; break }
+                if (!e.alive || e.id in p.hitIds) continue // dead-but-not-yet-culled bodies aren't targets
+                if (p.pos.distanceTo(e.pos) <= e.type.radius + p.radius) { target = e; break }
             }
-            val target = hitEnemy ?: continue
+            val t = target ?: continue
             // Every hit is an event routed through the resolver's frame budget (invariants #2/#3).
             resolver.resolve {
-                target.health -= p.damage
-                target.hitFlash = HIT_FLASH_SECONDS
-                bus.emit(GameEvent.OnHit(PLAYER_ID, target.id, p.damage, p.crit))
-                if (!target.alive) killEnemy(target)
+                t.health -= p.damage
+                t.hitFlash = HIT_FLASH_SECONDS
+                p.hitIds.add(t.id)
+                bus.emit(GameEvent.OnHit(PLAYER_ID, t.id, p.damage, p.crit))
+                if (!t.alive) killEnemy(t)
+                if (p.explosionRadius > 0f) explode(p.pos, p.explosionRadius, p.damage * EXPLOSION_DAMAGE_FRAC, t.id)
             }
-            pit.remove()
+            // Survive the hit via pierce first (straight through), then ricochet (bounce to a new
+            // target); a shot with neither budget is spent on impact.
+            when {
+                p.pierceLeft > 0 -> p.pierceLeft--
+                p.bouncesLeft > 0 -> {
+                    p.bouncesLeft--
+                    if (!redirectToNearest(p)) pit.remove()
+                }
+                else -> pit.remove()
+            }
         }
         enemies.removeAll { !it.alive }
+    }
+
+    /**
+     * An explosive shot's blast (DESIGN.md §9): splash [damage] to every enemy within [radius] of
+     * [center], skipping the projectile's direct target (already damaged this hit). Each splash hit
+     * goes through the resolver so a chain of explosions still respects the frame budget.
+     */
+    private fun explode(center: Vec2, radius: Float, damage: Float, directTargetId: Int) {
+        effects.add(RunEffect(pos = center, kind = EffectKind.EXPLOSION, worldRadius = radius, ttl = BURST_SECONDS))
+        for (e in enemies) {
+            if (!e.alive || e.id == directTargetId) continue
+            if (center.distanceTo(e.pos) > radius + e.type.radius) continue
+            resolver.resolve {
+                e.health -= damage
+                e.hitFlash = HIT_FLASH_SECONDS
+                bus.emit(GameEvent.OnHit(PLAYER_ID, e.id, damage, false))
+                if (!e.alive) killEnemy(e)
+            }
+        }
+    }
+
+    /** Point [p] at the nearest enemy it hasn't hit yet (a ricochet). Returns false if none remain. */
+    private fun redirectToNearest(p: Projectile): Boolean {
+        var best: Enemy? = null
+        var bestDist = Float.MAX_VALUE
+        for (e in enemies) {
+            if (!e.alive || e.id in p.hitIds) continue
+            val d = e.pos.distanceTo(p.pos)
+            if (d < bestDist) { bestDist = d; best = e }
+        }
+        val target = best ?: return false
+        val speed = p.vel.length()
+        p.vel = (target.pos - p.pos).normalized() * speed
+        // A fresh leg of travel, so a bounced shot doesn't die to the previous target's range clock.
+        p.lifeRemaining = maxOf(p.lifeRemaining, RICOCHET_LIFE)
+        return true
     }
 
     private fun killEnemy(e: Enemy) {
@@ -975,22 +1170,113 @@ class RunEngine(
         director.addRunBane(option.bane.contribution)
         rebuildStats()
         setBonusOptions = emptyList()
+        // The boon/bane draft is followed by the between-set store (DESIGN.md §9), then the next set.
+        enterStoreOrResume()
+    }
+
+    // --- Between-set store (DESIGN.md §9) ---------------------------------------------------------
+
+    /**
+     * After the set draft, open the store on up to [STORE_OFFER_COUNT] random unowned offers; if the
+     * catalog is exhausted (everything owned) there is nothing to show, so roll straight on.
+     */
+    private fun enterStoreOrResume() {
+        storeOptions = rollStoreOffers()
+        if (storeOptions.isNotEmpty()) {
+            status = RunStatus.STORE
+        } else {
+            resumeIntoNextSet()
+        }
+    }
+
+    /** Four random offers drawn from the catalog minus everything already owned this run. */
+    private fun rollStoreOffers(): List<StoreOffer> {
+        val pool = StoreCatalog.ITEMS.filter { it.id !in runUnlockedIds }.toMutableList()
+        val out = ArrayList<StoreOffer>(STORE_OFFER_COUNT)
+        while (pool.isNotEmpty() && out.size < STORE_OFFER_COUNT) {
+            val item = pool.removeAt(rng.nextInt(pool.size))
+            out.add(StoreOffer(item.id, item.name, item.description, item.category.label, item.category.cost))
+        }
+        return out
+    }
+
+    /**
+     * Apply a bought store item to this run and resume (DESIGN.md §9). The Modifier-Budget spend and
+     * the permanent unlock record are handled by the caller against the bank — the engine never
+     * touches banked resources (the same contract as [revive]). No-op unless paused on the store.
+     */
+    fun applyStorePurchase(itemId: String) {
+        if (status != RunStatus.STORE) return
+        StoreCatalog.byId(itemId)?.let { item ->
+            when (item) {
+                is StoreCatalog.Item.ArtifactItem -> grantArtifact(item.modifier)   // joins the build + pool
+                is StoreCatalog.Item.GunItem -> swapWeapon(item.weapon)             // replaces the aimed weapon
+                is StoreCatalog.Item.MutatorItem -> applyMutator(item)             // run-wide effect
+            }
+            runUnlockedIds.add(item.id)
+        }
+        resumeIntoNextSet()
+    }
+
+    /** Decline the store this set (DESIGN.md §9). No-op unless paused on the store. */
+    fun skipStore() {
+        if (status != RunStatus.STORE) return
+        resumeIntoNextSet()
+    }
+
+    private fun resumeIntoNextSet() {
+        storeOptions = emptyList()
         breatherTimer = BREATHER_SECONDS * 1.5f
         beginWave(0)
         status = RunStatus.RUNNING
     }
 
+    /** Grant (or rank up) a store artifact immediately, so it's live for the rest of this run. */
+    private fun grantArtifact(mod: Modifier) {
+        val idx = player.held.indexOfFirst { it.modifier.id == mod.id }
+        if (idx >= 0) {
+            val next = (player.held[idx].rank + 1).coerceAtMost(mod.maxRank)
+            player.held[idx] = HeldModifier(mod, next)
+        } else {
+            player.held.add(HeldModifier(mod, 1))
+        }
+        rebuildStats()
+    }
+
+    /** Swap the aimed weapon to a store gun: reset firing state and hand over a full magazine. */
+    private fun swapWeapon(newWeapon: StartingWeapon) {
+        player.weapon = newWeapon
+        player.reloadRemaining = 0f
+        player.spin = 0f
+        player.fireCooldown = 0f
+        rebuildStats()
+        player.ammo = player.magazine(stats)
+    }
+
+    /** Fold a mutator's run-wide bonuses/banes in (DESIGN.md §9). Used at run start and on purchase. */
+    private fun applyMutator(item: StoreCatalog.Item.MutatorItem) {
+        player.runBonuses.addAll(item.playerBonuses)
+        item.directorBanes.forEach { director.addRunBane(it) }
+        rebuildStats()
+    }
+
+    /** The draft pool: the baseline artifacts plus every passive/equipment unlocked from the store
+     *  (DESIGN.md §9). This is how a bought item "becomes part of the level-up pool" for the run. */
+    private fun artifactPool(): List<Modifier> = Artifacts.ALL + StoreCatalog.unlockedArtifacts(runUnlockedIds)
+
     private fun rollLevelUpOptions(): List<LevelUpOption> {
-        val candidates = Artifacts.ALL.mapNotNull { mod ->
+        val candidates = artifactPool().mapNotNull { mod ->
             val held = player.held.firstOrNull { it.modifier.id == mod.id }
             val currentRank = held?.rank ?: 0
             if (currentRank >= mod.maxRank) null
             else {
                 val resultingRank = currentRank + 1
-                // Combat-equipment ranks past the first roll a random turret upgrade (DESIGN.md §5),
-                // so the offer shows exactly which improvement this pick would grant.
-                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT && resultingRank >= 2)
-                    TurretUpgrades.POOL[rng.nextInt(TurretUpgrades.POOL.size)] else null
+                // Combat-equipment ranks past the first roll a random upgrade from *that equipment's*
+                // pool (DESIGN.md §5/§9), so the offer shows exactly which improvement this pick grants.
+                val pool = EquipmentUpgrades.poolFor(mod.id)
+                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT &&
+                    resultingRank >= 2 && pool.isNotEmpty())
+                    pool[rng.nextInt(pool.size)] else null
                 LevelUpOption(mod, resultingRank, isNew = held == null, equipmentUpgrade = upgrade)
             }
         }
@@ -1031,6 +1317,9 @@ class RunEngine(
 
     companion object {
         const val PLAYER_ID = 0
+        const val STORE_OFFER_COUNT = 4    // the between-set store shows four random offers (§9)
+        const val EXPLOSION_DAMAGE_FRAC = 0.6f // splash damage as a fraction of the direct hit (§9)
+        const val RICOCHET_LIFE = 1.2f     // seconds of travel a bounced shot is guaranteed for its new leg
         const val SPAWN_INTERVAL = 0.30f   // faster drip — the open arena wants a real swarm
         const val BREATHER_SECONDS = 2.5f
         const val BOSS_STAGGER = 1.2f      // seconds between multiple bosses entering
@@ -1043,6 +1332,13 @@ class RunEngine(
         const val REVIVE_CLEAR_RADIUS = 220f // enemies/fire cleared around the player on revive (§7)
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
         const val TURRET_DEPLOY_INTERVAL = 1.5f // seconds between auto-turret deployments
+        const val MINE_DEPLOY_INTERVAL = 1.4f   // seconds between mine deployments (§9)
+        const val MINE_ARM_TIME = 0.6f          // seconds before a sown mine can detonate
+        const val MINE_MIN_DIST = 45f           // ring around the player a mine is sown within
+        const val MINE_MAX_DIST = 120f
+        const val TWO_PI = (2.0 * Math.PI).toFloat()
+        const val DECOY_DEPLOY_INTERVAL = 2.0f  // seconds between (re)planting a decoy (§9)
+        const val DECOY_BLAST_DAMAGE = 60f       // damage of a destroyed decoy's death blast, if upgraded
         // Sniper "never reaches end of range" (§4): a lifetime long enough to cross the max arena at
         // its projectile speed, so range never clips its shots — only a hit or the arena edge does.
         const val UNLIMITED_LIFE = 6f

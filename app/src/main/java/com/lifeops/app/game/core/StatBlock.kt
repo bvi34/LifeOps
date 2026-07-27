@@ -33,6 +33,27 @@ enum class Stat {
     TURRET_COUNT,    // concurrent artifact turrets (also secretly multiplicative)
     TURRET_TTL,      // seconds a turret lives
 
+    // On-hit projectile behaviours (DESIGN.md §9 store passives). Read at fire time and stamped onto
+    // each shot, so they transform *any* weapon's projectiles — the engine reads the stat, no
+    // per-weapon code (the same "stat, not code" rule as TURRET_COUNT).
+    PIERCE,          // extra enemies a shot passes through before it's spent
+    RICOCHET,        // times a spent shot bounces to a new nearby target
+    EXPLOSION_RADIUS,// world-unit blast radius on impact (0 = no explosion)
+
+    // Mines equipment (DESIGN.md §9). Dedicated keys so mine upgrades never bleed onto the turret
+    // (AUTO) or the aimed gun. The engine keeps MINE_COUNT proximity mines sown near the player.
+    MINE_COUNT,      // concurrent proximity mines kept deployed (0 = no mines)
+    MINE_DAMAGE,     // blast damage per detonation
+    MINE_RADIUS,     // blast radius per detonation
+    MINE_TRIGGER,    // proximity radius that arms a detonation
+
+    // Decoy equipment (DESIGN.md §9). A deployed lure that hijacks enemy aggro: enemies farther than
+    // DECOY_RANGE from the player peel off to attack the nearest decoy instead. Dedicated keys.
+    DECOY_COUNT,        // concurrent decoys kept deployed (0 = no decoys)
+    DECOY_HP,           // decoy durability, in enemy hits
+    DECOY_RANGE,        // lure radius: enemies beyond this from the player target a decoy
+    DECOY_BLAST_RADIUS, // blast radius when a decoy is destroyed (0 = no death blast)
+
     // Director-scoped stats (DESIGN.md §8). Inert on the player/enemies — only the run's Director
     // reads them. Remap tables feed player stats into these; challenge-mode modifiers set them
     // directly. Adding a challenge variant is authoring these values, not writing engine code.
@@ -116,6 +137,17 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.XP_GAIN to 1f,
             Stat.TURRET_COUNT to 0f,
             Stat.TURRET_TTL to 8f,
+            Stat.PIERCE to 0f,
+            Stat.RICOCHET to 0f,
+            Stat.EXPLOSION_RADIUS to 0f,
+            Stat.MINE_COUNT to 0f,
+            Stat.MINE_DAMAGE to 45f,
+            Stat.MINE_RADIUS to 60f,
+            Stat.MINE_TRIGGER to 34f,
+            Stat.DECOY_COUNT to 0f,
+            Stat.DECOY_HP to 5f,
+            Stat.DECOY_RANGE to 220f,
+            Stat.DECOY_BLAST_RADIUS to 0f,
             Stat.SPAWN_MULT to 1f,
             Stat.ENEMY_HP_MULT to 1f,
             Stat.ENEMY_SPEED_MULT to 1f,

@@ -103,6 +103,7 @@ class StructureTest {
                 }
                 RunStatus.OVERFLOW -> e.snapshot().overflowOptions.firstOrNull()?.let { e.chooseOverflow(it) }
                 RunStatus.SET_BONUS -> e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                RunStatus.STORE -> e.skipStore()
                 else -> {}
             }
             e.step(1f / 60f, RunInput())
@@ -129,6 +130,7 @@ class StructureTest {
                 }
                 RunStatus.OVERFLOW -> e.snapshot().overflowOptions.firstOrNull()?.let { e.chooseOverflow(it) }
                 RunStatus.SET_BONUS -> e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                RunStatus.STORE -> e.skipStore()
                 else -> {}
             }
             val rank = e.player.held.firstOrNull { it.modifier.id == Artifacts.TURRET.id }?.rank ?: 0
