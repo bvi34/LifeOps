@@ -182,6 +182,20 @@ class Structure(
     val alive: Boolean get() = hp > 0f && ttl > 0f
 }
 
+/**
+ * A sown proximity mine (DESIGN.md §9 — the Mines equipment). Sits on the field until an enemy
+ * comes within its trigger radius, then detonates for an area blast. [arming] counts down before it
+ * can trigger, so a mine dropped into a crowd doesn't pop the same instant it lands. Blast damage /
+ * radius / trigger are read from the live build at detonation, so mid-run upgrades apply.
+ */
+class Mine(
+    val id: Int,
+    val pos: Vec2,
+    var arming: Float,
+) {
+    val armed: Boolean get() = arming <= 0f
+}
+
 class Pickup(
     val id: Int,
     var pos: Vec2,

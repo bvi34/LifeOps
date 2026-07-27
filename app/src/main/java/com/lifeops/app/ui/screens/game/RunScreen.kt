@@ -453,6 +453,17 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 }
             }
 
+            // Sown proximity mines: a small dark disc with a warning core, and a faint trigger ring
+            // once armed. They read as hazards on the floor, distinct from turrets/pickups.
+            snapshot.mines.forEach { m ->
+                val c = Offset(sx(m.pos.x), sy(m.pos.y))
+                if (m.armed) {
+                    drawCircle(color = MINE_COLOR.copy(alpha = 0.18f), radius = m.triggerRadius * scale, center = c, style = Stroke(1f * scale))
+                }
+                drawCircle(color = Color(0xFF2A2A30), radius = 6f * scale, center = c)
+                drawCircle(color = if (m.armed) MINE_COLOR else MINE_COLOR.copy(alpha = 0.45f), radius = 3f * scale, center = c)
+            }
+
             snapshot.enemies.forEach { e ->
                 val c = Offset(sx(e.pos.x), sy(e.pos.y))
                 val r = e.radius * scale
@@ -1067,6 +1078,7 @@ private val HP_ARC_COLOR = Color(0xFFECEFF1)
 private val BOSS_COLOR = Color(0xFFAB47BC)
 private val MUZZLE_COLOR = Color(0xFFFFF59D)
 private val EXPLOSION_COLOR = Color(0xFFFF7043)
+private val MINE_COLOR = Color(0xFFFFA726)
 private val HURT_FLASH_COLOR = Color(0xFFEF5350)
 private val AMMO_COLOR = Color(0xFF90A4AE)
 private val SPIN_COLOR = Color(0xFFFFB300)

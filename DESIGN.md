@@ -320,6 +320,18 @@ straight through), then bounces to a fresh target while it has ricochet budget,
 and splashes `EXPLOSION_DAMAGE_FRAC` of its damage in-radius when explosive. New
 on-hit behaviours are a new stat + a few lines in the collision step.
 
+**Equipment upgrade pools.** Every combat-equipment artifact rolls a *variable*
+upgrade on each rank past the first (the turret's original trick, generalised).
+`content/EquipmentUpgrades` is one registry of per-equipment pools —
+`poolFor(id)` maps an equipment's modifier id to its list of authored upgrade
+rows — and the level-up roll draws from the pool for *that* equipment. Turret
+upgrades are AUTO-scope weapon stats; **Mines** upgrades are dedicated `MINE_*`
+stats (count / damage / blast radius / trigger range) so the two never bleed into
+each other. Mines are the second equipment: rank 1 sows proximity mines that the
+engine keeps stocked near the player and detonates for an area blast on contact;
+ranks 2+ roll from `EquipmentUpgrades.MINES`. A new equipment is a deploy/behaviour
+in the engine reading its own stat + a pool in the registry.
+
 ---
 
 ## 10. Build order

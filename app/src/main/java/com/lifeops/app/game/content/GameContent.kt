@@ -235,8 +235,8 @@ object Artifacts {
     // --- Combat equipment -----------------------------------------------------------------------
 
     // The auto-turret (DESIGN.md §4/§5). Rank 1 deploys one auto-turret; ranks 2-4 each roll a
-    // *random* turret improvement from [TurretUpgrades] (damage / fire rate / projectiles / range /
-    // an extra turret), so the equipment grows a different way each run. The modifier itself only
+    // *random* turret improvement from [EquipmentUpgrades.TURRET] (damage / fire rate / projectiles /
+    // range / an extra turret), so the equipment grows a different way each run. The modifier only
     // carries the rank-1 turret grant (AUTO scope); the rolled upgrades are applied by the engine,
     // which is why ranks 2-4 add nothing here. AUTO scope: turret stats, not the aimed weapon.
     val TURRET = Modifier(
@@ -261,28 +261,6 @@ object Artifacts {
     val STAT_SUPPORT: List<Modifier> = ALL.filter { it.category == ArtifactCategory.STAT_SUPPORT }
 
     fun byId(id: String): Modifier? = ALL.firstOrNull { it.id == id }
-}
-
-/**
- * The pool the Turret combat-equipment artifact rolls from on each rank past the first (DESIGN.md
- * §5). Every entry is an AUTO-scope stat row, so it lifts the deployed turrets (their stats) without
- * touching the player's aimed weapon. Authored as data — adding a turret upgrade is a row here.
- */
-object TurretUpgrades {
-    data class Upgrade(val id: String, val label: String, val contribution: StatContribution)
-
-    val POOL: List<Upgrade> = listOf(
-        Upgrade("t_damage", "+30% turret damage",
-            StatContribution(Stat.DAMAGE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
-        Upgrade("t_firerate", "+30% turret fire rate",
-            StatContribution(Stat.FIRE_RATE, Scope.AUTO, Op.ADD_PERCENT, 0.30f)),
-        Upgrade("t_projectile", "+1 turret projectile",
-            StatContribution(Stat.PROJECTILES, Scope.AUTO, Op.FLAT, 1f)),
-        Upgrade("t_range", "+25% turret range",
-            StatContribution(Stat.RANGE, Scope.AUTO, Op.ADD_PERCENT, 0.25f)),
-        Upgrade("t_count", "+1 extra turret",
-            StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 1f)),
-    )
 }
 
 /**

@@ -20,8 +20,8 @@ data class LevelUpOption(
     val modifier: Modifier,
     val resultingRank: Int,
     val isNew: Boolean,
-    /** For a combat-equipment rank past the first: the random turret upgrade this pick rolls (§5). */
-    val equipmentUpgrade: com.lifeops.app.game.content.TurretUpgrades.Upgrade? = null,
+    /** For a combat-equipment rank past the first: the random upgrade this pick rolls (§5/§9). */
+    val equipmentUpgrade: com.lifeops.app.game.content.EquipmentUpgrades.Upgrade? = null,
 ) {
     val label: String get() = when {
         isNew -> "New · ${modifier.name}"
@@ -119,6 +119,8 @@ data class RunSnapshot(
     val enemyProjectiles: List<Vec2>,
     val structures: List<StructureView>,
     val structureCosts: Map<StructureType, Int>,
+    /** Sown proximity mines (the Mines equipment, §9). */
+    val mines: List<MineView>,
     val pickups: List<PickupView>,
     val effects: List<EffectView>,
     val boss: BossView?,
@@ -167,6 +169,7 @@ data class StructureView(
     val ttlFrac: Float = 1f,
 )
 data class EffectView(val pos: Vec2, val kind: EffectKind, val ageFrac: Float, val worldRadius: Float)
+data class MineView(val pos: Vec2, val armed: Boolean, val triggerRadius: Float)
 data class BossView(val healthFrac: Float, val name: String)
 data class HeldView(val name: String, val rank: Int, val maxRank: Int)
 

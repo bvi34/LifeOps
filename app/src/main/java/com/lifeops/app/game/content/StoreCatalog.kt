@@ -178,6 +178,21 @@ object StoreCatalog {
             category = ArtifactCategory.COMBAT_EQUIPMENT,
         ),
     )
+    private val MINES = Item.ArtifactItem(
+        id = "mines", category = Category.EQUIPMENT,
+        modifier = Modifier(
+            id = "mines", name = "Mines",
+            description = "Rank 1 sows proximity mines that detonate on contact; later ranks roll a random mine upgrade.",
+            attachesTo = AttachTarget.ENTITY, maxRank = 4,
+            rankContributions = listOf(
+                StatContribution(Stat.MINE_COUNT, Scope.GLOBAL, Op.FLAT, 1f), // rank 1: the first mine
+                StatContribution(Stat.MINE_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // ranks 2-4: a rolled
+                StatContribution(Stat.MINE_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // mine upgrade from
+                StatContribution(Stat.MINE_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // EquipmentUpgrades.MINES.
+            ),
+            category = ArtifactCategory.COMBAT_EQUIPMENT,
+        ),
+    )
 
     // --- Guns (§4). Fully data-authored weapons; picked → swap, owned → loadout. -----------------------
     private val SMG = Item.GunItem(
@@ -214,7 +229,7 @@ object StoreCatalog {
         RAPID_FIRE, MUZZLE_VELOCITY, GUNSLINGER, PREDATOR, QUARTERMASTER,
         PENETRATION, RICOCHET, EXPLOSIVE_ROUNDS,
         // Equipment (100)
-        SENTRY_ARRAY,
+        SENTRY_ARRAY, MINES,
         // Guns (150)
         SMG, HAND_CANNON,
     )

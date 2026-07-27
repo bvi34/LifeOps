@@ -40,6 +40,13 @@ enum class Stat {
     RICOCHET,        // times a spent shot bounces to a new nearby target
     EXPLOSION_RADIUS,// world-unit blast radius on impact (0 = no explosion)
 
+    // Mines equipment (DESIGN.md §9). Dedicated keys so mine upgrades never bleed onto the turret
+    // (AUTO) or the aimed gun. The engine keeps MINE_COUNT proximity mines sown near the player.
+    MINE_COUNT,      // concurrent proximity mines kept deployed (0 = no mines)
+    MINE_DAMAGE,     // blast damage per detonation
+    MINE_RADIUS,     // blast radius per detonation
+    MINE_TRIGGER,    // proximity radius that arms a detonation
+
     // Director-scoped stats (DESIGN.md §8). Inert on the player/enemies — only the run's Director
     // reads them. Remap tables feed player stats into these; challenge-mode modifiers set them
     // directly. Adding a challenge variant is authoring these values, not writing engine code.
@@ -126,6 +133,10 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.PIERCE to 0f,
             Stat.RICOCHET to 0f,
             Stat.EXPLOSION_RADIUS to 0f,
+            Stat.MINE_COUNT to 0f,
+            Stat.MINE_DAMAGE to 45f,
+            Stat.MINE_RADIUS to 60f,
+            Stat.MINE_TRIGGER to 34f,
             Stat.SPAWN_MULT to 1f,
             Stat.ENEMY_HP_MULT to 1f,
             Stat.ENEMY_SPEED_MULT to 1f,

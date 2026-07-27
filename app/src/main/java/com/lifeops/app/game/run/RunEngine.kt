@@ -6,8 +6,8 @@ import com.lifeops.app.game.content.SetBonuses
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
+import com.lifeops.app.game.content.EquipmentUpgrades
 import com.lifeops.app.game.content.TempBoosts
-import com.lifeops.app.game.content.TurretUpgrades
 import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
@@ -58,6 +58,8 @@ class RunEngine(
     val pickups = ArrayList<Pickup>()
     val effects = ArrayList<RunEffect>()
     val structures = ArrayList<Structure>()
+    /** Sown proximity mines from the Mines equipment (DESIGN.md §9). */
+    val mines = ArrayList<Mine>()
     /** Grid-cell occupancy for placed structures, keyed by [cellKey]. One structure per cell. */
     private val occupancy = HashMap<Int, Structure>()
     private val worldCols = (arena.worldSize.x / arena.cellSize).toInt().coerceAtLeast(1)
@@ -86,6 +88,8 @@ class RunEngine(
     private var nextId = 1
     /** Cooldown between auto-turret deployments, so the Turret artifact drips them in (not all at once). */
     private var turretDeployTimer = 0f
+    /** Cooldown between mine deployments, so the Mines equipment sows them in over time. */
+    private var mineDeployTimer = 0f
 
     /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
      *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
@@ -166,6 +170,7 @@ class RunEngine(
         updateAim(input)
         fireWeapon(clamped, input)
         updateArtifactTurrets(clamped)
+        updateMines(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
         resolveEnemyProjectileBlocks()
@@ -290,6 +295,7 @@ class RunEngine(
             )
         },
         structureCosts = StructureType.values().associateWith { buildCost(it) },
+        mines = mines.map { MineView(it.pos, it.armed, stats.resolve(Stat.MINE_TRIGGER)) },
         pickups = pickups.map { PickupView(it.pos, it.kind) },
         effects = effects.map { EffectView(it.pos, it.kind, (it.age / it.ttl).coerceIn(0f, 1f), it.worldRadius) },
         boss = enemies.firstOrNull { it.kind == EntityKind.BOSS }
@@ -453,6 +459,43 @@ class RunEngine(
         occupancy[cellKey(col, row)] = s
         bus.emit(GameEvent.OnSpawn(s.id, EntityKind.TURRET))
         return true
+    }
+
+    /**
+     * The Mines equipment (DESIGN.md §9): keep [Stat.MINE_COUNT] proximity mines sown near the player,
+     * dripping them in on a cooldown; detonate any armed mine an enemy wanders onto for an area blast.
+     * Blast damage / radius / trigger are read from the live build, so rolled mine upgrades apply.
+     */
+    private fun updateMines(dt: Float) {
+        // Age arming timers, then detonate any armed mine with an enemy in trigger range.
+        val trigger = stats.resolve(Stat.MINE_TRIGGER)
+        val radius = stats.resolve(Stat.MINE_RADIUS)
+        val damage = stats.resolve(Stat.MINE_DAMAGE)
+        val it = mines.iterator()
+        while (it.hasNext()) {
+            val m = it.next()
+            if (m.arming > 0f) { m.arming -= dt; continue }
+            val triggered = enemies.any { e -> e.alive && e.pos.distanceTo(m.pos) <= trigger + e.type.radius }
+            if (triggered) {
+                explode(m.pos, radius, damage, directTargetId = -1) // -1: no direct target, whole blast splashes
+                it.remove()
+            }
+        }
+        // Keep MINE_COUNT mines sown, dripping them in near the player on a cooldown.
+        val desired = stats.resolve(Stat.MINE_COUNT).toInt()
+        if (mineDeployTimer > 0f) mineDeployTimer -= dt
+        if (desired > 0 && mines.size < desired && mineDeployTimer <= 0f) {
+            deployMine()
+            mineDeployTimer = MINE_DEPLOY_INTERVAL
+        }
+    }
+
+    /** Sow one mine at a random in-arena point ringing the player. */
+    private fun deployMine() {
+        val ang = rng.nextFloat(0f, TWO_PI)
+        val dist = rng.nextFloat(MINE_MIN_DIST, MINE_MAX_DIST)
+        val pos = arena.clamp(Vec2(player.pos.x + cos(ang) * dist, player.pos.y + sin(ang) * dist), 6f)
+        mines.add(Mine(id = nextId++, pos = pos, arming = MINE_ARM_TIME))
     }
 
     /** Search grid cells outward from the player's cell for the first free, in-arena, non-player cell. */
@@ -1148,10 +1191,12 @@ class RunEngine(
             if (currentRank >= mod.maxRank) null
             else {
                 val resultingRank = currentRank + 1
-                // Combat-equipment ranks past the first roll a random turret upgrade (DESIGN.md §5),
-                // so the offer shows exactly which improvement this pick would grant.
-                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT && resultingRank >= 2)
-                    TurretUpgrades.POOL[rng.nextInt(TurretUpgrades.POOL.size)] else null
+                // Combat-equipment ranks past the first roll a random upgrade from *that equipment's*
+                // pool (DESIGN.md §5/§9), so the offer shows exactly which improvement this pick grants.
+                val pool = EquipmentUpgrades.poolFor(mod.id)
+                val upgrade = if (mod.category == com.lifeops.app.game.core.ArtifactCategory.COMBAT_EQUIPMENT &&
+                    resultingRank >= 2 && pool.isNotEmpty())
+                    pool[rng.nextInt(pool.size)] else null
                 LevelUpOption(mod, resultingRank, isNew = held == null, equipmentUpgrade = upgrade)
             }
         }
@@ -1207,6 +1252,11 @@ class RunEngine(
         const val REVIVE_CLEAR_RADIUS = 220f // enemies/fire cleared around the player on revive (§7)
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
         const val TURRET_DEPLOY_INTERVAL = 1.5f // seconds between auto-turret deployments
+        const val MINE_DEPLOY_INTERVAL = 1.4f   // seconds between mine deployments (§9)
+        const val MINE_ARM_TIME = 0.6f          // seconds before a sown mine can detonate
+        const val MINE_MIN_DIST = 45f           // ring around the player a mine is sown within
+        const val MINE_MAX_DIST = 120f
+        const val TWO_PI = (2.0 * Math.PI).toFloat()
         // Sniper "never reaches end of range" (§4): a lifetime long enough to cross the max arena at
         // its projectile speed, so range never clips its shots — only a hit or the arena edge does.
         const val UNLIMITED_LIFE = 6f
