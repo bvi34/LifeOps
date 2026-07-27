@@ -47,6 +47,12 @@ enum class StartingWeapon(
      */
     val spinUpFloor: Float = 0f,
     val spinUpAccel: Float = 0f,
+    /**
+     * Baseline weapons are always in the loadout; unlockable ones only appear once the player has
+     * bought them from the between-set store (DESIGN.md §9). A store gun swaps the run's aimed weapon
+     * on purchase and joins the loadout roster for future runs. See [com.lifeops.app.game.content.StoreCatalog].
+     */
+    val unlockable: Boolean = false,
 ) {
     SNIPER(
         displayName = "Sniper",
@@ -105,6 +111,47 @@ enum class StartingWeapon(
         spread = 0.85f,
         magazineSize = 6,
         reloadSeconds = 1.9f,
+    ),
+
+    // --- Store-unlockable guns (DESIGN.md §9). Authored purely as data, same as the baseline three;
+    //     they only reach the loadout/level-up once bought from the between-set store. ---
+    SMG(
+        displayName = "SMG",
+        blurb = "A cheap bullet hose — very high fire rate, low per-hit damage, big magazine. Medium range; melts trash, chews reloads.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 9f,
+            Stat.FIRE_RATE to 11f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 440f,
+            Stat.RANGE to 400f,
+            Stat.CRIT_CHANCE to 0.04f,
+            Stat.CRIT_MULT to 2f,
+        ),
+        dpsNormalized = false,
+        unlimitedRange = false,
+        spread = 0.14f,
+        magazineSize = 40,
+        reloadSeconds = 2.1f,
+        unlockable = true,
+    ),
+    HAND_CANNON(
+        displayName = "Hand Cannon",
+        blurb = "A slow, brutal single shot — huge damage, tiny magazine, punishing reload. Rewards aim over spray.",
+        baseStats = mapOf(
+            Stat.DAMAGE to 72f,
+            Stat.FIRE_RATE to 1.1f,
+            Stat.PROJECTILES to 1f,
+            Stat.PROJECTILE_SPEED to 520f,
+            Stat.RANGE to 500f,
+            Stat.CRIT_CHANCE to 0.2f,
+            Stat.CRIT_MULT to 2.5f,
+        ),
+        dpsNormalized = false,
+        unlimitedRange = false,
+        spread = 0.2f,
+        magazineSize = 4,
+        reloadSeconds = 2.0f,
+        unlockable = true,
     );
 
     // Magazine lives in the stat block (so Extended Mag can scale it) but its base is this weapon

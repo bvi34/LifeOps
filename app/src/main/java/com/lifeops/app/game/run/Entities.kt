@@ -25,7 +25,8 @@ class TempBuff(val contribution: StatContribution, val label: String, var remain
 
 class Player(
     var pos: Vec2,
-    val weapon: StartingWeapon,
+    /** The aimed weapon. Mutable so a store gun can swap it mid-run (DESIGN.md §9). */
+    var weapon: StartingWeapon,
     val held: MutableList<HeldModifier> = mutableListOf(),
     /** Permanent (for the run) player boons drafted at each set boundary (DESIGN.md §7). */
     val runBonuses: MutableList<StatContribution> = mutableListOf(),

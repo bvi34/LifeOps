@@ -29,6 +29,7 @@ class SetBonusTest {
                 RunStatus.LEVEL_UP -> e.snapshot().levelUpOptions.firstOrNull()?.let { e.choose(it) }
                 RunStatus.SET_BONUS -> if (stopOn != RunStatus.SET_BONUS)
                     e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                RunStatus.STORE -> if (stopOn != RunStatus.STORE) e.skipStore()
                 RunStatus.OVERFLOW -> if (stopOn != RunStatus.OVERFLOW) {
                     val opts = e.snapshot().overflowOptions
                     val pick = if (pickTempBoost) opts.first() else opts.first { it.kind == OverflowKind.GOLD }
@@ -66,9 +67,13 @@ class SetBonusTest {
         }
         assertTrue("set (tier) should have incremented before the draft", e.tier >= 1)
 
-        // Choosing the draft grants the boon, hosts the bane, and resumes the run.
+        // Choosing the draft grants the boon and hosts the bane; the store then opens between sets.
         val chosen = options.first()
         e.chooseSetBonus(chosen)
+        assertEquals("the boon/bane draft is followed by the store", RunStatus.STORE, e.status)
+        assertTrue("the store should offer up to four picks", e.snapshot().storeOptions.isNotEmpty())
+        // Skipping the store rolls straight into the next set.
+        e.skipStore()
         assertEquals(RunStatus.RUNNING, e.status)
         assertTrue("the drafted boon should show on the HUD", e.snapshot().boons.contains(chosen.boon.name))
     }
@@ -106,6 +111,7 @@ class SetBonusTest {
             when (e.status) {
                 RunStatus.LEVEL_UP -> e.snapshot().levelUpOptions.firstOrNull()?.let { e.choose(it) }
                 RunStatus.SET_BONUS -> e.snapshot().setBonusOptions.firstOrNull()?.let { e.chooseSetBonus(it) }
+                RunStatus.STORE -> e.skipStore()
                 RunStatus.OVERFLOW -> e.chooseOverflow(e.snapshot().overflowOptions.first { it.kind == OverflowKind.GOLD })
                 else -> {}
             }

@@ -279,6 +279,22 @@ effort goes here.
 - One modifier system, three faces: artifacts (entity-attached), shop items
   (player-attached, permanent), challenge modes (run/director-attached).
 
+**Implemented — the between-set store.** After each set's boon/bane draft the run
+pauses on a **store** (`RunStatus.STORE`) that offers **4 random** unowned picks
+from a data-authored catalog (`content/StoreCatalog.kt`), **pick one or skip**.
+It is paid in banked **Modifier Budget** — the Personal-aspect resource
+(`Loadout.Role.MODIFIER_BUDGET`, the 5th "Spirit" slot); the spend + the permanent
+unlock record are brokered by the ViewModel against the bank, never the pure engine
+(the same contract as revive). Four tiers, steep fixed prices: **Modifiers 25**
+(run-wide mutators / "skulls"), **Passives 50** (stat-support artifacts),
+**Equipment 100** (turret-family), **Guns 150** (new aimed weapons). A purchase is
+granted to the current run immediately — a passive/equipment joins the build (and
+the level-up draft), a gun swaps the aimed weapon, a mutator applies its run-scoped
+effect — and is unlocked **permanently** (`game_unlocks`), so future runs get it
+back: passives/equipment rejoin the level-up draft pool, guns rejoin the loadout
+roster, mutators become loadout opt-ins. Adding content (mines, arc thrower,
+drones, more skulls…) is appending a `StoreCatalog.Item`, not engine code.
+
 ---
 
 ## 10. Build order

@@ -23,6 +23,14 @@ data class RunConfig(
     val waves: Int = 7,
     /** Optional challenge mode the run's Director hosts (§8). Defaults to the standard run. */
     val challengeMode: ChallengeMode = ChallengeMode.NONE,
+    /**
+     * Store items unlocked in previous runs (DESIGN.md §9). Unlocked passives/equipment join this
+     * run's level-up draft pool from the start; unlocked guns/mutators are surfaced by the loadout.
+     * The between-set store adds to this set as the run goes.
+     */
+    val unlockedIds: Set<String> = emptySet(),
+    /** Unlocked mutators the player toggled on for this run in the loadout; applied at run start. */
+    val activeMutatorIds: Set<String> = emptySet(),
 ) {
     companion object {
         const val MIN_LEVEL_CAP = 6

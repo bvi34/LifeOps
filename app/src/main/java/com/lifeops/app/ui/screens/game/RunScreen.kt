@@ -54,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.core.PickupKind
 import com.lifeops.app.game.core.Vec2
@@ -110,14 +111,13 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
                     Column(Modifier.padding(16.dp)) {
                         Text("Weapon", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            StartingWeapon.values().forEach { w ->
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ui.availableWeapons.forEach { w ->
                                 val selected = ui.weapon == w
-                                val mod = Modifier.weight(1f)
                                 if (selected) {
-                                    Button(onClick = { viewModel.selectWeapon(w) }, modifier = mod) { Text(w.displayName) }
+                                    Button(onClick = { viewModel.selectWeapon(w) }) { Text(w.displayName) }
                                 } else {
-                                    OutlinedButton(onClick = { viewModel.selectWeapon(w) }, modifier = mod) { Text(w.displayName) }
+                                    OutlinedButton(onClick = { viewModel.selectWeapon(w) }) { Text(w.displayName) }
                                 }
                             }
                         }
@@ -154,6 +154,42 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
+                    }
+                }
+            }
+
+            // Owned mutators (bought from the store) can be self-imposed for a run (DESIGN.md §9).
+            val ownedMutators = StoreCatalog.unlockedMutators(ui.unlockedIds)
+            if (ownedMutators.isNotEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text("Modifiers", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text(
+                                "Self-impose an owned mutator for this run.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            ownedMutators.forEach { m ->
+                                val on = ui.activeMutatorIds.contains(m.id)
+                                if (on) {
+                                    Button(onClick = { viewModel.toggleMutator(m.id) }, modifier = Modifier.fillMaxWidth()) {
+                                        Text("✓ ${m.name}")
+                                    }
+                                } else {
+                                    OutlinedButton(onClick = { viewModel.toggleMutator(m.id) }, modifier = Modifier.fillMaxWidth()) {
+                                        Text(m.name)
+                                    }
+                                }
+                                Text(
+                                    m.description,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                                Spacer(Modifier.height(4.dp))
+                            }
+                        }
                     }
                 }
             }
@@ -279,6 +315,7 @@ private fun CommitCard(
 
 @Composable
 private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Unit) {
+    val ui by viewModel.uiState.collectAsStateWithLifecycle()
     var snapshot by remember(engine) { mutableStateOf(engine.snapshot()) }
     val move = remember(engine) { mutableStateOf(Vec2.ZERO) }
     var joyCenter by remember(engine) { mutableStateOf<Offset?>(null) }
@@ -480,12 +517,16 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 StartingWeapon.SNIPER -> 1.95f
                 StartingWeapon.GATLING -> 1.35f
                 StartingWeapon.SHOTGUN -> 1.15f
+                StartingWeapon.HAND_CANNON -> 1.9f
+                StartingWeapon.SMG -> 1.3f
             }
             val nubTip = pc + aimDir * (pr * nubLen)
             val nubWidth = when (snapshot.weapon) {
                 StartingWeapon.SNIPER -> 3f
                 StartingWeapon.GATLING -> 6f
                 StartingWeapon.SHOTGUN -> 8f
+                StartingWeapon.HAND_CANNON -> 5f
+                StartingWeapon.SMG -> 5f
             }
             drawLine(
                 color = Color(0xFFB0BEC5),
@@ -572,6 +613,16 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
         when (snapshot.status) {
             RunStatus.LEVEL_UP -> LevelUpOverlay(snapshot) { engine.choose(it) }
             RunStatus.SET_BONUS -> SetBonusOverlay(snapshot) { engine.chooseSetBonus(it) }
+            RunStatus.STORE -> {
+                val budget = Loadout.modifierBudgetResource(ui.resources)
+                StoreOverlay(
+                    snapshot = snapshot,
+                    balance = budget?.currentValue ?: 0,
+                    currencyName = budget?.name ?: "Modifier Budget",
+                    onBuy = { viewModel.purchaseStore(it) },
+                    onSkip = { viewModel.skipStore() },
+                )
+            }
             RunStatus.OVERFLOW -> OverflowOverlay(snapshot) { engine.chooseOverflow(it) }
             RunStatus.VICTORY, RunStatus.DEFEAT -> SummaryOverlay(
                 snapshot = snapshot,
@@ -780,6 +831,62 @@ private fun SetBonusOverlay(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StoreOverlay(
+    snapshot: RunSnapshot,
+    balance: Int,
+    currencyName: String,
+    onBuy: (com.lifeops.app.game.run.StoreOffer) -> Unit,
+    onSkip: () -> Unit,
+) {
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(Modifier.fillMaxWidth().padding(24.dp)) {
+            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Store", style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("$balance $currencyName", style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary)
+                }
+                Text(
+                    "Spend banked $currencyName to unlock something real — kept for future runs.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                snapshot.storeOptions.forEach { offer ->
+                    val affordable = balance >= offer.cost
+                    FilledTonalButton(
+                        onClick = { onBuy(offer) },
+                        enabled = affordable,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(offer.name, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text(
+                                    "${offer.cost} · ${offer.categoryLabel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (affordable) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                offer.description,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+                OutlinedButton(onClick = onSkip, modifier = Modifier.fillMaxWidth()) { Text("Skip") }
             }
         }
     }

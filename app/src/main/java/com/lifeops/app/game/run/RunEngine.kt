@@ -3,9 +3,12 @@ package com.lifeops.app.game.run
 import com.lifeops.app.game.content.Artifacts
 import com.lifeops.app.game.content.EnemyType
 import com.lifeops.app.game.content.SetBonuses
+import com.lifeops.app.game.content.StartingWeapon
+import com.lifeops.app.game.content.StoreCatalog
 import com.lifeops.app.game.content.StructureType
 import com.lifeops.app.game.content.TempBoosts
 import com.lifeops.app.game.content.TurretUpgrades
+import com.lifeops.app.game.core.Modifier
 import com.lifeops.app.game.core.EffectResolver
 import com.lifeops.app.game.core.EntityKind
 import com.lifeops.app.game.core.EventBus
@@ -101,9 +104,21 @@ class RunEngine(
     private var levelUpOptions: List<LevelUpOption> = emptyList()
     private var setBonusOptions: List<SetBonusOption> = emptyList()
     private var overflowOptions: List<OverflowOption> = emptyList()
+    private var storeOptions: List<StoreOffer> = emptyList()
+
+    /** Store items owned this run (DESIGN.md §9): the persisted unlocks, plus anything bought at a set
+     *  boundary so far. Seeds the level-up draft pool and gates the store from re-offering owned items. */
+    private val runUnlockedIds: MutableSet<String> = config.unlockedIds.toMutableSet()
+
+    /** The live aimed weapon — a store gun can swap it mid-run, so read it, never [config].weapon. */
+    private val weapon: StartingWeapon get() = player.weapon
 
     init {
         director.configure(config.challengeMode, stats)
+        // Loadout-toggled mutators the player owns (DESIGN.md §9) apply from the first frame.
+        config.activeMutatorIds.forEach { id ->
+            (StoreCatalog.byId(id) as? StoreCatalog.Item.MutatorItem)?.let { applyMutator(it) }
+        }
         beginWave(0)
     }
 
@@ -240,13 +255,13 @@ class RunEngine(
         ammo = player.ammo.coerceAtLeast(0),
         magazine = player.magazine(stats),
         reloading = player.reloadRemaining > 0f,
-        reloadFrac = if (player.reloadRemaining > 0f && config.weapon.reloadSeconds > 0f)
-            (1f - (player.reloadRemaining / (config.weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
+        reloadFrac = if (player.reloadRemaining > 0f && weapon.reloadSeconds > 0f)
+            (1f - (player.reloadRemaining / (weapon.reloadSeconds / player.reloadSpeed(stats)))).coerceIn(0f, 1f)
         else 0f,
-        spinUp = config.weapon.spinUpAccel > 0f,
-        spinFrac = if (config.weapon.spinUpAccel > 0f) {
+        spinUp = weapon.spinUpAccel > 0f,
+        spinFrac = if (weapon.spinUpAccel > 0f) {
             val ceiling = player.fireRate(stats)
-            ((effectiveFireRate() - config.weapon.spinUpFloor) / (ceiling - config.weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
+            ((effectiveFireRate() - weapon.spinUpFloor) / (ceiling - weapon.spinUpFloor).coerceAtLeast(0.01f)).coerceIn(0f, 1f)
         } else 0f,
         wave = wave + 1,
         totalWaves = config.waves,
@@ -281,9 +296,10 @@ class RunEngine(
             ?.let { BossView((it.health / it.maxHealth).coerceIn(0f, 1f), it.type.displayName) },
         levelUpOptions = levelUpOptions,
         setBonusOptions = setBonusOptions,
+        storeOptions = storeOptions,
         overflowOptions = overflowOptions,
-        weapon = config.weapon,
-        weaponName = config.weapon.displayName,
+        weapon = weapon,
+        weaponName = weapon.displayName,
         challengeModeName = config.challengeMode.name,
         held = player.held.map { HeldView(it.modifier.name, it.rank, it.modifier.maxRank) },
         boons = player.runBonuses.mapNotNull { c -> SetBonuses.BOONS.firstOrNull { it.contribution == c }?.name },
@@ -625,14 +641,14 @@ class RunEngine(
         var perHit = player.aimedDamage(stats)
         // Gatling normalizes total DPS across projectile count (DESIGN.md §4): splitting into more
         // projectiles must not multiply throughput, so per-hit damage is divided by the count.
-        if (config.weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
+        if (weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
 
         val baseAngle = kotlin.math.atan2(aimDir.y, aimDir.x)
-        val spread = if (count > 1) config.weapon.spread else 0f // per-weapon fan (Shotgun spreads wide)
+        val spread = if (count > 1) weapon.spread else 0f // per-weapon fan (Shotgun spreads wide)
         val speed = player.projectileSpeed(stats)
         // Sniper never falls short (DESIGN.md §4): its shots live long enough to cross the arena and
         // only die on a hit or at the edge. The others expire at their range.
-        val life = if (config.weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
+        val life = if (weapon.unlimitedRange) UNLIMITED_LIFE else player.range(stats) / speed
         val critChance = player.critChance(stats)
         val critMult = player.critMult(stats)
 
@@ -659,7 +675,7 @@ class RunEngine(
      */
     private fun beginReload() {
         if (player.reloadRemaining > 0f || player.ammo >= player.magazine(stats)) return
-        player.reloadRemaining = config.weapon.reloadSeconds / player.reloadSpeed(stats)
+        player.reloadRemaining = weapon.reloadSeconds / player.reloadSpeed(stats)
     }
 
     /** Reload on demand (DESIGN.md §4). Ignored while paused/over, mid-reload, or on a full magazine. */
@@ -675,8 +691,8 @@ class RunEngine(
      */
     private fun effectiveFireRate(): Float {
         val ceiling = player.fireRate(stats)
-        if (config.weapon.spinUpAccel <= 0f) return ceiling
-        return (config.weapon.spinUpFloor + config.weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
+        if (weapon.spinUpAccel <= 0f) return ceiling
+        return (weapon.spinUpFloor + weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
     }
 
     /** Track the aim direction every frame so the barrel/reticle follows the nearest target even
@@ -689,7 +705,7 @@ class RunEngine(
     private fun resolveAim(input: RunInput): Vec2? {
         input.aimOverride?.let { if (it.length() > Vec2.EPSILON) return it.normalized() }
         // The Sniper locks on anywhere (unlimited range, §4); the others only auto-aim within reach.
-        val range = if (config.weapon.unlimitedRange) UNLIMITED_AIM_RANGE else player.range(stats)
+        val range = if (weapon.unlimitedRange) UNLIMITED_AIM_RANGE else player.range(stats)
         var best: Enemy? = null
         var bestDist = Float.MAX_VALUE
         for (e in enemies) {
@@ -975,13 +991,102 @@ class RunEngine(
         director.addRunBane(option.bane.contribution)
         rebuildStats()
         setBonusOptions = emptyList()
+        // The boon/bane draft is followed by the between-set store (DESIGN.md §9), then the next set.
+        enterStoreOrResume()
+    }
+
+    // --- Between-set store (DESIGN.md §9) ---------------------------------------------------------
+
+    /**
+     * After the set draft, open the store on up to [STORE_OFFER_COUNT] random unowned offers; if the
+     * catalog is exhausted (everything owned) there is nothing to show, so roll straight on.
+     */
+    private fun enterStoreOrResume() {
+        storeOptions = rollStoreOffers()
+        if (storeOptions.isNotEmpty()) {
+            status = RunStatus.STORE
+        } else {
+            resumeIntoNextSet()
+        }
+    }
+
+    /** Four random offers drawn from the catalog minus everything already owned this run. */
+    private fun rollStoreOffers(): List<StoreOffer> {
+        val pool = StoreCatalog.ITEMS.filter { it.id !in runUnlockedIds }.toMutableList()
+        val out = ArrayList<StoreOffer>(STORE_OFFER_COUNT)
+        while (pool.isNotEmpty() && out.size < STORE_OFFER_COUNT) {
+            val item = pool.removeAt(rng.nextInt(pool.size))
+            out.add(StoreOffer(item.id, item.name, item.description, item.category.label, item.category.cost))
+        }
+        return out
+    }
+
+    /**
+     * Apply a bought store item to this run and resume (DESIGN.md §9). The Modifier-Budget spend and
+     * the permanent unlock record are handled by the caller against the bank — the engine never
+     * touches banked resources (the same contract as [revive]). No-op unless paused on the store.
+     */
+    fun applyStorePurchase(itemId: String) {
+        if (status != RunStatus.STORE) return
+        StoreCatalog.byId(itemId)?.let { item ->
+            when (item) {
+                is StoreCatalog.Item.ArtifactItem -> grantArtifact(item.modifier)   // joins the build + pool
+                is StoreCatalog.Item.GunItem -> swapWeapon(item.weapon)             // replaces the aimed weapon
+                is StoreCatalog.Item.MutatorItem -> applyMutator(item)             // run-wide effect
+            }
+            runUnlockedIds.add(item.id)
+        }
+        resumeIntoNextSet()
+    }
+
+    /** Decline the store this set (DESIGN.md §9). No-op unless paused on the store. */
+    fun skipStore() {
+        if (status != RunStatus.STORE) return
+        resumeIntoNextSet()
+    }
+
+    private fun resumeIntoNextSet() {
+        storeOptions = emptyList()
         breatherTimer = BREATHER_SECONDS * 1.5f
         beginWave(0)
         status = RunStatus.RUNNING
     }
 
+    /** Grant (or rank up) a store artifact immediately, so it's live for the rest of this run. */
+    private fun grantArtifact(mod: Modifier) {
+        val idx = player.held.indexOfFirst { it.modifier.id == mod.id }
+        if (idx >= 0) {
+            val next = (player.held[idx].rank + 1).coerceAtMost(mod.maxRank)
+            player.held[idx] = HeldModifier(mod, next)
+        } else {
+            player.held.add(HeldModifier(mod, 1))
+        }
+        rebuildStats()
+    }
+
+    /** Swap the aimed weapon to a store gun: reset firing state and hand over a full magazine. */
+    private fun swapWeapon(newWeapon: StartingWeapon) {
+        player.weapon = newWeapon
+        player.reloadRemaining = 0f
+        player.spin = 0f
+        player.fireCooldown = 0f
+        rebuildStats()
+        player.ammo = player.magazine(stats)
+    }
+
+    /** Fold a mutator's run-wide bonuses/banes in (DESIGN.md §9). Used at run start and on purchase. */
+    private fun applyMutator(item: StoreCatalog.Item.MutatorItem) {
+        player.runBonuses.addAll(item.playerBonuses)
+        item.directorBanes.forEach { director.addRunBane(it) }
+        rebuildStats()
+    }
+
+    /** The draft pool: the baseline artifacts plus every passive/equipment unlocked from the store
+     *  (DESIGN.md §9). This is how a bought item "becomes part of the level-up pool" for the run. */
+    private fun artifactPool(): List<Modifier> = Artifacts.ALL + StoreCatalog.unlockedArtifacts(runUnlockedIds)
+
     private fun rollLevelUpOptions(): List<LevelUpOption> {
-        val candidates = Artifacts.ALL.mapNotNull { mod ->
+        val candidates = artifactPool().mapNotNull { mod ->
             val held = player.held.firstOrNull { it.modifier.id == mod.id }
             val currentRank = held?.rank ?: 0
             if (currentRank >= mod.maxRank) null
@@ -1031,6 +1136,7 @@ class RunEngine(
 
     companion object {
         const val PLAYER_ID = 0
+        const val STORE_OFFER_COUNT = 4    // the between-set store shows four random offers (§9)
         const val SPAWN_INTERVAL = 0.30f   // faster drip — the open arena wants a real swarm
         const val BREATHER_SECONDS = 2.5f
         const val BOSS_STAGGER = 1.2f      // seconds between multiple bosses entering
