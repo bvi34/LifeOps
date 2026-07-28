@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
@@ -47,6 +48,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -490,6 +493,8 @@ private fun SettingsTab(vm: ReaderViewModel) {
                 ) { Text("Enable quick-capture bubble") }
             }
             Divider()
+            OreillyAccessSection(vm)
+            Divider()
             Text(
                 "Storage",
                 fontWeight = FontWeight.SemiBold,
@@ -497,6 +502,77 @@ private fun SettingsTab(vm: ReaderViewModel) {
                 modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
             )
             StorageReportBody(vm, Modifier.weight(1f))
+        }
+    }
+}
+
+// --- O'Reilly library access -------------------------------------------------------------------
+
+/**
+ * Enter the library proxy + card/PIN that let O'Reilly open through your library card. The card/PIN
+ * are stored encrypted on-device (Android Keystore) and never synced; the reader uses them only to
+ * re-sign-in to the library's own page when the proxy session lapses.
+ */
+@Composable
+private fun OreillyAccessSection(vm: ReaderViewModel) {
+    val config by vm.oreillyConfig.collectAsStateWithLifecycle()
+    var proxyHost by rememberSaveable { mutableStateOf("") }
+    var card by rememberSaveable { mutableStateOf("") }
+    var pin by rememberSaveable { mutableStateOf("") }
+
+    // Seed the proxy field from the stored config once it loads (leave card/PIN blank — never echoed).
+    androidx.compose.runtime.LaunchedEffect(config.proxyHost) {
+        if (proxyHost.isBlank()) proxyHost = config.proxyHost
+    }
+
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Text("O'Reilly via your library", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+        Text(
+            "Read O'Reilly on a library card through your library's proxy. Your card + PIN are stored " +
+                "encrypted on this device and used only to sign in to the library page — never synced, " +
+                "never sent anywhere else.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Text(
+            if (config.hasCredentials) "A library card + PIN are saved." else "No card + PIN saved yet.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 6.dp)
+        )
+        OutlinedTextField(
+            value = proxyHost, onValueChange = { proxyHost = it },
+            label = { Text("Library proxy host") },
+            supportingText = { Text("e.g. mcpl.idm.oclc.org") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        OutlinedTextField(
+            value = card, onValueChange = { card = it },
+            label = { Text("Library card number") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        OutlinedTextField(
+            value = pin, onValueChange = { pin = it },
+            label = { Text("PIN") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+            if (config.hasCredentials) {
+                TextButton(onClick = { vm.clearOreillyCredentials(); card = ""; pin = "" }) {
+                    Text("Forget card + PIN")
+                }
+            }
+            Button(
+                onClick = { vm.saveOreillyAccess(proxyHost, card, pin); card = ""; pin = "" },
+                modifier = Modifier.padding(start = 8.dp)
+            ) { Text("Save") }
         }
     }
 }

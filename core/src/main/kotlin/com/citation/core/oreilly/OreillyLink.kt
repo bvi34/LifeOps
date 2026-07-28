@@ -21,10 +21,16 @@ object OreillyLink {
      * Build a deep link to [bookId] (an O'Reilly urn/ISBN identifier), optionally at [location] —
      * the reader's own position token (an epubcfi or fragment). With no location it lands on the
      * book's cover/last-server-position; with one it lands on the saved spot.
+     *
+     * When a [proxy] is given, the link is routed through your library's EZproxy so you reach the
+     * content on a library card rather than a personal O'Reilly account. The destination path is
+     * identical either way — only the host changes — so a saved position survives switching the proxy
+     * on or off.
      */
-    fun deepLink(bookId: String, location: String? = null): String {
+    fun deepLink(bookId: String, location: String? = null, proxy: OreillyLibraryProxy? = null): String {
         val base = "$HOST/library/view/-/$bookId/"
-        return if (location.isNullOrBlank()) base else base + fragment(location)
+        val direct = if (location.isNullOrBlank()) base else base + fragment(location)
+        return proxy?.rewrite(direct) ?: direct
     }
 
     /**

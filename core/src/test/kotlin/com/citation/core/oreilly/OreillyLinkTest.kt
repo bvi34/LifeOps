@@ -44,4 +44,29 @@ class OreillyLinkTest {
     fun nonOreillyUrlReturnsNull() {
         assertNull(OreillyLink.parse("https://example.com/some/page"))
     }
+
+    @Test
+    fun buildsProxiedDeepLinkThroughLibrary() {
+        val link = OreillyLink.deepLink("9781492082279", null, OreillyLibraryProxy.MID_CONTINENT)
+        assertEquals(
+            "https://learning-oreilly-com.mcpl.idm.oclc.org/library/view/-/9781492082279/",
+            link
+        )
+    }
+
+    @Test
+    fun proxiedDeepLinkStillParsesBookIdAndLocation() {
+        val link = OreillyLink.deepLink("9781098119003", "epubcfi(/6/22[chap]!/4/2)", OreillyLibraryProxy.MID_CONTINENT)
+        val dest = OreillyLink.parse(link)!!
+        assertEquals("9781098119003", dest.bookId)
+        assertEquals("epubcfi(/6/22[chap]!/4/2)", dest.location)
+    }
+
+    @Test
+    fun nullProxyLeavesTheDirectLink() {
+        assertEquals(
+            OreillyLink.deepLink("9781492082279"),
+            OreillyLink.deepLink("9781492082279", null, null)
+        )
+    }
 }

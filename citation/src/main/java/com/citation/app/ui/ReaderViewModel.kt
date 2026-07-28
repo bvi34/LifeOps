@@ -3,6 +3,7 @@ package com.citation.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.OreillyAccess
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.model.Book
@@ -140,6 +141,41 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 count == 0 -> "No highlights found in that export."
                 else -> "Imported $count Kindle highlight${if (count == 1) "" else "s"}."
             }
+        }
+    }
+
+    // --- O'Reilly library access (proxy host + encrypted card/PIN) ------------------------------
+
+    private val _oreillyConfig = MutableStateFlow(
+        OreillyAccess.Config(com.citation.core.oreilly.OreillyLibraryProxy.MID_CONTINENT_HOST, false)
+    )
+    /** Drives the Settings section: the library proxy host and whether a card/PIN are on file. */
+    val oreillyConfig: StateFlow<OreillyAccess.Config> = _oreillyConfig.asStateFlow()
+
+    init {
+        // Load the stored access config off the constructor's path (Keystore-backed read).
+        viewModelScope.launch { _oreillyConfig.value = repository.oreillyAccessConfig() }
+    }
+
+    /**
+     * Save the library proxy host and, when both are given, the card + PIN (encrypted). A blank card
+     * or PIN leaves any stored credential untouched, so re-saving just the host is safe.
+     */
+    fun saveOreillyAccess(proxyHost: String, card: String, pin: String) {
+        viewModelScope.launch {
+            repository.setOreillyProxyHost(proxyHost)
+            if (card.isNotBlank() && pin.isNotBlank()) repository.setOreillyCredentials(card, pin)
+            _oreillyConfig.value = repository.oreillyAccessConfig()
+            _status.value = "O'Reilly library access saved."
+        }
+    }
+
+    /** Forget the stored library card + PIN (keeps the proxy host). */
+    fun clearOreillyCredentials() {
+        viewModelScope.launch {
+            repository.clearOreillyCredentials()
+            _oreillyConfig.value = repository.oreillyAccessConfig()
+            _status.value = "Cleared saved library card + PIN."
         }
     }
 
