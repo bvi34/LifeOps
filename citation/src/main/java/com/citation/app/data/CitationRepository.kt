@@ -329,7 +329,9 @@ class CitationRepository private constructor(
         val bookKey: String,
         val bookId: String,
         val deepLink: String,
-        val login: OreillyAccess.Credentials? = null
+        val login: OreillyAccess.Credentials? = null,
+        /** True when the warm page cache has gone stale (TTL) and should be dropped on open. */
+        val purgeWarmCache: Boolean = false
     )
 
     /**
@@ -390,6 +392,18 @@ class CitationRepository private constructor(
 
     /** Forget the stored card + PIN (the proxy host stays). */
     fun clearOreillyCredentials() = oreillyAccess.clearCredentials()
+
+    /**
+     * Whether the warm page cache for [bookKey] has gone stale (untouched past the TTL) and should be
+     * dropped. Read the last-open time *before* [markOpened] restamps it, so the decision reflects how
+     * long the cache has actually sat. A never-opened book is never stale.
+     */
+    suspend fun oreillyWarmCacheStale(bookKey: String, now: Long = System.currentTimeMillis()): Boolean {
+        val entity = db.bookDao().get(bookKey) ?: return false
+        return com.citation.core.oreilly.OreillyCachePolicy.shouldPurge(
+            lastWarmedAt = entity.lastOpenedAt, isReaderOpen = false, now = now
+        )
+    }
 
     /** Persist the O'Reilly reader's last position token so reopening lands at your spot. */
     suspend fun saveExternalPosition(bookKey: String, location: String) {

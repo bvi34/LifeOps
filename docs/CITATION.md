@@ -158,6 +158,7 @@ Two more sources, each on its own track (core pieces unit-tested):
 | **External anchor** | `anchor/TextAnchor.External` | A read-in-place anchor for content Citation never holds: the source reader's opaque **location token** + the frozen quote. Resolves via deep link (best-effort), not text matching; `NoteResolver` + `SyncCodec` handle it. |
 | **O'Reilly deep-link** | `oreilly/OreillyLink` | Build/parse the URL to a book + position, so reopening lands one tap from your spot. Optionally routes through a library proxy (see below); parsing is host-agnostic, so a proxied position round-trips unchanged. |
 | **Library proxy** | `oreilly/OreillyLibraryProxy` | EZproxy host rewriting — `learning.oreilly.com` → `learning-oreilly-com.mcpl.idm.oclc.org` — so you reach the licensed content on a **library card**, not a personal O'Reilly account. Encode (`.`→`-`, `-`→`--`) is reversible, so hosts round-trip; `rewrite` is idempotent. Defaults to Mid-Continent Public Library, any EZproxy host is configurable. |
+| **Warm page cache** | `oreilly/OreillyCachePolicy` | Policy for the WebView's HTTP cache of pages you've opened — so a reopen is fast and a page re-reads during a brief disconnect. The invariant it enforces: this is **never a permanent copy of licensed content**. It's always `Store.DISPOSABLE`, always `RECLAIMABLE` (refetchable by reopening online), and TTL-bounded — `shouldPurge` drops it once it's sat untouched past 7 days (and never while the reader is open). |
 | **Auto-reauth** | `oreilly/EzproxyLogin` | The reauth brain: detect an OCLC/EZproxy sign-in page (`isLoginPage`) and build a safe credential-fill/submit script (`fillScript`). Selectors lead with MCPL's confirmed form (`POST mcpl.idm.oclc.org/login`; card `name=user id=cardnum`, PIN `name=pass id=pin` — the card field is itself `type=password`, so the card never falls back to a `type=password` selector), then generic fallbacks for other libraries. Credentials are embedded as JSON string literals so a card/PIN can't break out of the script. It's the *user's own* library credential into the *library's* form — it never touches O'Reilly's DRM or federated tokens. |
 
 **Android wiring:** `PdfReaderScreen` renders pages via the platform `PdfRenderer` (own track, page
@@ -169,8 +170,14 @@ manual sign-in fallback in the top bar), persists the proxy session via cookies,
 from the URL, and captures **annotations only** (quote + location token as an `External` anchor) into
 the sovereign store. The card/PIN live in `data/OreillyAccess`, **encrypted at rest via the Android
 Keystore** (`EncryptedSharedPreferences`) and **never synced**; a Settings section takes the proxy
-host + card + PIN (the PIN field masked). Library gains "Import PDF" and "Add O'Reilly book"; opens
-route by source type to the right track.
+host + card + PIN (the PIN field masked). A **warm page cache** keeps opened pages in the WebView's
+own HTTP cache (`data/OreillyWebCache`): the reader picks `LOAD_DEFAULT` online and
+`LOAD_CACHE_ELSE_NETWORK` offline (re-read a page you've seen through a brief disconnect), drops the
+cache on open once `OreillyCachePolicy` calls it stale, and Settings shows its footprint with a "Clear
+O'Reilly cache" action — the cache is disposable and reclaimable, never promoted to the sovereign
+store, so your notes and position are untouched by clearing it. Your O'Reilly library, positions, and
+notes are Room-backed and already browse fully offline. Library gains "Import PDF" and "Add O'Reilly
+book"; opens route by source type to the right track.
 
 ## Storage visibility (milestone 7 — core built + verified)
 

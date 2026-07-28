@@ -2,6 +2,7 @@ package com.citation.app.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +35,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.OreillyWebCache
 import com.citation.core.oreilly.EzproxyLogin
 import com.citation.core.oreilly.OreillyLink
 
@@ -125,6 +127,15 @@ fun OreillyReaderScreen(session: CitationRepository.OreillySession, vm: ReaderVi
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // Warm page cache: online, use the cache when valid (fast reopens) and hit the
+                        // network otherwise; offline, serve a page you've already opened so a brief
+                        // disconnect doesn't blank the reader. Licensed pages, kept only in the
+                        // OS-evictable HTTP cache — never a permanent copy.
+                        settings.cacheMode =
+                            if (OreillyWebCache.isOnline(context)) WebSettings.LOAD_DEFAULT
+                            else WebSettings.LOAD_CACHE_ELSE_NETWORK
+                        // The warm cache has a TTL — if it's gone stale, drop it before this open.
+                        if (session.purgeWarmCache) clearCache(true)
                         // The library proxy keeps you signed in via cookies — persist them across opens.
                         CookieManager.getInstance().apply {
                             setAcceptCookie(true)

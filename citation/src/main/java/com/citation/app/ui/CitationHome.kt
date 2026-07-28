@@ -516,9 +516,16 @@ private fun SettingsTab(vm: ReaderViewModel) {
 @Composable
 private fun OreillyAccessSection(vm: ReaderViewModel) {
     val config by vm.oreillyConfig.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
     var proxyHost by rememberSaveable { mutableStateOf("") }
     var card by rememberSaveable { mutableStateOf("") }
     var pin by rememberSaveable { mutableStateOf("") }
+    var warmCacheBytes by remember { mutableStateOf(-1L) }
+
+    // Measure the warm page cache footprint on entry (best-effort; browser-managed).
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        warmCacheBytes = com.citation.app.data.OreillyWebCache.sizeBytes(context)
+    }
 
     // Seed the proxy field from the stored config once it loads (leave card/PIN blank — never echoed).
     androidx.compose.runtime.LaunchedEffect(config.proxyHost) {
@@ -573,6 +580,38 @@ private fun OreillyAccessSection(vm: ReaderViewModel) {
                 onClick = { vm.saveOreillyAccess(proxyHost, card, pin); card = ""; pin = "" },
                 modifier = Modifier.padding(start = 8.dp)
             ) { Text("Save") }
+        }
+
+        // Warm page cache — reclaimable, evictable, never a permanent copy of licensed content.
+        Text(
+            "Warm page cache",
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(top = 16.dp)
+        )
+        Text(
+            "Pages you've opened are kept in the browser cache so they reload fast and can be re-read " +
+                "during a brief disconnect. It's refetchable (safe to clear), dropped automatically " +
+                "after a week idle, and never a permanent copy.",
+            fontSize = 12.sp,
+            color = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(top = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (warmCacheBytes < 0) "Measuring…"
+                else "Cached: " + com.citation.core.manifest.StorageInventory.formatBytes(warmCacheBytes),
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            OutlinedButton(onClick = {
+                com.citation.app.data.OreillyWebCache.clear(context)
+                warmCacheBytes = com.citation.app.data.OreillyWebCache.sizeBytes(context)
+            }) { Text("Clear O'Reilly cache") }
         }
     }
 }
