@@ -57,15 +57,15 @@ enum class StartingWeapon(
 ) {
     SNIPER(
         displayName = "Sniper",
-        blurb = "Burst, precision, single-target. Unlimited range — shots never fall short. Deletes elites; weak vs trash.",
+        blurb = "Burst, precision, single-target. Unlimited range — shots never fall short. The premier big-target killer: huge per-shot damage and vicious crits delete elites and chew bosses. Weak vs trash.",
         baseStats = mapOf(
-            Stat.DAMAGE to 34f,
+            Stat.DAMAGE to 60f,
             Stat.FIRE_RATE to 1.6f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 560f,
             Stat.RANGE to 620f,
             Stat.CRIT_CHANCE to 0.15f,
-            Stat.CRIT_MULT to 2.5f,
+            Stat.CRIT_MULT to 3.0f,
         ),
         dpsNormalized = false,
         unlimitedRange = true,
@@ -138,15 +138,19 @@ enum class StartingWeapon(
     ),
     HAND_CANNON(
         displayName = "Hand Cannon",
-        blurb = "A slow, brutal single shot — huge damage, tiny magazine, punishing reload. Rewards aim over spray.",
+        blurb = "A slow lob of small explosive rounds — every shot detonates on impact and splashes the cluster around it. Modest single-target punch; shines clearing packs. Tiny magazine, punishing reload.",
         baseStats = mapOf(
-            Stat.DAMAGE to 72f,
+            Stat.DAMAGE to 38f,
             Stat.FIRE_RATE to 1.1f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 520f,
             Stat.RANGE to 500f,
-            Stat.CRIT_CHANCE to 0.2f,
-            Stat.CRIT_MULT to 2.5f,
+            Stat.CRIT_CHANCE to 0.08f,
+            Stat.CRIT_MULT to 2.0f,
+            // Innate blast (§9): its rounds carry an explosion radius baked into the weapon data, so the
+            // engine's explosive-projectile path fires with no per-weapon code. Direct hit takes full
+            // damage; everything else in the blast takes the splash fraction. Explosive Rounds stacks on top.
+            Stat.EXPLOSION_RADIUS to 46f,
         ),
         dpsNormalized = false,
         unlimitedRange = false,

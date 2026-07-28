@@ -217,7 +217,7 @@ object StoreCatalog {
     )
     private val HAND_CANNON = Item.GunItem(
         id = "gun_hand_cannon", name = "Hand Cannon",
-        description = "A slow, brutal single shot — huge damage, tiny magazine.",
+        description = "A slow lob of small explosive rounds — shots detonate on impact and splash the cluster. Clears packs, tiny magazine.",
         weapon = StartingWeapon.HAND_CANNON,
     )
 

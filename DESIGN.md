@@ -105,8 +105,11 @@ Two classes:
   with a distinct **range** and a **magazine + reload** cadence:
   - **Sniper**: burst / precision / single-target. **Unlimited range** — its
     shots never fall short (they fly until they hit or leave the arena, and
-    auto-aim locks on anywhere on the field). Deletes elites, weak vs trash.
-    Small magazine. Drafts toward swarm-clearing automatics.
+    auto-aim locks on anywhere on the field). The **premier big-target killer**:
+    the highest per-shot damage and crit multiplier in the game, so it deletes
+    elites and out-damages every other gun on bosses — but its single-target
+    focus and small magazine make it weak vs trash. Drafts toward swarm-clearing
+    automatics to cover that gap.
   - **Gatling**: sustained stream, **medium range** (bullets expire at their
     reach). **Spins up with no ceiling**: the fire rate starts low and climbs the
     longer you hold continuous fire (1 shot/s + 2/s per second engaged), with **no
