@@ -1,5 +1,6 @@
 package com.lifeops.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -37,5 +38,9 @@ data class BusyBlockEntity(
     val daysMask: Int,
     val specificDate: String? = null,
     val personId: String? = null,
-    val createdAt: String
+    val createdAt: String,
+    // Whether a start-of-block reminder is scheduled. NOT NULL with a matching
+    // @ColumnInfo(defaultValue) so the additive migration passes Room's schema validation.
+    @ColumnInfo(defaultValue = "0")
+    val reminderEnabled: Boolean = false
 )

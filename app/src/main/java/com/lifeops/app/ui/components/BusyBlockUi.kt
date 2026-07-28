@@ -81,7 +81,7 @@ fun BusyBlockRow(block: BusyBlock, onEdit: () -> Unit, onDelete: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium
             )
             Text(
-                busyRecurrenceSummary(block),
+                busyRecurrenceSummary(block) + if (block.reminderEnabled) "  ·  🔔 Reminder" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -108,6 +108,9 @@ fun BusyBlockEditorDialog(
     var weekly by remember { mutableStateOf(existing?.specificDate == null) }
     var daysMask by remember { mutableStateOf(existing?.takeIf { it.specificDate == null }?.daysMask ?: WEEKDAYS_MASK) }
     var dateText by remember { mutableStateOf(existing?.specificDate ?: "") }
+    // Reminders are an own-schedule feature only; a person's block never notifies.
+    val remindersSupported = personId == null
+    var remind by remember { mutableStateOf(existing?.reminderEnabled ?: false) }
 
     val start = parseClock(startText)
     val end = parseClock(endText)
@@ -175,6 +178,16 @@ fun BusyBlockEditorDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                if (remindersSupported) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Checkbox(checked = remind, onCheckedChange = { remind = it })
+                        Text("Remind me when it starts", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
             }
         },
         confirmButton = {
@@ -190,7 +203,8 @@ fun BusyBlockEditorDialog(
                             daysMask = if (weekly) daysMask else 0,
                             specificDate = if (weekly) null else dateText.trim(),
                             personId = personId,
-                            createdAt = existing?.createdAt ?: DateUtil.now()
+                            createdAt = existing?.createdAt ?: DateUtil.now(),
+                            reminderEnabled = remindersSupported && remind
                         )
                     )
                 }

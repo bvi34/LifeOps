@@ -35,7 +35,12 @@ class LifeOpsApp : Application() {
     val gameUnlockRepository by lazy { GameUnlockRepository(database.gameUnlockDao()) }
     val taskNoteRepository by lazy { TaskNoteRepository(database.taskNoteDao()) }
     val taskAttachmentRepository by lazy { TaskAttachmentRepository(database.taskAttachmentDao()) }
-    val busyBlockRepository by lazy { BusyBlockRepository(database.busyBlockDao()) }
+    val busyBlockRepository by lazy {
+        BusyBlockRepository(
+            database.busyBlockDao(),
+            com.lifeops.app.worker.AlarmBusyBlockReminderScheduler(this)
+        )
+    }
     val searchRepository by lazy { SearchRepository(database) }
     val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
     // App-scoped so a running task timer survives navigation between This Week and the task
@@ -231,6 +236,8 @@ class LifeOpsApp : Application() {
             // Re-arm per-habit daily reminders from the database (WorkManager's queue can be lost
             // across reinstall/device transfer while the reminder hours persist in Room).
             counterRepository.rescheduleAllReminders()
+            // Same for start-of-block reminders on the user's own busy times.
+            busyBlockRepository.rescheduleAllReminders()
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(this)

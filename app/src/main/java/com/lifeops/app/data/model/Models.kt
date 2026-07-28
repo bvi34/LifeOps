@@ -101,7 +101,10 @@ data class BusyBlock(
     val specificDate: String? = null,
     // null = the user's own schedule; otherwise the person whose schedule this belongs to.
     val personId: String? = null,
-    val createdAt: String
+    val createdAt: String,
+    // When true (own-schedule blocks only), a reminder notification fires as the block starts —
+    // once for a one-off, every matching day for a weekly block.
+    val reminderEnabled: Boolean = false
 )
 
 data class TaskAttachment(
