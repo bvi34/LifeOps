@@ -270,6 +270,28 @@ private fun LoadoutView(viewModel: RunViewModel, onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Start Run") }
             }
+
+            // Weekly dev run: an unlimited-resources sandbox, once a week, that ends after a set 4
+            // and leaves nothing permanent. Uses whatever weapon/challenge/mutators are selected above.
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Dev Run", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Once a week: unlimited resources, ends after set ${com.lifeops.app.game.run.RunConfig.DEV_RUN_SETS}. " +
+                                "Free store, nothing you earn is permanent — a sandbox to try builds.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { viewModel.startDevRun() },
+                            enabled = ui.devRunAvailable,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (ui.devRunAvailable) "Start Dev Run" else "Dev Run — used this week") }
+                    }
+                }
+            }
         }
     }
 }
@@ -643,10 +665,11 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             RunStatus.SET_BONUS -> SetBonusOverlay(snapshot) { engine.chooseSetBonus(it) }
             RunStatus.STORE -> {
                 val budget = Loadout.modifierBudgetResource(ui.resources)
+                // A dev run's store is free: everything is affordable and nothing is debited.
                 StoreOverlay(
                     snapshot = snapshot,
-                    balance = budget?.currentValue ?: 0,
-                    currencyName = budget?.name ?: "Modifier Budget",
+                    balance = if (snapshot.devRun) Int.MAX_VALUE else budget?.currentValue ?: 0,
+                    currencyName = if (snapshot.devRun) "Free" else budget?.name ?: "Modifier Budget",
                     onBuy = { viewModel.purchaseStore(it) },
                     onSkip = { viewModel.skipStore() },
                 )
@@ -881,11 +904,13 @@ private fun StoreOverlay(
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Store", style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    Text("$balance $currencyName", style = MaterialTheme.typography.titleSmall,
+                    Text(if (snapshot.devRun) "Free" else "$balance $currencyName",
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary)
                 }
                 Text(
-                    "Spend banked $currencyName to unlock something real — kept for future runs.",
+                    if (snapshot.devRun) "Dev run — take anything to try it. Nothing here is kept."
+                    else "Spend banked $currencyName to unlock something real — kept for future runs.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
@@ -963,7 +988,8 @@ private fun SummaryOverlay(
     onPlayAgain: () -> Unit,
     onLeave: () -> Unit,
 ) {
-    // Endless mode ends only in defeat — you hold out as long as you can.
+    // A standard run ends only in defeat; a bounded dev run can end in victory once it clears its sets.
+    val won = snapshot.status == RunStatus.VICTORY
     Box(
         Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.72f)),
         contentAlignment = Alignment.Center
@@ -975,14 +1001,15 @@ private fun SummaryOverlay(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    "Overrun",
+                    if (won) "Dev Run Complete" else "Overrun",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.error
+                    color = if (won) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                 )
                 Text("Score ${snapshot.score}", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Reached set ${snapshot.tier + 1} · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
+                    if (won) "Cleared ${snapshot.maxSets ?: snapshot.tier} sets · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}"
+                    else "Reached set ${snapshot.tier + 1} · wave ${snapshot.wave}/${snapshot.totalWaves} · level ${snapshot.level}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )

@@ -237,6 +237,14 @@ and — soon — your own placed turrets and barricades.
   next **tier**, with pure multipliers scaling enemy hp/speed/damage/count — the
   enemies come back "leveled up". The run only ever ends on death; score and the
   tier reached are the record of how long you held.
+- **Weekly dev run.** A once-a-week sandbox for trying builds without touching the
+  economy: a fully-funded loadout (ceiling level cap, max hearts, a starting purse)
+  with **no banked spend**, a **free** between-set store, and free revives. It is the
+  same endless engine with two knobs — `maxSets` auto-ends it in **victory** after a
+  fixed number of sets (4) instead of looping forever, and `devRun` marks it a
+  sandbox. Nothing earned in it is permanent: store picks vanish with the run, no
+  unlock is recorded, and it is never logged to the scoreboard. The once-a-week gate
+  is a stored `lastDevRunWeek` marker that clears when the week rolls over.
 - **Week-seeded.** Hash the closed week's snapshot into the run seed so spawn
   order/composition is a fingerprint of the week (geometry is not seeded).
 - Entry: debit run's energy price. Loadout draws on banked Level Cap, Max

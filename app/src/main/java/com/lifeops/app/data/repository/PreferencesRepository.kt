@@ -57,6 +57,12 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getBoolean("growth_aspect_history_backfill_done", false)
         set(value) { prefs.edit().putBoolean("growth_aspect_history_backfill_done", value).apply() }
 
+    // The week (DateUtil.currentWeekStart().toString()) the last dev/sandbox run was started. The
+    // dev run is once a week: a fresh week clears the gate. Empty means "never run".
+    var lastDevRunWeek: String
+        get() = prefs.getString("last_dev_run_week", "") ?: ""
+        set(value) { prefs.edit().putString("last_dev_run_week", value).apply() }
+
     var savedSortOrder: String
         get() = prefs.getString("sort_order", "DEFAULT") ?: "DEFAULT"
         set(value) { prefs.edit().putString("sort_order", value).apply() }

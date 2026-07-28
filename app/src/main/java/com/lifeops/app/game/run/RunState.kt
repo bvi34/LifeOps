@@ -109,6 +109,10 @@ data class RunSnapshot(
     val totalWaves: Int,
     /** Endless-mode loop/difficulty tier (0 = first loop). */
     val tier: Int,
+    /** Set ceiling for a bounded run (the dev run auto-ends at this many sets); null = endless. */
+    val maxSets: Int? = null,
+    /** True for the weekly dev/sandbox run: unlimited resources, nothing earned in it is permanent. */
+    val devRun: Boolean = false,
     val score: Long,
     val status: RunStatus,
     /** Times the player bought back into this run after a defeat (DESIGN.md §7). */
