@@ -73,4 +73,7 @@ interface RoyalRoadDao {
 
     @Query("DELETE FROM rr_chapters WHERE fictionId = :id")
     suspend fun deleteChapters(id: Long)
+
+    @Query("DELETE FROM rr_fictions WHERE fictionId = :id")
+    suspend fun deleteFiction(id: Long)
 }

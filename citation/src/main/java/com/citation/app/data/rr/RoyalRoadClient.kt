@@ -27,7 +27,9 @@ class RoyalRoadClient(
     /** Fetch + parse a fiction's chapter catalog (the skim view). */
     suspend fun fetchCatalog(fictionId: Long): FictionCatalog = withContext(Dispatchers.IO) {
         val html = get("$baseUrl/fiction/$fictionId")
-        val title = RoyalRoadHtml.extractChapter(html).title // page <h1> is the fiction title
+        // Take the title from the page's og:title/<title> metadata, not the first heading: the header
+        // chrome (notifications widget, etc.) renders <h*> elements before the fiction's own <h1>.
+        val title = RoyalRoadHtml.extractFictionTitle(html) ?: "Royal Road #$fictionId"
         RoyalRoadHtml.parseFictionChapters(fictionId, title, html)
     }
 

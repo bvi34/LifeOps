@@ -61,4 +61,12 @@ class FileStores(context: Context) {
     /** Total bytes of a serial's cached chapter bodies in the disposable store. */
     fun borrowedTotalSize(bookKey: String): Long =
         File(disposableDir, bookKey).listFiles()?.sumOf { it.length() } ?: 0L
+
+    /** Drop a serial's entire borrowed cache directory (used when the serial is deleted/uncached). */
+    fun deleteBorrowedFiction(bookKey: String): Boolean =
+        File(disposableDir, bookKey).deleteRecursively()
+
+    /** Remove an owned file (EPUB/PDF) from the sovereign store (used when the book is deleted). */
+    fun deleteOwned(bookKey: String, extension: String): Boolean =
+        File(sovereignDir, "$bookKey.$extension").let { it.exists() && it.delete() }
 }

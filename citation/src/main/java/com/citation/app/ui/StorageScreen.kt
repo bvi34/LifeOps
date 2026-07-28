@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
@@ -57,7 +57,13 @@ fun StorageReportBody(vm: ReaderViewModel, modifier: Modifier = Modifier) {
         Divider()
 
         LazyColumn(Modifier.fillMaxSize()) {
-            items(r.entries.sortedByDescending { it.bytes }, key = { it.label }) { entry ->
+            // Key on position, not label: two items can share a label (e.g. two serials that landed
+            // with the same title), and a duplicate LazyColumn key throws — which crashed the whole
+            // Settings screen the moment the second one scrolled into view.
+            itemsIndexed(
+                r.entries.sortedByDescending { it.bytes },
+                key = { index, entry -> "$index:${entry.label}" }
+            ) { _, entry ->
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween

@@ -40,6 +40,10 @@ interface BookDao {
 
     @Query("SELECT * FROM books")
     suspend fun getAll(): List<BookEntity>
+
+    /** Remove a library entry entirely (used when the user deletes a book). */
+    @Query("DELETE FROM books WHERE key = :key")
+    suspend fun delete(key: String)
 }
 
 @Dao
@@ -58,6 +62,10 @@ interface ChapterDao {
 
     @Query("DELETE FROM chapters WHERE bookKey = :bookKey AND ordinal = :ordinal")
     suspend fun evict(bookKey: String, ordinal: Int)
+
+    /** Drop all stored chapters for a book (used when the book is deleted). */
+    @Query("DELETE FROM chapters WHERE bookKey = :bookKey")
+    suspend fun deleteForBook(bookKey: String)
 }
 
 @Dao
