@@ -21,9 +21,9 @@ enum class StartingWeapon(
     val blurb: String,
     val baseStats: Map<Stat, Float>,
     /**
-     * Gatling normalizes total DPS across projectile count (§4): more projectiles = more, smaller
-     * hits at the same throughput. The engine divides per-hit damage by projectile count when this
-     * is true, so buying projectile ranks buys coverage, not raw DPS.
+     * When true, total DPS is normalized across projectile count (§4): the engine divides per-hit
+     * damage by projectile count, so more projectiles = more, smaller hits at the same throughput
+     * (coverage, not raw DPS). Off for every current weapon — projectile ranks multiply throughput.
      */
     val dpsNormalized: Boolean,
     /**
@@ -41,9 +41,10 @@ enum class StartingWeapon(
     val reloadSeconds: Float,
     /**
      * Spin-up (DESIGN.md §4). When [spinUpAccel] > 0 the fire rate ramps during continuous fire: it
-     * starts at [spinUpFloor] shots/s and climbs [spinUpAccel] shots/s for every second engaged, up
-     * to the weapon's [Stat.FIRE_RATE] ceiling, and resets the moment fire stops (the Gatling's
-     * wind-up). Zero accel = a flat fire rate (Sniper, Shotgun).
+     * starts at [spinUpFloor] shots/s and climbs [spinUpAccel] shots/s for every second engaged, with
+     * no ceiling — it keeps accelerating until the magazine empties, and resets the moment fire stops
+     * (the Gatling's wind-up). The weapon's [Stat.FIRE_RATE] is the reference that fire-rate passives
+     * scale and the wind-up meter fills toward, not a cap. Zero accel = a flat rate (Sniper, Shotgun).
      */
     val spinUpFloor: Float = 0f,
     val spinUpAccel: Float = 0f,
@@ -74,7 +75,7 @@ enum class StartingWeapon(
     ),
     GATLING(
         displayName = "Gatling",
-        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. Winds up: fire rate climbs the longer you hold fire, resets when you stop. DPS normalized across projectiles.",
+        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. Winds up with no ceiling: fire rate climbs the longer you hold fire, capped only by the magazine, and resets when you stop. Each projectile hits full.",
         baseStats = mapOf(
             Stat.DAMAGE to 16f,
             Stat.FIRE_RATE to 7f,
@@ -84,13 +85,14 @@ enum class StartingWeapon(
             Stat.CRIT_CHANCE to 0.05f,
             Stat.CRIT_MULT to 2f,
         ),
-        dpsNormalized = true,
+        dpsNormalized = false,
         unlimitedRange = false,
         spread = 0.28f,
         magazineSize = 60,
         reloadSeconds = 2.3f,
-        // Winds up: 1 shot/s from a standstill, +2 shots/s for every second of sustained fire, up to
-        // the 7/s ceiling above (~3s to spin up); resets the instant it stops firing.
+        // Winds up with no ceiling: 1 shot/s from a standstill, +2 shots/s for every second of
+        // sustained fire, climbing until the magazine empties (a reload resets the spin). The base
+        // FIRE_RATE above is only a reference point for fire-rate passives and the wind-up meter.
         spinUpFloor = 1f,
         spinUpAccel = 2f,
     ),

@@ -108,16 +108,18 @@ Two classes:
     auto-aim locks on anywhere on the field). Deletes elites, weak vs trash.
     Small magazine. Drafts toward swarm-clearing automatics.
   - **Gatling**: sustained stream, **medium range** (bullets expire at their
-    reach). **Spins up**: the fire rate starts low and climbs the longer you hold
-    continuous fire (1 shot/s + 2/s per second engaged, up to its `FIRE_RATE`
-    ceiling), and **resets the moment fire stops** — reward for sustained bursts.
-    Total DPS **normalized across projectile count** (more projectiles = same DPS
-    as more, smaller hits). Projectile ranks buy coverage/smoothness, not
-    throughput; damage% is its premium artifact. Large magazine.
-  - ⚠️ Note in the gatling weapon def: DPS-normalization is a baseline-era
-    truce. Any future per-hit proc modifier (on-hit heal, on-hit chance) scales
-    with hit count and makes the gatling the proc platform. Price Phase-2
-    on-hit modifiers with the gatling in mind.
+    reach). **Spins up with no ceiling**: the fire rate starts low and climbs the
+    longer you hold continuous fire (1 shot/s + 2/s per second engaged), with **no
+    cap** — it keeps accelerating until the magazine empties, and **resets the
+    moment fire stops** — reward for sustained bursts. Its base `FIRE_RATE` is only
+    the reference that fire-rate passives scale and the wind-up meter fills toward,
+    not a cap. Damage is **not DPS-normalized**: extra projectiles multiply
+    throughput, so projectile ranks (Splitter) are a real power spike on it. Large
+    magazine.
+  - ⚠️ Uncapped spin-up + full-damage projectiles make the Gatling the throughput
+    platform: any future per-hit proc modifier (on-hit heal, on-hit chance) scales
+    with both hit count and the sustained-fire ramp. Price Phase-2 on-hit and
+    projectile modifiers with the gatling in mind.
   - **Shotgun**: a **short-range** cone of pellets — devastating up close,
     useless at distance. Each pellet hits full (not DPS-normalized). Small
     magazine, wide spread.
