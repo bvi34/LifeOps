@@ -4,9 +4,9 @@ import com.lifeops.app.data.model.BusyBlock
 
 /**
  * Port for queuing/cancelling a busy block's start-of-block reminder, letting [BusyBlockRepository]
- * drive reminders without depending on Android's WorkManager (or a [android.content.Context])
- * directly. The production implementation is WorkManager-backed (see the app's
- * WorkManagerBusyBlockReminderScheduler); unit tests substitute a fake or the no-op below.
+ * drive reminders without depending on Android's AlarmManager (or a [android.content.Context])
+ * directly. The production implementation is exact-alarm-backed (see the app's
+ * AlarmBusyBlockReminderScheduler); unit tests substitute a fake or the no-op below.
  */
 interface BusyBlockReminderScheduler {
     /** Enqueue [block]'s next start-of-block reminder, replacing any pending one for that block. */

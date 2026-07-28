@@ -38,7 +38,7 @@ class LifeOpsApp : Application() {
     val busyBlockRepository by lazy {
         BusyBlockRepository(
             database.busyBlockDao(),
-            com.lifeops.app.worker.WorkManagerBusyBlockReminderScheduler(this)
+            com.lifeops.app.worker.AlarmBusyBlockReminderScheduler(this)
         )
     }
     val searchRepository by lazy { SearchRepository(database) }
