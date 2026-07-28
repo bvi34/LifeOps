@@ -32,6 +32,22 @@ class StorageInventoryTest {
     }
 
     @Test
+    fun explicitRecoverabilityOverridesTheSourceDefault() {
+        // O'Reilly's type reads irreplaceable (no owned body), but its warm page cache is refetchable.
+        val report = StorageInventory.report(
+            listOf(
+                StorageInventory.StorageItem(
+                    "O'Reilly warm pages", SourceType.OREILLY, 3_000, Recoverability.RECLAIMABLE
+                ),
+                StorageInventory.StorageItem("PDF: Research", SourceType.PDF, 7_000)
+            )
+        )
+        assertEquals(3_000L, report.reclaimableBytes)
+        assertEquals(7_000L, report.irreplaceableBytes)
+        assertEquals(listOf("O'Reilly warm pages"), StorageInventory.reclaimableLargestFirst(report).map { it.label })
+    }
+
+    @Test
     fun insightWarnsOnlyPastTheSoftThresholdAndNeverEvicts() {
         val report = StorageInventory.report(
             listOf(StorageInventory.StorageItem("RR", SourceType.ROYAL_ROAD, 10_000))

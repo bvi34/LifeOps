@@ -98,10 +98,13 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun open(bookKey: String) {
         viewModelScope.launch {
+            // Read cache staleness from the *prior* open time, before markOpened restamps it to now.
+            val warmCacheStale = repository.oreillyWarmCacheStale(bookKey)
             repository.markOpened(bookKey) // stamp for the Read tab's resume
             when (repository.sourceTypeOf(bookKey)) {
                 SourceType.PDF -> _pdfSession.value = repository.pdfSession(bookKey)
-                SourceType.OREILLY -> _oreillySession.value = repository.oreillySession(bookKey)
+                SourceType.OREILLY ->
+                    _oreillySession.value = repository.oreillySession(bookKey)?.copy(purgeWarmCache = warmCacheStale)
                 else -> {
                     val result = repository.openBook(bookKey)
                     openRrFictionId = result?.rrFictionId

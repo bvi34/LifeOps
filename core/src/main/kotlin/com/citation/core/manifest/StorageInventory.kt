@@ -18,20 +18,27 @@ import com.citation.core.model.SourceType
  */
 object StorageInventory {
 
-    /** One thing taking up space: a book's content, a cache, a pile of notes. */
+    /**
+     * One thing taking up space: a book's content, a cache, a pile of notes. Recoverability is
+     * normally derived from [sourceType], but an item may set [recoverability] explicitly for the
+     * cases where the source kind doesn't tell the whole story — e.g. O'Reilly keeps no owned body
+     * (so the type reads irreplaceable), yet its *warm page cache* is refetchable by reopening, so it
+     * is reclaimable.
+     */
     data class StorageItem(
         val label: String,
         val sourceType: SourceType,
-        val bytes: Long
+        val bytes: Long,
+        val recoverability: Recoverability? = null
     )
 
     /** Recoverability is derived purely from the source kind (borrowed cache ⇒ reclaimable). */
     fun recoverabilityFor(sourceType: SourceType): Recoverability =
         if (sourceType.isBorrowedCache) Recoverability.RECLAIMABLE else Recoverability.IRREPLACEABLE
 
-    /** Aggregate [items] into a [StorageReport], tagging each by recoverability. */
+    /** Aggregate [items] into a [StorageReport], tagging each by recoverability (explicit wins). */
     fun report(items: List<StorageItem>): StorageReport =
-        StorageReport(items.map { SizeEntry(it.label, it.bytes, recoverabilityFor(it.sourceType)) })
+        StorageReport(items.map { SizeEntry(it.label, it.bytes, it.recoverability ?: recoverabilityFor(it.sourceType)) })
 
     /**
      * An advisory read on a report. [softWarnBytes] is a *soft* threshold: crossing it sets
