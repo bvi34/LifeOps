@@ -18,7 +18,7 @@ enum class Scope { AIMED, AUTO, GLOBAL }
  */
 enum class Stat {
     DAMAGE,          // per-hit damage
-    FIRE_RATE,       // shots per second (for the Gatling this is the spin-up ceiling — DESIGN.md §4)
+    FIRE_RATE,       // shots per second (for a spin-up weapon this is the reference the uncapped ramp scales from, not a cap — DESIGN.md §4)
     RELOAD_SPEED,    // reload-speed multiplier (base 1.0; effective reload time = base / this)
     MAGAZINE,        // rounds per magazine (Extended Mag raises it — DESIGN.md §4)
     PROJECTILES,     // projectiles per shot (secretly multiplicative — DESIGN.md §5)

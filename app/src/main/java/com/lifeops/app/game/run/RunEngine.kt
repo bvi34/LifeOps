@@ -770,8 +770,8 @@ class RunEngine(
 
         val count = player.projectiles(stats)
         var perHit = player.aimedDamage(stats)
-        // Gatling normalizes total DPS across projectile count (DESIGN.md §4): splitting into more
-        // projectiles must not multiply throughput, so per-hit damage is divided by the count.
+        // DPS-normalized weapons (none at present, DESIGN.md §4) split throughput across projectiles:
+        // per-hit damage is divided by the count so more projectiles buy coverage, not raw DPS.
         if (weapon.dpsNormalized && count > 1) perHit /= count.toFloat()
 
         val baseAngle = kotlin.math.atan2(aimDir.y, aimDir.x)
@@ -823,13 +823,18 @@ class RunEngine(
 
     /**
      * The live fire rate. Flat for most weapons; for a spin-up weapon (Gatling) it ramps from
-     * [StartingWeapon.spinUpFloor] up toward the [Stat.FIRE_RATE] ceiling as [Player.spin] grows,
-     * so sustained fire accelerates and a pause resets it (DESIGN.md §4).
+     * [StartingWeapon.spinUpFloor] as [Player.spin] grows, with **no ceiling** — it keeps climbing
+     * for as long as fire is sustained and is bounded only by the magazine emptying (a reload resets
+     * the spin), DESIGN.md §4. Fire-rate passives scale the whole curve rather than raising a cap:
+     * the ramp is expressed relative to the weapon's base fire rate and multiplied by the resolved
+     * [Stat.FIRE_RATE], so Rapid Fire / Gunslinger / Berserker still speed the Gatling up.
      */
     private fun effectiveFireRate(): Float {
-        val ceiling = player.fireRate(stats)
-        if (weapon.spinUpAccel <= 0f) return ceiling
-        return (weapon.spinUpFloor + weapon.spinUpAccel * player.spin).coerceIn(0.1f, ceiling)
+        val rate = player.fireRate(stats)
+        if (weapon.spinUpAccel <= 0f) return rate
+        val baseRate = (weapon.baseStats[Stat.FIRE_RATE] ?: rate).coerceAtLeast(0.01f)
+        val ramp = (weapon.spinUpFloor + weapon.spinUpAccel * player.spin).coerceAtLeast(0.1f)
+        return ramp * (rate / baseRate)
     }
 
     /** Track the aim direction every frame so the barrel/reticle follows the nearest target even

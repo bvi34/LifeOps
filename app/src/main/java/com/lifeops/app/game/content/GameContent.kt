@@ -21,9 +21,9 @@ enum class StartingWeapon(
     val blurb: String,
     val baseStats: Map<Stat, Float>,
     /**
-     * Gatling normalizes total DPS across projectile count (§4): more projectiles = more, smaller
-     * hits at the same throughput. The engine divides per-hit damage by projectile count when this
-     * is true, so buying projectile ranks buys coverage, not raw DPS.
+     * When true, total DPS is normalized across projectile count (§4): the engine divides per-hit
+     * damage by projectile count, so more projectiles = more, smaller hits at the same throughput
+     * (coverage, not raw DPS). Off for every current weapon — projectile ranks multiply throughput.
      */
     val dpsNormalized: Boolean,
     /**
@@ -41,9 +41,10 @@ enum class StartingWeapon(
     val reloadSeconds: Float,
     /**
      * Spin-up (DESIGN.md §4). When [spinUpAccel] > 0 the fire rate ramps during continuous fire: it
-     * starts at [spinUpFloor] shots/s and climbs [spinUpAccel] shots/s for every second engaged, up
-     * to the weapon's [Stat.FIRE_RATE] ceiling, and resets the moment fire stops (the Gatling's
-     * wind-up). Zero accel = a flat fire rate (Sniper, Shotgun).
+     * starts at [spinUpFloor] shots/s and climbs [spinUpAccel] shots/s for every second engaged, with
+     * no ceiling — it keeps accelerating until the magazine empties, and resets the moment fire stops
+     * (the Gatling's wind-up). The weapon's [Stat.FIRE_RATE] is the reference that fire-rate passives
+     * scale and the wind-up meter fills toward, not a cap. Zero accel = a flat rate (Sniper, Shotgun).
      */
     val spinUpFloor: Float = 0f,
     val spinUpAccel: Float = 0f,
@@ -56,15 +57,15 @@ enum class StartingWeapon(
 ) {
     SNIPER(
         displayName = "Sniper",
-        blurb = "Burst, precision, single-target. Unlimited range — shots never fall short. Deletes elites; weak vs trash.",
+        blurb = "Burst, precision, single-target. Unlimited range — shots never fall short. The premier big-target killer: huge per-shot damage and vicious crits delete elites and chew bosses. Weak vs trash.",
         baseStats = mapOf(
-            Stat.DAMAGE to 34f,
+            Stat.DAMAGE to 60f,
             Stat.FIRE_RATE to 1.6f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 560f,
             Stat.RANGE to 620f,
             Stat.CRIT_CHANCE to 0.15f,
-            Stat.CRIT_MULT to 2.5f,
+            Stat.CRIT_MULT to 3.0f,
         ),
         dpsNormalized = false,
         unlimitedRange = true,
@@ -74,7 +75,7 @@ enum class StartingWeapon(
     ),
     GATLING(
         displayName = "Gatling",
-        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. Winds up: fire rate climbs the longer you hold fire, resets when you stop. DPS normalized across projectiles.",
+        blurb = "Sustained stream, medium range — bullets fizzle out past their reach. Winds up with no ceiling: fire rate climbs the longer you hold fire, capped only by the magazine, and resets when you stop. Each projectile hits full.",
         baseStats = mapOf(
             Stat.DAMAGE to 16f,
             Stat.FIRE_RATE to 7f,
@@ -84,13 +85,14 @@ enum class StartingWeapon(
             Stat.CRIT_CHANCE to 0.05f,
             Stat.CRIT_MULT to 2f,
         ),
-        dpsNormalized = true,
+        dpsNormalized = false,
         unlimitedRange = false,
         spread = 0.28f,
         magazineSize = 60,
         reloadSeconds = 2.3f,
-        // Winds up: 1 shot/s from a standstill, +2 shots/s for every second of sustained fire, up to
-        // the 7/s ceiling above (~3s to spin up); resets the instant it stops firing.
+        // Winds up with no ceiling: 1 shot/s from a standstill, +2 shots/s for every second of
+        // sustained fire, climbing until the magazine empties (a reload resets the spin). The base
+        // FIRE_RATE above is only a reference point for fire-rate passives and the wind-up meter.
         spinUpFloor = 1f,
         spinUpAccel = 2f,
     ),
@@ -136,15 +138,19 @@ enum class StartingWeapon(
     ),
     HAND_CANNON(
         displayName = "Hand Cannon",
-        blurb = "A slow, brutal single shot — huge damage, tiny magazine, punishing reload. Rewards aim over spray.",
+        blurb = "A slow lob of small explosive rounds — every shot detonates on impact and splashes the cluster around it. Modest single-target punch; shines clearing packs. Tiny magazine, punishing reload.",
         baseStats = mapOf(
-            Stat.DAMAGE to 72f,
+            Stat.DAMAGE to 38f,
             Stat.FIRE_RATE to 1.1f,
             Stat.PROJECTILES to 1f,
             Stat.PROJECTILE_SPEED to 520f,
             Stat.RANGE to 500f,
-            Stat.CRIT_CHANCE to 0.2f,
-            Stat.CRIT_MULT to 2.5f,
+            Stat.CRIT_CHANCE to 0.08f,
+            Stat.CRIT_MULT to 2.0f,
+            // Innate blast (§9): its rounds carry an explosion radius baked into the weapon data, so the
+            // engine's explosive-projectile path fires with no per-weapon code. Direct hit takes full
+            // damage; everything else in the blast takes the splash fraction. Explosive Rounds stacks on top.
+            Stat.EXPLOSION_RADIUS to 46f,
         ),
         dpsNormalized = false,
         unlimitedRange = false,
