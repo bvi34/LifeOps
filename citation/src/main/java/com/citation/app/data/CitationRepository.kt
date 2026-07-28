@@ -202,6 +202,29 @@ class CitationRepository private constructor(
     }
 
     /**
+     * Remove a book from the library and reclaim everything it borrowed. Routes by source: a Royal
+     * Road serial is un-favourited and its cache + catalog dropped via the coordinator; an owned
+     * EPUB/PDF has its file and inline chapters removed. In every case the [BookEntity] itself is
+     * deleted. Notes/highlights are deliberately left intact — they're sovereign and still hold their
+     * frozen snapshots, matching how [deleteNote] treats deletion as local and non-destructive to the
+     * captured record.
+     */
+    suspend fun deleteBook(bookKey: String) {
+        val entity = db.bookDao().get(bookKey) ?: return
+        when (entity.sourceType) {
+            SourceType.ROYAL_ROAD.name ->
+                entity.sourceId?.toLongOrNull()?.let { royalRoad.forget(it) }
+            SourceType.PDF.name -> files.deleteOwned(bookKey, "pdf")
+            SourceType.EPUB.name -> {
+                files.deleteOwned(bookKey, "epub")
+                db.chapterDao().deleteForBook(bookKey)
+            }
+            else -> db.chapterDao().deleteForBook(bookKey)
+        }
+        db.bookDao().delete(bookKey)
+    }
+
+    /**
      * Delete a note (and its passage highlight vanishes with it, since the reader renders highlights
      * from their notes). Local-only: LifeOps keeps the copy it already acked — a delete-tombstone on
      * the sync seam is deliberately out of scope, so this removes your local record, not the world's.

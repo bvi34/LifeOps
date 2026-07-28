@@ -25,6 +25,35 @@ object RoyalRoadHtml {
         "(?is)<a\\b[^>]*href\\s*=\\s*[\"']([^\"']*?/chapter/(\\d+)/[^\"']*)[\"'][^>]*>(.*?)</a>"
     )
 
+    // The fiction title, taken from stable page metadata rather than "the first heading on the page".
+    // The header chrome (the notifications dropdown — "You have no pending notifications" — etc.)
+    // renders its own <h*> elements *before* the fiction's <h1>, so a naive first-heading grab picks
+    // up site furniture. og:title and <title> are set by Royal Road to the fiction name itself.
+    private val OG_TITLE_FWD = Regex(
+        "(?is)<meta\\b[^>]*property\\s*=\\s*[\"']og:title[\"'][^>]*content\\s*=\\s*[\"']([^\"']*)[\"']"
+    )
+    private val OG_TITLE_REV = Regex(
+        "(?is)<meta\\b[^>]*content\\s*=\\s*[\"']([^\"']*)[\"'][^>]*property\\s*=\\s*[\"']og:title[\"']"
+    )
+    private val TITLE_TAG = Regex("(?is)<title\\b[^>]*>(.*?)</title>")
+    private val SITE_SUFFIX = Regex("(?i)\\s*[|\\-–]\\s*Royal\\s*Road\\s*$")
+
+    /**
+     * Extract a fiction's display title from its page. Prefers Royal Road's own metadata — the
+     * `og:title` meta tag, then the `<title>` element (with the trailing "| Royal Road" site suffix
+     * stripped) — and only falls back to the first heading if neither is present. This is what keeps a
+     * serial from being catalogued under the header's "You have no pending notifications" widget.
+     */
+    fun extractFictionTitle(html: String): String? {
+        val og = OG_TITLE_FWD.find(html)?.groupValues?.get(1)
+            ?: OG_TITLE_REV.find(html)?.groupValues?.get(1)
+        val fromTitle = TITLE_TAG.find(html)?.groupValues?.get(1)
+            ?.let { SITE_SUFFIX.replace(Html.toText(it), "") }
+        val raw = og ?: fromTitle
+        return raw?.let { Html.toText(it).trim() }?.takeIf { it.isNotBlank() }
+            ?: Html.extractHeading(html)?.takeIf { it.isNotBlank() }
+    }
+
     /**
      * Parse the fiction page HTML into an ordered chapter catalog. Reads anchors that point at
      * `/chapter/{id}/…` (Royal Road's chapter-table rows), de-duplicating by chapter id and keeping

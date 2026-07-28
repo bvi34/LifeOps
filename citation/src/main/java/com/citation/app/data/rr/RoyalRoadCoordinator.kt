@@ -103,6 +103,21 @@ class RoyalRoadCoordinator(
     }
 
     /**
+     * Forget a serial entirely: un-favourite it, drop its queued fetches, delete every cached chapter
+     * body, and remove its catalog rows (fiction + chapter meta). This is the "uncache / remove"
+     * action behind the library's delete — it undoes everything the RR loop borrowed for the serial.
+     * The sovereign [com.citation.app.data.db.BookEntity] and any notes are the repository's concern;
+     * this only reclaims the disposable, refetchable side.
+     */
+    suspend fun forget(fictionId: Long) {
+        queue.removeFiction(fictionId)
+        dao.setFavorite(fictionId, false)
+        files.deleteBorrowedFiction(fictionId.toString())
+        dao.deleteChapters(fictionId)
+        dao.deleteFiction(fictionId)
+    }
+
+    /**
      * Poll every favourite's feed (loose budget) and enqueue only genuinely new chapters (fast
      * FAVORITES_NEW lane). The feed is the detector; bodies are pulled later by [drainQueue].
      */

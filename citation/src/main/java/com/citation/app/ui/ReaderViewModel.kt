@@ -212,6 +212,19 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         _openBook.value = null
     }
 
+    /**
+     * Remove a book from the library. For a Royal Road serial this also un-favourites it and drops its
+     * cached chapter bodies (the "uncache" the user wants); if it happens to be the one open in the
+     * reader, the reader is closed too. Notes on it are kept (they hold their own frozen snapshots).
+     */
+    fun deleteBook(book: CitationRepository.BookSummary) {
+        viewModelScope.launch {
+            repository.deleteBook(book.key)
+            if (_openBook.value?.key?.toString() == book.key) closeBook()
+            _status.value = "Removed “${book.title}”."
+        }
+    }
+
     fun goToChapter(ordinal: Int) {
         val book = _openBook.value ?: return
         val target = ordinal.coerceIn(0, book.chapters.lastIndex)

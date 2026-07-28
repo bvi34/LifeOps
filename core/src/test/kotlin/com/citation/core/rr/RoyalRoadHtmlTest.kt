@@ -57,6 +57,32 @@ class RoyalRoadHtmlTest {
     }
 
     @Test
+    fun fictionTitleComesFromMetadataNotHeaderChrome() {
+        // A realistic fiction page: the header's notifications widget renders an <h*> *before* the
+        // fiction's own <h1>, so a first-heading grab would mis-title the serial. og:title/<title>
+        // carry the real name.
+        val page = """
+            <html><head>
+              <title>My Great Serial | Royal Road</title>
+              <meta property="og:title" content="My Great Serial" />
+            </head><body>
+              <header>
+                <div class="notifications"><h4>You have no pending notifications</h4></div>
+              </header>
+              <div class="fic-title"><h1>My Great Serial</h1></div>
+            </body></html>
+        """.trimIndent()
+        assertEquals("My Great Serial", RoyalRoadHtml.extractFictionTitle(page))
+    }
+
+    @Test
+    fun fictionTitleFallsBackToTitleTagStrippingSiteSuffix() {
+        val page = "<html><head><title>Another Serial - Royal Road</title></head>" +
+            "<body><h3>You have no pending notifications</h3></body></html>"
+        assertEquals("Another Serial", RoyalRoadHtml.extractFictionTitle(page))
+    }
+
+    @Test
     fun toChapterPlacesTextAtRefOrdinal() {
         val catalog = RoyalRoadHtml.parseFictionChapters(12345, "My Great Serial", fictionPage)
         val ref = catalog.chapters[1]

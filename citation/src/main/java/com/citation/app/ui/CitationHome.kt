@@ -2,7 +2,9 @@ package com.citation.app.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
 import com.citation.core.capture.CaptureClusterer
+import com.citation.core.model.SourceType
 import com.citation.core.sync.ReadingState
 
 /**
@@ -353,10 +356,12 @@ private fun resumeHint(book: CitationRepository.BookSummary): String = when {
 
 // --- Library -----------------------------------------------------------------------------------
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 private fun LibraryTab(vm: ReaderViewModel) {
     val books by vm.books.collectAsStateWithLifecycle()
+    // The book the user long-pressed and is being asked to confirm removing.
+    var pendingRemoval by remember { mutableStateOf<CitationRepository.BookSummary?>(null) }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Library") }) }) { padding ->
         if (books.isEmpty()) {
@@ -371,7 +376,14 @@ private fun LibraryTab(vm: ReaderViewModel) {
             Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
                 books.forEach { b ->
                     Column(
-                        Modifier.fillMaxWidth().clickable { vm.open(b.key) }.padding(horizontal = 16.dp, vertical = 12.dp)
+                        Modifier.fillMaxWidth()
+                            // Tap to open, long-press to remove/uncache — no hidden gesture, the empty
+                            // state and this list are the only library surfaces.
+                            .combinedClickable(
+                                onClick = { vm.open(b.key) },
+                                onLongClick = { pendingRemoval = b }
+                            )
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
                         Text(b.title, fontSize = 18.sp, fontFamily = FontFamily.Serif, color = MaterialTheme.colorScheme.onBackground)
                         b.author?.let { Text(it, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary) }
@@ -386,6 +398,45 @@ private fun LibraryTab(vm: ReaderViewModel) {
             }
         }
     }
+
+    pendingRemoval?.let { book ->
+        RemoveBookDialog(
+            book = book,
+            onConfirm = { vm.deleteBook(book); pendingRemoval = null },
+            onDismiss = { pendingRemoval = null }
+        )
+    }
+}
+
+/**
+ * Confirm removing a book from the library. For a Royal Road serial this is also the "uncache /
+ * unfavourite" the user reaches for — the copy spells that out so it's clear what's reclaimed.
+ */
+@Composable
+private fun RemoveBookDialog(
+    book: CitationRepository.BookSummary,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isRoyalRoad = book.sourceType == SourceType.ROYAL_ROAD.name
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove “${book.title}”?") },
+        text = {
+            Text(
+                if (isRoyalRoad) {
+                    "This un-favourites the serial and clears its cached chapters. Your notes are kept, " +
+                        "and you can add it again from Browse Royal Road."
+                } else {
+                    "This removes it from your library. Your notes are kept."
+                },
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        },
+        confirmButton = { Button(onClick = onConfirm) { Text("Remove") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 // --- Settings (sync + storage) -----------------------------------------------------------------
