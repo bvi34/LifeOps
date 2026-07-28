@@ -8,6 +8,7 @@ import com.lifeops.app.data.model.GameScore
 import com.lifeops.app.data.repository.GameResourceRepository
 import com.lifeops.app.data.repository.GameScoreRepository
 import com.lifeops.app.data.repository.GameUnlockRepository
+import com.lifeops.app.data.repository.PreferencesRepository
 import com.lifeops.app.game.content.ChallengeMode
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.content.StoreCatalog
@@ -38,6 +39,8 @@ data class RunUiState(
     val unlockedIds: Set<String> = emptySet(),
     /** Unlocked mutators the player has toggled on for the next run in the loadout. */
     val activeMutatorIds: Set<String> = emptySet(),
+    /** Whether the weekly dev/sandbox run is available (not yet used this week). */
+    val devRunAvailable: Boolean = false,
     val message: String? = null,
 ) {
     /** Weapons offered in the loadout: the always-on baseline plus any unlocked store guns. */
@@ -55,13 +58,21 @@ class RunViewModel(
     private val gameResourceRepository: GameResourceRepository,
     private val gameScoreRepository: GameScoreRepository,
     private val gameUnlockRepository: GameUnlockRepository,
+    private val preferencesRepository: PreferencesRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(RunUiState())
+    private val _uiState = MutableStateFlow(RunUiState(devRunAvailable = computeDevRunAvailable()))
     val uiState: StateFlow<RunUiState> = _uiState.asStateFlow()
 
     private val _engine = MutableStateFlow<RunEngine?>(null)
     val engine: StateFlow<RunEngine?> = _engine.asStateFlow()
+
+    /** True while the in-progress run is a dev/sandbox run: no banked spend, nothing permanent. */
+    private var devRunActive = false
+
+    /** The dev run is once a week; a new week (or never having run one) opens the gate. */
+    private fun computeDevRunAvailable(): Boolean =
+        preferencesRepository.lastDevRunWeek != DateUtil.currentWeekStart().toString()
 
     /** Loadout facts captured at run start so the scoreboard record needs only the final numbers. */
     private data class RunMeta(
@@ -130,11 +141,12 @@ class RunViewModel(
 
     fun canAfford(): Boolean = Loadout.canAfford(_uiState.value.resources)
 
-    /** Whether the player has the banked Energy to buy back into a lost run (2× entry). */
-    fun canRevive(): Boolean = Loadout.canRevive(_uiState.value.resources)
+    /** Whether the player can buy back into a lost run. A dev run revives for free; a normal run
+     *  needs the banked Energy for the 2× entry price. */
+    fun canRevive(): Boolean = devRunActive || Loadout.canRevive(_uiState.value.resources)
 
-    /** The banked-Energy price of a revive (2× run entry), for the defeat screen. */
-    val reviveCost: Int get() = Loadout.REVIVE_COST
+    /** The Energy price of a revive (2× run entry) for the defeat screen; free (0) in a dev run. */
+    val reviveCost: Int get() = if (devRunActive) 0 else Loadout.REVIVE_COST
 
     /**
      * Buy back into a lost run for [reviveCost] banked Energy (DESIGN.md §7). Debits the ledger and
@@ -144,6 +156,11 @@ class RunViewModel(
      */
     fun revive() {
         val engine = _engine.value ?: return
+        // A dev run revives for free — no banked spend, like every other cost in the sandbox.
+        if (devRunActive) {
+            engine.revive()
+            return
+        }
         val state = _uiState.value
         if (!Loadout.canRevive(state.resources)) {
             _uiState.update { it.copy(message = "Not enough Energy to revive.") }
@@ -199,9 +216,40 @@ class RunViewModel(
                 weapon = state.weapon.displayName,
                 challengeMode = state.challengeMode.name,
             )
+            devRunActive = false
             _engine.value = RunEngine(config)
             _uiState.update { it.copy(message = null) }
         }
+    }
+
+    /**
+     * Start the weekly dev/sandbox run (DESIGN.md §7): unlimited resources, no banked spend, ending
+     * automatically after [RunConfig.DEV_RUN_SETS] sets. Once a week — a used gate blocks re-entry
+     * until the week rolls over. Nothing earned in it is permanent (the store is free and unrecorded)
+     * and the run is never logged to the scoreboard, so it can't pollute the standings.
+     */
+    fun startDevRun() {
+        if (!computeDevRunAvailable()) {
+            _uiState.update {
+                it.copy(devRunAvailable = false, message = "Dev run already used this week — resets Monday.")
+            }
+            return
+        }
+        val state = _uiState.value
+        val weekKey = DateUtil.currentWeekStart().toString()
+        preferencesRepository.lastDevRunWeek = weekKey
+        devRunActive = true
+        // A dev run is ephemeral: it is not recorded on the scoreboard, so there is no run meta.
+        runMeta = null
+        val config = RunConfig.devRun(
+            weapon = state.weapon,
+            seed = RunSeed.fromWeek(weekKey),
+            unlockedIds = state.unlockedIds,
+            activeMutatorIds = state.activeMutatorIds,
+            challengeMode = state.challengeMode,
+        )
+        _engine.value = RunEngine(config)
+        _uiState.update { it.copy(devRunAvailable = false, message = null) }
     }
 
     /**
@@ -244,6 +292,13 @@ class RunViewModel(
      */
     fun purchaseStore(offer: StoreOffer) {
         val engine = _engine.value ?: return
+        // In a dev run the store is free and impermanent: grant it to the run only — no banked spend,
+        // no unlock record. It vanishes with the run, like everything else in the sandbox.
+        if (devRunActive) {
+            engine.applyStorePurchase(offer.itemId)
+            _uiState.update { it.copy(message = null) }
+            return
+        }
         val state = _uiState.value
         val budget = Loadout.modifierBudgetResource(state.resources)
         if ((budget?.currentValue ?: 0) < offer.cost) {
@@ -274,8 +329,10 @@ class RunViewModel(
     fun exitRun() {
         // Drop any un-recorded meta: leaving mid-run is not a finished run and should not be logged.
         runMeta = null
+        devRunActive = false
         _engine.value = null
-        _uiState.update { it.copy(commitment = Commitment()) }
+        // Re-read the once-a-week gate so returning to the loadout reflects a just-used dev run.
+        _uiState.update { it.copy(commitment = Commitment(), devRunAvailable = computeDevRunAvailable()) }
     }
 
     fun dismissMessage() = _uiState.update { it.copy(message = null) }
@@ -285,8 +342,9 @@ class RunViewModelFactory(
     private val gameResourceRepository: GameResourceRepository,
     private val gameScoreRepository: GameScoreRepository,
     private val gameUnlockRepository: GameUnlockRepository,
+    private val preferencesRepository: PreferencesRepository,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        RunViewModel(gameResourceRepository, gameScoreRepository, gameUnlockRepository) as T
+        RunViewModel(gameResourceRepository, gameScoreRepository, gameUnlockRepository, preferencesRepository) as T
 }

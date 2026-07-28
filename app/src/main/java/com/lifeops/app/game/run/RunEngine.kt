@@ -274,6 +274,8 @@ class RunEngine(
         wave = wave + 1,
         totalWaves = config.waves,
         tier = tier,
+        maxSets = config.maxSets,
+        devRun = config.devRun,
         score = score,
         status = status,
         revives = revives,
@@ -650,6 +652,12 @@ class RunEngine(
                 // enemies return "leveled up" (DESIGN.md §7). The run only ever ends on death.
                 tier++
                 score += 500L * tier
+                // Bounded runs (the weekly dev run) finish here instead of looping — once the set
+                // ceiling is cleared the run is a win, not another tier. Endless runs (maxSets null)
+                // fall through and keep escalating.
+                config.maxSets?.let { cap ->
+                    if (tier >= cap) { endRun(victory = true); return }
+                }
                 // The set draft (DESIGN.md §7): pause for a boon/bane pick, then begin the next set
                 // when it's chosen. No offers (should not happen) → just roll straight on.
                 setBonusOptions = rollSetBonusOptions()

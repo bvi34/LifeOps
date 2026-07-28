@@ -24,6 +24,18 @@ data class RunConfig(
     /** Optional challenge mode the run's Director hosts (§8). Defaults to the standard run. */
     val challengeMode: ChallengeMode = ChallengeMode.NONE,
     /**
+     * Auto-end the run in [RunStatus.VICTORY] once this many sets are cleared, instead of looping
+     * endlessly. Null (the default) keeps the standard endless run, which only ever ends on death.
+     * Used by the weekly dev run, which finishes after [DEV_RUN_SETS].
+     */
+    val maxSets: Int? = null,
+    /**
+     * A dev/sandbox run (the weekly "dev run"): unlimited resources, nothing banked is spent, and
+     * nothing earned in it is permanent. Purely a bookkeeping marker for the ViewModel/UI — the
+     * engine's only behavioural knob is [maxSets]. Not seeded from banked resources.
+     */
+    val devRun: Boolean = false,
+    /**
      * Store items unlocked in previous runs (DESIGN.md §9). Unlocked passives/equipment join this
      * run's level-up draft pool from the start; unlocked guns/mutators are surfaced by the loadout.
      * The between-set store adds to this set as the run goes.
@@ -38,6 +50,9 @@ data class RunConfig(
         const val BASE_HITS = 3
         const val MAX_HITS = 12
 
+        /** Sets the weekly dev run finishes after (§7): a fixed, bounded sandbox, not the endless run. */
+        const val DEV_RUN_SETS = 4
+
         /** A sane default loadout for a first run with an empty bank (still playable, per §2). */
         fun default(weapon: StartingWeapon = StartingWeapon.GATLING, seed: Long = 1L) = RunConfig(
             weapon = weapon,
@@ -45,6 +60,31 @@ data class RunConfig(
             maxHits = BASE_HITS,
             startingGold = 0,
             seed = seed,
+        )
+
+        /**
+         * The weekly dev/sandbox run: everything maxed out (ceiling level cap, max hearts, a fat
+         * starting purse) with no banked cost, ending automatically after [DEV_RUN_SETS] sets. The
+         * store, revives and this loadout are all free and impermanent — brokered by the ViewModel,
+         * which never debits the bank for a dev run.
+         */
+        fun devRun(
+            weapon: StartingWeapon = StartingWeapon.GATLING,
+            seed: Long = 1L,
+            unlockedIds: Set<String> = emptySet(),
+            activeMutatorIds: Set<String> = emptySet(),
+            challengeMode: ChallengeMode = ChallengeMode.NONE,
+        ) = RunConfig(
+            weapon = weapon,
+            levelCap = MAX_LEVEL_CAP,
+            maxHits = MAX_HITS,
+            startingGold = 500,
+            seed = seed,
+            challengeMode = challengeMode,
+            maxSets = DEV_RUN_SETS,
+            devRun = true,
+            unlockedIds = unlockedIds,
+            activeMutatorIds = activeMutatorIds,
         )
     }
 }

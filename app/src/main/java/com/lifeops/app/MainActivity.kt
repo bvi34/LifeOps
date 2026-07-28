@@ -398,7 +398,8 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 composable("game_run") {
                     val vm = viewModel<com.lifeops.app.ui.screens.game.RunViewModel>(
                         factory = com.lifeops.app.ui.screens.game.RunViewModelFactory(
-                            app.gameResourceRepository, app.gameScoreRepository, app.gameUnlockRepository
+                            app.gameResourceRepository, app.gameScoreRepository, app.gameUnlockRepository,
+                            app.preferencesRepository
                         )
                     )
                     com.lifeops.app.ui.screens.game.RunScreen(vm) { navController.navigateUp() }
