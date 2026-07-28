@@ -2,6 +2,7 @@ package com.citation.app
 
 import android.app.Application
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.OreillyAccess
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.store.FileStores
 import com.citation.app.work.RoyalRoadScheduler
@@ -27,7 +28,8 @@ class CitationApplication : Application() {
         super.onCreate()
         val db = CitationDatabase.get(this)
         val files = FileStores(this)
-        repository = appScope.async { CitationRepository.create(db, files) }
+        val oreillyAccess = OreillyAccess(this)
+        repository = appScope.async { CitationRepository.create(db, files, oreillyAccess) }
         // Register the periodic RR jobs (poll favourites, advance backfill, evict stale cache).
         RoyalRoadScheduler.schedule(this)
         // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).

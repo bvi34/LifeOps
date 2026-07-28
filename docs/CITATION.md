@@ -156,14 +156,21 @@ Two more sources, each on its own track (core pieces unit-tested):
 |---|---|---|
 | **PDF render track** | `pdf/PdfTrack` | Positioned glyphs don't reflow, so a PDF renders *pages*, never through the flowing reader. View↔PDF coordinate transform (Y-flip, **zoom-stable quads**), page/quad anchor construction, and the SHA-256 import identity (strong-positive dedup). |
 | **External anchor** | `anchor/TextAnchor.External` | A read-in-place anchor for content Citation never holds: the source reader's opaque **location token** + the frozen quote. Resolves via deep link (best-effort), not text matching; `NoteResolver` + `SyncCodec` handle it. |
-| **O'Reilly deep-link** | `oreilly/OreillyLink` | Build/parse the URL to a book + position, so reopening lands one tap from your spot; re-auth is left to the WebView by design. |
+| **O'Reilly deep-link** | `oreilly/OreillyLink` | Build/parse the URL to a book + position, so reopening lands one tap from your spot. Optionally routes through a library proxy (see below); parsing is host-agnostic, so a proxied position round-trips unchanged. |
+| **Library proxy** | `oreilly/OreillyLibraryProxy` | EZproxy host rewriting — `learning.oreilly.com` → `learning-oreilly-com.mcpl.idm.oclc.org` — so you reach the licensed content on a **library card**, not a personal O'Reilly account. Encode (`.`→`-`, `-`→`--`) is reversible, so hosts round-trip; `rewrite` is idempotent. Defaults to Mid-Continent Public Library, any EZproxy host is configurable. |
+| **Auto-reauth** | `oreilly/EzproxyLogin` | The reauth brain: detect an OCLC/EZproxy sign-in page (`isLoginPage`) and build a safe credential-fill/submit script (`fillScript`) that probes the common card/PIN field selectors. Credentials are embedded as JSON string literals so a card/PIN can't break out of the script. It's the *user's own* library credential into the *library's* form — it never touches O'Reilly's DRM or federated tokens. |
 
 **Android wiring:** `PdfReaderScreen` renders pages via the platform `PdfRenderer` (own track, page
 nav, page-anchored notes); PDF import hashes + dedups into the owned store. `OreillyReaderScreen`
-hosts O'Reilly's own reader in a WebView (**no content cache** — licensed), tracks your position from
-the URL, and captures **annotations only** (quote + location token as an `External` anchor) into the
-sovereign store. Library gains "Import PDF" and "Add O'Reilly book"; opens route by source type to the
-right track.
+hosts O'Reilly's own reader in a WebView (**no content cache** — licensed), routed through your
+library's EZproxy so you read on a library card; when the proxy session lapses and bounces to the
+OCLC sign-in page it **auto-reauths** from your saved card + PIN (`EzproxyLogin.fillScript`, with a
+manual sign-in fallback in the top bar), persists the proxy session via cookies, tracks your position
+from the URL, and captures **annotations only** (quote + location token as an `External` anchor) into
+the sovereign store. The card/PIN live in `data/OreillyAccess`, **encrypted at rest via the Android
+Keystore** (`EncryptedSharedPreferences`) and **never synced**; a Settings section takes the proxy
+host + card + PIN (the PIN field masked). Library gains "Import PDF" and "Add O'Reilly book"; opens
+route by source type to the right track.
 
 ## Storage visibility (milestone 7 — core built + verified)
 

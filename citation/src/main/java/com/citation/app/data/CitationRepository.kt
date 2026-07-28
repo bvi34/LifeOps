@@ -62,7 +62,9 @@ class CitationRepository private constructor(
     // The mailbox now carries both directions: up-packets out, acquire intents in.
     private val mailbox: Mailbox<UpPacket, AcquireBookIntent>,
     /** The Royal Road read loop (skim → buffer → cache → backfill → poll → evict). */
-    val royalRoad: RoyalRoadCoordinator
+    val royalRoad: RoyalRoadCoordinator,
+    /** Encrypted library card/PIN + proxy host for read-in-place O'Reilly (never synced). */
+    private val oreillyAccess: OreillyAccess
 ) {
 
     val books: Flow<List<BookSummary>> =
@@ -317,8 +319,18 @@ class CitationRepository private constructor(
 
     // --- O'Reilly (read-in-place) -------------------------------------------------------------
 
-    /** A read-in-place session: the deep link to open in O'Reilly's own reader, and the book id. */
-    data class OreillySession(val bookKey: String, val bookId: String, val deepLink: String)
+    /**
+     * A read-in-place session: the deep link to open in O'Reilly's own reader (routed through your
+     * library proxy when one is configured), the book id, and — when you've saved a card/PIN — the
+     * credentials the reader uses to auto-reauth the library sign-in. [login] is null when no
+     * credentials are stored, in which case you sign in by hand as before.
+     */
+    data class OreillySession(
+        val bookKey: String,
+        val bookId: String,
+        val deepLink: String,
+        val login: OreillyAccess.Credentials? = null
+    )
 
     /**
      * Register an O'Reilly book for read-in-place. **No content is cached** — it's licensed — only a
@@ -349,13 +361,35 @@ class CitationRepository private constructor(
         return key.toString()
     }
 
-    /** Build the deep link that lands you at your saved O'Reilly position in one tap (else the cover). */
+    /**
+     * Build the deep link that lands you at your saved O'Reilly position in one tap (else the cover).
+     * Routes through your configured library proxy so you reach the content on a library card, and
+     * attaches your stored card/PIN for auto-reauth when the proxy session lapses.
+     */
     suspend fun oreillySession(bookKey: String): OreillySession? {
         val entity = db.bookDao().get(bookKey) ?: return null
         val bookId = entity.sourceId ?: return null
-        val link = com.citation.core.oreilly.OreillyLink.deepLink(bookId, entity.externalLocation)
-        return OreillySession(bookKey, bookId, link)
+        val link = com.citation.core.oreilly.OreillyLink.deepLink(
+            bookId, entity.externalLocation, oreillyAccess.proxy()
+        )
+        return OreillySession(bookKey, bookId, link, oreillyAccess.credentials())
     }
+
+    // --- O'Reilly library access (encrypted card/PIN + proxy host, never synced) ----------------
+
+    /** Current O'Reilly access config for Settings — proxy host and whether a card/PIN are on file. */
+    fun oreillyAccessConfig(): OreillyAccess.Config = oreillyAccess.config()
+
+    /** Save the library proxy host (blank restores the default). */
+    fun setOreillyProxyHost(host: String) {
+        oreillyAccess.setProxyHost(host.ifBlank { com.citation.core.oreilly.OreillyLibraryProxy.MID_CONTINENT_HOST })
+    }
+
+    /** Save (encrypted) your library card + PIN for auto-reauth. */
+    fun setOreillyCredentials(card: String, pin: String) = oreillyAccess.setCredentials(card, pin)
+
+    /** Forget the stored card + PIN (the proxy host stays). */
+    fun clearOreillyCredentials() = oreillyAccess.clearCredentials()
 
     /** Persist the O'Reilly reader's last position token so reopening lands at your spot. */
     suspend fun saveExternalPosition(bookKey: String, location: String) {
@@ -768,13 +802,17 @@ class CitationRepository private constructor(
 
     companion object {
         /** Build the repository, restoring the key allocator and mailbox from persisted state. */
-        suspend fun create(db: CitationDatabase, files: FileStores): CitationRepository {
+        suspend fun create(
+            db: CitationDatabase,
+            files: FileStores,
+            oreillyAccess: OreillyAccess
+        ): CitationRepository {
             val watermarks = db.syncStateDao().watermarks().associate { it.type to it.highWater }
             val keys = KeyAllocator(seed = watermarks)
             val mailbox = Mailbox<UpPacket, AcquireBookIntent>()
             db.syncStateDao().syncState()?.let { mailbox.restore(it.outVersion, it.inboxCursor) }
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad)
+            return CitationRepository(db, files, keys, mailbox, royalRoad, oreillyAccess)
         }
     }
 }
