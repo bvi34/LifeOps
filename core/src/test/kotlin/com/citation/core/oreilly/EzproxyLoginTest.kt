@@ -34,6 +34,25 @@ class EzproxyLoginTest {
     }
 
     @Test
+    fun recognisesMcplLoginPageAtLoginPath() {
+        // The real Mid-Continent form posts to https://mcpl.idm.oclc.org/login (method=post).
+        assertTrue(EzproxyLogin.isLoginPage("https://mcpl.idm.oclc.org/login?url=https://learning.oreilly.com/"))
+    }
+
+    @Test
+    fun fillScriptTargetsTheRealMcplFieldIds() {
+        // MCPL's OCLC form: card is name=user id=cardnum (itself type=password), PIN is name=pass id=pin.
+        val js = EzproxyLogin.fillScript("21234567890123", "1984")
+        assertTrue("card selector #cardnum present", js.contains("#cardnum"))
+        assertTrue("pin selector #pin present", js.contains("#pin"))
+        assertTrue(js.contains("input[name=user]"))
+        assertTrue(js.contains("input[name=pass]"))
+        // The card list must not fall back to type=password (that's the card field here too).
+        val userList = js.substringAfter("userSel=[").substringBefore("]")
+        assertFalse("card must not select by type=password", userList.contains("type=password"))
+    }
+
+    @Test
     fun fillScriptEmbedsCredentialsAndSubmits() {
         val js = EzproxyLogin.fillScript("21234567890123", "1984", autoSubmit = true)
         assertTrue(js.contains("\"21234567890123\""))

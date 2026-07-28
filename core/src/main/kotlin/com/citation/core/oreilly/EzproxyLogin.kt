@@ -56,12 +56,16 @@ object EzproxyLogin {
         val cardLit = jsString(card)
         val pinLit = jsString(pin)
         val submit = if (autoSubmit) "true" else "false"
+        // Card first, PIN second. MCPL's OCLC form is `name=user id=cardnum` / `name=pass id=pin`,
+        // and — note — the *card* field is itself type=password, so the card selectors never fall back
+        // to `type=password` (that would grab the wrong box). Exact id/name selectors lead; generic
+        // ones tail for other libraries, with `input[type=password]` only the PIN's last resort.
         return """
             (function(){
-              var userSel=["input[name=user]","input[name=username]","input[name=userid]",
+              var userSel=["#cardnum","input[name=user]","input[name=username]","input[name=userid]",
                 "input[name=barcode]","input[name=cardnumber]","input#username","input#user",
                 "input[type=email]","input[type=tel]","input[type=text]"];
-              var pinSel=["input[name=pass]","input[name=password]","input[name=pin]",
+              var pinSel=["#pin","input[name=pass]","input[name=password]","input[name=pin]",
                 "input#password","input#pass","input[type=password]"];
               function first(sels){for(var i=0;i<sels.length;i++){
                 var e=document.querySelector(sels[i]); if(e) return e;} return null;}
