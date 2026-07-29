@@ -335,6 +335,24 @@ class CitationRepository private constructor(
     )
 
     /**
+     * A **browse** session: the O'Reilly catalog opened through your library proxy (so the whole skim
+     * runs on a library card), plus the card/PIN the WebView uses to auto-reauth the library sign-in —
+     * exactly like the reader. This is the O'Reilly equivalent of Browse Royal Road: you find a book by
+     * skimming O'Reilly's own catalog, and tapping into one hands it back to be opened read-in-place.
+     */
+    data class OreillyCatalog(
+        val startUrl: String,
+        val login: OreillyAccess.Credentials? = null
+    )
+
+    /** Build a browse session at O'Reilly's catalog, proxied through your library with your card/PIN. */
+    fun oreillyCatalog(): OreillyCatalog =
+        OreillyCatalog(
+            startUrl = com.citation.core.oreilly.OreillyLink.browseUrl(oreillyAccess.proxy()),
+            login = oreillyAccess.credentials()
+        )
+
+    /**
      * Register an O'Reilly book for read-in-place. **No content is cached** — it's licensed — only a
      * sovereign [BookEntity] holding your layer (id, title, last position, notes). Deduped by book id.
      */

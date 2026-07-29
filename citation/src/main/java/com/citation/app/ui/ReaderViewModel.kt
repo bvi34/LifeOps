@@ -85,6 +85,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _oreillySession = MutableStateFlow<CitationRepository.OreillySession?>(null)
     val oreillySession: StateFlow<CitationRepository.OreillySession?> = _oreillySession.asStateFlow()
 
+    // Non-null while browsing the O'Reilly catalog (proxied through your library); the catalog surface
+    // preempts the home shell, mirroring Browse Royal Road.
+    private val _oreillyCatalog = MutableStateFlow<CitationRepository.OreillyCatalog?>(null)
+    val oreillyCatalog: StateFlow<CitationRepository.OreillyCatalog?> = _oreillyCatalog.asStateFlow()
+
     fun importEpub(bytes: ByteArray) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
@@ -186,6 +191,28 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch {
             val key = repository.addOreillyBook(bookId, title)
             repository.markOpened(key)
+            _oreillySession.value = repository.oreillySession(key)
+        }
+    }
+
+    /** Open the O'Reilly catalog for browsing (proxied through your library, with your saved card/PIN). */
+    fun browseOreilly() {
+        viewModelScope.launch { _oreillyCatalog.value = repository.oreillyCatalog() }
+    }
+
+    /** Leave the O'Reilly catalog without opening anything. */
+    fun closeOreillyCatalog() { _oreillyCatalog.value = null }
+
+    /**
+     * Open a book tapped in the O'Reilly catalog: register it read-in-place (deduped by id, so
+     * re-browsing the same book reuses its library entry + notes) and hand off to the reader. This is
+     * the O'Reilly counterpart to [openRoyalRoad] — browse, tap, and you're reading.
+     */
+    fun openOreillyFromCatalog(bookId: String, title: String) {
+        viewModelScope.launch {
+            val key = repository.addOreillyBook(bookId, title)
+            repository.markOpened(key)
+            _oreillyCatalog.value = null
             _oreillySession.value = repository.oreillySession(key)
         }
     }
