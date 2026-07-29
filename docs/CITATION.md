@@ -136,6 +136,32 @@ serials are registered as sovereign books on open, so **notes on borrowed source
 eviction of their chapter bodies. A **Notes screen** lists every note with its state badge and the
 frozen snapshot, and tapping one **jumps back to live context** (best-effort for borrowed).
 
+## Notes retrieval — search, tags, export (core built + verified)
+
+Capture was already excellent; this is the **payoff end** — notes that come back *out* again. All the
+logic is pure `:core` under `com.citation.core.note`, JVM-tested, and operates on the in-memory note
+corpus (one person's reading is small and already loaded, so there's no FTS table or query
+round-trip — it stays offline-first like everything else):
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Search** | `note/NoteSearch` | In-memory full-text filter. A note matches when **every** whitespace-token appears (substring, case-folded) anywhere in its searchable surface — your body, the frozen quoted snapshot(s), the source title/author, and its tags. AND-of-tokens narrows rather than widens. |
+| **Tags** | `note/Tags`, `TagCount` | A local organizational layer. `parse` folds raw editor input (spaces/commas/`#` optional) into normalized lowercase tags, de-duped, first-seen order; `counts` builds the facet (most-used first); `withTag` filters. Multi-word concepts are one hyphenated tag. |
+| **Export** | `note/MarkdownExport` | Renders notes to portable Markdown — grouped by source, each entry a blockquoted snapshot + your words + tags + correct attribution (the frozen `{title, author}` makes every quote self-citing). Pure string-in/out, so the whole layout is unit-tested. |
+
+Tags live on the `core` `Note` (`tags: List<String>`, default empty) but are **deliberately off the
+sync wire** — a note's *text* is the shared artifact; its filing is Citation's own. The `NotePacket`
+projection is untouched, so the sync seam is unchanged.
+
+**Android wiring:** the **Notes screen** gains a search box and a tag-facet chip row (tap a tag to
+filter, tap again to clear), each note row shows its tags, and the note detail dialog gains a **Tags**
+field (also reachable from the reader). Tags persist via a new `notes.tagsJson` column (Room
+`citation.db` v2 → v3 migration; encoded/decoded in `AnchorCodec`) and are set local-only —
+`CitationRepository.setNoteTags` preserves the existing `syncVersion` rather than re-posting. An
+**Export** action on the Personal tab renders the *currently-visible* notes (so filtering by tag or
+search first exports just that slice) and shares them as a real `.md` file via a `FileProvider`
+(`NotesExporter`), mirroring how LifeOps shares its backup — drop the file straight into Obsidian.
+
 ## Sync seam (milestone 5 — core built + verified)
 
 Citation is a peer on the LifeOps spine. The whole protocol is pure/JVM-tested in `:core`:
@@ -242,12 +268,13 @@ the bubble behind the overlay permission.
 
 ## Status
 
-All seven task-list milestones plus cross-app highlight capture are implemented. The
+All seven task-list milestones plus cross-app highlight capture are implemented, and the notes layer
+now closes the loop from capture to **retrieval** — search, tags, and Markdown export. The
 framework-independent spine — internal model, keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes +
-degradation, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
-logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested; the Android reader
-(`:citation`) adds Room storage, the Compose readers, the capture entry points, WorkManager jobs, and
-the sync transport on top (buildable with the Android SDK).
+degradation + retrieval, the sync seam, storage visibility, and the capture
+provenance/clustering/promotion/triage logic + Kindle notebook parser — lives in `:core` and is fully
+JVM-tested; the Android reader (`:citation`) adds Room storage, the Compose readers, the capture entry
+points, WorkManager jobs, and the sync transport on top (buildable with the Android SDK).
 
 ## Cross-cutting principles (already encoded in `:core`)
 

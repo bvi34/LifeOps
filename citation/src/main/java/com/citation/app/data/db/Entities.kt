@@ -112,7 +112,10 @@ data class NoteEntity(
     val referencesJson: String,
     val createdAt: Long,
     // Outbound sync: the monotonic version this note was posted at (null = not yet queued).
-    val syncVersion: Long? = null
+    val syncVersion: Long? = null,
+    // Free-form organizational tags, serialized as a JSON string array. A local retrieval layer
+    // (search/facet/group); deliberately not on the sync wire. Defaults to an empty array.
+    val tagsJson: String = "[]"
 )
 
 /** Per-app key allocator high-water marks, so minting resumes without gaps across restarts. */

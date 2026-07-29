@@ -10,7 +10,10 @@ import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
+import com.citation.core.note.NoteSearch
 import com.citation.core.note.NoteType
+import com.citation.core.note.TagCount
+import com.citation.core.note.Tags
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -48,6 +51,39 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     val triage: StateFlow<List<CaptureClusterer.ProvisionalSource>> =
         repository.notes.map { CaptureTriage.queue(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Notes retrieval: free-text search + tag facet, and Markdown export ---------------------
+
+    private val _query = MutableStateFlow("")
+    /** The live search text over notes (matches body, frozen snapshot, title/author, and tags). */
+    val query: StateFlow<String> = _query.asStateFlow()
+
+    private val _activeTag = MutableStateFlow<String?>(null)
+    /** The tag currently filtering the notes list, or null for "all tags". */
+    val activeTag: StateFlow<String?> = _activeTag.asStateFlow()
+
+    /** Every tag across all notes with its note-count, most-used first — the facet row's data. */
+    val tagCounts: StateFlow<List<TagCount>> =
+        notes.map { Tags.counts(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * The notes actually shown: the full corpus narrowed by the active tag (if any), then the search
+     * query. Recomputed reactively, so typing or picking a tag re-filters live — and it's exactly
+     * what an export writes ("export what I'm looking at").
+     */
+    val filteredNotes: StateFlow<List<Note>> =
+        combine(notes, _activeTag, _query) { all, tag, q ->
+            val byTag = if (tag == null) all else Tags.withTag(all, tag)
+            NoteSearch.match(byTag, q)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setQuery(text: String) { _query.value = text }
+
+    /** Toggle a tag filter: tapping the active tag clears it, tapping another switches to it. */
+    fun toggleTag(tag: String) {
+        _activeTag.value = if (_activeTag.value == tag) null else tag
+    }
 
     private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
@@ -391,6 +427,32 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             repository.deleteNote(noteKey)
             _status.value = "Note deleted."
         }
+    }
+
+    /** Parse raw editor text into normalized tags and store them on the note (local organizational). */
+    fun setNoteTags(noteKey: String, raw: String) {
+        viewModelScope.launch {
+            repository.setNoteTags(noteKey, Tags.parse(raw))
+            _status.value = "Tags updated."
+        }
+    }
+
+    /**
+     * Render the currently-visible notes to Markdown and hand them to the share sheet as a `.md`
+     * file. Exports the filtered set, so narrowing by tag/search first exports just that slice.
+     */
+    fun exportVisibleNotes(context: android.content.Context) {
+        val visible = filteredNotes.value
+        val tag = _activeTag.value
+        val subtitle = buildString {
+            append("Exported ")
+            append(java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date()))
+            append(" · ${visible.size} note${if (visible.size == 1) "" else "s"}")
+            if (tag != null) append(" · #$tag")
+        }
+        val md = com.citation.core.note.MarkdownExport.render(visible, subtitle = subtitle)
+        val ok = com.citation.app.data.NotesExporter.share(context, md)
+        _status.value = if (ok) "Exporting notes…" else "Couldn't export notes."
     }
 
     /** Persist the reader's live position (current chapter + in-chapter scroll offset in px). */

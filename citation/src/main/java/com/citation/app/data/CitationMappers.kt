@@ -117,7 +117,8 @@ object CitationMappers {
             frozenAuthor = note.source.author,
             referencesJson = AnchorCodec.encodeReferences(note.references),
             createdAt = note.createdAt,
-            syncVersion = syncVersion
+            syncVersion = syncVersion,
+            tagsJson = AnchorCodec.encodeTags(note.tags)
         )
 
     fun noteFromEntity(entity: NoteEntity): Note =
@@ -133,6 +134,7 @@ object CitationMappers {
                 author = entity.frozenAuthor
             ),
             references = AnchorCodec.decodeReferences(entity.referencesJson),
-            createdAt = entity.createdAt
+            createdAt = entity.createdAt,
+            tags = AnchorCodec.decodeTags(entity.tagsJson)
         )
 }

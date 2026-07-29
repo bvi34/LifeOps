@@ -610,6 +610,19 @@ class CitationRepository private constructor(
         return updated
     }
 
+    /**
+     * Set a note's tags — the local organizational layer. Unlike [editNoteBody] this does **not**
+     * re-post up the mailbox: tags never travel on the sync wire (a note's *text* is the shared
+     * artifact; its filing is Citation's own), so we persist locally and preserve the existing
+     * `syncVersion` untouched. [tags] is stored as-is — callers normalize via `Tags.parse` first.
+     */
+    suspend fun setNoteTags(noteKey: String, tags: List<String>): Note? {
+        val entity = db.noteDao().get(noteKey) ?: return null
+        val updated = CitationMappers.noteFromEntity(entity).copy(tags = tags)
+        db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
+        return updated
+    }
+
     /** Persist a captured highlight + its note and queue the note up the mailbox. */
     private suspend fun persistCapture(highlight: Highlight, note: Note) {
         val versioned = mailbox.post(NotePacket.of(note))

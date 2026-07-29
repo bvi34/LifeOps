@@ -288,6 +288,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
         NoteDetailDialog(
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); openNote = null },
+            onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
             onJump = { vm.jumpToNote(note); openNote = null },
             onDelete = { vm.deleteNote(note.key.toString()); openNote = null },
             onDismiss = { openNote = null }
