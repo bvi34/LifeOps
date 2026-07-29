@@ -12,11 +12,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -52,11 +54,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -64,11 +68,15 @@ import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.citation.core.reader.Paginator
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
@@ -129,6 +137,9 @@ private fun FlowingReader(vm: ReaderViewModel) {
     var serif by rememberSaveable { mutableStateOf(true) }
     var lineSpacing by rememberSaveable { mutableStateOf(1.6f) }
     var marginDp by rememberSaveable { mutableStateOf(20f) }
+    // Paged (turn a screen at a time, within a chapter) vs scroll (one continuous column). Paged by
+    // default — that's the "page turning" reading mode; scroll stays a tap away in Display.
+    var paged by rememberSaveable { mutableStateOf(true) }
     var themeOrdinal by rememberSaveable { mutableStateOf(0) }
     val theme = ReaderTheme.entries[themeOrdinal.coerceIn(0, ReaderTheme.entries.lastIndex)]
 
@@ -250,6 +261,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         marginDp = marginDp,
                         foreground = foreground,
                         turnThreshold = turnThreshold,
+                        paged = paged,
                         onOpenNote = { openNote = it },
                         onProvideHint = { hintProvider.value = it }
                     )
@@ -264,6 +276,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
             serif = serif, onSerif = { serif = it },
             lineSpacing = lineSpacing, onLineSpacing = { lineSpacing = it },
             marginDp = marginDp, onMargin = { marginDp = it },
+            paged = paged, onPaged = { paged = it },
             themeOrdinal = themeOrdinal, onTheme = { themeOrdinal = it },
             onDismiss = { showFormat = false }
         )
@@ -283,11 +296,11 @@ private fun FlowingReader(vm: ReaderViewModel) {
 }
 
 /**
- * One chapter's flowing text, with your highlights drawn back into it. The [SelectionContainer] lets
- * you pick a passage (the reader toolbar turns that into a note/highlight); a horizontal swipe turns
- * the page; a tap opens the highlight under it, or — near the left/right edge — turns the page too, so
- * you never have to reach for a swipe. Scroll position is restored on the first paint of a reopened
- * book and saved as you read.
+ * One chapter's flowing text, with your highlights drawn back into it. Two reading modes share this
+ * entry point: **paged** (the default — the chapter is split into screen-pages you turn one at a time,
+ * so page turns work *within* a chapter, not only at its boundaries) and **scroll** (one continuous
+ * column). Both resolve the same highlights and feed the same capture/hint machinery; only the body
+ * differs, so a note lit up in one mode lights up in the other.
  */
 @Composable
 private fun ChapterPage(
@@ -301,11 +314,13 @@ private fun ChapterPage(
     marginDp: Float,
     foreground: Color,
     turnThreshold: Float,
+    paged: Boolean,
     onOpenNote: (Note) -> Unit,
     onProvideHint: (() -> Int) -> Unit
 ) {
     val chapter = book.chapterAt(ord)
     val text = chapter?.text ?: "(chapter unavailable)"
+    val title = chapter?.title ?: ""
     val lastIndex = book.chapters.lastIndex
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
 
@@ -329,12 +344,47 @@ private fun ChapterPage(
         }
     }
 
+    if (paged) {
+        PagedChapterBody(
+            vm, ord, lastIndex, text, title, annotated, ranges,
+            fontSize, family, lineSpacing, marginDp, foreground, turnThreshold, onOpenNote, onProvideHint
+        )
+    } else {
+        ScrollChapterBody(
+            vm, ord, lastIndex, title, annotated, ranges,
+            fontSize, family, lineSpacing, marginDp, foreground, turnThreshold, onOpenNote, onProvideHint
+        )
+    }
+}
+
+/**
+ * The scrolling reader body: one continuous column, a horizontal swipe (or edge tap) turning to the
+ * next/previous *chapter*. Scroll position is restored on the first paint of a reopened book and saved
+ * as you read.
+ */
+@Composable
+private fun ScrollChapterBody(
+    vm: ReaderViewModel,
+    ord: Int,
+    lastIndex: Int,
+    title: String,
+    annotated: androidx.compose.ui.text.AnnotatedString,
+    ranges: List<Pair<Note, IntRange>>,
+    fontSize: Float,
+    family: FontFamily,
+    lineSpacing: Float,
+    marginDp: Float,
+    foreground: Color,
+    turnThreshold: Float,
+    onOpenNote: (Note) -> Unit,
+    onProvideHint: (() -> Int) -> Unit
+) {
     val scroll = rememberScrollState()
     var layout by remember(ord) { mutableStateOf<TextLayoutResult?>(null) }
 
     // Restore the saved scroll once (after the content is measured so maxValue is known), then persist
     // scroll as you read, debounced so a flick doesn't hammer the DB.
-    LaunchedEffect(ord, book.key) {
+    LaunchedEffect(ord) {
         val restore = vm.consumePendingScroll(ord)
         if (restore > 0) {
             withTimeoutOrNull(2000) { snapshotFlow { scroll.maxValue }.first { it > 0 } }
@@ -375,7 +425,7 @@ private fun ChapterPage(
     ) {
         Column(Modifier.verticalScroll(scroll).padding(horizontal = marginDp.dp, vertical = 20.dp)) {
             Text(
-                text = chapter?.title ?: "",
+                text = title,
                 fontSize = (fontSize + 6).sp,
                 fontFamily = family,
                 color = foreground
@@ -408,6 +458,189 @@ private fun ChapterPage(
                         }
                     }
             )
+        }
+    }
+}
+
+/**
+ * The **paged** reader body. The chapter text is measured against the live viewport and typography and
+ * split into screen-pages ([Paginator]); you turn them one at a time with a swipe or an edge tap, and
+ * only the last/first page of a chapter crosses into the next/previous chapter. Turns animate like the
+ * chapter-level ones so a within-chapter turn and a chapter turn feel the same.
+ *
+ * Position is persisted as the current page's start **character offset** (font-size independent), so a
+ * reopened book lands on the same page. That offset shares the same stored slot as scroll mode's pixel
+ * offset; since it's only read once at open, a book read consistently in one mode always resumes true.
+ */
+@Composable
+private fun PagedChapterBody(
+    vm: ReaderViewModel,
+    ord: Int,
+    lastIndex: Int,
+    text: String,
+    title: String,
+    annotated: androidx.compose.ui.text.AnnotatedString,
+    ranges: List<Pair<Note, IntRange>>,
+    fontSize: Float,
+    family: FontFamily,
+    lineSpacing: Float,
+    marginDp: Float,
+    foreground: Color,
+    turnThreshold: Float,
+    onOpenNote: (Note) -> Unit,
+    onProvideHint: (() -> Int) -> Unit
+) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val textStyle = TextStyle(
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * lineSpacing).sp,
+        fontFamily = family,
+        color = foreground
+    )
+    val titleStyle = TextStyle(fontSize = (fontSize + 6).sp, fontFamily = family, color = foreground)
+
+    BoxWithConstraints(
+        Modifier.fillMaxSize().padding(horizontal = marginDp.dp, vertical = 20.dp)
+    ) {
+        val widthPx = constraints.maxWidth
+        val heightPx = constraints.maxHeight
+        val titleGapPx = with(density) { 12.dp.toPx() }
+
+        // Measure the whole chapter once for the current width/typography, then break it into pages.
+        // Page 0 gives up room for the chapter title. Recomputed only when text, typography, or the
+        // viewport changes — a page turn is a cheap index change, not a re-measure.
+        val pageStarts = remember(text, fontSize, lineSpacing, family, widthPx, heightPx) {
+            if (widthPx <= 0 || heightPx <= 0) {
+                listOf(0)
+            } else {
+                val layout = measurer.measure(
+                    androidx.compose.ui.text.AnnotatedString(text),
+                    style = textStyle,
+                    constraints = Constraints(maxWidth = widthPx)
+                )
+                val titleBlock = if (title.isBlank()) 0f else {
+                    measurer.measure(
+                        androidx.compose.ui.text.AnnotatedString(title),
+                        style = titleStyle,
+                        constraints = Constraints(maxWidth = widthPx)
+                    ).size.height.toFloat() + titleGapPx
+                }
+                Paginator.pageStarts(
+                    lineCount = layout.lineCount,
+                    lineTop = { layout.getLineTop(it) },
+                    lineBottom = { layout.getLineBottom(it) },
+                    lineStartChar = { layout.getLineStart(it) },
+                    firstCapacityPx = heightPx - titleBlock,
+                    capacityPx = heightPx.toFloat()
+                )
+            }
+        }
+
+        // Page index survives font/margin changes (re-clamped below); it only resets per chapter.
+        var page by rememberSaveable(ord) { mutableStateOf(0) }
+        val safePage = page.coerceIn(0, pageStarts.lastIndex)
+        var turnDir by remember { mutableStateOf(1) }
+        val pageStartsState = rememberUpdatedState(pageStarts)
+
+        fun turnNext() {
+            turnDir = 1
+            if (safePage < pageStarts.lastIndex) page = safePage + 1
+            else if (ord < lastIndex) vm.goToChapter(ord + 1)
+        }
+        fun turnPrev() {
+            turnDir = -1
+            if (safePage > 0) page = safePage - 1
+            else if (ord > 0) vm.goToChapter(ord - 1)
+        }
+
+        // Restore the saved page once the pages are known: find the page whose slice holds the saved
+        // character offset. Consumed once, so a turn doesn't snap back.
+        var restoreOffset by remember(ord) { mutableStateOf(-1) }
+        LaunchedEffect(ord) { restoreOffset = vm.consumePendingScroll(ord) }
+        LaunchedEffect(pageStarts, restoreOffset) {
+            if (restoreOffset > 0 && pageStarts.size > 1) {
+                page = pageStarts.indexOfLast { it <= restoreOffset }.coerceAtLeast(0)
+                restoreOffset = 0
+            }
+        }
+        // Persist the page's start offset as you turn (debounced).
+        LaunchedEffect(safePage, pageStarts) {
+            delay(400)
+            vm.savePosition(ord, pageStarts.getOrElse(safePage) { 0 })
+        }
+        // Capture disambiguation hint = the current page's start offset.
+        LaunchedEffect(ord) {
+            onProvideHint { pageStartsState.value.getOrElse(page.coerceIn(0, pageStartsState.value.lastIndex)) { 0 } }
+        }
+
+        AnimatedContent(
+            targetState = safePage,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                val dir = turnDir
+                (slideInHorizontally(tween(220)) { w -> dir * w } + fadeIn(tween(220))) togetherWith
+                    (slideOutHorizontally(tween(220)) { w -> -dir * w } + fadeOut(tween(220)))
+            },
+            label = "page"
+        ) { p ->
+            val start = pageStarts.getOrElse(p) { 0 }
+            val end = pageStarts.getOrElse(p + 1) { text.length }
+            val slice = annotated.subSequence(start.coerceIn(0, annotated.length), end.coerceIn(start, annotated.length))
+            var layout by remember(p, pageStarts) { mutableStateOf<TextLayoutResult?>(null) }
+
+            SelectionContainer(
+                Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+                    .pointerInput(p, lastIndex, pageStarts.size) {
+                        var total = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { total = 0f },
+                            onDragCancel = { total = 0f },
+                            onDragEnd = {
+                                when {
+                                    total <= -turnThreshold -> turnNext()
+                                    total >= turnThreshold -> turnPrev()
+                                }
+                            }
+                        ) { change, dragAmount ->
+                            total += dragAmount
+                            change.consume()
+                        }
+                    }
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    if (p == 0 && title.isNotBlank()) {
+                        Text(text = title, style = titleStyle)
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    Text(
+                        text = slice,
+                        style = textStyle,
+                        onTextLayout = { layout = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .pointerInput(p, ranges, start) {
+                                detectTapGestures { pos ->
+                                    val l = layout ?: return@detectTapGestures
+                                    val local = l.getOffsetForPosition(pos)
+                                    val global = start + local
+                                    val hit = ranges.firstOrNull { global in it.second }
+                                    if (hit != null) {
+                                        onOpenNote(hit.first)
+                                    } else {
+                                        val w = size.width.toFloat()
+                                        when {
+                                            pos.x < w * 0.30f -> turnPrev()
+                                            pos.x > w * 0.70f -> turnNext()
+                                        }
+                                    }
+                                }
+                            }
+                    )
+                }
+            }
         }
     }
 }
@@ -462,6 +695,7 @@ private fun FormatSheet(
     serif: Boolean, onSerif: (Boolean) -> Unit,
     lineSpacing: Float, onLineSpacing: (Float) -> Unit,
     marginDp: Float, onMargin: (Float) -> Unit,
+    paged: Boolean, onPaged: (Boolean) -> Unit,
     themeOrdinal: Int, onTheme: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -472,6 +706,13 @@ private fun FormatSheet(
             LabeledSlider("Text size", fontSize, 12f..30f) { onFontSize(it) }
             LabeledSlider("Line spacing", lineSpacing, 1.2f..2.2f) { onLineSpacing(it) }
             LabeledSlider("Margins", marginDp, 8f..48f) { onMargin(it) }
+
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Reading", Modifier.weight(1f))
+                Choice("Paged", paged) { onPaged(true) }
+                Spacer(Modifier.width(8.dp))
+                Choice("Scroll", !paged) { onPaged(false) }
+            }
 
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Typeface", Modifier.weight(1f))

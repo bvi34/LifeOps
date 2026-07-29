@@ -96,6 +96,18 @@ fun CitationHome(vm: ReaderViewModel) {
         return
     }
 
+    // The O'Reilly catalog (a proxied, library-card WebView skim) likewise preempts the shell. It's
+    // VM-owned rather than local state because it carries the library credentials for auto-reauth.
+    val oreillyCatalog by vm.oreillyCatalog.collectAsStateWithLifecycle()
+    oreillyCatalog?.let { cat ->
+        OreillyCatalogScreen(
+            catalog = cat,
+            onOpenBook = { bookId, title -> vm.openOreillyFromCatalog(bookId, title) },
+            onBack = { vm.closeOreillyCatalog() }
+        )
+        return
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -113,7 +125,11 @@ fun CitationHome(vm: ReaderViewModel) {
         // The tabs carry their own top app bars; only the bottom-bar inset needs reserving here.
         Box(Modifier.fillMaxSize().padding(bottom = innerPadding.calculateBottomPadding())) {
             when (tab) {
-                HomeTab.NEW -> NewTab(vm, onBrowseRoyalRoad = { browsingRoyalRoad = true })
+                HomeTab.NEW -> NewTab(
+                    vm,
+                    onBrowseRoyalRoad = { browsingRoyalRoad = true },
+                    onBrowseOreilly = { vm.browseOreilly() }
+                )
                 HomeTab.PERSONAL -> PersonalTab(vm)
                 HomeTab.READ -> ReadTab(vm, onGoToLibrary = { tabOrdinal = HomeTab.LIBRARY.ordinal })
                 HomeTab.LIBRARY -> LibraryTab(vm)
@@ -127,7 +143,7 @@ fun CitationHome(vm: ReaderViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit) {
+private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseOreilly: () -> Unit) {
     val status by vm.status.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     var showOreilly by remember { mutableStateOf(false) }
@@ -171,9 +187,13 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Import PDF") }
             OutlinedButton(
-                onClick = { showOreilly = true },
+                onClick = onBrowseOreilly,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Add O'Reilly book") }
+            ) { Text("Browse O'Reilly") }
+            TextButton(
+                onClick = { showOreilly = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("…or add an O'Reilly book by id") }
             OutlinedButton(
                 onClick = onBrowseRoyalRoad,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)

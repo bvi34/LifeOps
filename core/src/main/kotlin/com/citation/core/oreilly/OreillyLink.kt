@@ -14,8 +14,21 @@ object OreillyLink {
 
     private const val HOST = "https://learning.oreilly.com"
 
-    /** A resolved O'Reilly destination: which book, and (optionally) where in it. */
-    data class Destination(val bookId: String, val location: String?)
+    /** Where a browse session lands: O'Reilly's own search/discovery home. */
+    private const val BROWSE_PATH = "/search/"
+
+    /** A resolved O'Reilly destination: which book, (optionally) where in it, and its URL slug. */
+    data class Destination(val bookId: String, val location: String?, val slug: String? = null)
+
+    /**
+     * The URL to open a **browse** session at — O'Reilly's own catalog, routed through your library's
+     * EZproxy when one is configured (so the whole skim runs on a library card, exactly like the
+     * reader). With no proxy it's the direct O'Reilly search home.
+     */
+    fun browseUrl(proxy: OreillyLibraryProxy? = null): String {
+        val direct = HOST + BROWSE_PATH
+        return proxy?.rewrite(direct) ?: direct
+    }
 
     /**
      * Build a deep link to [bookId] (an O'Reilly urn/ISBN identifier), optionally at [location] —
@@ -49,7 +62,21 @@ object OreillyLink {
         val fragment = hashSplit.getOrNull(1)?.removePrefix("!")?.takeIf { it.isNotBlank() }
         val segments = path.split('/').filter { it.isNotBlank() }
         val bookId = segments.getOrNull(1) ?: return null
-        return Destination(bookId = bookId, location = fragment)
+        // Segment 0 is the URL slug on a real catalog link (e.g. `designing-data-intensive`); our own
+        // deep links use a bare `-` placeholder there, which isn't a slug.
+        val slug = segments.getOrNull(0)?.takeUnless { it == "-" }
+        return Destination(bookId = bookId, location = fragment, slug = slug)
+    }
+
+    /**
+     * A human title guessed from a catalog URL [slug] (`the-pragmatic-programmer` →
+     * `The Pragmatic Programmer`), or null when there's no usable slug. Used to give a browsed O'Reilly
+     * book a readable library name without an API call — the reader's page can refine it later.
+     */
+    fun titleFromSlug(slug: String?): String? {
+        val words = slug?.replace('_', '-')?.split('-')?.filter { it.isNotBlank() } ?: return null
+        if (words.isEmpty()) return null
+        return words.joinToString(" ") { w -> w.replaceFirstChar { it.uppercaseChar() } }
     }
 
     private fun fragment(location: String): String = "#!" + location.removePrefix("!")

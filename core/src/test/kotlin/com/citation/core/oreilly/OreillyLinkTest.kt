@@ -46,6 +46,34 @@ class OreillyLinkTest {
     }
 
     @Test
+    fun parsesNamedSlugFromCatalogLink() {
+        val dest = OreillyLink.parse("https://learning.oreilly.com/library/view/the-pragmatic-programmer/9780135956977/")
+        assertEquals("the-pragmatic-programmer", dest?.slug)
+    }
+
+    @Test
+    fun bareDashSlugIsNotASlug() {
+        val dest = OreillyLink.parse("https://learning.oreilly.com/library/view/-/9781492082279/")
+        assertNull(dest?.slug)
+    }
+
+    @Test
+    fun titleFromSlugTitleCasesWords() {
+        assertEquals("The Pragmatic Programmer", OreillyLink.titleFromSlug("the-pragmatic-programmer"))
+        assertNull(OreillyLink.titleFromSlug(null))
+        assertNull(OreillyLink.titleFromSlug("-"))
+    }
+
+    @Test
+    fun browseUrlRoutesThroughTheLibraryProxy() {
+        assertEquals("https://learning.oreilly.com/search/", OreillyLink.browseUrl())
+        assertEquals(
+            "https://learning-oreilly-com.mcpl.idm.oclc.org/search/",
+            OreillyLink.browseUrl(OreillyLibraryProxy.MID_CONTINENT)
+        )
+    }
+
+    @Test
     fun buildsProxiedDeepLinkThroughLibrary() {
         val link = OreillyLink.deepLink("9781492082279", null, OreillyLibraryProxy.MID_CONTINENT)
         assertEquals(
