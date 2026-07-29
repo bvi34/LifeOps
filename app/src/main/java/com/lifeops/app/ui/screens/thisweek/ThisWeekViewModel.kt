@@ -7,7 +7,10 @@ import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.toSlug
+import com.lifeops.app.util.ClosingWeekStats
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.WeekReview
+import com.lifeops.app.util.WeekReviewBuilder
 import com.lifeops.app.util.ImportParser
 import com.lifeops.app.util.SevereWeatherIntel
 import com.lifeops.app.util.TaskWeatherFit
@@ -549,6 +552,37 @@ class ThisWeekViewModel(
                 weekCloseInFlight = false
             }
         }
+    }
+
+    /**
+     * Assemble the pre-close **week in review** from the current week's live tasks/time plus the
+     * trailing sealed history. Pure logic lives in [WeekReviewBuilder]; this just aggregates the
+     * inputs. Called when the close dialog opens so the ritual becomes a mirror, not a rubber stamp.
+     * Self-rating is left out — it's chosen in the dialog *after* seeing this.
+     */
+    suspend fun buildWeekReview(): WeekReview {
+        val s = _uiState.value
+        val tasks = s.rawTasks
+        val time = s.taskTimeMinutes
+        val relevant = tasks.count { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
+        val closing = ClosingWeekStats(
+            completed = tasks.count { it.status == TaskStatus.COMPLETED },
+            totalRelevant = relevant,
+            carried = tasks.count { it.status == TaskStatus.CARRIED_FORWARD },
+            totalMinutes = time.values.sum(),
+            hardDeadlineHit = tasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED },
+            hardDeadlineExpired = tasks.count {
+                it.hardDeadline && it.status != TaskStatus.COMPLETED && it.status != TaskStatus.PENDING
+            },
+            minutesByAspect = tasks
+                .filter { it.aspectId != null }
+                .groupBy { it.aspectId!! }
+                .mapValues { (_, group) -> group.sumOf { time[it.id] ?: 0 } },
+            estimatedActuals = tasks
+                .filter { it.status == TaskStatus.COMPLETED && it.estimatedMinutes != null }
+                .map { it.estimatedMinutes!! to (time[it.id] ?: 0) }
+        )
+        return WeekReviewBuilder.build(closing, weekRepository.getAllSnapshotsSync(), s.aspects.values.toList())
     }
 
     fun onPromoteToProject(taskId: String) {
