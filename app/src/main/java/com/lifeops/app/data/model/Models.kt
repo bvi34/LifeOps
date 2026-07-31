@@ -568,7 +568,11 @@ data class Book(
     val author: String? = null,
     val status: BookStatus = BookStatus.TO_READ,
     val createdAt: String,
-    val completedAt: String? = null
+    val completedAt: String? = null,
+    /** Source kind from Citation (EPUB/PDF/ROYAL_ROAD/OREILLY); null for LifeOps-created books. */
+    val sourceType: String? = null,
+    /** Derived reading category (LEARNING/FUN) for the reading report; null when unknown. */
+    val category: String? = null
 )
 
 data class BookNote(

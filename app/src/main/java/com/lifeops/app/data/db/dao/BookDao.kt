@@ -27,6 +27,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id")
     fun observeById(id: String): Flow<BookEntity?>
 
+    @Query("SELECT * FROM books WHERE id = :id")
+    suspend fun getById(id: String): BookEntity?
+
     // @Upsert updates in place; @Insert(REPLACE) would delete-and-reinsert the book,
     // cascading away its notes and time entries.
     @Upsert

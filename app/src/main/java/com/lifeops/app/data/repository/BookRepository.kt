@@ -54,4 +54,42 @@ class BookRepository(private val bookDao: BookDao) {
     }
 
     suspend fun deleteTimeEntry(id: String) = bookDao.deleteTimeEntry(id)
+
+    /**
+     * Ingest one engaged-reading telemetry record from Citation: upsert the book (keyed by Citation's
+     * own [bookKey], tagged with its source + derived category) and log the engaged [minutes] as a
+     * time entry stamped at the session's [occurredAt]. The logged minutes then feed reading rewards
+     * at week-close (see [TaskRepository.closeWeek]). Idempotent on the book row; each call adds one
+     * time entry (the caller de-dupes packets via the sync cursor). No-op for zero minutes.
+     */
+    suspend fun ingestReadingTelemetry(
+        bookKey: String,
+        title: String,
+        sourceType: String,
+        minutes: Int,
+        occurredAt: Long
+    ) {
+        if (minutes <= 0) return
+        val category = com.lifeops.app.util.ReadingRewards.defaultCategory(sourceType).name
+        val existing = bookDao.getById(bookKey)?.toModel()
+        val book = existing?.copy(title = title, sourceType = sourceType, category = category)
+            ?: Book(
+                id = bookKey,
+                title = title,
+                status = BookStatus.READING,
+                createdAt = DateUtil.now(),
+                sourceType = sourceType,
+                category = category
+            )
+        bookDao.upsert(book.toEntity())
+        bookDao.insertTimeEntry(
+            BookTimeEntry(
+                id = UUID.randomUUID().toString(),
+                bookId = bookKey,
+                durationMinutes = minutes,
+                note = "Citation",
+                recordedAt = DateUtil.isoFromEpoch(occurredAt)
+            ).toEntity()
+        )
+    }
 }
