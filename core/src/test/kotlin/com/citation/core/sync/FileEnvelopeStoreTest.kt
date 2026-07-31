@@ -1,6 +1,7 @@
 package com.citation.core.sync
 
 import com.citation.core.key.EntityKey
+import com.citation.core.model.SourceType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -22,7 +23,7 @@ class FileEnvelopeStoreTest {
         // Citation writes up; LifeOps reads it (loopback via the same store).
         val outbound = OutboundEnvelope(
             peer = "ER",
-            packets = listOf(Mailbox.Versioned(1L, TelemetryPacket(EntityKey("ER", "Book", 1), "A", 12, 3L))),
+            packets = listOf(Mailbox.Versioned(1L, TelemetryPacket(EntityKey("ER", "Book", 1), SourceType.EPUB, "A", 12, 3L))),
             ackedIntentVersion = 0
         )
         store.writeOutbound(outbound)
@@ -41,7 +42,7 @@ class FileEnvelopeStoreTest {
     fun fullRoundThroughEngineAndFiles() {
         val store = FileEnvelopeStore(tmp.newFolder("mailbox"))
         val mailbox = Mailbox<UpPacket, AcquireBookIntent>()
-        mailbox.post(TelemetryPacket(EntityKey("ER", "Book", 1), "Read", 30, 1L))
+        mailbox.post(TelemetryPacket(EntityKey("ER", "Book", 1), SourceType.EPUB, "Read", 30, 1L))
         val engine = SyncEngine(mailbox)
 
         // 1) Citation builds + writes outbound.

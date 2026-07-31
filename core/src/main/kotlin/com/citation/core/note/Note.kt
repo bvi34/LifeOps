@@ -21,6 +21,9 @@ import com.citation.core.model.SourceType
  * @property references the anchored passages: exactly one for [NoteType.PASSAGE_ANCHORED], zero or
  *   more for [NoteType.FREESTANDING_SYNTHESIS].
  * @property createdAt epoch millis.
+ * @property tags free-form organizational labels (normalized lowercase, no leading `#`). A local
+ *   retrieval layer — they let a pile of highlights be queried and grouped. Not carried on the sync
+ *   wire (a note's *text* syncs; its filing is Citation's own).
  */
 data class Note(
     val key: EntityKey,
@@ -28,7 +31,8 @@ data class Note(
     val body: String,
     val source: SourceDescriptor,
     val references: List<PassageReference>,
-    val createdAt: Long
+    val createdAt: Long,
+    val tags: List<String> = emptyList()
 ) {
     init {
         if (type == NoteType.PASSAGE_ANCHORED) {

@@ -27,6 +27,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :id")
     fun observeById(id: String): Flow<BookEntity?>
 
+    @Query("SELECT * FROM books WHERE id = :id")
+    suspend fun getById(id: String): BookEntity?
+
     // @Upsert updates in place; @Insert(REPLACE) would delete-and-reinsert the book,
     // cascading away its notes and time entries.
     @Upsert
@@ -52,4 +55,15 @@ interface BookDao {
 
     @Query("DELETE FROM book_time_entries WHERE id = :id")
     suspend fun deleteTimeEntry(id: String)
+
+    /**
+     * Total reading minutes logged in a week window (inclusive), compared on the date part of
+     * `recordedAt` so a timestamp's time-of-day can't push it out of range. Drives reading rewards
+     * at week-close (see [com.lifeops.app.data.repository.TaskRepository.closeWeek]).
+     */
+    @Query(
+        "SELECT COALESCE(SUM(durationMinutes), 0) FROM book_time_entries " +
+            "WHERE substr(recordedAt, 1, 10) BETWEEN :startDate AND :endDate"
+    )
+    suspend fun sumReadingMinutesBetween(startDate: String, endDate: String): Int
 }

@@ -33,6 +33,7 @@ object SyncCodec {
         is TelemetryPacket -> JsonObject().apply {
             addProperty("kind", "telemetry")
             addProperty("bookKey", packet.bookKey?.toString())
+            addProperty("sourceType", packet.sourceType.name)
             addProperty("title", packet.title)
             addProperty("minutesRead", packet.minutesRead)
             addProperty("occurredAt", packet.occurredAt)
@@ -49,6 +50,7 @@ object SyncCodec {
     private fun upPacketFromJson(obj: JsonObject): UpPacket = when (obj.get("kind").asString) {
         "telemetry" -> TelemetryPacket(
             bookKey = obj.entityKey("bookKey"),
+            sourceType = SourceType.valueOf(obj.get("sourceType").asString),
             title = obj.get("title").asString,
             minutesRead = obj.get("minutesRead").asInt,
             occurredAt = obj.get("occurredAt").asLong

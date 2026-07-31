@@ -23,11 +23,13 @@ import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -44,6 +46,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontFamily
@@ -232,8 +235,22 @@ private fun PersonalTab(vm: ReaderViewModel) {
     val reading = books.count { it.readingState == ReadingState.READING.name }
     val finished = books.count { it.readingState == ReadingState.DONE.name }
     val toRead = books.count { it.readingState == ReadingState.TO_READ.name }
+    val context = LocalContext.current
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Personal") }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Personal") },
+                actions = {
+                    if (notes.isNotEmpty()) {
+                        IconButton(onClick = { vm.exportVisibleNotes(context) }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Export notes")
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Card(Modifier.fillMaxWidth().padding(16.dp)) {
                 Column(Modifier.padding(16.dp)) {

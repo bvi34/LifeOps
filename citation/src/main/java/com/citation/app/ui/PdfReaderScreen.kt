@@ -29,6 +29,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -71,6 +72,8 @@ fun PdfReaderScreen(session: CitationRepository.PdfSession, vm: ReaderViewModel)
 
     var pageIndex by remember { mutableIntStateOf(0) }
     val pageCount = renderer?.pageCount ?: 0
+    // Each page turn is a reading-progress signal for the engaged-time meter (idle pages don't count).
+    LaunchedEffect(pageIndex) { vm.onReadingProgress() }
     var showNote by remember { mutableStateOf(false) }
     var quote by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }

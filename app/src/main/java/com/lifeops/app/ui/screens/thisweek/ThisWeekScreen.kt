@@ -11,6 +11,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,8 +37,11 @@ import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.WeatherAlert
 import com.lifeops.app.data.model.WeekProgress
+import com.lifeops.app.util.ReviewMetric
 import com.lifeops.app.util.TodayEvents
+import com.lifeops.app.util.Trend
 import com.lifeops.app.util.WeatherAdvisory
+import com.lifeops.app.util.WeekReview
 import com.lifeops.app.ui.components.CreateTaskDialog
 import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskEditDialog
@@ -45,6 +50,7 @@ import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
 import java.time.LocalDate
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 @Composable
@@ -325,33 +331,38 @@ fun ThisWeekScreen(
     }
 
     if (showCloseConfirm) {
-        val completedCount = state.rawTasks.count { it.status == TaskStatus.COMPLETED }
-        val totalRelevant = state.rawTasks.count { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
+        // The headline figures now live in the Week-in-Review section; these two feed the
+        // consequence lines that explain what closing does to still-open tasks.
         val carriedCount = state.rawTasks.count { it.status == TaskStatus.CARRIED_FORWARD }
         val pendingCount = state.rawTasks.count { it.status == TaskStatus.PENDING }
-        val hdHits = state.rawTasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }
-        val hdExpired = state.rawTasks.count { it.hardDeadline && it.status != TaskStatus.COMPLETED && it.status != TaskStatus.PENDING }
-        val totalMinutes = state.taskTimeMinutes.values.sum()
 
         var selfRating by remember { mutableStateOf<Int?>(null) }
         var selfRatingNote by remember { mutableStateOf("") }
+        // The retrospective is assembled off the UI thread from live tasks + trailing history.
+        val review by produceState<WeekReview?>(initialValue = null) { value = viewModel.buildWeekReview() }
 
         AlertDialog(
             onDismissRequest = { showCloseConfirm = false },
-            title = { Text("Close This Week?") },
+            title = { Text("Week in Review") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "$completedCount / $totalRelevant tasks completed",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (totalMinutes > 0) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.verticalScroll(rememberScrollState())
+                ) {
+                    val r = review
+                    if (r == null) {
                         Text(
-                            "Time logged: ${formatMinutes(totalMinutes)}",
+                            "Reviewing your week…",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
+                    } else {
+                        WeekReviewSection(r)
                     }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    // What closing actually does to the open tasks.
                     if (carriedCount > 0) {
                         Text(
                             "$carriedCount task${if (carriedCount != 1) "s" else ""} will carry to next week",
@@ -364,14 +375,6 @@ fun ThisWeekScreen(
                             "$pendingCount pending → will become incomplete",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
-                    }
-                    if (hdHits + hdExpired > 0) {
-                        Text(
-                            "Hard deadlines: $hdHits hit, $hdExpired expired",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (hdExpired > 0) MaterialTheme.colorScheme.error
-                                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                         )
                     }
                     Text(
@@ -411,6 +414,14 @@ fun ThisWeekScreen(
                             }
                         }
                     }
+                    // The honest mirror: your rating held against what the board actually shows.
+                    selfRatingMirror(selfRating, review?.completionRate)?.let { line ->
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.tertiary
+                        )
+                    }
                     if (selfRating != null) {
                         OutlinedTextField(
                             value = selfRatingNote,
@@ -433,6 +444,94 @@ fun ThisWeekScreen(
                 TextButton(onClick = { showCloseConfirm = false }) { Text("Cancel") }
             }
         )
+    }
+}
+
+/** A dry one-liner when your self-rating and the completion board disagree; null when they roughly agree. */
+private fun selfRatingMirror(selfRating: Int?, completionRate: Float?): String? {
+    if (selfRating == null || completionRate == null) return null
+    val pct = (completionRate * 100).roundToInt()
+    return when {
+        selfRating >= 8 && completionRate < 0.5f -> "You rated this a $selfRating. The board says $pct% done."
+        selfRating <= 3 && completionRate >= 0.75f -> "You rated this a $selfRating, but $pct% shipped. Credit yourself."
+        else -> null
+    }
+}
+
+/**
+ * The "week in review" body: headline metrics with honest deltas, any grey-scar aspects, and the
+ * earned observations. Everything here comes from [WeekReviewBuilder] — this only lays it out.
+ */
+@Composable
+private fun WeekReviewSection(review: WeekReview) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        review.headline.forEach { metric -> MetricRow(metric) }
+
+        // Neglected aspects the Growth Record will scar — surfaced from 2 weeks grey.
+        review.aspectBalance.filter { it.greyStreak >= 2 }.forEach { row ->
+            Text(
+                "△ ${row.name} — grey ${row.greyStreak} week${if (row.greyStreak == 1) "" else "s"}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error.copy(alpha = 0.85f)
+            )
+        }
+
+        if (review.observations.isNotEmpty()) {
+            Spacer(Modifier.height(2.dp))
+            review.observations.forEach { obs ->
+                Text(
+                    obs,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f)
+                )
+            }
+        }
+    }
+}
+
+/** One headline metric: label on the left, value and (if there's history) a coloured delta on the right. */
+@Composable
+private fun MetricRow(metric: ReviewMetric) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            metric.label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                metric.value,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            metric.delta?.let { delta ->
+                val improved: Boolean? = when (metric.trend) {
+                    Trend.UP -> metric.higherIsBetter
+                    Trend.DOWN -> !metric.higherIsBetter
+                    Trend.FLAT -> null
+                }
+                val arrow = when (metric.trend) {
+                    Trend.UP -> "▲"
+                    Trend.DOWN -> "▼"
+                    Trend.FLAT -> ""
+                }
+                val color = when (improved) {
+                    true -> Color(0xFF2E7D32)
+                    false -> MaterialTheme.colorScheme.error
+                    null -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                }
+                Text(
+                    "$arrow $delta".trim(),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color
+                )
+            }
+        }
     }
 }
 

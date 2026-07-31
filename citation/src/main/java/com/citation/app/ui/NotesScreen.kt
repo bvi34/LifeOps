@@ -9,10 +9,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -36,34 +44,74 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteType
+import com.citation.core.note.Tags
 import java.text.DateFormat
 import java.util.Date
 
 /**
- * The Notes list: every captured note, each showing its **degradation state** and — when it can —
- * a jump back to live context. The frozen snapshot is always shown, so even an orphaned or
- * source-unavailable note reads fully; the badge just tells you whether the jump is live, shaky, or
- * gone. This is where "a note outlives its source" is visible to the reader. Rendered content-only so
- * the Personal tab can host it beneath its reading stats.
+ * The Notes list: every captured note, searchable and tag-filterable, each showing its
+ * **degradation state** and — when it can — a jump back to live context. A search box narrows by
+ * body/snapshot/title/tags; a facet row of tags narrows by filing. The frozen snapshot is always
+ * shown, so even an orphaned or source-unavailable note reads fully; the badge just tells you
+ * whether the jump is live, shaky, or gone. This is where "a note outlives its source" — and now
+ * "notes come back out again" — is visible to the reader. Rendered content-only so the Personal tab
+ * can host it beneath its reading stats.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
-    val notes by vm.notes.collectAsStateWithLifecycle()
+    val notes by vm.filteredNotes.collectAsStateWithLifecycle()
+    val query by vm.query.collectAsStateWithLifecycle()
+    val tagCounts by vm.tagCounts.collectAsStateWithLifecycle()
+    val activeTag by vm.activeTag.collectAsStateWithLifecycle()
     // The note currently open in the detail/edit sheet (tap a row to open).
     var editing by remember { mutableStateOf<Note?>(null) }
 
-    if (notes.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text(
-                "No notes yet. Highlight a passage while reading, or use “Save to Citation” from any app.",
-                color = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.padding(24.dp)
-            )
+    Column(modifier.fillMaxSize()) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = vm::setQuery,
+            placeholder = { Text("Search notes") },
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { vm.setQuery("") }) {
+                        Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+        )
+
+        if (tagCounts.isNotEmpty()) {
+            LazyRow(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(tagCounts, key = { it.tag }) { tc ->
+                    FilterChip(
+                        selected = activeTag == tc.tag,
+                        onClick = { vm.toggleTag(tc.tag) },
+                        label = { Text("#${tc.tag} · ${tc.count}") }
+                    )
+                }
+            }
         }
-    } else {
-        LazyColumn(modifier.fillMaxSize()) {
-            items(notes, key = { it.key.toString() }) { note ->
-                NoteRow(note, vm, onClick = { editing = note })
+
+        if (notes.isEmpty()) {
+            Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                Text(
+                    emptyMessage(query, activeTag),
+                    color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.padding(24.dp)
+                )
+            }
+        } else {
+            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                items(notes, key = { it.key.toString() }) { note ->
+                    NoteRow(note, vm, onClick = { editing = note })
+                }
             }
         }
     }
@@ -72,12 +120,18 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
         NoteDetailDialog(
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); editing = null },
+            onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
             onJump = { vm.jumpToNote(note); editing = null },
             onDelete = { vm.deleteNote(note.key.toString()); editing = null },
             onDismiss = { editing = null }
         )
     }
 }
+
+/** What the empty state says depends on whether a filter is hiding notes or there simply are none. */
+private fun emptyMessage(query: String, activeTag: String?): String =
+    if (query.isNotBlank() || activeTag != null) "No notes match."
+    else "No notes yet. Highlight a passage while reading, or use “Save to Citation” from any app."
 
 @Composable
 private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
@@ -128,6 +182,15 @@ private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.primary
             )
         }
+        if (note.tags.isNotEmpty()) {
+            Text(
+                text = Tags.format(note.tags),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
         Text(
             text = "${note.source.title} · ${formatWhen(note.createdAt)}",
             fontSize = 12.sp,
@@ -139,8 +202,9 @@ private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
 
 /**
  * Open one note to read it in full and **add your own words**. A captured quote arrives with an empty
- * body; this is where you annotate it. When the note is bound to a source, a "Jump to source" button
- * appears; otherwise you just read the frozen snapshot and write your note.
+ * body; this is where you annotate it — and, when [onSaveTags] is supplied, file it with tags. When
+ * the note is bound to a source, a "Jump to source" button appears; otherwise you just read the
+ * frozen snapshot and write your note.
  */
 @Composable
 fun NoteDetailDialog(
@@ -148,9 +212,11 @@ fun NoteDetailDialog(
     onSave: (String) -> Unit,
     onJump: () -> Unit,
     onDismiss: () -> Unit,
-    onDelete: (() -> Unit)? = null
+    onDelete: (() -> Unit)? = null,
+    onSaveTags: ((String) -> Unit)? = null
 ) {
     var body by remember(note.key) { mutableStateOf(note.body) }
+    var tagsText by remember(note.key) { mutableStateOf(Tags.format(note.tags)) }
     val canJump = note.source.bookKey != null
 
     AlertDialog(
@@ -180,6 +246,16 @@ fun NoteDetailDialog(
                     minLines = 3,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (onSaveTags != null) {
+                    OutlinedTextField(
+                        value = tagsText,
+                        onValueChange = { tagsText = it },
+                        label = { Text("Tags") },
+                        placeholder = { Text("#stoicism #deep-work") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     if (canJump) {
                         TextButton(onClick = onJump) { Text("Jump to source") }
@@ -192,7 +268,12 @@ fun NoteDetailDialog(
                 }
             }
         },
-        confirmButton = { Button(onClick = { onSave(body) }) { Text("Save") } },
+        confirmButton = {
+            Button(onClick = {
+                onSaveTags?.invoke(tagsText)
+                onSave(body)
+            }) { Text("Save") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }

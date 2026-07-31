@@ -18,12 +18,16 @@ sealed interface UpPacket {
  * Fulfillment telemetry: you read this book for this long. Feeds LifeOps' time/among-aspects
  * accounting. Deliberately minimal — reading is an activity LifeOps logs, not content it stores.
  *
- * @property minutesRead minutes in this reporting window.
+ * @property sourceType the source kind (EPUB / PDF / ROYAL_ROAD / OREILLY), so LifeOps can map the
+ *   reading to a category (e.g. O'Reilly → Learning, Royal Road → Fun) without opening the book.
+ * @property minutesRead **engaged** minutes in this reporting window (idle dwell excluded — see
+ *   [com.citation.core.reader.ReadingMeter]).
  * @property occurredAt epoch millis of the reading session (window end).
  * @property title frozen for display.
  */
 data class TelemetryPacket(
     override val bookKey: EntityKey?,
+    val sourceType: SourceType,
     val title: String,
     val minutesRead: Int,
     val occurredAt: Long

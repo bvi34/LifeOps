@@ -176,6 +176,47 @@ cache, **included in backup/restore** (backup v8) since profiles are real user d
 
 ---
 
+## Week-close review — design note
+
+Closing the week is LifeOps' one **mint** — the moment work becomes resources and a ring is sealed —
+so the close dialog is a **review**, not a rubber stamp. Before you confirm, it holds the week you're
+about to close against the trailing sealed history and shows: headline metrics with honest deltas
+(completion vs last week in percentage points, time logged vs the trailing average, hard-deadline hit
+rate), an **aspect-balance** read that surfaces *grey scars* (aspects gone two-plus weeks with zero
+minutes — the same neglect the Growth Record marks), and a short set of **earned observations** —
+the sardonic honest-mirror lines the app promises, each fired only when the numbers justify it
+("Body has been a grey scar 3 weeks running", "You keep underestimating — most tasks ran over").
+Pick a self-rating and, if it disagrees with the board, the mirror says so ("You rated this an 8; the
+board says 40% done").
+
+The whole retrospective is pure, Android-free logic in `util/WeekReview.kt` (`WeekReviewBuilder` +
+`ClosingWeekStats` → `WeekReview`), unit-tested on the JVM like `GrowthRings` / `BestTime` /
+`ScoringUtils`. The estimate window matches `ScoringUtils` (±15 min), and historical time comes from
+each snapshot's sealed `aspectHistory`, so the review reads the same faithful record the rings do. It
+is **read-only** — nothing new is persisted; the existing self-rating/note still seal into the
+snapshot, and the close path (mint next week, snapshot/settle, seed recurring) is unchanged.
+
+---
+
+## Reading rewards — design note
+
+Reading (in the **Citation** companion app) is the one activity rewarded *by time* rather than by
+task completion, so the time has to be honest: Citation measures **engaged** minutes only — a page
+left open past a short idle timeout stops the clock (see `docs/CITATION.md`) — and reports them to
+LifeOps. Those minutes earn resource points at a flat rate (**Settings → Reading rewards**: pick the
+aspect they earn into, default rate 5 pts/hour). Both reading categories — *Learning* (O'Reilly,
+owned books) and *Fun* (Royal Road) — fold into the one chosen aspect; the category split is a report
+dimension, not a second economy.
+
+The reward is minted the normal way: at week-close, engaged reading minutes logged in the week window
+become points (`util/ReadingRewards`, pure + unit-tested) and are added to the chosen aspect's
+earnings, which then flow through the existing **aspect → resource** mapping. So reading obeys every
+economy invariant — *only closed weeks emit*, and it mints an aspect's own resource rather than
+converting between resources (**non-fungibility** holds; reading is genuine effort, not a purchase).
+The rate and aspect are user settings; reading rewards are **off until an aspect is chosen**.
+
+---
+
 ## Build & run
 
 The project targets the standard Android toolchain.

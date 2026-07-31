@@ -14,6 +14,9 @@ import java.util.UUID
 
 data class SettingsUiState(
     val aspects: List<Aspect> = emptyList(),
+    // Reading rewards: which aspect reading time earns into (null = off) and the flat points/hour.
+    val readingAspectId: String? = null,
+    val readingPointsPerHour: Int = com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR,
     val categories: Map<String, List<Category>> = emptyMap(),
     val gameResources: List<GameResource> = emptyList(),
     val expandedAspectId: String? = null,
@@ -91,7 +94,9 @@ class SettingsViewModel(
                 customPalette = preferencesRepository.customPalette,
                 wellnessRemindersEnabled = preferencesRepository.wellnessRemindersEnabled,
                 sleepTrackingEnabled = preferencesRepository.sleepTrackingEnabled,
-                wellnessSlotHours = preferencesRepository.wellnessSlotHours
+                wellnessSlotHours = preferencesRepository.wellnessSlotHours,
+                readingAspectId = preferencesRepository.readingAspectId,
+                readingPointsPerHour = preferencesRepository.readingPointsPerHour
             )
         }
         foodItemRepository?.let { repo ->
@@ -236,6 +241,19 @@ class SettingsViewModel(
     fun setDefaultReminderHour(hour: Int) {
         preferencesRepository.defaultReminderHour = hour
         _uiState.update { it.copy(defaultReminderHour = hour) }
+    }
+
+    /** Choose the aspect reading time earns into (null turns reading rewards off). */
+    fun setReadingAspect(aspectId: String?) {
+        preferencesRepository.readingAspectId = aspectId
+        _uiState.update { it.copy(readingAspectId = aspectId) }
+    }
+
+    /** Set the flat reward rate (resource points per engaged hour of reading). */
+    fun setReadingPointsPerHour(points: Int) {
+        val clamped = points.coerceIn(0, 100)
+        preferencesRepository.readingPointsPerHour = clamped
+        _uiState.update { it.copy(readingPointsPerHour = clamped) }
     }
 
     fun showReminderTimePicker() = _uiState.update { it.copy(showReminderTimePicker = true) }

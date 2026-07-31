@@ -12,6 +12,22 @@ class PreferencesRepository(context: Context) {
     private val prefs = context.getSharedPreferences("lifeops_settings", Context.MODE_PRIVATE)
     private val gson = Gson()
 
+    /**
+     * The aspect that reading time earns into at week-close (null = reading rewards are off). Both
+     * reading categories (Learning / Fun) fold into this one aspect — the category split is a report
+     * dimension, not a separate economy. See [com.lifeops.app.util.ReadingRewards].
+     */
+    var readingAspectId: String?
+        get() = prefs.getString("reading_aspect_id", null)
+        set(value) {
+            prefs.edit().apply { if (value == null) remove("reading_aspect_id") else putString("reading_aspect_id", value) }.apply()
+        }
+
+    /** Resource points earned per engaged hour of reading (flat rate; default 5). */
+    var readingPointsPerHour: Int
+        get() = prefs.getInt("reading_points_per_hour", com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR)
+        set(value) { prefs.edit().putInt("reading_points_per_hour", value.coerceAtLeast(0)).apply() }
+
     var defaultReminderHour: Int
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
         set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }

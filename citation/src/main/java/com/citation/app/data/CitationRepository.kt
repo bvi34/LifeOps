@@ -41,6 +41,7 @@ import com.citation.core.sync.IntentReconciler
 import com.citation.core.sync.Mailbox
 import com.citation.core.sync.NotePacket
 import com.citation.core.sync.ReadingState
+import com.citation.core.sync.TelemetryPacket
 import com.citation.core.sync.SyncEngine
 import com.citation.core.sync.UpPacket
 import kotlinx.coroutines.flow.Flow
@@ -608,6 +609,44 @@ class CitationRepository private constructor(
         db.noteDao().upsert(CitationMappers.noteToEntity(updated, versioned.version))
         persistSyncState()
         return updated
+    }
+
+    /**
+     * Set a note's tags — the local organizational layer. Unlike [editNoteBody] this does **not**
+     * re-post up the mailbox: tags never travel on the sync wire (a note's *text* is the shared
+     * artifact; its filing is Citation's own), so we persist locally and preserve the existing
+     * `syncVersion` untouched. [tags] is stored as-is — callers normalize via `Tags.parse` first.
+     */
+    suspend fun setNoteTags(noteKey: String, tags: List<String>): Note? {
+        val entity = db.noteDao().get(noteKey) ?: return null
+        val updated = CitationMappers.noteFromEntity(entity).copy(tags = tags)
+        db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
+        return updated
+    }
+
+    /**
+     * Report **engaged** reading time for a book up the mailbox as a [TelemetryPacket]. The engaged
+     * minutes are measured by the reader's [com.citation.core.reader.ReadingMeter] (idle dwell already
+     * excluded), so LifeOps receives honest time. The packet carries the book's `sourceType` so
+     * LifeOps can map it to a category (O'Reilly → Learning, Royal Road → Fun) without holding the
+     * book. No-op for a zero-minute or unknown book.
+     */
+    suspend fun recordReadingTelemetry(
+        bookKey: String,
+        minutes: Int,
+        occurredAt: Long = System.currentTimeMillis()
+    ) {
+        if (minutes <= 0) return
+        val entity = db.bookDao().get(bookKey) ?: return
+        val packet = TelemetryPacket(
+            bookKey = EntityKey.parse(bookKey),
+            sourceType = SourceType.valueOf(entity.sourceType),
+            title = entity.title,
+            minutesRead = minutes,
+            occurredAt = occurredAt
+        )
+        mailbox.post(packet)
+        persistSyncState()
     }
 
     /** Persist a captured highlight + its note and queue the note up the mailbox. */

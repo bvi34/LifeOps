@@ -50,6 +50,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,9 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.citation.core.reader.Paginator
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
@@ -99,6 +103,22 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val openBook by vm.openBook.collectAsStateWithLifecycle()
     val pdfSession by vm.pdfSession.collectAsStateWithLifecycle()
     val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
+
+    // Pause the engaged-reading meter whenever the app leaves the foreground, and resume on return —
+    // so backgrounded time never accrues. Guarded inside the VM (no-op when no book is being read),
+    // so a single observer here covers all three reader tracks and is harmless on the home screen.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> vm.onReaderHidden()
+                Lifecycle.Event.ON_START -> vm.onReaderVisible()
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // The immersive readers (PDF, O'Reilly, flowing text) each preempt the tab shell. When none is
     // open, the app lands on the consolidated home with its bottom tabs.
@@ -288,6 +308,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
         NoteDetailDialog(
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); openNote = null },
+            onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
             onJump = { vm.jumpToNote(note); openNote = null },
             onDelete = { vm.deleteNote(note.key.toString()); openNote = null },
             onDismiss = { openNote = null }

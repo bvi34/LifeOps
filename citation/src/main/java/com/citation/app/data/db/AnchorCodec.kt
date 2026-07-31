@@ -40,6 +40,20 @@ object AnchorCodec {
         }
     }
 
+    /** Serialize a note's tag list to the opaque `tagsJson` column (a plain JSON string array). */
+    fun encodeTags(tags: List<String>): String {
+        val arr = JSONArray()
+        tags.forEach { arr.put(it) }
+        return arr.toString()
+    }
+
+    /** Decode `tagsJson` back into a tag list; a blank/absent column reads as no tags. */
+    fun decodeTags(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        val arr = JSONArray(json)
+        return (0 until arr.length()).map { arr.getString(it) }
+    }
+
     private fun anchorToJson(anchor: TextAnchor): JSONObject = when (anchor) {
         is TextAnchor.Flowing -> JSONObject()
             .put("type", "flowing")

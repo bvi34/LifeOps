@@ -1,13 +1,14 @@
 package com.citation.core.sync
 
 import com.citation.core.key.EntityKey
+import com.citation.core.model.SourceType
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class SyncEngineTest {
 
     private fun telemetry(title: String) =
-        TelemetryPacket(EntityKey("ER", "Book", 1), title, 10, 1L)
+        TelemetryPacket(EntityKey("ER", "Book", 1), SourceType.EPUB, title, 10, 1L)
 
     private fun intent(v: Long, title: String) =
         Mailbox.Versioned(v, AcquireBookIntent(EntityKey("LO", "Book", v), title, null))
