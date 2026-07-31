@@ -2,6 +2,7 @@ package com.lifeops.app
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.lifeops.app.data.db.LifeOpsDatabase
@@ -12,11 +13,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
-class LifeOpsApp : Application() {
+/**
+ * LifeOps' runtime: the manual-DI holder for every repository/service plus the once-per-process
+ * startup work. It used to *be* the `Application`, but under the Operations Sandbox container there
+ * is a single [android.app.Application] ([com.operations.sandbox.SandboxApplication]) hosting both
+ * LifeOps and Citation. So this is now a plain holder the sandbox constructs via [install]; feature
+ * code reaches it through [get]/[getOrNull] instead of casting the Application.
+ *
+ * The class name is deliberately unchanged so existing typed references (e.g. `LifeOpsNavHost(app:
+ * LifeOpsApp)`) keep compiling; only the base class and the acquisition path changed.
+ */
+class LifeOpsApp private constructor(private val app: Application) {
     // Tied to the process lifetime — not leaked.
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    val database by lazy { LifeOpsDatabase.getInstance(this) }
+    val database by lazy { LifeOpsDatabase.getInstance(app) }
 
     val aspectRepository by lazy {
         AspectRepository(database.aspectDao(), database.categoryDao())
@@ -38,7 +49,7 @@ class LifeOpsApp : Application() {
     val busyBlockRepository by lazy {
         BusyBlockRepository(
             database.busyBlockDao(),
-            com.lifeops.app.worker.AlarmBusyBlockReminderScheduler(this)
+            com.lifeops.app.worker.AlarmBusyBlockReminderScheduler(app)
         )
     }
     val searchRepository by lazy { SearchRepository(database) }
@@ -46,9 +57,9 @@ class LifeOpsApp : Application() {
     // App-scoped so a running task timer survives navigation between This Week and the task
     // detail screen, and both observe the same clock.
     val timerController by lazy { TimerController(applicationScope, timeEntryRepository) }
-    val preferencesRepository by lazy { PreferencesRepository(this) }
+    val preferencesRepository by lazy { PreferencesRepository(app) }
     val notificationRepository by lazy {
-        NotificationRepository(this, database.notificationDao(), preferencesRepository)
+        NotificationRepository(app, database.notificationDao(), preferencesRepository)
     }
     val taskRepository by lazy {
         TaskRepository(
@@ -83,7 +94,7 @@ class LifeOpsApp : Application() {
     val counterRepository by lazy {
         CounterRepository(
             database.counterDao(),
-            com.lifeops.app.worker.WorkManagerHabitReminderScheduler(this)
+            com.lifeops.app.worker.WorkManagerHabitReminderScheduler(app)
         ) {
             weatherRepository.primaryCurrentConditions()?.let { (location, conditions) ->
                 CounterEventWeather(
@@ -113,7 +124,7 @@ class LifeOpsApp : Application() {
         PhoneActivityRepository(database.phoneActivityEventDao())
     }
     val wellnessRepository by lazy {
-        WellnessRepository(this, database.wellnessCheckinDao(), phoneActivityRepository, preferencesRepository)
+        WellnessRepository(app, database.wellnessCheckinDao(), phoneActivityRepository, preferencesRepository)
     }
 
     // --- Connection layer (in-process command dispatch) ---
@@ -196,13 +207,16 @@ class LifeOpsApp : Application() {
         )
     }
 
-    override fun onCreate() {
-        super.onCreate()
+    /**
+     * Run LifeOps' once-per-process startup. Called by the sandbox after [install]. Idempotent at
+     * the [install] level (constructed + started once); safe to treat as the old `onCreate`.
+     */
+    private fun start() {
         // Fold the write-ahead log back into lifeops.db whenever the app leaves the
         // foreground. Android's Auto Backup / device transfer copies the .db file only
         // (see backup_rules.xml / data_extraction_rules.xml); without this, writes still
         // sitting in the -wal sidecar would be missing from a fresh-device restore.
-        registerActivityLifecycleCallbacks(BackgroundWalCheckpoint())
+        app.registerActivityLifecycleCallbacks(BackgroundWalCheckpoint())
         applicationScope.launch {
             if (!preferencesRepository.sameWeekCarryRepairDone) {
                 taskRepository.repairSameWeekCarries()
@@ -241,7 +255,7 @@ class LifeOpsApp : Application() {
             busyBlockRepository.rescheduleAllReminders()
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
-        com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(this)
+        com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(app)
         // Daytime wellness check-in reminders at the configured slots (default 10:00/15:00/21:00).
         // Each fired slot re-schedules its own next occurrence; this seeds them from settings (and
         // clears them if the user has turned reminders off).
@@ -249,8 +263,34 @@ class LifeOpsApp : Application() {
         // Keep the background sleep tracker running so screen/charging events are captured overnight
         // (see SleepTrackingService). No-op when the user has turned tracking off.
         if (preferencesRepository.sleepTrackingEnabled) {
-            runCatching { com.lifeops.app.service.SleepTrackingService.start(this) }
+            runCatching { com.lifeops.app.service.SleepTrackingService.start(app) }
         }
+    }
+
+    companion object {
+        @Volatile
+        private var instance: LifeOpsApp? = null
+
+        /**
+         * Construct the LifeOps runtime against the single hosting [app] and run its startup, once.
+         * Called by the sandbox's Application. Repeated calls return the existing instance without
+         * re-running startup.
+         */
+        fun install(app: Application): LifeOpsApp =
+            instance ?: synchronized(this) {
+                instance ?: LifeOpsApp(app).also { instance = it; it.start() }
+            }
+
+        /** The installed runtime. Throws if the host never called [install] (a wiring bug). */
+        fun get(context: Context): LifeOpsApp =
+            instance ?: error("LifeOpsApp.install() was never called by the hosting Application")
+
+        /**
+         * The installed runtime, or null if not yet installed — for background entry points
+         * (workers, receivers, the widget) that must degrade gracefully rather than crash when they
+         * fire before/without the host process wiring.
+         */
+        fun getOrNull(): LifeOpsApp? = instance
     }
 
     /**

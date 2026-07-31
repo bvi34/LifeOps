@@ -29,7 +29,7 @@ class WeatherRefreshWorker(
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val app = applicationContext as? LifeOpsApp ?: return Result.success()
+        val app = LifeOpsApp.getOrNull() ?: return Result.success()
         val repo = app.weatherRepository
         return try {
             repo.refreshAll()

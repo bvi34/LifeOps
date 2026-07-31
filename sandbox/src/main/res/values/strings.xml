@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The application-module definition; overrides the same-named strings the merged LifeOps and
+         Citation libraries each carry, so the launcher label is unambiguous. -->
+    <string name="app_name">Operations Sandbox</string>
+</resources>

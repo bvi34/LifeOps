@@ -18,7 +18,7 @@ class BusyBlockReminderReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
-                val app = context.applicationContext as? LifeOpsApp ?: return
+                val app = LifeOpsApp.getOrNull() ?: return
                 val pending = goAsync()
                 app.applicationScope.launch {
                     try {

@@ -1,6 +1,7 @@
 package com.citation.app
 
 import android.app.Application
+import android.content.Context
 import com.citation.app.data.CitationRepository
 import com.citation.app.data.OreillyAccess
 import com.citation.app.data.db.CitationDatabase
@@ -13,26 +14,48 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 
 /**
- * Process-wide wiring. The [repository] is built asynchronously (it restores the key allocator and
- * mailbox from Room), so callers await the [Deferred]. Simple manual DI, mirroring how LifeOps holds
- * its dispatcher/services on the Application.
+ * Citation's runtime. It used to *be* the `Application`, but under the Operations Sandbox container
+ * a single [Application] ([com.operations.sandbox.SandboxApplication]) hosts both LifeOps and
+ * Citation, so this is now a plain holder the sandbox constructs via [install]. Feature code reaches
+ * it through [get]/[getOrNull] instead of casting the Application.
+ *
+ * The class name is unchanged so existing typed references keep compiling. [repository] is still
+ * built asynchronously (it restores the key allocator and mailbox from Room); callers await it.
  */
-class CitationApplication : Application() {
+class CitationApplication private constructor(private val app: Application) {
 
     private val appScope = CoroutineScope(SupervisorJob())
 
     lateinit var repository: Deferred<CitationRepository>
         private set
 
-    override fun onCreate() {
-        super.onCreate()
-        val db = CitationDatabase.get(this)
-        val files = FileStores(this)
-        val oreillyAccess = OreillyAccess(this)
+    /** Build the repository and register Citation's periodic jobs, once. Called by the sandbox. */
+    private fun start() {
+        val db = CitationDatabase.get(app)
+        val files = FileStores(app)
+        val oreillyAccess = OreillyAccess(app)
         repository = appScope.async { CitationRepository.create(db, files, oreillyAccess) }
         // Register the periodic RR jobs (poll favourites, advance backfill, evict stale cache).
-        RoyalRoadScheduler.schedule(this)
+        RoyalRoadScheduler.schedule(app)
         // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).
-        SyncWorker.schedule(this)
+        SyncWorker.schedule(app)
+    }
+
+    companion object {
+        @Volatile
+        private var instance: CitationApplication? = null
+
+        /** Construct Citation's runtime against the hosting [app] and start it, once. */
+        fun install(app: Application): CitationApplication =
+            instance ?: synchronized(this) {
+                instance ?: CitationApplication(app).also { instance = it; it.start() }
+            }
+
+        /** The installed runtime. Throws if the host never called [install] (a wiring bug). */
+        fun get(context: Context): CitationApplication =
+            instance ?: error("CitationApplication.install() was never called by the hosting Application")
+
+        /** The installed runtime, or null — for background entry points that must degrade gracefully. */
+        fun getOrNull(): CitationApplication? = instance
     }
 }

@@ -10,23 +10,18 @@
          runtime (Settings.canDrawOverlays); the bubble never appears until the user grants it. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <application
-        android:name=".CitationApplication"
-        android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.Citation">
+    <!-- Citation is a library module now: no app-level attributes here (name/icon/theme/label live
+         on the :sandbox host). Only Citation's own components are declared for the merger. -->
+    <application>
 
+        <!-- No longer a launcher: the Operations Sandbox home opens this explicitly. The theme,
+             previously inherited from the application, is set on the activity so the reader keeps
+             its own look. The VIEW filter (open an EPUB from another app) stays. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/Theme.Citation"
             android:windowSoftInputMode="adjustResize">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
 
             <!-- Open an EPUB shared/opened from another app straight into ingestion. -->
             <intent-filter>
@@ -78,12 +73,12 @@
         <!-- Shares exported Markdown notes as a real .md file via a content URI (see NotesExporter). -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.fileprovider"
+            android:authorities="${applicationId}.citation.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+                android:resource="@xml/citation_file_paths" />
         </provider>
     </application>
 

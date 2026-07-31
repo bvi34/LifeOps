@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android Auto Backup rules for the container app. Both hosted apps' databases and the shared prefs
+  ride along. Citation's owned files (filesDir/sovereign) are intentionally excluded here — they can
+  be large and would blow the OS backup quota; the Operations Sandbox zip is where those are kept.
+  A WAL checkpoint runs when the app is backgrounded (see LifeOpsApp) so lifeops.db is current;
+  Citation's db is checkpointed at backup time by its contributor.
+-->
+<full-backup-content>
+    <include domain="database" path="lifeops.db" />
+    <include domain="database" path="citation.db" />
+    <include domain="sharedpref" path="." />
+</full-backup-content>

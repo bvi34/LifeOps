@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- LifeOps and Citation contribute their own <uses-permission> entries via the manifest
+         merger (they're library dependencies), so they are not repeated here. -->
+
+    <application
+        android:name=".SandboxApplication"
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Sandbox">
+
+        <!-- The one launcher entry point for the whole suite. -->
+        <activity
+            android:name=".SandboxActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Sandbox">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

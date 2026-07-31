@@ -22,27 +22,19 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-    <application
-        android:name=".LifeOpsApp"
-        android:allowBackup="true"
-        android:enableOnBackInvokedCallback="true"
-        android:fullBackupContent="@xml/backup_rules"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:roundIcon="@mipmap/ic_launcher_round"
-        android:label="@string/app_name"
-        android:theme="@style/Theme.LifeOps"
-        android:supportsRtl="true">
+    <!-- LifeOps is a library module now: the application element carries no app-level attributes
+         (name/icon/theme/label/backup rules live on the :sandbox host). Only LifeOps' own
+         components are declared here for the manifest merger to fold into the sandbox app. -->
+    <application>
 
+        <!-- No longer a launcher: the Operations Sandbox home opens this explicitly. The theme,
+             which used to be inherited from the application, is set on the activity so LifeOps
+             keeps its own launch look. The SEND filter (JSON import share target) stays. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:theme="@style/Theme.LifeOps"
             android:windowSoftInputMode="adjustResize">
-
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
 
             <!-- Share sheet receiver for JSON import -->
             <intent-filter>
@@ -54,12 +46,12 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.lifeops.app.fileprovider"
+            android:authorities="${applicationId}.lifeops.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/file_paths" />
+                android:resource="@xml/lifeops_file_paths" />
         </provider>
 
         <receiver

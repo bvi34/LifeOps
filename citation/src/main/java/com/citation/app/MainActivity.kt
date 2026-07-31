@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val app = application as CitationApplication
+        val app = CitationApplication.get(this)
 
         setContent {
             CitationTheme {

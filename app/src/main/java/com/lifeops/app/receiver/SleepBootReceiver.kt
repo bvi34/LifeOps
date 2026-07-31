@@ -14,7 +14,7 @@ import com.lifeops.app.service.SleepTrackingService
 class SleepBootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
-        val app = context.applicationContext as? LifeOpsApp ?: return
+        val app = LifeOpsApp.getOrNull() ?: return
         if (app.preferencesRepository.sleepTrackingEnabled) {
             SleepTrackingService.start(context)
         }

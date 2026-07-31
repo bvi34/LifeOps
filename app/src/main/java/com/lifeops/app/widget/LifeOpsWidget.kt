@@ -21,7 +21,7 @@ import com.lifeops.app.MainActivity
 class LifeOpsWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val app = context.applicationContext as LifeOpsApp
+        val app = LifeOpsApp.get(context)
         val tasks = try {
             app.database.taskDao().getTopPendingTitles(5)
         } catch (e: Exception) {

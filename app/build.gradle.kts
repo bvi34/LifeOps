@@ -1,5 +1,8 @@
 plugins {
-    alias(libs.plugins.android.application)
+    // LifeOps is now a *library* consumed by the Operations Sandbox container app (:sandbox),
+    // not an installable application of its own. It keeps its package/namespace and every screen;
+    // it just no longer owns the launcher, applicationId, or Application class.
+    alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
@@ -10,21 +13,9 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.lifeops.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+        // Code shrinking is the consuming app's (:sandbox) responsibility, so no
+        // applicationId/version/minify here.
     }
 
     compileOptions {
@@ -46,6 +37,9 @@ ksp {
 }
 
 dependencies {
+    // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
+    implementation(project(":backupkit"))
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

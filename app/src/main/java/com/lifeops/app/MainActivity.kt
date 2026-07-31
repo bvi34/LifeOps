@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        val app = application as LifeOpsApp
+        val app = LifeOpsApp.get(this)
         val sharedText = intent.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
             ?.getStringExtra(Intent.EXTRA_TEXT)
 

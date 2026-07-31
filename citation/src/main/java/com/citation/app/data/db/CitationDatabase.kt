@@ -60,5 +60,18 @@ abstract class CitationDatabase : RoomDatabase() {
                     "citation.db"
                 ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
+
+        /**
+         * Close and forget the singleton so the underlying `citation.db` file can be replaced
+         * wholesale (used by the sandbox restore, which swaps the file rather than merging rows).
+         * The next [get] rebuilds against the restored file. Any DAO/repository already holding the
+         * old handle is stale afterwards — a Citation restart is expected after a restore.
+         */
+        fun closeInstance() {
+            synchronized(this) {
+                instance?.close()
+                instance = null
+            }
+        }
     }
 }

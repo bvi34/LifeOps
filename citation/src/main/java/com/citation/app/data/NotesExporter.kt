@@ -22,7 +22,7 @@ object NotesExporter {
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             val file = File(dir, fileName)
             file.writeText(markdown)
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.citation.fileprovider", file)
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/markdown"
                 putExtra(Intent.EXTRA_SUBJECT, "Citation Notes")

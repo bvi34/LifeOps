@@ -27,7 +27,7 @@ class PhoneActivityReceiver : BroadcastReceiver() {
             else -> return
         }
         val at = System.currentTimeMillis()
-        val app = context.applicationContext as? LifeOpsApp ?: return
+        val app = LifeOpsApp.getOrNull() ?: return
         // Persist off the main thread; goAsync keeps the receiver alive until the write finishes.
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {

@@ -107,7 +107,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             dir.mkdirs()
             val file = File(dir, "lifeops_backup.json")
             file.writeText(json)
-            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            FileProvider.getUriForFile(context, "${context.packageName}.lifeops.fileprovider", file)
         } catch (e: Exception) {
             null
         }
