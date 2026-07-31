@@ -5,17 +5,18 @@ package com.citation.core.reader
  * just leaving the app open on one page. This is what makes reading safe to reward: the receipts are
  * honest at the source, so the economy downstream needs no output cap.
  *
- * The rule: time accrues between reading-progress signals (page turns, scrolls, chapter advances),
- * but each open interval is capped at [maxGapMillis]. So a page you legitimately dwell on for four
- * minutes counts four; a page left open for thirty counts only the cap; backgrounding the reader
- * (or the screen going off) closes the interval and pauses accrual entirely. Idle time can never
- * inflate the total.
+ * The rule: time accrues between reading-progress signals (page turns, scrolls, chapter advances).
+ * A gap **within** [idleTimeoutMillis] means you were reading, so it counts in full. A **longer**
+ * silence means you stepped away (same page past the timeout): the clock **stops**, and that whole
+ * stretch counts for nothing — it is not capped-and-credited, it is voided. So a page you turn from
+ * after four minutes counts four; a page left open for thirty counts zero; backgrounding the reader
+ * (or the screen going off) pauses accrual entirely. Idle time can never earn.
  *
  * Stateful but deterministic: the clock is injected and every transition takes an explicit `now`,
  * mirroring [com.citation.core.rr.RateBudget], so the whole meter is unit-testable without a device.
  */
 class ReadingMeter(
-    val maxGapMillis: Long = DEFAULT_MAX_GAP,
+    val idleTimeoutMillis: Long = DEFAULT_IDLE_TIMEOUT,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     private var accruedMillis = 0L
@@ -68,19 +69,19 @@ class ReadingMeter(
         accruedMillis += openInterval(start, now)
     }
 
-    /** The capped length of an open interval starting at [start] (null start, or non-positive span, is zero). */
+    /**
+     * The credited length of an open interval starting at [start]. A gap within [idleTimeoutMillis]
+     * counts in full; a longer silence is idle — the clock stopped, so the whole gap counts **zero**
+     * (not capped-and-credited). A null start or non-positive span is zero.
+     */
     private fun openInterval(start: Long?, now: Long): Long {
         if (start == null) return 0
         val elapsed = now - start
-        return when {
-            elapsed <= 0 -> 0
-            elapsed > maxGapMillis -> maxGapMillis
-            else -> elapsed
-        }
+        return if (elapsed in 1..idleTimeoutMillis) elapsed else 0
     }
 
     companion object {
-        /** Five minutes: the longest a single page may count, so idle dwell can't be farmed. */
-        const val DEFAULT_MAX_GAP = 5L * 60 * 1000
+        /** Five minutes of silence with no page progress means you've stepped away — the clock stops. */
+        const val DEFAULT_IDLE_TIMEOUT = 5L * 60 * 1000
     }
 }

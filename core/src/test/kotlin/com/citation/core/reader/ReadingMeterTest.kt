@@ -9,11 +9,11 @@ class ReadingMeterTest {
 
     private val min = 60_000L
 
-    /** A meter with a 5-minute cap and a hand-driven clock (we always pass `now` explicitly). */
-    private fun meter() = ReadingMeter(maxGapMillis = 5 * min, clock = { 0L })
+    /** A meter with a 5-minute idle timeout and a hand-driven clock (we always pass `now`). */
+    private fun meter() = ReadingMeter(idleTimeoutMillis = 5 * min, clock = { 0L })
 
     @Test
-    fun activePageDwellCountsUpToTheCap() {
+    fun activePageDwellWithinTimeoutCountsInFull() {
         val m = meter()
         m.resume(now = 0)
         // Read one page for 4 minutes, then turn — the whole 4 minutes counts.
@@ -21,11 +21,23 @@ class ReadingMeterTest {
     }
 
     @Test
-    fun idleDwellIsCappedNotInflated() {
+    fun idleDwellPastTimeoutCreditsNothing() {
         val m = meter()
         m.resume(now = 0)
-        // Left open on one page for 30 minutes with no progress → capped at 5.
-        assertEquals(5 * min, m.engagedMillis(now = 30 * min))
+        // Left open on one page for 30 minutes with no progress → the clock stopped, credit zero.
+        assertEquals(0, m.engagedMillis(now = 30 * min))
+    }
+
+    @Test
+    fun boundaryExactlyAtTimeoutCountsButPastItVoids() {
+        meter().let { m ->
+            m.resume(now = 0)
+            assertEquals(5 * min, m.engagedMillis(now = 5 * min)) // exactly the timeout still counts
+        }
+        meter().let { m ->
+            m.resume(now = 0)
+            assertEquals(0, m.engagedMillis(now = 5 * min + 1)) // one ms past → voided
+        }
     }
 
     @Test
@@ -50,14 +62,24 @@ class ReadingMeterTest {
     }
 
     @Test
-    fun eachCappedGapIsIndependent() {
+    fun longIdleGapsCreditNothing() {
         val m = meter()
         m.resume(now = 0)
-        // Two long idle gaps, each capped at 5 → 10, not 60.
-        m.progress(now = 30 * min) // gap capped to 5
-        assertEquals(5 * min, m.engagedMillis(now = 30 * min))
-        val later = 60 * min
-        assertEquals(10 * min, m.engagedMillis(now = later)) // + another capped 5
+        // A page turn after a 30-minute silence: you were away, so that gap voids entirely.
+        m.progress(now = 30 * min)
+        assertEquals(0, m.engagedMillis(now = 30 * min))
+        // Another long idle stretch to the next signal — still nothing.
+        assertEquals(0, m.engagedMillis(now = 60 * min))
+    }
+
+    @Test
+    fun genuineReadingPaceCountsEveryInterval() {
+        val m = meter()
+        m.resume(now = 0)
+        // Turning pages every couple of minutes — each gap is within the timeout, all of it counts.
+        m.progress(now = 2 * min)
+        m.progress(now = 4 * min)
+        assertEquals(5 * min, m.engagedMillis(now = 5 * min)) // 2 + 2 + 1
     }
 
     @Test
