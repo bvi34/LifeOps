@@ -82,6 +82,7 @@ class CitationSkeleton(
         outbox.post(
             TelemetryPacket(
                 bookKey = ingested.book.key,
+                sourceType = ingested.book.metadata.source,
                 title = ingested.book.metadata.title,
                 minutesRead = minutes,
                 occurredAt = occurredAt

@@ -23,7 +23,7 @@ class SyncCodecTest {
 
     @Test
     fun telemetryPacketRoundTrips() {
-        val packet = TelemetryPacket(EntityKey("ER", "Book", 3), "The Test Book", 25, 1_700_000_000_000L)
+        val packet = TelemetryPacket(EntityKey("ER", "Book", 3), SourceType.ROYAL_ROAD, "The Test Book", 25, 1_700_000_000_000L)
         val decoded = SyncCodec.decodeUpPacket(SyncCodec.encodeUpPacket(packet))
         assertEquals(packet, decoded)
     }
@@ -98,8 +98,8 @@ class SyncCodecTest {
         val env = OutboundEnvelope(
             peer = "ER",
             packets = listOf(
-                Mailbox.Versioned(1L, TelemetryPacket(EntityKey("ER", "Book", 1), "A", 10, 5L)),
-                Mailbox.Versioned(2L, TelemetryPacket(null, "B", 20, 6L))
+                Mailbox.Versioned(1L, TelemetryPacket(EntityKey("ER", "Book", 1), SourceType.EPUB, "A", 10, 5L)),
+                Mailbox.Versioned(2L, TelemetryPacket(null, SourceType.OREILLY, "B", 20, 6L))
             ),
             ackedIntentVersion = 4L
         )

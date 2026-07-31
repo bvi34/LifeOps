@@ -11,6 +11,7 @@ import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
+import com.citation.core.reader.ReadingMeter
 import com.citation.core.note.NoteType
 import com.citation.core.note.TagCount
 import com.citation.core.note.Tags
@@ -110,6 +111,54 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
+    // --- Engaged-reading meter -----------------------------------------------------------------
+    // Measures only *active* reading time: it accrues between progress signals (page turns, scrolls,
+    // chapter advances), each interval capped, and pauses when the reader isn't visible. So leaving
+    // the app open on a page can't inflate the count — which is what lets reading be rewarded without
+    // an output cap. Drained to whole minutes and posted up the mailbox as telemetry.
+    private val readingMeter = ReadingMeter()
+    private var readingBookKey: String? = null
+    // Sub-minute engaged time carried across a pause/resume so brief backgrounding doesn't lose it.
+    private var readingRemainderMillis = 0L
+
+    /** Start metering engaged reading for [bookKey]; report + close any prior book's session first. */
+    private fun startReadingSession(bookKey: String?) {
+        bookKey ?: return
+        if (readingBookKey != null && readingBookKey != bookKey) endReadingSession()
+        readingBookKey = bookKey
+        readingMeter.resume()
+    }
+
+    /** A reading-progress signal (page turn / scroll / chapter advance) from any reader track. */
+    fun onReadingProgress() {
+        if (readingBookKey != null) readingMeter.progress()
+    }
+
+    /** Reader became visible again (lifecycle resume): keep accruing. */
+    fun onReaderVisible() {
+        if (readingBookKey != null) readingMeter.resume()
+    }
+
+    /** Reader went to the background (lifecycle stop): bank + report engaged time, keep the session. */
+    fun onReaderHidden() = reportReading()
+
+    /** End the current reading session (book closed): report, then clear and drop the sub-minute tail. */
+    private fun endReadingSession() {
+        reportReading()
+        readingBookKey = null
+        readingRemainderMillis = 0
+    }
+
+    /** Drain the meter to whole engaged minutes and post telemetry; carry the sub-minute remainder. */
+    private fun reportReading() {
+        val key = readingBookKey ?: return
+        readingMeter.pause()
+        val total = readingRemainderMillis + readingMeter.flushMillis()
+        readingRemainderMillis = total % 60_000L
+        val minutes = (total / 60_000L).toInt()
+        if (minutes > 0) viewModelScope.launch { repository.recordReadingTelemetry(key, minutes) }
+    }
+
     // Non-null while a Royal Road serial is open, so page turns can slide its prefetch buffer.
     private var openRrFictionId: Long? = null
 
@@ -161,6 +210,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
                 }
             }
+            startReadingSession(bookKey)
         }
     }
 
@@ -170,6 +220,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             repository.markOpened(key)
             _status.value = "Imported PDF “$title”."
             _pdfSession.value = repository.pdfSession(key)
+            startReadingSession(key)
         }
     }
 
@@ -228,6 +279,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             val key = repository.addOreillyBook(bookId, title)
             repository.markOpened(key)
             _oreillySession.value = repository.oreillySession(key)
+            startReadingSession(key)
         }
     }
 
@@ -250,6 +302,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             repository.markOpened(key)
             _oreillyCatalog.value = null
             _oreillySession.value = repository.oreillySession(key)
+            startReadingSession(key)
         }
     }
 
@@ -262,12 +315,13 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
-    fun closePdf() { _pdfSession.value = null }
+    fun closePdf() { endReadingSession(); _pdfSession.value = null }
 
-    fun closeOreilly() { _oreillySession.value = null }
+    fun closeOreilly() { endReadingSession(); _oreillySession.value = null }
 
     /** Persist the O'Reilly reader's position so the next open lands one tap from your spot. */
     fun saveOreillyPosition(location: String) {
+        onReadingProgress()
         val session = _oreillySession.value ?: return
         viewModelScope.launch { repository.saveExternalPosition(session.bookKey, location) }
     }
@@ -296,6 +350,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     _openBook.value = book
                     _chapterOrdinal.value = 0
                     _status.value = "Opened “${book.metadata.title}”."
+                    startReadingSession(book.key?.toString())
                 }
                 .onFailure { _status.value = "Couldn’t open that Royal Road story." }
         }
@@ -310,6 +365,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     }
 
     fun closeBook() {
+        endReadingSession()
         openRrFictionId = null
         _openBook.value = null
     }
@@ -330,6 +386,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     fun goToChapter(ordinal: Int) {
         val book = _openBook.value ?: return
         val target = ordinal.coerceIn(0, book.chapters.lastIndex)
+        onReadingProgress() // a chapter advance is genuine reading progress
         _chapterOrdinal.value = target
         viewModelScope.launch {
             val rr = openRrFictionId
@@ -457,6 +514,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     /** Persist the reader's live position (current chapter + in-chapter scroll offset in px). */
     fun savePosition(chapterOrdinal: Int, charOffset: Int) {
+        onReadingProgress() // scrolling/paging within a chapter is reading progress
         val key = _openBook.value?.key?.toString() ?: return
         viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset) }
     }
@@ -489,6 +547,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             openRrFictionId = result.rrFictionId
             repository.markOpened(bookKey)
             _openBook.value = result.book
+            startReadingSession(bookKey)
             val target = repository.resolveNote(note).firstOrNull { it.chapterOrdinal != null && it.state.canJump }
             _chapterOrdinal.value = target?.chapterOrdinal ?: 0
             if (target == null) {

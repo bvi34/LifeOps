@@ -266,10 +266,37 @@ offline, and importing an EPUB/PDF/RR serial runs **promotion** to adopt any wai
 captures. The Personal tab shows a **triage banner**; New has "Import Kindle notebook"; Settings gates
 the bubble behind the overlay permission.
 
+## Reading telemetry — engaged time (core built + verified)
+
+Reading is the one activity LifeOps rewards *by time*, so the time has to be honest — otherwise
+leaving the app open on a page would farm resources. The measurement is **engaged time**, in pure
+`:core` (`reader/ReadingMeter`, JVM-tested, injected clock like `RateBudget`):
+
+- Time accrues **between reading-progress signals** (page turns, scrolls, chapter advances), and each
+  open interval is **capped** (default 5 min). A page you genuinely dwell on for four minutes counts
+  four; a page left open for thirty counts only the cap; backgrounding the reader pauses accrual
+  entirely. Idle dwell can never inflate the total — which is what lets the LifeOps economy reward
+  reading with **no output cap**, because the receipts are honest at the source.
+
+`TelemetryPacket` now carries `sourceType` alongside `minutesRead`, so LifeOps can map a session to a
+category (**O'Reilly → Learning, Royal Road → Fun**) without ever holding the book. The packet has
+always ridden the sync seam; it is now **actually emitted** (it was previously only built in the
+walking skeleton).
+
+**Android wiring:** `ReaderViewModel` owns one `ReadingMeter`. A reading session starts on every open
+path (flowing / PDF / O'Reilly / Royal Road / jump-to-note) and ends on close; progress is fed from
+the existing position signals (`savePosition`, `goToChapter`, `saveOreillyPosition`, and a PDF
+page-turn effect); a single lifecycle observer in `ReaderScreen` pauses/resumes across foreground
+changes for all three tracks (guarded, so it's a no-op on the home screen). On pause/close the meter
+drains to whole engaged minutes — carrying the sub-minute remainder across brief backgrounding — and
+`CitationRepository.recordReadingTelemetry` posts a `TelemetryPacket` up the mailbox. Consuming it on
+the LifeOps side (source→category→resource at week-close) is the next, LifeOps-side phase.
+
 ## Status
 
-All seven task-list milestones plus cross-app highlight capture are implemented, and the notes layer
-now closes the loop from capture to **retrieval** — search, tags, and Markdown export. The
+All seven task-list milestones plus cross-app highlight capture are implemented; the notes layer now
+closes the loop from capture to **retrieval** — search, tags, and Markdown export — and reading now
+emits **engaged-time telemetry** (honest, idle-proof, source-tagged) up the sync seam. The
 framework-independent spine — internal model, keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes +
 degradation + retrieval, the sync seam, storage visibility, and the capture
 provenance/clustering/promotion/triage logic + Kindle notebook parser — lives in `:core` and is fully
