@@ -1,36 +1,25 @@
 plugins {
-    alias(libs.plugins.android.application)
+    // Citation is now a *library* consumed by the Operations Sandbox container app (:app).
+    // It keeps its package, reader, and ingestion; it just no longer owns a launcher or Application.
+    alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
-// Citation — a standalone reading app that ingests content, lets you read it, and pulls notes from
-// it while preserving each note's source. Its own applicationId (distinct install + icon) makes it a
-// separate app from LifeOps; the two talk only over the sync seam in :core. Everything
+// Citation — the reading surface that ingests content, lets you read it, and pulls notes from it
+// while preserving each note's source. It is hosted inside the Operations Sandbox container app
+// (:app) alongside LifeOps; the two still talk only over the sync seam in :core. Everything
 // framework-independent (content model, keys, dedup, EPUB parse, anchors, notes, sync) lives in
-// :core and is JVM-tested; this module adds Room storage, the Compose reader, and (later)
-// WorkManager ingestion jobs on top.
+// :core and is JVM-tested; this module adds Room storage, the Compose reader, and WorkManager
+// ingestion jobs on top.
 android {
     namespace = "com.citation.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.citation.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
-    }
-
-    buildTypes {
-        release {
-            isMinifyEnabled = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-        }
+        // Code shrinking is the consuming app's (:app) responsibility.
     }
 
     compileOptions {
@@ -53,6 +42,8 @@ ksp {
 
 dependencies {
     implementation(project(":core"))
+    // The Operations Sandbox backup format/engine (pure JVM). Citation supplies a BackupContributor.
+    implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

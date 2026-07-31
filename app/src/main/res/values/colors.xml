@@ -1,18 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!--
-        Icon colour tokens — mirror of CSS custom properties in assets/icon-themes.css.
-        These are static (Beacon dark palette) because the launcher icon is rendered
-        once by the OS.  In-app composables should pull colours from MaterialTheme
-        rather than these constants.
-
-        Token          Semantic               Beacon dark source
-        ───────────    ────────────────────   ──────────────────
-        icon_bg        background rect        background  #111827
-        icon_dial      ring + cardinal ticks  secondary   #9B72CF
-        icon_check     checkmark needle       tertiary    #FFB74D
-    -->
-    <color name="icon_bg">#FF111827</color>
-    <color name="icon_dial">#FF9B72CF</color>
-    <color name="icon_check">#FFFFB74D</color>
+    <color name="ic_launcher_background">#1E293B</color>
 </resources>

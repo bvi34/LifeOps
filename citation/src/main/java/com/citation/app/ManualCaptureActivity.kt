@@ -45,7 +45,7 @@ class ManualCaptureActivity : ComponentActivity() {
             finish()
             return
         }
-        val app = application as CitationApplication
+        val app = CitationApplication.get(this)
         lifecycleScope.launch {
             val message = runCatching {
                 val repo = app.repository.await()

@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
  */
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val app = applicationContext as? CitationApplication ?: return Result.success()
+        val app = CitationApplication.getOrNull() ?: return Result.success()
         return try {
             app.repository.await().sync()
             Result.success()

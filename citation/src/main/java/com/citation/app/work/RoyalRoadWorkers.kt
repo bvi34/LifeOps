@@ -24,7 +24,7 @@ import java.util.concurrent.TimeUnit
 class RrFavoritesPollWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val app = applicationContext as? CitationApplication ?: return Result.success()
+        val app = CitationApplication.getOrNull() ?: return Result.success()
         return try {
             app.repository.await().royalRoad.pollFavorites()
             Result.success()
@@ -37,7 +37,7 @@ class RrFavoritesPollWorker(context: Context, params: WorkerParameters) :
 class RrBackfillWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val app = applicationContext as? CitationApplication ?: return Result.success()
+        val app = CitationApplication.getOrNull() ?: return Result.success()
         return try {
             // Draining respects the scrape budget internally; each run makes bounded progress and
             // the plan is recomputed from cache next time (resumable).
@@ -52,7 +52,7 @@ class RrBackfillWorker(context: Context, params: WorkerParameters) :
 class RrEvictionWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
     override suspend fun doWork(): Result {
-        val app = applicationContext as? CitationApplication ?: return Result.success()
+        val app = CitationApplication.getOrNull() ?: return Result.success()
         return try {
             app.repository.await().royalRoad.runEviction()
             Result.success()
@@ -62,7 +62,7 @@ class RrEvictionWorker(context: Context, params: WorkerParameters) :
     }
 }
 
-/** Registers the periodic RR jobs. Called once from [CitationApplication.onCreate]. */
+/** Registers the periodic RR jobs. Called once from CitationApplication.start(). */
 object RoyalRoadScheduler {
     private val networkConstraint = Constraints.Builder()
         .setRequiredNetworkType(NetworkType.CONNECTED)
