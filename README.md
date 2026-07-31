@@ -198,6 +198,25 @@ snapshot, and the close path (mint next week, snapshot/settle, seed recurring) i
 
 ---
 
+## Reading rewards — design note
+
+Reading (in the **Citation** companion app) is the one activity rewarded *by time* rather than by
+task completion, so the time has to be honest: Citation measures **engaged** minutes only — a page
+left open past a short idle timeout stops the clock (see `docs/CITATION.md`) — and reports them to
+LifeOps. Those minutes earn resource points at a flat rate (**Settings → Reading rewards**: pick the
+aspect they earn into, default rate 5 pts/hour). Both reading categories — *Learning* (O'Reilly,
+owned books) and *Fun* (Royal Road) — fold into the one chosen aspect; the category split is a report
+dimension, not a second economy.
+
+The reward is minted the normal way: at week-close, engaged reading minutes logged in the week window
+become points (`util/ReadingRewards`, pure + unit-tested) and are added to the chosen aspect's
+earnings, which then flow through the existing **aspect → resource** mapping. So reading obeys every
+economy invariant — *only closed weeks emit*, and it mints an aspect's own resource rather than
+converting between resources (**non-fungibility** holds; reading is genuine effort, not a purchase).
+The rate and aspect are user settings; reading rewards are **off until an aspect is chosen**.
+
+---
+
 ## Build & run
 
 The project targets the standard Android toolchain.

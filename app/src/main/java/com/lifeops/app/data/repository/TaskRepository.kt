@@ -32,7 +32,8 @@ class TaskRepository(
     private val notificationDao: NotificationDao,
     private val notificationRepository: NotificationRepository,
     private val weekRepository: WeekRepository,
-    private val counterRepository: CounterRepository
+    private val counterRepository: CounterRepository,
+    private val preferencesRepository: PreferencesRepository
 ) {
     private val gson = Gson()
 
@@ -143,7 +144,18 @@ class TaskRepository(
             val subtaskTickCount = if (allTaskIds.isNotEmpty())
                 db.subtaskDao().getByTasks(allTaskIds).count { it.isChecked }
             else 0
-            val snapshot = buildSnapshot(weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote, subtaskTickCount)
+            // Reading rewards: engaged reading minutes logged in this week's window earn resource
+            // points into the user-chosen reading aspect (both Learning and Fun fold into it), which
+            // then flow through the normal aspect→resource mapping. Off unless an aspect is chosen.
+            val readingAspectId = preferencesRepository.readingAspectId
+            val readingPoints = if (readingAspectId != null) {
+                val minutes = db.bookDao().sumReadingMinutesBetween(week.startDate, week.endDate)
+                ReadingRewards.points(minutes, preferencesRepository.readingPointsPerHour)
+            } else 0
+            val snapshot = buildSnapshot(
+                weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote,
+                subtaskTickCount, readingAspectId, readingPoints
+            )
             weekSnapshotDao.insert(snapshot)
             weekDao.update(week.copy(isClosed = true, closedAt = now))
             applySnapshotToGameResources(snapshot)
@@ -247,7 +259,9 @@ class TaskRepository(
         aspectMeta: Map<String, Pair<String, String>>,
         selfRating: Int? = null,
         selfRatingNote: String? = null,
-        subtaskTickCount: Int = 0
+        subtaskTickCount: Int = 0,
+        readingAspectId: String? = null,
+        readingPoints: Int = 0
     ): WeekSnapshotEntity {
         // Phase 10: scoring keys off task-level completion only. Subtask checked state
         // contributes to subtaskTickCount but never modifies resource point calculations.
@@ -279,6 +293,13 @@ class TaskRepository(
             }
         }
 
+        // Reading rewards fold into the chosen aspect's earnings (see closeWeek). Kept out of the
+        // per-task loop and the Growth-ring minutes below, so reading earns resources without
+        // rewriting task history or the ring geometry.
+        if (readingAspectId != null && readingPoints > 0) {
+            aspectBreakdown[readingAspectId] = (aspectBreakdown[readingAspectId] ?: 0) + readingPoints
+        }
+
         // Growth rings: minutes per aspect = ALL logged time that week (effort is effort,
         // regardless of whether the task was completed). Seal the aspect's current name +
         // colour so the ring stays faithful if the aspect is later deleted/renamed/recoloured.
@@ -304,7 +325,7 @@ class TaskRepository(
                     (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id]) * 0.5).roundToInt()
                 else -> 0
             }
-        }
+        } + readingPoints
 
         return WeekSnapshotEntity(
             id = java.util.UUID.randomUUID().toString(),

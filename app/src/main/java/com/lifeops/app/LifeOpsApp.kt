@@ -63,7 +63,8 @@ class LifeOpsApp : Application() {
             database.notificationDao(),
             notificationRepository,
             weekRepository,
-            counterRepository
+            counterRepository,
+            preferencesRepository
         )
     }
     val runbookRepository by lazy { RunbookRepository(database) }

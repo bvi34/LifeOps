@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -166,6 +167,19 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 SleepTrackingSection(
                     enabled = state.sleepTrackingEnabled,
                     onToggle = viewModel::setSleepTrackingEnabled
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Reading rewards", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                ReadingRewardsSection(
+                    aspects = state.aspects,
+                    selectedAspectId = state.readingAspectId,
+                    pointsPerHour = state.readingPointsPerHour,
+                    onSelectAspect = viewModel::setReadingAspect,
+                    onSetPoints = viewModel::setReadingPointsPerHour
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -341,6 +355,68 @@ private val presetSwatches = mapOf(
     ThemePreset.OCEAN to Triple(Color(0xFF0277BD), Color(0xFF4FC3F7), Color(0xFF80DEEA)),
     ThemePreset.SUNSET to Triple(Color(0xFFBF360C), Color(0xFFFF7043), Color(0xFFFFCC02)),
 )
+
+/**
+ * Reading rewards: choose which aspect reading time in Citation earns into (or Off), and the flat
+ * points-per-hour rate. Both reading categories fold into the one aspect; the economy stays simple.
+ */
+@Composable
+private fun ReadingRewardsSection(
+    aspects: List<Aspect>,
+    selectedAspectId: String?,
+    pointsPerHour: Int,
+    onSelectAspect: (String?) -> Unit,
+    onSetPoints: (Int) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Engaged reading time in Citation earns resources into the aspect you pick. Off by default.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Text("Earns into", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedAspectId == null,
+                    onClick = { onSelectAspect(null) },
+                    label = { Text("Off") }
+                )
+                aspects.filter { !it.isArchived }.forEach { aspect ->
+                    FilterChip(
+                        selected = selectedAspectId == aspect.id,
+                        onClick = { onSelectAspect(aspect.id) },
+                        label = { Text(aspect.name) }
+                    )
+                }
+            }
+            if (selectedAspectId != null) {
+                Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Rate", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { onSetPoints(pointsPerHour - 1) }, enabled = pointsPerHour > 0) {
+                        Icon(Icons.Default.Remove, contentDescription = "Fewer points")
+                    }
+                    Text(
+                        "$pointsPerHour pts/hr",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    IconButton(onClick = { onSetPoints(pointsPerHour + 1) }) {
+                        Icon(Icons.Default.Add, contentDescription = "More points")
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun ThemeSection(
