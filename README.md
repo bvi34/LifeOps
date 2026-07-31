@@ -16,8 +16,9 @@ the receipts.
 > see **[docs/CITATION.md](docs/CITATION.md)**. Its framework-independent core lives in `:core`
 > (pure JVM, unit-tested); the Android reader is `:citation`.
 
-> **Operations Sandbox** is the container these apps now ship inside. It is the single installed
-> app: one launcher that opens LifeOps (the standard app) or Citation, and one place to back the
+> **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
+> single installed application and the central hub the whole suite opens through. One launcher that
+> opens LifeOps (`:lifeops`, the standard app) or Citation (`:citation`), and one place to back the
 > whole suite up into a single `.zip` and restore from it. LifeOps and Citation are library modules
 > hosted in that one process — see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The
 > backup format/engine is the pure-JVM, unit-tested `:backupkit`.
@@ -227,17 +228,17 @@ The rate and aspect are user settings; reading rewards are **off until an aspect
 
 The project targets the standard Android toolchain.
 
-**Android Studio (recommended):** open the project root; let it sync; run the `sandbox`
-configuration on a device/emulator (API 26+). The one installed app is **Operations Sandbox**;
-LifeOps and Citation open from its home screen.
+**Android Studio (recommended):** open the project root; let it sync; **Debug ▶** the default
+`app` configuration on a device/emulator (API 26+) — `:app` is the **Operations Sandbox** container
+(the only runnable app), and LifeOps and Citation open from its home screen.
 
 **Command line:** you need an Android SDK. Point the build at it via a `local.properties`
 with `sdk.dir=/path/to/Android/Sdk` (the checked-in value is a placeholder), or set
 `ANDROID_HOME`. Then:
 
 ```bash
-gradle :sandbox:assembleDebug    # build the container app's debug APK
-gradle :app:testDebugUnitTest    # run LifeOps' JVM unit tests
+gradle :app:assembleDebug        # build the Operations Sandbox container APK
+gradle :lifeops:testDebugUnitTest # run LifeOps' JVM unit tests
 gradle :backupkit:test           # run the backup format/engine tests (pure JVM, no SDK needed)
 ```
 

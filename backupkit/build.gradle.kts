@@ -6,7 +6,7 @@ plugins {
 //
 // Same discipline as :core: everything about the cross-app backup archive (the manifest model and
 // its codec, the zip layout, the streaming writer/reader, the engine that walks contributors) is
-// framework-independent and unit-testable on the JVM. The Android side (:app, :citation, :sandbox)
+// framework-independent and unit-testable on the JVM. The Android side (:app, :lifeops, :citation)
 // only supplies BackupContributor implementations that read/write real databases and files; the
 // archive mechanics live here, tested without an emulator.
 dependencies {

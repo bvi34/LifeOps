@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Weather: NWS (api.weather.gov) forecast + alert fetches. Cache-first, so the app still
+         opens and works fully offline; the network is only touched on an explicit refresh. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Sleep tracking: a foreground service keeps a live process so the screen on/off receiver
+         (which the OS only delivers to a runtime-registered receiver) can capture activity overnight.
+         SPECIAL_USE — no standard FGS type fits "infer sleep from on-device screen/charging activity". -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- Wellness: estimate sleep from screen-time (last phone use → wake). Special access the user
+         grants once in Settings; the sleep prompt degrades to hand-entered duration without it. -->
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- LifeOps is a library module now: the application element carries no app-level attributes
+         (name/icon/theme/label/backup rules live on the :app host). Only LifeOps' own
+         components are declared here for the manifest merger to fold into the sandbox app. -->
+    <application>
+
+        <!-- No longer a launcher: the Operations Sandbox home opens this explicitly. The theme,
+             which used to be inherited from the application, is set on the activity so LifeOps
+             keeps its own launch look. The SEND filter (JSON import share target) stays. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.LifeOps"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Share sheet receiver for JSON import -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.lifeops.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/lifeops_file_paths" />
+        </provider>
+
+        <receiver
+            android:name=".widget.LifeOpsWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/life_ops_widget_info" />
+        </receiver>
+
+        <!-- Keeps the process alive so the screen/charging receiver can capture activity overnight. -->
+        <service
+            android:name=".service.SleepTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="sleep_activity_tracking" />
+        </service>
+
+        <!-- Restart sleep tracking after a reboot (the process and its runtime receiver don't survive one). -->
+        <receiver
+            android:name=".receiver.SleepBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Fires busy-block reminders (exact alarms target it by component) and re-arms them after a
+             reboot/app-update, when the OS clears all pending alarms. -->
+        <receiver
+            android:name=".receiver.BusyBlockReminderReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+    </application>
+
+</manifest>

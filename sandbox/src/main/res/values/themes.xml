@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Launch/base window theme only; the real (dark-aware) UI comes from Compose (SandboxTheme).
-         A framework parent keeps the container free of a Material XML theme dependency. -->
-    <style name="Theme.Sandbox" parent="android:Theme.Material.Light.NoActionBar" />
-</resources>

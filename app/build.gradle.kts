@@ -1,21 +1,33 @@
 plugins {
-    // LifeOps is now a *library* consumed by the Operations Sandbox container app (:sandbox),
-    // not an installable application of its own. It keeps its package/namespace and every screen;
-    // it just no longer owns the launcher, applicationId, or Application class.
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.ksp)
 }
 
+// :app — the Operations Sandbox container. This is the single installable application (and the
+// default Android Studio run target); it hosts LifeOps (:lifeops) and Citation (:citation) as
+// library modules in one process with shared storage, which is what makes a true cross-app
+// "back up everything into one zip / restore from it" possible without any inter-process plumbing.
+// The home screen picks an app to open and drives backup/restore. New suite apps plug in here.
 android {
-    namespace = "com.lifeops.app"
+    namespace = "com.operations.sandbox"
     compileSdk = 35
 
     defaultConfig {
+        applicationId = "com.operations.sandbox"
         minSdk = 26
-        // Code shrinking is the consuming app's (:sandbox) responsibility, so no
-        // applicationId/version/minify here.
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0"
+    }
+
+    buildTypes {
+        release {
+            // Code shrinking is off for now: the merged LifeOps+Citation code needs a vetted
+            // keep-rule set (Room/Gson/Glance/WorkManager reflection) before minify can be trusted.
+            // Left as a deliberate follow-up so the first container build is verifiable end-to-end.
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
@@ -32,38 +44,24 @@ android {
     }
 }
 
-ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
-}
-
 dependencies {
-    // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
+    // The two hosted apps (now libraries) and the shared backup engine.
+    implementation(project(":lifeops"))
+    implementation(project(":citation"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.navigation.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-    implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.gson)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.androidx.glance)
-    implementation(libs.androidx.glance.appwidget)
     debugImplementation(libs.androidx.ui.tooling)
 
-    implementation("sh.calvin.reorderable:reorderable-android:2.4.0")
-
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }

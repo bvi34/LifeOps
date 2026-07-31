@@ -11,7 +11,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Citation is a library module now: no app-level attributes here (name/icon/theme/label live
-         on the :sandbox host). Only Citation's own components are declared for the merger. -->
+         on the :app host). Only Citation's own components are declared for the merger. -->
     <application>
 
         <!-- No longer a launcher: the Operations Sandbox home opens this explicitly. The theme,

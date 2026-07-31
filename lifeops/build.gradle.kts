@@ -1,25 +1,21 @@
 plugins {
-    // Citation is now a *library* consumed by the Operations Sandbox container app (:app).
-    // It keeps its package, reader, and ingestion; it just no longer owns a launcher or Application.
+    // LifeOps is now a *library* consumed by the Operations Sandbox container app (:app),
+    // not an installable application of its own. It keeps its package/namespace and every screen;
+    // it just no longer owns the launcher, applicationId, or Application class.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
 
-// Citation — the reading surface that ingests content, lets you read it, and pulls notes from it
-// while preserving each note's source. It is hosted inside the Operations Sandbox container app
-// (:app) alongside LifeOps; the two still talk only over the sync seam in :core. Everything
-// framework-independent (content model, keys, dedup, EPUB parse, anchors, notes, sync) lives in
-// :core and is JVM-tested; this module adds Room storage, the Compose reader, and WorkManager
-// ingestion jobs on top.
 android {
-    namespace = "com.citation.app"
+    namespace = "com.lifeops.app"
     compileSdk = 35
 
     defaultConfig {
         minSdk = 26
-        // Code shrinking is the consuming app's (:app) responsibility.
+        // Code shrinking is the consuming app's (:app) responsibility, so no
+        // applicationId/version/minify here.
     }
 
     compileOptions {
@@ -41,8 +37,7 @@ ksp {
 }
 
 dependencies {
-    implementation(project(":core"))
-    // The Operations Sandbox backup format/engine (pure JVM). Citation supplies a BackupContributor.
+    // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)
@@ -61,11 +56,13 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
-    // Encrypted-at-rest storage (Android Keystore) for the library card + PIN.
-    implementation(libs.androidx.security.crypto)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.glance)
+    implementation(libs.androidx.glance.appwidget)
     debugImplementation(libs.androidx.ui.tooling)
+
+    implementation("sh.calvin.reorderable:reorderable-android:2.4.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")

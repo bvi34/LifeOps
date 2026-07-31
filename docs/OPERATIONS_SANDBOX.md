@@ -15,20 +15,22 @@ The GUI and the backups are unified: one hub, one archive.
 ## Why a container (and what changed)
 
 LifeOps and Citation used to be two separately-installed apps. They are now **library modules**
-hosted inside one application (`:sandbox`, applicationId `com.operations.sandbox`). One process, one
-private storage area. That single fact is what makes an honest cross-app "back up everything, then
-restore it" possible **without any inter-process plumbing** — the container can read both apps'
-databases and files directly.
+hosted inside one application: **`:app`** (applicationId `com.operations.sandbox`), which is the
+Operations Sandbox container and the default Android Studio run target. One process, one private
+storage area. That single fact is what makes an honest cross-app "back up everything, then restore
+it" possible **without any inter-process plumbing** — the container can read both apps' databases
+and files directly. `:app` is deliberately the central hub: future suite apps plug into it.
 
-What this cost, module by module:
+What this cost, module by module (LifeOps moved out of `:app` into `:lifeops` so the container can
+own the `:app` name):
 
-| Module | Before | After |
-|---|---|---|
-| `:app` (LifeOps) | `com.android.application`, own launcher + `Application` | `com.android.library`; no launcher; `LifeOpsApp` is a runtime holder |
-| `:citation` | `com.android.application`, own launcher + `Application` | `com.android.library`; no launcher; `CitationApplication` is a runtime holder |
-| `:sandbox` | — | **new** `com.android.application`: the launcher, the home GUI, the backup center, the single `Application` |
-| `:backupkit` | — | **new** pure-JVM library: the archive format + engine, unit-tested |
-| `:core` | Citation's JVM spine | unchanged |
+| Module | Directory | Before | After |
+|---|---|---|---|
+| `:app` | `app/` | LifeOps' code | **the container**: `com.android.application`, the launcher, home GUI, backup center, the single `Application` |
+| `:lifeops` | `lifeops/` | — (was `:app`) | LifeOps as `com.android.library`; no launcher; `LifeOpsApp` is a runtime holder |
+| `:citation` | `citation/` | `com.android.application`, own launcher + `Application` | `com.android.library`; no launcher; `CitationApplication` is a runtime holder |
+| `:backupkit` | `backupkit/` | — | **new** pure-JVM library: the archive format + engine, unit-tested |
+| `:core` | `core/` | Citation's JVM spine | unchanged |
 
 ### The single Application
 
@@ -49,7 +51,7 @@ call `getOrNull()` so they still degrade gracefully if they fire before wiring.
 Merging two feature libraries into one app means their resources merge too. Collisions were handled
 deliberately:
 
-- `app_name`, the launcher icons (`ic_launcher*`, `ic_launcher_foreground`) — the `:sandbox`
+- `app_name`, the launcher icons (`ic_launcher*`, `ic_launcher_foreground`) — the `:app`
   application module defines its own, which **override** the library duplicates (app-module wins),
   so there is no duplicate-resource error and the launcher identity is unambiguously the container.
 - `file_paths.xml` — renamed per module (`lifeops_file_paths` / `citation_file_paths`) because a
@@ -112,7 +114,7 @@ interface BackupContributor {
 
 ---
 
-## The GUI (`:sandbox`)
+## The GUI (`:app`)
 
 `SandboxActivity` is a single Compose screen (`BackupCenter` does the work):
 
@@ -123,7 +125,7 @@ interface BackupContributor {
   the apps that are both selected and present in the archive are restored.
 
 Adding a third hosted app later is authoring, not engineering: add an `AppId`, ship a
-`BackupContributor`, and register it in `BackupCenter` (and add the module as a `:sandbox` dependency).
+`BackupContributor`, and register it in `BackupCenter` (and add the module as an `:app` dependency).
 
 ---
 
@@ -134,6 +136,6 @@ round-trip, backup→restore payload fidelity across apps, selection, skipping u
 the no-manifest case, and the zip-slip guard. The Android glue (contributors, GUI, the module
 surgery) is verified by building and running the container app.
 
-> Note: code shrinking (`minifyEnabled`) is off in `:sandbox`'s release build for now — the merged
+> Note: code shrinking (`minifyEnabled`) is off in `:app`'s release build for now — the merged
 > LifeOps + Citation code needs a vetted keep-rule set (Room/Gson/Glance/WorkManager reflection)
 > before minify can be trusted. It's a deliberate follow-up.

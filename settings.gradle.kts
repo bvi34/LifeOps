@@ -16,10 +16,11 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "LifeOps"
+// :app is the Operations Sandbox container — the single installable application and the central
+// hub every other app opens through. LifeOps and Citation are library modules it hosts; the shared,
+// JVM-tested backup format/engine is `:backupkit`.
 include(":app")
-include(":core")
+include(":lifeops")
 include(":citation")
-// Operations Sandbox: the single container app that hosts LifeOps + Citation and drives
-// cross-app backup/restore. `:backupkit` is its framework-independent, JVM-tested spine.
+include(":core")
 include(":backupkit")
-include(":sandbox")
