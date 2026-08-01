@@ -80,6 +80,10 @@ class MainActivity : ComponentActivity() {
 
     private var showNotificationDeniedDialog by mutableStateOf(false)
 
+    // Destination requested by a deep-link intent (e.g. the sleep-tracking notification asking to
+    // open Settings). Consumed by the nav host once it has navigated.
+    private var deepLinkDestination by mutableStateOf<String?>(null)
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (!granted) showNotificationDeniedDialog = true }
@@ -112,13 +116,19 @@ class MainActivity : ComponentActivity() {
         val app = LifeOpsApp.get(this)
         val sharedText = intent.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
             ?.getStringExtra(Intent.EXTRA_TEXT)
+        deepLinkDestination = intent.getStringExtra(EXTRA_OPEN_DESTINATION)
 
         setContent {
             val themePreset by app.preferencesRepository.themePresetFlow.collectAsStateWithLifecycle()
             val isDarkMode by app.preferencesRepository.darkModeFlow.collectAsStateWithLifecycle()
             val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
             LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
-                LifeOpsNavHost(app, sharedText)
+                LifeOpsNavHost(
+                    app,
+                    sharedText,
+                    openDestination = deepLinkDestination,
+                    onDestinationConsumed = { deepLinkDestination = null }
+                )
                 // Above the nav content so an energy/sensory check-in or the morning sleep prompt
                 // can surface on whatever screen the app opened to.
                 com.lifeops.app.ui.screens.wellness.WellnessPromptHost(
@@ -145,11 +155,42 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    // The sleep-tracking notification opens with FLAG_ACTIVITY_CLEAR_TOP, so a running instance is
+    // reused and the new intent arrives here rather than through onCreate — pick up its destination.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(EXTRA_OPEN_DESTINATION)?.let { deepLinkDestination = it }
+    }
+
+    companion object {
+        /** Intent extra naming a nav destination to open on launch (see [DEST_SETTINGS]). */
+        const val EXTRA_OPEN_DESTINATION = "com.lifeops.app.extra.OPEN_DESTINATION"
+
+        /** [EXTRA_OPEN_DESTINATION] value that opens the Settings screen. */
+        const val DEST_SETTINGS = "settings"
+    }
 }
 
 @Composable
-fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
+fun LifeOpsNavHost(
+    app: LifeOpsApp,
+    sharedText: String? = null,
+    openDestination: String? = null,
+    onDestinationConsumed: () -> Unit = {}
+) {
     val navController = rememberNavController()
+
+    // Honour a deep-link destination (e.g. the sleep-tracking notification opening Settings) once the
+    // nav graph is in place, then clear it so it doesn't re-fire on recomposition/config change.
+    LaunchedEffect(openDestination) {
+        when (openDestination) {
+            MainActivity.DEST_SETTINGS ->
+                navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+        }
+        if (openDestination != null) onDestinationConsumed()
+    }
     // One factory shared by Settings and the Planning management screens (projects,
     // runbooks, templates, cost resources). Each destination still gets its own
     // ViewModel instance scoped to its back-stack entry.
