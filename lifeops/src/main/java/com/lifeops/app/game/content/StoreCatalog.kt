@@ -162,18 +162,20 @@ object StoreCatalog {
         ),
     )
 
-    // --- Equipment (COMBAT_EQUIPMENT, §5). Reads TURRET_COUNT; the engine deploys that many. ---------
-    private val SENTRY_ARRAY = Item.ArtifactItem(
-        id = "sentry_array", category = Category.EQUIPMENT,
+    // --- Equipment (COMBAT_EQUIPMENT, §5). Reads OUTPOST_COUNT; the engine plants that many permanent
+    // Sentry+Barricade emplacements near the player. Distinct from the always-available Turret artifact:
+    // the Turret is mobile fire-support you draft for free; the Outpost is a lasting strongpoint you buy. --
+    private val OUTPOST = Item.ArtifactItem(
+        id = "outpost", category = Category.EQUIPMENT,
         modifier = Modifier(
-            id = "sentry_array", name = "Sentry Array",
-            description = "Rank 1 deploys an auto-turret; later ranks roll a random turret upgrade.",
+            id = "outpost", name = "Outpost",
+            description = "Rank 1 plants a permanent Sentry + Barricade emplacement near you; later ranks roll a random upgrade that buffs your whole defensive line.",
             attachesTo = AttachTarget.ENTITY, maxRank = 4,
             rankContributions = listOf(
-                StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 1f), // rank 1: the turret itself
-                StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // ranks 2-4: a rolled
-                StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // equipment upgrade,
-                StatContribution(Stat.TURRET_COUNT, Scope.AUTO, Op.FLAT, 0f), // not a fixed row.
+                StatContribution(Stat.OUTPOST_COUNT, Scope.GLOBAL, Op.FLAT, 1f), // rank 1: the emplacement
+                StatContribution(Stat.OUTPOST_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // ranks 2-4: a rolled
+                StatContribution(Stat.OUTPOST_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // upgrade from
+                StatContribution(Stat.OUTPOST_COUNT, Scope.GLOBAL, Op.FLAT, 0f), // EquipmentUpgrades.OUTPOST.
             ),
             category = ArtifactCategory.COMBAT_EQUIPMENT,
         ),
@@ -244,7 +246,7 @@ object StoreCatalog {
         RAPID_FIRE, MUZZLE_VELOCITY, GUNSLINGER, PREDATOR, QUARTERMASTER,
         PENETRATION, RICOCHET, EXPLOSIVE_ROUNDS,
         // Equipment (100)
-        SENTRY_ARRAY, MINES, DECOY,
+        OUTPOST, MINES, DECOY,
         // Guns (150)
         SMG, HAND_CANNON,
     )

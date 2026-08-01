@@ -57,11 +57,27 @@ object EquipmentUpgrades {
             StatContribution(Stat.DECOY_BLAST_RADIUS, Scope.GLOBAL, Op.FLAT, 55f)),
     )
 
+    /** Outpost pool — the emplacement buffs the *whole* defensive line, so these are GLOBAL and read
+     *  by every static Sentry / Barricade you own (gold-built included). +1 outpost plants another
+     *  emplacement; the rest lift sentry fire and arm the wall's thorns. Disjoint from the turret's
+     *  AUTO-scope pool, so an Outpost roll never bleeds onto the auto-turret and vice-versa. */
+    val OUTPOST: List<Upgrade> = listOf(
+        Upgrade("o_count", "+1 outpost",
+            StatContribution(Stat.OUTPOST_COUNT, Scope.GLOBAL, Op.FLAT, 1f)),
+        Upgrade("o_sentry_damage", "+20% sentry damage",
+            StatContribution(Stat.SENTRY_DAMAGE, Scope.GLOBAL, Op.ADD_PERCENT, 0.20f)),
+        Upgrade("o_sentry_firerate", "+20% sentry fire rate",
+            StatContribution(Stat.SENTRY_FIRE_RATE, Scope.GLOBAL, Op.ADD_PERCENT, 0.20f)),
+        Upgrade("o_thorns", "+10 barricade thorns",
+            StatContribution(Stat.BARRICADE_THORNS, Scope.GLOBAL, Op.FLAT, 10f)),
+    )
+
     /** The pool an equipment artifact rolls from, by its modifier id. Empty for non-equipment. */
     fun poolFor(equipmentId: String): List<Upgrade> = when (equipmentId) {
-        "turret", "sentry_array" -> TURRET
+        "turret" -> TURRET
         "mines" -> MINES
         "decoy" -> DECOY
+        "outpost" -> OUTPOST
         else -> emptyList()
     }
 }

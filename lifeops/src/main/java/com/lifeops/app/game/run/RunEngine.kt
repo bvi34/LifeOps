@@ -92,6 +92,8 @@ class RunEngine(
     private var mineDeployTimer = 0f
     /** Cooldown between decoy deployments, so the Decoy equipment replants them as they're torn down. */
     private var decoyDeployTimer = 0f
+    /** Cooldown between Outpost deployments — permanent emplacements drip in slowly, one at a time. */
+    private var outpostDeployTimer = 0f
 
     /** Hosts every enemy-modifying decision for this run (DESIGN.md §8): challenge-mode modifiers,
      *  remap tables, and per-enemy artifacts. Standard runs install [ChallengeMode.NONE]. */
@@ -174,6 +176,7 @@ class RunEngine(
         updateArtifactTurrets(clamped)
         updateMines(clamped)
         updateDecoys(clamped)
+        updateOutpost(clamped)
         updateStructures(clamped)
         moveProjectiles(clamped)
         resolveEnemyProjectileBlocks()
@@ -392,6 +395,17 @@ class RunEngine(
         e.attackCooldown = ATTACK_INTERVAL
         s.hp -= e.type.contactHits.toFloat() // durability is in hits; a blow removes contactHits
         bus.emit(GameEvent.OnHit(e.id, s.id, e.type.contactHits.toFloat(), false))
+        // A reinforced wall (Outpost's BARRICADE_THORNS upgrade) bites back at whatever strikes it —
+        // flat damage on every blow, routed through the resolver like any other hit (DESIGN.md §9).
+        if (s.type == StructureType.BARRICADE) {
+            val thorns = stats.resolve(Stat.BARRICADE_THORNS)
+            if (thorns > 0f) resolver.resolve {
+                e.health -= thorns
+                e.hitFlash = HIT_FLASH_SECONDS
+                bus.emit(GameEvent.OnHit(PLAYER_ID, e.id, thorns, false))
+                if (!e.alive) killEnemy(e)
+            }
+        }
     }
 
     /** Ranged enemies (Spitter) fire bursts at the player: a few quick shots, then a long recovery. */
@@ -427,6 +441,10 @@ class RunEngine(
         val autoFireRate = turretStats.resolve(Stat.FIRE_RATE, Scope.AUTO).coerceAtLeast(0.1f)
         val autoSpeed = turretStats.resolve(Stat.PROJECTILE_SPEED, Scope.AUTO)
         val autoProjectiles = turretStats.resolve(Stat.PROJECTILES, Scope.AUTO).toInt().coerceAtLeast(1)
+        // Static Sentries fire on their own fixed type stats, lifted by the Outpost's line-wide
+        // buffs (base 1.0 multipliers, so no Outpost owned = unchanged) — gold-built Sentries included.
+        val sentryDamageMult = stats.resolve(Stat.SENTRY_DAMAGE)
+        val sentryFireRateMult = stats.resolve(Stat.SENTRY_FIRE_RATE)
         val it = structures.iterator()
         while (it.hasNext()) {
             val s = it.next()
@@ -443,9 +461,9 @@ class RunEngine(
                 continue
             }
             if (!s.type.isTurret) continue
-            val damage = if (s.artifactTurret) autoDamage else s.type.damage
+            val damage = if (s.artifactTurret) autoDamage else s.type.damage * sentryDamageMult
             val range = if (s.artifactTurret) autoRange else s.type.range
-            val fireRate = if (s.artifactTurret) autoFireRate else s.type.fireRate.coerceAtLeast(0.1f)
+            val fireRate = if (s.artifactTurret) autoFireRate else (s.type.fireRate * sentryFireRateMult).coerceAtLeast(0.1f)
             val speed = if (s.artifactTurret) autoSpeed else s.type.projectileSpeed
             // Only artifact turrets gain extra projectiles (from a rolled upgrade); Sentries fire one.
             val proj = if (s.artifactTurret) autoProjectiles else 1
@@ -578,6 +596,60 @@ class RunEngine(
         structures.add(s)
         occupancy[cellKey(col, row)] = s
         return true
+    }
+
+    /**
+     * The Outpost equipment (DESIGN.md §9): keep [Stat.OUTPOST_COUNT] permanent emplacements planted
+     * near the player — each a static Sentry with a Barricade walled in behind it (barricade | sentry
+     * | player). Unlike the auto-turret these never expire, so an Outpost seeds lasting strongpoints
+     * as you roam; they drip in one at a time on a slow cooldown. Only the engine's own emplacements
+     * count toward the target, so gold-built Sentries never suppress deployment.
+     */
+    private fun updateOutpost(dt: Float) {
+        val desired = stats.resolve(Stat.OUTPOST_COUNT).toInt()
+        if (desired <= 0) return
+        if (outpostDeployTimer > 0f) outpostDeployTimer -= dt
+        // One Sentry anchors each emplacement; the paired Barricade rides along and isn't tallied.
+        val current = structures.count { it.fromOutpost && it.type == StructureType.SENTRY }
+        if (current < desired && outpostDeployTimer <= 0f) {
+            if (deployOutpost()) outpostDeployTimer = OUTPOST_DEPLOY_INTERVAL
+        }
+    }
+
+    /**
+     * Plant one permanent Outpost: a Sentry at the nearest free cell to the player, and a Barricade one
+     * cell beyond it — continuing the line away from the player, so it walls the emplacement's outer
+     * face (barricade | sentry | player). If that cell is taken the Sentry still stands alone. Returns
+     * whether the Sentry placed.
+     */
+    private fun deployOutpost(): Boolean {
+        val (scol, srow) = freeCellNearPlayer() ?: return false
+        plantOutpostStructure(StructureType.SENTRY, scol, srow)
+        // Step one more cell along the player→sentry direction for the Barricade's cell.
+        val bcol = scol + (scol - colOf(player.pos.x)).coerceIn(-1, 1)
+        val brow = srow + (srow - rowOf(player.pos.y)).coerceIn(-1, 1)
+        if ((bcol != scol || brow != srow) && isFreeCell(bcol, brow)) {
+            plantOutpostStructure(StructureType.BARRICADE, bcol, brow)
+        }
+        return true
+    }
+
+    /** Add a permanent, engine-owned Outpost structure of [type] to the grid (no gold cost). */
+    private fun plantOutpostStructure(type: StructureType, col: Int, row: Int) {
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        val s = Structure(
+            id = nextId++, type = type, col = col, row = row, pos = center,
+            hp = type.maxHp, maxHp = type.maxHp, fromOutpost = true,
+        )
+        structures.add(s)
+        occupancy[cellKey(col, row)] = s
+    }
+
+    /** Whether [col],[row] is an in-arena grid cell not already occupied by a structure. */
+    private fun isFreeCell(col: Int, row: Int): Boolean {
+        if (occupancy.containsKey(cellKey(col, row))) return false
+        val center = Vec2((col + 0.5f) * arena.cellSize, (row + 0.5f) * arena.cellSize)
+        return arena.contains(center)
     }
 
     /** Search grid cells outward from the player's cell for the first free, in-arena, non-player cell. */
@@ -1345,6 +1417,7 @@ class RunEngine(
         const val REVIVE_CLEAR_RADIUS = 220f // enemies/fire cleared around the player on revive (§7)
         const val ATTACK_INTERVAL = 0.6f   // seconds between an enemy's blows on a structure
         const val TURRET_DEPLOY_INTERVAL = 1.5f // seconds between auto-turret deployments
+        const val OUTPOST_DEPLOY_INTERVAL = 12f // seconds between Outpost emplacements — permanent, so slow
         const val MINE_DEPLOY_INTERVAL = 1.4f   // seconds between mine deployments (§9)
         const val MINE_ARM_TIME = 0.6f          // seconds before a sown mine can detonate
         const val MINE_MIN_DIST = 45f           // ring around the player a mine is sown within

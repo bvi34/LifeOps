@@ -54,6 +54,16 @@ enum class Stat {
     DECOY_RANGE,        // lure radius: enemies beyond this from the player target a decoy
     DECOY_BLAST_RADIUS, // blast radius when a decoy is destroyed (0 = no death blast)
 
+    // Outpost equipment (DESIGN.md §9). A permanent emplacement — a static Sentry with a Barricade
+    // walled in behind it — the engine keeps OUTPOST_COUNT of planted near the player. Its rolled
+    // upgrades lift the *whole* defensive line: SENTRY_DAMAGE / SENTRY_FIRE_RATE are multipliers
+    // (base 1.0) read at fire time by every static Sentry (gold-built ones included), and
+    // BARRICADE_THORNS is flat retaliation damage a wall deals to whatever strikes it.
+    OUTPOST_COUNT,      // concurrent permanent outposts (Sentry + Barricade) kept deployed
+    SENTRY_DAMAGE,      // multiplier on every static Sentry's shot damage (base 1.0)
+    SENTRY_FIRE_RATE,   // multiplier on every static Sentry's fire rate (base 1.0)
+    BARRICADE_THORNS,   // flat damage a Barricade deals back to an enemy that strikes it (0 = none)
+
     // Director-scoped stats (DESIGN.md §8). Inert on the player/enemies — only the run's Director
     // reads them. Remap tables feed player stats into these; challenge-mode modifiers set them
     // directly. Adding a challenge variant is authoring these values, not writing engine code.
@@ -148,6 +158,10 @@ class StatBlock(private val base: Map<Stat, Float> = emptyMap()) {
             Stat.DECOY_HP to 5f,
             Stat.DECOY_RANGE to 220f,
             Stat.DECOY_BLAST_RADIUS to 0f,
+            Stat.OUTPOST_COUNT to 0f,
+            Stat.SENTRY_DAMAGE to 1f,
+            Stat.SENTRY_FIRE_RATE to 1f,
+            Stat.BARRICADE_THORNS to 0f,
             Stat.SPAWN_MULT to 1f,
             Stat.ENEMY_HP_MULT to 1f,
             Stat.ENEMY_SPEED_MULT to 1f,

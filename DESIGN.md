@@ -358,6 +358,19 @@ rolls +count / +durability / +lure range / detonate-on-death. A targeted
 non-blocking structure is attacked on reach (it can't be walked-through-and-hit
 like a wall), so a decoy only takes damage from enemies that *chose* it.
 
+**The Outpost.** The fourth equipment plants a *permanent* strongpoint rather than
+mobile support, so it complements the always-drafted **Turret** instead of
+duplicating it. Rank 1 grants `OUTPOST_COUNT`; the engine keeps that many
+emplacements planted near the player, each a static `StructureType.SENTRY` with a
+`StructureType.BARRICADE` walled in one cell beyond it (barricade | sentry |
+player), and — unlike the auto-turret — they never expire. Its pool
+(`EquipmentUpgrades.OUTPOST`) is `GLOBAL`-scoped because it buffs the whole
+defensive line, not just its own emplacements: +1 outpost, `SENTRY_DAMAGE` /
+`SENTRY_FIRE_RATE` multipliers read at fire time by *every* static Sentry, and
+`BARRICADE_THORNS` flat retaliation every Barricade deals to whatever strikes it
+(gold-built Sentries and Barricades included). The engine tallies only its own
+emplacements (`fromOutpost`), so buying gold defences never suppresses deployment.
+
 ---
 
 ## 10. Build order
