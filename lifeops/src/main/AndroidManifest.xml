@@ -45,7 +45,7 @@
         </activity>
 
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".LifeOpsFileProvider"
             android:authorities="${applicationId}.lifeops.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
