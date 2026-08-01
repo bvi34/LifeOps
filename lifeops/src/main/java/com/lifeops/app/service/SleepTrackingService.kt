@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.lifeops.app.LifeOpsApp
 import com.lifeops.app.MainActivity
 import com.lifeops.app.receiver.PhoneActivityReceiver
 
@@ -37,6 +38,14 @@ class SleepTrackingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // The "Turn off" notification action routes back here — honour the user's preference and
+        // shut the tracker down instead of re-asserting foreground.
+        if (intent?.action == ACTION_STOP) {
+            LifeOpsApp.getOrNull()?.preferencesRepository?.sleepTrackingEnabled = false
+            ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         // Re-assert foreground on restart; registration already happened in onCreate.
         startInForeground()
         return START_STICKY
@@ -70,20 +79,35 @@ class SleepTrackingService : Service() {
             NotificationChannel(CHANNEL_ID, "Sleep tracking", NotificationManager.IMPORTANCE_MIN)
                 .apply { description = "Keeps sleep tracking running in the background." }
         )
+        // Tapping the notification lands on the Sleep tracking setting so it's actually actionable —
+        // rather than the generic home screen, which left the notification feeling inert.
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra(MainActivity.EXTRA_OPEN_DESTINATION, MainActivity.DEST_SETTINGS)
             },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        // "Turn off" action: routes to onStartCommand, which flips the preference and stops tracking.
+        val turnOff = PendingIntent.getService(
+            this, 1,
+            Intent(this, SleepTrackingService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_lock_idle_low_battery)
-            .setContentTitle("Sleep tracking active")
-            .setContentText("Recording screen & charging activity to estimate your sleep.")
+            .setContentTitle("Sleep tracking on")
+            .setContentText("Runs quietly in the background. You'll get a sleep report in the morning.")
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
+            // No timestamp — the elapsed "when" read like a live counter, as if a sleep session had
+            // already started while the user was still awake. This is passive background capture.
+            .setShowWhen(false)
+            // Never re-alert when the service is re-posted on process restart (launch/reboot).
+            .setOnlyAlertOnce(true)
             .setContentIntent(open)
+            .addAction(0, "Turn off", turnOff)
             .build()
 
         // The specialUse FGS type (and its matching permission) only exist on API 34+; on older
@@ -99,6 +123,9 @@ class SleepTrackingService : Service() {
     companion object {
         private const val CHANNEL_ID = "lifeops_sleep_tracking"
         private const val NOTIF_ID = 88100
+
+        /** Intent action for the notification's "Turn off" button: stops tracking and clears the pref. */
+        private const val ACTION_STOP = "com.lifeops.app.action.STOP_SLEEP_TRACKING"
 
         /** Start the tracking service (foreground). Safe to call repeatedly. */
         fun start(context: Context) {
