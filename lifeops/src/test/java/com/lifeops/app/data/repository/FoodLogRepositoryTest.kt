@@ -29,6 +29,8 @@ class FoodLogRepositoryTest {
             entries.firstOrNull { it.weeklyMenuItemId == weeklyMenuItemId }
         override suspend fun delete(id: String) { entries.removeAll { it.id == id } }
         override suspend fun getRecent(limit: Int): List<FoodLogEntryEntity> = entries.takeLast(limit)
+        override suspend fun getSince(startIso: String): List<FoodLogEntryEntity> =
+            entries.filter { it.loggedAt >= startIso }
         override fun observeByDateRange(startIso: String, endIso: String): Flow<List<FoodLogEntryEntity>> =
             flowOf(entries.filter { it.loggedAt >= startIso && it.loggedAt < endIso })
         override suspend fun getRecentFoodItems(limit: Int): List<FoodItemEntity> = recentFoodItems.take(limit)
