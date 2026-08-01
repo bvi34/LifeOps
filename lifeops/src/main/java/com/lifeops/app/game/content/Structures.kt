@@ -13,6 +13,10 @@ package com.lifeops.app.game.content
  *   auto-deployed near the player on a cooldown with a limited TTL, then expiring. Non-blocking
  *   fire support; its stats are the turret base rows boosted by AUTO-scope artifacts.
  *
+ * The **Outpost** shop equipment (§9) plants permanent Sentry + Barricade pairs near the player from
+ * the engine, so both also arrive engine-owned (no gold cost); its upgrades lift every Sentry/Barricade
+ * you own (SENTRY_DAMAGE / SENTRY_FIRE_RATE / BARRICADE_THORNS), gold-built ones included.
+ *
  * Adding a defense is a row.
  */
 enum class StructureType(

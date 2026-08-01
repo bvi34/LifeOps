@@ -173,6 +173,9 @@ class Structure(
     var aim: Vec2 = Vec2(1f, 0f),
     /** True for engine-deployed auto-turrets (the Turret artifact); false for player-placed defenses. */
     val artifactTurret: Boolean = false,
+    /** True for the Sentry/Barricade the Outpost equipment plants (vs. a gold-built one), so the engine
+     *  counts only its own emplacements when maintaining [Stat.OUTPOST_COUNT]. */
+    val fromOutpost: Boolean = false,
     /** Seconds of life left. [Float.POSITIVE_INFINITY] for permanent placed defenses; finite for
      *  auto-turrets, which expire when it runs out (DESIGN.md §4 — limited TTL). */
     var ttl: Float = Float.POSITIVE_INFINITY,
