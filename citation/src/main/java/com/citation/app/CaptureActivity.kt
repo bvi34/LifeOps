@@ -53,6 +53,16 @@ class CaptureActivity : ComponentActivity() {
                 return "Imported $count Kindle highlight${if (count == 1) "" else "s"}."
             }
         }
+        // Selected from *inside our own reader* (the hosted read-in-place WebView). The capturing app is
+        // this very container, so the provenance ladder has nothing but our own package to go on and
+        // would file the note under the app name. Instead, file it against the book actually open in the
+        // reader — real source + the reader's saved position — so it reports where it came from. Falls
+        // through to the normal ladder when no read-in-place reader is open.
+        if (isSelfOrigin()) {
+            repo.captureInOpenReader(quote = text)?.let { note ->
+                return "Saved to Citation — “${note.source.title.take(40)}”."
+            }
+        }
         val url = firstUrlIn(text)
         val pkg = referrerPackage()
         val raw = RawCapture(
@@ -85,6 +95,14 @@ class CaptureActivity : ComponentActivity() {
     /** The package that shared into us, when the OS surfaces it — the ladder's app-name fallback. */
     private fun referrerPackage(): String? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) referrer?.host else callingPackage
+
+    /**
+     * True when the capture originated from *our own container app* — i.e. a selection in one of our
+     * hosted read-in-place readers, not a genuinely foreign app. Both surfaced signals are checked
+     * because either can be absent depending on the OS/launch path.
+     */
+    private fun isSelfOrigin(): Boolean =
+        callingPackage == packageName || referrer?.host == packageName
 
     private fun firstUrlIn(text: String): String? =
         Patterns.WEB_URL.matcher(text).let { if (it.find()) text.substring(it.start(), it.end()) else null }

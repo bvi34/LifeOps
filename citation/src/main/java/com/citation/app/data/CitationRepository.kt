@@ -318,6 +318,47 @@ class CitationRepository private constructor(
         return note
     }
 
+    // --- Read-in-place capture context -------------------------------------------------------
+    // The book currently open in a read-in-place reader (O'Reilly), or null when none is open. It is
+    // process-wide because the sanctioned capture entry point ([CaptureActivity]) is a *separate*
+    // activity from the reader: when you select a passage in the hosted WebView and tap the system
+    // "Save to Citation" item, that capture arrives labelled with our **own** container package
+    // (there is no other app to name — the reader is ours), so without this the ladder would file it
+    // under the container's app name ("Operations Sandbox") and lose the book you were reading. The
+    // reader stamps this on open and clears it on close, so a self-originated capture can instead be
+    // filed against the book actually on screen. Only combined with a self-origin check is it used, so
+    // a stale value can never misattribute a capture that came from a genuinely different app.
+
+    @Volatile
+    private var openReaderBookKey: String? = null
+
+    /** The reader marks a read-in-place book open, so a self-capture can be filed against it. */
+    fun beginReaderContext(bookKey: String) { openReaderBookKey = bookKey }
+
+    /** The reader marks its book closed. No-ops if a different book has since opened. */
+    fun endReaderContext(bookKey: String) {
+        if (openReaderBookKey == bookKey) openReaderBookKey = null
+    }
+
+    /**
+     * File a capture that arrived from **within our own container app** — the system "Save to Citation"
+     * used on a selection in a read-in-place reader — against the book currently open in that reader,
+     * exactly as the reader's own "Add note" would: a real [SourceType.OREILLY] source (title/author +
+     * bound `bookKey`) and the reader's saved position token as the [TextAnchor.External] jump target.
+     * This is what makes a read-in-place capture **report where it came from** instead of falling to
+     * the container's app-name floor. Returns `null` when no read-in-place reader is open, so the
+     * caller falls back to the normal cross-app provenance ladder.
+     */
+    suspend fun captureInOpenReader(
+        quote: String,
+        annotation: String = "",
+        now: Long = System.currentTimeMillis()
+    ): Note? {
+        val bookKey = openReaderBookKey ?: return null
+        val entity = db.bookDao().get(bookKey) ?: return null
+        return captureExternalNote(bookKey, entity.externalLocation.orEmpty(), quote, annotation, now)
+    }
+
     // --- O'Reilly (read-in-place) -------------------------------------------------------------
 
     /**

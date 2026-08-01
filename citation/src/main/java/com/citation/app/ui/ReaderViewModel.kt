@@ -279,6 +279,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             val key = repository.addOreillyBook(bookId, title)
             repository.markOpened(key)
             _oreillySession.value = repository.oreillySession(key)
+            repository.beginReaderContext(key)
             startReadingSession(key)
         }
     }
@@ -302,6 +303,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             repository.markOpened(key)
             _oreillyCatalog.value = null
             _oreillySession.value = repository.oreillySession(key)
+            repository.beginReaderContext(key)
             startReadingSession(key)
         }
     }
@@ -317,7 +319,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     fun closePdf() { endReadingSession(); _pdfSession.value = null }
 
-    fun closeOreilly() { endReadingSession(); _oreillySession.value = null }
+    fun closeOreilly() {
+        _oreillySession.value?.bookKey?.let { repository.endReaderContext(it) }
+        endReadingSession()
+        _oreillySession.value = null
+    }
 
     /** Persist the O'Reilly reader's position so the next open lands one tap from your spot. */
     fun saveOreillyPosition(location: String) {
