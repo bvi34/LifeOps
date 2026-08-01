@@ -72,7 +72,7 @@
 
         <!-- Shares exported Markdown notes as a real .md file via a content URI (see NotesExporter). -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name=".CitationFileProvider"
             android:authorities="${applicationId}.citation.fileprovider"
             android:exported="false"
             android:grantUriPermissions="true">
