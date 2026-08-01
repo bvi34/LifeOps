@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
+import com.lifeops.app.util.DateUtil
 import com.lifeops.app.data.model.GameResource
 import com.lifeops.app.data.model.GameResourceMapping
 import com.lifeops.app.data.model.ResourceTransaction
@@ -195,7 +196,7 @@ private fun TransactionRow(tx: ResourceTransaction) {
             modifier = Modifier.weight(1f)
         )
         Text(
-            text = tx.createdAt.take(10),
+            text = DateUtil.localDateKey(tx.createdAt),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
         )

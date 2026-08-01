@@ -79,4 +79,32 @@ class DateUtilTest {
     fun `isOverdue returns false for null`() {
         assertFalse(DateUtil.isOverdue(null))
     }
+
+    @Test
+    fun `localDateKey(String) converts a stored UTC instant to the system-zone date`() {
+        val iso = "2026-08-02T01:30:00Z"
+        val expected = java.time.Instant.parse(iso)
+            .atZone(ZoneId.systemDefault()).toLocalDate().toString()
+        assertEquals(expected, DateUtil.localDateKey(iso))
+    }
+
+    @Test
+    fun `localDateKey(String) keeps an evening record on the local day, not the UTC day`() {
+        // 8:30 PM Aug 1 in US Central (UTC-5 in summer) is stored as 01:30 UTC on Aug 2.
+        // Naively slicing the string would report Aug 2 (a future date); the local-zone
+        // conversion must report Aug 1.
+        val previous = java.util.TimeZone.getDefault()
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Chicago"))
+            assertEquals("2026-08-01", DateUtil.localDateKey("2026-08-02T01:30:00Z"))
+        } finally {
+            java.util.TimeZone.setDefault(previous)
+        }
+    }
+
+    @Test
+    fun `localDateKey(String) passes through a plain date and unparseable input`() {
+        assertEquals("2026-06-10", DateUtil.localDateKey("2026-06-10"))
+        assertEquals("not-a-date", DateUtil.localDateKey("not-a-date"))
+    }
 }

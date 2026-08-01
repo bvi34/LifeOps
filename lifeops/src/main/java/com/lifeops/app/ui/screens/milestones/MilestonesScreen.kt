@@ -161,7 +161,7 @@ private fun MilestoneCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     buildString {
-                        append(milestone.achievedAt.take(10))
+                        append(DateUtil.localDateKey(milestone.achievedAt))
                         personName?.let { append("   ·   with $it") }
                     },
                     style = MaterialTheme.typography.labelSmall,

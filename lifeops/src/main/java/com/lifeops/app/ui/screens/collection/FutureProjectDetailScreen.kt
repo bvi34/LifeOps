@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.FutureProjectStatus
 import com.lifeops.app.ui.components.AppHeader
+import com.lifeops.app.util.DateUtil
 import com.lifeops.app.ui.components.BackNavIcon
 
 /** Notes are posted as timestamped segments, the same journal shape as task notes — each
@@ -105,7 +106,7 @@ fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: (
                             Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                                 Text(note.content, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    note.createdAt.take(10),
+                                    DateUtil.localDateKey(note.createdAt),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                                 )

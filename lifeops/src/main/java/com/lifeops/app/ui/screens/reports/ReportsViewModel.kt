@@ -137,7 +137,7 @@ class ReportsViewModel(
             val total = snap.completedCount + snap.incompleteCount + snap.expiredCount +
                     snap.skippedCount + snap.carriedForwardCount + snap.unsuccessfulCount
             WeeklyCompletionPoint(
-                snap.createdAt.take(10),
+                DateUtil.localDateKey(snap.createdAt),
                 if (total > 0) snap.completedCount.toFloat() / total else 0f
             )
         }
@@ -224,7 +224,7 @@ class ReportsViewModel(
 
         // Scoring trend (resources earned per week from snapshots)
         val scoringTrend = snapshots.map { snap ->
-            ScoringPoint(snap.createdAt.take(10), snap.totalResourcesEarned)
+            ScoringPoint(DateUtil.localDateKey(snap.createdAt), snap.totalResourcesEarned)
         }
 
         // Priority breakdown
@@ -294,7 +294,7 @@ class ReportsViewModel(
         val carryoverSummary = summaryRows.sortedWith(compareBy({ it.isStillOpen }, { -it.carriedCount }))
 
         val ratingPoints = snapshots
-            .mapNotNull { snap -> snap.selfRating?.let { SelfRatingPoint(snap.createdAt.take(10), it, snap.selfRatingNote) } }
+            .mapNotNull { snap -> snap.selfRating?.let { SelfRatingPoint(DateUtil.localDateKey(snap.createdAt), it, snap.selfRatingNote) } }
         val avgRating = ratingPoints.takeIf { it.isNotEmpty() }?.let { pts -> pts.sumOf { it.rating }.toFloat() / pts.size }
 
         // --- New domains (reporting only; never feed resources) -----------------------------------
@@ -316,7 +316,7 @@ class ReportsViewModel(
         // Nutrition: per-day averages (totals ÷ distinct logged days) over the range.
         val foodEntries = foodLogRepository.getEntriesSince(cutoff)
         val nutritionSummary = if (foodEntries.isEmpty()) null else {
-            val days = foodEntries.map { it.loggedAt.take(10) }.distinct().size.coerceAtLeast(1)
+            val days = foodEntries.map { DateUtil.localDateKey(it.loggedAt) }.distinct().size.coerceAtLeast(1)
             NutritionSummary(
                 daysLogged = days,
                 avgCalories = (foodEntries.sumOf { it.calories } / days).roundToInt(),
