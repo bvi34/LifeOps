@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.TrackChanges
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -30,6 +31,7 @@ fun HistoryScreen(
     onOpenReports: () -> Unit,
     onOpenResources: () -> Unit,
     onOpenWellness: () -> Unit,
+    onOpenMilestones: () -> Unit,
 ) {
     Scaffold(topBar = { AppHeader() }) { padding ->
         LazyColumn(
@@ -53,6 +55,14 @@ fun HistoryScreen(
                     subtitle = "Trends and breakdowns over a range",
                     icon = Icons.Default.BarChart,
                     onClick = onOpenReports
+                )
+            }
+            item {
+                HubCard(
+                    title = "Milestones",
+                    subtitle = "Rare accomplishments — logged and rewarded on the spot",
+                    icon = Icons.Default.EmojiEvents,
+                    onClick = onOpenMilestones
                 )
             }
             item {

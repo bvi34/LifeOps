@@ -422,8 +422,17 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                         onOpenGrowth = { navController.navigate("growth") },
                         onOpenReports = { navController.navigate("reports") },
                         onOpenResources = { navController.navigate("resources") },
-                        onOpenWellness = { navController.navigate("wellness") }
+                        onOpenWellness = { navController.navigate("wellness") },
+                        onOpenMilestones = { navController.navigate("milestones") }
                     )
+                }
+                composable("milestones") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.milestones.MilestonesViewModel>(
+                        factory = com.lifeops.app.ui.screens.milestones.MilestonesViewModelFactory(
+                            app.milestoneRepository, app.aspectRepository, app.personRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.milestones.MilestonesScreen(vm) { navController.navigateUp() }
                 }
                 composable("wellness") {
                     val vm = viewModel<com.lifeops.app.ui.screens.wellness.WellnessViewModel>(

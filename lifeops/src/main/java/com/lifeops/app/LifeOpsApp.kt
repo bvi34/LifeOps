@@ -126,6 +126,14 @@ class LifeOpsApp private constructor(private val app: Application) {
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
+    val milestoneRepository by lazy {
+        MilestoneRepository(
+            database.milestoneDao(),
+            database.gameResourceMappingDao(),
+            database.gameResourceDao(),
+            database.resourceTransactionDao()
+        )
+    }
     val activityTemplateRepository by lazy { ActivityTemplateRepository(database.activityTemplateDao()) }
     val phoneActivityRepository by lazy {
         PhoneActivityRepository(database.phoneActivityEventDao())

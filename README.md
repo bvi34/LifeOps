@@ -183,6 +183,28 @@ cache, **included in backup/restore** (backup v8) since profiles are real user d
 
 ---
 
+## Milestones (History) — design note
+
+The **Milestones** page (History hub → Milestones) records the rare, once-in-a-lifetime
+accomplishments that don't fit the weekly task rhythm. A milestone is a title, an optional
+description, a point value, an *achieved on* date, and an optional attachment to an **aspect**
+and/or a **person** (nullable FKs with `ON DELETE SET NULL`, the same shape as `tasks.projectId`,
+so removing an aspect or person leaves the milestone standing with its link cleared).
+
+Milestones are the **deliberate exception to "only closed weeks emit resources."** Because they are
+logged after the fact for something already accomplished, their points are **granted immediately**
+rather than at week-close: on creation, an aspect-attached milestone mints its points into that
+aspect's mapped game resources through the *exact same path* week-close uses
+(`GameResourceMappingDao.getByAspect` scaled by each mapping's weight → `GameResourceDao.addValue`),
+and records a `milestone` **resource transaction** so the grant is visible in the Resources ledger.
+A milestone with no aspect (or an aspect with no resource mappings) simply keeps its point value as
+part of the record. Like every mint in LifeOps the grant is **permanent** — deleting a milestone
+removes the record but never claws back already-granted points. The `milestones` table (migration
+44→45) is additive and **included in backup/restore** (backup v15); restore upserts the rows
+without re-running the grant, so restoring never double-mints.
+
+---
+
 ## Week-close review — design note
 
 Closing the week is LifeOps' one **mint** — the moment work becomes resources and a ring is sealed —

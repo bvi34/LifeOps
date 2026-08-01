@@ -650,6 +650,23 @@ data class PersonNote(
 )
 
 /**
+ * A rare, once-in-a-lifetime accomplishment. Recorded after the fact and granted its [points]
+ * immediately (into the attached aspect's mapped resources), not at week-close. Optionally attached
+ * to an [aspectId] and/or a [personId]; both are cleared (not deleted) if the aspect/person is
+ * removed, mirroring the entity's ON DELETE SET NULL.
+ */
+data class Milestone(
+    val id: String,
+    val title: String,
+    val description: String? = null,
+    val points: Int = 0,
+    val aspectId: String? = null,
+    val personId: String? = null,
+    val achievedAt: String,
+    val createdAt: String
+)
+
+/**
  * Optional weather constraints attached to a task (Phase 3). A task with [outdoorPreferred] set
  * opts into "best time" recommendations; the nullable ceilings/floors are hard limits the engine
  * uses to disqualify unsuitable forecast windows. All-null means "no weather opinion" and the

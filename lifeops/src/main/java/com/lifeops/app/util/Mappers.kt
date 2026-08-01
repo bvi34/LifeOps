@@ -167,6 +167,13 @@ fun Person.toEntity() = PersonEntity(
 fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)
 fun PersonNote.toEntity() = PersonNoteEntity(id, personId, content, createdAt)
 
+fun MilestoneEntity.toModel() = Milestone(
+    id, title, description, points, aspectId, personId, achievedAt, createdAt
+)
+fun Milestone.toEntity() = MilestoneEntity(
+    id, title, description, points, aspectId, personId, achievedAt, createdAt
+)
+
 fun TaskWeatherRequirementEntity.toModel() = TaskWeatherRequirement(
     taskId, outdoorPreferred, durationMinutes, maxTempF, minTempF, avoidRain, maxWindMph
 )

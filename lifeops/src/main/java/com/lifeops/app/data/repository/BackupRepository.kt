@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 14,
+    val version: Int = 15,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -56,6 +56,8 @@ private data class BackupData(
     val taskAttachments: List<TaskAttachmentEntity> = emptyList(),
     // v14: in-app free/busy blocks (own schedule + per-person schedules). personId FK → persons.
     val busyBlocks: List<BusyBlockEntity> = emptyList(),
+    // v15: milestones — rare accomplishments. Nullable FKs → aspects/persons (SET_NULL).
+    val milestones: List<MilestoneEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -92,6 +94,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             wellnessCheckins = db.wellnessCheckinDao().getAll(),
             taskAttachments = db.taskAttachmentDao().getAll(),
             busyBlocks = db.busyBlockDao().getAll(),
+            milestones = db.milestoneDao().getAll(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -176,6 +179,9 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (ta in data.taskAttachments) db.taskAttachmentDao().insert(ta)
                 // Busy blocks: after persons (nullable FK personId → persons).
                 for (bb in data.busyBlocks) db.busyBlockDao().upsert(bb)
+                // Milestones: after aspects and persons (nullable FKs, SET_NULL). Restore-only —
+                // upsert never re-runs the immediate point grant, so restoring can't double-mint.
+                for (m in data.milestones) db.milestoneDao().upsert(m)
                 // Backups written before v7 carried one long-form content blob per future
                 // project; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring
