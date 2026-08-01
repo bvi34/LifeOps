@@ -935,6 +935,33 @@ private val MIGRATION_43_44 = object : Migration(43, 44) {
     }
 }
 
+private val MIGRATION_44_45 = object : Migration(44, 45) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Milestones: rare, once-in-a-lifetime accomplishments, optionally attached to an aspect
+        // and/or a person (nullable FKs, ON DELETE SET NULL — same shape as tasks.projectId). Their
+        // points are minted immediately on creation, not at week-close. Purely additive; no existing
+        // schema is touched. No SQL DEFAULTs — the entity carries no @ColumnInfo(defaultValue), so
+        // Room's generated schema has none and this CREATE must match exactly or startup validation
+        // fails (the same rule the counters/people migrations call out).
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS milestones (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT,
+                points INTEGER NOT NULL,
+                aspectId TEXT,
+                personId TEXT,
+                achievedAt TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(aspectId) REFERENCES aspects(id) ON DELETE SET NULL,
+                FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_milestones_aspectId ON milestones(aspectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_milestones_personId ON milestones(personId)")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -982,9 +1009,10 @@ private val MIGRATION_43_44 = object : Migration(43, 44) {
         TaskAttachmentEntity::class,
         BusyBlockEntity::class,
         PhoneActivityEventEntity::class,
-        GameUnlockEntity::class
+        GameUnlockEntity::class,
+        MilestoneEntity::class
     ],
-    version = 44,
+    version = 45,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -1021,6 +1049,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun wellnessCheckinDao(): WellnessCheckinDao
     abstract fun phoneActivityEventDao(): PhoneActivityEventDao
     abstract fun gameUnlockDao(): GameUnlockDao
+    abstract fun milestoneDao(): MilestoneDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null
@@ -1032,7 +1061,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
                     .build()
                     .also { INSTANCE = it }
             }
