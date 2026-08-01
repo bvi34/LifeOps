@@ -84,6 +84,19 @@ object DateUtil {
     fun localDateKey(millis: Long): String =
         Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate().toString()
 
+    /**
+     * Local ISO date (yyyy-MM-dd) for a stored timestamp [iso], in the system zone.
+     *
+     * Timestamps are stored as UTC instants (see [now]/[isoFromEpoch]), so slicing the first
+     * ten characters off the string yields the *UTC* calendar date — which rolls a late-evening
+     * local record onto the next day. Converting to the system zone first keeps the date on the
+     * day the user actually experienced it. A value that is already a plain date (yyyy-MM-dd) or
+     * otherwise not a parseable instant falls back to its first ten characters unchanged.
+     */
+    fun localDateKey(iso: String): String = try {
+        Instant.parse(iso).atZone(ZoneId.systemDefault()).toLocalDate().toString()
+    } catch (_: Exception) { iso.take(10) }
+
     /** Local ISO date (yyyy-MM-dd) for today, in the system zone. */
     fun todayKey(): String = LocalDate.now().toString()
 

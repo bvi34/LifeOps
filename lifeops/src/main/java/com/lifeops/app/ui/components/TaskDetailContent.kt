@@ -629,7 +629,7 @@ fun TaskDetailContent(
                                 )
                             }
                             Text(
-                                entry.recordedAt.take(10),
+                                DateUtil.localDateKey(entry.recordedAt),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )
@@ -694,7 +694,7 @@ fun TaskDetailContent(
                         Column(modifier = Modifier.padding(vertical = 6.dp)) {
                             Text(note.content, style = MaterialTheme.typography.bodyMedium)
                             Text(
-                                note.createdAt.take(10),
+                                DateUtil.localDateKey(note.createdAt),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                             )

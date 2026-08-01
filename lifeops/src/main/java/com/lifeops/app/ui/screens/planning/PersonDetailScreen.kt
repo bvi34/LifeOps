@@ -270,7 +270,7 @@ private fun NoteRow(note: PersonNote, onDelete: () -> Unit) {
             Column(Modifier.weight(1f)) {
                 Text(note.content, style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    DateUtil.formatDate(note.createdAt.take(10)),
+                    DateUtil.formatDate(DateUtil.localDateKey(note.createdAt)),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
