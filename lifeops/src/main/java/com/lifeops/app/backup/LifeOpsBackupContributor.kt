@@ -1,50 +1,93 @@
 package com.lifeops.app.backup
 
 import android.content.Context
-import com.lifeops.app.LifeOpsApp
+import androidx.sqlite.db.SimpleSQLiteQuery
+import com.lifeops.app.data.db.LifeOpsDatabase
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
 import com.operations.backupkit.BackupSink
 import com.operations.backupkit.BackupSource
-import kotlinx.coroutines.runBlocking
+import java.io.File
 
 /**
- * LifeOps' hook into the Operations Sandbox backup. It reuses LifeOps' existing lossless JSON
- * snapshot (`BackupRepository`) verbatim — the same bytes the in-app Settings → Backup produces —
- * so there is exactly one backup format to reason about and restore stays a superset-merge into the
- * live database (idempotent upserts), needing no app restart.
+ * LifeOps' hook into the Operations Sandbox backup. It backs up LifeOps **whole**: the entire
+ * `lifeops.db` (every table — tasks, aspects, weeks, game resources and their ledger, counters and
+ * events, runbooks, templates, food log, growth snapshots, wellness, …) plus LifeOps' own
+ * SharedPreferences (theme, reminders, reading rewards, onboarding, the custom palette).
  *
- * The whole payload is a single archive entry, `lifeops/data.json`. The custom theme palette rides
- * inside that JSON (as it already does for the in-app backup) and is re-applied on restore.
+ * This is a deliberate move away from the older per-table JSON snapshot (`BackupRepository`), which
+ * silently omitted whole tables — game resources, counters, runbooks, templates, food log, game
+ * scores/unlocks, weather locations — so a "full backup" wasn't actually full. A whole-file copy is
+ * complete *by construction* and stays complete as the schema grows. The in-app JSON export
+ * (Settings → Backup) still exists for its own uses; it just isn't what the sandbox relies on.
+ *
+ * Because LifeOps and Citation share one process/package now, `shared_prefs/` holds every hosted
+ * app's prefs together, so this contributor is careful to touch only files named `lifeops_*` — it
+ * never reads or writes Citation's (or the sandbox's own) preferences.
+ *
+ * Restore is a whole-file swap of `lifeops.db` (not a row merge), so a LifeOps restart is expected
+ * afterwards — the sandbox surfaces that.
  */
 class LifeOpsBackupContributor(private val context: Context) : BackupContributor {
 
     override val appId = AppId.LIFEOPS
     override val displayName = "LifeOps"
 
-    // Mirrors BackupData.version in BackupRepository. The JSON itself also carries this, so an older
-    // archive still restores; this is the version stamped into the sandbox manifest for display.
-    override val dataVersion = 14
+    // Matches LifeOpsDatabase @Database(version = 44).
+    override val dataVersion = 44
 
     override fun backup(sink: BackupSink) {
-        val runtime = LifeOpsApp.get(context)
-        val repo = runtime.backupRepository
-        val palette = runtime.preferencesRepository.customPalette
-        val json = runBlocking { repo.buildBackupJson(palette) }
-        sink.entry(DATA_ENTRY).use { it.write(json.toByteArray(Charsets.UTF_8)) }
-    }
+        // Fold the WAL into the main db so the file copy is current and self-contained.
+        runCatching {
+            LifeOpsDatabase.getInstance(context)
+                .query(SimpleSQLiteQuery("PRAGMA wal_checkpoint(TRUNCATE)"))
+                .use { it.moveToFirst() }
+        }
 
-    override fun restore(source: BackupSource) {
-        val json = source.open(DATA_ENTRY)?.use { it.reader(Charsets.UTF_8).readText() } ?: return
-        val runtime = LifeOpsApp.get(context)
-        runBlocking { runtime.backupRepository.restore(json) }.getOrThrow()
-        // Re-apply the theme palette the same way the in-app restore does.
-        runtime.backupRepository.extractCustomPalette(json)?.let { palette ->
-            runtime.preferencesRepository.customPalette = palette
+        val dbFile = context.getDatabasePath(DB_NAME)
+        if (dbFile.exists()) {
+            sink.entry(DB_ENTRY).use { out -> dbFile.inputStream().use { it.copyTo(out) } }
+        }
+
+        // LifeOps' own preferences only (lifeops_prefs.xml, lifeops_settings.xml) — not Citation's.
+        lifeOpsPrefFiles().forEach { file ->
+            sink.entry("$PREFS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
         }
     }
 
+    override fun restore(source: BackupSource) {
+        // Preferences first (settings, palette, onboarding).
+        val prefsDir = sharedPrefsDir().apply { mkdirs() }
+        source.list().filter { it.startsWith(PREFS_PREFIX) }.forEach { rel ->
+            val name = rel.removePrefix(PREFS_PREFIX)
+            // Defensive: only ever write LifeOps-owned pref files.
+            if (name.startsWith("lifeops")) {
+                source.open(rel)?.use { input -> File(prefsDir, name).outputStream().use { input.copyTo(it) } }
+            }
+        }
+
+        // Then swap the database file wholesale. Close the live handle, drop stale WAL/SHM sidecars
+        // (which could otherwise shadow the restored file), and copy the archived db in its place.
+        source.open(DB_ENTRY)?.use { input ->
+            LifeOpsDatabase.closeInstance()
+            val dbFile = context.getDatabasePath(DB_NAME)
+            dbFile.parentFile?.mkdirs()
+            File("${dbFile.path}-wal").delete()
+            File("${dbFile.path}-shm").delete()
+            dbFile.outputStream().use { input.copyTo(it) }
+        }
+    }
+
+    private fun sharedPrefsDir() = File(context.applicationInfo.dataDir, "shared_prefs")
+
+    /** LifeOps' own preference XML files, isolated from the other hosted apps by name prefix. */
+    private fun lifeOpsPrefFiles(): List<File> =
+        sharedPrefsDir().listFiles { f -> f.isFile && f.name.startsWith("lifeops") && f.name.endsWith(".xml") }
+            ?.toList().orEmpty()
+
     companion object {
-        private const val DATA_ENTRY = "data.json"
+        private const val DB_NAME = "lifeops.db"
+        private const val DB_ENTRY = "lifeops.db"
+        private const val PREFS_PREFIX = "shared_prefs/"
     }
 }
