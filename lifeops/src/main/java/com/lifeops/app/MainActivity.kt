@@ -205,7 +205,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 composable("this_week_hub") {
                     val taskManagerVm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
                         factory = ThisWeekViewModelFactory(
-                            app,
+                            app.appContext,
                             app.applicationScope,
                             app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                             app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
@@ -502,7 +502,7 @@ fun LifeOpsNavHost(app: LifeOpsApp, sharedText: String? = null) {
                 val vm = viewModel<com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModel>(
                     key = "task_detail_$taskId",
                     factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
-                        app, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
+                        app.appContext, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
                         app.costResourceRepository, app.runbookRepository, app.projectRepository,
                         app.counterRepository, app.personRepository, app.taskAttachmentRepository,
                         app.weatherRepository, app.weekRepository, app.aspectRepository,

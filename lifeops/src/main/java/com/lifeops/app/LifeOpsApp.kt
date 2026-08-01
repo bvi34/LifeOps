@@ -27,6 +27,13 @@ class LifeOpsApp private constructor(private val app: Application) {
     // Tied to the process lifetime — not leaked.
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    /**
+     * The hosting Application as a [Context], for the handful of call sites (ViewModel factories,
+     * etc.) that used to receive the old `LifeOpsApp : Application` directly and just need an
+     * application context.
+     */
+    val appContext: Context get() = app
+
     val database by lazy { LifeOpsDatabase.getInstance(app) }
 
     val aspectRepository by lazy {
@@ -298,7 +305,7 @@ class LifeOpsApp private constructor(private val app: Application) {
      * stops (app backgrounded). TRUNCATE empties the -wal file into the main db, so the
      * file-based backup captures the latest state and never restores a mismatched sidecar.
      */
-    private inner class BackgroundWalCheckpoint : ActivityLifecycleCallbacks {
+    private inner class BackgroundWalCheckpoint : Application.ActivityLifecycleCallbacks {
         private var startedActivities = 0
 
         override fun onActivityStarted(activity: Activity) {
