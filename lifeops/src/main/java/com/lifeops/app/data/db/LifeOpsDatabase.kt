@@ -1036,5 +1036,18 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     .build()
                     .also { INSTANCE = it }
             }
+
+        /**
+         * Close and forget the singleton so the underlying `lifeops.db` file can be replaced
+         * wholesale (used by the Operations Sandbox restore, which swaps the file rather than
+         * merging rows, to guarantee a complete restore of every table). The next [getInstance]
+         * rebuilds against the restored file; a LifeOps restart is expected after a restore.
+         */
+        fun closeInstance() {
+            synchronized(this) {
+                INSTANCE?.close()
+                INSTANCE = null
+            }
+        }
     }
 }

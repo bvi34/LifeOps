@@ -103,7 +103,8 @@ private fun SandboxHome(center: BackupCenter) {
             status = result.fold(
                 onSuccess = { done ->
                     "Restored ${done.joinToString { it.defaultDisplayName }}. " +
-                        "Reopen the app(s) so the restored data loads."
+                        "Fully close Operations Sandbox (swipe it from Recents) and reopen it so the " +
+                        "restored data loads."
                 },
                 onFailure = { "Restore failed: ${it.message}" }
             )

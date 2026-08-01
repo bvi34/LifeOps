@@ -104,13 +104,28 @@ interface BackupContributor {
 
 ### What each app contributes
 
-- **LifeOps** — reuses its existing lossless JSON snapshot (`BackupRepository`), the same bytes the
-  in-app Settings → Backup produces, as a single `lifeops/data.json`. Restore is an idempotent
-  row-merge into the live DB, so **no restart needed**.
+Both apps back up **whole-file**, so a "full backup" is complete *by construction* — every table,
+no per-entity allow-list to fall out of date.
+
+- **LifeOps** — WAL-checkpoints and copies the entire `lifeops.db` (all 45 tables: tasks, aspects,
+  weeks, **game resources + their ledger + mappings**, **counters + events**, runbooks, templates,
+  subtasks, food log, growth snapshots, wellness, game scores/unlocks, weather locations, …), plus
+  LifeOps' own `shared_prefs/lifeops_*.xml` (theme, reminders, reading rewards, onboarding, custom
+  palette). This replaced an earlier per-table JSON snapshot that silently omitted resources,
+  counters, runbooks, templates, food log, and more. The in-app JSON export (Settings → Backup)
+  still exists separately.
 - **Citation** — WAL-checkpoints and copies `citation.db`, plus every owned file under
   `filesDir/sovereign` (imported EPUB/PDF and the sync envelope store). The disposable Royal Road
-  cache is intentionally **not** backed up (it's refetchable by design). Restore is a whole-file DB
-  swap, so **a Citation restart is expected** afterwards — the sandbox says so in its status line.
+  cache is intentionally **not** backed up (it's refetchable by design). The O'Reilly card/PIN lives
+  in Keystore-bound `EncryptedSharedPreferences`, which can't be portably restored (the Keystore key
+  doesn't survive a reinstall), so it is deliberately left out — it's a re-enterable credential.
+
+Because the two apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
+each contributor scopes strictly to its own files by name.
+
+**Restore requires a restart.** Swapping database files closes the live Room handle for the lifetime
+of the process, so after a restore the sandbox tells you to **fully close Operations Sandbox and
+reopen it** — reopening just the hosted screen would reuse the now-closed database.
 
 ---
 
