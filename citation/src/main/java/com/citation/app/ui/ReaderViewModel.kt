@@ -170,6 +170,9 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _oreillySession = MutableStateFlow<CitationRepository.OreillySession?>(null)
     val oreillySession: StateFlow<CitationRepository.OreillySession?> = _oreillySession.asStateFlow()
 
+    private val _kindleSession = MutableStateFlow<CitationRepository.KindleSession?>(null)
+    val kindleSession: StateFlow<CitationRepository.KindleSession?> = _kindleSession.asStateFlow()
+
     // Non-null while browsing the O'Reilly catalog (proxied through your library); the catalog surface
     // preempts the home shell, mirroring Browse Royal Road.
     private val _oreillyCatalog = MutableStateFlow<CitationRepository.OreillyCatalog?>(null)
@@ -195,6 +198,10 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 SourceType.PDF -> _pdfSession.value = repository.pdfSession(bookKey)
                 SourceType.OREILLY ->
                     _oreillySession.value = repository.oreillySession(bookKey)?.copy(purgeWarmCache = warmCacheStale)
+                SourceType.KINDLE -> {
+                    _kindleSession.value = repository.kindleSession(bookKey)
+                    _kindleSession.value?.bookKey?.let { repository.beginReaderContext(it) }
+                }
                 else -> {
                     val result = repository.openBook(bookKey)
                     openRrFictionId = result?.rrFictionId
@@ -338,6 +345,51 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch {
             val note = repository.captureExternalNote(session.bookKey, location, quote, body)
             _status.value = "Note ${note.key} captured on O'Reilly book."
+        }
+    }
+
+    // --- Kindle read-in-place (read.amazon.com) -------------------------------------------------
+
+    /**
+     * Register a Kindle book by ASIN and open it read-in-place in the Cloud Reader. The counterpart to
+     * [addOreillyBook] — add it, and you're reading (deduped by ASIN, so re-adding reuses its notes).
+     */
+    fun addKindleBook(asin: String, title: String) {
+        viewModelScope.launch {
+            val key = repository.addKindleBook(asin, title)
+            repository.markOpened(key)
+            _kindleSession.value = repository.kindleSession(key)
+            repository.beginReaderContext(key)
+            startReadingSession(key)
+        }
+    }
+
+    fun closeKindle() {
+        _kindleSession.value?.bookKey?.let { repository.endReaderContext(it) }
+        endReadingSession()
+        _kindleSession.value = null
+    }
+
+    /** Persist the Kindle reader's last position label so the library shows where you were. */
+    fun saveKindlePosition(location: String) {
+        onReadingProgress()
+        val session = _kindleSession.value ?: return
+        viewModelScope.launch { repository.saveExternalPosition(session.bookKey, location) }
+    }
+
+    /**
+     * Capture a note on the open Kindle book. `read.amazon.com` blocks copying the passage, so the
+     * quote is normally unavailable: the reader's position label ([location], e.g. "Location 156 of
+     * 3866") stands in as the citation. A real [quote] is still honoured when present — in case text
+     * selection ever works — and only falls back to the location when left blank. The book is the
+     * source; the annotation is your own.
+     */
+    fun captureKindleNote(location: String, quote: String, body: String) {
+        val session = _kindleSession.value ?: return
+        viewModelScope.launch {
+            val cited = quote.ifBlank { location }
+            val note = repository.captureExternalNote(session.bookKey, location, cited, body)
+            _status.value = "Note ${note.key} captured on Kindle book."
         }
     }
 

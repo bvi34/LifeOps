@@ -437,6 +437,57 @@ class CitationRepository private constructor(
         return OreillySession(bookKey, bookId, link, oreillyAccess.credentials())
     }
 
+    // --- Kindle (read-in-place on read.amazon.com) --------------------------------------------
+
+    /**
+     * A Kindle read-in-place session: the ASIN and the `read.amazon.com` URL to open in Amazon's own
+     * Cloud Reader. Unlike O'Reilly there's no library proxy or stored credential — you sign in to
+     * Amazon in the WebView and cookies persist the session. Whispersync resumes your position on open,
+     * so the URL is the ASIN alone.
+     */
+    data class KindleSession(
+        val bookKey: String,
+        val asin: String,
+        val readerUrl: String
+    )
+
+    /**
+     * Register a Kindle book for read-in-place. **No content is cached** — it's licensed — only a
+     * sovereign [BookEntity] holding your layer (ASIN, title, last position label, notes). Deduped by
+     * ASIN, exactly like [addOreillyBook].
+     */
+    suspend fun addKindleBook(
+        asin: String,
+        title: String,
+        author: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): String {
+        db.bookDao().findBySource(asin, SourceType.KINDLE.name)?.let { return it.key }
+        val key = keys.next(EntityType.BOOK)
+        db.bookDao().upsert(
+            BookEntity(
+                key = key.toString(),
+                title = title,
+                author = author,
+                sourceType = SourceType.KINDLE.name,
+                sourceId = asin,
+                language = null,
+                acquisitionState = AcquisitionState.ACQUIRED.name,
+                readingState = ReadingState.READING.name,
+                createdAt = now
+            )
+        )
+        checkpointKey(EntityType.BOOK)
+        return key.toString()
+    }
+
+    /** Build the session that opens a Kindle book in the Cloud Reader (Whispersync lands you at your spot). */
+    suspend fun kindleSession(bookKey: String): KindleSession? {
+        val entity = db.bookDao().get(bookKey) ?: return null
+        val asin = entity.sourceId ?: return null
+        return KindleSession(bookKey, asin, com.citation.core.kindle.KindleLink.readerUrl(asin))
+    }
+
     // --- O'Reilly library access (encrypted card/PIN + proxy host, never synced) ----------------
 
     /** Current O'Reilly access config for Settings — proxy host and whether a card/PIN are on file. */

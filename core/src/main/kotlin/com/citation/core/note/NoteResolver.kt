@@ -141,8 +141,11 @@ object NoteResolver {
     private fun reliabilityOf(sourceType: SourceType): Reliability = when (sourceType) {
         SourceType.EPUB, SourceType.PDF, SourceType.INTERNAL -> Reliability.RELIABLE
         // A cross-app capture points back into someone else's app (a URL, a Kindle location); even
-        // when the target is present the jump is a deep link we don't control, so it's best-effort.
-        SourceType.ROYAL_ROAD, SourceType.OREILLY, SourceType.CAPTURE -> Reliability.BEST_EFFORT
+        // when the target is present the jump is a deep link we don't control, so it's best-effort. The
+        // read-in-place sources (O'Reilly, Kindle) are the same: reopening lands you near the spot, but
+        // in their reader, not ours.
+        SourceType.ROYAL_ROAD, SourceType.OREILLY, SourceType.KINDLE, SourceType.CAPTURE ->
+            Reliability.BEST_EFFORT
     }
 
     private fun anchorChapter(anchor: TextAnchor): Int? =
