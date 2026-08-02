@@ -4,10 +4,10 @@ import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
 import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.ImportParser
+import com.lifeops.app.util.ScoringUtils
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.UUID
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 data class ResourcesUiState(
@@ -61,7 +61,7 @@ class ResourcesViewModel(
                             .mapValues { (_, e) -> e.sumOf { it.durationMinutes } }
                         val earned = mutableMapOf<String, Int>()
                         tasks.filter { it.status == TaskStatus.COMPLETED }.forEach { task ->
-                            val multiplier = accuracyMultiplier(task, timeByTask[task.id])
+                            val multiplier = ScoringUtils.accuracyMultiplier(task.estimatedMinutes, timeByTask[task.id])
                             val pts = (task.resourceValue * multiplier).roundToInt()
                             task.aspectId?.let { earned[it] = (earned[it] ?: 0) + pts }
                         }
@@ -150,7 +150,7 @@ class ResourcesViewModel(
             .filter { it.gameResourceId == gameResourceId }
             .sumOf { mapping ->
                 val aspectEarned = state.aspectEarnedThisWeek[mapping.aspectId] ?: 0
-                (aspectEarned * mapping.weight).toInt()
+                (aspectEarned * mapping.weight).roundToInt()
             }
     }
 }
@@ -165,14 +165,4 @@ class ResourcesViewModelFactory(
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ResourcesViewModel(gameResourceRepository, aspectRepository, taskRepository, weekRepository, timeEntryRepository) as T
-}
-
-private fun accuracyMultiplier(task: Task, actualMinutes: Int?): Double {
-    val estimated = task.estimatedMinutes ?: return 1.0
-    val actual = actualMinutes?.takeIf { it > 0 } ?: return 1.0
-    return when {
-        abs(actual - estimated) <= 15 -> 2.0
-        actual < estimated -> 0.9
-        else -> 0.75
-    }
 }
