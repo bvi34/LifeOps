@@ -565,6 +565,22 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
+    /**
+     * Manually link a capture to a book in your library — bind ("capture") its source when no hard
+     * identity ever arrived to promote it automatically. Binds the whole cluster the note belongs to, so
+     * linking one capture claims all captures from the same source (e.g. a Kindle-notebook export).
+     */
+    fun linkNoteToBook(noteKey: String, bookKey: String) {
+        viewModelScope.launch {
+            val linked = repository.linkNoteToBook(noteKey, bookKey)
+            _status.value = if (linked > 0) {
+                "Linked $linked capture${if (linked == 1) "" else "s"} to its source."
+            } else {
+                "Couldn't link that note to a source."
+            }
+        }
+    }
+
     /** Delete a note (its inline highlight goes with it). Local-only — see the repository. */
     fun deleteNote(noteKey: String) {
         viewModelScope.launch {
