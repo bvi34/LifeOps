@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
@@ -44,6 +45,11 @@ class PantryViewModel(private val repo: PantryRepository) : ViewModel() {
         repo.addItem(name, quantity, unit, category)
     }
 
+    /** Break one stock line into individual pieces — see [PantryRepository.splitItem]. */
+    fun split(item: PantryItem, pieces: Double, unit: String) = viewModelScope.launch {
+        repo.splitItem(item.id, pieces, unit)
+    }
+
     class Factory(private val repo: PantryRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T = PantryViewModel(repo) as T
@@ -55,6 +61,7 @@ class PantryViewModel(private val repo: PantryRepository) : ViewModel() {
 fun PantryScreen(vm: PantryViewModel) {
     val pantryItems by vm.items.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
+    var splitTarget by remember { mutableStateOf<PantryItem?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -88,7 +95,8 @@ fun PantryScreen(vm: PantryViewModel) {
                             item = row,
                             onIncrement = { vm.adjust(row, 1.0) },
                             onDecrement = { vm.adjust(row, -1.0) },
-                            onDelete = { vm.delete(row) }
+                            onDelete = { vm.delete(row) },
+                            onSplit = { splitTarget = row }
                         )
                     }
                 }
@@ -102,6 +110,17 @@ fun PantryScreen(vm: PantryViewModel) {
             onConfirm = { name, qty, unit, category ->
                 vm.addItem(name, qty, unit, category)
                 showAdd = false
+            }
+        )
+    }
+
+    splitTarget?.let { target ->
+        SplitItemDialog(
+            item = target,
+            onDismiss = { splitTarget = null },
+            onConfirm = { pieces, unit ->
+                vm.split(target, pieces, unit)
+                splitTarget = null
             }
         )
     }
@@ -122,7 +141,8 @@ private fun PantryRow(
     item: PantryItem,
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onSplit: () -> Unit
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Row(
@@ -143,12 +163,69 @@ private fun PantryRow(
                     }
                 }
             }
+            IconButton(onClick = onSplit) { Icon(Icons.Default.CallSplit, contentDescription = "Break into pieces") }
             IconButton(onClick = onDecrement) { Icon(Icons.Default.Remove, contentDescription = "Use one") }
             Text(formatQty(item.quantity), style = MaterialTheme.typography.titleMedium)
             IconButton(onClick = onIncrement) { Icon(Icons.Default.Add, contentDescription = "Add one") }
             IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
         }
     }
+}
+
+/**
+ * "Break into pieces" — repackage one stock line at a finer granularity. Prefilled from the item's
+ * current stock, with a live preview of the before/after so "2 lb → 3 meals" is obvious before you
+ * commit.
+ */
+@Composable
+private fun SplitItemDialog(
+    item: PantryItem,
+    onDismiss: () -> Unit,
+    onConfirm: (pieces: Double, unit: String) -> Unit
+) {
+    var pieces by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf("piece") }
+    val piecesValue = pieces.toDoubleOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Break into pieces") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Re-express \"${item.name}\" at a finer granularity — same stock, counted your way. " +
+                        "e.g. 2 lb into 3 meals, or a 58-count box into 58 pieces.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pieces, onValueChange = { pieces = it }, label = { Text("Count") },
+                        singleLine = true, modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                    OutlinedTextField(
+                        value = unit, onValueChange = { unit = it }, label = { Text("Piece unit") },
+                        singleLine = true, modifier = Modifier.weight(1f)
+                    )
+                }
+                if (piecesValue != null && piecesValue > 0.0) {
+                    Text(
+                        "${formatQty(item.quantity)} ${item.unit} → ${formatQty(piecesValue)} ${unit.ifBlank { "piece" }}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = piecesValue != null && piecesValue > 0.0,
+                onClick = { onConfirm(piecesValue ?: 0.0, unit.ifBlank { "piece" }) }
+            ) { Text("Break up") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

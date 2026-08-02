@@ -6,11 +6,15 @@ import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
 import com.logistics.app.data.model.ImportBatch
 import com.logistics.app.data.model.ImportSource
+import com.logistics.app.data.model.MealLine
+import com.logistics.app.data.model.MealLog
 import com.logistics.app.data.model.PantryItem
 import com.logistics.app.data.model.PantryTxn
 import com.logistics.app.data.model.PantryTxnReason
 import com.logistics.app.data.model.ParsedOrder
+import com.logistics.app.logic.PantryUnits
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.time.Instant
 import java.util.UUID
@@ -31,6 +35,41 @@ class PantryRepository(
     fun observeConsumption(): Flow<List<PantryTxn>> = dao.observeConsumption().map { list -> list.map { it.toModel() } }
     fun observeTxnsForItem(itemId: String): Flow<List<PantryTxn>> =
         dao.observeTxnsForItem(itemId).map { list -> list.map { it.toModel() } }
+
+    /**
+     * Past meals for the History screen, newest first — every CONSUME ledger row rolled up into the
+     * meal it belonged to. Grouping is by [PantryTxn.mealLogId]; rows written before the v2 migration
+     * have none, so they fall back to grouping by meal name + timestamp (a best-effort reconstruction
+     * of the meals that were logged before grouping existed). Item names/units are resolved against
+     * live pantry rows so a remake targets the right shelf line.
+     */
+    fun observeMealHistory(): Flow<List<MealLog>> =
+        combine(dao.observeConsumption(), dao.observeAll()) { txns, items ->
+            val byId = items.associateBy { it.id }
+            txns.groupBy { it.mealLogId ?: "legacy:${it.mealName}@${it.createdAt}" }
+                .map { (groupKey, rows) ->
+                    val head = rows.first()
+                    MealLog(
+                        id = head.mealLogId ?: groupKey,
+                        mealName = head.mealName ?: "Meal",
+                        recipeId = head.recipeId,
+                        // Rows in a group share an instant; use the earliest as the meal's stamp.
+                        loggedAt = rows.minOf { it.createdAt },
+                        lines = rows.map { txn ->
+                            val item = byId[txn.pantryItemId]
+                            MealLine(
+                                pantryItemId = txn.pantryItemId,
+                                name = item?.name ?: "(removed item)",
+                                // delta is negative for a use; History shows the amount consumed.
+                                amount = -txn.delta,
+                                unit = txn.unit,
+                                available = item != null
+                            )
+                        }
+                    )
+                }
+                .sortedByDescending { it.loggedAt }
+        }
 
     suspend fun getItem(id: String): PantryItem? = dao.getById(id)?.toModel()
 
@@ -149,9 +188,12 @@ class PantryRepository(
         mealName: String,
         recipeId: String?,
         consumptions: List<Consumption>
-    ) {
+    ): Int {
         val name = mealName.trim().ifBlank { "Meal" }
         val now = now()
+        // One id for the whole meal so its CONSUME rows can be regrouped — and replayed — as a unit.
+        val mealLogId = UUID.randomUUID().toString()
+        var deducted = 0
         for (c in consumptions) {
             if (c.amount <= 0.0) continue
             val item = dao.getById(c.pantryItemId) ?: continue
@@ -164,9 +206,44 @@ class PantryRepository(
                 unit = item.unit,
                 reason = PantryTxnReason.CONSUME,
                 mealName = name,
-                recipeId = recipeId
+                recipeId = recipeId,
+                mealLogId = mealLogId
             )
+            deducted++
         }
+        return deducted
+    }
+
+    /**
+     * Re-log a past [MealLog] — deducts each of its lines from the pantry again (clamped to what's on
+     * hand), landing a fresh meal in the ledger with the same name/recipe. Returns how many lines were
+     * actually deducted (0 if nothing on those shelves is left). Lines whose pantry row no longer
+     * exists are skipped by [consumeMeal].
+     */
+    suspend fun remakeMeal(meal: MealLog): Int =
+        consumeMeal(
+            mealName = meal.mealName,
+            recipeId = meal.recipeId,
+            consumptions = meal.lines.map { Consumption(it.pantryItemId, it.amount) }
+        )
+
+    // --- repackage ("break a unit into individual pieces") ---
+
+    /**
+     * Re-express one stock line at a finer granularity: the same physical stock, a different unit and
+     * count ("2 lb" → "3 meals", "1 unit of 58-count" → "58 pieces"). It overwrites the item's
+     * quantity/unit and lands a SPLIT ledger row noting the before/after, so the shelf stays
+     * auditable. No-op returning null if the item is gone or the target count is not positive.
+     */
+    suspend fun splitItem(itemId: String, pieces: Double, pieceUnit: String, note: String? = null): PantryItem? {
+        if (pieces <= 0.0) return null
+        val item = dao.getById(itemId) ?: return null
+        val unit = pieceUnit.trim().ifBlank { "piece" }
+        val ledgerNote = note?.takeIf { it.isNotBlank() }
+            ?: PantryUnits.splitNote(item.quantity, item.unit, pieces, unit)
+        dao.upsert(item.copy(quantity = pieces, unit = unit, updatedAt = now()))
+        recordTxn(item.id, pieces, unit, PantryTxnReason.SPLIT, note = ledgerNote)
+        return dao.getById(itemId)?.toModel()
     }
 
     // --- internals ---
@@ -179,6 +256,7 @@ class PantryRepository(
         mealName: String? = null,
         recipeId: String? = null,
         importBatchId: String? = null,
+        mealLogId: String? = null,
         note: String? = null
     ) {
         dao.upsertTxn(
@@ -191,6 +269,7 @@ class PantryRepository(
                 mealName = mealName,
                 recipeId = recipeId,
                 importBatchId = importBatchId,
+                mealLogId = mealLogId,
                 note = note,
                 createdAt = now()
             )
@@ -209,7 +288,7 @@ class PantryRepository(
     private fun PantryTxnEntity.toModel() = PantryTxn(
         id = id, pantryItemId = pantryItemId, delta = delta, unit = unit,
         reason = PantryTxnReason.from(reason), mealName = mealName, recipeId = recipeId,
-        importBatchId = importBatchId, note = note, createdAt = createdAt
+        importBatchId = importBatchId, mealLogId = mealLogId, note = note, createdAt = createdAt
     )
 
     private fun ImportBatchEntity.toModel() = ImportBatch(

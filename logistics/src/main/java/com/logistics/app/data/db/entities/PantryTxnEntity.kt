@@ -1,5 +1,6 @@
 package com.logistics.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -20,7 +21,7 @@ import androidx.room.PrimaryKey
             onDelete = ForeignKey.CASCADE
         )
     ],
-    indices = [Index("pantryItemId"), Index("reason"), Index("mealName")]
+    indices = [Index("pantryItemId"), Index("reason"), Index("mealName"), Index("mealLogId")]
 )
 data class PantryTxnEntity(
     @PrimaryKey val id: String,
@@ -31,6 +32,9 @@ data class PantryTxnEntity(
     val mealName: String?,
     val recipeId: String?,
     val importBatchId: String?,
+    // All CONSUME rows from one "log a meal" action share this id, so the History screen can group
+    // and replay a meal exactly. Null for non-meal rows and rows written before the v2 migration.
+    @ColumnInfo(defaultValue = "NULL") val mealLogId: String?,
     val note: String?,
     val createdAt: String
 )

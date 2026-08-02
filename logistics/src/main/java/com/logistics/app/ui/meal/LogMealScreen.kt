@@ -7,6 +7,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -77,6 +79,7 @@ fun LogMealScreen(vm: LogMealViewModel) {
 
     var mealName by remember { mutableStateOf("") }
     var selectedRecipe by remember { mutableStateOf<Recipe?>(null) }
+    var search by remember { mutableStateOf("") }
     // itemId -> amount text
     val amounts = remember { mutableStateMapOf<String, String>() }
     val included = remember { mutableStateListOf<String>() }
@@ -86,9 +89,17 @@ fun LogMealScreen(vm: LogMealViewModel) {
         vm.lastLogged?.let {
             snackbar.showSnackbar(it)
             // Reset the form after a successful log.
-            mealName = ""; selectedRecipe = null; included.clear(); amounts.clear()
+            mealName = ""; selectedRecipe = null; included.clear(); amounts.clear(); search = ""
             vm.clearStatus()
         }
+    }
+
+    // Filter the shelf as you type. Anything already marked stays visible so it's never lost behind
+    // the filter — you can search, add several specific items, then clear and see them all checked.
+    val visibleItems = remember(pantryItems, search, included.toList()) {
+        val q = search.trim()
+        if (q.isBlank()) pantryItems
+        else pantryItems.filter { it.name.contains(q, ignoreCase = true) || it.id in included }
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
@@ -128,12 +139,30 @@ fun LogMealScreen(vm: LogMealViewModel) {
                     Text("Your pantry is empty — import an order first.", style = MaterialTheme.typography.bodyMedium)
                 }
             } else {
+                OutlinedTextField(
+                    value = search,
+                    onValueChange = { search = it },
+                    label = { Text("Search your pantry") },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    trailingIcon = {
+                        if (search.isNotEmpty()) {
+                            IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear search") }
+                        }
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+                if (visibleItems.isEmpty()) {
+                    Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text("No pantry items match \"${search.trim()}\".", style = MaterialTheme.typography.bodyMedium)
+                    }
+                } else {
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(12.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(pantryItems, key = { it.id }) { item ->
+                    items(visibleItems, key = { it.id }) { item ->
                         val isIncluded = item.id in included
                         MealItemRow(
                             item = item,
@@ -146,6 +175,7 @@ fun LogMealScreen(vm: LogMealViewModel) {
                             onAmount = { amounts[item.id] = it }
                         )
                     }
+                }
                 }
                 Surface(tonalElevation = 3.dp) {
                     val selections = included.associateWith { (amounts[it] ?: "1").toDoubleOrNull() ?: 0.0 }

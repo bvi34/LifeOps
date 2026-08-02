@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.logistics.app.data.db.dao.PantryDao
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
@@ -23,7 +25,7 @@ import com.logistics.app.data.db.entities.PantryTxnEntity
         PantryTxnEntity::class,
         ImportBatchEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class LogisticsDatabase : RoomDatabase() {
@@ -32,6 +34,15 @@ abstract class LogisticsDatabase : RoomDatabase() {
 
     companion object {
         const val DB_NAME = "logistics.db"
+
+        /** v2 adds pantry_txns.mealLogId so a meal's consumption rows can be grouped and replayed by
+         *  the History screen. Existing rows keep NULL (they predate meal grouping). */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE pantry_txns ADD COLUMN mealLogId TEXT DEFAULT NULL")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_pantry_txns_mealLogId ON pantry_txns(mealLogId)")
+            }
+        }
 
         @Volatile
         private var instance: LogisticsDatabase? = null
@@ -42,7 +53,7 @@ abstract class LogisticsDatabase : RoomDatabase() {
                     context.applicationContext,
                     LogisticsDatabase::class.java,
                     DB_NAME
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

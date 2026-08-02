@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.ReceiptLong
@@ -22,6 +23,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.logistics.app.ui.history.HistoryScreen
+import com.logistics.app.ui.history.HistoryViewModel
 import com.logistics.app.ui.importflow.ImportScreen
 import com.logistics.app.ui.importflow.ImportViewModel
 import com.logistics.app.ui.meal.LogMealScreen
@@ -36,10 +39,11 @@ private sealed class Dest(val route: String, val label: String, val icon: ImageV
     object Pantry : Dest("pantry", "Pantry", Icons.Default.Inventory2)
     object Import : Dest("import", "Import", Icons.Default.ReceiptLong)
     object Meal : Dest("meal", "Log meal", Icons.Default.Restaurant)
+    object History : Dest("history", "History", Icons.Default.History)
     object Recipes : Dest("recipes", "Recipes", Icons.Default.MenuBook)
 }
 
-private val navItems = listOf(Dest.Pantry, Dest.Import, Dest.Meal, Dest.Recipes)
+private val navItems = listOf(Dest.Pantry, Dest.Import, Dest.Meal, Dest.History, Dest.Recipes)
 
 /**
  * Logistics' single entry point. A four-tab shell — Pantry, Import, Log meal, Recipes — over the one
@@ -108,6 +112,10 @@ class MainActivity : ComponentActivity() {
                         composable(Dest.Meal.route) {
                             val vm: LogMealViewModel = viewModel(factory = LogMealViewModel.Factory(app.pantryRepository, app.catalog))
                             LogMealScreen(vm)
+                        }
+                        composable(Dest.History.route) {
+                            val vm: HistoryViewModel = viewModel(factory = HistoryViewModel.Factory(app.pantryRepository))
+                            HistoryScreen(vm)
                         }
                         composable(Dest.Recipes.route) {
                             val vm: RecipeViewModel = viewModel(factory = RecipeViewModel.Factory(app.catalog))

@@ -47,4 +47,20 @@ class PantryUnitsTest {
     fun unknownCategoryIsNull() {
         assertNull(PantryUnits.guessCategory("Mystery widget"))
     }
+
+    @Test
+    fun splitNoteReadsBeforeAndAfter() {
+        assertEquals("Broke 2 lb into 3 meal", PantryUnits.splitNote(2.0, "lb", 3.0, "meal"))
+        assertEquals("Broke 1 unit into 58 piece", PantryUnits.splitNote(1.0, "unit", 58.0, "piece"))
+    }
+
+    @Test
+    fun splitNoteTrimsTrailingZerosButKeepsFractions() {
+        assertEquals("Broke 1.5 lb into 4 portion", PantryUnits.splitNote(1.5, "lb", 4.0, "portion"))
+    }
+
+    @Test
+    fun splitNoteFallsBackToUnitOnBlank() {
+        assertEquals("Broke 1 unit into 6 unit", PantryUnits.splitNote(1.0, "  ", 6.0, ""))
+    }
 }

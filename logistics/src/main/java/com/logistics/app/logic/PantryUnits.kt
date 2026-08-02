@@ -75,4 +75,17 @@ object PantryUnits {
         }
         return null
     }
+
+    /**
+     * A one-line ledger note describing a repackage ("break into pieces"): the same physical stock
+     * re-expressed at a finer granularity, e.g. `2 lb → 3 meal` or `1 unit → 58 piece`. Kept pure so
+     * both the ledger note and the confirmation copy read identically, and it's JVM-tested.
+     */
+    fun splitNote(fromQty: Double, fromUnit: String, toQty: Double, toUnit: String): String =
+        "Broke ${formatQty(fromQty)} ${fromUnit.trim().ifBlank { "unit" }} into " +
+            "${formatQty(toQty)} ${toUnit.trim().ifBlank { "unit" }}"
+
+    /** Trim trailing zeros so "3.0" reads as "3" but "1.5" survives — matching the pantry shelf. */
+    private fun formatQty(q: Double): String =
+        if (q % 1.0 == 0.0) q.toInt().toString() else q.toString().trimEnd('0').trimEnd('.')
 }
