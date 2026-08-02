@@ -12,7 +12,8 @@ package com.operations.backupkit
  */
 enum class AppId(val key: String, val defaultDisplayName: String) {
     LIFEOPS("lifeops", "LifeOps"),
-    CITATION("citation", "Citation");
+    CITATION("citation", "Citation"),
+    LOGISTICS("logistics", "Logistics");
 
     companion object {
         fun fromKey(key: String): AppId? = entries.firstOrNull { it.key == key }

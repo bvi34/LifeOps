@@ -22,5 +22,6 @@ rootProject.name = "LifeOps"
 include(":app")
 include(":lifeops")
 include(":citation")
+include(":logistics")
 include(":core")
 include(":backupkit")
