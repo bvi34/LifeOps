@@ -10,6 +10,7 @@ import com.citation.app.data.store.FileStores
 import com.citation.core.anchor.TextAnchor
 import com.citation.core.capture.CaptureBuilder
 import com.citation.core.capture.CaptureClusterer
+import com.citation.core.capture.CaptureLink
 import com.citation.core.capture.CapturePromotion
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.capture.ProvenanceLadder
@@ -440,6 +441,19 @@ class CitationRepository private constructor(
     // --- Kindle (read-in-place on read.amazon.com) --------------------------------------------
 
     /**
+     * A Kindle **browse** session: your own library on `read.amazon.com`, opened so you can *pick* a
+     * book instead of typing its ASIN + title by hand. The read-in-place counterpart to [OreillyCatalog]
+     * — but there's no library proxy or stored credential here (Amazon keeps you signed in via cookies),
+     * so the session is just the shelf's URL. Tapping a book hands its ASIN + learned title back to be
+     * registered and opened.
+     */
+    data class KindleLibrary(val startUrl: String)
+
+    /** Build a browse session at your Kindle library (the Cloud Reader's book grid). */
+    fun kindleLibrary(): KindleLibrary =
+        KindleLibrary(startUrl = com.citation.core.kindle.KindleLink.libraryUrl())
+
+    /**
      * A Kindle read-in-place session: the ASIN and the `read.amazon.com` URL to open in Amazon's own
      * Cloud Reader. Unlike O'Reilly there's no library proxy or stored credential — you sign in to
      * Amazon in the WebView and cookies persist the session. Whispersync resumes your position on open,
@@ -779,6 +793,30 @@ class CitationRepository private constructor(
         }
         if (moved > 0) persistSyncState()
         return moved
+    }
+
+    /**
+     * **Manually link** a capture to a book you already have — the user-driven counterpart to
+     * [promoteCapturesTo]. When a capture never got a hard identity (a browser clip, a floating thought,
+     * a Kindle-notebook highlight), promotion can't claim it; this is how you say "this *is* from that
+     * book on my shelf." Binds every still-provisional note in [noteKey]'s cluster to [bookKey] — so
+     * linking one member captures the whole provisional source, exactly as automatic promotion would —
+     * re-posts each up the mailbox so LifeOps sees the binding, and returns the number of notes linked.
+     * No fuzzy matching: the user has chosen the book. Returns 0 if the note or book is unknown, or the
+     * note carries no cluster id to link.
+     */
+    suspend fun linkNoteToBook(noteKey: String, bookKey: String): Int {
+        db.bookDao().get(bookKey) ?: return 0
+        val entity = db.noteDao().get(noteKey) ?: return 0
+        val clusterId = CitationMappers.noteFromEntity(entity).source.sourceId ?: return 0
+        val captures = db.noteDao().captures().map(CitationMappers::noteFromEntity)
+        val rebound = CaptureLink.link(captures, clusterId, EntityKey.parse(bookKey))
+        rebound.forEach { note ->
+            val versioned = mailbox.post(NotePacket.of(note))
+            db.noteDao().upsert(CitationMappers.noteToEntity(note, versioned.version))
+        }
+        if (rebound.isNotEmpty()) persistSyncState()
+        return rebound.size
     }
 
     /**

@@ -178,6 +178,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _oreillyCatalog = MutableStateFlow<CitationRepository.OreillyCatalog?>(null)
     val oreillyCatalog: StateFlow<CitationRepository.OreillyCatalog?> = _oreillyCatalog.asStateFlow()
 
+    // Non-null while browsing your Kindle library on read.amazon.com; the browse surface preempts the
+    // home shell, exactly like the O'Reilly catalog — you skim the shelf and tap a book to open it.
+    private val _kindleLibrary = MutableStateFlow<CitationRepository.KindleLibrary?>(null)
+    val kindleLibrary: StateFlow<CitationRepository.KindleLibrary?> = _kindleLibrary.asStateFlow()
+
     fun importEpub(bytes: ByteArray) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
@@ -364,6 +369,30 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
+    /** Open your Kindle library on read.amazon.com to browse and pick a book (learns its ASIN + title). */
+    fun browseKindle() {
+        _kindleLibrary.value = repository.kindleLibrary()
+    }
+
+    /** Leave the Kindle library without opening anything. */
+    fun closeKindleLibrary() { _kindleLibrary.value = null }
+
+    /**
+     * Open a book tapped in the Kindle library: register it read-in-place with the ASIN + learned title
+     * (deduped by ASIN, so re-picking the same book reuses its notes) and hand off to the reader. The
+     * Kindle counterpart to [openOreillyFromCatalog] — browse the shelf, tap, and you're reading.
+     */
+    fun openKindleFromLibrary(asin: String, title: String) {
+        viewModelScope.launch {
+            val key = repository.addKindleBook(asin, title)
+            repository.markOpened(key)
+            _kindleLibrary.value = null
+            _kindleSession.value = repository.kindleSession(key)
+            repository.beginReaderContext(key)
+            startReadingSession(key)
+        }
+    }
+
     fun closeKindle() {
         _kindleSession.value?.bookKey?.let { repository.endReaderContext(it) }
         endReadingSession()
@@ -533,6 +562,22 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch {
             repository.editNoteBody(noteKey, body)
             _status.value = "Note updated."
+        }
+    }
+
+    /**
+     * Manually link a capture to a book in your library — bind ("capture") its source when no hard
+     * identity ever arrived to promote it automatically. Binds the whole cluster the note belongs to, so
+     * linking one capture claims all captures from the same source (e.g. a Kindle-notebook export).
+     */
+    fun linkNoteToBook(noteKey: String, bookKey: String) {
+        viewModelScope.launch {
+            val linked = repository.linkNoteToBook(noteKey, bookKey)
+            _status.value = if (linked > 0) {
+                "Linked $linked capture${if (linked == 1) "" else "s"} to its source."
+            } else {
+                "Couldn't link that note to a source."
+            }
         }
     }
 

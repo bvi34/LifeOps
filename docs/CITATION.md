@@ -219,6 +219,16 @@ the reader uses, so a lapse mid-browse re-signs-in without kicking you out. Tapp
 your library (deduped by id, so re-browsing reuses the entry + notes), titled from the URL slug. The
 old "…add an O'Reilly book by id" dialog stays as a manual fallback.
 
+**Browse Kindle library** (`ui/KindleLibraryScreen`) is the same move for Kindle: a full-screen WebView
+on your own library at `read.amazon.com` (Amazon's own sign-in + cookies — no proxy or stored
+credential, unlike O'Reilly). Because the Cloud Reader is a single-page app, a book tap swaps in the
+reader *without* a navigation, so instead of `shouldOverrideUrlLoading` the screen **polls**
+`KindleLink.libraryProbeScript` (the same trick the reader uses to follow the footer position); when a
+book's ASIN appears it hands back the ASIN + a `cleanTitle`'d name (`openKindleFromLibrary`), opening it
+**read-in-place** through `KindleReaderScreen` — registered in your library, deduped by ASIN, so
+re-picking reuses the entry + notes. The old "…add a Kindle book by ASIN" dialog stays as a manual
+fallback for when you already know the ASIN.
+
 ## Storage visibility (milestone 7 — core built + verified)
 
 The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does
@@ -253,8 +263,10 @@ fuzzy-to-concrete `BindOrCreate` lifecycle as center-authored book intents. The 
 | **Note construction** | `capture/CaptureBuilder` | Maps a provenance into records: a **quoted** capture (browser/Kindle) → `External`-anchored passage note; a **manual** capture (bubble) → freestanding synthesis note. Pure, so the whole mapping is unit-tested without keys or storage. |
 | **Retroactive clustering** | `capture/CaptureClusterer` | Groups captures sharing an identifier (same URL, same title) under one **provisional source** — a derived view, before that source is ever a real record. |
 | **Promotion** | `capture/CapturePromotion` | When a hard identity later appears (you add the book with an ISBN), **bind** the matching provisional cluster to the real record instead of stranding it — reusing `BindOrCreate` so hard-identity, fuzzy-title, and edition-safety rules all carry over verbatim. |
+| **Manual link** | `capture/CaptureLink` | The **user-driven** counterpart to promotion: when a capture never got a hard identity (a browser clip, a floating thought, a Kindle-notebook highlight), you say "this *is* from that book on my shelf." Binds every still-provisional note in the cluster to the chosen book — no fuzzy matching (you decided) — re-pointing `bookKey` only, so the frozen snapshot/title/cluster id survive and the note stays legible. Pure + JVM-tested. |
 | **Triage** | `capture/CaptureTriage` | The unresolved / **thin-context view**: surfaces captures whose best identifier is only an app name or a timestamp, so you tag them while you remember. Read-only, derived, optional-and-later — never at capture time. |
 | **Kindle import** | `kindle/KindleNotebook` | Parses the Kindle **notebook export** (HTML) into per-highlight captures — a highlight-*import* source, not a live one. **Non-realtime** and bounded by Amazon's per-book clipping limit; ingests exactly what the file holds. Clusters on the book title (the export carries no ISBN) and promotes like any other capture. |
+| **Kindle browse** | `kindle/KindleLink.libraryUrl` / `libraryProbeScript` / `cleanTitle` | The **browse-your-shelf** helpers behind "Browse Kindle library" (the read-in-place counterpart to Browse O'Reilly): open your own library on `read.amazon.com`, and when you tap a book, learn its **ASIN** (`asinOf` on the reader URL) + **title** without typing either. The Cloud Reader is an SPA, so a tap swaps in the reader without a navigation — `libraryProbeScript` is polled and hands off once the ASIN appears; `cleanTitle` strips Amazon's `- Kindle edition`-style chrome and rejects the reader's own generic labels so an early poll falls back to the ASIN rather than naming the book "Kindle". |
 
 **Android wiring:** a chromeless `CaptureActivity` backs the sanctioned entry points — a `PROCESS_TEXT`
 "Save to Citation" item in the system text-selection toolbar (any app with selectable text), a
@@ -263,8 +275,11 @@ resolves provenance and finishes with a toast, no app switch. A `QuickCaptureBub
 `ManualCaptureActivity` provide the "display over other apps" **floating bubble** for typing a note
 over anything (the catch-all; captures what you type, never the screen). The repository files captures
 offline, and importing an EPUB/PDF/RR serial runs **promotion** to adopt any waiting provisional
-captures. The Personal tab shows a **triage banner**; New has "Import Kindle notebook"; Settings gates
-the bubble behind the overlay permission.
+captures. For the captures promotion can't reach — no hard identity ever arrives — the note detail
+dialog offers **"Link to a book"** (`CaptureLink` → `CitationRepository.linkNoteToBook`): pick any book
+in your library and the capture's source is bound by hand, along with its cluster siblings, and re-posted
+up the mailbox so LifeOps sees the binding. The Personal tab shows a **triage banner**; New has "Import
+Kindle notebook"; Settings gates the bubble behind the overlay permission.
 
 ## Reading telemetry — engaged time (core built + verified)
 

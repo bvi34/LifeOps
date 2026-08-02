@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.data.CitationRepository
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteType
@@ -64,6 +65,8 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
     val query by vm.query.collectAsStateWithLifecycle()
     val tagCounts by vm.tagCounts.collectAsStateWithLifecycle()
     val activeTag by vm.activeTag.collectAsStateWithLifecycle()
+    // Library books, offered as link targets for an unbound capture (bind its source by hand).
+    val books by vm.books.collectAsStateWithLifecycle()
     // The note currently open in the detail/edit sheet (tap a row to open).
     var editing by remember { mutableStateOf<Note?>(null) }
 
@@ -123,7 +126,9 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
             onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
             onJump = { vm.jumpToNote(note); editing = null },
             onDelete = { vm.deleteNote(note.key.toString()); editing = null },
-            onDismiss = { editing = null }
+            onDismiss = { editing = null },
+            linkTargets = books,
+            onLink = { bookKey -> vm.linkNoteToBook(note.key.toString(), bookKey); editing = null }
         )
     }
 }
@@ -203,8 +208,13 @@ private fun NoteRow(note: Note, vm: ReaderViewModel, onClick: () -> Unit) {
 /**
  * Open one note to read it in full and **add your own words**. A captured quote arrives with an empty
  * body; this is where you annotate it — and, when [onSaveTags] is supplied, file it with tags. When
- * the note is bound to a source, a "Jump to source" button appears; otherwise you just read the
- * frozen snapshot and write your note.
+ * the note is bound to a source, a "Jump to source" button appears; when it's an unbound capture and
+ * [onLink] + [linkTargets] are supplied, a "Link to a book" button lets you bind its source by hand
+ * (the manual counterpart to automatic promotion). Otherwise you just read the frozen snapshot and
+ * write your note.
+ *
+ * @param linkTargets library books offered as link targets for an unbound capture.
+ * @param onLink called with a chosen book's key to bind this capture's source to it.
  */
 @Composable
 fun NoteDetailDialog(
@@ -213,11 +223,16 @@ fun NoteDetailDialog(
     onJump: () -> Unit,
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
-    onSaveTags: ((String) -> Unit)? = null
+    onSaveTags: ((String) -> Unit)? = null,
+    linkTargets: List<CitationRepository.BookSummary> = emptyList(),
+    onLink: ((String) -> Unit)? = null
 ) {
     var body by remember(note.key) { mutableStateOf(note.body) }
     var tagsText by remember(note.key) { mutableStateOf(Tags.format(note.tags)) }
+    var picking by remember(note.key) { mutableStateOf(false) }
     val canJump = note.source.bookKey != null
+    // An unbound capture can be linked to a book you already hold — bind its source by hand.
+    val canLink = note.source.bookKey == null && onLink != null && linkTargets.isNotEmpty()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -260,6 +275,9 @@ fun NoteDetailDialog(
                     if (canJump) {
                         TextButton(onClick = onJump) { Text("Jump to source") }
                     }
+                    if (canLink) {
+                        TextButton(onClick = { picking = true }) { Text("Link to a book") }
+                    }
                     onDelete?.let {
                         TextButton(onClick = it) {
                             Text("Delete", color = MaterialTheme.colorScheme.error)
@@ -275,6 +293,61 @@ fun NoteDetailDialog(
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+
+    if (picking && onLink != null) {
+        LinkBookPicker(
+            books = linkTargets,
+            onPick = { bookKey -> picking = false; onLink(bookKey) },
+            onDismiss = { picking = false }
+        )
+    }
+}
+
+/**
+ * Pick a library book to bind an unbound capture's source to. A plain, searchless list — one person's
+ * library is small — of every book you hold; tapping one links the capture (and its cluster siblings).
+ */
+@Composable
+private fun LinkBookPicker(
+    books: List<CitationRepository.BookSummary>,
+    onPick: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Link to a book") },
+        text = {
+            if (books.isEmpty()) {
+                Text(
+                    "Your library is empty — add a book first, then link this capture to it.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+            } else {
+                LazyColumn(Modifier.fillMaxWidth()) {
+                    items(books, key = { it.key }) { book ->
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onPick(book.key) }
+                                .padding(vertical = 10.dp)
+                        ) {
+                            Text(
+                                book.title,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            book.author?.let {
+                                Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

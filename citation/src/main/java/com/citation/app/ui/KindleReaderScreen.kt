@@ -167,7 +167,7 @@ fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderView
  * `\"`/`\\` escapes (and `null` for a null result). Unwrap it to the bare footer text before parsing —
  * enough for [KindleLink.parseFooter], which ignores anything that isn't a Location/Page/percent.
  */
-private fun unquoteJsString(raw: String?): String {
+internal fun unquoteJsString(raw: String?): String {
     if (raw == null || raw == "null") return ""
     val trimmed = raw.trim()
     val inner = if (trimmed.length >= 2 && trimmed.first() == '"' && trimmed.last() == '"') {

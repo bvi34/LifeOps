@@ -30,6 +30,15 @@ object KindleLink {
     fun readerUrl(asin: String): String = "$HOST/?asin=${asin.trim()}"
 
     /**
+     * Where a **browse** session lands: your own Kindle library on `read.amazon.com` — the Cloud
+     * Reader's book grid. This is the read-in-place counterpart to Browse O'Reilly: instead of typing
+     * an ASIN and title, you skim the shelf you already own and *tap* a book, and Citation learns its
+     * ASIN + title for you (see [libraryProbeScript] / [cleanTitle]). Amazon keeps you signed in via
+     * cookies, so there's no library proxy or stored credential here — you sign in once in the WebView.
+     */
+    fun libraryUrl(): String = "$HOST/kindle-library"
+
+    /**
      * The ASIN carried by a `read.amazon.com` URL's `?asin=` parameter, or `null` when the URL isn't a
      * Kindle reader link. Tolerant of extra query params (`&ref_=…`) and the reader's own fragments.
      */
@@ -86,4 +95,58 @@ object KindleLink {
         "(function(){var e=document.querySelector('[item-i-d=\"reader-footer-title\"]')" +
             "||document.querySelector('.footer-label.position');" +
             "return e?(e.innerText||e.textContent||''):'';})()"
+
+    /**
+     * A one-liner JS expression for the **browse** WebView to poll while you skim your library. It
+     * returns the current URL and the best available book title, joined by a newline
+     * (`"<href>\n<title>"`) — because the Cloud Reader is a single-page app: tapping a book swaps in the
+     * reader (`?asin=…`) *without* a fresh navigation, so a poll — the same honest trick
+     * [footerProbeScript] uses for the position — is how the browse surface notices you picked one.
+     *
+     * The caller reads the ASIN from the href via [asinOf] and the human title via [cleanTitle] over the
+     * title half. The title is taken from the reader chrome if it has rendered, else the document title
+     * (which Amazon sets to the book's name once a book is open); [cleanTitle] rejects the library's own
+     * generic chrome so an early poll falls back to the ASIN rather than naming the book "Kindle".
+     */
+    fun libraryProbeScript(): String =
+        "(function(){var t='';" +
+            "var s=['[item-i-d=\"reader-header-title\"]','.book-title','[aria-label=\"Book title\"]'];" +
+            "for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);" +
+            "if(e){var v=(e.innerText||e.textContent||'').trim();if(v){t=v;break;}}}" +
+            "if(!t)t=document.title||'';" +
+            "return location.href+'\\n'+t;})()"
+
+    // Amazon chrome that shows up as a page/reader title but isn't a book name — reject these so the
+    // browse handoff falls back to the ASIN instead of naming a book after the reader itself.
+    private val GENERIC_TITLES = setOf(
+        "kindle cloud reader", "amazon kindle", "kindle", "amazon.com",
+        "kindle library", "your library", "your books", "library", "read now"
+    )
+
+    // Suffixes Amazon tacks onto a product/page title; stripped so the stored name is just the book.
+    private val TITLE_SUFFIXES = listOf(
+        " - kindle edition", " - kindle", ": kindle store", " - amazon.com", " | kindle"
+    )
+
+    /**
+     * Clean a raw reader/page title into a book title — trimmed, with Amazon's `- Kindle edition` /
+     * `- Amazon.com`-style chrome stripped — or `null` when it's only the reader's own generic label
+     * (so the browse handoff can fall back to the ASIN). Empty/blank input is likewise `null`.
+     */
+    fun cleanTitle(raw: String?): String? {
+        var s = raw?.trim().orEmpty()
+        if (s.isEmpty()) return null
+        var changed = true
+        while (changed) {
+            changed = false
+            for (suffix in TITLE_SUFFIXES) {
+                if (s.endsWith(suffix, ignoreCase = true)) {
+                    s = s.dropLast(suffix.length).trim()
+                    changed = true
+                }
+            }
+        }
+        if (s.isBlank() || s.lowercase() in GENERIC_TITLES) return null
+        return s
+    }
 }
