@@ -219,6 +219,16 @@ the reader uses, so a lapse mid-browse re-signs-in without kicking you out. Tapp
 your library (deduped by id, so re-browsing reuses the entry + notes), titled from the URL slug. The
 old "…add an O'Reilly book by id" dialog stays as a manual fallback.
 
+**Browse Kindle library** (`ui/KindleLibraryScreen`) is the same move for Kindle: a full-screen WebView
+on your own library at `read.amazon.com` (Amazon's own sign-in + cookies — no proxy or stored
+credential, unlike O'Reilly). Because the Cloud Reader is a single-page app, a book tap swaps in the
+reader *without* a navigation, so instead of `shouldOverrideUrlLoading` the screen **polls**
+`KindleLink.libraryProbeScript` (the same trick the reader uses to follow the footer position); when a
+book's ASIN appears it hands back the ASIN + a `cleanTitle`'d name (`openKindleFromLibrary`), opening it
+**read-in-place** through `KindleReaderScreen` — registered in your library, deduped by ASIN, so
+re-picking reuses the entry + notes. The old "…add a Kindle book by ASIN" dialog stays as a manual
+fallback for when you already know the ASIN.
+
 ## Storage visibility (milestone 7 — core built + verified)
 
 The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does
@@ -255,6 +265,7 @@ fuzzy-to-concrete `BindOrCreate` lifecycle as center-authored book intents. The 
 | **Promotion** | `capture/CapturePromotion` | When a hard identity later appears (you add the book with an ISBN), **bind** the matching provisional cluster to the real record instead of stranding it — reusing `BindOrCreate` so hard-identity, fuzzy-title, and edition-safety rules all carry over verbatim. |
 | **Triage** | `capture/CaptureTriage` | The unresolved / **thin-context view**: surfaces captures whose best identifier is only an app name or a timestamp, so you tag them while you remember. Read-only, derived, optional-and-later — never at capture time. |
 | **Kindle import** | `kindle/KindleNotebook` | Parses the Kindle **notebook export** (HTML) into per-highlight captures — a highlight-*import* source, not a live one. **Non-realtime** and bounded by Amazon's per-book clipping limit; ingests exactly what the file holds. Clusters on the book title (the export carries no ISBN) and promotes like any other capture. |
+| **Kindle browse** | `kindle/KindleLink.libraryUrl` / `libraryProbeScript` / `cleanTitle` | The **browse-your-shelf** helpers behind "Browse Kindle library" (the read-in-place counterpart to Browse O'Reilly): open your own library on `read.amazon.com`, and when you tap a book, learn its **ASIN** (`asinOf` on the reader URL) + **title** without typing either. The Cloud Reader is an SPA, so a tap swaps in the reader without a navigation — `libraryProbeScript` is polled and hands off once the ASIN appears; `cleanTitle` strips Amazon's `- Kindle edition`-style chrome and rejects the reader's own generic labels so an early poll falls back to the ASIN rather than naming the book "Kindle". |
 
 **Android wiring:** a chromeless `CaptureActivity` backs the sanctioned entry points — a `PROCESS_TEXT`
 "Save to Citation" item in the system text-selection toolbar (any app with selectable text), a

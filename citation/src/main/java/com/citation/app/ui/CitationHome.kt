@@ -111,6 +111,18 @@ fun CitationHome(vm: ReaderViewModel) {
         return
     }
 
+    // Your Kindle library (a WebView on read.amazon.com) preempts the shell while browsing — the
+    // read-in-place counterpart to the O'Reilly catalog, but on Amazon's own sign-in/cookies.
+    val kindleLibrary by vm.kindleLibrary.collectAsStateWithLifecycle()
+    kindleLibrary?.let { lib ->
+        KindleLibraryScreen(
+            library = lib,
+            onOpenBook = { asin, title -> vm.openKindleFromLibrary(asin, title) },
+            onBack = { vm.closeKindleLibrary() }
+        )
+        return
+    }
+
     Scaffold(
         bottomBar = {
             NavigationBar {
@@ -131,7 +143,8 @@ fun CitationHome(vm: ReaderViewModel) {
                 HomeTab.NEW -> NewTab(
                     vm,
                     onBrowseRoyalRoad = { browsingRoyalRoad = true },
-                    onBrowseOreilly = { vm.browseOreilly() }
+                    onBrowseOreilly = { vm.browseOreilly() },
+                    onBrowseKindle = { vm.browseKindle() }
                 )
                 HomeTab.PERSONAL -> PersonalTab(vm)
                 HomeTab.READ -> ReadTab(vm, onGoToLibrary = { tabOrdinal = HomeTab.LIBRARY.ordinal })
@@ -146,7 +159,12 @@ fun CitationHome(vm: ReaderViewModel) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseOreilly: () -> Unit) {
+private fun NewTab(
+    vm: ReaderViewModel,
+    onBrowseRoyalRoad: () -> Unit,
+    onBrowseOreilly: () -> Unit,
+    onBrowseKindle: () -> Unit
+) {
     val status by vm.status.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     var showOreilly by remember { mutableStateOf(false) }
@@ -203,13 +221,18 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseO
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse Royal Road") }
             OutlinedButton(
-                onClick = { showKindle = true },
+                onClick = onBrowseKindle,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Read on Kindle") }
+            ) { Text("Browse Kindle library") }
+            TextButton(
+                onClick = { showKindle = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("…or add a Kindle book by ASIN") }
             Text(
-                "Kindle: read in place on read.amazon.com. Nothing is downloaded. Copying the passage is " +
-                    "blocked there, so a note cites your location (\"Location 156 of 3866\") instead of the " +
-                    "words — the book is the source and the note is yours.",
+                "Kindle: read in place on read.amazon.com. Browse your own library and tap a book — " +
+                    "Citation learns its title and ASIN for you. Nothing is downloaded. Copying the passage " +
+                    "is blocked there, so a note cites your location (\"Location 156 of 3866\") instead of " +
+                    "the words — the book is the source and the note is yours.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp)

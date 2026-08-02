@@ -63,4 +63,39 @@ class KindleLinkTest {
         assertNull(KindleLink.parseFooter(""))
         assertNull(KindleLink.parseFooter("Loading…"))
     }
+
+    @Test
+    fun libraryUrlOpensTheKindleShelf() {
+        assertEquals("https://read.amazon.com/kindle-library", KindleLink.libraryUrl())
+        // The shelf itself carries no ASIN — you're picking, not reading yet.
+        assertNull(KindleLink.asinOf(KindleLink.libraryUrl()))
+    }
+
+    @Test
+    fun cleanTitleStripsKindleChrome() {
+        assertEquals(
+            "Designing Data-Intensive Applications",
+            KindleLink.cleanTitle("Designing Data-Intensive Applications - Kindle edition")
+        )
+        assertEquals("The Pragmatic Programmer", KindleLink.cleanTitle("  The Pragmatic Programmer - Kindle  "))
+        assertEquals("Dune", KindleLink.cleanTitle("Dune: Kindle Store"))
+        assertEquals("Dune", KindleLink.cleanTitle("Dune - Amazon.com"))
+    }
+
+    @Test
+    fun cleanTitleRejectsGenericReaderChrome() {
+        assertNull(KindleLink.cleanTitle("Kindle Cloud Reader"))
+        assertNull(KindleLink.cleanTitle("amazon kindle"))
+        assertNull(KindleLink.cleanTitle("Your Library"))
+        assertNull(KindleLink.cleanTitle(""))
+        assertNull(KindleLink.cleanTitle("   "))
+        assertNull(KindleLink.cleanTitle(null))
+        // A bare "Kindle" suffix that would otherwise leave nothing is rejected, not left blank.
+        assertNull(KindleLink.cleanTitle("Kindle"))
+    }
+
+    @Test
+    fun cleanTitleKeepsARealTitleUntouched() {
+        assertEquals("Project Hail Mary", KindleLink.cleanTitle("Project Hail Mary"))
+    }
 }

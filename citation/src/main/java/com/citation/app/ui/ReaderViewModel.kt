@@ -178,6 +178,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _oreillyCatalog = MutableStateFlow<CitationRepository.OreillyCatalog?>(null)
     val oreillyCatalog: StateFlow<CitationRepository.OreillyCatalog?> = _oreillyCatalog.asStateFlow()
 
+    // Non-null while browsing your Kindle library on read.amazon.com; the browse surface preempts the
+    // home shell, exactly like the O'Reilly catalog — you skim the shelf and tap a book to open it.
+    private val _kindleLibrary = MutableStateFlow<CitationRepository.KindleLibrary?>(null)
+    val kindleLibrary: StateFlow<CitationRepository.KindleLibrary?> = _kindleLibrary.asStateFlow()
+
     fun importEpub(bytes: ByteArray) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
@@ -358,6 +363,30 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch {
             val key = repository.addKindleBook(asin, title)
             repository.markOpened(key)
+            _kindleSession.value = repository.kindleSession(key)
+            repository.beginReaderContext(key)
+            startReadingSession(key)
+        }
+    }
+
+    /** Open your Kindle library on read.amazon.com to browse and pick a book (learns its ASIN + title). */
+    fun browseKindle() {
+        _kindleLibrary.value = repository.kindleLibrary()
+    }
+
+    /** Leave the Kindle library without opening anything. */
+    fun closeKindleLibrary() { _kindleLibrary.value = null }
+
+    /**
+     * Open a book tapped in the Kindle library: register it read-in-place with the ASIN + learned title
+     * (deduped by ASIN, so re-picking the same book reuses its notes) and hand off to the reader. The
+     * Kindle counterpart to [openOreillyFromCatalog] — browse the shelf, tap, and you're reading.
+     */
+    fun openKindleFromLibrary(asin: String, title: String) {
+        viewModelScope.launch {
+            val key = repository.addKindleBook(asin, title)
+            repository.markOpened(key)
+            _kindleLibrary.value = null
             _kindleSession.value = repository.kindleSession(key)
             repository.beginReaderContext(key)
             startReadingSession(key)

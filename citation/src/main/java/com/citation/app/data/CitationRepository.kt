@@ -440,6 +440,19 @@ class CitationRepository private constructor(
     // --- Kindle (read-in-place on read.amazon.com) --------------------------------------------
 
     /**
+     * A Kindle **browse** session: your own library on `read.amazon.com`, opened so you can *pick* a
+     * book instead of typing its ASIN + title by hand. The read-in-place counterpart to [OreillyCatalog]
+     * — but there's no library proxy or stored credential here (Amazon keeps you signed in via cookies),
+     * so the session is just the shelf's URL. Tapping a book hands its ASIN + learned title back to be
+     * registered and opened.
+     */
+    data class KindleLibrary(val startUrl: String)
+
+    /** Build a browse session at your Kindle library (the Cloud Reader's book grid). */
+    fun kindleLibrary(): KindleLibrary =
+        KindleLibrary(startUrl = com.citation.core.kindle.KindleLink.libraryUrl())
+
+    /**
      * A Kindle read-in-place session: the ASIN and the `read.amazon.com` URL to open in Amazon's own
      * Cloud Reader. Unlike O'Reilly there's no library proxy or stored credential — you sign in to
      * Amazon in the WebView and cookies persist the session. Whispersync resumes your position on open,
