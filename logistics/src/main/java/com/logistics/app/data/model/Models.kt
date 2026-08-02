@@ -32,7 +32,10 @@ enum class PantryTxnReason(val value: String, val label: String) {
     IMPORT("import", "Imported"),
     CONSUME("consume", "Used in a meal"),
     MANUAL("manual", "Manual change"),
-    CORRECTION("correction", "Correction");
+    CORRECTION("correction", "Correction"),
+    // A repackage: the same physical stock re-expressed at a finer granularity ("2 lb" → "3 meals",
+    // "1 unit of 58-count" → "58 pieces"). Not an add or a use — the quantity/unit just change shape.
+    SPLIT("split", "Broke into pieces");
 
     companion object {
         fun from(value: String?) = entries.firstOrNull { it.value == value } ?: MANUAL
@@ -54,8 +57,36 @@ data class PantryTxn(
     val mealName: String? = null,
     val recipeId: String? = null,
     val importBatchId: String? = null,
+    // Groups every CONSUME row that came from a single "log a meal" action, so history can rebuild —
+    // and re-run — that one meal exactly. Null for non-meal movements and legacy pre-migration rows.
+    val mealLogId: String? = null,
     val note: String? = null,
     val createdAt: String
+)
+
+/**
+ * One past meal, reconstructed from the CONSUME ledger — the unit the History screen shows and the
+ * "Log again" button replays. [lines] are the pantry deductions that made up the meal; [loggedAt] is
+ * when it was logged.
+ */
+data class MealLog(
+    val id: String,
+    val mealName: String,
+    val recipeId: String?,
+    val loggedAt: String,
+    val lines: List<MealLine>
+) {
+    val itemCount: Int get() = lines.size
+}
+
+/** One deducted item within a [MealLog]. [pantryItemId] is the row to deduct from again on a remake;
+ *  [available] is false when that row no longer exists so the UI can flag a partial remake. */
+data class MealLine(
+    val pantryItemId: String,
+    val name: String,
+    val amount: Double,
+    val unit: String,
+    val available: Boolean = true
 )
 
 /** How an [ImportBatch] came in — a real Walmart PDF, or pasted/shared order text. */
