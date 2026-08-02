@@ -3,6 +3,7 @@ package com.operations.sandbox
 import android.app.Application
 import com.citation.app.CitationApplication
 import com.lifeops.app.LifeOpsApp
+import com.logistics.app.LogisticsApp
 
 /**
  * The single [Application] for the whole suite. LifeOps and Citation are library modules now, so
@@ -18,5 +19,6 @@ class SandboxApplication : Application() {
         super.onCreate()
         LifeOpsApp.install(this)
         CitationApplication.install(this)
+        LogisticsApp.install(this)
     }
 }

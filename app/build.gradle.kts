@@ -45,9 +45,10 @@ android {
 }
 
 dependencies {
-    // The two hosted apps (now libraries) and the shared backup engine.
+    // The hosted apps (now libraries) and the shared backup engine.
     implementation(project(":lifeops"))
     implementation(project(":citation"))
+    implementation(project(":logistics"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

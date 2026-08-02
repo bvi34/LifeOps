@@ -18,10 +18,17 @@ the receipts.
 
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
 > single installed application and the central hub the whole suite opens through. One launcher that
-> opens LifeOps (`:lifeops`, the standard app) or Citation (`:citation`), and one place to back the
-> whole suite up into a single `.zip` and restore from it. LifeOps and Citation are library modules
-> hosted in that one process — see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The
-> backup format/engine is the pure-JVM, unit-tested `:backupkit`.
+> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), or Logistics (`:logistics`),
+> and one place to back the whole suite up into a single `.zip` and restore from it. LifeOps,
+> Citation and Logistics are library modules hosted in that one process — see
+> **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
+> pure-JVM, unit-tested `:backupkit`.
+
+> **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
+> It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
+> meals you cooked ("for *X* meal, here's what I used"), and grabs recipes from links — reusing
+> LifeOps' food & recipe catalog rather than keeping its own. Its framework-free parsers live in
+> `logistics/logic/` and are JVM-unit-tested.
 
 ---
 

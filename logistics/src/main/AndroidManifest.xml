@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Recipe-from-link import fetches a page over HTTPS and parses its schema.org Recipe data.
+         Everything else — the pantry, the Walmart PDF import, meal logging — works fully offline. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- Logistics is a library module: no app-level attributes here (name/icon/theme/label live on
+         the :app host). Only Logistics' own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. The theme is set on
+             the activity so Logistics keeps its own launch look. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Logistics"
+            android:windowSoftInputMode="adjustResize">
+
+            <!-- Open/share a Walmart order PDF straight into the import flow. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+
+            <!-- Share a recipe link (or plain order text) from another app into Logistics. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
