@@ -248,8 +248,8 @@ class TaskRepository(
         }
     }
 
-    private fun accuracyMultiplier(task: Task, actualMinutes: Int?): Double =
-        ScoringUtils.accuracyMultiplier(task.estimatedMinutes, actualMinutes)
+    private fun earnedPoints(task: Task, actualMinutes: Int?, successFactor: Double = 1.0): Int =
+        ScoringUtils.earnedResourceValue(task, actualMinutes, successFactor)
 
     private fun buildSnapshot(
         weekId: String,
@@ -277,12 +277,12 @@ class TaskRepository(
             }
             when (task.status) {
                 TaskStatus.COMPLETED -> {
-                    val earned = (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id])).roundToInt()
+                    val earned = earnedPoints(task, timeByTask[task.id])
                     task.aspectId?.let { aspectBreakdown[it] = (aspectBreakdown[it] ?: 0) + earned }
                     task.categoryId?.let { categoryBreakdown[it] = (categoryBreakdown[it] ?: 0) + earned }
                 }
                 TaskStatus.UNSUCCESSFUL -> {
-                    val earned = (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id]) * 0.5).roundToInt()
+                    val earned = earnedPoints(task, timeByTask[task.id], successFactor = 0.5)
                     task.aspectId?.let { aspectBreakdown[it] = (aspectBreakdown[it] ?: 0) + earned }
                     task.categoryId?.let { categoryBreakdown[it] = (categoryBreakdown[it] ?: 0) + earned }
                 }
@@ -319,10 +319,8 @@ class TaskRepository(
 
         val totalEarned = tasks.sumOf { task ->
             when (task.status) {
-                TaskStatus.COMPLETED ->
-                    (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id])).roundToInt()
-                TaskStatus.UNSUCCESSFUL ->
-                    (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id]) * 0.5).roundToInt()
+                TaskStatus.COMPLETED -> earnedPoints(task, timeByTask[task.id])
+                TaskStatus.UNSUCCESSFUL -> earnedPoints(task, timeByTask[task.id], successFactor = 0.5)
                 else -> 0
             }
         } + readingPoints
@@ -550,7 +548,7 @@ class TaskRepository(
             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
         val result = mutableMapOf<String, Int>()
         tasks.filter { it.status == TaskStatus.COMPLETED }.forEach { task ->
-            val earned = (task.resourceValue * accuracyMultiplier(task, timeByTask[task.id])).roundToInt()
+            val earned = earnedPoints(task, timeByTask[task.id])
             task.aspectId?.let { result[it] = (result[it] ?: 0) + earned }
         }
         return result

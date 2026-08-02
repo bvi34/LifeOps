@@ -61,8 +61,7 @@ class ResourcesViewModel(
                             .mapValues { (_, e) -> e.sumOf { it.durationMinutes } }
                         val earned = mutableMapOf<String, Int>()
                         tasks.filter { it.status == TaskStatus.COMPLETED }.forEach { task ->
-                            val multiplier = ScoringUtils.accuracyMultiplier(task.estimatedMinutes, timeByTask[task.id])
-                            val pts = (task.resourceValue * multiplier).roundToInt()
+                            val pts = ScoringUtils.earnedResourceValue(task, timeByTask[task.id])
                             task.aspectId?.let { earned[it] = (earned[it] ?: 0) + pts }
                         }
                         earned as Map<String, Int>
