@@ -103,6 +103,7 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val openBook by vm.openBook.collectAsStateWithLifecycle()
     val pdfSession by vm.pdfSession.collectAsStateWithLifecycle()
     val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
+    val kindleSession by vm.kindleSession.collectAsStateWithLifecycle()
 
     // Pause the engaged-reading meter whenever the app leaves the foreground, and resume on return —
     // so backgrounded time never accrues. Guarded inside the VM (no-op when no book is being read),
@@ -128,6 +129,10 @@ fun ReaderScreen(vm: ReaderViewModel) {
     }
     if (oreillySession != null) {
         OreillyReaderScreen(oreillySession!!, vm)
+        return
+    }
+    if (kindleSession != null) {
+        KindleReaderScreen(kindleSession!!, vm)
         return
     }
 

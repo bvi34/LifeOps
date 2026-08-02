@@ -79,6 +79,9 @@ data class BookMetadata(
  * - [EPUB] / [PDF] — **owned** files you hold; jump-to-context is reliable.
  * - [ROYAL_ROAD] — **borrowed** web serial; cacheable but evictable, authors edit chapters.
  * - [OREILLY] — **licensed**, read-in-place; no local content cache, only your annotations.
+ * - [KINDLE] — **licensed**, read-in-place on `read.amazon.com`; like [OREILLY], no local content
+ *   cache. The reader also suppresses text selection, so a Kindle note cites the reader's *location*
+ *   ("Location 156 of 3866") rather than the passage words.
  * - [INTERNAL] — a LifeOps center-authored placeholder (a "wanted" book) not yet bound to an
  *   artifact.
  * - [CAPTURE] — a fragment handed to Citation from *another app* (a browser selection, shared text,
@@ -91,6 +94,7 @@ enum class SourceType {
     PDF,
     ROYAL_ROAD,
     OREILLY,
+    KINDLE,
     INTERNAL,
     CAPTURE;
 

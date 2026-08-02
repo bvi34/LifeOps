@@ -150,6 +150,7 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseO
     val status by vm.status.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     var showOreilly by remember { mutableStateOf(false) }
+    var showKindle by remember { mutableStateOf(false) }
 
     val epubPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
@@ -162,16 +163,16 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseO
         val title = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".pdf") ?: "PDF"
         if (bytes != null) vm.importPdf(bytes, title)
     }
-    val kindlePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        val html = context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() }
-        if (html != null) vm.importKindleNotebook(html)
-    }
-
     if (showOreilly) {
         AddOreillyDialog(
             onAdd = { id, title -> vm.addOreillyBook(id, title); showOreilly = false },
             onDismiss = { showOreilly = false }
+        )
+    }
+    if (showKindle) {
+        AddKindleDialog(
+            onAdd = { asin, title -> vm.addKindleBook(asin, title); showKindle = false },
+            onDismiss = { showKindle = false }
         )
     }
 
@@ -202,12 +203,13 @@ private fun NewTab(vm: ReaderViewModel, onBrowseRoyalRoad: () -> Unit, onBrowseO
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse Royal Road") }
             OutlinedButton(
-                onClick = { kindlePicker.launch("text/html") },
+                onClick = { showKindle = true },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            ) { Text("Import Kindle notebook") }
+            ) { Text("Read on Kindle") }
             Text(
-                "Kindle: export your notebook (highlights sync to your Amazon account) and pick the " +
-                    "HTML here. Non-realtime, and bounded by Amazon's per-book clipping limit.",
+                "Kindle: read in place on read.amazon.com. Nothing is downloaded. Copying the passage is " +
+                    "blocked there, so a note cites your location (\"Location 156 of 3866\") instead of the " +
+                    "words — the book is the source and the note is yours.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(top = 4.dp)
@@ -684,6 +686,44 @@ private fun AddOreillyDialog(onAdd: (String, String) -> Unit, onDismiss: () -> U
         confirmButton = {
             Button(onClick = { onAdd(bookId.trim(), title.trim()) }, enabled = bookId.isNotBlank() && title.isNotBlank()) {
                 Text("Add")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun AddKindleDialog(onAdd: (String, String) -> Unit, onDismiss: () -> Unit) {
+    var asin by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Read a Kindle book") },
+        text = {
+            Column {
+                Text(
+                    "Read-in-place on read.amazon.com: nothing is downloaded. Copying is blocked there, so " +
+                        "notes cite your location rather than the passage. The ASIN is in the book's Amazon " +
+                        "URL (the read.amazon.com “?asin=…”, or the product page's Product details).",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+                OutlinedTextField(
+                    value = asin, onValueChange = { asin = it },
+                    label = { Text("Kindle ASIN") },
+                    supportingText = { Text("e.g. B0H9Y3ZFJM") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    value = title, onValueChange = { title = it },
+                    label = { Text("Title") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onAdd(asin.trim(), title.trim()) }, enabled = asin.isNotBlank() && title.isNotBlank()) {
+                Text("Read")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
