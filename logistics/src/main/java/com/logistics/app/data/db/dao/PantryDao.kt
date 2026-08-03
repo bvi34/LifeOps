@@ -3,6 +3,7 @@ package com.logistics.app.data.db.dao
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
+import com.logistics.app.data.db.entities.GroceryItemEntity
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
@@ -57,4 +58,36 @@ interface PantryDao {
 
     @Query("SELECT * FROM import_batches ORDER BY createdAt DESC")
     suspend fun getAllBatches(): List<ImportBatchEntity>
+
+    // --- grocery list ---
+    // Unchecked first, then by category/name, so the "still to get" items sit at the top and the
+    // ticked-off ones sink to the bottom of each category as you shop.
+    @Query("SELECT * FROM grocery_items ORDER BY checked ASC, category COLLATE NOCASE, name COLLATE NOCASE")
+    fun observeGrocery(): Flow<List<GroceryItemEntity>>
+
+    @Query("SELECT * FROM grocery_items")
+    suspend fun getAllGrocery(): List<GroceryItemEntity>
+
+    @Query("SELECT * FROM grocery_items WHERE checked = 1")
+    suspend fun getCheckedGrocery(): List<GroceryItemEntity>
+
+    @Query("SELECT * FROM grocery_items WHERE id = :id")
+    suspend fun getGroceryById(id: String): GroceryItemEntity?
+
+    /** Case-insensitive exact-name match so adding the same product twice (or re-running a source)
+     *  tops up the existing line instead of duplicating it. */
+    @Query("SELECT * FROM grocery_items WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun getGroceryByName(name: String): GroceryItemEntity?
+
+    @Upsert
+    suspend fun upsertGrocery(item: GroceryItemEntity)
+
+    @Query("DELETE FROM grocery_items WHERE id = :id")
+    suspend fun deleteGrocery(id: String)
+
+    @Query("DELETE FROM grocery_items WHERE checked = 1")
+    suspend fun deleteCheckedGrocery()
+
+    @Query("DELETE FROM grocery_items")
+    suspend fun clearGrocery()
 }

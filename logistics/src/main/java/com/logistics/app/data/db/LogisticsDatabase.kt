@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.logistics.app.data.db.dao.PantryDao
+import com.logistics.app.data.db.entities.GroceryItemEntity
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
@@ -23,9 +24,10 @@ import com.logistics.app.data.db.entities.PantryTxnEntity
     entities = [
         PantryItemEntity::class,
         PantryTxnEntity::class,
-        ImportBatchEntity::class
+        ImportBatchEntity::class,
+        GroceryItemEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class LogisticsDatabase : RoomDatabase() {
@@ -44,6 +46,34 @@ abstract class LogisticsDatabase : RoomDatabase() {
             }
         }
 
+        /** v3 adds the grocery_items table — the shopping list Logistics builds from low stock,
+         *  recipes, and hand-added lines, then purchases back into the pantry. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS grocery_items (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        foodItemId TEXT,
+                        name TEXT NOT NULL,
+                        quantity REAL NOT NULL,
+                        unit TEXT NOT NULL,
+                        category TEXT,
+                        source TEXT NOT NULL,
+                        recipeId TEXT,
+                        checked INTEGER NOT NULL,
+                        note TEXT,
+                        createdAt TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_grocery_items_name ON grocery_items(name)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_grocery_items_foodItemId ON grocery_items(foodItemId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_grocery_items_checked ON grocery_items(checked)")
+            }
+        }
+
         @Volatile
         private var instance: LogisticsDatabase? = null
 
@@ -53,7 +83,7 @@ abstract class LogisticsDatabase : RoomDatabase() {
                     context.applicationContext,
                     LogisticsDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

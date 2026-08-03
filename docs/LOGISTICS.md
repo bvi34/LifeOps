@@ -12,11 +12,12 @@ what's left, and what went into each meal is a **ledger**, not a vibe.
 
 | Tab | Purpose |
 |---|---|
-| **Pantry** | The shelf. Every stock line with its quantity, unit and category; quick +/- adjustments, low-stock flags, add-by-hand, and **Break into pieces** to re-express one line at a finer granularity. |
-| **Import** | Fill the pantry from a **Walmart order** — open the order's PDF or paste its text, review the parsed lines, confirm. |
+| **Pantry** | The shelf. Every stock line with its quantity, unit and category; quick +/- adjustments, low-stock flags, add-by-hand, **Break into pieces** to re-express one line at a finer granularity, and — tap a row — **set its exact amount and a low-stock alert level**. |
+| **Grocery** | The shopping list. Add items by hand, pull in everything **running low** in one tap, or gather a recipe's **missing ingredients**; check things off as you shop, then **Add to pantry** shelves the checked lines (a `restock` ledger entry each) and clears them. |
 | **Log meal** | "For *X* meal, here's what I used." **Search** the shelf to grab specific items, name a meal (optionally from a LifeOps recipe), mark what you took, and Logistics deducts it from the pantry. |
 | **History** | Every past meal, newest first, with the items it drew down — **Make again** re-deducts the same items in one tap. |
 | **Recipes** | Grab a recipe from any link (schema.org data) into **LifeOps'** recipe book, and browse the recipes already there. |
+| **Import** | Fill the pantry from a **Walmart order** — open the order's PDF or paste its text, review the parsed lines, confirm. |
 
 ## How it relates to LifeOps
 
@@ -32,9 +33,12 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
   linked to a LifeOps food by id (a soft reference, not a cross-database FK).
 - **`pantry_txns`** — the movement ledger. Every quantity change is one signed row: `import`,
   `consume` (stamped with the meal name / recipe, and a `mealLogId` grouping one meal's rows so
-  History can replay it), `manual`, `correction`, or `split` (a repackage). *Schema v2 adds
-  `mealLogId`; a manual `MIGRATION_1_2` backfills it as `NULL` on existing rows.*
+  History can replay it), `manual`, `correction`, `split` (a repackage), or `restock` (bought off
+  the grocery list). *Schema v2 adds `mealLogId`; a manual `MIGRATION_1_2` backfills it as `NULL`.*
 - **`import_batches`** — provenance for each import run (source, order number, item count).
+- **`grocery_items`** — the shopping list: name, quantity, unit, category, a nullable LifeOps food
+  link, a `source` (`manual` / `low_stock` / `recipe`), and a `checked` tick. *Schema v3 adds this
+  table via `MIGRATION_2_3`.*
 
 ## Module layout
 
@@ -43,17 +47,18 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 ├── logic/            pure JVM, unit-tested — no Android imports
 │   ├── WalmartOrderParser   extracted order text → structured lines
 │   ├── PantryUnits          product name → packaging unit + aisle category
+│   ├── GroceryPlanner       restock-quantity + missing-ingredient rules for the list
 │   ├── IngredientLineParser "2 cups flour" → {qty, unit, name}
 │   └── RecipeLinkParser     page HTML → schema.org Recipe (JSON-LD + microdata)
 ├── net/              the only Android/IO shims
 │   ├── PdfTextExtractor     PDFBox-Android: PDF → text (feeds WalmartOrderParser)
 │   └── RecipeFetcher        HttpURLConnection: URL → HTML (feeds RecipeLinkParser)
 ├── data/             Room (LogisticsDatabase, entities, PantryDao) + repositories
-│   └── repository/   PantryRepository (pantry + ledger + import + consume) · LifeOpsCatalog (bridge)
-├── ui/               Compose: pantry · importflow · meal · history · recipe (+ theme)
+│   └── repository/   PantryRepository (pantry + ledger + import + consume + grocery) · LifeOpsCatalog (bridge)
+├── ui/               Compose: pantry · grocery · importflow · meal · history · recipe (+ theme)
 ├── backup/           LogisticsBackupContributor (whole-file logistics.db copy)
 ├── LogisticsApp.kt   tiny runtime container (install/get), like LifeOpsApp
-└── MainActivity.kt   five-tab shell; also handles VIEW pdf / SEND text|link intents
+└── MainActivity.kt   tabbed shell; also handles VIEW pdf / SEND text|link intents
 ```
 
 The split mirrors LifeOps' growth/weather approach: **everything that can be pure logic is**, so the
@@ -104,6 +109,25 @@ granularity: the same physical stock, a new count and unit — **2 lb → 3 meal
 noting the before/after (`PantryUnits.splitNote`, JVM-tested), so the shelf stays auditable. The
 Pantry row's **Break into pieces** action opens a dialog with a live `before → after` preview.
 
+## Grocery list — build it, shop it, shelve it
+
+The **Grocery** tab is a first-class shopping list wired into both ends of the pantry. Three ways
+fill it, all de-duplicated by name (`PantryRepository.addGroceryItem` tops up an existing line and
+un-checks it rather than duplicating):
+
+- **By hand** — a name/qty/unit/category dialog.
+- **Restock low** — `addLowStockToGrocery()` sweeps every pantry line at or below its alert level (or
+  simply out of stock) and adds it, with a suggested count from `GroceryPlanner.restockQuantity`
+  (round the deficit up to whole units; at least one). The alert level is set by tapping a Pantry row.
+- **From recipe** — `addRecipeMissingToGrocery(recipeId)` resolves the recipe's foods
+  (`LifeOpsCatalog.ingredientFoods`) and adds only the ones you don't already have, matched by catalog
+  id first then name via `GroceryPlanner.missingIngredients` (both JVM-tested).
+
+As you shop you check items off (they strike through and sink to the bottom). **Add to pantry** —
+`purchaseCheckedIntoPantry()` — closes the loop shop → shelf: each checked line tops up its matching
+pantry row (by food id, then name) or creates a new one, lands a `restock` ledger entry, and is
+removed from the list. So a grocery run is as auditable as an import or a meal.
+
 ## Recipe-from-link
 
 `RecipeFetcher` fetches the page; `RecipeLinkParser` reads its **schema.org/Recipe** data
@@ -130,6 +154,8 @@ Pure-JVM suites under `logistics/src/test` (run with `gradle :logistics:testDebu
 - `PantryUnitsTest` — packaging-word choice (incl. "Canister" over "Can"), `each` normalization,
   keyword categories, the tightened rule that keeps *fresh* meat out of Produce, and the
   `splitNote` before/after copy used by **Break into pieces**.
+- `GroceryPlannerTest` — restock-quantity rounding (deficit up to whole units, at least one, one when
+  no threshold) and missing-ingredient matching (by id and by case-insensitive name, de-duplicated).
 - `IngredientLineParserTest` — quantities, fractions (`1/2`, `1 1/2`, `½`), unit vs. size words,
   free-form lines.
 - `RecipeLinkParserTest` — JSON-LD, `@graph`, HTML-entity decoding, and the microdata fallback.
