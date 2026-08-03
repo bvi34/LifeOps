@@ -1,5 +1,6 @@
 package com.logistics.app.ui.pantry
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -39,6 +40,12 @@ class PantryViewModel(private val repo: PantryRepository) : ViewModel() {
         repo.setQuantity(item.id, value)
     }
 
+    /** Set (or clear, with null) the low-stock alert level that flags a row as running low and feeds
+     *  the grocery list's "Restock low". */
+    fun setThreshold(item: PantryItem, threshold: Double?) = viewModelScope.launch {
+        repo.updateThreshold(item.id, threshold)
+    }
+
     fun delete(item: PantryItem) = viewModelScope.launch { repo.deleteItem(item.id) }
 
     fun addItem(name: String, quantity: Double, unit: String, category: String?) = viewModelScope.launch {
@@ -62,6 +69,7 @@ fun PantryScreen(vm: PantryViewModel) {
     val pantryItems by vm.items.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
     var splitTarget by remember { mutableStateOf<PantryItem?>(null) }
+    var editTarget by remember { mutableStateOf<PantryItem?>(null) }
 
     Scaffold(
         floatingActionButton = {
@@ -96,7 +104,8 @@ fun PantryScreen(vm: PantryViewModel) {
                             onIncrement = { vm.adjust(row, 1.0) },
                             onDecrement = { vm.adjust(row, -1.0) },
                             onDelete = { vm.delete(row) },
-                            onSplit = { splitTarget = row }
+                            onSplit = { splitTarget = row },
+                            onEdit = { editTarget = row }
                         )
                     }
                 }
@@ -124,6 +133,18 @@ fun PantryScreen(vm: PantryViewModel) {
             }
         )
     }
+
+    editTarget?.let { target ->
+        EditItemDialog(
+            item = target,
+            onDismiss = { editTarget = null },
+            onConfirm = { quantity, threshold ->
+                vm.setQuantity(target, quantity)
+                vm.setThreshold(target, threshold)
+                editTarget = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -142,14 +163,16 @@ private fun PantryRow(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onDelete: () -> Unit,
-    onSplit: () -> Unit
+    onSplit: () -> Unit,
+    onEdit: () -> Unit
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
+            // Tap the name/qty to set an exact amount and a low-stock alert level.
+            Column(Modifier.weight(1f).clickable { onEdit() }) {
                 Text(item.name, style = MaterialTheme.typography.bodyMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -223,6 +246,53 @@ private fun SplitItemDialog(
                 enabled = piecesValue != null && piecesValue > 0.0,
                 onClick = { onConfirm(piecesValue ?: 0.0, unit.ifBlank { "piece" }) }
             ) { Text("Break up") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * Edit an existing stock line: set its exact quantity and its low-stock alert level. The threshold is
+ * what turns on the "LOW" flag and what the grocery list's "Restock low" sweeps for, so this is where
+ * the pantry and the shopping list connect. A blank threshold clears the alert.
+ */
+@Composable
+private fun EditItemDialog(
+    item: PantryItem,
+    onDismiss: () -> Unit,
+    onConfirm: (quantity: Double, threshold: Double?) -> Unit
+) {
+    var qty by remember { mutableStateOf(formatQty(item.quantity)) }
+    var threshold by remember { mutableStateOf(item.lowStockThreshold?.let { formatQty(it) } ?: "") }
+    val qtyValue = qty.toDoubleOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(item.name) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = qty, onValueChange = { qty = it },
+                    label = { Text("On hand (${item.unit})") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = threshold, onValueChange = { threshold = it },
+                    label = { Text("Alert me at or below") },
+                    supportingText = { Text("Feeds \"Restock low\" on your grocery list. Leave blank for no alert.") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = qtyValue != null,
+                onClick = { onConfirm(qtyValue ?: item.quantity, threshold.toDoubleOrNull()) }
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

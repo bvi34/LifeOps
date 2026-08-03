@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -23,6 +24,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.logistics.app.ui.grocery.GroceryScreen
+import com.logistics.app.ui.grocery.GroceryViewModel
 import com.logistics.app.ui.history.HistoryScreen
 import com.logistics.app.ui.history.HistoryViewModel
 import com.logistics.app.ui.importflow.ImportScreen
@@ -37,18 +40,19 @@ import com.logistics.app.ui.theme.LogisticsTheme
 
 private sealed class Dest(val route: String, val label: String, val icon: ImageVector) {
     object Pantry : Dest("pantry", "Pantry", Icons.Default.Inventory2)
-    object Import : Dest("import", "Import", Icons.Default.ReceiptLong)
+    object Grocery : Dest("grocery", "Grocery", Icons.Default.ShoppingCart)
     object Meal : Dest("meal", "Log meal", Icons.Default.Restaurant)
     object History : Dest("history", "History", Icons.Default.History)
     object Recipes : Dest("recipes", "Recipes", Icons.Default.MenuBook)
+    object Import : Dest("import", "Import", Icons.Default.ReceiptLong)
 }
 
-private val navItems = listOf(Dest.Pantry, Dest.Import, Dest.Meal, Dest.History, Dest.Recipes)
+private val navItems = listOf(Dest.Pantry, Dest.Grocery, Dest.Meal, Dest.History, Dest.Recipes, Dest.Import)
 
 /**
- * Logistics' single entry point. A four-tab shell — Pantry, Import, Log meal, Recipes — over the one
- * [LogisticsApp] runtime. It also accepts a Walmart PDF opened/shared from another app (→ Import) and
- * a shared recipe link or order text (→ Recipes / Import).
+ * Logistics' single entry point. A tabbed shell — Pantry, Grocery list, Log meal, History, Recipes,
+ * Import — over the one [LogisticsApp] runtime. It also accepts a Walmart PDF opened/shared from
+ * another app (→ Import) and a shared recipe link or order text (→ Recipes / Import).
  */
 class MainActivity : ComponentActivity() {
 
@@ -104,6 +108,10 @@ class MainActivity : ComponentActivity() {
                         composable(Dest.Pantry.route) {
                             val vm: PantryViewModel = viewModel(factory = PantryViewModel.Factory(app.pantryRepository))
                             PantryScreen(vm)
+                        }
+                        composable(Dest.Grocery.route) {
+                            val vm: GroceryViewModel = viewModel(factory = GroceryViewModel.Factory(app.pantryRepository, app.catalog))
+                            GroceryScreen(vm)
                         }
                         composable(Dest.Import.route) {
                             val vm: ImportViewModel = viewModel(factory = ImportViewModel.Factory(app.pantryRepository))

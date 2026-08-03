@@ -33,6 +33,9 @@ enum class PantryTxnReason(val value: String, val label: String) {
     CONSUME("consume", "Used in a meal"),
     MANUAL("manual", "Manual change"),
     CORRECTION("correction", "Correction"),
+    // Stock that came back from a grocery run — the checked-off list items purchased and shelved.
+    // Distinct from IMPORT (a parsed order document) so the ledger reads "Restocked" for a shop.
+    RESTOCK("restock", "Restocked"),
     // A repackage: the same physical stock re-expressed at a finer granularity ("2 lb" → "3 meals",
     // "1 unit of 58-count" → "58 pieces"). Not an add or a use — the quantity/unit just change shape.
     SPLIT("split", "Broke into pieces");
@@ -147,4 +150,38 @@ data class ParsedIngredient(
     val unit: String?,
     val name: String,
     val raw: String
+)
+
+/** Where a [GroceryItem] came onto the list — so the list can explain itself ("added because you're
+ *  low", "needed for Chili night") and so re-running a source doesn't duplicate what's already there. */
+enum class GrocerySource(val value: String, val label: String) {
+    MANUAL("manual", "Added by hand"),
+    LOW_STOCK("low_stock", "Running low"),
+    RECIPE("recipe", "For a recipe");
+
+    companion object {
+        fun from(value: String?) = entries.firstOrNull { it.value == value } ?: MANUAL
+    }
+}
+
+/**
+ * One line on the grocery/shopping list — the thing Logistics is a "list builder" for. A line can be
+ * added by hand, pulled in because a pantry row dropped below its alert level, or gathered from a
+ * recipe's missing ingredients. [foodItemId] links to a LifeOps catalog food when known, so checking
+ * the item off restocks the right pantry row (matched by id first, then name). [checked] is the
+ * shopping-cart tick; checked lines are what "Add to pantry" purchases and clears.
+ */
+data class GroceryItem(
+    val id: String,
+    val foodItemId: String? = null,
+    val name: String,
+    val quantity: Double,
+    val unit: String = "unit",
+    val category: String? = null,
+    val source: GrocerySource = GrocerySource.MANUAL,
+    val recipeId: String? = null,
+    val checked: Boolean = false,
+    val note: String? = null,
+    val createdAt: String,
+    val updatedAt: String
 )

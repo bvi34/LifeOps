@@ -26,9 +26,10 @@ the receipts.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
-> meals you cooked ("for *X* meal, here's what I used"), and grabs recipes from links — reusing
-> LifeOps' food & recipe catalog rather than keeping its own. Its framework-free parsers live in
-> `logistics/logic/` and are JVM-unit-tested.
+> meals you cooked ("for *X* meal, here's what I used"), **builds a grocery list** from what's running
+> low or a recipe's missing ingredients — and shelves it back into the pantry when you've shopped —
+> and grabs recipes from links, reusing LifeOps' food & recipe catalog rather than keeping its own.
+> Its framework-free parsers live in `logistics/logic/` and are JVM-unit-tested.
 
 ---
 

@@ -1,9 +1,12 @@
 package com.logistics.app.data.repository
 
 import com.logistics.app.data.db.dao.PantryDao
+import com.logistics.app.data.db.entities.GroceryItemEntity
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
+import com.logistics.app.data.model.GroceryItem
+import com.logistics.app.data.model.GrocerySource
 import com.logistics.app.data.model.ImportBatch
 import com.logistics.app.data.model.ImportSource
 import com.logistics.app.data.model.MealLine
@@ -12,6 +15,7 @@ import com.logistics.app.data.model.PantryItem
 import com.logistics.app.data.model.PantryTxn
 import com.logistics.app.data.model.PantryTxnReason
 import com.logistics.app.data.model.ParsedOrder
+import com.logistics.app.logic.GroceryPlanner
 import com.logistics.app.logic.PantryUnits
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -35,6 +39,7 @@ class PantryRepository(
     fun observeConsumption(): Flow<List<PantryTxn>> = dao.observeConsumption().map { list -> list.map { it.toModel() } }
     fun observeTxnsForItem(itemId: String): Flow<List<PantryTxn>> =
         dao.observeTxnsForItem(itemId).map { list -> list.map { it.toModel() } }
+    fun observeGrocery(): Flow<List<GroceryItem>> = dao.observeGrocery().map { list -> list.map { it.toModel() } }
 
     /**
      * Past meals for the History screen, newest first — every CONSUME ledger row rolled up into the
@@ -227,6 +232,164 @@ class PantryRepository(
             consumptions = meal.lines.map { Consumption(it.pantryItemId, it.amount) }
         )
 
+    // --- grocery list ("what to buy") ---
+
+    /**
+     * Add (or top up) one grocery line. Dedupes by name case-insensitively so hand-adding a product
+     * already on the list — or re-running "restock low" / "from recipe" — bumps the existing line's
+     * quantity instead of duplicating it (and un-checks it, since you clearly still need more). Fills
+     * in a catalog link/category only when the existing line lacked one. Returns the resulting line.
+     */
+    suspend fun addGroceryItem(
+        name: String,
+        quantity: Double = 1.0,
+        unit: String = "unit",
+        category: String? = null,
+        foodItemId: String? = null,
+        source: GrocerySource = GrocerySource.MANUAL,
+        recipeId: String? = null
+    ): GroceryItem {
+        val clean = name.trim()
+        val now = now()
+        val existing = dao.getGroceryByName(clean)
+        val entity = if (existing != null) {
+            existing.copy(
+                quantity = existing.quantity + quantity.coerceAtLeast(0.0),
+                unit = existing.unit.ifBlank { unit },
+                category = existing.category ?: category,
+                foodItemId = existing.foodItemId ?: foodItemId,
+                recipeId = existing.recipeId ?: recipeId,
+                checked = false,
+                updatedAt = now
+            )
+        } else {
+            GroceryItemEntity(
+                id = UUID.randomUUID().toString(),
+                foodItemId = foodItemId,
+                name = clean,
+                quantity = quantity.coerceAtLeast(0.0).let { if (it == 0.0) 1.0 else it },
+                unit = unit.ifBlank { "unit" },
+                category = category,
+                source = source.value,
+                recipeId = recipeId,
+                checked = false,
+                note = null,
+                createdAt = now,
+                updatedAt = now
+            )
+        }
+        dao.upsertGrocery(entity)
+        return entity.toModel()
+    }
+
+    suspend fun setGroceryChecked(id: String, checked: Boolean) {
+        val item = dao.getGroceryById(id) ?: return
+        dao.upsertGrocery(item.copy(checked = checked, updatedAt = now()))
+    }
+
+    suspend fun setGroceryQuantity(id: String, quantity: Double) {
+        val item = dao.getGroceryById(id) ?: return
+        dao.upsertGrocery(item.copy(quantity = quantity.coerceAtLeast(0.0), updatedAt = now()))
+    }
+
+    suspend fun removeGroceryItem(id: String) = dao.deleteGrocery(id)
+    suspend fun clearCheckedGrocery() = dao.deleteCheckedGrocery()
+    suspend fun clearGrocery() = dao.clearGrocery()
+
+    /**
+     * Sweep the pantry for anything at/under its alert level (or simply run out) and add each to the
+     * grocery list, suggesting how many to buy via [GroceryPlanner.restockQuantity]. Returns how many
+     * lines were added or topped up.
+     */
+    suspend fun addLowStockToGrocery(): Int {
+        var added = 0
+        for (item in dao.getAll()) {
+            val low = (item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold) ||
+                item.quantity <= 0.0
+            if (!low) continue
+            addGroceryItem(
+                name = item.name,
+                quantity = GroceryPlanner.restockQuantity(item.quantity, item.lowStockThreshold),
+                unit = item.unit,
+                category = item.category,
+                foodItemId = item.foodItemId,
+                source = GrocerySource.LOW_STOCK
+            )
+            added++
+        }
+        return added
+    }
+
+    /**
+     * Add a recipe's *missing* ingredients — the catalog foods it needs that aren't already on the
+     * shelf (matched by id first, then name; only counting rows that actually have stock). Returns
+     * how many lines were added. Requires [catalog.ingredientFoods] to resolve the recipe.
+     */
+    suspend fun addRecipeMissingToGrocery(recipeId: String): Int {
+        val needed = catalog.ingredientFoods(recipeId)
+        if (needed.isEmpty()) return 0
+        val pantry = dao.getAll().filter { it.quantity > 0.0 }
+        val stockedIds = pantry.mapNotNull { it.foodItemId }.toSet()
+        val stockedNames = pantry.map { it.name }.toSet()
+        val missing = GroceryPlanner.missingIngredients(needed, stockedIds, stockedNames)
+        for (food in missing) {
+            addGroceryItem(
+                name = food.name,
+                quantity = 1.0,
+                unit = PantryUnits.guessUnit(food.name),
+                category = PantryUnits.guessCategory(food.name),
+                foodItemId = food.foodItemId,
+                source = GrocerySource.RECIPE,
+                recipeId = recipeId
+            )
+        }
+        return missing.size
+    }
+
+    /**
+     * "Bought it" — move every checked grocery line onto the pantry shelf: top up the matching pantry
+     * row (by catalog id, then name) or create a new one, record a RESTOCK ledger entry, and clear the
+     * line off the list. This closes the loop shop → shelf. Returns how many lines were shelved.
+     */
+    suspend fun purchaseCheckedIntoPantry(): Int {
+        val now = now()
+        var count = 0
+        for (g in dao.getCheckedGrocery()) {
+            if (g.quantity <= 0.0) { dao.deleteGrocery(g.id); continue }
+            val existing = g.foodItemId?.let { dao.getByFoodItemId(it) } ?: dao.getByName(g.name)
+            if (existing != null) {
+                dao.upsert(
+                    existing.copy(
+                        quantity = existing.quantity + g.quantity,
+                        category = existing.category ?: g.category,
+                        foodItemId = existing.foodItemId ?: g.foodItemId,
+                        updatedAt = now
+                    )
+                )
+                recordTxn(existing.id, g.quantity, existing.unit, PantryTxnReason.RESTOCK, note = "From grocery list")
+            } else {
+                val foodId = g.foodItemId ?: catalog.findFoodByName(g.name)?.id
+                val item = PantryItemEntity(
+                    id = UUID.randomUUID().toString(),
+                    foodItemId = foodId,
+                    name = g.name,
+                    quantity = g.quantity,
+                    unit = g.unit,
+                    category = g.category,
+                    lowStockThreshold = null,
+                    note = null,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                dao.upsert(item)
+                recordTxn(item.id, g.quantity, item.unit, PantryTxnReason.RESTOCK, note = "From grocery list")
+            }
+            dao.deleteGrocery(g.id)
+            count++
+        }
+        return count
+    }
+
     // --- repackage ("break a unit into individual pieces") ---
 
     /**
@@ -294,5 +457,11 @@ class PantryRepository(
     private fun ImportBatchEntity.toModel() = ImportBatch(
         id = id, source = ImportSource.from(source), orderNumber = orderNumber,
         itemCount = itemCount, label = label, createdAt = createdAt
+    )
+
+    private fun GroceryItemEntity.toModel() = GroceryItem(
+        id = id, foodItemId = foodItemId, name = name, quantity = quantity, unit = unit,
+        category = category, source = GrocerySource.from(source), recipeId = recipeId,
+        checked = checked, note = note, createdAt = createdAt, updatedAt = updatedAt
     )
 }

@@ -10,8 +10,10 @@ import com.lifeops.app.data.model.RecipeNutrition
 import com.lifeops.app.data.repository.FoodItemRepository
 import com.lifeops.app.data.repository.RecipeRepository
 import com.logistics.app.data.model.ParsedRecipe
+import com.logistics.app.logic.GroceryPlanner
 import com.logistics.app.logic.IngredientLineParser
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * Logistics' read/write bridge into LifeOps' food & recipe catalog. This is the seam that makes the
@@ -39,6 +41,16 @@ class LifeOpsCatalog private constructor(
      *  food so nutrition and recipes line up. Null when nothing matches closely enough. */
     suspend fun findFoodByName(name: String): FoodItem? =
         foodItemRepo.search(name, 5).firstOrNull { it.name.equals(name, ignoreCase = true) }
+
+    /**
+     * The catalog foods a recipe calls for, resolved to name + id — the raw material the grocery-list
+     * builder diffs against the pantry to find what's missing. Ingredients whose food no longer
+     * exists in the catalog are dropped.
+     */
+    suspend fun ingredientFoods(recipeId: String): List<GroceryPlanner.NeededFood> =
+        recipeRepo.observeIngredients(recipeId).first().mapNotNull { ing ->
+            foodItemRepo.getById(ing.foodItemId)?.let { GroceryPlanner.NeededFood(it.id, it.name) }
+        }
 
     // --- writes (materialize an imported recipe into LifeOps) ---
 
