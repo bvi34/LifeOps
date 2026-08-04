@@ -44,6 +44,20 @@ import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
 
 /**
+ * A compact JS probe of the browse page's *actual* state, for the temporary diagnostics panel. Returns
+ * `readyState | href | title | bodyTextLen | imageCount | linkCount | firstBodyText`, so a blank grid
+ * reveals its cause on-screen: a sign-in bounce shows in the href/text, an "unsupported browser" gate
+ * shows in the text, a still-loading page shows a non-`complete` readyState, and a genuinely empty grid
+ * shows as `complete` with few images and short text.
+ */
+private const val DIAG_PROBE =
+    "(function(){try{var b=document.body;var t=b?(b.innerText||''):'';" +
+        "var imgs=document.images?document.images.length:0;" +
+        "var links=document.querySelectorAll('a').length;" +
+        "return [document.readyState,location.href,(document.title||''),t.length,imgs,links," +
+        "t.slice(0,160).replace(/\\s+/g,' ')].join(' | ');}catch(e){return 'probe error: '+e;}})()"
+
+/**
  * The Kindle **browse/library** surface — the read-in-place counterpart to Browse O'Reilly, on
  * `read.amazon.com`. This is a full-screen WebView on your own Kindle library (the Cloud Reader's book
  * grid); Amazon keeps you signed in via cookies, so there's no library proxy or stored credential like
@@ -59,10 +73,10 @@ import kotlinx.coroutines.delay
  * page (the same honest trick [KindleReaderScreen] uses to follow the footer position) and hand off once
  * a book's ASIN appears — giving the title a moment to settle so it isn't named after the reader itself.
  *
- * **Diagnostics:** while we chase why the library grid can come up blank, a debuggable build surfaces the
- * WebView's own console errors and failed page/resource loads in a panel below the hint — so the actual
- * failure is visible on-screen (screenshot-able) instead of hidden. It's gated to debuggable builds and
- * meant to be removed once the cause is understood.
+ * **Diagnostics (temporary):** while we chase why the library grid can come up blank, a panel below the
+ * hint actively probes the page ([DIAG_PROBE]) and shows its live state plus any console errors and
+ * failed loads — so the actual failure is visible on-screen (screenshot-able) instead of hidden. Meant
+ * to be removed once the cause is understood.
  *
  * @param onOpenBook called with the tapped book's ASIN and best-effort title; the caller opens it.
  */
@@ -77,11 +91,12 @@ fun KindleLibraryScreen(
     var webView by remember { mutableStateOf<WebView?>(null) }
     // Hand a picked book off exactly once — the poll keeps firing until this screen is torn down.
     var handedOff by remember { mutableStateOf(false) }
-    // Temporary on-screen diagnostics: WebView console errors + failed loads, newest last, capped.
-    val diagnostics = remember { mutableStateListOf<String>() }
+    // Temporary on-screen diagnostics.
+    var pageState by remember { mutableStateOf("probing…") }
+    val events = remember { mutableStateListOf<String>() } // console errors + failed loads, capped
     fun note(line: String) {
-        diagnostics.add(line)
-        if (diagnostics.size > 40) diagnostics.removeAt(0)
+        events.add(line)
+        if (events.size > 30) events.removeAt(0)
     }
 
     // Poll the SPA while you browse: when a book's ASIN appears in the URL you've opened one. Give the
@@ -114,6 +129,15 @@ fun KindleLibraryScreen(
         }
     }
 
+    // Temporary diagnostic poll: report the page's live DOM state so a blank grid shows its cause.
+    LaunchedEffect(webView) {
+        val view = webView ?: return@LaunchedEffect
+        while (true) {
+            view.evaluateJavascript(DIAG_PROBE) { raw -> pageState = unquoteJsString(raw) }
+            delay(1000)
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -134,38 +158,42 @@ fun KindleLibraryScreen(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.secondary
             )
-            if (diagnostics.isNotEmpty()) {
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            // Temporary diagnostics panel — always visible so it can be screenshotted.
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            ) {
+                Column(
+                    Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()).padding(8.dp)
                 ) {
-                    Column(
-                        Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()).padding(8.dp)
-                    ) {
+                    Text(
+                        "WebView diagnostics (temporary):",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        pageState,
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    events.forEach { line ->
                         Text(
-                            "WebView diagnostics (temporary):",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            line,
+                            fontSize = 10.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.error
                         )
-                        diagnostics.forEach { line ->
-                            Text(
-                                line,
-                                fontSize = 10.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
                     }
                 }
             }
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
-                    // Let a debuggable build attach Chrome DevTools (chrome://inspect) to this WebView so
-                    // the network/console can be inspected directly, and mirror errors on-screen too.
-                    val debuggable =
-                        (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
-                    if (debuggable) WebView.setWebContentsDebuggingEnabled(true)
+                    // Let a debuggable build attach Chrome DevTools (chrome://inspect) to this WebView.
+                    if ((context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+                        WebView.setWebContentsDebuggingEnabled(true)
+                    }
                     WebView(context).apply {
                         val web = this
                         webView = this
@@ -177,30 +205,27 @@ fun KindleLibraryScreen(
                             setAcceptCookie(true)
                             setAcceptThirdPartyCookies(web, true)
                         }
-                        // Surface JS console errors/warnings from the library SPA so a blank grid shows
-                        // its cause on-screen (debuggable builds only).
-                        if (debuggable) {
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
-                                    if (msg.messageLevel() == ConsoleMessage.MessageLevel.ERROR ||
-                                        msg.messageLevel() == ConsoleMessage.MessageLevel.WARNING
-                                    ) {
-                                        note("console ${msg.messageLevel()}: ${msg.message()}")
-                                    }
-                                    return false // also let it reach Logcat
+                        // Surface JS console errors/warnings from the library SPA on-screen.
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+                                if (msg.messageLevel() == ConsoleMessage.MessageLevel.ERROR ||
+                                    msg.messageLevel() == ConsoleMessage.MessageLevel.WARNING
+                                ) {
+                                    note("console ${msg.messageLevel()}: ${msg.message()}")
                                 }
+                                return false // also let it reach Logcat
                             }
                         }
                         // Keep every navigation — the Amazon sign-in redirects included — inside this
                         // WebView; the default would hand http(s) URLs to an external browser and break
-                        // the session. Also record failed loads (debuggable builds only).
+                        // the session. Also record failed main-frame loads on-screen.
                         webViewClient = object : WebViewClient() {
                             override fun onReceivedError(
                                 view: WebView?,
                                 request: WebResourceRequest?,
                                 error: WebResourceError?
                             ) {
-                                if (debuggable && request?.isForMainFrame == true) {
+                                if (request?.isForMainFrame == true) {
                                     note("load error: ${error?.description} @ ${request.url}")
                                 }
                             }
@@ -210,13 +235,9 @@ fun KindleLibraryScreen(
                                 request: WebResourceRequest?,
                                 errorResponse: WebResourceResponse?
                             ) {
-                                if (debuggable && request?.isForMainFrame == true) {
+                                if (request?.isForMainFrame == true) {
                                     note("http ${errorResponse?.statusCode}: ${request.url}")
                                 }
-                            }
-
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                if (debuggable) note("loaded: $url")
                             }
                         }
                         loadUrl(library.startUrl)
