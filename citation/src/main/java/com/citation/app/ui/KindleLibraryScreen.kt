@@ -118,13 +118,6 @@ fun KindleLibraryScreen(
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        // Ask Amazon for the desktop Cloud Reader. On the WebView's default (mobile) UA
-                        // it serves the shell — the `kindle` header and sort/filter chrome — but never
-                        // fills in the library grid, so the shelf comes up blank; a desktop UA renders
-                        // the books you can actually tap. See KindleLink.desktopUserAgent.
-                        settings.userAgentString = KindleLink.desktopUserAgent()
-                        // Darken the white Cloud Reader to match Citation's dark chrome.
-                        settings.enableCloudReaderDarkMode()
                         // Amazon keeps you signed in via cookies — persist them across opens and share
                         // them with the reader's WebView.
                         CookieManager.getInstance().apply {
