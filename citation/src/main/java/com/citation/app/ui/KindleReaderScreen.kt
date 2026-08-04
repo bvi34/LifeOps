@@ -145,6 +145,10 @@ fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderView
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // Load the desktop Cloud Reader, matching the browse surface — the footer probe
+                        // reads the desktop reader's position element, and a mobile UA gets a different
+                        // (or blank) page. See KindleLink.desktopUserAgent.
+                        settings.userAgentString = KindleLink.desktopUserAgent()
                         // Amazon keeps you signed in via cookies — persist them across opens.
                         CookieManager.getInstance().apply {
                             setAcceptCookie(true)
