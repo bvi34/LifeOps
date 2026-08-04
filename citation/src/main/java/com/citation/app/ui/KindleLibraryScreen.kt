@@ -44,18 +44,28 @@ import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
 
 /**
- * A compact JS probe of the browse page's *actual* state, for the temporary diagnostics panel. Returns
- * `readyState | href | title | bodyTextLen | imageCount | linkCount | firstBodyText`, so a blank grid
- * reveals its cause on-screen: a sign-in bounce shows in the href/text, an "unsupported browser" gate
- * shows in the text, a still-loading page shows a non-`complete` readyState, and a genuinely empty grid
- * shows as `complete` with few images and short text.
+ * A compact JS probe of the browse page's *actual* state, for the temporary diagnostics panel. We now
+ * know the grid loads (readyState `complete`, dozens of cover images + links in the DOM) but isn't
+ * painted, so this also reports geometry — the WebView's CSS viewport (`win`), the document scroll size
+ * (`doc`), the first cover image's rect (`img0`), and the `<main>` container's size/offset (`main`) — to
+ * pin down *why* it's invisible: a collapsed (zero-height) container, covers positioned off-screen, or a
+ * viewport the WebView sized wrong.
  */
 private const val DIAG_PROBE =
     "(function(){try{var b=document.body;var t=b?(b.innerText||''):'';" +
         "var imgs=document.images?document.images.length:0;" +
         "var links=document.querySelectorAll('a').length;" +
+        "var d=document.documentElement;" +
+        "var im=document.images[0];var r=im?im.getBoundingClientRect():null;" +
+        "var img0=r?(Math.round(r.left)+','+Math.round(r.top)+' '+Math.round(r.width)+'x'+" +
+        "Math.round(r.height)):'none';" +
+        "var m=document.querySelector('main')||document.querySelector('[role=main]');" +
+        "var mr=m?m.getBoundingClientRect():null;" +
+        "var mn=mr?(Math.round(mr.width)+'x'+Math.round(mr.height)+'@'+Math.round(mr.top)):'none';" +
         "return [document.readyState,location.href,(document.title||''),t.length,imgs,links," +
-        "t.slice(0,160).replace(/\\s+/g,' ')].join(' | ');}catch(e){return 'probe error: '+e;}})()"
+        "'win '+innerWidth+'x'+innerHeight,'doc '+d.scrollWidth+'x'+d.scrollHeight+'/'+d.clientHeight," +
+        "'img0 '+img0,'main '+mn," +
+        "t.slice(0,110).replace(/\\s+/g,' ')].join(' | ');}catch(e){return 'probe error: '+e;}})()"
 
 /**
  * The Kindle **browse/library** surface — the read-in-place counterpart to Browse O'Reilly, on
@@ -199,6 +209,13 @@ fun KindleLibraryScreen(
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // The library is a responsive app-shell whose grid loads into the DOM but can
+                        // collapse to zero visible height when the WebView lays the page out at a default
+                        // width. Honour the page's own viewport meta and fit it to the view so the grid
+                        // computes real geometry and paints. (The reader is a simple full-viewport page
+                        // and doesn't need this.)
+                        settings.useWideViewPort = true
+                        settings.loadWithOverviewMode = true
                         // Amazon keeps you signed in via cookies — persist them across opens and share
                         // them with the reader's WebView.
                         CookieManager.getInstance().apply {
