@@ -171,6 +171,7 @@ class RunEngine(
         updateWaves(clamped)
         moveEnemies(clamped)
         updateEnemyFire(clamped)
+        updateSpawners(clamped)
         updateAim(input)
         fireWeapon(clamped, input)
         updateArtifactTurrets(clamped)
@@ -332,6 +333,14 @@ class RunEngine(
 
     private fun moveEnemies(dt: Float) {
         for (e in enemies) {
+            // A Mother flees: she backs directly away from the player, staying alive to keep birthing.
+            // Cornering her against the arena edge is how you finally pin her down (a Nest has moveSpeed
+            // 0, so it just sits where it hatched — no special case needed).
+            if (e.type.fleesPlayer) {
+                val away = (e.pos - player.pos).normalized()
+                moveEnemyToward(e, e.pos + away * (arena.cellSize * 4f), dt)
+                continue
+            }
             // Most enemies beeline the player (Geometry Wars); rushers make for the nearest base, and
             // a decoy pulls any enemy that has strayed beyond its lure range. A targeted structure in
             // reach is smashed on the spot rather than orbited.
@@ -749,7 +758,15 @@ class RunEngine(
     private fun spawnWaveEnemy() {
         // Weighted pick among the trash archetypes unlocked at the current tier (each tier reveals a
         // new one). Bosses are never in this pool — they come from the final-wave roster.
-        val pool = EnemyType.values().filter { !it.isBoss && it.unlockTier <= tier }
+        spawnEnemy(weightedTrashPick { true }, hpScale = 1f)
+    }
+
+    /**
+     * A weighted-random trash archetype unlocked at the current [tier], further narrowed by [extra]
+     * (e.g. a Mother's brood excludes other spawners so nests don't hatch nests). Bosses never qualify.
+     */
+    private inline fun weightedTrashPick(extra: (EnemyType) -> Boolean): EnemyType {
+        val pool = EnemyType.values().filter { !it.isBoss && it.unlockTier <= tier && extra(it) }
         val totalWeight = pool.sumOf { it.spawnWeight }
         var r = rng.nextInt(totalWeight.coerceAtLeast(1))
         var chosen = pool.first()
@@ -757,7 +774,27 @@ class RunEngine(
             r -= t.spawnWeight
             if (r < 0) { chosen = t; break }
         }
-        spawnEnemy(chosen, hpScale = 1f)
+        return chosen
+    }
+
+    /**
+     * On-field spawners (Nest, Mother — DESIGN.md §7). While one lives it births minions beside itself
+     * on its own cadence, capped at [EnemyType.maxBrood] live children. A Nest hatches Shamblers where
+     * it sits; a Mother births a random unlocked trash type as she flees. A Mother's brood death resets
+     * her timer (see [killEnemy]), so thinning her swarm only makes her spawn faster.
+     */
+    private fun updateSpawners(dt: Float) {
+        // Snapshot first: a birth appends to [enemies], which must not be mutated mid-iteration.
+        val active = enemies.filter { it.alive && it.type.isSpawner }
+        for (e in active) {
+            e.spawnCooldown -= dt
+            if (e.spawnCooldown > 0f) continue
+            e.spawnCooldown = e.type.spawnInterval // recharge whether or not the brood is full this tick
+            val liveBrood = enemies.count { it.parentId == e.id && it.alive }
+            if (liveBrood >= e.type.maxBrood) continue // brood at capacity — hold until one dies or strays
+            val child = if (e.type.broodRandom) weightedTrashPick { !it.isSpawner } else EnemyType.SHAMBLER
+            spawnEnemy(child, hpScale = 1f, at = e.pos, parentId = e.id)
+        }
     }
 
     /**
@@ -777,8 +814,13 @@ class RunEngine(
     }
 
 
-    private fun spawnEnemy(type: EnemyType, hpScale: Float) {
-        val pos = spawnPoint()
+    private fun spawnEnemy(type: EnemyType, hpScale: Float, at: Vec2? = null, parentId: Int = -1) {
+        // Brood minions hatch next to their parent (with a little scatter so they don't stack); a wave
+        // enemy enters at a random active edge.
+        val pos = if (at != null) {
+            val j = arena.cellSize
+            arena.clamp(Vec2(at.x + rng.nextFloat(-j, j), at.y + rng.nextFloat(-j, j)), type.radius)
+        } else spawnPoint()
         // Build the enemy through the same StatBlock path the player uses: its archetype base, then
         // the Director's per-enemy multipliers, then any enemy-attached artifacts (Mob Boss). An
         // aimed-scope artifact is simply inert on an enemy with no weapon (DESIGN.md §3).
@@ -802,6 +844,9 @@ class RunEngine(
             maxHealth = hp,
             moveSpeed = block.resolve(Stat.MOVE_SPEED, Scope.GLOBAL),
             held = director.enemyModifiers,
+            // A spawner waits one full interval before its first birth, so it isn't instant on arrival.
+            spawnCooldown = type.spawnInterval,
+            parentId = parentId,
         )
         enemies.add(e)
         bus.emit(GameEvent.OnSpawn(e.id, e.kind))
@@ -1035,6 +1080,13 @@ class RunEngine(
     private fun killEnemy(e: Enemy) {
         score += e.type.xpValue * 10L
         bus.emit(GameEvent.OnKill(PLAYER_ID, e.id, e.kind))
+        // Feeding the Mother: if this enemy was one of her brood, her spawn timer zeroes so she births
+        // again immediately — thinning the swarm only accelerates her. The dying child is still in the
+        // list here (removed after this pass), but the live-parent lookup skips it.
+        if (e.parentId >= 0) {
+            enemies.firstOrNull { it.id == e.parentId && it.alive && it.type.broodResetsOnDeath }
+                ?.let { it.spawnCooldown = 0f }
+        }
         if (e.kind == EntityKind.BOSS) {
             // Bosses always pay out — XP, gold, and a heart.
             pickups.add(Pickup(nextId++, e.pos, PickupKind.XP, e.type.xpValue))

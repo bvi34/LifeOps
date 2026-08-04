@@ -115,6 +115,10 @@ class Enemy(
     var burstShots: Int = 0,
     /** Seconds until this enemy can strike a structure again (discrete hits, not continuous drain). */
     var attackCooldown: Float = 0f,
+    /** Spawners (Nest/Mother): seconds until the next on-field birth. Unused by other types. */
+    var spawnCooldown: Float = 0f,
+    /** The spawner that birthed this enemy, or -1 if it entered from a wave rather than a parent. */
+    val parentId: Int = -1,
 ) {
     val alive: Boolean get() = health > 0f
 }
