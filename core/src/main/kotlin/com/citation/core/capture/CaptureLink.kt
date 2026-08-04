@@ -26,7 +26,7 @@ object CaptureLink {
      * rebound notes for the caller to persist + re-post. [notes] is the full capture corpus; members of
      * other clusters, and members already bound, are filtered out (linking never re-binds).
      */
-    fun link(notes: List<Note>, clusterId: String, bookKey: EntityKey): List<Note> =
+    fun link(notes: List<Note>, clusterId: String, bookKey: EntityKey?): List<Note> =
         notes
             .filter { it.source.sourceId == clusterId && it.source.bookKey == null }
             .map { CaptureBuilder.bind(it, bookKey) }

@@ -11,6 +11,11 @@
           <set>
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/app" />
+            <option value="$PROJECT_DIR$/backupkit" />
+            <option value="$PROJECT_DIR$/citation" />
+            <option value="$PROJECT_DIR$/core" />
+            <option value="$PROJECT_DIR$/lifeops" />
+            <option value="$PROJECT_DIR$/logistics" />
           </set>
         </option>
       </GradleProjectSettings>

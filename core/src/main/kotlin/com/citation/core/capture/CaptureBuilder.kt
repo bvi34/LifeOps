@@ -74,6 +74,6 @@ object CaptureBuilder {
     )
 
     /** Re-point a note's frozen descriptor at a now-bound book (the persisted effect of a promotion). */
-    fun bind(note: Note, bookKey: EntityKey): Note =
+    fun bind(note: Note, bookKey: EntityKey?): Note =
         note.copy(source = note.source.copy(bookKey = bookKey))
 }
