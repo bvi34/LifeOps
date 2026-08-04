@@ -335,7 +335,7 @@ enum class EnemyType(
     // you under trash. Tanky enough to demand real fire; rich drops when you finally crack it.
     NEST("Nest", maxHealth = 300f, moveSpeed = 0f, contactHits = 1, radius = 20f, xpValue = 18, goldValue = 6,
         xpDropChance = 0.85f, goldDropChance = 0.5f, unlockTier = 3, spawnWeight = 2,
-        spawnInterval = 4.5f, maxBrood = 5),
+        spawnInterval = 4.5f, maxBrood = 10),
 
     // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
     // Tier 1: the original heavy melee sponge. A contact costs three hearts.
@@ -353,7 +353,7 @@ enum class EnemyType(
     // her down through her own swarm.
     MOTHER("Mother", maxHealth = 1400f, moveSpeed = 62f, contactHits = 3, radius = 30f, xpValue = 75, goldValue = 36,
         isBoss = true, unlockTier = 3,
-        spawnInterval = 3f, broodRandom = true, maxBrood = 8, broodResetsOnDeath = true, fleesPlayer = true),
+        spawnInterval = 3f, broodRandom = true, maxBrood = 16, broodResetsOnDeath = true, fleesPlayer = true),
     ;
 
     val isRanged: Boolean get() = fireRate > 0f
