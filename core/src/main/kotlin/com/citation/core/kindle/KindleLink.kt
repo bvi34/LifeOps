@@ -39,20 +39,6 @@ object KindleLink {
     fun libraryUrl(): String = "$HOST/kindle-library"
 
     /**
-     * The user-agent a WebView must present to `read.amazon.com` so Amazon serves the **desktop** Kindle
-     * Cloud Reader. This matters because the Cloud Reader is a desktop-oriented single-page app: on a
-     * mobile user-agent — which is what an Android WebView sends by default (its UA carries `Mobile` and
-     * the `; wv` WebView token) — Amazon hands back the app shell (the `kindle` header, search/sort
-     * chrome) but never populates your library grid, so the browse surface comes up blank. It's the same
-     * page the reader depends on: [footerProbeScript] reads the *desktop* footer element, so both the
-     * library and the reader want this UA. Presenting a plain desktop-Chrome string makes Amazon render
-     * the full shelf (and the reader) the way the rest of this file assumes.
-     */
-    fun desktopUserAgent(): String =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-            "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
-
-    /**
      * The ASIN carried by a `read.amazon.com` URL's `?asin=` parameter, or `null` when the URL isn't a
      * Kindle reader link. Tolerant of extra query params (`&ref_=…`) and the reader's own fragments.
      */
