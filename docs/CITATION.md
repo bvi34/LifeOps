@@ -229,6 +229,12 @@ book's ASIN appears it hands back the ASIN + a `cleanTitle`'d name (`openKindleF
 re-picking reuses the entry + notes. The old "…add a Kindle book by ASIN" dialog stays as a manual
 fallback for when you already know the ASIN.
 
+Both the browse and reader WebViews present a **desktop user-agent** (`KindleLink.desktopUserAgent`).
+The Cloud Reader is desktop-oriented: on the WebView's default mobile UA, Amazon serves the app shell
+(the `kindle` header and sort/filter chrome) but never populates the library grid — so the shelf comes
+up blank — and the reader's footer probe likewise reads the *desktop* position element. Spoofing a
+plain desktop-Chrome UA is what makes the shelf and the reader render.
+
 ## Storage visibility (milestone 7 — core built + verified)
 
 The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does

@@ -2,8 +2,11 @@ package com.citation.app.ui
 
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewFeature
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -145,6 +148,12 @@ fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderView
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
+                        // Load the desktop Cloud Reader, matching the browse surface — the footer probe
+                        // reads the desktop reader's position element, and a mobile UA gets a different
+                        // (or blank) page. See KindleLink.desktopUserAgent.
+                        settings.userAgentString = KindleLink.desktopUserAgent()
+                        // Darken the white Cloud Reader to match Citation's dark chrome.
+                        settings.enableCloudReaderDarkMode()
                         // Amazon keeps you signed in via cookies — persist them across opens.
                         CookieManager.getInstance().apply {
                             setAcceptCookie(true)
@@ -167,6 +176,20 @@ fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderView
  * `\"`/`\\` escapes (and `null` for a null result). Unwrap it to the bare footer text before parsing —
  * enough for [KindleLink.parseFooter], which ignores anything that isn't a Location/Page/percent.
  */
+/**
+ * Turn a Cloud Reader WebView dark. `read.amazon.com` renders on a white page and offers no dark theme
+ * of its own, so we let WebView darken it to match Citation's dark chrome — on both the browse shelf and
+ * the reader. Algorithmic darkening follows the app's night mode: it honours the page's own
+ * `prefers-color-scheme: dark` styles where they exist and darkens the page itself where they don't,
+ * leaving book covers and images legible rather than crudely inverting them. Guarded by feature
+ * detection, so it's a no-op on WebView builds too old to support it.
+ */
+internal fun WebSettings.enableCloudReaderDarkMode() {
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
+        WebSettingsCompat.setAlgorithmicDarkeningAllowed(this, true)
+    }
+}
+
 internal fun unquoteJsString(raw: String?): String {
     if (raw == null || raw == "null") return ""
     val trimmed = raw.trim()

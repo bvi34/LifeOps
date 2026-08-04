@@ -1,7 +1,9 @@
 package com.citation.core.kindle
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KindleLinkTest {
@@ -69,6 +71,19 @@ class KindleLinkTest {
         assertEquals("https://read.amazon.com/kindle-library", KindleLink.libraryUrl())
         // The shelf itself carries no ASIN — you're picking, not reading yet.
         assertNull(KindleLink.asinOf(KindleLink.libraryUrl()))
+    }
+
+    @Test
+    fun desktopUserAgentLooksLikeADesktopBrowser() {
+        val ua = KindleLink.desktopUserAgent()
+        // It's the fix for the blank shelf: Amazon must not see a mobile browser or an Android WebView,
+        // or it serves the shell without the library grid.
+        assertFalse("must not read as mobile", ua.contains("Mobile"))
+        assertFalse("must not read as Android", ua.contains("Android"))
+        assertFalse("must not carry the WebView token", ua.contains("; wv"))
+        // A recognisable desktop-Chrome signature is what makes Amazon render the full Cloud Reader.
+        assertTrue(ua.contains("Windows NT"))
+        assertTrue(ua.contains("Chrome/"))
     }
 
     @Test
