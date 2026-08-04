@@ -230,13 +230,18 @@ and — soon — your own placed turrets and barricades.
   single shot; elites/bosses take more.
 - **Waves + a cumulative boss roster.** SAS-style waves, heavier than a classic
   holdout, ending in the finale. Enemy archetypes are **unlocked by tier** — each
-  loop reveals a new trash type (Spitter at tier 2, then Rusher, then Brute),
-  chosen from the unlocked pool by weight; the ranged Spitter fires in **bursts**.
-  The **boss roster is cumulative**: every boss unlocked so far spawns together on
-  the final wave — Abomination (tier 1), + Spitter Boss (tier 2, fires without
-  pause), + Rusher Swarm (tier 3, several fast rusher-bosses at once), and beyond.
+  loop reveals a new trash type (Spitter at tier 2, then Rusher, then the **Nest**
+  at tier 4 — a stationary sac that sits where it lands and hatches Shamblers on a
+  slow cadence, so it must be prioritised or it buries you), chosen from the
+  unlocked pool by weight; the ranged Spitter fires in **bursts**. The **boss
+  roster is cumulative**: every boss unlocked so far spawns together on the final
+  wave — Abomination (tier 1), + Spitter Boss (tier 2, fires without pause), +
+  Rusher Swarm (tier 3, several fast rusher-bosses at once), + the **Mother** (tier
+  4, a boss that **flees** the player and **births a random enemy** on a fast
+  cadence — and every minion of hers that dies **resets her timer**, so thinning
+  the brood only speeds her up; corner her against the edge to end it), and beyond.
 - **Drops scale with the kill.** Trash stays stingy (~25% XP / 5% gold); elites
-  (Husk, Spitter, Brute) pay out far more often; bosses always drop XP, gold, and
+  (Husk, Spitter, Nest) pay out far more often; bosses always drop XP, gold, and
   a heart. So farming the dangerous things — not the swarm — is what funds you.
 - **Endless.** Clearing all `waves` + the boss(es) loops back to wave 1 at the
   next **tier**, with pure multipliers scaling enemy hp/speed/damage/count — the

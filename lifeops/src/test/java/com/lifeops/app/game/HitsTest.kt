@@ -82,7 +82,7 @@ class HitsTest {
     fun elitesDropMoreOftenThanTrash() {
         assertTrue(EnemyType.HUSK.xpDropChance > EnemyType.SHAMBLER.xpDropChance)
         assertTrue(EnemyType.SPITTER.goldDropChance > EnemyType.RUSHER.goldDropChance)
-        assertTrue(EnemyType.BRUTE.xpDropChance > EnemyType.HUSK.xpDropChance)
+        assertTrue(EnemyType.NEST.xpDropChance > EnemyType.HUSK.xpDropChance)
         // Trash keeps the stingy baseline.
         assertEquals(0.25f, EnemyType.SHAMBLER.xpDropChance, 0.0001f)
         assertEquals(0.25f, EnemyType.RUSHER.xpDropChance, 0.0001f)
@@ -106,7 +106,7 @@ class HitsTest {
         assertEquals(0, EnemyType.HUSK.unlockTier)
         assertEquals(1, EnemyType.SPITTER.unlockTier) // shows up at UI "tier 2"
         assertTrue(EnemyType.RUSHER.unlockTier > EnemyType.SPITTER.unlockTier)
-        assertTrue(EnemyType.BRUTE.unlockTier > EnemyType.RUSHER.unlockTier)
+        assertTrue(EnemyType.NEST.unlockTier > EnemyType.RUSHER.unlockTier)
     }
 
     @Test

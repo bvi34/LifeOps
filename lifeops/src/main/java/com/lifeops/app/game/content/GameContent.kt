@@ -301,6 +301,19 @@ enum class EnemyType(
     val burstCooldown: Float = 0f,  // recovery after a burst
     val range: Float = 0f,
     val projectileSpeed: Float = 0f,
+    // On-field spawners (Nest, Mother, DESIGN.md §7): a type with spawnInterval > 0 periodically
+    // births minions next to itself while it lives, which makes it a priority target — ignore it and
+    // the field fills up. This is the same at-spawn code path everything else uses, just self-driven.
+    /** Seconds between on-field spawns; 0 means this type never births minions. */
+    val spawnInterval: Float = 0f,
+    /** true → each birth is a random unlocked trash type (Mother); false → always a Shambler (Nest). */
+    val broodRandom: Boolean = false,
+    /** Cap on how many live minions this spawner may have out at once. */
+    val maxBrood: Int = 0,
+    /** A minion of this spawner dying resets its spawn timer — culling the brood only feeds it (Mother). */
+    val broodResetsOnDeath: Boolean = false,
+    /** Moves *away* from the player instead of toward, keeping its distance (Mother). */
+    val fleesPlayer: Boolean = false,
 ) {
     // Trash: cheap, fast, swarms. Tuned to 20 HP so the Gatling's base 16-damage shot needs two hits
     // (a Sniper still one-shots it). Deals one heart. Stingy drops (25% / 5%). Every other enemy's HP
@@ -317,9 +330,12 @@ enum class EnemyType(
     // Rusher (tier 3+): fast, fragile trash — punishes standing still. Stingy like the Shambler.
     RUSHER("Rusher", maxHealth = 15f, moveSpeed = 92f, contactHits = 1, radius = 11f, xpValue = 5, goldValue = 1,
         unlockTier = 2, spawnWeight = 5),
-    // Brute (tier 4+): a slow mini-boss that hits for two hearts and soaks a magazine. Rich drops.
-    BRUTE("Brute", maxHealth = 375f, moveSpeed = 26f, contactHits = 2, radius = 22f, xpValue = 22, goldValue = 6,
-        xpDropChance = 0.85f, goldDropChance = 0.5f, unlockTier = 3, spawnWeight = 2),
+    // Nest (tier 4+): a stationary sac that hatches Shamblers on a slow cadence. It never chases —
+    // it just sits where it landed and pumps out the swarm, so it has to be prioritised or it buries
+    // you under trash. Tanky enough to demand real fire; rich drops when you finally crack it.
+    NEST("Nest", maxHealth = 300f, moveSpeed = 0f, contactHits = 1, radius = 20f, xpValue = 18, goldValue = 6,
+        xpDropChance = 0.85f, goldDropChance = 0.5f, unlockTier = 3, spawnWeight = 2,
+        spawnInterval = 4.5f, maxBrood = 5),
 
     // --- Bosses (final wave). The roster is cumulative: every unlocked boss shows up each loop. ---
     // Tier 1: the original heavy melee sponge. A contact costs three hearts.
@@ -331,7 +347,16 @@ enum class EnemyType(
     // Tier 3: a swarm of fast, dangerous rusher-bosses that arrive together.
     RUSHER_BOSS("Rusher Swarm", maxHealth = 600f, moveSpeed = 80f, contactHits = 2, radius = 22f, xpValue = 40, goldValue = 16,
         isBoss = true, unlockTier = 2, bossCount = 3),
+    // Tier 4: the Mother — a fleeing boss that births a random enemy on a fast cadence and backs away
+    // to stay alive while she does it. Every minion of hers that dies resets her timer, so culling the
+    // brood only makes her spawn faster: the answer is to corner her against the arena edge and burn
+    // her down through her own swarm.
+    MOTHER("Mother", maxHealth = 1400f, moveSpeed = 62f, contactHits = 3, radius = 30f, xpValue = 75, goldValue = 36,
+        isBoss = true, unlockTier = 3,
+        spawnInterval = 3f, broodRandom = true, maxBrood = 8, broodResetsOnDeath = true, fleesPlayer = true),
     ;
 
     val isRanged: Boolean get() = fireRate > 0f
+    /** Births minions on the field while alive (Nest, Mother). */
+    val isSpawner: Boolean get() = spawnInterval > 0f
 }
