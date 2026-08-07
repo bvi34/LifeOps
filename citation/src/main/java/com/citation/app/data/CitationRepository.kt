@@ -991,6 +991,24 @@ class CitationRepository private constructor(
         db.syncStateDao().saveSyncState(
             SyncStateEntity(0, mailbox.currentOutVersion, mailbox.inboxCursor)
         )
+        flushOutbox()
+    }
+
+    /**
+     * Mirror the up-mailbox to the file-drop so LifeOps can pick up new telemetry/notes promptly —
+     * right when they're captured, not only on the periodic/manual [sync] round. Every capture path
+     * calls [persistSyncState] immediately after posting (once per capture, once per batch import), so
+     * routing the flush through here covers them all without a per-note write storm.
+     *
+     * Writes only the outbound envelope (no inbound read/reconcile), so it's cheap. Best-effort: a
+     * transient IO failure must never fail the capture that triggered it — the next round resends
+     * anyway, since the in-memory outbox still holds the unacked packets.
+     */
+    private fun flushOutbox() {
+        runCatching {
+            FileEnvelopeStore(java.io.File(files.sovereignDir, "sync"))
+                .writeOutbound(SyncEngine(mailbox).buildOutbound())
+        }
     }
 
     data class BookSummary(
