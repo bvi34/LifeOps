@@ -749,7 +749,10 @@ class CitationRepository private constructor(
             sourceType = SourceType.valueOf(entity.sourceType),
             title = entity.title,
             minutesRead = minutes,
-            occurredAt = occurredAt
+            occurredAt = occurredAt,
+            // Carry the source's own id (O'Reilly product id / ISBN / RR id) so LifeOps keeps the
+            // book's real identity even from a read-only session with no notes.
+            sourceId = entity.sourceId
         )
         mailbox.post(packet)
         persistSyncState()

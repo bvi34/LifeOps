@@ -50,6 +50,24 @@ fun BookDetailScreen(viewModel: BookDetailViewModel, onBack: () -> Unit) {
                         book.author?.let {
                             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                         }
+                        // The Citation record: source + its own id, so O'Reilly's identity is visible
+                        // and preserved even after the GUI title above is renamed. Only for synced books.
+                        book.sourceType?.let { source ->
+                            val idPart = book.sourceId?.let { " · $it" } ?: ""
+                            Text(
+                                "Citation: ${citationSourceLabel(source)}$idPart",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // When the user has renamed the book, show what Citation still calls it.
+                        book.citationTitle?.takeIf { it != book.title }?.let {
+                            Text(
+                                "Synced as “$it”",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                     IconButton(onClick = { viewModel.showEditDialog() }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit book")
@@ -126,6 +144,17 @@ private fun BookStatus.label() = when (this) {
     BookStatus.TO_READ -> "To read"
     BookStatus.READING -> "Reading"
     BookStatus.DONE -> "Done"
+}
+
+/** Friendly label for a Citation `SourceType` name; unknown values pass through as-is. */
+private fun citationSourceLabel(sourceType: String) = when (sourceType.uppercase()) {
+    "OREILLY" -> "O'Reilly"
+    "ROYAL_ROAD" -> "Royal Road"
+    "EPUB" -> "EPUB"
+    "PDF" -> "PDF"
+    "KINDLE" -> "Kindle"
+    "INTERNAL" -> "Citation"
+    else -> sourceType
 }
 
 @Composable

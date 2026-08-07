@@ -28,6 +28,15 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getInt("reading_points_per_hour", com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR)
         set(value) { prefs.edit().putInt("reading_points_per_hour", value.coerceAtLeast(0)).apply() }
 
+    /**
+     * The highest Citation up-packet version LifeOps has durably ingested. The Citation sync consumer
+     * pulls everything above this cursor, then advances it — so each reading-time / note packet is
+     * ingested exactly once even though Citation keeps resending unacked packets every round.
+     */
+    var citationSyncAckedVersion: Long
+        get() = prefs.getLong("citation_sync_acked_version", 0L)
+        set(value) { prefs.edit().putLong("citation_sync_acked_version", value).apply() }
+
     var defaultReminderHour: Int
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
         set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }

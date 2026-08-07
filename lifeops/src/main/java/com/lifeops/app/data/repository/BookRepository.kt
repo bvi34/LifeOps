@@ -67,20 +67,12 @@ class BookRepository(private val bookDao: BookDao) {
         title: String,
         sourceType: String,
         minutes: Int,
-        occurredAt: Long
+        occurredAt: Long,
+        sourceId: String? = null
     ) {
         if (minutes <= 0) return
-        val category = com.lifeops.app.util.ReadingRewards.defaultCategory(sourceType).name
         val existing = bookDao.getById(bookKey)?.toModel()
-        val book = existing?.copy(title = title, sourceType = sourceType, category = category)
-            ?: Book(
-                id = bookKey,
-                title = title,
-                status = BookStatus.READING,
-                createdAt = DateUtil.now(),
-                sourceType = sourceType,
-                category = category
-            )
+        val book = mergeCitationRecord(existing, bookKey, title, sourceType, sourceId)
         bookDao.upsert(book.toEntity())
         bookDao.insertTimeEntry(
             BookTimeEntry(
@@ -90,6 +82,69 @@ class BookRepository(private val bookDao: BookDao) {
                 note = "Citation",
                 recordedAt = DateUtil.isoFromEpoch(occurredAt)
             ).toEntity()
+        )
+    }
+
+    /**
+     * Ingest one note/highlight from Citation onto its book: upsert the book (keyed by Citation's
+     * [bookKey], tagged with its source + derived category — creating it if LifeOps has never seen it)
+     * and attach the note. Idempotent on both rows: the note's row id is derived from Citation's own
+     * stable [noteKey], so re-syncing an edited note updates it in place instead of duplicating. No-op
+     * for a blank body. Notes with no book (thin triage captures) are dropped by the caller before
+     * this point, since there's nothing to file them under.
+     */
+    suspend fun ingestNote(
+        bookKey: String,
+        title: String,
+        sourceType: String?,
+        noteKey: String,
+        content: String,
+        occurredAt: Long,
+        sourceId: String? = null
+    ) {
+        if (content.isBlank()) return
+        val existing = bookDao.getById(bookKey)?.toModel()
+        val book = mergeCitationRecord(existing, bookKey, title, sourceType, sourceId)
+        bookDao.upsert(book.toEntity())
+        bookDao.insertNote(
+            BookNote(
+                id = "citation:$noteKey",
+                bookId = bookKey,
+                content = content.trim(),
+                createdAt = DateUtil.isoFromEpoch(occurredAt)
+            ).toEntity()
+        )
+    }
+
+    /**
+     * Fold a Citation packet's provenance into a book row. The Citation record ([citationTitle],
+     * [sourceId], sourceType, category) is refreshed from the packet every time; the user-owned GUI
+     * [Book.title] is set only when the book is first created (seeded from Citation's title) and is
+     * never overwritten afterwards, so a rename in LifeOps survives future syncs. Null packet fields
+     * never clobber a value already on file.
+     */
+    private fun mergeCitationRecord(
+        existing: Book?,
+        bookKey: String,
+        citationTitle: String,
+        sourceType: String?,
+        sourceId: String?
+    ): Book {
+        val category = sourceType?.let { com.lifeops.app.util.ReadingRewards.defaultCategory(it).name }
+        return existing?.copy(
+            sourceType = sourceType ?: existing.sourceType,
+            category = category ?: existing.category,
+            sourceId = sourceId ?: existing.sourceId,
+            citationTitle = citationTitle
+        ) ?: Book(
+            id = bookKey,
+            title = citationTitle,
+            status = BookStatus.READING,
+            createdAt = DateUtil.now(),
+            sourceType = sourceType,
+            category = category,
+            sourceId = sourceId,
+            citationTitle = citationTitle
         )
     }
 }

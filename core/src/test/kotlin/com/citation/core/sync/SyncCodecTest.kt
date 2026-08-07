@@ -29,6 +29,14 @@ class SyncCodecTest {
     }
 
     @Test
+    fun telemetryPacketCarriesSourceIdSoLifeOpsKeepsTheId() {
+        val packet = TelemetryPacket(EntityKey("ER", "Book", 3), SourceType.OREILLY, "DDIA", 25, 1_700_000_000_000L, sourceId = "9780132350884")
+        val decoded = SyncCodec.decodeUpPacket(SyncCodec.encodeUpPacket(packet)) as TelemetryPacket
+        assertEquals(packet, decoded)
+        assertEquals("9780132350884", decoded.sourceId)
+    }
+
+    @Test
     fun notePacketRoundTripsAndIsLegibleWithoutTheSource() {
         val highlight = Highlight.captureFlowing(
             key = EntityKey("ER", "Highlight", 1),

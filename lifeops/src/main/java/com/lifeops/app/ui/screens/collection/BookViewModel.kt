@@ -18,7 +18,10 @@ data class BookListUiState(
     val showCreateDialog: Boolean = false
 )
 
-class BookViewModel(private val bookRepository: BookRepository) : ViewModel() {
+class BookViewModel(
+    private val bookRepository: BookRepository,
+    private val citationSync: com.lifeops.app.data.repository.CitationSyncRepository? = null
+) : ViewModel() {
     // Book lifecycle policy lives in the connection service layer (same BookService the
     // /v1/LifeOps/local/book/* routes call), so screen and connection paths behave identically.
     private val bookService = com.lifeops.app.connection.service.BookService(bookRepository)
@@ -27,6 +30,10 @@ class BookViewModel(private val bookRepository: BookRepository) : ViewModel() {
     val uiState: StateFlow<BookListUiState> = _uiState.asStateFlow()
 
     init {
+        // Fold in anything Citation has synced since we last looked, so books it created and notes it
+        // attached appear the moment the list opens. Best-effort; the observed flow refreshes on the
+        // resulting DB writes. Runs before collecting so the first emission can already include them.
+        citationSync?.let { sync -> viewModelScope.launch { runCatching { sync.sync() } } }
         viewModelScope.launch {
             bookRepository.observeAll().collectLatest { books -> _uiState.update { it.copy(books = books) } }
         }
@@ -47,7 +54,10 @@ class BookViewModel(private val bookRepository: BookRepository) : ViewModel() {
     }
 }
 
-class BookViewModelFactory(private val bookRepository: BookRepository) : ViewModelProvider.Factory {
+class BookViewModelFactory(
+    private val bookRepository: BookRepository,
+    private val citationSync: com.lifeops.app.data.repository.CitationSyncRepository? = null
+) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
-    override fun <T : ViewModel> create(modelClass: Class<T>): T = BookViewModel(bookRepository) as T
+    override fun <T : ViewModel> create(modelClass: Class<T>): T = BookViewModel(bookRepository, citationSync) as T
 }
