@@ -3,8 +3,10 @@ package com.lifeops.app.data.repository
 import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.model.SourceType
+import com.citation.core.anchor.TextAnchor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteType
+import com.citation.core.note.PassageReference
 import com.citation.core.note.SourceDescriptor
 import com.citation.core.sync.FileEnvelopeStore
 import com.citation.core.sync.Mailbox
@@ -63,16 +65,25 @@ class CitationSyncRepositoryTest {
 
     // Typed as UpPacket so `listOf(Versioned(v, packet))` infers List<Versioned<UpPacket>> — the
     // invariant Versioned<T> won't widen a List<Versioned<TelemetryPacket>> to the envelope's type.
-    private fun telemetry(key: EntityKey, minutes: Int, occurredAt: Long, sourceId: String? = "prod-1"): UpPacket =
-        TelemetryPacket(key, SourceType.OREILLY, "Designing Data-Intensive Applications", minutes, occurredAt, sourceId)
+    private fun telemetry(key: EntityKey, minutes: Int, occurredAt: Long): UpPacket =
+        TelemetryPacket(key, SourceType.OREILLY, "Designing Data-Intensive Applications", minutes, occurredAt)
 
-    private fun note(bookKey: EntityKey, key: EntityKey, body: String, createdAt: Long): UpPacket {
+    private fun note(
+        bookKey: EntityKey,
+        key: EntityKey,
+        body: String,
+        createdAt: Long,
+        quote: String? = null
+    ): UpPacket {
         val descriptor = SourceDescriptor(bookKey, SourceType.OREILLY, "isbn-1", "Designing Data-Intensive Applications", "Kleppmann")
+        val references = quote?.let {
+            listOf(PassageReference(it, TextAnchor.External(location = "loc", quote = it, bookRef = null)))
+        } ?: emptyList()
         return NotePacket(
             bookKey = bookKey,
             sourceType = SourceType.OREILLY,
             sourceId = "isbn-1",
-            note = Note(key, NoteType.FREESTANDING_SYNTHESIS, body, descriptor, emptyList(), createdAt)
+            note = Note(key, NoteType.FREESTANDING_SYNTHESIS, body, descriptor, references, createdAt)
         )
     }
 
@@ -142,7 +153,10 @@ class CitationSyncRepositoryTest {
         val dir = tmp.newFolder("sync")
         val dao = FakeBookDao()
         val cursor = Cursor()
-        writeOutbound(dir, listOf(Mailbox.Versioned(1, note(bookKey(3), noteKey(7), "The log is the source of truth", 1_700_000_000_000))))
+        writeOutbound(dir, listOf(Mailbox.Versioned(1, note(
+            bookKey(3), noteKey(7), body = "Interesting", createdAt = 1_700_000_000_000,
+            quote = "Most architecture decisions aren't binary"
+        ))))
 
         val summary = repo(dir, dao, cursor).sync()
 
@@ -153,13 +167,14 @@ class CitationSyncRepositoryTest {
         assertEquals("isbn-1", book.sourceId)
         assertEquals("Designing Data-Intensive Applications", book.citationTitle)
         val stored = dao.notes.single()
-        assertEquals("The log is the source of truth", stored.content)
+        // The highlighted passage travels with the note as context, then the user's own note.
+        assertEquals("“Most architecture decisions aren't binary”\n\nInteresting", stored.content)
         // Row id derives from Citation's note key, keeping re-syncs idempotent.
         assertEquals("citation:ER-Note-7", stored.id)
     }
 
     @Test
-    fun `re-syncing the same envelope is a no-op past the cursor`() = runTest {
+    fun `re-syncing does not double-count telemetry but keeps notes idempotent`() = runTest {
         val dir = tmp.newFolder("sync")
         val dao = FakeBookDao()
         val cursor = Cursor()
@@ -169,14 +184,30 @@ class CitationSyncRepositoryTest {
         ))
 
         repo(dir, dao, cursor).sync()
-        // Second round: Citation still resends the same unacked packets, but the cursor is past them.
+        // Second round: Citation still resends the same unacked packets.
         val second = repo(dir, dao, cursor).sync()
 
-        assertEquals(0, second.telemetryIngested)
-        assertEquals(0, second.notesIngested)
+        assertEquals(0, second.telemetryIngested)   // telemetry gated by cursor — not recounted
+        assertEquals(1, second.notesIngested)       // note re-ingested (idempotent)…
         assertEquals(2L, cursor.value)
-        assertEquals(1, dao.times.size)   // not double-counted
+        assertEquals(1, dao.times.size)             // …and neither produces a duplicate row
         assertEquals(1, dao.notes.size)
+    }
+
+    @Test
+    fun `a backfilled note below the cursor is still ingested`() = runTest {
+        val dir = tmp.newFolder("sync")
+        val dao = FakeBookDao()
+        // The cursor has already advanced past v5 (e.g. via a live telemetry session).
+        val cursor = Cursor(value = 5)
+        // Citation reseeds an old note captured long ago at v2 — below the cursor.
+        writeOutbound(dir, listOf(Mailbox.Versioned(2, note(bookKey(3), noteKey(7), "historical note", 1L))))
+
+        val summary = repo(dir, dao, cursor).sync()
+
+        assertEquals(1, summary.notesIngested)      // ingested despite v2 < cursor
+        assertEquals("historical note", dao.notes.single().content)
+        assertEquals(5L, cursor.value)              // cursor never rewinds
     }
 
     @Test

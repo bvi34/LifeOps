@@ -95,4 +95,20 @@ class Mailbox<Out, In> {
         if (outVersion > this.outVersion) this.outVersion = outVersion
         if (inboxCursor > this.lastConsumedInVersion) this.lastConsumedInVersion = inboxCursor
     }
+
+    /**
+     * Re-populate the outbox after a restart from a durable copy the sender persisted itself (each
+     * item at the version it was originally [post]ed at). The in-memory outbox is otherwise empty on
+     * relaunch — [restore] only recovers the counters — so without this, packets produced in a past
+     * session that were never acknowledged would never be resent. Dedupes by version (a re-seed or an
+     * item already posted this session is ignored) and keeps the outbox ordered. Pair with [restore]
+     * so [currentOutVersion] already sits at-or-above every seeded version.
+     */
+    @Synchronized
+    fun seedOutbox(items: List<Versioned<Out>>) {
+        for (item in items) {
+            if (outbox.none { it.version == item.version }) outbox.add(item)
+        }
+        outbox.sortBy { it.version }
+    }
 }

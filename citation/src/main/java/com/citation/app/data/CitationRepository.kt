@@ -910,6 +910,9 @@ class CitationRepository private constructor(
                 is IntentReconciler.Outcome.CreateWanted -> toCreate.add(intent)
             }
         }
+        // LifeOps has durably taken every note up to its ack; drop their outbox marker so a later
+        // relaunch doesn't re-seed and resend them (mirrors the mailbox prune applyInbound just did).
+        if (inbound.ackedPacketVersion > 0) db.noteDao().clearSyncVersionThrough(inbound.ackedPacketVersion)
         // Persist newly-wanted books (a fuzzy, center-authored placeholder on both state machines).
         toCreate.forEach { intent ->
             val key = keys.next(EntityType.BOOK)
@@ -1033,8 +1036,20 @@ class CitationRepository private constructor(
             val keys = KeyAllocator(seed = watermarks)
             val mailbox = Mailbox<UpPacket, AcquireBookIntent>()
             db.syncStateDao().syncState()?.let { mailbox.restore(it.outVersion, it.inboxCursor) }
+            // Rebuild the outbox from durable storage. Notes posted in past sessions still carry their
+            // syncVersion in the notes table, but the in-memory outbox is empty after a relaunch — so
+            // without this, notes captured before LifeOps could take them (or before the sync seam
+            // existed) would never be resent. Cleared once LifeOps acks them (see sync()).
+            val pending = db.noteDao().pendingSync().map { entity ->
+                Mailbox.Versioned<UpPacket>(entity.syncVersion!!, NotePacket.of(CitationMappers.noteFromEntity(entity)))
+            }
+            mailbox.seedOutbox(pending)
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad, oreillyAccess)
+            return CitationRepository(db, files, keys, mailbox, royalRoad, oreillyAccess).also { repo ->
+                // Write the reseeded backlog to the file-drop now so LifeOps can pick it up without
+                // waiting for the next capture or the periodic worker.
+                if (pending.isNotEmpty()) repo.flushOutbox()
+            }
         }
     }
 }
