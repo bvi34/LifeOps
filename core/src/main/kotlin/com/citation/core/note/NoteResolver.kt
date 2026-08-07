@@ -72,10 +72,13 @@ object NoteResolver {
         val reliability = reliabilityOf(sourceType)
         val anchor = ref.anchor
 
-        // Read-in-place (O'Reilly): there is no local text to match. The jump is a deep link to the
-        // source reader's own location token, so a present token means "jumpable" (best-effort).
+        // Read-in-place (O'Reilly/Kindle): there is no local text to match. The jump is a deep link
+        // into the source reader — a location token lands on the exact spot, and lacking one a known
+        // book (bookRef, e.g. the ISBN the capture auto-filled) still reopens the book. Either way the
+        // note is linked, best-effort; only one that knows neither location nor book is truly orphaned.
         if (anchor is TextAnchor.External) {
-            val state = if (anchor.location.isNotBlank()) State.RESOLVED else State.ORPHANED
+            val jumpable = anchor.location.isNotBlank() || !anchor.bookRef.isNullOrBlank()
+            val state = if (jumpable) State.RESOLVED else State.ORPHANED
             return RefResolution(
                 state = state,
                 chapterOrdinal = null,

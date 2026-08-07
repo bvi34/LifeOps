@@ -1,5 +1,6 @@
 package com.lifeops.app.data.repository
 
+import com.citation.core.note.Note
 import com.citation.core.sync.FileEnvelopeStore
 import com.citation.core.sync.InboundEnvelope
 import com.citation.core.sync.NotePacket
@@ -50,10 +51,16 @@ class CitationSyncRepository(
      * persist the cursor, and acknowledge back to Citation. A no-op — returning the current cursor —
      * when Citation hasn't written an envelope yet.
      *
-     * Un-fileable packets (telemetry or a note with no book key) are still acknowledged so Citation
-     * stops resending them; they simply produce no LifeOps row. The cursor advances per packet in
-     * version order, so a mid-round failure leaves the cursor at the last *successfully* ingested
-     * packet and the rest are retried next round without re-ingesting what already landed.
+     * Notes and telemetry are gated differently. **Telemetry** is not idempotent — each packet is one
+     * reading session logged as its own time entry — so it's ingested only above the cursor. **Notes**
+     * are idempotent (the row id derives from Citation's note key), so every note packet in the
+     * envelope is ingested regardless of the cursor; that's what lets Citation backfill historical
+     * notes whose original versions sit *below* the cursor without them being skipped. The cursor
+     * still advances to the highest version seen so telemetry is never double-counted, and Citation is
+     * acked so it can prune (and, once acked, stop re-seeding those notes).
+     *
+     * Un-fileable packets (telemetry or a note with no book key) produce no LifeOps row but still
+     * advance the cursor so Citation stops resending them.
      */
     suspend fun sync(): Summary {
         val store = FileEnvelopeStore(syncDir)
@@ -61,36 +68,37 @@ class CitationSyncRepository(
         val lastAcked = readAckedVersion()
         if (outbound == null) return Summary(0, 0, lastAcked)
 
-        val fresh = outbound.packets.filter { it.version > lastAcked }.sortedBy { it.version }
         var acked = lastAcked
         var telemetry = 0
         var notes = 0
         try {
-            for (versioned in fresh) {
+            for (versioned in outbound.packets.sortedBy { it.version }) {
                 when (val packet = versioned.payload) {
                     is TelemetryPacket -> {
                         val key = packet.bookKey?.toString()
-                        if (key != null) {
+                        // Not idempotent — only count sessions we haven't already logged.
+                        if (key != null && versioned.version > lastAcked) {
                             bookRepository.ingestReadingTelemetry(
                                 bookKey = key,
                                 title = packet.title,
                                 sourceType = packet.sourceType.name,
                                 minutes = packet.minutesRead,
-                                occurredAt = packet.occurredAt,
-                                sourceId = packet.sourceId
+                                occurredAt = packet.occurredAt
                             )
                             telemetry++
                         }
                     }
                     is NotePacket -> {
                         val key = packet.bookKey?.toString()
+                        // Idempotent (keyed by the note's Citation id): always ingest so backfilled
+                        // history lands even when its version is below the cursor.
                         if (key != null) {
                             bookRepository.ingestNote(
                                 bookKey = key,
                                 title = packet.note.source.title,
                                 sourceType = packet.sourceType.name,
                                 noteKey = packet.note.key.toString(),
-                                content = packet.note.body,
+                                content = citationNoteContent(packet.note),
                                 occurredAt = packet.note.createdAt,
                                 sourceId = packet.sourceId
                             )
@@ -98,7 +106,7 @@ class CitationSyncRepository(
                         }
                     }
                 }
-                acked = versioned.version
+                if (versioned.version > acked) acked = versioned.version
             }
         } finally {
             if (acked != lastAcked) writeAckedVersion(acked)
@@ -107,5 +115,18 @@ class CitationSyncRepository(
             store.writeInbound(InboundEnvelope(intents = emptyList(), ackedPacketVersion = acked))
         }
         return Summary(telemetry, notes, acked)
+    }
+
+    /**
+     * The text LifeOps files for a Citation note: the highlighted passage(s) it hangs off, quoted,
+     * then the user's own note below — so the frozen context travels with the note instead of only its
+     * bare body. A highlight with no written note keeps just the quote; a freestanding note keeps just
+     * the body.
+     */
+    private fun citationNoteContent(note: Note): String {
+        val quotes = note.references.mapNotNull { it.quotedSnapshot.trim().ifBlank { null } }
+        val quoteBlock = quotes.joinToString("\n\n") { "“$it”" }
+        val body = note.body.trim()
+        return listOf(quoteBlock, body).filter { it.isNotBlank() }.joinToString("\n\n")
     }
 }

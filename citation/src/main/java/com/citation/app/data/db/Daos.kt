@@ -92,6 +92,13 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE syncVersion IS NOT NULL ORDER BY syncVersion ASC")
     suspend fun pendingSync(): List<NoteEntity>
 
+    /**
+     * Clear the outbound queue marker for every note LifeOps has acknowledged (version ≤ [version]),
+     * so a later restart doesn't re-seed and resend notes already durably taken by the center.
+     */
+    @Query("UPDATE notes SET syncVersion = NULL WHERE syncVersion IS NOT NULL AND syncVersion <= :version")
+    suspend fun clearSyncVersionThrough(version: Long)
+
     @Query("SELECT * FROM notes")
     suspend fun getAllSync(): List<NoteEntity>
 

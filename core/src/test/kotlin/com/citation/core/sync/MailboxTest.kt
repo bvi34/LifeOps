@@ -31,6 +31,27 @@ class MailboxTest {
     }
 
     @Test
+    fun seedOutboxRebuildsUnackedItemsAtTheirVersions() {
+        // Simulate a restart: counters restored, but the in-memory outbox is empty.
+        val mb = Mailbox<String, String>()
+        mb.restore(outVersion = 3, inboxCursor = 0)
+        mb.seedOutbox(listOf(Mailbox.Versioned(2L, "b"), Mailbox.Versioned(3L, "c")))
+
+        // The seeded items are resendable, ordered by version…
+        assertEquals(listOf("b", "c"), mb.outboxSince(0).map { it.payload })
+        // …and a fresh post continues above the restored counter without reusing a version.
+        assertEquals(4L, mb.post("d").version)
+    }
+
+    @Test
+    fun seedOutboxDedupesByVersion() {
+        val mb = Mailbox<String, String>()
+        mb.post("a") // version 1, already in the outbox this session
+        mb.seedOutbox(listOf(Mailbox.Versioned(1L, "a"), Mailbox.Versioned(2L, "b")))
+        assertEquals(listOf("a", "b"), mb.outboxSince(0).map { it.payload })
+    }
+
+    @Test
     fun deliverIsIdempotentByVersion() {
         val mb = Mailbox<String, String>()
         val items = listOf(Mailbox.Versioned(1L, "x"), Mailbox.Versioned(2L, "y"))
