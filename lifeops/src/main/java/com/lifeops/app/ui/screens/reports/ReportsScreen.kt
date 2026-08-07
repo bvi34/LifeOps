@@ -772,7 +772,14 @@ private fun ReadingSummaryCard(summary: ReadingSummary) {
                 StatBox("Time", formatMinutes(summary.totalMinutes))
                 StatBox("Sessions", summary.sessions.toString())
                 StatBox("Finished", summary.booksFinished.toString())
+                StatBox("Points", summary.points.toString())
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Earned at ${summary.pointsPerHour} pts/hour of engaged reading",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

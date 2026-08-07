@@ -264,7 +264,7 @@ fun LifeOpsNavHost(
                         factory = com.lifeops.app.ui.screens.collection.RecipeViewModelFactory(app.recipeRepository)
                     )
                     val bookVm = viewModel<com.lifeops.app.ui.screens.collection.BookViewModel>(
-                        factory = com.lifeops.app.ui.screens.collection.BookViewModelFactory(app.bookRepository)
+                        factory = com.lifeops.app.ui.screens.collection.BookViewModelFactory(app.bookRepository, app.citationSyncRepository)
                     )
                     val futureProjectVm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectViewModel>(
                         factory = com.lifeops.app.ui.screens.collection.FutureProjectViewModelFactory(app.futureProjectRepository)
@@ -496,7 +496,8 @@ fun LifeOpsNavHost(
                             app.weekRepository, app.aspectRepository,
                             app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
                             app.projectRepository, app.wellnessRepository, app.foodLogRepository,
-                            app.counterRepository, app.bookRepository
+                            app.counterRepository, app.bookRepository,
+                            app.preferencesRepository, app.citationSyncRepository
                         )
                     )
                     ReportsScreen(

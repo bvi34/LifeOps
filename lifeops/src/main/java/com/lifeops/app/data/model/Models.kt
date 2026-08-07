@@ -564,6 +564,7 @@ enum class BookStatus {
 
 data class Book(
     val id: String,
+    /** The user-editable GUI title. Sync seeds it once (from [citationTitle]) then never touches it. */
     val title: String,
     val author: String? = null,
     val status: BookStatus = BookStatus.TO_READ,
@@ -572,7 +573,11 @@ data class Book(
     /** Source kind from Citation (EPUB/PDF/ROYAL_ROAD/OREILLY); null for LifeOps-created books. */
     val sourceType: String? = null,
     /** Derived reading category (LEARNING/FUN) for the reading report; null when unknown. */
-    val category: String? = null
+    val category: String? = null,
+    /** Citation's source id (O'Reilly product id / ISBN / Royal Road id); null when unknown. */
+    val sourceId: String? = null,
+    /** The title Citation reports — the immutable Citation record, shown alongside the GUI [title]. */
+    val citationTitle: String? = null
 )
 
 data class BookNote(

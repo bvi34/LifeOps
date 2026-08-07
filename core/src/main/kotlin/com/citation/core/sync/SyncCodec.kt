@@ -37,6 +37,7 @@ object SyncCodec {
             addProperty("title", packet.title)
             addProperty("minutesRead", packet.minutesRead)
             addProperty("occurredAt", packet.occurredAt)
+            addProperty("sourceId", packet.sourceId)
         }
         is NotePacket -> JsonObject().apply {
             addProperty("kind", "note")
@@ -53,7 +54,8 @@ object SyncCodec {
             sourceType = SourceType.valueOf(obj.get("sourceType").asString),
             title = obj.get("title").asString,
             minutesRead = obj.get("minutesRead").asInt,
-            occurredAt = obj.get("occurredAt").asLong
+            occurredAt = obj.get("occurredAt").asLong,
+            sourceId = obj.stringOrNull("sourceId")
         )
         "note" -> NotePacket(
             bookKey = obj.entityKey("bookKey"),

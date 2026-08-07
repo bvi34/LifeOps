@@ -48,7 +48,11 @@ data class CounterTotalRow(val name: String, val total: Int)
 data class ReadingSummary(
     val totalMinutes: Int,
     val sessions: Int,
-    val booksFinished: Int
+    val booksFinished: Int,
+    /** The configured reward rate (points per engaged hour) these points were computed at. */
+    val pointsPerHour: Int,
+    /** Resource points the range's reading time earns at [pointsPerHour] (flat, floored). */
+    val points: Int
 )
 
 data class ReportsUiState(
@@ -88,7 +92,9 @@ class ReportsViewModel(
     private val wellnessRepository: WellnessRepository,
     private val foodLogRepository: FoodLogRepository,
     private val counterRepository: CounterRepository,
-    private val bookRepository: BookRepository
+    private val bookRepository: BookRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val citationSync: com.lifeops.app.data.repository.CitationSyncRepository? = null
 ) : ViewModel() {
 
     private var weeksById: Map<String, Week> = emptyMap()
@@ -97,6 +103,9 @@ class ReportsViewModel(
     val uiState: StateFlow<ReportsUiState> = _uiState.asStateFlow()
 
     init {
+        // Ingest any reading time/notes Citation has dropped in the shared mailbox before we
+        // aggregate, so the Reading card reflects the latest sessions. Best-effort.
+        citationSync?.let { sync -> viewModelScope.launch { runCatching { sync.sync() } } }
         viewModelScope.launch {
             combine(
                 weekRepository.observeSnapshots(),
@@ -335,10 +344,16 @@ class ReportsViewModel(
         // Reading: minutes logged and books finished within the range.
         val bookTimes = bookRepository.getAllTimeEntries().filter { it.recordedAt >= cutoff }
         val booksFinished = bookRepository.getAllBooks().count { it.completedAt != null && it.completedAt >= cutoff }
+        val readingMinutes = bookTimes.sumOf { it.durationMinutes }
+        val pointsPerHour = preferencesRepository.readingPointsPerHour
         val readingSummary = if (bookTimes.isEmpty() && booksFinished == 0) null else ReadingSummary(
-            totalMinutes = bookTimes.sumOf { it.durationMinutes },
+            totalMinutes = readingMinutes,
             sessions = bookTimes.size,
-            booksFinished = booksFinished
+            booksFinished = booksFinished,
+            pointsPerHour = pointsPerHour,
+            // Same policy/rate as week-close (ReadingRewards.points), applied to the range's total
+            // engaged minutes so the single floor doesn't discard per-session remainders.
+            points = com.lifeops.app.util.ReadingRewards.points(readingMinutes, pointsPerHour)
         )
 
         _uiState.update {
@@ -383,12 +398,15 @@ class ReportsViewModelFactory(
     private val wellnessRepository: WellnessRepository,
     private val foodLogRepository: FoodLogRepository,
     private val counterRepository: CounterRepository,
-    private val bookRepository: BookRepository
+    private val bookRepository: BookRepository,
+    private val preferencesRepository: PreferencesRepository,
+    private val citationSync: com.lifeops.app.data.repository.CitationSyncRepository? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ReportsViewModel(
             weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository,
-            projectRepository, wellnessRepository, foodLogRepository, counterRepository, bookRepository
+            projectRepository, wellnessRepository, foodLogRepository, counterRepository, bookRepository,
+            preferencesRepository, citationSync
         ) as T
 }

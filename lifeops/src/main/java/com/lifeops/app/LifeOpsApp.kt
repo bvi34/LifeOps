@@ -123,6 +123,16 @@ class LifeOpsApp private constructor(private val app: Application) {
     val recipeRepository by lazy { RecipeRepository(database.recipeDao(), database.foodItemDao()) }
     val foodLogRepository by lazy { FoodLogRepository(database.foodLogDao(), database.foodItemDao()) }
     val bookRepository by lazy { BookRepository(database.bookDao()) }
+    // The LifeOps side of the Citation sync seam. Both apps share this process's filesDir, so the
+    // mailbox is the folder Citation drops its outbound envelope into (filesDir/sovereign/sync).
+    val citationSyncRepository by lazy {
+        CitationSyncRepository(
+            bookRepository,
+            java.io.File(app.filesDir, "sovereign/sync"),
+            readAckedVersion = { preferencesRepository.citationSyncAckedVersion },
+            writeAckedVersion = { preferencesRepository.citationSyncAckedVersion = it }
+        )
+    }
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
@@ -268,6 +278,10 @@ class LifeOpsApp private constructor(private val app: Application) {
             counterRepository.rescheduleAllReminders()
             // Same for start-of-block reminders on the user's own busy times.
             busyBlockRepository.rescheduleAllReminders()
+            // Pull in any reading telemetry / notes Citation has dropped in the shared mailbox since
+            // last launch, so time entries + book notes are current before Reports/Books render.
+            // Best-effort: a missing or half-written envelope must never block startup.
+            runCatching { citationSyncRepository.sync() }
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(app)

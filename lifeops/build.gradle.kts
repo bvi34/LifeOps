@@ -39,6 +39,9 @@ ksp {
 dependencies {
     // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps
+    // reads to ingest reading telemetry and notes. LifeOps is just another peer on the seam.
+    implementation(project(":core"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

@@ -24,13 +24,17 @@ sealed interface UpPacket {
  *   [com.citation.core.reader.ReadingMeter]).
  * @property occurredAt epoch millis of the reading session (window end).
  * @property title frozen for display.
+ * @property sourceId the source's own id (O'Reilly product id / ISBN / RR id), stringified, so
+ *   LifeOps can retain the book's real identity from a read-only session too — not just from notes.
+ *   Nullable for sources without a stable external id.
  */
 data class TelemetryPacket(
     override val bookKey: EntityKey?,
     val sourceType: SourceType,
     val title: String,
     val minutesRead: Int,
-    val occurredAt: Long
+    val occurredAt: Long,
+    val sourceId: String? = null
 ) : UpPacket
 
 /**
