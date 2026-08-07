@@ -66,7 +66,7 @@ import com.citation.core.sync.ReadingState
  * does. Immersive readers (flowing text, PDF, O'Reilly) preempt this shell from [ReaderScreen]; when
  * none is open the reader lands here.
  *
- *  - **New** — import / add sources (EPUB, PDF, O'Reilly, Royal Road).
+ *  - **New** — import / add sources (EPUB, PDF, O'Reilly, Royal Road, Archive of Our Own).
  *  - **Personal** — your reading stats and every captured note.
  *  - **Read** — resume the last thing you opened, right where you left off.
  *  - **Library** — everything you've added.
@@ -83,6 +83,7 @@ private enum class HomeTab(val label: String, val icon: ImageVector) {
 @Composable
 fun CitationHome(vm: ReaderViewModel) {
     var browsingRoyalRoad by remember { mutableStateOf(false) }
+    var browsingAo3 by remember { mutableStateOf(false) }
     // Land on Read — the app's reason for being is resuming what you were reading.
     var tabOrdinal by rememberSaveable { mutableStateOf(HomeTab.READ.ordinal) }
     val tab = HomeTab.entries[tabOrdinal]
@@ -95,6 +96,19 @@ fun CitationHome(vm: ReaderViewModel) {
                 vm.openRoyalRoad(fictionId)
             },
             onBack = { browsingRoyalRoad = false }
+        )
+        return
+    }
+
+    // The Archive of Our Own catalog (a full-screen WebView skim) preempts the shell while browsing —
+    // the AO3 twin of the Royal Road catalog.
+    if (browsingAo3) {
+        Ao3CatalogScreen(
+            onOpenWork = { workId ->
+                browsingAo3 = false
+                vm.openAo3(workId)
+            },
+            onBack = { browsingAo3 = false }
         )
         return
     }
@@ -143,6 +157,7 @@ fun CitationHome(vm: ReaderViewModel) {
                 HomeTab.NEW -> NewTab(
                     vm,
                     onBrowseRoyalRoad = { browsingRoyalRoad = true },
+                    onBrowseAo3 = { browsingAo3 = true },
                     onBrowseOreilly = { vm.browseOreilly() },
                     onBrowseKindle = { vm.browseKindle() }
                 )
@@ -162,6 +177,7 @@ fun CitationHome(vm: ReaderViewModel) {
 private fun NewTab(
     vm: ReaderViewModel,
     onBrowseRoyalRoad: () -> Unit,
+    onBrowseAo3: () -> Unit,
     onBrowseOreilly: () -> Unit,
     onBrowseKindle: () -> Unit
 ) {
@@ -220,6 +236,10 @@ private fun NewTab(
                 onClick = onBrowseRoyalRoad,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse Royal Road") }
+            OutlinedButton(
+                onClick = onBrowseAo3,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Browse Archive of Our Own") }
             OutlinedButton(
                 onClick = onBrowseKindle,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -484,16 +504,20 @@ private fun RemoveBookDialog(
     onDismiss: () -> Unit
 ) {
     val isRoyalRoad = book.sourceType == SourceType.ROYAL_ROAD.name
+    val isAo3 = book.sourceType == SourceType.AO3.name
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Remove “${book.title}”?") },
         text = {
             Text(
-                if (isRoyalRoad) {
-                    "This un-favourites the serial and clears its cached chapters. Your notes are kept, " +
-                        "and you can add it again from Browse Royal Road."
-                } else {
-                    "This removes it from your library. Your notes are kept."
+                when {
+                    isRoyalRoad ->
+                        "This un-favourites the serial and clears its cached chapters. Your notes are kept, " +
+                            "and you can add it again from Browse Royal Road."
+                    isAo3 ->
+                        "This un-favourites the work and clears its cached chapters. Your notes are kept, " +
+                            "and you can add it again from Browse Archive of Our Own."
+                    else -> "This removes it from your library. Your notes are kept."
                 },
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.secondary

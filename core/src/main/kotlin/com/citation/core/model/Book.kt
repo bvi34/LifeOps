@@ -78,6 +78,9 @@ data class BookMetadata(
  *
  * - [EPUB] / [PDF] — **owned** files you hold; jump-to-context is reliable.
  * - [ROYAL_ROAD] — **borrowed** web serial; cacheable but evictable, authors edit chapters.
+ * - [AO3] — Archive of Our Own; **borrowed** web serial, like [ROYAL_ROAD] (cacheable, evictable,
+ *   authors edit works). Distinguished from RR only by how the producer reads it: AO3 has no
+ *   per-work syndication feed, so update-detection re-reads the work's chapter index instead.
  * - [OREILLY] — **licensed**, read-in-place; no local content cache, only your annotations.
  * - [KINDLE] — **licensed**, read-in-place on `read.amazon.com`; like [OREILLY], no local content
  *   cache. The reader also suppresses text selection, so a Kindle note cites the reader's *location*
@@ -93,6 +96,7 @@ enum class SourceType {
     EPUB,
     PDF,
     ROYAL_ROAD,
+    AO3,
     OREILLY,
     KINDLE,
     INTERNAL,
@@ -101,8 +105,8 @@ enum class SourceType {
     /**
      * Whether content from this source is *borrowed* (safe to auto-evict; refetchable but not
      * guaranteed) versus *owned/licensed* content that eviction must never structurally reach.
-     * Royal Road chapters are the only borrowed, cacheable body; O'Reilly is licensed but keeps no
-     * local body at all, so nothing there is evictable.
+     * Royal Road and Archive of Our Own chapters are the borrowed, cacheable bodies; O'Reilly is
+     * licensed but keeps no local body at all, so nothing there is evictable.
      */
-    val isBorrowedCache: Boolean get() = this == ROYAL_ROAD
+    val isBorrowedCache: Boolean get() = this == ROYAL_ROAD || this == AO3
 }

@@ -22,9 +22,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         KeyWatermarkEntity::class,
         SyncStateEntity::class,
         RrFictionEntity::class,
-        RrChapterMetaEntity::class
+        RrChapterMetaEntity::class,
+        Ao3WorkEntity::class,
+        Ao3ChapterMetaEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class CitationDatabase : RoomDatabase() {
@@ -34,6 +36,7 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun royalRoadDao(): RoyalRoadDao
+    abstract fun ao3Dao(): Ao3Dao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null
@@ -52,13 +55,38 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 → v4: add the Archive of Our Own catalog tables (`ao3_works`/`ao3_chapters`), the AO3
+         * mirror of `rr_fictions`/`rr_chapters`. Chapter bodies stay in the disposable file store;
+         * only catalog + cached-flag rows live here.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Column definitions must match Room's generated schema exactly — Kotlin constructor
+                // defaults are NOT SQL defaults, so these carry no DEFAULT clauses (mirrors rr_*).
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `ao3_works` (" +
+                        "`workId` INTEGER NOT NULL, `title` TEXT NOT NULL, `author` TEXT, " +
+                        "`isFavorite` INTEGER NOT NULL, `currentOrdinal` INTEGER NOT NULL, " +
+                        "`expectedCount` INTEGER NOT NULL, `lastReadAt` INTEGER NOT NULL, " +
+                        "`bookKey` TEXT, PRIMARY KEY(`workId`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `ao3_chapters` (" +
+                        "`workId` INTEGER NOT NULL, `ordinal` INTEGER NOT NULL, `chapterId` INTEGER NOT NULL, " +
+                        "`title` TEXT NOT NULL, `url` TEXT NOT NULL, `cached` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`workId`, `ordinal`))"
+                )
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
 
         /**

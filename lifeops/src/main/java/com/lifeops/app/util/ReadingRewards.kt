@@ -6,7 +6,8 @@ package com.lifeops.app.util
  *
  * Two decisions live here:
  *  - **Category** (a report/label dimension): a source's default filing — O'Reilly is *Learning*,
- *    Royal Road is *Fun*, owned files (EPUB/PDF) lean *Learning*. Both categories earn identically;
+ *    Royal Road and Archive of Our Own are *Fun*, owned files (EPUB/PDF) lean *Learning*. Both
+ *    categories earn identically;
  *    the split exists so Reports can show whether you're reading to grow or to escape.
  *  - **Points**: engaged reading minutes → resource points at a flat rate (default 5/hour). Applied
  *    to the *total* engaged minutes for the week, floored once, so remainders aren't lost per-entry.
@@ -27,7 +28,7 @@ object ReadingRewards {
     /** A source type's default category. [sourceType] is the `SourceType` name (case-insensitive). */
     fun defaultCategory(sourceType: String): ReadingCategory =
         when (sourceType.trim().uppercase()) {
-            "ROYAL_ROAD" -> ReadingCategory.FUN
+            "ROYAL_ROAD", "AO3" -> ReadingCategory.FUN
             else -> ReadingCategory.LEARNING // EPUB, PDF, OREILLY, and anything unknown
         }
 

@@ -17,6 +17,18 @@ class DedupTest {
     }
 
     @Test
+    fun ao3IdIsAuthoritativeAndDistinctFromRoyalRoadId() {
+        val a = IdentitySet(IdentityKey.Ao3Id(21220))
+        val b = IdentitySet(IdentityKey.Ao3Id(21220))
+        val c = IdentitySet(IdentityKey.Ao3Id(99999))
+        assertEquals(DedupValidator.Verdict.SAME, DedupValidator.compare(a, b))
+        assertEquals(DedupValidator.Verdict.DIFFERENT, DedupValidator.compare(a, c))
+        // An AO3 work id and a Royal Road fiction id sharing a number are NOT the same work.
+        val rr = IdentitySet(IdentityKey.RoyalRoadId(21220))
+        assertEquals(DedupValidator.Verdict.UNKNOWN, DedupValidator.compare(a, rr))
+    }
+
+    @Test
     fun isbnIsEditionAware() {
         // DDIA 1st vs 2nd edition — distinct works, must NOT dedup together.
         val first = IdentitySet(IdentityKey.Isbn("978-1449373320"))
