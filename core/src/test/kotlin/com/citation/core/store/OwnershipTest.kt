@@ -11,6 +11,7 @@ class OwnershipTest {
     @Test
     fun borrowedContentIsDisposableOwnedIsSovereign() {
         assertEquals(Store.DISPOSABLE, Ownership.contentStore(SourceType.ROYAL_ROAD))
+        assertEquals(Store.DISPOSABLE, Ownership.contentStore(SourceType.AO3))
         assertEquals(Store.SOVEREIGN, Ownership.contentStore(SourceType.EPUB))
         assertEquals(Store.SOVEREIGN, Ownership.contentStore(SourceType.PDF))
         assertEquals(Store.SOVEREIGN, Ownership.contentStore(SourceType.OREILLY))
@@ -26,6 +27,7 @@ class OwnershipTest {
     @Test
     fun borrowedNonFavoriteClosedIsEvictable() {
         assertTrue(Ownership.isEvictable(SourceType.ROYAL_ROAD, isFavorite = false, isOpen = false))
+        assertTrue(Ownership.isEvictable(SourceType.AO3, isFavorite = false, isOpen = false))
     }
 
     @Test

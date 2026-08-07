@@ -113,6 +113,32 @@ budgets + file store + catalog persistence), three WorkManager jobs (favourites 
 eviction), and a WebView **skim/catalog** screen that intercepts a `/fiction/{id}` tap and opens the
 story *through the reader* instead of loading the live page.
 
+## Archive of Our Own read loop (core built + verified)
+
+AO3 is a second borrowed web-serial source, built as the **twin of Royal Road**: numeric work id ≈
+fiction id, numeric chapter ids, per-chapter fetch, borrowed/evictable cache. It reuses the entire
+generic RR engine unchanged — the rolling buffer, backfill planner, eviction policy, rate budget, and
+cross-lane fetch queue are all id-keyed and source-agnostic — so only the *producer* and a small
+amount of Android glue are AO3-specific. The AO3 brains live in `:core` under `com.citation.core.ao3`,
+fully unit-tested (`Ao3HtmlTest`, `Ao3UpdatesTest`).
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Catalog / extraction** | `ao3/Ao3Html`, `ao3/Ao3Catalog` | Work-page HTML → ordered chapter catalog, read from AO3's `<select id="selected_id">` chapter dropdown (deduped by chapter id; the "N. " number prefix stripped). A single-chapter work has no dropdown, so it degrades to one chapter keyed by the work id. Chapter-page HTML → flowing-text `Chapter`, pulling the `role="article"` `userstuff` block **only** — the work summary and chapter notes are also `userstuff` (in `<blockquote>`s) and must not leak in. Requests carry `view_adult=true` to clear the adult-content interstitial. |
+| **Update detector** | `ao3/Ao3Updates` | AO3 publishes **no per-work syndication feed** (the one place it diverges from Royal Road), so "did new chapters appear?" can't be answered from RSS. Instead the detector diffs a freshly-read catalog against the known chapter ids and returns only the genuinely-new refs, oldest-first. The catalog scrape *is* the detector, so favourites poll on the scrape budget rather than a loose feed budget. |
+| **Identity** | `identity/IdentityKey.Ao3Id` | AO3 work id — **authoritative for AO3**, a distinct type from `RoyalRoadId` so an AO3 work and a Royal Road fiction sharing a number never dedup together. |
+
+**Android glue** (`data/ao3`, `work/Ao3Workers`, `ui/Ao3CatalogScreen`): `Ao3Client`
+(HttpURLConnection, parses via `:core`), `Ao3Coordinator` (the RR coordinator's twin — wires client +
+the shared planners/queue/budgets + file store + catalog persistence, with chapter bodies namespaced
+`ao3-{workId}` in the disposable cache so they can't collide with RR's raw fiction-id keys), three
+WorkManager jobs (favourites poll / backfill / eviction), and a WebView **skim/catalog** screen that
+intercepts a `/works/{id}` tap and opens the work *through the reader* instead of loading the live
+page. Room gains `ao3_works`/`ao3_chapters` (citation.db v3 → v4 migration); the repository registers
+an opened work as a sovereign book (so notes survive eviction), routes open/delete/storage/dedup by
+source type, and `Ao3Scheduler` registers the periodic jobs alongside RR's. On the LifeOps side AO3
+telemetry maps to the **Fun** reading category, like Royal Road.
+
 ## Notes complete (milestone 4 — core built + verified)
 
 The note **degradation/resolution engine** lives in `:core` as `note/NoteResolver` (unit-tested): it
@@ -294,7 +320,7 @@ leaving the app open on a page would farm resources. The measurement is **engage
   reading with **no output cap**, because the receipts are honest at the source.
 
 `TelemetryPacket` now carries `sourceType` alongside `minutesRead`, so LifeOps can map a session to a
-category (**O'Reilly → Learning, Royal Road → Fun**) without ever holding the book. The packet has
+category (**O'Reilly → Learning, Royal Road & Archive of Our Own → Fun**) without ever holding the book. The packet has
 always ridden the sync seam; it is now **actually emitted** (it was previously only built in the
 walking skeleton).
 

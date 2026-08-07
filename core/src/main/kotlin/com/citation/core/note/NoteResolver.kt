@@ -147,7 +147,7 @@ object NoteResolver {
         // when the target is present the jump is a deep link we don't control, so it's best-effort. The
         // read-in-place sources (O'Reilly, Kindle) are the same: reopening lands you near the spot, but
         // in their reader, not ours.
-        SourceType.ROYAL_ROAD, SourceType.OREILLY, SourceType.KINDLE, SourceType.CAPTURE ->
+        SourceType.ROYAL_ROAD, SourceType.AO3, SourceType.OREILLY, SourceType.KINDLE, SourceType.CAPTURE ->
             Reliability.BEST_EFFORT
     }
 

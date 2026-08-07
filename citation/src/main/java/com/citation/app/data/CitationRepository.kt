@@ -4,6 +4,8 @@ import com.citation.app.data.db.BookEntity
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
+import com.citation.app.data.ao3.Ao3Client
+import com.citation.app.data.ao3.Ao3Coordinator
 import com.citation.app.data.rr.RoyalRoadClient
 import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
@@ -65,6 +67,8 @@ class CitationRepository private constructor(
     private val mailbox: Mailbox<UpPacket, AcquireBookIntent>,
     /** The Royal Road read loop (skim → buffer → cache → backfill → poll → evict). */
     val royalRoad: RoyalRoadCoordinator,
+    /** The Archive of Our Own read loop — same shape as [royalRoad], AO3 sources. */
+    val ao3: Ao3Coordinator,
     /** Encrypted library card/PIN + proxy host for read-in-place O'Reilly (never synced). */
     private val oreillyAccess: OreillyAccess
 ) {
@@ -143,24 +147,31 @@ class CitationRepository private constructor(
     data class OpenResult(
         val book: Book,
         val rrFictionId: Long?,
+        val ao3WorkId: Long? = null,
         val chapterOrdinal: Int = 0,
         val charOffset: Int = 0
     )
 
     /**
-     * Open a library entry, routing a Royal Road serial through its own loader (chapter bodies live
-     * in the disposable cache, not the `chapters` table) and an owned book through the plain loader.
-     * The stored last position rides along so the ViewModel can restore chapter + scroll.
+     * Open a library entry, routing a borrowed web serial (Royal Road or AO3) through its own loader
+     * (chapter bodies live in the disposable cache, not the `chapters` table) and an owned book through
+     * the plain loader. The stored last position rides along so the ViewModel can restore chapter +
+     * scroll.
      */
     suspend fun openBook(bookKey: String): OpenResult? {
         val entity = db.bookDao().get(bookKey) ?: return null
-        val book = if (entity.sourceType == SourceType.ROYAL_ROAD.name) {
-            val fictionId = entity.sourceId?.toLongOrNull() ?: return null
-            return OpenResult(openRoyalRoad(fictionId), fictionId, entity.lastChapterOrdinal, entity.lastCharOffset)
-        } else {
-            CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey))
+        val book = when (entity.sourceType) {
+            SourceType.ROYAL_ROAD.name -> {
+                val fictionId = entity.sourceId?.toLongOrNull() ?: return null
+                return OpenResult(openRoyalRoad(fictionId), fictionId, null, entity.lastChapterOrdinal, entity.lastCharOffset)
+            }
+            SourceType.AO3.name -> {
+                val workId = entity.sourceId?.toLongOrNull() ?: return null
+                return OpenResult(openAo3(workId), null, workId, entity.lastChapterOrdinal, entity.lastCharOffset)
+            }
+            else -> CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey))
         }
-        return OpenResult(book, null, entity.lastChapterOrdinal, entity.lastCharOffset)
+        return OpenResult(book, null, null, entity.lastChapterOrdinal, entity.lastCharOffset)
     }
 
     /**
@@ -200,6 +211,43 @@ class CitationRepository private constructor(
         return book.copy(key = key)
     }
 
+    /**
+     * Open an Archive of Our Own work and register it as a **sovereign** [BookEntity] (minting a book
+     * key on first open), so notes/highlights on it are keyed and survive eviction of its borrowed
+     * chapter bodies. The AO3 twin of [openRoyalRoad]; returns the keyed [Book] whose chapters come
+     * from the AO3 loader.
+     */
+    suspend fun openAo3(workId: Long, now: Long = System.currentTimeMillis()): Book {
+        val book = ao3.openWork(workId)
+        val work = db.ao3Dao().work(workId)
+        val key = work?.bookKey?.let { EntityKey.parse(it) } ?: run {
+            val minted = keys.next(EntityType.BOOK)
+            db.bookDao().upsert(
+                BookEntity(
+                    key = minted.toString(),
+                    title = book.metadata.title,
+                    author = book.metadata.author,
+                    sourceType = SourceType.AO3.name,
+                    sourceId = workId.toString(),
+                    language = null,
+                    acquisitionState = AcquisitionState.ACQUIRED.name,
+                    readingState = ReadingState.READING.name,
+                    createdAt = now
+                )
+            )
+            db.ao3Dao().setBookKey(workId, minted.toString())
+            checkpointKey(EntityType.BOOK)
+            promoteCapturesTo(
+                CapturePromotion.PromotableRecord(
+                    minted, IdentitySet(IdentityKey.Ao3Id(workId)),
+                    book.metadata.title, book.metadata.author
+                )
+            )
+            minted
+        }
+        return book.copy(key = key)
+    }
+
     /** Persist the reader's last position for restore-on-reopen. */
     suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
@@ -218,6 +266,8 @@ class CitationRepository private constructor(
         when (entity.sourceType) {
             SourceType.ROYAL_ROAD.name ->
                 entity.sourceId?.toLongOrNull()?.let { royalRoad.forget(it) }
+            SourceType.AO3.name ->
+                entity.sourceId?.toLongOrNull()?.let { ao3.forget(it) }
             SourceType.PDF.name -> files.deleteOwned(bookKey, "pdf")
             SourceType.EPUB.name -> {
                 files.deleteOwned(bookKey, "epub")
@@ -841,6 +891,13 @@ class CitationRepository private constructor(
                     .mapNotNull { ord -> files.readBorrowedChapter(fictionId, ord)?.let { ord to it } }
                     .toMap()
             }
+            entity.sourceType == SourceType.AO3.name -> {
+                val cacheKey = entity.sourceId?.let { "ao3-$it" } ?: ""
+                note.references.mapNotNull { (it.anchor as? TextAnchor.Flowing)?.chapterOrdinal }
+                    .distinct()
+                    .mapNotNull { ord -> files.readBorrowedChapter(cacheKey, ord)?.let { ord to it } }
+                    .toMap()
+            }
             else -> db.chapterDao().forBook(entity.key)
                 .mapNotNull { ch -> ch.text?.let { ch.ordinal to it } }.toMap()
         }
@@ -864,6 +921,7 @@ class CitationRepository private constructor(
                 SourceType.PDF.name -> files.ownedFileSize(b.key, "pdf")
                 SourceType.EPUB.name -> files.ownedFileSize(b.key, "epub")
                 SourceType.ROYAL_ROAD.name -> b.sourceId?.let { files.borrowedTotalSize(it) } ?: 0L
+                SourceType.AO3.name -> b.sourceId?.let { files.borrowedTotalSize("ao3-$it") } ?: 0L
                 else -> 0L // O'Reilly caches nothing; INTERNAL "wanted" has no content yet
             }
             if (bytes > 0) {
@@ -943,6 +1001,8 @@ class CitationRepository private constructor(
             SourceType.PDF.name -> e.sourceId?.let { IdentitySet(IdentityKey.PdfSha(it)) }
             SourceType.ROYAL_ROAD.name ->
                 e.sourceId?.toLongOrNull()?.let { IdentitySet(IdentityKey.RoyalRoadId(it)) }
+            SourceType.AO3.name ->
+                e.sourceId?.toLongOrNull()?.let { IdentitySet(IdentityKey.Ao3Id(it)) }
             else -> null
         } ?: IdentitySet(emptyList())
         return BindOrCreate.Candidate(
@@ -1045,7 +1105,8 @@ class CitationRepository private constructor(
             }
             mailbox.seedOutbox(pending)
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad, oreillyAccess).also { repo ->
+            val ao3 = Ao3Coordinator(db.ao3Dao(), Ao3Client(), files)
+            return CitationRepository(db, files, keys, mailbox, royalRoad, ao3, oreillyAccess).also { repo ->
                 // Write the reseeded backlog to the file-drop now so LifeOps can pick it up without
                 // waiting for the next capture or the periodic worker.
                 if (pending.isNotEmpty()) repo.flushOutbox()

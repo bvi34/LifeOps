@@ -33,6 +33,18 @@ sealed interface IdentityKey {
     }
 
     /**
+     * Archive of Our Own work id — **authoritative for AO3**. Two records with the same work id are
+     * the same work, full stop; different ids are different works. The AO3 analogue of
+     * [RoyalRoadId], kept a distinct type so an AO3 work and a Royal Road fiction that happen to
+     * share a numeric id never collide.
+     */
+    data class Ao3Id(val workId: Long) : IdentityKey {
+        override val strength: Int get() = STRENGTH_AUTHORITATIVE
+        override fun matches(other: IdentityKey): Boolean =
+            other is Ao3Id && other.workId == workId
+    }
+
+    /**
      * ISBN for an owned published book — **edition-aware**. The whole point: *Designing
      * Data-Intensive Applications* 1st ed and 2nd ed are distinct works with distinct ISBNs, and a
      * note anchored in the 2nd must not silently rebind to the 1st. So the match is exact on the

@@ -9,7 +9,7 @@ import com.citation.core.identity.IdentityKey
  * is what lets a note store *only this string* yet still recover, later and offline: which rung it
  * came from (for triage), and — for a book-identity capture — the typed [IdentityKey] itself (for
  * promotion). Book identities nest their kind so the exact key round-trips:
- * `book:isbn:9781449373320`, `book:rr:12345`, `book:sha:<hex>`.
+ * `book:isbn:9781449373320`, `book:rr:12345`, `book:ao3:12345`, `book:sha:<hex>`.
  *
  * Values are trimmed but never lower-cased here (a URL is case-sensitive after the host); identity
  * normalisation stays the job of [IdentityKey] itself.
@@ -44,6 +44,7 @@ object ClusterId {
         val body = when (key) {
             is IdentityKey.Isbn -> "isbn:${key.normalized}"
             is IdentityKey.RoyalRoadId -> "rr:${key.fictionId}"
+            is IdentityKey.Ao3Id -> "ao3:${key.workId}"
             is IdentityKey.PdfSha -> "sha:${key.normalized}"
         }
         return "${ProvenanceRung.BOOK_IDENTITY.tag}:$body"
@@ -59,6 +60,7 @@ object ClusterId {
         return when (kind) {
             "isbn" -> IdentityKey.Isbn(value)
             "rr" -> value.toLongOrNull()?.let { IdentityKey.RoyalRoadId(it) }
+            "ao3" -> value.toLongOrNull()?.let { IdentityKey.Ao3Id(it) }
             "sha" -> IdentityKey.PdfSha(value)
             else -> null
         }

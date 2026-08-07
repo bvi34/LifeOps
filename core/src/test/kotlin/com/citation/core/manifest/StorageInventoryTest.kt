@@ -12,6 +12,7 @@ class StorageInventoryTest {
     fun recoverabilityComesFromTheSourceKind() {
         // A Royal Road serial is reclaimable (refetchable); owned files are irreplaceable.
         assertEquals(Recoverability.RECLAIMABLE, StorageInventory.recoverabilityFor(SourceType.ROYAL_ROAD))
+        assertEquals(Recoverability.RECLAIMABLE, StorageInventory.recoverabilityFor(SourceType.AO3))
         assertEquals(Recoverability.IRREPLACEABLE, StorageInventory.recoverabilityFor(SourceType.PDF))
         assertEquals(Recoverability.IRREPLACEABLE, StorageInventory.recoverabilityFor(SourceType.EPUB))
         assertEquals(Recoverability.IRREPLACEABLE, StorageInventory.recoverabilityFor(SourceType.OREILLY))

@@ -150,6 +150,7 @@ private fun BookStatus.label() = when (this) {
 private fun citationSourceLabel(sourceType: String) = when (sourceType.uppercase()) {
     "OREILLY" -> "O'Reilly"
     "ROYAL_ROAD" -> "Royal Road"
+    "AO3" -> "Archive of Our Own"
     "EPUB" -> "EPUB"
     "PDF" -> "PDF"
     "KINDLE" -> "Kindle"

@@ -8,6 +8,7 @@ class ReadingRewardsTest {
     @Test
     fun royalRoadIsFunEverythingElseIsLearning() {
         assertEquals(ReadingCategory.FUN, ReadingRewards.defaultCategory("ROYAL_ROAD"))
+        assertEquals(ReadingCategory.FUN, ReadingRewards.defaultCategory("AO3"))
         assertEquals(ReadingCategory.LEARNING, ReadingRewards.defaultCategory("OREILLY"))
         assertEquals(ReadingCategory.LEARNING, ReadingRewards.defaultCategory("EPUB"))
         assertEquals(ReadingCategory.LEARNING, ReadingRewards.defaultCategory("PDF"))
