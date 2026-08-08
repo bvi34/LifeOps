@@ -116,6 +116,33 @@ object KindleLink {
             "if(!t)t=document.title||'';" +
             "return location.href+'\\n'+t;})()"
 
+    /**
+     * A self-installing JS fix for the library grid that comes up **blank** in an Android WebView.
+     *
+     * The Cloud Reader's app-shell sizes itself with `height: 100vh` on the flex column that wraps the
+     * header and the scrolling book grid (`<main id="library">`, a `flex: 1 1 auto` child). Android's
+     * WebView mis-computes `vh` for that shell — it collapses to zero, so `main` gets no height and the
+     * grid, though fully in the DOM (dozens of covers and links), never paints. The same page lays out
+     * correctly in desktop Chromium at the identical viewport, which pins the cause on `vh`, not the CSS.
+     *
+     * `window.innerHeight` *is* reported correctly by the WebView (only the CSS `vh` unit is wrong), so
+     * the fix pins the shell — the parent of the stable `#library` element — to `innerHeight` in real
+     * pixels, which the flex column then distributes to `main` normally. It re-pins on resize/orientation
+     * change and for a few seconds after load (the shell can mount a beat late), then leaves the listener
+     * to handle rotation. Idempotent: installs its listeners once. Targeting `#library`'s parent keeps it
+     * independent of Amazon's churn-prone obfuscated class names.
+     */
+    fun libraryLayoutFixScript(): String =
+        "(function(){" +
+            "function fit(){var m=document.getElementById('library');" +
+            "if(m&&m.parentElement){m.parentElement.style.height=window.innerHeight+'px';}}" +
+            "fit();" +
+            "if(!window.__kcrShellFit){window.__kcrShellFit=1;" +
+            "window.addEventListener('resize',fit);" +
+            "window.addEventListener('orientationchange',fit);" +
+            "var n=0,id=setInterval(function(){fit();if(++n>20){clearInterval(id);}},250);}" +
+            "})()"
+
     // Amazon chrome that shows up as a page/reader title but isn't a book name — reject these so the
     // browse handoff falls back to the ASIN instead of naming a book after the reader itself.
     private val GENERIC_TITLES = setOf(
