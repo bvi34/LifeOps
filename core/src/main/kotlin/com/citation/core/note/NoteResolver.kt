@@ -142,12 +142,13 @@ object NoteResolver {
         resolutions.minByOrNull { it.state.ordinal }?.state ?: State.RESOLVED
 
     private fun reliabilityOf(sourceType: SourceType): Reliability = when (sourceType) {
-        SourceType.EPUB, SourceType.PDF, SourceType.INTERNAL -> Reliability.RELIABLE
+        // AO3 is an owned EPUB snapshot with inline chapter text, so its jumps are as reliable as EPUB.
+        SourceType.EPUB, SourceType.PDF, SourceType.INTERNAL, SourceType.AO3 -> Reliability.RELIABLE
         // A cross-app capture points back into someone else's app (a URL, a Kindle location); even
         // when the target is present the jump is a deep link we don't control, so it's best-effort. The
         // read-in-place sources (O'Reilly, Kindle) are the same: reopening lands you near the spot, but
         // in their reader, not ours.
-        SourceType.ROYAL_ROAD, SourceType.AO3, SourceType.OREILLY, SourceType.KINDLE, SourceType.CAPTURE ->
+        SourceType.ROYAL_ROAD, SourceType.OREILLY, SourceType.KINDLE, SourceType.CAPTURE ->
             Reliability.BEST_EFFORT
     }
 

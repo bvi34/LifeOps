@@ -5,7 +5,6 @@ import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
 import com.citation.app.data.ao3.Ao3Client
-import com.citation.app.data.ao3.Ao3Coordinator
 import com.citation.app.data.rr.RoyalRoadClient
 import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
@@ -67,8 +66,8 @@ class CitationRepository private constructor(
     private val mailbox: Mailbox<UpPacket, AcquireBookIntent>,
     /** The Royal Road read loop (skim → buffer → cache → backfill → poll → evict). */
     val royalRoad: RoyalRoadCoordinator,
-    /** The Archive of Our Own read loop — same shape as [royalRoad], AO3 sources. */
-    val ao3: Ao3Coordinator,
+    /** Downloads AO3's official EPUB export; AO3 works are ingested as owned EPUB snapshots. */
+    private val ao3Client: Ao3Client,
     /** Encrypted library card/PIN + proxy host for read-in-place O'Reilly (never synced). */
     private val oreillyAccess: OreillyAccess
 ) {
@@ -147,31 +146,26 @@ class CitationRepository private constructor(
     data class OpenResult(
         val book: Book,
         val rrFictionId: Long?,
-        val ao3WorkId: Long? = null,
         val chapterOrdinal: Int = 0,
         val charOffset: Int = 0
     )
 
     /**
-     * Open a library entry, routing a borrowed web serial (Royal Road or AO3) through its own loader
-     * (chapter bodies live in the disposable cache, not the `chapters` table) and an owned book through
-     * the plain loader. The stored last position rides along so the ViewModel can restore chapter +
-     * scroll.
+     * Open a library entry, routing a Royal Road serial through its own loader (chapter bodies live
+     * in the disposable cache, not the `chapters` table) and every other source — including an AO3
+     * work, whose EPUB snapshot stores chapters inline like any owned EPUB — through the plain loader.
+     * The stored last position rides along so the ViewModel can restore chapter + scroll.
      */
     suspend fun openBook(bookKey: String): OpenResult? {
         val entity = db.bookDao().get(bookKey) ?: return null
         val book = when (entity.sourceType) {
             SourceType.ROYAL_ROAD.name -> {
                 val fictionId = entity.sourceId?.toLongOrNull() ?: return null
-                return OpenResult(openRoyalRoad(fictionId), fictionId, null, entity.lastChapterOrdinal, entity.lastCharOffset)
-            }
-            SourceType.AO3.name -> {
-                val workId = entity.sourceId?.toLongOrNull() ?: return null
-                return OpenResult(openAo3(workId), null, workId, entity.lastChapterOrdinal, entity.lastCharOffset)
+                return OpenResult(openRoyalRoad(fictionId), fictionId, entity.lastChapterOrdinal, entity.lastCharOffset)
             }
             else -> CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey))
         }
-        return OpenResult(book, null, null, entity.lastChapterOrdinal, entity.lastCharOffset)
+        return OpenResult(book, null, entity.lastChapterOrdinal, entity.lastCharOffset)
     }
 
     /**
@@ -212,40 +206,56 @@ class CitationRepository private constructor(
     }
 
     /**
-     * Open an Archive of Our Own work and register it as a **sovereign** [BookEntity] (minting a book
-     * key on first open), so notes/highlights on it are keyed and survive eviction of its borrowed
-     * chapter bodies. The AO3 twin of [openRoyalRoad]; returns the keyed [Book] whose chapters come
-     * from the AO3 loader.
+     * Open an Archive of Our Own work. AO3 is ingested via its **official EPUB download** and kept as
+     * an owned snapshot: if the work is already in the library (matched by its AO3 work id) it just
+     * loads; otherwise it is downloaded and imported once. Returns the keyed [Book].
+     *
+     * Throws if the work has never been imported and the download/parse fails — the ViewModel turns
+     * that into a user-facing "couldn't open" rather than a silent empty book.
      */
-    suspend fun openAo3(workId: Long, now: Long = System.currentTimeMillis()): Book {
-        val book = ao3.openWork(workId)
-        val work = db.ao3Dao().work(workId)
-        val key = work?.bookKey?.let { EntityKey.parse(it) } ?: run {
-            val minted = keys.next(EntityType.BOOK)
-            db.bookDao().upsert(
-                BookEntity(
-                    key = minted.toString(),
-                    title = book.metadata.title,
-                    author = book.metadata.author,
-                    sourceType = SourceType.AO3.name,
-                    sourceId = workId.toString(),
-                    language = null,
-                    acquisitionState = AcquisitionState.ACQUIRED.name,
-                    readingState = ReadingState.READING.name,
-                    createdAt = now
-                )
-            )
-            db.ao3Dao().setBookKey(workId, minted.toString())
-            checkpointKey(EntityType.BOOK)
-            promoteCapturesTo(
-                CapturePromotion.PromotableRecord(
-                    minted, IdentitySet(IdentityKey.Ao3Id(workId)),
-                    book.metadata.title, book.metadata.author
-                )
-            )
-            minted
+    suspend fun openAo3(workId: Long): Book {
+        db.bookDao().findBySource(workId.toString(), SourceType.AO3.name)?.let { existing ->
+            return CitationMappers.bookFromEntities(existing, db.chapterDao().forBook(existing.key))
         }
-        return book.copy(key = key)
+        return importAo3(workId) ?: error("Could not download or parse AO3 work $workId")
+    }
+
+    /**
+     * Download AO3 work [workId]'s official EPUB, parse it, and persist it as an **owned** book keyed
+     * by the AO3 work id — the same shape as [importEpub] (chapters stored inline in the sovereign DB,
+     * the raw EPUB kept for re-parse/export), but tagged [SourceType.AO3] and carrying an
+     * [IdentityKey.Ao3Id] so it dedups by work and files as *Fun* on the LifeOps side. Returns the
+     * keyed [Book], or `null` if the archive yields no content.
+     */
+    suspend fun importAo3(workId: Long, now: Long = System.currentTimeMillis()): Book? {
+        val bytes = ao3Client.downloadEpub(workId)
+        val parsed = EpubParser.parse(bytes) ?: return null
+        val bookKey = keys.next(EntityType.BOOK)
+        // Re-tag the parsed EPUB as an AO3 source so it categorises + dedups as a work, not a plain EPUB.
+        val book = parsed.book.copy(
+            key = bookKey,
+            metadata = parsed.book.metadata.copy(source = SourceType.AO3)
+        )
+        val descriptor = SourceDescriptor(
+            bookKey = bookKey,
+            sourceType = SourceType.AO3,
+            sourceId = workId.toString(),
+            title = book.metadata.title,
+            author = book.metadata.author
+        )
+        db.bookDao().upsert(CitationMappers.bookToEntity(book, descriptor, BookLifecycle.owned(), now))
+        db.chapterDao().upsertAll(
+            book.chapters.map { CitationMappers.chapterToEntity(bookKey.toString(), it, storeInline = true, now) }
+        )
+        files.writeOwned(bookKey.toString(), "epub", bytes)
+        checkpointKey(EntityType.BOOK)
+        promoteCapturesTo(
+            CapturePromotion.PromotableRecord(
+                bookKey, IdentitySet(IdentityKey.Ao3Id(workId)),
+                book.metadata.title, book.metadata.author
+            )
+        )
+        return book
     }
 
     /** Persist the reader's last position for restore-on-reopen. */
@@ -266,10 +276,9 @@ class CitationRepository private constructor(
         when (entity.sourceType) {
             SourceType.ROYAL_ROAD.name ->
                 entity.sourceId?.toLongOrNull()?.let { royalRoad.forget(it) }
-            SourceType.AO3.name ->
-                entity.sourceId?.toLongOrNull()?.let { ao3.forget(it) }
             SourceType.PDF.name -> files.deleteOwned(bookKey, "pdf")
-            SourceType.EPUB.name -> {
+            // AO3 is an owned EPUB snapshot — its raw file + inline chapters are removed like an EPUB.
+            SourceType.EPUB.name, SourceType.AO3.name -> {
                 files.deleteOwned(bookKey, "epub")
                 db.chapterDao().deleteForBook(bookKey)
             }
@@ -891,13 +900,6 @@ class CitationRepository private constructor(
                     .mapNotNull { ord -> files.readBorrowedChapter(fictionId, ord)?.let { ord to it } }
                     .toMap()
             }
-            entity.sourceType == SourceType.AO3.name -> {
-                val cacheKey = entity.sourceId?.let { "ao3-$it" } ?: ""
-                note.references.mapNotNull { (it.anchor as? TextAnchor.Flowing)?.chapterOrdinal }
-                    .distinct()
-                    .mapNotNull { ord -> files.readBorrowedChapter(cacheKey, ord)?.let { ord to it } }
-                    .toMap()
-            }
             else -> db.chapterDao().forBook(entity.key)
                 .mapNotNull { ch -> ch.text?.let { ch.ordinal to it } }.toMap()
         }
@@ -919,9 +921,9 @@ class CitationRepository private constructor(
         db.bookDao().getAll().forEach { b ->
             val bytes = when (b.sourceType) {
                 SourceType.PDF.name -> files.ownedFileSize(b.key, "pdf")
-                SourceType.EPUB.name -> files.ownedFileSize(b.key, "epub")
+                // AO3 keeps its downloaded EPUB in the owned store, sized like any EPUB.
+                SourceType.EPUB.name, SourceType.AO3.name -> files.ownedFileSize(b.key, "epub")
                 SourceType.ROYAL_ROAD.name -> b.sourceId?.let { files.borrowedTotalSize(it) } ?: 0L
-                SourceType.AO3.name -> b.sourceId?.let { files.borrowedTotalSize("ao3-$it") } ?: 0L
                 else -> 0L // O'Reilly caches nothing; INTERNAL "wanted" has no content yet
             }
             if (bytes > 0) {
@@ -1105,8 +1107,7 @@ class CitationRepository private constructor(
             }
             mailbox.seedOutbox(pending)
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            val ao3 = Ao3Coordinator(db.ao3Dao(), Ao3Client(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad, ao3, oreillyAccess).also { repo ->
+            return CitationRepository(db, files, keys, mailbox, royalRoad, Ao3Client(), oreillyAccess).also { repo ->
                 // Write the reseeded backlog to the file-drop now so LifeOps can pick it up without
                 // waiting for the next capture or the periodic worker.
                 if (pending.isNotEmpty()) repo.flushOutbox()

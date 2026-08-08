@@ -161,7 +161,6 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     // Non-null while a Royal Road serial is open, so page turns can slide its prefetch buffer.
     private var openRrFictionId: Long? = null
-    private var openAo3WorkId: Long? = null
 
     // The PDF paged reader and the O'Reilly read-in-place reader are separate tracks from the
     // flowing reader; when one is set the UI shows that track instead.
@@ -211,18 +210,16 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 else -> {
                     val result = repository.openBook(bookKey)
                     openRrFictionId = result?.rrFictionId
-                    openAo3WorkId = result?.ao3WorkId
                     _openBook.value = result?.book
                     // Land where you left off: restore the saved chapter, and stage the scroll offset
-                    // for the reader to apply on first paint. A borrowed serial (Royal Road / AO3)
-                    // needs its buffer slid to the resumed chapter, so route through goToChapter.
+                    // for the reader to apply on first paint. Royal Road needs its buffer slid to the
+                    // resumed chapter, so route through goToChapter for that side.
                     val lastIndex = (result?.book?.chapters?.lastIndex ?: 0).coerceAtLeast(0)
                     val savedChapter = (result?.chapterOrdinal ?: 0).coerceIn(0, lastIndex)
                     pendingScrollChapter = savedChapter
                     pendingScrollOffset = result?.charOffset ?: 0
                     _chapterOrdinal.value = savedChapter
-                    val isSerial = result?.rrFictionId != null || result?.ao3WorkId != null
-                    if (isSerial && savedChapter > 0) goToChapter(savedChapter)
+                    if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
                 }
             }
             startReadingSession(bookKey)
@@ -436,7 +433,6 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             runCatching { repository.openRoyalRoad(fictionId) }
                 .onSuccess { book ->
                     openRrFictionId = fictionId
-                    openAo3WorkId = null
                     book.key?.let { repository.markOpened(it.toString()) }
                     _openBook.value = book
                     _chapterOrdinal.value = 0
@@ -456,16 +452,15 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     }
 
     /**
-     * Open an Archive of Our Own work *through the reader* — the WebView is only for skimming/catalog,
-     * so even chapter 1 comes back as internal-model text here. The AO3 twin of [openRoyalRoad]; the
-     * work is registered as a sovereign book, so notes on it work like any other source.
+     * Open an Archive of Our Own work: download its official EPUB the first time (imported as an owned
+     * snapshot), then open it through the reader like any owned book. The WebView is only for
+     * finding the work; reading always happens on the parsed internal model.
      */
     fun openAo3(workId: Long) {
         viewModelScope.launch {
-            _status.value = "Fetching Archive of Our Own catalog…"
+            _status.value = "Downloading from Archive of Our Own…"
             runCatching { repository.openAo3(workId) }
                 .onSuccess { book ->
-                    openAo3WorkId = workId
                     openRrFictionId = null
                     book.key?.let { repository.markOpened(it.toString()) }
                     _openBook.value = book
@@ -473,22 +468,13 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     _status.value = "Opened “${book.metadata.title}”."
                     startReadingSession(book.key?.toString())
                 }
-                .onFailure { _status.value = "Couldn’t open that Archive of Our Own work." }
-        }
-    }
-
-    fun favoriteAo3() {
-        val workId = openAo3WorkId ?: return
-        viewModelScope.launch {
-            repository.ao3.markFavorite(workId, true)
-            _status.value = "Favourited — full backfill queued, kept indefinitely."
+                .onFailure { _status.value = "Couldn’t download that Archive of Our Own work." }
         }
     }
 
     fun closeBook() {
         endReadingSession()
         openRrFictionId = null
-        openAo3WorkId = null
         _openBook.value = null
     }
 
@@ -512,27 +498,21 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         _chapterOrdinal.value = target
         viewModelScope.launch {
             val rr = openRrFictionId
-            val ao3 = openAo3WorkId
-            when {
+            if (rr != null) {
                 // Fetch the target chapter + slide the prefetch buffer, then re-read the book so the
                 // freshly-cached bodies replace their "Fetching…" placeholders. Without this refresh
                 // the reader would keep the stale snapshot captured at open time and reading would
                 // dead-end at the initially-buffered window.
-                rr != null -> {
-                    repository.royalRoad.advance(rr, target)
-                    _openBook.value = repository.royalRoad.loadBook(rr).copy(key = book.key)
-                }
-                ao3 != null -> {
-                    repository.ao3.advance(ao3, target)
-                    _openBook.value = repository.ao3.loadBook(ao3).copy(key = book.key)
-                }
-                else -> book.key?.let { repository.savePosition(it.toString(), target, 0) }
+                repository.royalRoad.advance(rr, target)
+                _openBook.value = repository.royalRoad.loadBook(rr).copy(key = book.key)
+            } else {
+                // Owned books (EPUB / PDF / AO3 snapshot) already hold every chapter inline.
+                book.key?.let { repository.savePosition(it.toString(), target, 0) }
             }
         }
     }
 
     val isRoyalRoadOpen: Boolean get() = openRrFictionId != null
-    val isAo3Open: Boolean get() = openAo3WorkId != null
 
     /** Capture a highlight over the current chapter's selection and attach a note. */
     fun captureNote(selectionStart: Int, selectionEnd: Int, body: String) {
@@ -690,7 +670,6 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 return@launch
             }
             openRrFictionId = result.rrFictionId
-            openAo3WorkId = result.ao3WorkId
             repository.markOpened(bookKey)
             _openBook.value = result.book
             startReadingSession(bookKey)

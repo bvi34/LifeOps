@@ -113,31 +113,31 @@ budgets + file store + catalog persistence), three WorkManager jobs (favourites 
 eviction), and a WebView **skim/catalog** screen that intercepts a `/fiction/{id}` tap and opens the
 story *through the reader* instead of loading the live page.
 
-## Archive of Our Own read loop (core built + verified)
+## Archive of Our Own (via official EPUB download — built + verified)
 
-AO3 is a second borrowed web-serial source, built as the **twin of Royal Road**: numeric work id ≈
-fiction id, numeric chapter ids, per-chapter fetch, borrowed/evictable cache. It reuses the entire
-generic RR engine unchanged — the rolling buffer, backfill planner, eviction policy, rate budget, and
-cross-lane fetch queue are all id-keyed and source-agnostic — so only the *producer* and a small
-amount of Android glue are AO3-specific. The AO3 brains live in `:core` under `com.citation.core.ao3`,
-fully unit-tested (`Ao3HtmlTest`, `Ao3UpdatesTest`).
+AO3 is a source, but **not** a scraped web serial. An early attempt mirrored Royal Road (parse the
+work page, cache chapters, poll for updates), but AO3's HTML is hostile to that: work pages 302 through
+adult-content gates, some works require login, and the markup drifts. AO3 already publishes a complete,
+sanctioned **EPUB download** for every work, and Citation's EPUB producer parses it cleanly — so AO3 is
+ingested as an **owned EPUB snapshot**, not borrowed cache. This is simpler, robust, and gets every
+chapter with correct metadata in one fetch.
 
 | Area | Type(s) | What it does |
 |---|---|---|
-| **Catalog / extraction** | `ao3/Ao3Html`, `ao3/Ao3Catalog` | Work-page HTML → ordered chapter catalog, read from AO3's `<select id="selected_id">` chapter dropdown (deduped by chapter id; the "N. " number prefix stripped). A single-chapter work has no dropdown, so it degrades to one chapter keyed by the work id. Chapter-page HTML → flowing-text `Chapter`, pulling the `role="article"` `userstuff` block **only** — the work summary and chapter notes are also `userstuff` (in `<blockquote>`s) and must not leak in. Requests carry `view_adult=true` to clear the adult-content interstitial. |
-| **Update detector** | `ao3/Ao3Updates` | AO3 publishes **no per-work syndication feed** (the one place it diverges from Royal Road), so "did new chapters appear?" can't be answered from RSS. Instead the detector diffs a freshly-read catalog against the known chapter ids and returns only the genuinely-new refs, oldest-first. The catalog scrape *is* the detector, so favourites poll on the scrape budget rather than a loose feed budget. |
-| **Identity** | `identity/IdentityKey.Ao3Id` | AO3 work id — **authoritative for AO3**, a distinct type from `RoyalRoadId` so an AO3 work and a Royal Road fiction sharing a number never dedup together. |
+| **Download** | `data/ao3/Ao3Client` | Fetches `archiveofourown.org/downloads/{workId}/work.epub` (the slug and `updated_at` AO3 puts on its own links are optional). Redirects — including the hop to `download.archiveofourown.org` — are **followed manually** rather than via `HttpURLConnection`'s built-in handling, which proved unreliable (the scraping attempt landed on a pre-redirect page). |
+| **Parse** | `epub/EpubParser` (reused) | AO3's Calibre-produced EPUB 2.0 (root-level `content.opf`, split `*_split_NNN.xhtml` chapters, `toc.ncx`) parses through the existing EPUB producer with no AO3-specific code. Pinned by `Ao3EpubTest` against a real AO3 export in test resources. |
+| **Identity** | `identity/IdentityKey.Ao3Id` | AO3 work id — **authoritative for AO3**, a distinct type from `RoyalRoadId` so an AO3 work and a Royal Road fiction sharing a number never dedup together. The imported book carries it, so re-opening the same work reuses the download instead of fetching twice. |
 
-**Android glue** (`data/ao3`, `work/Ao3Workers`, `ui/Ao3CatalogScreen`): `Ao3Client`
-(HttpURLConnection, parses via `:core`), `Ao3Coordinator` (the RR coordinator's twin — wires client +
-the shared planners/queue/budgets + file store + catalog persistence, with chapter bodies namespaced
-`ao3-{workId}` in the disposable cache so they can't collide with RR's raw fiction-id keys), three
-WorkManager jobs (favourites poll / backfill / eviction), and a WebView **skim/catalog** screen that
-intercepts a `/works/{id}` tap and opens the work *through the reader* instead of loading the live
-page. Room gains `ao3_works`/`ao3_chapters` (citation.db v3 → v4 migration); the repository registers
-an opened work as a sovereign book (so notes survive eviction), routes open/delete/storage/dedup by
-source type, and `Ao3Scheduler` registers the periodic jobs alongside RR's. On the LifeOps side AO3
-telemetry maps to the **Fun** reading category, like Royal Road.
+**Android glue** (`data/ao3/Ao3Client`, `ui/Ao3CatalogScreen`): a WebView **catalog** screen browses
+AO3 and intercepts a `/works/{id}` tap, handing the work id back so the app downloads + opens it
+through the reader instead of loading the live page. `CitationRepository.openAo3` downloads the EPUB
+the first time (via `importAo3` — parse, mint a key, store chapters inline in the sovereign DB and keep
+the raw `.epub`, tagged `SourceType.AO3` with an `Ao3Id`), and thereafter just loads the owned book;
+open/delete/storage/dedup all route AO3 down the same owned-EPUB paths. Because AO3 is owned, there is
+no coordinator, buffer, eviction, or update-poll (the v4 borrowed-serial tables are dropped again in the
+citation.db v4 → v5 migration). The **Import EPUB** picker now accepts `application/epub`/`octet-stream`
+too, so a manually-downloaded AO3 EPUB is selectable. On the LifeOps side AO3 telemetry maps to the
+**Fun** reading category, like Royal Road.
 
 ## Notes complete (milestone 4 — core built + verified)
 
