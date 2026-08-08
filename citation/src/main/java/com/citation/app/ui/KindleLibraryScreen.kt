@@ -1,22 +1,12 @@
 package com.citation.app.ui
 
 import android.annotation.SuppressLint
-import android.content.pm.ApplicationInfo
-import android.webkit.ConsoleMessage
 import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,48 +14,21 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.citation.app.data.CitationRepository
 import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
-
-/**
- * A compact JS probe of the browse page's *actual* state, for the temporary diagnostics panel. We now
- * know the grid loads (readyState `complete`, dozens of cover images + links in the DOM) but isn't
- * painted, so this also reports geometry — the WebView's CSS viewport (`win`), the document scroll size
- * (`doc`), the first cover image's rect (`img0`), and the `<main>` container's size/offset (`main`) — to
- * pin down *why* it's invisible: a collapsed (zero-height) container, covers positioned off-screen, or a
- * viewport the WebView sized wrong.
- */
-private const val DIAG_PROBE =
-    "(function(){try{var b=document.body;var t=b?(b.innerText||''):'';" +
-        "var imgs=document.images?document.images.length:0;" +
-        "var links=document.querySelectorAll('a').length;" +
-        "var d=document.documentElement;" +
-        "var im=document.images[0];var r=im?im.getBoundingClientRect():null;" +
-        "var img0=r?(Math.round(r.left)+','+Math.round(r.top)+' '+Math.round(r.width)+'x'+" +
-        "Math.round(r.height)):'none';" +
-        "var m=document.querySelector('main')||document.querySelector('[role=main]');" +
-        "var mr=m?m.getBoundingClientRect():null;" +
-        "var mn=mr?(Math.round(mr.width)+'x'+Math.round(mr.height)+'@'+Math.round(mr.top)):'none';" +
-        "return [document.readyState,location.href,(document.title||''),t.length,imgs,links," +
-        "'win '+innerWidth+'x'+innerHeight,'doc '+d.scrollWidth+'x'+d.scrollHeight+'/'+d.clientHeight," +
-        "'img0 '+img0,'main '+mn," +
-        "t.slice(0,110).replace(/\\s+/g,' ')].join(' | ');}catch(e){return 'probe error: '+e;}})()"
 
 /**
  * The Kindle **browse/library** surface — the read-in-place counterpart to Browse O'Reilly, on
@@ -83,10 +46,10 @@ private const val DIAG_PROBE =
  * page (the same honest trick [KindleReaderScreen] uses to follow the footer position) and hand off once
  * a book's ASIN appears — giving the title a moment to settle so it isn't named after the reader itself.
  *
- * **Diagnostics (temporary):** while we chase why the library grid can come up blank, a panel below the
- * hint actively probes the page ([DIAG_PROBE]) and shows its live state plus any console errors and
- * failed loads — so the actual failure is visible on-screen (screenshot-able) instead of hidden. Meant
- * to be removed once the cause is understood.
+ * The grid used to come up **blank** in the WebView: the Cloud Reader's `height: 100vh` app-shell
+ * collapses to zero under Android's WebView (which mis-computes `vh`), so the book grid loads into the
+ * DOM but never paints. We repair it by injecting [KindleLink.libraryLayoutFixScript] once the page
+ * loads, which pins the shell to a real pixel height. See that script for the full diagnosis.
  *
  * @param onOpenBook called with the tapped book's ASIN and best-effort title; the caller opens it.
  */
@@ -101,13 +64,6 @@ fun KindleLibraryScreen(
     var webView by remember { mutableStateOf<WebView?>(null) }
     // Hand a picked book off exactly once — the poll keeps firing until this screen is torn down.
     var handedOff by remember { mutableStateOf(false) }
-    // Temporary on-screen diagnostics.
-    var pageState by remember { mutableStateOf("probing…") }
-    val events = remember { mutableStateListOf<String>() } // console errors + failed loads, capped
-    fun note(line: String) {
-        events.add(line)
-        if (events.size > 30) events.removeAt(0)
-    }
 
     // Poll the SPA while you browse: when a book's ASIN appears in the URL you've opened one. Give the
     // title a few ticks to render (the reader chrome / document title lags the URL swap) before falling
@@ -139,15 +95,6 @@ fun KindleLibraryScreen(
         }
     }
 
-    // Temporary diagnostic poll: report the page's live DOM state so a blank grid shows its cause.
-    LaunchedEffect(webView) {
-        val view = webView ?: return@LaunchedEffect
-        while (true) {
-            view.evaluateJavascript(DIAG_PROBE) { raw -> pageState = unquoteJsString(raw) }
-            delay(1000)
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -168,52 +115,17 @@ fun KindleLibraryScreen(
                 fontSize = 13.sp,
                 color = MaterialTheme.colorScheme.secondary
             )
-            // Temporary diagnostics panel — always visible so it can be screenshotted.
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
-            ) {
-                Column(
-                    Modifier.heightIn(max = 160.dp).verticalScroll(rememberScrollState()).padding(8.dp)
-                ) {
-                    Text(
-                        "WebView diagnostics (temporary):",
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        pageState,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    events.forEach { line ->
-                        Text(
-                            line,
-                            fontSize = 10.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { context ->
-                    // Let a debuggable build attach Chrome DevTools (chrome://inspect) to this WebView.
-                    if ((context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-                        WebView.setWebContentsDebuggingEnabled(true)
-                    }
                     WebView(context).apply {
                         val web = this
                         webView = this
                         settings.javaScriptEnabled = true
                         settings.domStorageEnabled = true
-                        // The library is a responsive app-shell whose grid loads into the DOM but can
-                        // collapse to zero visible height when the WebView lays the page out at a default
-                        // width. Honour the page's own viewport meta and fit it to the view so the grid
-                        // computes real geometry and paints. (The reader is a simple full-viewport page
-                        // and doesn't need this.)
+                        // Honour the page's own `width=device-width` viewport so the responsive grid lays
+                        // out at the real device width. (The `100vh` height it then relies on collapses in
+                        // the WebView — see the layout-fix script injected in onPageFinished below.)
                         settings.useWideViewPort = true
                         settings.loadWithOverviewMode = true
                         // Amazon keeps you signed in via cookies — persist them across opens and share
@@ -222,39 +134,13 @@ fun KindleLibraryScreen(
                             setAcceptCookie(true)
                             setAcceptThirdPartyCookies(web, true)
                         }
-                        // Surface JS console errors/warnings from the library SPA on-screen.
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
-                                if (msg.messageLevel() == ConsoleMessage.MessageLevel.ERROR ||
-                                    msg.messageLevel() == ConsoleMessage.MessageLevel.WARNING
-                                ) {
-                                    note("console ${msg.messageLevel()}: ${msg.message()}")
-                                }
-                                return false // also let it reach Logcat
-                            }
-                        }
                         // Keep every navigation — the Amazon sign-in redirects included — inside this
                         // WebView; the default would hand http(s) URLs to an external browser and break
-                        // the session. Also record failed main-frame loads on-screen.
+                        // the session. On each load, repair the collapsed `100vh` app-shell so the grid
+                        // actually paints.
                         webViewClient = object : WebViewClient() {
-                            override fun onReceivedError(
-                                view: WebView?,
-                                request: WebResourceRequest?,
-                                error: WebResourceError?
-                            ) {
-                                if (request?.isForMainFrame == true) {
-                                    note("load error: ${error?.description} @ ${request.url}")
-                                }
-                            }
-
-                            override fun onReceivedHttpError(
-                                view: WebView?,
-                                request: WebResourceRequest?,
-                                errorResponse: WebResourceResponse?
-                            ) {
-                                if (request?.isForMainFrame == true) {
-                                    note("http ${errorResponse?.statusCode}: ${request.url}")
-                                }
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                view?.evaluateJavascript(KindleLink.libraryLayoutFixScript(), null)
                             }
                         }
                         loadUrl(library.startUrl)

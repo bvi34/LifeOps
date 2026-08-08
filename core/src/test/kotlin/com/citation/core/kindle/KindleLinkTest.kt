@@ -1,7 +1,9 @@
 package com.citation.core.kindle
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KindleLinkTest {
@@ -97,5 +99,20 @@ class KindleLinkTest {
     @Test
     fun cleanTitleKeepsARealTitleUntouched() {
         assertEquals("Project Hail Mary", KindleLink.cleanTitle("Project Hail Mary"))
+    }
+
+    @Test
+    fun layoutFixPinsTheShellToRealPixelsNotViewportUnits() {
+        val js = KindleLink.libraryLayoutFixScript()
+        // Repairs the collapsed shell via the stable #library element's parent…
+        assertTrue(js.contains("getElementById('library')"))
+        assertTrue(js.contains("parentElement"))
+        // …using window.innerHeight (correct in the WebView) in real px, never the broken `vh` unit.
+        assertTrue(js.contains("window.innerHeight+'px'"))
+        assertFalse(js.contains("vh"))
+        // Re-pins on rotation and installs its listeners only once (idempotent).
+        assertTrue(js.contains("resize"))
+        assertTrue(js.contains("orientationchange"))
+        assertTrue(js.contains("__kcrShellFit"))
     }
 }
