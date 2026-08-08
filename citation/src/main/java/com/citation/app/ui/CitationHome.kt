@@ -186,7 +186,10 @@ private fun NewTab(
     var showOreilly by remember { mutableStateOf(false) }
     var showKindle by remember { mutableStateOf(false) }
 
-    val epubPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    // OpenDocument (not GetContent) so we can offer several MIME types: an EPUB downloaded from AO3 or
+    // a browser is often typed `application/epub` or `application/octet-stream`, not `application/epub+zip`,
+    // and a single-type GetContent filter would grey those files out in the picker.
+    val epubPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         if (bytes != null) vm.importEpub(bytes)
@@ -217,9 +220,14 @@ private fun NewTab(
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
-            Button(onClick = { epubPicker.launch("application/epub+zip") }, modifier = Modifier.fillMaxWidth()) {
-                Text("Import EPUB")
-            }
+            Button(
+                onClick = {
+                    epubPicker.launch(
+                        arrayOf("application/epub+zip", "application/epub", "application/octet-stream")
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Import EPUB") }
             OutlinedButton(
                 onClick = { pdfPicker.launch("application/pdf") },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -515,8 +523,8 @@ private fun RemoveBookDialog(
                         "This un-favourites the serial and clears its cached chapters. Your notes are kept, " +
                             "and you can add it again from Browse Royal Road."
                     isAo3 ->
-                        "This un-favourites the work and clears its cached chapters. Your notes are kept, " +
-                            "and you can add it again from Browse Archive of Our Own."
+                        "This removes the downloaded work from your library. Your notes are kept, " +
+                            "and you can download it again from Browse Archive of Our Own."
                     else -> "This removes it from your library. Your notes are kept."
                 },
                 fontSize = 13.sp,

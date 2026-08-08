@@ -212,11 +212,6 @@ private fun FlowingReader(vm: ReaderViewModel) {
                             Icon(Icons.Default.Star, contentDescription = "Favourite (full backfill)")
                         }
                     }
-                    if (vm.isAo3Open) {
-                        IconButton(onClick = { vm.favoriteAo3() }) {
-                            Icon(Icons.Default.Star, contentDescription = "Favourite (full backfill)")
-                        }
-                    }
                     IconButton(onClick = {
                         noteQuote = ""; noteBody = ""; noteHint = hintProvider.value(); showNote = true
                     }) {

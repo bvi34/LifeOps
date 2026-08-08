@@ -22,11 +22,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         KeyWatermarkEntity::class,
         SyncStateEntity::class,
         RrFictionEntity::class,
-        RrChapterMetaEntity::class,
-        Ao3WorkEntity::class,
-        Ao3ChapterMetaEntity::class
+        RrChapterMetaEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class CitationDatabase : RoomDatabase() {
@@ -36,7 +34,6 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun royalRoadDao(): RoyalRoadDao
-    abstract fun ao3Dao(): Ao3Dao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null
@@ -56,14 +53,14 @@ abstract class CitationDatabase : RoomDatabase() {
         }
 
         /**
-         * v3 → v4: add the Archive of Our Own catalog tables (`ao3_works`/`ao3_chapters`), the AO3
-         * mirror of `rr_fictions`/`rr_chapters`. Chapter bodies stay in the disposable file store;
-         * only catalog + cached-flag rows live here.
+         * v3 → v4: added AO3 catalog tables for a borrowed-serial scraping model. That approach was
+         * abandoned for AO3's official EPUB download (AO3 works are now owned EPUB snapshots in the
+         * `books`/`chapters` tables like any EPUB), so these tables are dropped again in v4 → v5. This
+         * step is kept so a device that already ran v4 has a table to drop, and a fresh v3 device
+         * takes the same create-then-drop path.
          */
         private val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                // Column definitions must match Room's generated schema exactly — Kotlin constructor
-                // defaults are NOT SQL defaults, so these carry no DEFAULT clauses (mirrors rr_*).
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `ao3_works` (" +
                         "`workId` INTEGER NOT NULL, `title` TEXT NOT NULL, `author` TEXT, " +
@@ -80,13 +77,22 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 → v5: drop the abandoned AO3 borrowed-serial tables (AO3 is now an owned EPUB snapshot). */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `ao3_chapters`")
+                db.execSQL("DROP TABLE IF EXISTS `ao3_works`")
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .build().also { instance = it }
             }
 
         /**
