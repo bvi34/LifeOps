@@ -20,6 +20,14 @@ import kotlinx.coroutines.flow.map
 // (currentWeek - openWeek) iterations; this only guards against corrupt/duplicate week rows.
 private const val MAX_CATCHUP_WEEKS = 1040
 
+/**
+ * Reading's contribution to a week: [minutes] engaged reading summed across every session in the
+ * week window, [points] those minutes mint (floored once over the total — cumulative, not
+ * per-session), and the [aspectId] they fold into (`null` when reading rewards are off, in which
+ * case [points] is zero). See [TaskRepository.expectedReadingReward].
+ */
+data class ReadingExpectation(val minutes: Int, val points: Int, val aspectId: String?)
+
 class TaskRepository(
     private val db: LifeOpsDatabase,
     private val taskDao: TaskDao,
@@ -147,11 +155,9 @@ class TaskRepository(
             // Reading rewards: engaged reading minutes logged in this week's window earn resource
             // points into the user-chosen reading aspect (both Learning and Fun fold into it), which
             // then flow through the normal aspect→resource mapping. Off unless an aspect is chosen.
-            val readingAspectId = preferencesRepository.readingAspectId
-            val readingPoints = if (readingAspectId != null) {
-                val minutes = db.bookDao().sumReadingMinutesBetween(week.startDate, week.endDate)
-                ReadingRewards.points(minutes, preferencesRepository.readingPointsPerHour)
-            } else 0
+            val reading = readingRewardFor(week.startDate, week.endDate)
+            val readingAspectId = reading.aspectId
+            val readingPoints = reading.points
             val snapshot = buildSnapshot(
                 weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote,
                 subtaskTickCount, readingAspectId, readingPoints
@@ -163,6 +169,32 @@ class TaskRepository(
 
         for (task in newTasksToSchedule) notificationRepository.scheduleForTask(task)
         notificationRepository.scheduleWeekCloseReminder()
+    }
+
+    /**
+     * The reading reward for a week window, computed exactly as [closeWeek] mints it: every engaged
+     * reading session logged between [startDate] and [endDate] is **summed first**, then turned into
+     * points once at the user's rate. So six ten-minute sittings earn the same as one unbroken hour,
+     * and no per-session remainder is floored away — reading is cumulative over the week, never a
+     * single-session gate. Points are zero unless a reading aspect is chosen (rewards off); minutes
+     * are reported regardless. The single source of truth for both the mint and its pre-close preview.
+     */
+    private suspend fun readingRewardFor(startDate: String, endDate: String): ReadingExpectation {
+        val minutes = db.bookDao().sumReadingMinutesBetween(startDate, endDate)
+        val aspectId = preferencesRepository.readingAspectId
+        val points = if (aspectId != null)
+            ReadingRewards.points(minutes, preferencesRepository.readingPointsPerHour) else 0
+        return ReadingExpectation(minutes = minutes, points = points, aspectId = aspectId)
+    }
+
+    /**
+     * The reading reward the still-open [weekId] has already accrued but not yet minted — what
+     * closing will add for reading, so the cumulative total is visible before the week-close ritual.
+     * Returns zeros for an unknown week. Mirrors [closeWeek]'s figure precisely via [readingRewardFor].
+     */
+    suspend fun expectedReadingReward(weekId: String): ReadingExpectation {
+        val week = weekDao.getById(weekId) ?: return ReadingExpectation(0, 0, null)
+        return readingRewardFor(week.startDate, week.endDate)
     }
 
     /**

@@ -71,7 +71,15 @@ data class ClosingWeekStats(
     val minutesByAspect: Map<String, Int>,
     /** `(estimatedMinutes, actualMinutes)` for completed tasks that carried an estimate. */
     val estimatedActuals: List<Pair<Int, Int>>,
-    val selfRating: Int? = null
+    val selfRating: Int? = null,
+    /**
+     * Engaged reading minutes logged across the whole week window — every session summed, not one
+     * sitting. Zero when reading rewards are off (no reading aspect chosen). Paired with
+     * [readingPoints] to preview what closing will mint from reading.
+     */
+    val readingMinutes: Int = 0,
+    /** Points those [readingMinutes] mint at close, floored once over the weekly total (see `ReadingRewards`). */
+    val readingPoints: Int = 0
 )
 
 object WeekReviewBuilder {
@@ -145,6 +153,19 @@ object WeekReviewBuilder {
                 value = thisHd?.let { "${(it * 100).roundToInt()}% hit" } ?: "—",
                 delta = if (thisHd != null && lastHd != null) "${signed(((thisHd - lastHd) * 100).roundToInt())}pp" else null,
                 trend = trendOf(thisHd, lastHd),
+                higherIsBetter = true
+            )
+        }
+
+        // Reading reward already banked this week — cumulative across every session, minted at
+        // close. Shown whenever any reading was logged (rewards on), so the running total is visible
+        // before the mint and it's clear that short sittings add up rather than needing one full hour.
+        if (closing.readingMinutes > 0) {
+            metrics += ReviewMetric(
+                label = "Reading",
+                value = "+${closing.readingPoints} pts · ${fmtMinutes(closing.readingMinutes)}",
+                delta = null,
+                trend = Trend.FLAT,
                 higherIsBetter = true
             )
         }

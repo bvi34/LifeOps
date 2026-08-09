@@ -252,6 +252,13 @@ economy invariant — *only closed weeks emit*, and it mints an aspect's own res
 converting between resources (**non-fungibility** holds; reading is genuine effort, not a purchase).
 The rate and aspect are user settings; reading rewards are **off until an aspect is chosen**.
 
+Reading is **cumulative over the week, never a single-session gate**: every session's minutes are
+*summed first* over the week window (`BookDao.sumReadingMinutesBetween`) and turned into points
+*once* — so six ten-minute sittings earn exactly what one unbroken hour does, and no per-session
+remainder is floored away. To make that visible before the mint, the pre-close **Week in Review**
+shows a *Reading* line with the points the open week has already banked
+(`TaskRepository.expectedReadingReward`), computed from the same code the close uses.
+
 ---
 
 ## Build & run
