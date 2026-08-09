@@ -46,7 +46,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -425,6 +427,7 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 topLeft = Offset(sx(0f), sy(0f)),
                 size = androidx.compose.ui.geometry.Size(snapshot.worldSize.x * scale, snapshot.worldSize.y * scale)
             )
+            drawNeonStarfield(scale)
             val amin = snapshot.activeMin
             val amax = snapshot.activeMax
             drawRect(
@@ -432,17 +435,36 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 topLeft = Offset(sx(amin.x), sy(amin.y)),
                 size = androidx.compose.ui.geometry.Size((amax.x - amin.x) * scale, (amax.y - amin.y) * scale)
             )
-            // Faint placement grid over the active region (Geometry Wars vibe + future turret pads).
+            // Vector floor: layered cyan/magenta grid with glowing intersections, leaning into the
+            // Geometry Wars-inspired wireframe read while keeping the active arena bounds legible.
             var gx = amin.x
-            while (gx <= amax.x + 0.5f) { drawLine(GRID_LINE, Offset(sx(gx), sy(amin.y)), Offset(sx(gx), sy(amax.y)), 1f); gx += snapshot.cellSize }
+            while (gx <= amax.x + 0.5f) {
+                val a = if (((gx / snapshot.cellSize).toInt() % 4) == 0) 0.28f else 0.14f
+                drawGlowLine(NEON_CYAN.copy(alpha = a), Offset(sx(gx), sy(amin.y)), Offset(sx(gx), sy(amax.y)), 1.25f * scale)
+                gx += snapshot.cellSize
+            }
             var gy = amin.y
-            while (gy <= amax.y + 0.5f) { drawLine(GRID_LINE, Offset(sx(amin.x), sy(gy)), Offset(sx(amax.x), sy(gy)), 1f); gy += snapshot.cellSize }
+            while (gy <= amax.y + 0.5f) {
+                val a = if (((gy / snapshot.cellSize).toInt() % 4) == 0) 0.24f else 0.12f
+                drawGlowLine(NEON_MAGENTA.copy(alpha = a), Offset(sx(amin.x), sy(gy)), Offset(sx(amax.x), sy(gy)), 1.1f * scale)
+                gy += snapshot.cellSize
+            }
+            var diag = -((amax.y - amin.y))
+            while (diag < (amax.x - amin.x)) {
+                val startX = (amin.x + diag).coerceAtLeast(amin.x)
+                val startY = (amin.y - diag).coerceIn(amin.y, amax.y)
+                val endX = (startX + (amax.y - startY)).coerceAtMost(amax.x)
+                val endY = (startY + (endX - startX)).coerceAtMost(amax.y)
+                drawLine(VECTOR_DIAGONAL, Offset(sx(startX), sy(startY)), Offset(sx(endX), sy(endY)), 0.75f * scale)
+                diag += snapshot.cellSize * 2f
+            }
             // Bright boundary so the current edge reads clearly.
-            drawRect(
+            drawNeonRect(
                 color = ARENA_EDGE,
                 topLeft = Offset(sx(amin.x), sy(amin.y)),
-                size = androidx.compose.ui.geometry.Size((amax.x - amin.x) * scale, (amax.y - amin.y) * scale),
-                style = Stroke(2f * scale)
+                width = (amax.x - amin.x) * scale,
+                height = (amax.y - amin.y) * scale,
+                strokeWidth = 2.2f * scale
             )
 
             snapshot.pickups.forEach { pk ->
@@ -472,7 +494,7 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 // Auto-turrets fade toward transparent as their TTL runs out, telegraphing the despawn.
                 val alpha = if (s.artifactTurret) (0.35f + 0.65f * s.ttlFrac) else 1f
                 val col = lerp(Color(0xFF3A1010), base, s.healthFrac.coerceIn(0.15f, 1f)).copy(alpha = alpha)
-                drawRect(color = col, topLeft = Offset(c.x - half, c.y - half), size = androidx.compose.ui.geometry.Size(half * 2, half * 2))
+                drawNeonRect(color = col, topLeft = Offset(c.x - half, c.y - half), width = half * 2, height = half * 2, strokeWidth = 1.8f * scale)
                 if (s.type.isTurret) {
                     val a = atan2(s.aim.y, s.aim.x)
                     drawLine(Color(0xFFB0BEC5).copy(alpha = alpha), c, c + Offset(cos(a), sin(a)) * (half * 1.8f), strokeWidth = 3f * scale)
@@ -500,7 +522,11 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
                 val facing = atan2(e.facing.y, e.facing.x)
                 // Silhouette flashes toward white on a fresh hit.
                 val body = lerp(enemyColor(e.type), Color.White, e.hitFlashFrac)
-                drawPath(enemyPath(e.type, c, r, facing), color = body)
+                val path = enemyPath(e.type, c, r, facing)
+                drawPath(path, color = body.copy(alpha = 0.22f), style = Stroke(width = 8f * scale))
+                drawPath(path, color = body.copy(alpha = 0.55f), style = Stroke(width = 3f * scale))
+                drawPath(path, color = body.copy(alpha = 0.18f))
+                drawPath(path, color = body, style = Stroke(width = 1.35f * scale))
                 // A thin HP arc hugging the silhouette — only while damaged.
                 if (e.healthFrac < 0.999f) {
                     val pad = 3f * scale
@@ -538,10 +564,10 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             }
 
             snapshot.projectiles.forEach { p ->
-                drawCircle(color = PROJECTILE_COLOR, radius = 3.5f * scale, center = Offset(sx(p.x), sy(p.y)))
+                drawGlowCircle(PROJECTILE_COLOR, radius = 3.5f * scale, center = Offset(sx(p.x), sy(p.y)))
             }
             snapshot.enemyProjectiles.forEach { p ->
-                drawCircle(color = ENEMY_PROJECTILE_COLOR, radius = 4f * scale, center = Offset(sx(p.x), sy(p.y)))
+                drawGlowCircle(ENEMY_PROJECTILE_COLOR, radius = 4f * scale, center = Offset(sx(p.x), sy(p.y)))
             }
 
             // Player: an oriented silhouette pointing where it's aiming, a weapon nub whose shape
@@ -588,7 +614,11 @@ private fun RunView(engine: RunEngine, viewModel: RunViewModel, onBack: () -> Un
             // Body silhouette (flashes red when hurt; dims while invulnerable), then a bright core.
             val iAlpha = if (snapshot.playerInvuln) 0.5f else 1f
             val body = lerp(PLAYER_COLOR, HURT_FLASH_COLOR, snapshot.playerHurtFrac).copy(alpha = iAlpha)
-            drawPath(playerPath(pc, pr, aim), color = body)
+            val ship = playerPath(pc, pr, aim)
+            drawPath(ship, color = body.copy(alpha = 0.28f * iAlpha), style = Stroke(width = 10f * scale))
+            drawPath(ship, color = body.copy(alpha = 0.65f * iAlpha), style = Stroke(width = 3f * scale))
+            drawPath(ship, color = body.copy(alpha = 0.16f * iAlpha))
+            drawPath(ship, color = Color.White.copy(alpha = 0.86f * iAlpha), style = Stroke(width = 1.4f * scale))
             drawCircle(color = Color.White.copy(alpha = 0.9f * iAlpha), radius = 4.5f * scale, center = pc)
 
             // Muzzle flash at the barrel tip on each shot.
@@ -1033,6 +1063,47 @@ private fun SummaryOverlay(
     }
 }
 
+private fun DrawScope.drawGlowLine(color: Color, start: Offset, end: Offset, strokeWidth: Float) {
+    drawLine(color.copy(alpha = color.alpha * 0.22f), start, end, strokeWidth * 7f, cap = StrokeCap.Round)
+    drawLine(color.copy(alpha = color.alpha * 0.45f), start, end, strokeWidth * 3f, cap = StrokeCap.Round)
+    drawLine(color, start, end, strokeWidth, cap = StrokeCap.Round)
+}
+
+private fun DrawScope.drawGlowCircle(color: Color, radius: Float, center: Offset) {
+    drawCircle(color.copy(alpha = 0.16f), radius = radius * 3.2f, center = center)
+    drawCircle(color.copy(alpha = 0.35f), radius = radius * 1.8f, center = center)
+    drawCircle(color = color, radius = radius, center = center)
+}
+
+private fun DrawScope.drawNeonRect(color: Color, topLeft: Offset, width: Float, height: Float, strokeWidth: Float) {
+    val size = androidx.compose.ui.geometry.Size(width, height)
+    drawRect(color = color.copy(alpha = 0.16f), topLeft = topLeft, size = size, style = Stroke(strokeWidth * 6f))
+    drawRect(color = color.copy(alpha = 0.36f), topLeft = topLeft, size = size, style = Stroke(strokeWidth * 2.6f))
+    drawRect(color = color, topLeft = topLeft, size = size, style = Stroke(strokeWidth))
+}
+
+private fun DrawScope.drawNeonStarfield(scale: Float) {
+    val step = 96f * scale.coerceAtLeast(0.75f)
+    var x = step * 0.45f
+    var column = 0
+    while (x < size.width) {
+        var y = step * (0.35f + (column % 3) * 0.19f)
+        var row = 0
+        while (y < size.height) {
+            val tint = if ((row + column) % 2 == 0) NEON_CYAN else NEON_MAGENTA
+            drawCircle(tint.copy(alpha = 0.10f), radius = 1.4f * scale, center = Offset(x, y))
+            if ((row + column) % 5 == 0) {
+                drawLine(tint.copy(alpha = 0.08f), Offset(x - 7f * scale, y), Offset(x + 7f * scale, y), 0.8f * scale)
+                drawLine(tint.copy(alpha = 0.08f), Offset(x, y - 7f * scale), Offset(x, y + 7f * scale), 0.8f * scale)
+            }
+            y += step
+            row++
+        }
+        x += step
+        column++
+    }
+}
+
 private fun enemyColor(type: EnemyType): Color = when (type) {
     EnemyType.SHAMBLER -> Color(0xFF7CB342)
     EnemyType.HUSK -> Color(0xFFEF6C00)
@@ -1097,11 +1168,13 @@ private fun playerPath(center: Offset, rScreen: Float, facing: Float): Path {
     return path
 }
 
-private val ARENA_BG = Color(0xFF101014)
-private val FLOOR_COLOR = Color(0xFF1A2230)
-private val LOCKED_COLOR = Color(0xFF0C0C10)
-private val GRID_LINE = Color(0x14FFFFFF)
-private val ARENA_EDGE = Color(0xFF4FC3F7)
+private val ARENA_BG = Color(0xFF05050E)
+private val FLOOR_COLOR = Color(0xFF081527)
+private val LOCKED_COLOR = Color(0xFF02030A)
+private val NEON_CYAN = Color(0xFF00E5FF)
+private val NEON_MAGENTA = Color(0xFFFF2BD6)
+private val VECTOR_DIAGONAL = Color(0x1414F7FF)
+private val ARENA_EDGE = Color(0xFF00E5FF)
 private val TURRET_COLOR = Color(0xFF26A69A)
 private val SENTRY_COLOR = Color(0xFF5C6BC0)
 private val BARRICADE_COLOR = Color(0xFF8D6E63)
