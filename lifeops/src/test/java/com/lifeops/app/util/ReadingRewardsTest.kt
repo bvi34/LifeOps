@@ -45,6 +45,18 @@ class ReadingRewardsTest {
     }
 
     @Test
+    fun readingIsCumulativeNotSingleSession() {
+        // The intent: six 10-minute sittings earn exactly what one unbroken hour does — points key
+        // off the week's summed engaged minutes, not any single session's length. Callers sum first
+        // (BookDao.sumReadingMinutesBetween) then floor once here, so no sitting is wasted.
+        val sixTenMinuteSessions = List(6) { 10 }
+        assertEquals(5, ReadingRewards.points(sixTenMinuteSessions.sum())) // 60 min → 5 pts
+        assertEquals(ReadingRewards.points(60), ReadingRewards.points(sixTenMinuteSessions.sum()))
+        // Flooring per-session instead would have wasted every sub-12-minute sitting → 0 pts.
+        assertEquals(0, sixTenMinuteSessions.sumOf { ReadingRewards.points(it) })
+    }
+
+    @Test
     fun customRateApplies() {
         assertEquals(20, ReadingRewards.points(60, pointsPerHour = 20))
     }

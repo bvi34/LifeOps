@@ -565,6 +565,8 @@ class ThisWeekViewModel(
         val tasks = s.rawTasks
         val time = s.taskTimeMinutes
         val relevant = tasks.count { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
+        val reading = s.week?.id?.let { taskRepository.expectedReadingReward(it) }
+            ?: ReadingExpectation(0, 0, null)
         val closing = ClosingWeekStats(
             completed = tasks.count { it.status == TaskStatus.COMPLETED },
             totalRelevant = relevant,
@@ -580,7 +582,12 @@ class ThisWeekViewModel(
                 .mapValues { (_, group) -> group.sumOf { time[it.id] ?: 0 } },
             estimatedActuals = tasks
                 .filter { it.status == TaskStatus.COMPLETED && it.estimatedMinutes != null }
-                .map { it.estimatedMinutes!! to (time[it.id] ?: 0) }
+                .map { it.estimatedMinutes!! to (time[it.id] ?: 0) },
+            // Reading reward the open week has already banked — cumulative over every session, shown
+            // in the review so what closing mints from reading is visible before the mint. Off (0)
+            // unless a reading aspect is chosen, matching closeWeek exactly.
+            readingMinutes = reading.minutes.takeIf { reading.aspectId != null } ?: 0,
+            readingPoints = reading.points
         )
         return WeekReviewBuilder.build(closing, weekRepository.getAllSnapshotsSync(), s.aspects.values.toList())
     }

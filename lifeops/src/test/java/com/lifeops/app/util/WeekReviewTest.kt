@@ -66,6 +66,33 @@ class WeekReviewTest {
     }
 
     @Test
+    fun readingMetricPreviewsCumulativePointsWhenAnyReadingLogged() {
+        // Six 10-minute sittings = 60 engaged minutes summed across the week → +5 pts (the
+        // week-close mint), shown before close so short sessions are visibly cumulative.
+        val withReading = closing.copy(readingMinutes = 60, readingPoints = 5)
+        val review = WeekReviewBuilder.build(withReading, emptyList(), listOf(aspect("body")))
+        val reading = review.headline.first { it.label == "Reading" }
+        assertEquals("+5 pts · 1h", reading.value)
+        assertNull(reading.delta)
+    }
+
+    @Test
+    fun readingMetricShowsSubThresholdMinutesAtZeroPoints() {
+        // 40 min @5/hr floors to 3 pts; even below a point it would still surface the minutes so the
+        // running total is visible. Here it's 3 pts — confirms minutes + points render together.
+        val withReading = closing.copy(readingMinutes = 40, readingPoints = 3)
+        val reading = WeekReviewBuilder.build(withReading, emptyList(), listOf(aspect("body")))
+            .headline.first { it.label == "Reading" }
+        assertEquals("+3 pts · 40m", reading.value)
+    }
+
+    @Test
+    fun noReadingMetricWhenNothingRead() {
+        val review = WeekReviewBuilder.build(closing, emptyList(), listOf(aspect("body")))
+        assertTrue(review.headline.none { it.label == "Reading" })
+    }
+
+    @Test
     fun completionDeltaComparesToLastWeekInPercentagePoints() {
         // Last week: 5/10 = 50%; this week 70% → +20pp, UP.
         val last = snap("2026-07-20", completed = 5, incomplete = 5)
