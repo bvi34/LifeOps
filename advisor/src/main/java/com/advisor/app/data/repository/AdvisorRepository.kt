@@ -14,6 +14,7 @@ import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
+import com.advisor.app.logic.AssistantNaming
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
@@ -33,6 +34,7 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.RelevanceEngine
 import com.advisor.app.logic.SmallTalk
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
@@ -178,6 +180,13 @@ class AdvisorRepository(
         val intent = WriteIntent.detect(question, profiles)
         if (intent.hasWrites) return applyWriteCommand(question, intent)
 
+        // A request to rename the assistant ("can you call yourself Ava?", "go by Ava now") is a
+        // command to persist how it should refer to itself, not a data question — save it to the persona
+        // profile and confirm, before retrieval would otherwise treat it as a look-up and dump rows.
+        AssistantNaming.detect(question)?.let { newName ->
+            return applyAssistantRename(question, newName, profiles)
+        }
+
         // A purely social or meta turn ("hi", "thanks", "what can you do?") isn't a data question —
         // reply warmly and immediately from what we already hold (the user's name, the enabled apps)
         // rather than dead-ending in the grounding gate. Grounded questions, even ones that open with
@@ -222,7 +231,15 @@ class AdvisorRepository(
 
         // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
         // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
-        val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+        val retrieved = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+
+        // Categorical relevance grounding: judge each candidate against what the question actually asks
+        // for — object type (a *book*?) and lifecycle state (one I'm *reading* now?) — and keep only what
+        // fits, so a pantry item or a to-read book never dumps into "what am I reading?". Facets are
+        // inferred from the current question (not the conversation-folded retrieval query), and the
+        // baseline is deterministic here — a real model can override any verdict via RelevanceEngine.
+        val grounding = RelevanceEngine.assess(question, retrieved)
+        val chunks = grounding.grounding
 
         // Recall long-term memory (always available; not permission-gated).
         val recalled = MemoryRecall.recall(retrievalQuery, memory.allRecords())
@@ -253,8 +270,11 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
+        // Hand the model the logic engine's notes plus what the relevance filter set aside and why, so
+        // it can be honest about near-misses ("nothing you're reading now, but 2 are on your to-read list").
+        val derived = logic.derivedContext + listOfNotNull(grounding.filterNote().takeIf { it.isNotBlank() })
         val prompt = PromptAssembler.assemble(
-            question, chunks, identity, recalled, profiles, logic.derivedContext, conversation
+            question, chunks, identity, recalled, profiles, derived, conversation
         )
         // A real local model runs for seconds and can block on native inference — keep it off the UI
         // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
@@ -309,6 +329,25 @@ class AdvisorRepository(
         }
         persistTurn(question, result.text, result.citations, KIND_NORMAL)
         return AdvisorAnswer(result.text, result.citations, emptyList(), engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Persist a request to rename the assistant to [newName] and confirm it, bypassing retrieval and the
+     * model. The name is appended to the standing **persona** profile as a plain instruction, which is
+     * where [SmallTalk.assistantNameFrom] reads it — so from the next turn on the assistant introduces
+     * itself and signs off as [newName]. Falls back to the seeded [PERSONA_PROFILE_KEY] when no persona
+     * profile is in context yet (the store creates it on write).
+     */
+    private suspend fun applyAssistantRename(
+        question: String,
+        newName: String,
+        profiles: List<Profile>
+    ): AdvisorAnswer {
+        val personaKey = profiles.firstOrNull { it.kind == ProfileKind.PERSONA }?.key ?: PERSONA_PROFILE_KEY
+        profileStore.append(personaKey, "You are called $newName.", ProfileEntry.AUTHOR_ADVISOR)
+        val text = "Done — I'll go by $newName from now on."
+        persistTurn(question, text, emptyList(), KIND_NORMAL)
+        return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
     }
 
     /**
@@ -385,6 +424,8 @@ class AdvisorRepository(
         const val KIND_CLARIFICATION = "clarification"
         /** Marks a memory the assistant wrote (via a user command or a @memorize directive). */
         const val SOURCE_ADVISOR = "advisor"
+        /** The seeded persona profile the assistant's name is stored in (see [ProfileStore]). */
+        const val PERSONA_PROFILE_KEY = "llm-persona"
         /** How many recent messages feed the conversation context (≈ the last handful of exchanges). */
         const val HISTORY_TURNS = 8
     }

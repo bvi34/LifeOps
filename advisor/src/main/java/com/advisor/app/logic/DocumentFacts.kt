@@ -20,6 +20,8 @@ object DocumentFacts {
     private val POINTS = Regex("""\((\d+)\s*pts\)""", RegexOption.IGNORE_CASE)
     private val STATUS = Regex("""Status:\s*([^.]+)""", RegexOption.IGNORE_CASE)
     private val PRIORITY = Regex("""Priority:\s*([^.]+)""", RegexOption.IGNORE_CASE)
+    private val READING_STATE = Regex("""Reading state:\s*([A-Za-z_]+)""", RegexOption.IGNORE_CASE)
+    private val BOOK_AUTHOR = Regex("""Book:.*?\bby\s+(.+?)\.\s*Source:""", RegexOption.IGNORE_CASE)
 
     /** Pantry stock quantity, e.g. 2.0 from "In stock: 2 Count". */
     fun stockQuantity(doc: KnowledgeDocument): Double? =
@@ -60,4 +62,12 @@ object DocumentFacts {
     /** A task's priority label, e.g. "high". */
     fun priority(doc: KnowledgeDocument): String? =
         PRIORITY.find(doc.body)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+
+    /** A book's reading state, normalized to upper case: "READING", "TO_READ", or "DONE". */
+    fun readingState(doc: KnowledgeDocument): String? =
+        READING_STATE.find(doc.body)?.groupValues?.get(1)?.trim()?.uppercase()?.takeIf { it.isNotBlank() }
+
+    /** A book's author, e.g. "Michael W Lucas" from "Book: … by Michael W Lucas. Source: …". */
+    fun author(doc: KnowledgeDocument): String? =
+        BOOK_AUTHOR.find(doc.body)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
 }

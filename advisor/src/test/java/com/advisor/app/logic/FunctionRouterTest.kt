@@ -17,6 +17,7 @@ class FunctionRouterTest {
 
     @Test
     fun falls_through_for_questions_no_function_handles() {
+        // Browse questions flow to retrieval + relevance grounding (the LLM-driven path), not a function.
         assertNull(FunctionRouter.DEFAULT.handler("what books am I reading?"))
         assertNull(FunctionRouter.DEFAULT.handler("what should I focus on today?"))
     }
