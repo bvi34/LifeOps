@@ -1,6 +1,7 @@
 package com.operations.sandbox
 
 import android.content.Context
+import com.advisor.app.backup.AdvisorBackupContributor
 import com.citation.app.backup.CitationBackupContributor
 import com.lifeops.app.backup.LifeOpsBackupContributor
 import com.logistics.app.backup.LogisticsBackupContributor
@@ -28,7 +29,8 @@ class BackupCenter(context: Context, private val sandboxVersion: String) {
     val contributors: List<BackupContributor> = listOf(
         LifeOpsBackupContributor(appContext),
         CitationBackupContributor(appContext),
-        LogisticsBackupContributor(appContext)
+        LogisticsBackupContributor(appContext),
+        AdvisorBackupContributor(appContext)
     )
 
     /** Write the [selected] apps into [out] as a single archive. [out] is closed by the engine. */
