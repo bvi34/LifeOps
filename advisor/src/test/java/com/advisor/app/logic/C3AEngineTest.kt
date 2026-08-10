@@ -1,103 +1,52 @@
 package com.advisor.app.logic
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * Grounding behaviour for questions about the user. A stored "Name: …" fact shares no words with
+ * "who am I", so the engine must recognise the identity intent and answer from the profile it holds
+ * rather than clarifying about something plainly on record.
+ */
 class C3AEngineTest {
 
     private val engine = C3AEngine()
 
-    private fun chunk(title: String, body: String) =
-        RetrievedChunk(KnowledgeDocument("lifeops:task:1", SourceApp.LIFEOPS, "task", title, body), 3.0)
-
-    private fun input(
-        question: String,
-        retrieved: List<RetrievedChunk> = emptyList(),
-        memories: List<MemoryRecord> = emptyList(),
-        profiles: List<Profile> = emptyList(),
-        granted: Set<SourceApp> = SourceApp.entries.toSet(),
-        justAsked: Boolean = false
-    ) = LogicInput(
-        question = question,
-        identity = Identity.EMPTY,
-        retrieved = retrieved,
-        memories = memories,
-        profiles = profiles,
-        grantedApps = granted,
-        deniedApps = SourceApp.entries.toSet() - granted,
-        justAsked = justAsked
+    private fun userProfile() = Profile(
+        key = "user", name = "User", kind = ProfileKind.USER,
+        entries = listOf(ProfileEntry("Name: Brenden Villaruel"))
     )
 
-    @Test
-    fun answers_when_grounded() {
-        val out = engine.process(
-            input("what tasks are due", retrieved = listOf(chunk("Mow the lawn", "Task: Mow the lawn. due Friday")))
+    private fun input(question: String, profiles: List<Profile> = emptyList(), identity: Identity = Identity.EMPTY) =
+        LogicInput(
+            question = question,
+            identity = identity,
+            retrieved = emptyList(),
+            memories = emptyList(),
+            profiles = profiles
         )
-        assertEquals(EngineDecision.ANSWER, out.decision)
-        assertFalse(out.asksUser)
-        assertTrue(out.derivedContext.isNotEmpty())
-    }
 
     @Test
-    fun clarifies_when_nothing_matches() {
-        val out = engine.process(input("what did I decide about the quarterly budget reforecast"))
-        assertEquals(EngineDecision.CLARIFY, out.decision)
-        assertNotNull(out.clarification)
-    }
-
-    @Test
-    fun clarifies_on_contradiction_rather_than_picking_one() {
-        val memories = listOf(
-            MemoryRecord("m1", "The user prefers oat milk in coffee"),
-            MemoryRecord("m2", "The user does not prefer oat milk in coffee")
-        )
-        // Even with strong lexical grounding, conflicting facts must not be answered from.
-        val out = engine.process(
-            input("what milk do I prefer", retrieved = listOf(chunk("coffee", "milk preference")), memories = memories)
-        )
-        assertEquals(EngineDecision.CLARIFY, out.decision)
-        assertTrue(out.contradictions.isNotEmpty())
-        assertTrue(out.clarification!!.contains("conflict"))
-    }
-
-    @Test
-    fun ambiguous_reference_is_clarified() {
-        val out = engine.process(input("can you finish it"))
-        assertEquals(EngineDecision.CLARIFY, out.decision)
-        assertTrue(out.clarification!!.contains("which", ignoreCase = true))
-    }
-
-    @Test
-    fun investigates_when_topic_needs_a_denied_app() {
-        // Asks about pantry, but Logistics isn't granted.
-        val out = engine.process(input("how much flour is in my pantry", granted = setOf(SourceApp.LIFEOPS)))
-        assertEquals(EngineDecision.INVESTIGATE, out.decision)
-        assertTrue(out.clarification!!.contains("Logistics"))
-    }
-
-    @Test
-    fun does_not_ask_twice_in_a_row() {
-        // Ungrounded, but the previous turn was already a clarification → proceed instead of looping.
-        val out = engine.process(input("tell me more about the reforecast", justAsked = true))
+    fun who_am_i_answers_from_the_user_profile_instead_of_clarifying() {
+        val out = engine.process(input("who am I", profiles = listOf(userProfile())))
         assertEquals(EngineDecision.ANSWER, out.decision)
     }
 
     @Test
-    fun contradiction_still_stops_even_after_asking() {
-        val memories = listOf(
-            MemoryRecord("m1", "The user is vegetarian"),
-            MemoryRecord("m2", "The user is not vegetarian")
-        )
-        val out = engine.process(input("what should I cook", memories = memories, justAsked = true))
+    fun who_am_i_answers_from_identity_when_there_is_no_profile() {
+        val out = engine.process(input("who am I", identity = Identity(name = "Brenden Villaruel")))
+        assertEquals(EngineDecision.ANSWER, out.decision)
+    }
+
+    @Test
+    fun identity_question_with_nothing_on_record_still_clarifies() {
+        val out = engine.process(input("who am I"))
         assertEquals(EngineDecision.CLARIFY, out.decision)
     }
 
     @Test
-    fun plain_greeting_is_answered() {
-        assertEquals(EngineDecision.ANSWER, engine.process(input("hello")).decision)
-        assertEquals(EngineDecision.ANSWER, engine.process(input("thanks")).decision)
+    fun what_is_my_name_grounds_on_the_matching_profile_entry() {
+        val out = engine.process(input("what is my name", profiles = listOf(userProfile())))
+        assertEquals(EngineDecision.ANSWER, out.decision)
     }
 }

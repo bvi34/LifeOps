@@ -28,6 +28,37 @@ class PlaceholderLlmEngineTest {
         assertTrue(answer.contains("Permissions") || answer.contains("granted"))
     }
 
+    private fun userProfile() = Profile(
+        key = "user", name = "User", kind = ProfileKind.USER,
+        entries = listOf(ProfileEntry("Name: Brenden Villaruel"))
+    )
+
+    @Test
+    fun surfaces_the_matching_fact_from_the_user_profile() {
+        val prompt = PromptAssembler.assemble("what is my name", emptyList(), profiles = listOf(userProfile()))
+        val answer = engine.generate(prompt)
+        assertTrue("surfaces the profile fact, not just the profile name", answer.contains("Brenden Villaruel"))
+    }
+
+    @Test
+    fun who_am_i_surfaces_the_user_profile_without_term_overlap() {
+        // "who am I" shares no words with "Name: …" — the whole user profile should still be surfaced.
+        val prompt = PromptAssembler.assemble("who am I", emptyList(), profiles = listOf(userProfile()))
+        assertTrue(engine.generate(prompt).contains("Brenden Villaruel"))
+    }
+
+    @Test
+    fun unrelated_question_does_not_dump_the_profile() {
+        val chunk = RetrievedChunk(
+            KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "Mow the lawn", "Task: Mow the lawn. Status: pending"),
+            1.0
+        )
+        val prompt = PromptAssembler.assemble("what tasks are pending", listOf(chunk), profiles = listOf(userProfile()))
+        val answer = engine.generate(prompt)
+        assertFalse("no personal fact leaks into an unrelated answer", answer.contains("Brenden Villaruel"))
+        assertTrue("still answers the actual question", answer.contains("Mow the lawn"))
+    }
+
     @Test
     fun grounded_answer_cites_and_is_deterministic() {
         val prompt = promptWith("Mow the lawn", "File taxes")

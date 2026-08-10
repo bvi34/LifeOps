@@ -67,6 +67,13 @@ class C3AEngine(
             return answer(input, overlap)
         }
 
+        // An identity question ("who am I") shares no literal terms with a "Name: …" fact, so lexical
+        // overlap is 0 — but if we hold identity or a user profile, that IS the grounding. Answer from
+        // it rather than clarifying about something we plainly have on record.
+        if (IdentityQuestions.isAboutUser(question) && hasUserContext(input)) {
+            return answer(input, overlap, extraNote = "Answering from your identity and standing profiles.")
+        }
+
         // Ungrounded from here down.
         if (input.justAsked) {
             // Already asked once last turn — honour the rule (we asked) and proceed with a caveat.
@@ -121,6 +128,11 @@ class C3AEngine(
         uncertainties = listOf(Uncertainty(reference, "Unresolved reference with no clear antecedent.")),
         rationale = "Ambiguous reference; asking avoids answering about the wrong subject."
     )
+
+    /** Do we hold identity or a user profile with entries — enough to answer a question about the user? */
+    private fun hasUserContext(input: LogicInput): Boolean =
+        !input.identity.isEmpty ||
+            input.profiles.any { it.kind == ProfileKind.USER && it.entries.isNotEmpty() }
 
     // --- grounding ---
 
