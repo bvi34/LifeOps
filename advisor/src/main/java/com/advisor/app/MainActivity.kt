@@ -3,6 +3,7 @@ package com.advisor.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -76,7 +77,12 @@ class MainActivity : ComponentActivity() {
                     NavHost(
                         navController = nav,
                         startDestination = Dest.Chat.route,
-                        modifier = Modifier.padding(padding)
+                        // consumeWindowInsets marks the Scaffold padding (which includes the bottom
+                        // nav bar) as already applied, so a screen's imePadding lifts its input flush
+                        // to the keyboard instead of leaving a nav-bar-height gap above it.
+                        modifier = Modifier
+                            .padding(padding)
+                            .consumeWindowInsets(padding)
                     ) {
                         composable(Dest.Chat.route) {
                             val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))

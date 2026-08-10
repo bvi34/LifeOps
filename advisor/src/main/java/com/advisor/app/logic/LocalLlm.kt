@@ -53,16 +53,27 @@ class PlaceholderLlmEngine : LocalLlmEngine {
         val hasContext = prompt.context.isNotEmpty()
         val hasMemory = prompt.memories.isNotEmpty()
         val hasProfiles = prompt.profiles.isNotEmpty()
+        val hasIdentity = prompt.identity.isNotEmpty()
 
-        if (!hasContext && !hasMemory && !hasProfiles) {
+        if (!hasContext && !hasMemory && !hasProfiles && !hasIdentity) {
             return "I couldn't find anything in your granted data or long-term memory to answer " +
                 "that.\n\nThis is a placeholder assistant: it retrieves and cites your own records " +
                 "but does not yet run a language model. Check that the relevant app is enabled in " +
                 "Permissions, add a memory, or rephrase using words that appear in your data."
         }
 
+        // The identity/profile facts this specific question is about — the actual entries, not just
+        // the profile names. Surfacing these is what makes "what is my name" answer from the profile.
+        val personalFacts = personalFacts(prompt)
+
         return buildString {
+            if (personalFacts.isNotEmpty()) {
+                append("From your profile:")
+                for (fact in personalFacts) append("\n• ").append(fact)
+            }
+
             if (hasContext) {
+                if (isNotEmpty()) append("\n\n")
                 val sourcesLine = prompt.context
                     .map { it.document.source }.distinct().joinToString(", ") { it.displayName }
                 append("Based on your own ").append(sourcesLine).append(" data, here's what's relevant:\n")
@@ -78,7 +89,7 @@ class PlaceholderLlmEngine : LocalLlmEngine {
             }
 
             if (hasMemory) {
-                if (hasContext) append("\n\n")
+                if (isNotEmpty()) append("\n\n")
                 append("From long-term memory:")
                 prompt.memories.forEachIndexed { index, memory ->
                     append("\n• ").append(firstLine(memory.content))
@@ -88,7 +99,7 @@ class PlaceholderLlmEngine : LocalLlmEngine {
             }
 
             if (hasProfiles) {
-                if (hasContext || hasMemory) append("\n\n")
+                if (isNotEmpty()) append("\n\n")
                 append("Standing profiles in context: ")
                 append(prompt.profiles.joinToString(", ") { it.name })
                 append('.')
@@ -108,4 +119,30 @@ class PlaceholderLlmEngine : LocalLlmEngine {
 
     private fun firstLine(text: String): String =
         text.lineSequence().map { it.trim() }.firstOrNull { it.isNotBlank() }.orEmpty()
+
+    /**
+     * The identity lines and profile entries worth quoting back for [prompt]'s question. For an
+     * explicit identity question ("who am I") the whole user profile and identity are fair game, since
+     * the wording won't overlap the stored "Name: …" lines; otherwise only entries that share a term
+     * with the question are surfaced, so unrelated questions don't dump the profile.
+     */
+    private fun personalFacts(prompt: AdvisorPrompt): List<String> {
+        val aboutUser = IdentityQuestions.isAboutUser(prompt.question)
+        val queryTerms = Retriever.tokenize(prompt.question).toSet()
+        val facts = LinkedHashSet<String>()
+
+        for (line in prompt.identity) {
+            if (aboutUser || overlaps(line, queryTerms)) facts += line.trim()
+        }
+        for (profile in prompt.profiles) {
+            val takeAll = aboutUser && profile.kind == ProfileKind.USER
+            for (entry in profile.recentEntries()) {
+                if (takeAll || overlaps(entry.text, queryTerms)) facts += entry.text.trim()
+            }
+        }
+        return facts.filter { it.isNotBlank() }
+    }
+
+    private fun overlaps(text: String, queryTerms: Set<String>): Boolean =
+        queryTerms.isNotEmpty() && Retriever.tokenize(text).any { it in queryTerms }
 }
