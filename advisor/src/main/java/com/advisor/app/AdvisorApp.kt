@@ -13,8 +13,11 @@ import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
 import com.advisor.app.llm.AdvisorModelStore
+import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.llm.LlamaCppBackend
+import com.advisor.app.llm.LlamaCppEmbedder
 import com.advisor.app.logic.C3AEngine
+import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.Qwen3LlmEngine
 
@@ -52,6 +55,15 @@ class AdvisorApp private constructor(private val app: Application) {
     /** Owns the on-device model file: in-app import of a Qwen3-4B GGUF, its status, and removal. */
     val modelStore by lazy { AdvisorModelStore(app) }
 
+    /** Owns the on-device embedding model file that powers semantic retrieval (imported in-app). */
+    val embeddingModelStore by lazy { EmbeddingModelStore(app) }
+
+    /**
+     * Retrieval strategy: semantic when an embedding model is loaded (via [LlamaCppEmbedder]), else the
+     * deterministic lexical retriever. The vector cache is held here so it lives across questions.
+     */
+    val retriever by lazy { HybridRetriever(LlamaCppEmbedder(embeddingModelStore)) }
+
     /**
      * The language model: a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the
      * weights are provisioned on the device the backend reports not-ready and the engine falls back to
@@ -72,7 +84,9 @@ class AdvisorApp private constructor(private val app: Application) {
             identityStore = identityStore,
             profileStore = profileStore,
             logicEngine = logicEngine,
-            modelStore = modelStore
+            modelStore = modelStore,
+            embeddingModelStore = embeddingModelStore,
+            retriever = retriever
         )
     }
 

@@ -50,10 +50,19 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    in. The gate is enforced in the repository *before any source is loaded* — a denied app's database
    is never even opened.
 
-2. **Retrieve** (`logic/Retriever`). A dependency-free lexical retriever (TF-IDF, title terms
-   weighted heavier than body) ranks the granted corpus against the question and returns the top few
-   `RetrievedChunk`s. No embeddings, no network — cheap, deterministic, and JVM-testable. A real
-   embedding index can replace it later behind the same `retrieve(...)` shape.
+2. **Retrieve** (`logic/HybridRetriever`). Ranks the granted corpus against the question and returns
+   the top few `RetrievedChunk`s, one of two ways behind a single shape:
+   - **Lexical** (`logic/Retriever`) — the default and fallback: a dependency-free TF-IDF retriever
+     (title terms weighted heavier than body). No embeddings, no network — cheap, deterministic, and
+     JVM-testable.
+   - **Semantic** (`logic/EmbeddingRetriever`) — active once an embedding model is imported: it ranks
+     by *meaning* (cosine over on-device sentence embeddings), so a question finds relevant records
+     even when they share no literal words. This is what lets "Who am I?" reach a `Name:` fact without
+     the engine hand-coding that bridge. See [Semantic retrieval](#semantic-retrieval).
+
+   `HybridRetriever` picks semantic when the embedder is ready and falls back to lexical otherwise —
+   the same "better path activates when its model file is present" pattern as generation. The corpus
+   is passed in per question (already permission-filtered), so revocation is honoured on the next call.
 
 3. **Recall memory** (`logic/MemoryRecall`). Ranks the long-term memory store for the question —
    lexical overlap over content + tags, an explicit tag-focus boost, and `salience`/`pinned` as
@@ -209,9 +218,11 @@ surfaces that).
 - **Profiles** — the standing-profiles manager: create project profiles, add entries to any profile,
   and see entries the assistant wrote back (tagged "advisor" vs "you").
 - **Permissions** — the identity summary (JSON-backed), one switch per app (denied by default), the
-  model card, and a "clear conversation" action. The model card names the running model (Qwen3-4B, or
+  model cards, and a "clear conversation" action. The model card names the running model (Qwen3-4B, or
   the placeholder while the weights aren't on the device) and lets you **import a Qwen3-4B GGUF** from
-  device storage — a progress-reported, on-device copy with no network — or remove it.
+  device storage — a progress-reported, on-device copy with no network — or remove it. A second,
+  optional **semantic-retrieval** card imports a small embedding GGUF the same way; with it installed,
+  retrieval ranks your data by meaning instead of by keyword.
 
 `AdvisorApp` is the tiny runtime holder (mirroring `LifeOpsApp`/`LogisticsApp`): it owns the
 database, the read-only knowledge sources, the engine, and the repository. Everything is lazy — no
@@ -258,11 +269,58 @@ runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes secon
 
 ---
 
+## Semantic retrieval
+
+Lexical retrieval matches on shared surface words, which forces the engine to hand-code bridges for
+every vocabulary gap — "Who am I?" shares no literal terms with a `Name: …` fact, so C3A carries an
+explicit identity carve-out, a per-app keyword map, and greeting/deixis lists just to compensate.
+Semantic retrieval closes those gaps at the source: it ranks by meaning, so the relevant record
+surfaces on its own and the special cases stop multiplying.
+
+It is **optional** and slots in behind the same `retrieve(...)` shape:
+
+- **`logic/Embedder`** — the seam an embedding model runs behind (the vector analogue of `LlmBackend`).
+  Guarded: when no embedding model is provisioned, `isReady` is false and `HybridRetriever` uses the
+  lexical retriever. Nothing requires an embedder to be present.
+- **`logic/EmbeddingRetriever`** — embeds the query and each document and ranks by cosine
+  (`logic/EmbeddingMath`), dropping anything below a similarity floor so an unrelated question still
+  returns nothing (the honest "no match" C3A turns into a clarification). Document vectors are memoized
+  in a **`logic/VectorCache`** keyed by `(documentId, contentHash, embedderId)`: the corpus is embedded
+  once per process, an edited row re-embeds (its hash changes), and swapping the model invalidates
+  everything (the id changes).
+- **`llm/LlamaCppEmbedder` + `llm/EmbeddingModelStore`** — the native seam and in-app provisioning for a
+  **small, dedicated** sentence-embedding GGUF (tens to a couple hundred MB), separate from the 4B so
+  embeddings stay fast and good. It's imported exactly like the generation model (copied in from a
+  document the user picked; no `INTERNET`, nothing leaves the device) and loaded through the same
+  `advisor-llm` native library via a new `nativeEmbed` entry point.
+
+The cache is **in-memory only, by design**: Advisor keeps no copy of the other apps' data at rest, so
+there's nothing new to back up and a revoked app leaks nothing. The only cost is re-embedding once per
+process after a cold start; a persistent cache can drop in behind `VectorCache` later if that ever
+matters. Because the corpus handed to the retriever is already permission-filtered, a revoked app's
+vectors are simply never consulted — revocation stays instant.
+
+> The native embedding path is written against the pinned llama.cpp (`b4000`) but, like the weights
+> themselves, is provisioned separately and **not yet compiled/verified on-device** in this repo. The
+> Kotlin side is fully guarded, so until an embedding model is present (or if the native call fails)
+> retrieval is lexical — exactly as before.
+
+---
+
 ## Testing
 
 `advisor/src/test/` runs on the JVM (via the module's unit tests, no emulator for the logic):
 
 - `RetrieverTest` — ranking, no-overlap/stop-word empties, title-over-body, top-K, recency tie-break.
+- `EmbeddingMathTest` — cosine (identical/orthogonal/opposite/scale-invariant), safe zero/mismatched
+  vectors, unit-length normalization.
+- `VectorCacheTest` — store/miss, content-hash sensitivity to title/body, LRU eviction past capacity.
+- `EmbeddingRetrieverTest` — semantic match with no shared words (vs. lexical miss), similarity-floor
+  empties, top-K + recency tie-break, embed-once-then-cache, re-embed on edit, invalidate on model swap.
+- `HybridRetrieverTest` — lexical fallback with no embedder, semantic path when ready, per-call corpus
+  (revocation) behaviour.
+- `EmbeddingModelStoreTest` — the embedding-GGUF filename contract (canonical + common model names,
+  reject the generation model / non-GGUF), case-insensitivity.
 - `PromptAssemblerTest` — block numbering, excerpt trimming, and the rendered prompt's contents.
 - `AdvisorPermissionsTest` — deny-by-default, immutable grant/revoke, and the filter gate.
 - `PlaceholderLlmEngineTest` — grounded citations, deterministic output, and the empty-context path.

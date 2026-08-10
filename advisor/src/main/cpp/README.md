@@ -50,6 +50,32 @@ adb push qwen3-4b-q4_k_m.gguf \
 
 Either way, the model card shows whether the real model or the placeholder is live.
 
+## Optional: the embedding model (semantic retrieval)
+
+`advisor_llm.cpp` also implements `nativeLoad`/`nativeDim`/`nativeEmbed`/`nativeFree` for
+`com.advisor.app.llm.LlamaCppEmbedder` — a **second, small** model loaded in embedding mode
+(mean-pooled) that turns text into a vector so `EmbeddingRetriever` can rank the user's data by
+meaning. It shares this library; no separate build step is needed.
+
+Provision it exactly like the generation weights, but with a **small sentence-embedding GGUF**
+(tens to a couple hundred MB — e.g. a `bge`, `e5`, `gte`, `minilm` or `nomic-embed` GGUF). The
+Permissions screen's **Semantic retrieval** card imports one in-app, or side-load it:
+
+```
+adb push advisor-embed.gguf \
+  /sdcard/Android/data/com.operations.sandbox/files/models/advisor-embed.gguf
+```
+
+The embedder keys on the filename (any `.gguf` whose name contains `embed`/`bge`/`gte-`/`e5-`/
+`minilm`/`nomic`), so it coexists with `qwen3-4b*.gguf` in the same directory. Without an embedding
+model — or in a build without the native library — retrieval is lexical, so this is purely additive.
+
+> Unlike the generation path, the embedding JNI functions have **not** been compiled/verified on a
+> device in this repo yet (they need an embedding GGUF to exercise). They're written against the same
+> `b4000` API and the stock `examples/embedding` pooling pattern; the Kotlin side is fully guarded, so
+> a mismatch falls back to lexical retrieval rather than crashing. Validate them when you first import
+> an embedding model, and treat them the same as the generation calls when bumping the tag.
+
 ## Bumping llama.cpp
 
 `advisor_llm.cpp` is written against the API of the pinned tag (`LLAMA_CPP_TAG`, currently `b4000`).

@@ -66,6 +66,10 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 
         ModelCard(vm)
 
+        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+
+        EmbeddingModelCard(vm)
+
         Text("Reasoning (C3A)", style = MaterialTheme.typography.titleMedium)
         Text(
             "A unifying engine coordinates identity, profiles, memory and app data, and checks for " +
@@ -166,6 +170,87 @@ private fun ModelCard(vm: AdvisorViewModel) {
                 )
                 Button(onClick = { pickModel.launch(arrayOf("*/*")) }) {
                     Text("Import model file (.gguf)…")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The embedding-model card: optional, in-app provisioning of a small sentence-embedding GGUF. With it
+ * installed, retrieval ranks the user's data by *meaning* (so "Who am I?" finds a `Name:` fact);
+ * without it, Advisor uses the deterministic lexical retriever. Same promise as the generation model —
+ * the file is imported from a document the user picked, no network, nothing leaves the device.
+ */
+@Composable
+private fun EmbeddingModelCard(vm: AdvisorViewModel) {
+    val state by vm.embeddingModelState.collectAsStateWithLifecycle()
+
+    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importEmbeddingModel(uri)
+    }
+
+    Text("Semantic retrieval", style = MaterialTheme.typography.titleMedium)
+
+    when (val s = state) {
+        is ModelUiState.Importing -> {
+            if (s.total > 0) {
+                LinearProgressIndicator(
+                    progress = { (s.copied.toFloat() / s.total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Importing… ${AdvisorModelStore.humanBytes(s.copied)} of " +
+                        AdvisorModelStore.humanBytes(s.total),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(
+                    "Importing… ${AdvisorModelStore.humanBytes(s.copied)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        is ModelUiState.Error -> {
+            Text(s.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                Text("Try another file…")
+            }
+        }
+
+        is ModelUiState.Idle -> {
+            if (s.info.installed) {
+                Text("Embedding model: ${s.info.label()}", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (vm.semanticRetrieval) {
+                        "Retrieval ranks your data by meaning, on-device. This lets Advisor match a " +
+                            "question to relevant records even when they share no exact words."
+                    } else {
+                        "An embedding file is installed, but this build doesn't include the native " +
+                            "runtime, so retrieval is still lexical. Rebuild with " +
+                            "-Padvisor.buildNativeLlm=true to run it."
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                        Text("Replace model…")
+                    }
+                    TextButton(onClick = { vm.deleteEmbeddingModel() }) {
+                        Text("Remove")
+                    }
+                }
+            } else {
+                Text(
+                    "Optional. Without it, Advisor retrieves your data by keyword (lexical). Import a " +
+                        "small sentence-embedding GGUF and retrieval becomes semantic — matching by " +
+                        "meaning — fully on-device, no network.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                    Text("Import embedding model (.gguf)…")
                 }
             }
         }
