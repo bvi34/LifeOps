@@ -14,6 +14,12 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// Opt-in native build: the on-device Qwen3-4B backend (llama.cpp, libadvisor-llm.so) is compiled only
+// when `-Padvisor.buildNativeLlm=true` is passed (or set in gradle.properties). It needs the Android
+// NDK + CMake and fetches llama.cpp at configure time, so it stays off by default — a plain build
+// ships without the .so and Advisor falls back to its deterministic placeholder engine at runtime.
+val buildNativeLlm = (providers.gradleProperty("advisor.buildNativeLlm").orNull ?: "false").toBoolean()
+
 android {
     namespace = "com.advisor.app"
     compileSdk = 35
@@ -21,6 +27,23 @@ android {
     defaultConfig {
         minSdk = 26
         // Code shrinking is the consuming app's (:app) responsibility.
+
+        if (buildNativeLlm) {
+            // A 4B Q4 model is only realistic on 64-bit ARM; don't bloat other ABIs with the weights' runtime.
+            ndk { abiFilters += "arm64-v8a" }
+            externalNativeBuild {
+                cmake { cppFlags += "-O3" }
+            }
+        }
+    }
+
+    if (buildNativeLlm) {
+        externalNativeBuild {
+            cmake {
+                path = file("src/main/cpp/CMakeLists.txt")
+                version = "3.22.1"
+            }
+        }
     }
 
     compileOptions {

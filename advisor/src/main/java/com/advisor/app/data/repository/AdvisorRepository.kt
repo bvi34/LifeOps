@@ -6,8 +6,11 @@ import com.advisor.app.data.db.entities.AppPermissionEntity
 import com.advisor.app.data.identity.IdentityStore
 import com.advisor.app.data.memory.MemoryRepository
 import com.advisor.app.data.memory.TagCount
+import android.net.Uri
 import com.advisor.app.data.profile.ProfileStore
 import com.advisor.app.data.source.KnowledgeSource
+import com.advisor.app.llm.AdvisorModelInfo
+import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.Identity
@@ -62,10 +65,23 @@ class AdvisorRepository(
     private val memory: MemoryRepository,
     private val identityStore: IdentityStore,
     private val profileStore: ProfileStore,
-    private val logicEngine: LogicEngine
+    private val logicEngine: LogicEngine,
+    private val modelStore: AdvisorModelStore
 ) {
 
     val model: ModelSpec get() = engine.spec
+
+    // --- on-device model file (in-app import; no network, nothing leaves the device) ---
+
+    /** Status of the installed model file, independent of whether the native runtime is in the build. */
+    fun modelInfo(): AdvisorModelInfo = modelStore.info()
+
+    /** Import a user-picked GGUF into app storage, reporting copy progress. */
+    suspend fun importModel(uri: Uri, onProgress: (copied: Long, total: Long) -> Unit) =
+        modelStore.import(uri, onProgress)
+
+    /** Remove the imported model file. */
+    fun deleteModel(): Boolean = modelStore.delete()
 
     // --- permissions ---
 

@@ -1,5 +1,7 @@
 package com.advisor.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -9,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.SourceApp
 
@@ -61,20 +64,7 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
-        Text("Model", style = MaterialTheme.typography.titleMedium)
-        Text(vm.model.label(), style = MaterialTheme.typography.bodyMedium)
-        Text(
-            if (vm.model.isPlaceholder) {
-                "The Qwen3-4B weights aren't on this device yet, so Advisor is using a deterministic " +
-                    "placeholder that retrieves and cites your own records without running a language " +
-                    "model. Drop a Qwen3-4B Q4_K_M GGUF into the app's models folder and Advisor " +
-                    "switches to it automatically — fully on-device, no network."
-            } else {
-                "Advisor runs Qwen3-4B (Q4_K_M GGUF) locally via llama.cpp — fully on-device, no " +
-                    "network. It reasons over the same retrieved, cited context the pipeline assembled."
-            },
-            style = MaterialTheme.typography.bodySmall
-        )
+        ModelCard(vm)
 
         Text("Reasoning (C3A)", style = MaterialTheme.typography.titleMedium)
         Text(
@@ -95,6 +85,91 @@ private fun describe(app: SourceApp): String = when (app) {
     SourceApp.LIFEOPS -> "Tasks, aspects, projects and milestones."
     SourceApp.CITATION -> "Your library and reading notes."
     SourceApp.LOGISTICS -> "Pantry stock and grocery list."
+}
+
+/**
+ * The model card: what's running, plus in-app provisioning of the Qwen3-4B GGUF. The weights are
+ * *imported* from a file the user picked (no `INTERNET`, nothing leaves the device); Advisor loads
+ * them on the next question. When a file is present but generation is still the placeholder, the card
+ * says why — this build doesn't include the native runtime.
+ */
+@Composable
+private fun ModelCard(vm: AdvisorViewModel) {
+    val modelState by vm.modelState.collectAsStateWithLifecycle()
+
+    val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importModel(uri)
+    }
+
+    Text("Model", style = MaterialTheme.typography.titleMedium)
+    Text(vm.model.label(), style = MaterialTheme.typography.bodyMedium)
+
+    when (val s = modelState) {
+        is ModelUiState.Importing -> {
+            if (s.total > 0) {
+                LinearProgressIndicator(
+                    progress = { (s.copied.toFloat() / s.total).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Importing… ${AdvisorModelStore.humanBytes(s.copied)} of " +
+                        AdvisorModelStore.humanBytes(s.total),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            } else {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Text(
+                    "Importing… ${AdvisorModelStore.humanBytes(s.copied)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        is ModelUiState.Error -> {
+            Text(s.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                Text("Try another file…")
+            }
+        }
+
+        is ModelUiState.Idle -> {
+            if (s.info.installed) {
+                Text(
+                    "Model file: ${s.info.label()}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Text(
+                    if (vm.model.isPlaceholder) {
+                        "A model file is installed, but this build doesn't include the native " +
+                            "inference runtime, so Advisor is still using the deterministic " +
+                            "placeholder. Rebuild with -Padvisor.buildNativeLlm=true to run it."
+                    } else {
+                        "Advisor runs Qwen3-4B locally via llama.cpp — fully on-device, no network. " +
+                            "It reasons over the same retrieved, cited context the pipeline assembled."
+                    },
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                        Text("Replace model…")
+                    }
+                    TextButton(onClick = { vm.deleteModel() }) {
+                        Text("Remove")
+                    }
+                }
+            } else {
+                Text(
+                    "No model is installed yet, so Advisor uses a deterministic placeholder that " +
+                        "retrieves and cites your own records. Import a Qwen3-4B Q4_K_M GGUF and " +
+                        "Advisor runs it fully on-device — no network, nothing leaves the device.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Button(onClick = { pickModel.launch(arrayOf("*/*")) }) {
+                    Text("Import model file (.gguf)…")
+                }
+            }
+        }
+    }
 }
 
 @Composable

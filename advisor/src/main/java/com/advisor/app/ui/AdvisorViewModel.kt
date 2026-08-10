@@ -1,10 +1,12 @@
 package com.advisor.app.ui
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.advisor.app.data.memory.TagCount
 import com.advisor.app.data.repository.AdvisorRepository
+import com.advisor.app.llm.AdvisorModelInfo
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.MemoryRecord
@@ -28,6 +30,15 @@ data class ChatMessage(
     val citationIds: List<String>,
     val isClarification: Boolean = false
 )
+
+/** The state of the on-device model file, for the Permissions model card. */
+sealed interface ModelUiState {
+    /** Not importing: shows whether a model file is installed. */
+    data class Idle(val info: AdvisorModelInfo) : ModelUiState
+    /** A copy is in progress; [total] is -1 when the source size is unknown. */
+    data class Importing(val copied: Long, val total: Long) : ModelUiState
+    data class Error(val message: String) : ModelUiState
+}
 
 class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
 
@@ -72,9 +83,37 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     private val _thinking = MutableStateFlow(false)
     val thinking: StateFlow<Boolean> = _thinking.asStateFlow()
 
+    // --- on-device model file ---
+
+    private val _modelState = MutableStateFlow<ModelUiState>(ModelUiState.Idle(repo.modelInfo()))
+    val modelState: StateFlow<ModelUiState> = _modelState.asStateFlow()
+
     init {
         viewModelScope.launch { _identity.value = repo.loadIdentity() }
         refreshProfiles()
+    }
+
+    fun refreshModel() { _modelState.value = ModelUiState.Idle(repo.modelInfo()) }
+
+    /** Import the picked GGUF into app storage, streaming progress into [modelState]. */
+    fun importModel(uri: Uri) = viewModelScope.launch {
+        _modelState.value = ModelUiState.Importing(0L, -1L)
+        var lastPosted = 0L
+        runCatching {
+            repo.importModel(uri) { copied, total ->
+                // Throttle: ~16 MB steps (or completion) — a multi-GB copy would post thousands of updates.
+                if (copied - lastPosted >= (16L shl 20) || (total in 1..copied)) {
+                    lastPosted = copied
+                    _modelState.value = ModelUiState.Importing(copied, total)
+                }
+            }
+        }.onSuccess { refreshModel() }
+            .onFailure { _modelState.value = ModelUiState.Error(it.message ?: "Import failed") }
+    }
+
+    fun deleteModel() = viewModelScope.launch {
+        repo.deleteModel()
+        refreshModel()
     }
 
     fun refreshProfiles() = viewModelScope.launch { _profiles.value = repo.listProfiles() }
