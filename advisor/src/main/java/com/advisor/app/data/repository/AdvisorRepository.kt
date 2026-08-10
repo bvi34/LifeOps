@@ -11,6 +11,7 @@ import com.advisor.app.data.profile.ProfileStore
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.llm.AdvisorModelInfo
 import com.advisor.app.llm.AdvisorModelStore
+import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.Identity
@@ -26,7 +27,7 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
-import com.advisor.app.logic.Retriever
+import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -66,10 +67,15 @@ class AdvisorRepository(
     private val identityStore: IdentityStore,
     private val profileStore: ProfileStore,
     private val logicEngine: LogicEngine,
-    private val modelStore: AdvisorModelStore
+    private val modelStore: AdvisorModelStore,
+    private val embeddingModelStore: EmbeddingModelStore,
+    private val retriever: HybridRetriever = HybridRetriever()
 ) {
 
     val model: ModelSpec get() = engine.spec
+
+    /** True when retrieval is running semantically (an embedding model is loaded), not lexically. */
+    val semanticRetrieval: Boolean get() = retriever.isSemantic
 
     // --- on-device model file (in-app import; no network, nothing leaves the device) ---
 
@@ -82,6 +88,18 @@ class AdvisorRepository(
 
     /** Remove the imported model file. */
     fun deleteModel(): Boolean = modelStore.delete()
+
+    // --- on-device embedding model file (powers semantic retrieval; same no-network promise) ---
+
+    /** Status of the installed embedding model file. */
+    fun embeddingModelInfo(): AdvisorModelInfo = embeddingModelStore.info()
+
+    /** Import a user-picked embedding GGUF into app storage, reporting copy progress. */
+    suspend fun importEmbeddingModel(uri: Uri, onProgress: (copied: Long, total: Long) -> Unit) =
+        embeddingModelStore.import(uri, onProgress)
+
+    /** Remove the imported embedding model file. */
+    fun deleteEmbeddingModel(): Boolean = embeddingModelStore.delete()
 
     // --- permissions ---
 
@@ -151,7 +169,9 @@ class AdvisorRepository(
                 corpus += runCatching { source.load() }.getOrDefault(emptyList())
             }
         }
-        val chunks = Retriever(corpus).retrieve(question)
+        // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
+        // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
+        val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, question) }
 
         // Recall long-term memory (always available; not permission-gated).
         val recalled = MemoryRecall.recall(question, memory.allRecords())

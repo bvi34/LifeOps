@@ -182,4 +182,143 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
     delete h;
 }
 
+// ---------------------------------------------------------------------------
+// Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
+//
+// A second, small model loaded in *embedding* mode (mean-pooled) that turns a piece of text into one
+// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b4000
+// API pin with the generation backend above.
+//
+// NOTE: unlike nativeGenerate, this path has not been compiled/verified on-device in this repo yet
+// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b4000
+// API and the stock `examples/embedding` pooling pattern; validate it when you first import an
+// embedding model. The Kotlin side is fully guarded — any load/encode failure falls back to lexical
+// retrieval — so a mismatch degrades gracefully rather than crashing.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+struct AdvisorEmbed {
+    llama_model*   model = nullptr;
+    llama_context* ctx   = nullptr;
+    int            n_embd = 0;
+};
+
+} // namespace
+
+extern "C" {
+
+JNIEXPORT jlong JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz*/, jstring jpath) {
+    static bool backend_ready = false;
+    if (!backend_ready) {
+        llama_backend_init();
+        backend_ready = true;
+    }
+
+    const char* path = env->GetStringUTFChars(jpath, nullptr);
+
+    llama_model_params mp = llama_model_default_params();
+    mp.n_gpu_layers = 0; // pure CPU inference on-device
+
+    llama_model* model = llama_load_model_from_file(path, mp);
+    env->ReleaseStringUTFChars(jpath, path);
+    if (model == nullptr) {
+        LOGW("embedding: llama_load_model_from_file returned null");
+        return 0;
+    }
+
+    llama_context_params cp = llama_context_default_params();
+    cp.embeddings   = true;                       // produce embeddings, not logits
+    cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;    // one vector per input, mean over tokens
+    cp.n_ctx        = 2048;                        // embedding inputs are short (title + body excerpt)
+    cp.n_batch      = 2048;                        // decode the whole sequence in one batch (pooling)
+    cp.n_ubatch     = 2048;
+    unsigned hw = std::thread::hardware_concurrency();
+    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
+    cp.n_threads       = threads;
+    cp.n_threads_batch = threads;
+
+    llama_context* ctx = llama_new_context_with_model(model, cp);
+    if (ctx == nullptr) {
+        LOGW("embedding: llama_new_context_with_model returned null");
+        llama_free_model(model);
+        return 0;
+    }
+
+    auto* h = new AdvisorEmbed{model, ctx, llama_n_embd(model)};
+    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d", h->n_embd, threads);
+    return reinterpret_cast<jlong>(h);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeDim(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
+    return h == nullptr ? 0 : h->n_embd;
+}
+
+JNIEXPORT jfloatArray JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
+        JNIEnv* env, jobject /*thiz*/, jlong handle, jstring jtext) {
+
+    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
+    if (h == nullptr || h->ctx == nullptr) return env->NewFloatArray(0);
+
+    const char* text = env->GetStringUTFChars(jtext, nullptr);
+    std::string input(text ? text : "");
+    env->ReleaseStringUTFChars(jtext, text);
+
+    // Tokenize (add BOS/EOS per the model; embedding models don't use ChatML control tokens).
+    int n_max = (int) input.size() + 8;
+    std::vector<llama_token> tokens(n_max);
+    int n_tok = llama_tokenize(
+            h->model, input.c_str(), (int) input.size(),
+            tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/false);
+    if (n_tok <= 0) {
+        LOGW("embedding: tokenization failed (%d)", n_tok);
+        return env->NewFloatArray(0);
+    }
+    const int n_ctx = (int) llama_n_ctx(h->ctx);
+    if (n_tok > n_ctx) n_tok = n_ctx; // truncate over-long inputs rather than fail
+    tokens.resize(n_tok);
+
+    // One sequence; all positions marked as outputs so mean-pooling sees every token.
+    llama_kv_cache_clear(h->ctx);
+    llama_batch batch = llama_batch_init(n_tok, 0, 1);
+    for (int i = 0; i < n_tok; i++) {
+        batch.token[i]     = tokens[i];
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]    = 1;
+    }
+    batch.n_tokens = n_tok;
+
+    jfloatArray result = env->NewFloatArray(0);
+    if (llama_decode(h->ctx, batch) == 0) {
+        const float* emb = llama_get_embeddings_seq(h->ctx, 0);
+        if (emb == nullptr) emb = llama_get_embeddings(h->ctx); // non-pooled fallback
+        if (emb != nullptr && h->n_embd > 0) {
+            result = env->NewFloatArray(h->n_embd);
+            env->SetFloatArrayRegion(result, 0, h->n_embd, emb);
+        } else {
+            LOGW("embedding: no embeddings returned");
+        }
+    } else {
+        LOGW("embedding: llama_decode failed");
+    }
+
+    llama_batch_free(batch);
+    return result;
+}
+
+JNIEXPORT void JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeFree(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
+    if (h == nullptr) return;
+    if (h->ctx)   llama_free(h->ctx);
+    if (h->model) llama_free_model(h->model);
+    delete h;
+}
+
 } // extern "C"

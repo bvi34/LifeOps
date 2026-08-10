@@ -88,6 +88,14 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     private val _modelState = MutableStateFlow<ModelUiState>(ModelUiState.Idle(repo.modelInfo()))
     val modelState: StateFlow<ModelUiState> = _modelState.asStateFlow()
 
+    // --- on-device embedding model file (powers semantic retrieval) ---
+
+    private val _embeddingModelState = MutableStateFlow<ModelUiState>(ModelUiState.Idle(repo.embeddingModelInfo()))
+    val embeddingModelState: StateFlow<ModelUiState> = _embeddingModelState.asStateFlow()
+
+    /** True when an embedding model is active, so retrieval is semantic rather than lexical. */
+    val semanticRetrieval: Boolean get() = repo.semanticRetrieval
+
     init {
         viewModelScope.launch { _identity.value = repo.loadIdentity() }
         refreshProfiles()
@@ -114,6 +122,28 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     fun deleteModel() = viewModelScope.launch {
         repo.deleteModel()
         refreshModel()
+    }
+
+    fun refreshEmbeddingModel() { _embeddingModelState.value = ModelUiState.Idle(repo.embeddingModelInfo()) }
+
+    /** Import the picked embedding GGUF into app storage, streaming progress into [embeddingModelState]. */
+    fun importEmbeddingModel(uri: Uri) = viewModelScope.launch {
+        _embeddingModelState.value = ModelUiState.Importing(0L, -1L)
+        var lastPosted = 0L
+        runCatching {
+            repo.importEmbeddingModel(uri) { copied, total ->
+                if (copied - lastPosted >= (16L shl 20) || (total in 1..copied)) {
+                    lastPosted = copied
+                    _embeddingModelState.value = ModelUiState.Importing(copied, total)
+                }
+            }
+        }.onSuccess { refreshEmbeddingModel() }
+            .onFailure { _embeddingModelState.value = ModelUiState.Error(it.message ?: "Import failed") }
+    }
+
+    fun deleteEmbeddingModel() = viewModelScope.launch {
+        repo.deleteEmbeddingModel()
+        refreshEmbeddingModel()
     }
 
     fun refreshProfiles() = viewModelScope.launch { _profiles.value = repo.listProfiles() }
