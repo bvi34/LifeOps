@@ -61,10 +61,24 @@ permissions → load corpus → retrieve → recall → logic engine → augment
    times have I said X", "count my word usage in my tasks" — and extractive RAG can only *surface* rows,
    so it answers them badly (it matched "count" to the word "Count" in pantry labels). The router hands
    the question to the first registered `AdvisorFunction` that handles it; the function *computes* the
-   answer over the user's own (permission-filtered) data and returns it, skipping the RAG path. Today
-   that's `WordUsageFunction` (exact whole-word counts and most-used-words summaries, scoped to the
-   conversation, tasks, notes, memory, …, and honouring the permission gate). New capabilities plug in
-   by being added to the router — this is the "distribute various functions" seam.
+   answer over the user's own (permission-filtered) data and returns it, skipping the RAG path. New
+   capabilities plug in by being added to the router — this is the "distribute various functions" seam.
+   Ships with four, most-specific first:
+   - **`CalculatorFunction`** — arithmetic ("what is 15% of 200", "12.5 * 3 + 2", "3 to the power of 2"),
+     evaluated by a small recursive-descent parser (no `eval`). A trigger guard keeps date/id-like text
+     ("what did I do on 2026-08-10") from being read as subtraction.
+   - **`WordUsageFunction`** — exact whole-word counts ("how many times have I said X") and most-used-word
+     summaries, scoped to the conversation, tasks, notes, memory, ….
+   - **`InventoryFunction`** — the Logistics pantry/grocery: what's running low, a specific item's stock,
+     a category-broken-down pantry summary, and the still-needed grocery list.
+   - **`AggregateFunction`** — counts and numeric roll-ups over what you collect: "how many tasks / books
+     / memories", "how many tasks are done", "how much time do my tasks take" (sum/avg/min/max of task
+     estimate minutes), "how many points have I earned" (milestone points).
+
+   The structured numbers behind inventory and aggregate come from `logic/DocumentFacts`, which recovers
+   the typed fields (stock, status, estimate minutes, points, …) from the knowledge sources' generated
+   prose in one tested place. App-backed scopes honour the permission gate — a disabled app is asked to
+   be enabled rather than counted as zero.
 
 1. **Permissions gate** (`logic/AdvisorPermissions`). Which apps Advisor may read. **Denied by
    default**: an app is off until you grant it, so the model can never see data you haven't opted
@@ -134,7 +148,8 @@ All the reasoning stages are **framework-free** and live under `advisor/logic/`,
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
 `ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `ConversationTest`,
-`WordUsageFunctionTest`, `FunctionRouterTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
+`WordUsageFunctionTest`, `CalculatorFunctionTest`, `InventoryFunctionTest`, `AggregateFunctionTest`,
+`DocumentFactsTest`, `FunctionRouterTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
@@ -380,7 +395,15 @@ vectors are simply never consulted — revocation stays instant.
   the "chat is under way" signal.
 - `WordUsageFunctionTest` — specific whole-word counts (subject, word boundaries, zero matches), the
   most-used-words summary, scope parsing / citations, and the disabled-app gate.
-- `FunctionRouterTest` — routing a word-usage question to its function, falling through for others, and
+- `CalculatorFunctionTest` — precedence, percent/power/word operators, integer formatting, division by
+  zero, and the non-math / date-hijack guard.
+- `InventoryFunctionTest` — low stock, item lookup, on-the-list fallback, category summary, needed-only
+  groceries, and the Logistics permission gate.
+- `AggregateFunctionTest` — counts (with a status filter), task-time sum/average, milestone-point total,
+  cross-app counts (books, memories), and the LifeOps gate.
+- `DocumentFactsTest` — recovering stock/unit/category/low, grocery quantity/needed, task status/
+  priority/estimate, and milestone points from the sources' prose.
+- `FunctionRouterTest` — routing each question to the right capability, falling through for others, and
   first-match-wins ordering.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.

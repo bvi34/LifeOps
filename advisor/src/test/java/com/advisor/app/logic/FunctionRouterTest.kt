@@ -7,15 +7,18 @@ import org.junit.Test
 class FunctionRouterTest {
 
     @Test
-    fun routes_a_word_usage_question_to_the_word_usage_function() {
-        val handler = FunctionRouter.DEFAULT.handler("how many times have I said fuck?")
-        assertEquals("word-usage", handler?.name)
+    fun routes_each_question_to_the_right_capability() {
+        val r = FunctionRouter.DEFAULT
+        assertEquals("calculator", r.handler("what is 12 * 3?")?.name)
+        assertEquals("word-usage", r.handler("how many times have I said fuck?")?.name)
+        assertEquals("inventory", r.handler("what's running low?")?.name)
+        assertEquals("aggregate", r.handler("how many tasks do I have?")?.name)
     }
 
     @Test
     fun falls_through_for_questions_no_function_handles() {
         assertNull(FunctionRouter.DEFAULT.handler("what books am I reading?"))
-        assertNull(FunctionRouter.DEFAULT.handler("how many tasks are due this week?"))
+        assertNull(FunctionRouter.DEFAULT.handler("what should I focus on today?"))
     }
 
     @Test
