@@ -73,6 +73,14 @@ class ProfileStore(context: Context) {
         updated
     }
 
+    suspend fun removeMatchingEntry(key: String, text: String): Pair<Profile?, Int> = withContext(Dispatchers.IO) {
+        val slug = ProfileDirectives.slug(key)
+        val existing = load(slug) ?: return@withContext null to 0
+        val (updated, removed) = existing.withoutMatching(text, System.currentTimeMillis())
+        if (removed > 0) writeFile(updated)
+        updated to removed
+    }
+
     suspend fun delete(key: String) = withContext(Dispatchers.IO) {
         fileFor(ProfileDirectives.slug(key)).delete()
         Unit
