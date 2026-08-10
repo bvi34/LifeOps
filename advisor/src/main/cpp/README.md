@@ -22,6 +22,12 @@ Only the `arm64-v8a` ABI is built — a 4B Q4 model isn't realistic on 32-bit or
 When the property is **off** (the default), no `.so` is produced; `LlamaCppBackend` reports
 not-ready and Advisor answers with its deterministic placeholder engine.
 
+The CMake build produces `libadvisor-llm.so` alongside its llama.cpp dependencies (`libllama.so`,
+`libggml.so`). AGP's `externalNativeBuild` packages all of them into the APK's `lib/arm64-v8a/`, and
+the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 26), so the Kotlin side
+only needs `System.loadLibrary("advisor-llm")`. This build has been verified for `arm64-v8a` against
+the pinned tag with the NDK's CMake toolchain.
+
 ## Providing the model weights
 
 The `.so` is the engine; the weights ship separately (they're ~2.5 GB and don't belong in git). At
