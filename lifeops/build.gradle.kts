@@ -42,6 +42,7 @@ dependencies {
     // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps
     // reads to ingest reading telemetry and notes. LifeOps is just another peer on the seam.
     implementation(project(":core"))
+    implementation(libs.androidx.compose.ui.graphics)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
