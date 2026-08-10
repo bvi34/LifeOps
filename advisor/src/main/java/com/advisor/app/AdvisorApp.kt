@@ -12,6 +12,7 @@ import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.LlamaCppBackend
 import com.advisor.app.logic.C3AEngine
 import com.advisor.app.logic.LogicEngine
@@ -48,13 +49,16 @@ class AdvisorApp private constructor(private val app: Application) {
         )
     }
 
+    /** Owns the on-device model file: in-app import of a Qwen3-4B GGUF, its status, and removal. */
+    val modelStore by lazy { AdvisorModelStore(app) }
+
     /**
      * The language model: a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the
      * weights are provisioned on the device the backend reports not-ready and the engine falls back to
      * a deterministic, grounded placeholder — so Advisor works either way and gains real reasoning the
      * moment the model file is present, with no code change.
      */
-    val engine by lazy { Qwen3LlmEngine(LlamaCppBackend(app)) }
+    val engine by lazy { Qwen3LlmEngine(LlamaCppBackend(modelStore)) }
 
     /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */
     val logicEngine: LogicEngine by lazy { C3AEngine() }
@@ -67,7 +71,8 @@ class AdvisorApp private constructor(private val app: Application) {
             memory = memoryRepository,
             identityStore = identityStore,
             profileStore = profileStore,
-            logicEngine = logicEngine
+            logicEngine = logicEngine,
+            modelStore = modelStore
         )
     }
 

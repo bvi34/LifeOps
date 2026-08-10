@@ -209,8 +209,9 @@ surfaces that).
 - **Profiles** — the standing-profiles manager: create project profiles, add entries to any profile,
   and see entries the assistant wrote back (tagged "advisor" vs "you").
 - **Permissions** — the identity summary (JSON-backed), one switch per app (denied by default), the
-  model card (which names the running model — Qwen3-4B, or the placeholder while the weights aren't yet
-  on the device), and a "clear conversation" action.
+  model card, and a "clear conversation" action. The model card names the running model (Qwen3-4B, or
+  the placeholder while the weights aren't on the device) and lets you **import a Qwen3-4B GGUF** from
+  device storage — a progress-reported, on-device copy with no network — or remove it.
 
 `AdvisorApp` is the tiny runtime holder (mirroring `LifeOpsApp`/`LogisticsApp`): it owns the
 database, the read-only knowledge sources, the engine, and the repository. Everything is lazy — no
@@ -233,11 +234,16 @@ first two are pure and JVM-tested:
   backend, cleans the result. If the backend isn't ready, or a generation is blank or throws, it falls
   back to `PlaceholderLlmEngine` so the pipeline always yields a grounded, cited answer. `spec` reports
   the placeholder vs. the real Qwen3 weights so the UI's model card is truthful.
-- **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It looks for a `qwen3-4b*.gguf` under the
-  app's `files/models` (or external files), loads it once through the `advisor-llm` native library over
-  JNI, and generates on-device. Every native call is guarded: no library or no file ⇒ `isReady = false`
-  ⇒ the placeholder answers. Dropping the GGUF onto the device is the whole activation step — no code
-  change.
+- **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It loads whatever
+  **`llm/AdvisorModelStore`** reports as the installed `qwen3-4b*.gguf` (internal `files/models`, or an
+  `adb push`ed copy under external files), once, through the `advisor-llm` native library over JNI, and
+  generates on-device. Every native call is guarded: no library or no file ⇒ `isReady = false` ⇒ the
+  placeholder answers. The store is re-checked until a model loads, so a freshly imported file is picked
+  up on the next question — no restart, no code change.
+- **`llm/AdvisorModelStore`** — provisions the weights **in-app**: it imports a GGUF the user picked
+  from device storage (Storage Access Framework) into `files/models`, streaming the copy with progress,
+  and reports / removes the installed file. The import is a *copy in* from a chosen document, so Advisor
+  still requests no `INTERNET` and nothing leaves the device.
 
 The native library is built from `advisor/src/main/cpp/` (`advisor_llm.cpp` + `CMakeLists.txt`, which
 fetches a pinned llama.cpp). It is **opt-in**: a plain build ships no `.so` and uses the placeholder,
@@ -264,6 +270,8 @@ runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes secon
   of the user turn, and control-token/think-block clean-up of completions.
 - `Qwen3LlmEngineTest` — a ready backend answers and advertises Qwen3, and the unready / blank /
   throwing paths all fall back to the grounded placeholder.
+- `AdvisorModelStoreTest` — the `qwen3-4b*.gguf` filename contract the backend keys on, and the
+  byte-size formatting shown on the model card.
 - `IdentityTest` — context-line rendering of only filled fields.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
 - `LogicEngineTest` — the no-op default and derived lines reaching the prompt's REASONING section.

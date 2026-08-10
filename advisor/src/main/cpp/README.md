@@ -30,20 +30,25 @@ the pinned tag with the NDK's CMake toolchain.
 
 ## Providing the model weights
 
-The `.so` is the engine; the weights ship separately (they're ~2.5 GB and don't belong in git). At
-runtime `LlamaCppBackend` looks for a `qwen3-4b*.gguf` in, in order:
+The `.so` is the engine; the weights ship separately (they're ~2.5 GB and don't belong in git). The
+intended way to provide them is **in-app**: the Permissions screen's model card has an **Import model
+file (.gguf)…** button that copies a GGUF you picked from device storage into the app's private
+`files/models/` (progress-reported, on-device, no network). Advisor loads it on the next question.
 
-1. `filesDir/models/` (internal app storage), or
+At runtime `LlamaCppBackend` loads whatever `AdvisorModelStore` reports as installed — a `qwen3-4b*.gguf`
+in, in order:
+
+1. `filesDir/models/` (internal app storage — where the in-app import lands), or
 2. `getExternalFilesDir("models")` — e.g. `/sdcard/Android/data/com.operations.sandbox/files/models/`.
 
-Push a quantized file there, for example:
+The second path lets you side-load with `adb` instead of the in-app import, for example:
 
 ```
 adb push qwen3-4b-q4_k_m.gguf \
   /sdcard/Android/data/com.operations.sandbox/files/models/qwen3-4b-q4_k_m.gguf
 ```
 
-The Permissions screen's model card shows whether the real model or the placeholder is live.
+Either way, the model card shows whether the real model or the placeholder is live.
 
 ## Bumping llama.cpp
 

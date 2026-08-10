@@ -1,41 +1,44 @@
 package com.advisor.app.llm
 
-import android.content.Context
 import android.util.Log
 import com.advisor.app.logic.GenerationParams
 import com.advisor.app.logic.LlmBackend
-import java.io.File
 
 /**
- * A [LlmBackend] backed by llama.cpp's native inference, loaded over JNI. It looks for a Qwen3-4B GGUF
- * that has been placed on the device (bundled under the app's `files/models`, or side-loaded into
- * external files), loads it once through the `advisor-llm` native library, and runs a completion for
- * each prompt — all on-device, no network.
+ * A [LlmBackend] backed by llama.cpp's native inference, loaded over JNI. It loads whatever Qwen3-4B
+ * GGUF [AdvisorModelStore] reports as installed — a file the user imported in-app, or one `adb push`ed
+ * onto the device — through the `advisor-llm` native library, and runs a completion for each prompt,
+ * all on-device with no network.
  *
- * The native library and multi-gigabyte weights are provisioned out of band, so every native entry
+ * The native library and multi-gigabyte weights are provisioned separately, so every native entry
  * point is guarded: if the `.so` or the `.gguf` isn't present the backend reports `isReady = false`
- * and [com.advisor.app.logic.Qwen3LlmEngine] falls back to its extractive placeholder. That keeps the
- * app fully functional on a device that hasn't been given the model yet, and makes wiring the real
- * weights a drop-in — no code change, just the file.
+ * and [com.advisor.app.logic.Qwen3LlmEngine] falls back to its extractive placeholder. A freshly
+ * imported model is detected on the next question (the store is re-checked until a model is loaded),
+ * so importing weights activates the model with no restart and no code change.
  */
-class LlamaCppBackend(context: Context) : LlmBackend {
-
-    private val appContext = context.applicationContext
-    private val modelFile: File? by lazy { locateModel(appContext) }
+class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     @Volatile private var handle: Long = 0L
-    @Volatile private var loadFailed: Boolean = false
+    @Volatile private var failedSignature: String? = null
     private val lock = Any()
 
     override val isReady: Boolean
-        get() = NATIVE_AVAILABLE && modelFile != null && !loadFailed
+        get() {
+            if (!NATIVE_AVAILABLE) return false
+            if (handle != 0L) return true
+            val file = modelStore.installedModel() ?: return false
+            return signature(file.absolutePath, file.length()) != failedSignature
+        }
 
     override val detail: String
-        get() = when {
-            !NATIVE_AVAILABLE -> "native llama.cpp library unavailable"
-            modelFile == null -> "no Qwen3-4B GGUF found"
-            loadFailed -> "model failed to load"
-            else -> modelFile!!.name
+        get() {
+            val file = modelStore.installedModel()
+            return when {
+                !NATIVE_AVAILABLE -> "native llama.cpp library not in this build"
+                file == null -> "no Qwen3-4B GGUF installed"
+                handle == 0L && failedSignature != null -> "model failed to load"
+                else -> file.name
+            }
         }
 
     override fun generate(prompt: String, params: GenerationParams): String {
@@ -60,21 +63,33 @@ class LlamaCppBackend(context: Context) : LlmBackend {
         }
     }
 
-    /** Load the weights on first use (off the main thread — generation is already dispatched there). */
+    /**
+     * Load the weights on first use (off the main thread — generation is dispatched there). The store
+     * is re-read each time so a newly imported model is picked up; a file that already failed to load
+     * is remembered by (path, size) and skipped until it changes.
+     */
     private fun ensureLoaded(): Boolean {
         if (handle != 0L) return true
-        if (!NATIVE_AVAILABLE || loadFailed) return false
-        val file = modelFile ?: return false
+        if (!NATIVE_AVAILABLE) return false
+        val file = modelStore.installedModel() ?: return false
+        val sig = signature(file.absolutePath, file.length())
+        if (sig == failedSignature) return false
         synchronized(lock) {
             if (handle != 0L) return true
             handle = runCatching { nativeLoad(file.absolutePath) }.getOrElse {
                 Log.w(TAG, "Failed to load Qwen3-4B GGUF at ${file.absolutePath}", it)
                 0L
             }
-            if (handle == 0L) loadFailed = true
-            return handle != 0L
+            if (handle == 0L) {
+                failedSignature = sig
+                return false
+            }
+            failedSignature = null
+            return true
         }
     }
+
+    private fun signature(path: String, size: Long): String = "$path:$size"
 
     // --- JNI: implemented by the `advisor-llm` native library (llama.cpp) ---
 
@@ -88,33 +103,13 @@ class LlamaCppBackend(context: Context) : LlmBackend {
     companion object {
         private const val TAG = "LlamaCppBackend"
 
-        /** True once the native library is present; false (and logged) when it isn't bundled yet. */
+        /** True once the native library is present; false (and logged) when it isn't in the build. */
         private val NATIVE_AVAILABLE: Boolean = runCatching {
             System.loadLibrary("advisor-llm")
             true
         }.getOrElse {
             Log.i(TAG, "Native llama.cpp backend not present; Advisor will use the placeholder engine.")
             false
-        }
-
-        /** Search the app's model directories for a Qwen3-4B GGUF, most-specific filename first. */
-        private fun locateModel(context: Context): File? {
-            val dirs = buildList {
-                add(File(context.filesDir, "models"))
-                context.getExternalFilesDir("models")?.let { add(it) }
-            }
-            for (dir in dirs) {
-                dir.listFiles()
-                    ?.filter { it.isFile && it.length() > 0 && isQwen3Gguf(it.name) }
-                    ?.minByOrNull { it.name.length } // shortest name ≈ the canonical drop-in
-                    ?.let { return it }
-            }
-            return null
-        }
-
-        private fun isQwen3Gguf(name: String): Boolean {
-            val lower = name.lowercase()
-            return lower.startsWith("qwen3-4b") && lower.endsWith(".gguf")
         }
     }
 }
