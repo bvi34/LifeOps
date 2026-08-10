@@ -38,13 +38,14 @@ change.
 A question flows through these stages, in order:
 
 ```
-                         ┌── write command? ──→ apply writes (profiles + memory) → confirm ──┐
-                         │                                                                    │
-permissions → retrieve → recall memory → logic engine → augment (assemble prompt) → generate → apply writes
-                                                 ↑            ↑                                      │
-                            identity + profiles ─┴────────────┘                                      │
-                                    ↑                                                                │
-                                    └──────── @remember(<profile>) / @memorize directives ──────────┘
+                    ┌── write command? ─→ apply writes (profiles + memory) → confirm ──┐
+                    │── function match? ─→ run capability (count / tally / lookup) ────┤
+                    │                                                                   │
+permissions → load corpus → retrieve → recall → logic engine → augment → generate → apply writes
+                                            ↑         ↑                                     │
+                       identity + profiles ─┴─────────┘                                     │
+                                    ↑                                                       │
+                                    └──── @remember(<profile>) / @memorize directives ──────┘
 ```
 
 0. **Write commands** (`logic/WriteIntent`, in the repository, *before* the gate). An explicit
@@ -54,6 +55,16 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    makes the write capability real *today*, on the deterministic placeholder, without waiting on the
    model to emit a directive. `WriteIntent` is deliberately conservative — it ignores anything phrased
    as a question — so ordinary recall ("do you remember what I said?") falls through untouched.
+
+0b. **Function dispatch** (`logic/FunctionRouter`, `logic/AdvisorFunction`, in the repository, after the
+   corpus is loaded but before retrieval). Some questions are **computations**, not lookups — "how many
+   times have I said X", "count my word usage in my tasks" — and extractive RAG can only *surface* rows,
+   so it answers them badly (it matched "count" to the word "Count" in pantry labels). The router hands
+   the question to the first registered `AdvisorFunction` that handles it; the function *computes* the
+   answer over the user's own (permission-filtered) data and returns it, skipping the RAG path. Today
+   that's `WordUsageFunction` (exact whole-word counts and most-used-words summaries, scoped to the
+   conversation, tasks, notes, memory, …, and honouring the permission gate). New capabilities plug in
+   by being added to the router — this is the "distribute various functions" seam.
 
 1. **Permissions gate** (`logic/AdvisorPermissions`). Which apps Advisor may read. **Denied by
    default**: an app is off until you grant it, so the model can never see data you haven't opted
@@ -123,7 +134,7 @@ All the reasoning stages are **framework-free** and live under `advisor/logic/`,
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
 `ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `ConversationTest`,
-`C3AEngineTest`) — the same discipline as `:backupkit` and
+`WordUsageFunctionTest`, `FunctionRouterTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
@@ -367,6 +378,10 @@ vectors are simply never consulted — revocation stays instant.
   the conversation gives context*.
 - `ConversationTest` — the recent-turns retrieval query (folded-in subject, last-turns-only cap) and
   the "chat is under way" signal.
+- `WordUsageFunctionTest` — specific whole-word counts (subject, word boundaries, zero matches), the
+  most-used-words summary, scope parsing / citations, and the disabled-app gate.
+- `FunctionRouterTest` — routing a word-usage question to its function, falling through for others, and
+  first-match-wins ordering.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
 - `MemoryDirectivesTest` — `@memorize` parsing, `#tag` extraction (lower-cased/de-duped), and stripping.

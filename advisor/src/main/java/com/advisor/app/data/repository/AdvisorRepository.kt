@@ -12,10 +12,13 @@ import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.llm.AdvisorModelInfo
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
+import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
+import com.advisor.app.logic.FunctionRequest
+import com.advisor.app.logic.FunctionRouter
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
@@ -74,7 +77,8 @@ class AdvisorRepository(
     private val logicEngine: LogicEngine,
     private val modelStore: AdvisorModelStore,
     private val embeddingModelStore: EmbeddingModelStore,
-    private val retriever: HybridRetriever = HybridRetriever()
+    private val retriever: HybridRetriever = HybridRetriever(),
+    private val functions: FunctionRouter = FunctionRouter.DEFAULT
 ) {
 
     val model: ModelSpec get() = engine.spec
@@ -173,6 +177,21 @@ class AdvisorRepository(
         val intent = WriteIntent.detect(question, profiles)
         if (intent.hasWrites) return applyWriteCommand(question, intent)
 
+        // Load only what the user has granted — denied apps are never read.
+        val corpus = ArrayList<KnowledgeDocument>()
+        for (source in sources) {
+            if (permissions.isGranted(source.source)) {
+                corpus += runCatching { source.load() }.getOrDefault(emptyList())
+            }
+        }
+
+        // Function dispatch: some questions are computations ("how many times have I said X",
+        // "count my word usage in my tasks") that retrieval can't answer — it can only surface rows.
+        // If a registered capability handles this, it computes the real answer and we skip the RAG path.
+        functions.handler(question)?.let { fn ->
+            return runFunction(question, fn, permissions, identity, profiles, corpus)
+        }
+
         // Recent chat history, oldest-first, so retrieval, the C3A gate and the prompt all reason over
         // the conversation — not just this one message. Loaded before the turn is persisted, so it's
         // strictly the prior turns.
@@ -184,13 +203,6 @@ class AdvisorRepository(
         // into the query so retrieval and recall find what the follow-up is actually about.
         val retrievalQuery = Conversation.retrievalQuery(conversation, question)
 
-        // Load only what the user has granted — denied apps are never read.
-        val corpus = ArrayList<KnowledgeDocument>()
-        for (source in sources) {
-            if (permissions.isGranted(source.source)) {
-                corpus += runCatching { source.load() }.getOrDefault(emptyList())
-            }
-        }
         // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
         // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
         val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
@@ -245,6 +257,41 @@ class AdvisorRepository(
         persistTurn(question, text, chunks.map { it.document }, KIND_NORMAL)
 
         return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Run a dispatched [fn] over the full available data and persist its computed answer. A function
+     * needs the *whole* stored conversation (not the recent-turns window) so a count like "how many
+     * times have I said X" is accurate, so it's loaded here rather than reusing the pipeline window.
+     */
+    private suspend fun runFunction(
+        question: String,
+        fn: AdvisorFunction,
+        permissions: AdvisorPermissions,
+        identity: Identity,
+        profiles: List<Profile>,
+        corpus: List<KnowledgeDocument>
+    ): AdvisorAnswer {
+        val fullConversation = dao.recentMessages(Int.MAX_VALUE)
+            .asReversed()
+            .map { ConversationTurn(fromUser = it.role == ROLE_USER, text = it.text) }
+            .filter { it.text.isNotBlank() }
+        val result = withContext(Dispatchers.Default) {
+            fn.run(
+                FunctionRequest(
+                    question = question,
+                    corpus = corpus,
+                    conversation = fullConversation,
+                    memories = memory.allRecords(),
+                    profiles = profiles,
+                    identity = identity,
+                    grantedApps = permissions.granted,
+                    deniedApps = SourceApp.entries.toSet() - permissions.granted
+                )
+            )
+        }
+        persistTurn(question, result.text, result.citations, KIND_NORMAL)
+        return AdvisorAnswer(result.text, result.citations, emptyList(), engine.spec, EngineDecision.ANSWER)
     }
 
     /**
