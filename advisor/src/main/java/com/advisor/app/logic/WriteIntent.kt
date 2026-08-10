@@ -5,11 +5,15 @@ package com.advisor.app.logic
  * command — "add to LLM persona that you are called Ava", "remember that my dog is Rex #pets" — this
  * captures the profile and/or memory writes it implies.
  */
+data class ProfileRemoval(val profileKey: String, val text: String)
+
 data class WriteIntentResult(
     val profileAppends: List<ProfileAppend> = emptyList(),
+    val profileRemovals: List<ProfileRemoval> = emptyList(),
     val memoryWrites: List<MemoryWrite> = emptyList()
 ) {
-    val hasWrites: Boolean get() = profileAppends.isNotEmpty() || memoryWrites.isNotEmpty()
+    val hasWrites: Boolean get() =
+        profileAppends.isNotEmpty() || profileRemovals.isNotEmpty() || memoryWrites.isNotEmpty()
 
     companion object {
         val NONE = WriteIntentResult()
@@ -33,6 +37,9 @@ object WriteIntent {
     // Verbs that, together with a "to <profile>" target, mean "append to that standing profile".
     private const val PROFILE_VERB =
         "(?:add|append|save|note|write|record|put|store|remember|update|set|jot)"
+
+    // Verbs that, together with a profile target, mean "remove this stale fact from that profile".
+    private const val FORGET_VERB = "(?:forget|remove|delete|clear|drop)"
 
     // Verbs that, at the very start of the turn, mean "commit the rest to long-term memory".
     private val MEMORY_LEAD = Regex(
@@ -64,9 +71,38 @@ object WriteIntent {
         val q = question.trim()
         if (q.isEmpty() || q.endsWith("?")) return WriteIntentResult.NONE
 
+        profileRemoval(q, profiles)?.let { return WriteIntentResult(profileRemovals = listOf(it)) }
         profileAppend(q, profiles)?.let { return WriteIntentResult(profileAppends = listOf(it)) }
         memoryWrite(q)?.let { return WriteIntentResult(memoryWrites = listOf(it)) }
         return WriteIntentResult.NONE
+    }
+
+    /** A "forget/remove … <known profile> [profile] [that|:] <fact>" command, or null. */
+    private fun profileRemoval(q: String, profiles: List<Profile>): ProfileRemoval? {
+        val targets = profiles
+            .flatMap { p -> nameVariants(p).map { it to p.key } }
+            .sortedByDescending { it.first.length }
+        for ((variant, key) in targets) {
+            val escaped = Regex.escape(variant)
+            val patterns = listOf(
+                Regex(
+                    """(?i)\b$FORGET_VERB\b.*?\b(?:from|in|inside|within)\b\s+(?:my\s+|the\s+|your\s+)?""" +
+                        escaped + """(?:\s+profile)?\b\s*[:,\-]?\s*(?:that\s+|saying\s+|as\s+)?(.+)""",
+                    RegexOption.DOT_MATCHES_ALL
+                ),
+                Regex(
+                    """(?i)\b$FORGET_VERB\b\s+(?:my\s+|the\s+|your\s+)?""" + escaped +
+                        """(?:\s+profile)?\b\s*[:,\-]?\s*(?:that\s+|saying\s+|as\s+)?(.+)""",
+                    RegexOption.DOT_MATCHES_ALL
+                )
+            )
+            val fact = patterns.asSequence()
+                .mapNotNull { it.find(q)?.groupValues?.get(1)?.let(::clean) }
+                .firstOrNull { it.isNotBlank() }
+                .orEmpty()
+            if (fact.isNotBlank()) return ProfileRemoval(key, fact)
+        }
+        return null
     }
 
     /** A "<verb> … to <known profile> [profile] [that|:] <fact>" command, or null. */

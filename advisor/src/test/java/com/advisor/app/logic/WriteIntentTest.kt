@@ -20,6 +20,7 @@ class WriteIntentTest {
         val result = detect("add to LLM persona that you are called Ava now")
         assertTrue(result.hasWrites)
         assertTrue(result.memoryWrites.isEmpty())
+        assertTrue(result.profileRemovals.isEmpty())
         assertEquals(1, result.profileAppends.size)
         assertEquals("llm-persona", result.profileAppends[0].profileKey)
         assertEquals("you are called Ava", result.profileAppends[0].text)
@@ -61,6 +62,17 @@ class WriteIntentTest {
         // "add milk to the grocery list" names no known profile and no memory target.
         assertFalse(detect("add milk to the grocery list").hasWrites)
         assertFalse(detect("how many tasks are due today").hasWrites)
+    }
+
+    @Test
+    fun profile_forget_removes_a_profile_entry() {
+        val result = detect("forget the LLM persona that you are called ava")
+        assertTrue(result.hasWrites)
+        assertEquals(1, result.profileRemovals.size)
+        assertEquals("llm-persona", result.profileRemovals[0].profileKey)
+        assertEquals("you are called ava", result.profileRemovals[0].text)
+        assertTrue(result.profileAppends.isEmpty())
+        assertTrue(result.memoryWrites.isEmpty())
     }
 
     @Test

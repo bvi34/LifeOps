@@ -56,6 +56,14 @@ data class Profile(
     fun appended(text: String, author: String, now: Long): Profile =
         copy(entries = entries + ProfileEntry(text.trim(), author, now), updatedAt = now)
 
+    /** A new profile with entries matching [text] removed, plus the number removed. */
+    fun withoutMatching(text: String, now: Long): Pair<Profile, Int> {
+        val target = comparable(text)
+        val kept = entries.filterNot { comparable(it.text) == target }
+        return copy(entries = kept, updatedAt = if (kept.size == entries.size) updatedAt else now) to
+            (entries.size - kept.size)
+    }
+
     /** The header line for this profile: name, its addressable key, and summary. */
     fun headerLine(): String = buildString {
         append(name)
@@ -73,5 +81,8 @@ data class Profile(
 
     companion object {
         const val DEFAULT_MAX_ENTRIES = 8
+
+        private fun comparable(text: String): String =
+            text.trim().trimEnd('.', '!').lowercase().replace(Regex("""\s+"""), " ")
     }
 }

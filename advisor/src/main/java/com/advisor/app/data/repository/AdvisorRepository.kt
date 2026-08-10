@@ -306,6 +306,15 @@ class AdvisorRepository(
             val profile = profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
             lines += "Saved to your ${profile.name} profile:\n• ${append.text}"
         }
+        for (removal in intent.profileRemovals) {
+            val (profile, removed) = profileStore.removeMatchingEntry(removal.profileKey, removal.text)
+            val profileName = profile?.name ?: removal.profileKey
+            lines += if (removed > 0) {
+                "Removed from your $profileName profile:\n• ${removal.text}"
+            } else {
+                "I couldn't find that exact line in your $profileName profile:\n• ${removal.text}"
+            }
+        }
         for (write in intent.memoryWrites) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
             val tagNote = if (write.tags.isEmpty()) "" else " (tags: ${write.tags.joinToString(", ")})"
