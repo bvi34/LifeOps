@@ -1,6 +1,7 @@
 package com.operations.sandbox
 
 import android.app.Application
+import com.advisor.app.AdvisorApp
 import com.citation.app.CitationApplication
 import com.lifeops.app.LifeOpsApp
 import com.logistics.app.LogisticsApp
@@ -20,5 +21,6 @@ class SandboxApplication : Application() {
         LifeOpsApp.install(this)
         CitationApplication.install(this)
         LogisticsApp.install(this)
+        AdvisorApp.install(this)
     }
 }

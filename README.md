@@ -18,11 +18,18 @@ the receipts.
 
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
 > single installed application and the central hub the whole suite opens through. One launcher that
-> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), or Logistics (`:logistics`),
-> and one place to back the whole suite up into a single `.zip` and restore from it. LifeOps,
-> Citation and Logistics are library modules hosted in that one process — see
-> **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
+> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), Logistics (`:logistics`), or
+> Advisor (`:advisor`), and one place to back the whole suite up into a single `.zip` and restore
+> from it. LifeOps, Citation, Logistics and Advisor are library modules hosted in that one process —
+> see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`.
+
+> **Advisor** (the private, on-device assistant) is a peer module — see **[docs/ADVISOR.md](docs/ADVISOR.md)**.
+> It's the suite's **RAG** layer: it answers questions grounded in your own data across LifeOps,
+> Citation and Logistics, under an explicit **per-app permission gate** (denied by default). The
+> language model is a **placeholder** today — a small local model (≈2–4B params, Q4 GGUF, on-device)
+> is the intended drop-in — but the retrieval, permissions and prompt assembly around it are real and
+> JVM-unit-tested in `advisor/logic/`. It requests no `INTERNET`; nothing leaves the device.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

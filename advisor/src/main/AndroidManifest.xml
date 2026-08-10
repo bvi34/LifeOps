@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Advisor is fully offline: it reads the other apps' databases in-process and (once wired) runs
+         a local model on-device. It requests no permissions of its own — no INTERNET. -->
+
+    <!-- Advisor is a library module: no app-level attributes here (name/icon/theme/label live on the
+         :app host). Only Advisor's own component is declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. The theme is set on
+             the activity so Advisor keeps its own launch look. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Advisor"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

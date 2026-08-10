@@ -4,8 +4,9 @@ Operations Sandbox is the **container** the whole suite ships inside — think a
 Docker-style host crossed with a single sign-on hub. It is the one installed app and the one
 launcher icon. Opening it gives you a home screen that:
 
-- lists the apps we build (**LifeOps** — the standard app — and **Citation**),
-- opens either one, and
+- lists the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**, and
+  **Advisor**),
+- opens any one of them, and
 - backs the **whole suite up into a single `.zip`** and **restores from that same zip**.
 
 The GUI and the backups are unified: one hub, one archive.
@@ -139,8 +140,10 @@ reopen it** — reopening just the hosted screen would reuse the now-closed data
 - **Restore from zip…** → the system *open-document* picker → the archive's manifest is read, then
   the apps that are both selected and present in the archive are restored.
 
-Adding a third hosted app later is authoring, not engineering: add an `AppId`, ship a
+Adding another hosted app later is authoring, not engineering: add an `AppId`, ship a
 `BackupContributor`, and register it in `BackupCenter` (and add the module as an `:app` dependency).
+**Advisor** (`:advisor`) is the most recent example — a permission-gated RAG assistant that reads the
+other apps' data to answer grounded questions; see **[ADVISOR.md](ADVISOR.md)**.
 
 ---
 

@@ -49,6 +49,7 @@ dependencies {
     implementation(project(":lifeops"))
     implementation(project(":citation"))
     implementation(project(":logistics"))
+    implementation(project(":advisor"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

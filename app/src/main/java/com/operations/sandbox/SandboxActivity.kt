@@ -208,6 +208,7 @@ private fun openApp(context: Context, appId: AppId) {
         AppId.LIFEOPS -> com.lifeops.app.MainActivity::class.java
         AppId.CITATION -> com.citation.app.MainActivity::class.java
         AppId.LOGISTICS -> com.logistics.app.MainActivity::class.java
+        AppId.ADVISOR -> com.advisor.app.MainActivity::class.java
     }
     context.startActivity(Intent(context, target))
 }

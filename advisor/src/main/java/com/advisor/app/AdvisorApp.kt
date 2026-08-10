@@ -1,0 +1,57 @@
+package com.advisor.app
+
+import android.app.Application
+import android.content.Context
+import com.advisor.app.data.db.AdvisorDatabase
+import com.advisor.app.data.repository.AdvisorRepository
+import com.advisor.app.data.source.CitationKnowledgeSource
+import com.advisor.app.data.source.KnowledgeSource
+import com.advisor.app.data.source.LifeOpsKnowledgeSource
+import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.logic.PlaceholderLlmEngine
+
+/**
+ * Advisor's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
+ * Sandbox [Application] calls [install] once, and the (single) activity resolves it with [get]. It
+ * owns Advisor's own database, the read-only knowledge sources into the other apps, and the
+ * repository that runs the RAG pipeline. Everything is lazy, so bringing Advisor up is essentially
+ * free until its screen is opened — and no other app's database is touched until a question is asked
+ * (and only for the apps the user has granted).
+ */
+class AdvisorApp private constructor(private val app: Application) {
+
+    val database by lazy { AdvisorDatabase.getInstance(app) }
+
+    /** The read-only bridges into every hosted app's data. Loaded only when granted. */
+    val knowledgeSources: List<KnowledgeSource> by lazy {
+        listOf(
+            LifeOpsKnowledgeSource(app),
+            CitationKnowledgeSource(app),
+            LogisticsKnowledgeSource(app)
+        )
+    }
+
+    /** The language model. A deterministic placeholder today; a local 2–4B GGUF model is the target. */
+    val engine by lazy { PlaceholderLlmEngine() }
+
+    val repository by lazy {
+        AdvisorRepository(database.advisorDao(), knowledgeSources, engine)
+    }
+
+    companion object {
+        @Volatile
+        private var instance: AdvisorApp? = null
+
+        fun install(app: Application): AdvisorApp =
+            instance ?: synchronized(this) {
+                instance ?: AdvisorApp(app).also { instance = it }
+            }
+
+        fun get(context: Context): AdvisorApp =
+            instance ?: synchronized(this) {
+                // Be forgiving: if the host forgot to install, build from the app context rather than
+                // crash the screen (the sources only need a context).
+                instance ?: AdvisorApp(context.applicationContext as Application).also { instance = it }
+            }
+    }
+}
