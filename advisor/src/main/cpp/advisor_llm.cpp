@@ -182,6 +182,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
     delete h;
 }
 
+} // extern "C" (generation)
+
 // ---------------------------------------------------------------------------
 // Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
 //
