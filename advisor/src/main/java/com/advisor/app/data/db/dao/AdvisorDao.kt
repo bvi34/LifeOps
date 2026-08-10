@@ -27,6 +27,9 @@ interface AdvisorDao {
     @Query("SELECT * FROM advisor_messages ORDER BY createdAt ASC")
     fun observeMessages(): Flow<List<AdvisorMessageEntity>>
 
+    @Query("SELECT * FROM advisor_messages WHERE role = :role ORDER BY createdAt DESC LIMIT 1")
+    suspend fun lastMessageOf(role: String): AdvisorMessageEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addMessage(message: AdvisorMessageEntity)
 

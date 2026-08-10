@@ -12,8 +12,8 @@ import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.logic.C3AEngine
 import com.advisor.app.logic.LogicEngine
-import com.advisor.app.logic.NoOpLogicEngine
 import com.advisor.app.logic.PlaceholderLlmEngine
 
 /**
@@ -50,8 +50,8 @@ class AdvisorApp private constructor(private val app: Application) {
     /** The language model. A deterministic placeholder today; a local 2–4B GGUF model is the target. */
     val engine by lazy { PlaceholderLlmEngine() }
 
-    /** The logic engine seam. A no-op until the real engine ships in a later commit. */
-    val logicEngine: LogicEngine by lazy { NoOpLogicEngine }
+    /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */
+    val logicEngine: LogicEngine by lazy { C3AEngine() }
 
     val repository by lazy {
         AdvisorRepository(

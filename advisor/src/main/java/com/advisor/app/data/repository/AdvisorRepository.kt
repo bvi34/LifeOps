@@ -9,6 +9,7 @@ import com.advisor.app.data.memory.TagCount
 import com.advisor.app.data.profile.ProfileStore
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.logic.AdvisorPermissions
+import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
@@ -35,8 +36,12 @@ data class AdvisorAnswer(
     val text: String,
     val citations: List<KnowledgeDocument>,
     val memories: List<MemoryRecord>,
-    val model: ModelSpec
-)
+    val model: ModelSpec,
+    val decision: EngineDecision = EngineDecision.ANSWER
+) {
+    /** True when the assistant asked instead of answering (clarify/investigate). */
+    val isQuestion: Boolean get() = decision != EngineDecision.ANSWER
+}
 
 /**
  * The Advisor's brain-stem: it owns the full pipeline and is the only thing the ViewModel talks to.
@@ -133,8 +138,30 @@ class AdvisorRepository(
         // Recall long-term memory (always available; not permission-gated).
         val recalled = MemoryRecall.recall(question, memory.allRecords())
 
-        // Let the logic engine derive extra context (no-op until the real engine ships).
-        val logic = logicEngine.process(LogicInput(question, identity, chunks, recalled))
+        // The C3A unifying engine decides whether to answer, ask for clarification, or flag that a
+        // source is needed. justAsked = the previous turn was itself a clarification, so it won't loop.
+        val justAsked = dao.lastMessageOf(ROLE_ADVISOR)?.kind == KIND_CLARIFICATION
+        val logic = logicEngine.process(
+            LogicInput(
+                question = question,
+                identity = identity,
+                retrieved = chunks,
+                memories = recalled,
+                profiles = profiles,
+                grantedApps = permissions.granted,
+                deniedApps = SourceApp.entries.toSet() - permissions.granted,
+                justAsked = justAsked
+            )
+        )
+
+        // "Not knowing is acceptable. Being wrong without asking is not." — when the engine is
+        // uncertain it asks the user, and the model is not invoked to resolve it internally.
+        if (logic.asksUser) {
+            val text = logic.clarification
+                ?: "I need a bit more to answer that — could you clarify?"
+            persistTurn(question, text, emptyList(), KIND_CLARIFICATION)
+            return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
+        }
 
         val prompt = PromptAssembler.assemble(question, chunks, identity, recalled, profiles, logic.derivedContext)
         val raw = engine.generate(prompt)
@@ -146,12 +173,17 @@ class AdvisorRepository(
         val text = ProfileDirectives.strip(raw)
 
         memory.markRecalled(recalled.map { it.id })
-        persistTurn(question, text, chunks.map { it.document })
+        persistTurn(question, text, chunks.map { it.document }, KIND_NORMAL)
 
-        return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec)
+        return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
     }
 
-    private suspend fun persistTurn(question: String, answer: String, citations: List<KnowledgeDocument>) {
+    private suspend fun persistTurn(
+        question: String,
+        answer: String,
+        citations: List<KnowledgeDocument>,
+        advisorKind: String
+    ) {
         val now = System.currentTimeMillis()
         dao.addMessage(
             AdvisorMessageEntity(
@@ -159,7 +191,8 @@ class AdvisorRepository(
                 role = ROLE_USER,
                 text = question.trim(),
                 citationIds = "",
-                createdAt = now
+                createdAt = now,
+                kind = KIND_NORMAL
             )
         )
         dao.addMessage(
@@ -168,7 +201,8 @@ class AdvisorRepository(
                 role = ROLE_ADVISOR,
                 text = answer,
                 citationIds = citations.joinToString("\n") { it.id },
-                createdAt = now + 1
+                createdAt = now + 1,
+                kind = advisorKind
             )
         )
     }
@@ -183,5 +217,7 @@ class AdvisorRepository(
     companion object {
         const val ROLE_USER = "user"
         const val ROLE_ADVISOR = "advisor"
+        const val KIND_NORMAL = "normal"
+        const val KIND_CLARIFICATION = "clarification"
     }
 }

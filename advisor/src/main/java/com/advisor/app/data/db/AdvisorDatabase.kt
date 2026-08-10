@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.advisor.app.data.db.dao.AdvisorDao
 import com.advisor.app.data.db.entities.AdvisorMessageEntity
 import com.advisor.app.data.db.entities.AppPermissionEntity
@@ -22,7 +24,7 @@ import com.advisor.app.data.db.entities.AppPermissionEntity
         AppPermissionEntity::class,
         AdvisorMessageEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = true
 )
 abstract class AdvisorDatabase : RoomDatabase() {
@@ -31,6 +33,13 @@ abstract class AdvisorDatabase : RoomDatabase() {
 
     companion object {
         const val DB_NAME = "advisor.db"
+
+        /** v2 adds advisor_messages.kind so the C3A engine's clarifications are marked (and not repeated). */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE advisor_messages ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'")
+            }
+        }
 
         @Volatile
         private var instance: AdvisorDatabase? = null
@@ -41,7 +50,7 @@ abstract class AdvisorDatabase : RoomDatabase() {
                     context.applicationContext,
                     AdvisorDatabase::class.java,
                     DB_NAME
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

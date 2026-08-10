@@ -17,8 +17,9 @@ It reasons over three kinds of its own context on top of the retrieved app data:
   layer.
 - **Long-term memory** — a **dedicated, heavily-tagged database** (`advisor_memory.db`) the assistant
   recalls from. Tags are normalized and indexed for real facet/recall power.
-- **Logic engine** — a seam for a future component that injects derived context/logic into the model.
-  It's a no-op today; the real engine lands in a later commit without touching anything else.
+- **Unifying engine (C3A)** — the coordinator. It assembles the above into one working set and decides
+  whether to **answer**, **ask for clarification**, or flag that **external investigation** is needed —
+  under one rule: *"Not knowing is acceptable. Being wrong without asking clarification is not."*
 
 The language model itself is a **placeholder** today. Everything around it — the permission gate,
 the retrieval, the prompt assembly, the citations — is real and working; a small local model
@@ -57,9 +58,12 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    gentle priors. Pinned memories are always eligible; unrelated ones are left out. Memory is
    Advisor's own and is **not** permission-gated.
 
-4. **Logic engine** (`logic/LogicEngine`). The seam. Given the question, identity, retrieved chunks
-   and recalled memories, it returns derived context lines. `NoOpLogicEngine` (today) returns
-   nothing; a real engine drops in here without changing any other stage.
+4. **Unifying engine — C3A** (`logic/C3AEngine`). The coordinator. Given the question, identity,
+   profiles, retrieved chunks, recalled memories, and which apps are granted/denied, it runs a
+   reasoning workflow and returns a **decision**: `ANSWER` (with derived context), `CLARIFY` (ask the
+   user), or `INVESTIGATE` (a needed source isn't enabled). **If the decision isn't `ANSWER`, the
+   model is never invoked** — the assistant asks instead of resolving the uncertainty internally. See
+   [The C3A engine](#the-c3a-engine).
 
 5. **Augment** (`logic/PromptAssembler`). Turns identity + standing profiles + memory + chunks +
    derived lines into an `AdvisorPrompt` with `IDENTITY`, `PROFILES`, `MEMORY`, `CONTEXT` and
@@ -80,10 +84,44 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
 
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
-`IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`, `ProfileTest`, `ProfileDirectivesTest`) — the
-same discipline as `:backupkit` and Citation's `:core`.
+`IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`, `ProfileTest`, `ProfileDirectivesTest`,
+`C3AEngineTest`) — the same discipline as `:backupkit` and Citation's `:core`.
 
-## Identity, memory and the logic engine
+## The C3A engine
+
+C3A is the **unifying engine** (`logic/C3AEngine`, implementing `LogicEngine`). It exists to enforce
+one rule:
+
+> **"Not knowing is acceptable. Being wrong without asking clarification is not."**
+
+So instead of always answering, it runs a deterministic workflow over the assembled context and
+returns an `EngineDecision`:
+
+1. **Contradiction detection.** It scans recalled memory and profile entries for conflicting facts
+   (high token overlap, opposite polarity — e.g. "prefers oat milk" vs. "does *not* prefer oat milk").
+   A conflict always yields `CLARIFY` — it asks which is correct rather than picking one. This check
+   fires even right after a previous clarification, because answering from conflicting data is exactly
+   the "being wrong" the rule forbids.
+2. **Ambiguity.** An unresolved reference ("it", "that", "the project") with nothing to bind it to
+   yields `CLARIFY` — it asks what you mean rather than guessing the subject.
+3. **Grounding / uncertainty.** It measures how many of the question's content terms appear anywhere
+   in identity, profiles, memory, or granted app data. Zero overlap and it won't let the model
+   improvise: if the topic maps to a **denied app** it returns `INVESTIGATE` (asking you to enable
+   that source), otherwise `CLARIFY`.
+4. **Answer.** Only with real grounding does it return `ANSWER`, attaching a short note of what it's
+   grounded in (which flows into the prompt's `REASONING` section).
+
+The repository honors the decision: on `CLARIFY`/`INVESTIGATE` **the model is not invoked at all** —
+the assistant's turn is the question, stored as a `clarification`-kind message (styled distinctly in
+chat). To avoid nagging, `LogicInput.justAsked` (set when the previous assistant turn was a
+clarification) lets thin-grounding/ambiguity cases proceed on the next turn — it asked once, so it
+answers now. Contradictions are the deliberate exception and still stop it.
+
+The reasoning is heuristic and pure today (a stand-in for what a real model could do more richly), but
+the **policy is the real contract** and doesn't change when the model does — a wired-in model still
+answers only when C3A says `ANSWER`.
+
+## Identity, memory and profiles
 
 - **Identity** (`logic/Identity`, `data/identity/IdentityStore`). A plain data class of identity-based
   fields plus a free-form `traits` map, persisted as pretty-printed JSON at
@@ -101,9 +139,11 @@ same discipline as `:backupkit` and Citation's `:core`.
   normalizes tags (trim/lower/dedupe) and closes the recall loop by bumping stats on surfaced
   memories.
 
-- **Logic engine** (`logic/LogicEngine`). `LogicEngine.process(LogicInput) → LogicOutput`, wired into
-  the repository between recall and assembly. `NoOpLogicEngine` is the default; swap
-  `AdvisorApp.logicEngine` for the real implementation when it ships.
+- **Unifying engine** (`logic/LogicEngine`, `logic/C3AEngine`). `LogicEngine.process(LogicInput) →
+  LogicOutput`, wired into the repository between recall and assembly — see
+  [The C3A engine](#the-c3a-engine). `C3AEngine` is the default (`AdvisorApp.logicEngine`);
+  `NoOpLogicEngine` (always answer, contribute nothing) remains for callers that want the old
+  pass-through behavior.
 
 - **Standing profiles** (`logic/Profile`, `logic/ProfileDirectives`, `data/profile/ProfileStore`).
   Named dossiers, each a `Profile` (key, name, kind, summary, and an append-only list of
@@ -153,7 +193,8 @@ surfaces that).
 
 `MainActivity` is a three-tab shell over the one `AdvisorApp` runtime:
 
-- **Advisor** — the chat. Ask in plain language; each answer carries the sources retrieval cited. The
+- **Advisor** — the chat. Ask in plain language; each answer carries the sources retrieval cited, and
+  when C3A asks instead of answering, that turn is styled as a "Needs your input" clarification. The
   empty state and a footer are honest that the model is a placeholder and name what's running.
 - **Memory** — the long-term memory manager: add memories with free-form tags, filter by tag facet,
   set salience, and pin the ones that should always be reachable.
@@ -173,8 +214,9 @@ other app's database is touched until a question is asked, and only for granted 
 The whole remaining job is replacing `PlaceholderLlmEngine` with an implementation of
 `LocalLlmEngine.generate(prompt)` that loads a GGUF model and runs `prompt.render()` on-device
 (llama.cpp / MediaPipe LLM Inference / ONNX Runtime — TBD). Nothing upstream changes: permissions,
-retrieval, prompt assembly and citations are already model-agnostic. Update `AdvisorApp.engine` to
-construct the real engine and the `ModelSpec` to describe the actual weights.
+retrieval, prompt assembly, citations, and the C3A decision gate are already model-agnostic — a wired
+model still only runs when C3A returns `ANSWER`. Update `AdvisorApp.engine` to construct the real
+engine and the `ModelSpec` to describe the actual weights.
 
 ---
 
@@ -189,6 +231,8 @@ construct the real engine and the `ModelSpec` to describe the actual weights.
 - `IdentityTest` — context-line rendering of only filled fields.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
 - `LogicEngineTest` — the no-op default and derived lines reaching the prompt's REASONING section.
+- `C3AEngineTest` — answer-when-grounded, clarify-when-empty, contradiction → clarify, ambiguity →
+  clarify, denied-app → investigate, no-double-asking, and greeting handling.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
 - `IdentityJsonTest` / `ProfileJsonTest` — the identity and profile JSON round-trips.

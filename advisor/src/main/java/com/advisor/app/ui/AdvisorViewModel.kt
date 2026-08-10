@@ -25,7 +25,8 @@ data class ChatMessage(
     val id: String,
     val fromUser: Boolean,
     val text: String,
-    val citationIds: List<String>
+    val citationIds: List<String>,
+    val isClarification: Boolean = false
 )
 
 class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
@@ -44,7 +45,8 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
                     id = row.id,
                     fromUser = row.role == AdvisorRepository.ROLE_USER,
                     text = row.text,
-                    citationIds = row.citationIds.split('\n').filter { it.isNotBlank() }
+                    citationIds = row.citationIds.split('\n').filter { it.isNotBlank() },
+                    isClarification = row.kind == AdvisorRepository.KIND_CLARIFICATION
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

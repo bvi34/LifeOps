@@ -70,6 +70,15 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.bodySmall
         )
 
+        Text("Reasoning (C3A)", style = MaterialTheme.typography.titleMedium)
+        Text(
+            "A unifying engine coordinates identity, profiles, memory and app data, and checks for " +
+                "gaps and contradictions before answering. Its rule: not knowing is fine — being " +
+                "wrong without asking is not. When it's unsure it asks you a question instead of " +
+                "guessing.",
+            style = MaterialTheme.typography.bodySmall
+        )
+
         OutlinedButton(onClick = { vm.clearConversation() }) {
             Text("Clear conversation")
         }

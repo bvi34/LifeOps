@@ -29,8 +29,10 @@ the receipts.
 > Citation and Logistics, under an explicit **per-app permission gate** (denied by default). It also
 > keeps **identity-based data** as a portable JSON file, a set of **standing named profiles** (user,
 > LLM persona, projects) it references by name and can write to via a `@remember` directive, and a
-> **dedicated, heavily-tagged long-term memory** database it recalls from, with a **logic-engine**
-> seam for future derived reasoning. The
+> **dedicated, heavily-tagged long-term memory** database it recalls from. A **unifying engine (C3A)**
+> coordinates all of it and decides whether to answer, ask, or flag a missing source — on the rule
+> *"not knowing is acceptable; being wrong without asking is not"*, so when it's unsure it asks
+> instead of guessing. The
 > language model is a **placeholder** today — a small local model (≈2–4B params, Q4 GGUF, on-device)
 > is the intended drop-in — but the retrieval, permissions, recall and prompt assembly around it are
 > real and JVM-unit-tested in `advisor/logic/`. It requests no `INTERNET`; nothing leaves the device.

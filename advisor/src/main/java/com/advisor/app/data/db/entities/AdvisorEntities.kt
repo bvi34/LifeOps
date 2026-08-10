@@ -1,5 +1,6 @@
 package com.advisor.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -18,7 +19,8 @@ data class AppPermissionEntity(
 /**
  * One turn of a saved conversation — the user's question or the assistant's answer. Citations are
  * stored as the newline-joined document ids they referenced, which is enough to show provenance
- * without pulling in a JSON serializer.
+ * without pulling in a JSON serializer. [kind] distinguishes a normal answer from a clarification the
+ * unifying engine raised, so the UI can style it and the engine can avoid asking twice in a row.
  */
 @Entity(tableName = "advisor_messages")
 data class AdvisorMessageEntity(
@@ -26,5 +28,7 @@ data class AdvisorMessageEntity(
     val role: String,
     val text: String,
     val citationIds: String,
-    val createdAt: Long
+    val createdAt: Long,
+    // Matches the migration's `DEFAULT 'normal'` so fresh-install and migrated schemas are identical.
+    @ColumnInfo(defaultValue = "normal") val kind: String = "normal"
 )

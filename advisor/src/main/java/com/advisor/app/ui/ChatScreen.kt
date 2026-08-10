@@ -133,19 +133,36 @@ private fun ThinkingRow() {
 @Composable
 private fun MessageBubble(message: ChatMessage) {
     val fromUser = message.fromUser
+    val clarify = message.isClarification
+    val bubbleColor = when {
+        fromUser -> MaterialTheme.colorScheme.primary
+        clarify -> MaterialTheme.colorScheme.tertiaryContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val onBubble = when {
+        fromUser -> MaterialTheme.colorScheme.onPrimary
+        clarify -> MaterialTheme.colorScheme.onTertiaryContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (fromUser) Arrangement.End else Arrangement.Start
     ) {
         Surface(
-            color = if (fromUser) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = if (fromUser) MaterialTheme.colorScheme.onPrimary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = bubbleColor,
+            contentColor = onBubble,
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier.widthIn(max = 320.dp)
         ) {
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                if (clarify) {
+                    Text(
+                        "Needs your input",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
                 Text(message.text, style = MaterialTheme.typography.bodyMedium)
                 if (message.citationIds.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
