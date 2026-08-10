@@ -12,9 +12,10 @@ import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.llm.LlamaCppBackend
 import com.advisor.app.logic.C3AEngine
 import com.advisor.app.logic.LogicEngine
-import com.advisor.app.logic.PlaceholderLlmEngine
+import com.advisor.app.logic.Qwen3LlmEngine
 
 /**
  * Advisor's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
@@ -47,8 +48,13 @@ class AdvisorApp private constructor(private val app: Application) {
         )
     }
 
-    /** The language model. A deterministic placeholder today; a local 2–4B GGUF model is the target. */
-    val engine by lazy { PlaceholderLlmEngine() }
+    /**
+     * The language model: a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the
+     * weights are provisioned on the device the backend reports not-ready and the engine falls back to
+     * a deterministic, grounded placeholder — so Advisor works either way and gains real reasoning the
+     * moment the model file is present, with no code change.
+     */
+    val engine by lazy { Qwen3LlmEngine(LlamaCppBackend(app)) }
 
     /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */
     val logicEngine: LogicEngine by lazy { C3AEngine() }

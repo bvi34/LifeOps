@@ -25,8 +25,10 @@ import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
 import com.advisor.app.logic.Retriever
 import com.advisor.app.logic.SourceApp
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 
 /**
  * An answer produced for a question: the text, the app documents and memories it drew on, and which
@@ -164,7 +166,9 @@ class AdvisorRepository(
         }
 
         val prompt = PromptAssembler.assemble(question, chunks, identity, recalled, profiles, logic.derivedContext)
-        val raw = engine.generate(prompt)
+        // A real local model runs for seconds and can block on native inference — keep it off the UI
+        // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
+        val raw = withContext(Dispatchers.Default) { engine.generate(prompt) }
 
         // Apply any @remember(<profile>): … writes the model emitted, then show a clean answer.
         for (append in ProfileDirectives.parse(raw)) {

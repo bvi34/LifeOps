@@ -33,9 +33,11 @@ the receipts.
 > coordinates all of it and decides whether to answer, ask, or flag a missing source — on the rule
 > *"not knowing is acceptable; being wrong without asking is not"*, so when it's unsure it asks
 > instead of guessing. The
-> language model is a **placeholder** today — a small local model (≈2–4B params, Q4 GGUF, on-device)
-> is the intended drop-in — but the retrieval, permissions, recall and prompt assembly around it are
-> real and JVM-unit-tested in `advisor/logic/`. It requests no `INTERNET`; nothing leaves the device.
+> language model is a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp, wired in behind a
+> single `LocalLlmEngine` seam; until the weights are dropped onto the device it falls back to a
+> deterministic, grounded placeholder, so Advisor works either way. The retrieval, permissions, recall
+> and prompt assembly around it are real and JVM-unit-tested in `advisor/logic/`. It requests no
+> `INTERNET`; nothing leaves the device.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

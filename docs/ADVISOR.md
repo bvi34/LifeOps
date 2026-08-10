@@ -21,10 +21,12 @@ It reasons over three kinds of its own context on top of the retrieved app data:
   whether to **answer**, **ask for clarification**, or flag that **external investigation** is needed —
   under one rule: *"Not knowing is acceptable. Being wrong without asking clarification is not."*
 
-The language model itself is a **placeholder** today. Everything around it — the permission gate,
-the retrieval, the prompt assembly, the citations — is real and working; a small local model
-(≈2–4B parameters, Q4-quantised GGUF, running fully on-device) is the intended drop-in behind one
-interface.
+The language model is a local **Qwen3-4B** (Q4_K_M GGUF), run fully on-device via **llama.cpp** behind
+one interface (`logic/LocalLlmEngine`). Everything around it — the permission gate, the retrieval, the
+prompt assembly, the citations — is real and working. Until the multi-gigabyte weights are provisioned
+on the device, the engine transparently falls back to a deterministic, grounded **placeholder**, so
+Advisor answers either way and gains real reasoning the moment the model file is present — no code
+change.
 
 > **Nothing leaves the device.** Advisor requests no permissions of its own — no `INTERNET`. It reads
 > the other apps' databases in-process and (once wired) will run the model locally.
@@ -71,11 +73,16 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    documents the `@remember` write convention, and the question. `AdvisorPrompt.render()` is the flat
    text a real GGUF model would be fed.
 
-6. **Generate** (`logic/LocalLlm`). The `LocalLlmEngine` interface. Today it's `PlaceholderLlmEngine`,
-   which composes a **grounded, extractive** answer directly from the context and recalled memory
-   (with `[n]` / `[Mn]` citations) rather than inventing language — so the end-to-end path is
-   demonstrably correct while the weights are chosen. When nothing is granted, recalled or matched, it
-   says so and points at the permission gate; "no data" is the honest answer, not a hallucinated one.
+6. **Generate** (`logic/LocalLlm`, `logic/Qwen3LlmEngine`). The `LocalLlmEngine` interface. The default
+   is `Qwen3LlmEngine`: it formats the assembled prompt with Qwen3's ChatML template
+   (`logic/Qwen3ChatFormat`, thinking disabled for a grounded assistant), runs it through an
+   `LlmBackend` (the native llama.cpp seam), and cleans the completion back into an answer. If the
+   backend isn't ready — the weights aren't on the device — or a generation is empty/throws, it falls
+   back to `PlaceholderLlmEngine`, which composes a **grounded, extractive** answer directly from the
+   context and recalled memory (with `[n]` / `[Mn]` citations) rather than inventing language. When
+   nothing is granted, recalled or matched, it says so and points at the permission gate; "no data" is
+   the honest answer, not a hallucinated one. `ModelSpec` reports which of the two actually answered, so
+   the UI stays honest.
 
 7. **Apply writes** (`logic/ProfileDirectives`, in the repository). Any `@remember(<profile>): <fact>`
    lines the model emitted are parsed and appended to the named profiles (creating one on a new key),
@@ -84,8 +91,9 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
 
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
-`IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`, `ProfileTest`, `ProfileDirectivesTest`,
-`C3AEngineTest`) — the same discipline as `:backupkit` and Citation's `:core`.
+`Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
+`ProfileTest`, `ProfileDirectivesTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
+Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
 
@@ -201,7 +209,8 @@ surfaces that).
 - **Profiles** — the standing-profiles manager: create project profiles, add entries to any profile,
   and see entries the assistant wrote back (tagged "advisor" vs "you").
 - **Permissions** — the identity summary (JSON-backed), one switch per app (denied by default), the
-  model card describing the intended local 2–4B model, and a "clear conversation" action.
+  model card (which names the running model — Qwen3-4B, or the placeholder while the weights aren't yet
+  on the device), and a "clear conversation" action.
 
 `AdvisorApp` is the tiny runtime holder (mirroring `LifeOpsApp`/`LogisticsApp`): it owns the
 database, the read-only knowledge sources, the engine, and the repository. Everything is lazy — no
@@ -209,14 +218,30 @@ other app's database is touched until a question is asked, and only for granted 
 
 ---
 
-## Wiring a real model
+## The model — Qwen3-4B on-device
 
-The whole remaining job is replacing `PlaceholderLlmEngine` with an implementation of
-`LocalLlmEngine.generate(prompt)` that loads a GGUF model and runs `prompt.render()` on-device
-(llama.cpp / MediaPipe LLM Inference / ONNX Runtime — TBD). Nothing upstream changes: permissions,
-retrieval, prompt assembly, citations, and the C3A decision gate are already model-agnostic — a wired
-model still only runs when C3A returns `ANSWER`. Update `AdvisorApp.engine` to construct the real
-engine and the `ModelSpec` to describe the actual weights.
+`AdvisorApp.engine` is `Qwen3LlmEngine(LlamaCppBackend(app))`. Three small pieces make it work, and the
+first two are pure and JVM-tested:
+
+- **`logic/Qwen3ChatFormat`** — Qwen3's ChatML prompt format and the inverse clean-up of its output.
+  It wraps the assembler's `system` instruction as the system turn and the rest of `prompt.render()` as
+  the user turn, and disables Qwen3's "thinking" mode (Advisor cites its sources; it doesn't need a
+  visible chain-of-thought) by pre-seeding an empty `<think></think>` block — the same trick the
+  official template uses for `enable_thinking=false`. `cleanOutput` strips any think block and ChatML
+  control tokens back off the completion.
+- **`logic/Qwen3LlmEngine`** — implements `LocalLlmEngine`. Formats the prompt, runs it through the
+  backend, cleans the result. If the backend isn't ready, or a generation is blank or throws, it falls
+  back to `PlaceholderLlmEngine` so the pipeline always yields a grounded, cited answer. `spec` reports
+  the placeholder vs. the real Qwen3 weights so the UI's model card is truthful.
+- **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It looks for a `qwen3-4b*.gguf` under the
+  app's `files/models` (or external files), loads it once through the `advisor-llm` native library over
+  JNI, and generates on-device. The `.so` and the weights are provisioned **out of band**, so every
+  native call is guarded: no library or no file ⇒ `isReady = false` ⇒ the placeholder answers. Dropping
+  the GGUF onto the device is the whole activation step — no code change.
+
+Nothing upstream changes: permissions, retrieval, prompt assembly, citations, and the C3A decision gate
+are already model-agnostic — the wired model still only runs when C3A returns `ANSWER`, and generation
+runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes seconds.
 
 ---
 
@@ -228,6 +253,10 @@ engine and the `ModelSpec` to describe the actual weights.
 - `PromptAssemblerTest` — block numbering, excerpt trimming, and the rendered prompt's contents.
 - `AdvisorPermissionsTest` — deny-by-default, immutable grant/revoke, and the filter gate.
 - `PlaceholderLlmEngineTest` — grounded citations, deterministic output, and the empty-context path.
+- `Qwen3ChatFormatTest` — ChatML turn order, thinking disabled by the empty-block seed, system kept out
+  of the user turn, and control-token/think-block clean-up of completions.
+- `Qwen3LlmEngineTest` — a ready backend answers and advertises Qwen3, and the unready / blank /
+  throwing paths all fall back to the grounded placeholder.
 - `IdentityTest` — context-line rendering of only filled fields.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
 - `LogicEngineTest` — the no-op default and derived lines reaching the prompt's REASONING section.

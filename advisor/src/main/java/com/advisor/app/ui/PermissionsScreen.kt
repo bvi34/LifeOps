@@ -64,9 +64,15 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
         Text("Model", style = MaterialTheme.typography.titleMedium)
         Text(vm.model.label(), style = MaterialTheme.typography.bodyMedium)
         Text(
-            "The assistant is a placeholder: it retrieves and cites your own records but does not " +
-                "yet run a language model. A small local model (~2–4B parameters, Q4 GGUF) is the " +
-                "intended drop-in and would run fully on-device.",
+            if (vm.model.isPlaceholder) {
+                "The Qwen3-4B weights aren't on this device yet, so Advisor is using a deterministic " +
+                    "placeholder that retrieves and cites your own records without running a language " +
+                    "model. Drop a Qwen3-4B Q4_K_M GGUF into the app's models folder and Advisor " +
+                    "switches to it automatically — fully on-device, no network."
+            } else {
+                "Advisor runs Qwen3-4B (Q4_K_M GGUF) locally via llama.cpp — fully on-device, no " +
+                    "network. It reasons over the same retrieved, cited context the pipeline assembled."
+            },
             style = MaterialTheme.typography.bodySmall
         )
 
