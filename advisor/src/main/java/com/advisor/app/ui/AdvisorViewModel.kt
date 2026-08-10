@@ -9,6 +9,8 @@ import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.MemoryRecord
 import com.advisor.app.logic.ModelSpec
+import com.advisor.app.logic.Profile
+import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.SourceApp
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -60,12 +62,20 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     private val _identity = MutableStateFlow(Identity.EMPTY)
     val identity: StateFlow<Identity> = _identity.asStateFlow()
 
+    // --- standing profiles (JSON files; loaded imperatively and refreshed after changes) ---
+
+    private val _profiles = MutableStateFlow<List<Profile>>(emptyList())
+    val profiles: StateFlow<List<Profile>> = _profiles.asStateFlow()
+
     private val _thinking = MutableStateFlow(false)
     val thinking: StateFlow<Boolean> = _thinking.asStateFlow()
 
     init {
         viewModelScope.launch { _identity.value = repo.loadIdentity() }
+        refreshProfiles()
     }
+
+    fun refreshProfiles() = viewModelScope.launch { _profiles.value = repo.listProfiles() }
 
     fun setPermission(app: SourceApp, granted: Boolean) = viewModelScope.launch {
         repo.setPermission(app, granted)
@@ -78,6 +88,8 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
             _thinking.value = true
             try {
                 repo.ask(q)
+                // The model may have written to a profile via @remember — reflect that.
+                refreshProfiles()
             } finally {
                 _thinking.value = false
             }
@@ -95,6 +107,23 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
 
     fun setMemoryPinned(id: String, pinned: Boolean) = viewModelScope.launch {
         repo.setMemoryPinned(id, pinned)
+    }
+
+    // --- profile actions ---
+
+    fun appendToProfile(key: String, text: String) = viewModelScope.launch {
+        repo.appendToProfile(key, text)
+        refreshProfiles()
+    }
+
+    fun createProfile(name: String, kind: ProfileKind, summary: String) = viewModelScope.launch {
+        repo.createProfile(name, kind, summary)
+        refreshProfiles()
+    }
+
+    fun deleteProfile(key: String) = viewModelScope.launch {
+        repo.deleteProfile(key)
+        refreshProfiles()
     }
 
     class Factory(private val repo: AdvisorRepository) : ViewModelProvider.Factory {

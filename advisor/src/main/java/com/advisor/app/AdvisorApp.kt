@@ -6,6 +6,7 @@ import com.advisor.app.data.db.AdvisorDatabase
 import com.advisor.app.data.identity.IdentityStore
 import com.advisor.app.data.memory.AdvisorMemoryDatabase
 import com.advisor.app.data.memory.MemoryRepository
+import com.advisor.app.data.profile.ProfileStore
 import com.advisor.app.data.repository.AdvisorRepository
 import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
@@ -34,6 +35,9 @@ class AdvisorApp private constructor(private val app: Application) {
     /** Identity-based data, persisted as portable JSON rather than in the database. */
     val identityStore by lazy { IdentityStore(app) }
 
+    /** Standing, always-on named profiles (user, LLM persona, projects), persisted as JSON. */
+    val profileStore by lazy { ProfileStore(app) }
+
     /** The read-only bridges into every hosted app's data. Loaded only when granted. */
     val knowledgeSources: List<KnowledgeSource> by lazy {
         listOf(
@@ -56,6 +60,7 @@ class AdvisorApp private constructor(private val app: Application) {
             engine = engine,
             memory = memoryRepository,
             identityStore = identityStore,
+            profileStore = profileStore,
             logicEngine = logicEngine
         )
     }

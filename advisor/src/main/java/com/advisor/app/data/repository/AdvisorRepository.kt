@@ -6,6 +6,7 @@ import com.advisor.app.data.db.entities.AppPermissionEntity
 import com.advisor.app.data.identity.IdentityStore
 import com.advisor.app.data.memory.MemoryRepository
 import com.advisor.app.data.memory.TagCount
+import com.advisor.app.data.profile.ProfileStore
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.Identity
@@ -16,6 +17,10 @@ import com.advisor.app.logic.LogicInput
 import com.advisor.app.logic.MemoryRecall
 import com.advisor.app.logic.MemoryRecord
 import com.advisor.app.logic.ModelSpec
+import com.advisor.app.logic.Profile
+import com.advisor.app.logic.ProfileDirectives
+import com.advisor.app.logic.ProfileEntry
+import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
 import com.advisor.app.logic.Retriever
 import com.advisor.app.logic.SourceApp
@@ -49,6 +54,7 @@ class AdvisorRepository(
     private val engine: LocalLlmEngine,
     private val memory: MemoryRepository,
     private val identityStore: IdentityStore,
+    private val profileStore: ProfileStore,
     private val logicEngine: LogicEngine
 ) {
 
@@ -70,6 +76,20 @@ class AdvisorRepository(
     suspend fun loadIdentity(): Identity = identityStore.load()
 
     suspend fun saveIdentity(identity: Identity) = identityStore.save(identity)
+
+    // --- standing profiles (always-on named dossiers; not database-queried) ---
+
+    suspend fun listProfiles(): List<Profile> = profileStore.list()
+
+    suspend fun loadProfile(key: String): Profile? = profileStore.load(key)
+
+    suspend fun appendToProfile(key: String, text: String): Profile =
+        profileStore.append(key, text, ProfileEntry.AUTHOR_USER)
+
+    suspend fun createProfile(name: String, kind: ProfileKind, summary: String): Profile =
+        profileStore.create(name, kind, summary)
+
+    suspend fun deleteProfile(key: String) = profileStore.delete(key)
 
     // --- memory ---
 
@@ -98,6 +118,9 @@ class AdvisorRepository(
         val permissions = currentPermissions()
         val identity = loadIdentity()
 
+        // Standing profiles are always-on context — no query, referenced by name.
+        val profiles = profileStore.list().filter { it.alwaysInclude }
+
         // Load only what the user has granted — denied apps are never read.
         val corpus = ArrayList<KnowledgeDocument>()
         for (source in sources) {
@@ -113,8 +136,14 @@ class AdvisorRepository(
         // Let the logic engine derive extra context (no-op until the real engine ships).
         val logic = logicEngine.process(LogicInput(question, identity, chunks, recalled))
 
-        val prompt = PromptAssembler.assemble(question, chunks, identity, recalled, logic.derivedContext)
-        val text = engine.generate(prompt)
+        val prompt = PromptAssembler.assemble(question, chunks, identity, recalled, profiles, logic.derivedContext)
+        val raw = engine.generate(prompt)
+
+        // Apply any @remember(<profile>): … writes the model emitted, then show a clean answer.
+        for (append in ProfileDirectives.parse(raw)) {
+            profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
+        }
+        val text = ProfileDirectives.strip(raw)
 
         memory.markRecalled(recalled.map { it.id })
         persistTurn(question, text, chunks.map { it.document })

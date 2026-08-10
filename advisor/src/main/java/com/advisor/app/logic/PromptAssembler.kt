@@ -19,6 +19,7 @@ data class ContextBlock(
 data class AdvisorPrompt(
     val system: String,
     val identity: List<String>,
+    val profiles: List<Profile>,
     val memories: List<MemoryRecord>,
     val context: List<ContextBlock>,
     val derived: List<String>,
@@ -31,6 +32,15 @@ data class AdvisorPrompt(
         if (identity.isNotEmpty()) {
             append("IDENTITY (who you are advising):\n")
             for (line in identity) append("- ").append(line).append('\n')
+            append('\n')
+        }
+
+        if (profiles.isNotEmpty()) {
+            append("PROFILES (standing context; reference by name):\n")
+            for (profile in profiles) {
+                append("## ").append(profile.headerLine()).append('\n')
+                for (entry in profile.recentEntries()) append("- ").append(entry.text).append('\n')
+            }
             append('\n')
         }
 
@@ -77,9 +87,12 @@ object PromptAssembler {
     /** The grounding contract the model is held to — use what's given, cite sources, don't guess. */
     const val SYSTEM: String =
         "You are Advisor, a private on-device assistant for the Operations Sandbox suite. Answer " +
-            "using the user's IDENTITY, recalled MEMORY, the CONTEXT drawn from their own LifeOps, " +
-            "Citation and Logistics data, and any REASONING provided. Cite app context you use as " +
-            "[n]. If none of it answers the question, say so plainly rather than guessing."
+            "using the user's IDENTITY, the standing PROFILES (referenced by name), recalled MEMORY, " +
+            "the CONTEXT drawn from their own LifeOps, Citation and Logistics data, and any REASONING " +
+            "provided. Cite app context you use as [n]. If none of it answers the question, say so " +
+            "plainly rather than guessing. To save a durable fact to a standing profile, add a line: " +
+            "@remember(<profile>): <fact> — use an existing profile key (e.g. user, llm-persona) or " +
+            "a new project key."
 
     /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
     const val MAX_EXCERPT = 400
@@ -89,6 +102,7 @@ object PromptAssembler {
         chunks: List<RetrievedChunk>,
         identity: Identity = Identity.EMPTY,
         memories: List<MemoryRecord> = emptyList(),
+        profiles: List<Profile> = emptyList(),
         derived: List<String> = emptyList()
     ): AdvisorPrompt {
         val blocks = chunks.mapIndexed { index, chunk ->
@@ -97,6 +111,7 @@ object PromptAssembler {
         return AdvisorPrompt(
             system = SYSTEM,
             identity = identity.toContextLines(),
+            profiles = profiles,
             memories = memories,
             context = blocks,
             derived = derived,

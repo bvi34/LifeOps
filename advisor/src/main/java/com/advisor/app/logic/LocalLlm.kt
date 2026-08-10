@@ -53,8 +53,9 @@ class PlaceholderLlmEngine : LocalLlmEngine {
     override fun generate(prompt: AdvisorPrompt): String {
         val hasContext = prompt.context.isNotEmpty()
         val hasMemory = prompt.memories.isNotEmpty()
+        val hasProfiles = prompt.profiles.isNotEmpty()
 
-        if (!hasContext && !hasMemory) {
+        if (!hasContext && !hasMemory && !hasProfiles) {
             return "I couldn't find anything in your granted data or long-term memory to answer " +
                 "that.\n\nThis is a placeholder assistant: it retrieves and cites your own records " +
                 "but does not yet run a language model. Check that the relevant app is enabled in " +
@@ -85,6 +86,13 @@ class PlaceholderLlmEngine : LocalLlmEngine {
                     if (memory.tags.isNotEmpty()) append(" (").append(memory.tags.joinToString(", ")).append(')')
                     append(" [M").append(index + 1).append(']')
                 }
+            }
+
+            if (hasProfiles) {
+                if (hasContext || hasMemory) append("\n\n")
+                append("Standing profiles in context: ")
+                append(prompt.profiles.joinToString(", ") { it.name })
+                append('.')
             }
 
             if (prompt.derived.isNotEmpty()) {
