@@ -21,7 +21,8 @@ class LogisticsKnowledgeSource(context: Context) : KnowledgeSource {
         val docs = ArrayList<KnowledgeDocument>()
 
         for (item in dao.getAll()) {
-            val low = item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold
+            val threshold = item.lowStockThreshold
+            val low = threshold != null && item.quantity <= threshold
             docs += KnowledgeDocument(
                 id = "logistics:pantry:${item.id}",
                 source = source,
