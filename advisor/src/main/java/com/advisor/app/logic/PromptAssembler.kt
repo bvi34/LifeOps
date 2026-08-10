@@ -11,18 +11,39 @@ data class ContextBlock(
 )
 
 /**
- * The fully-assembled RAG prompt: a system instruction, the retrieved context, and the user's
- * question. It is structured (not a bare string) so the placeholder engine can reason over the
- * blocks directly while a real model consumes [render] — the flat text a GGUF model is actually fed.
+ * The fully-assembled RAG prompt. Beyond the retrieved [context] it now also carries the user's
+ * [identity] (always-on persona context), recalled long-term [memories], and any [derived] lines the
+ * logic engine produced. It is structured (not a bare string) so the placeholder engine can reason
+ * over the parts directly while a real model consumes [render] — the flat text a GGUF model is fed.
  */
 data class AdvisorPrompt(
     val system: String,
+    val identity: List<String>,
+    val memories: List<MemoryRecord>,
     val context: List<ContextBlock>,
+    val derived: List<String>,
     val question: String
 ) {
     /** Flatten to the single prompt string a local model receives. */
     fun render(): String = buildString {
         append(system).append("\n\n")
+
+        if (identity.isNotEmpty()) {
+            append("IDENTITY (who you are advising):\n")
+            for (line in identity) append("- ").append(line).append('\n')
+            append('\n')
+        }
+
+        if (memories.isNotEmpty()) {
+            append("MEMORY (long-term recall):\n")
+            memories.forEachIndexed { index, memory ->
+                append('M').append(index + 1).append(". ")
+                if (memory.tags.isNotEmpty()) append('[').append(memory.tags.joinToString(", ")).append("] ")
+                append(memory.content).append('\n')
+            }
+            append('\n')
+        }
+
         if (context.isEmpty()) {
             append("CONTEXT: (none available)\n\n")
         } else {
@@ -34,32 +55,53 @@ data class AdvisorPrompt(
                 append(block.excerpt).append("\n\n")
             }
         }
+
+        if (derived.isNotEmpty()) {
+            append("REASONING (from the logic engine):\n")
+            for (line in derived) append("- ").append(line).append('\n')
+            append('\n')
+        }
+
         append("QUESTION: ").append(question).append('\n')
         append("ANSWER:")
     }
 }
 
 /**
- * The **A**ugmentation step: turns a question plus the retriever's chunks into an [AdvisorPrompt].
- * Kept pure and tiny so the exact text the model sees is testable and stable.
+ * The **A**ugmentation step: turns a question plus identity, recalled memory, retrieved chunks and
+ * the logic engine's output into an [AdvisorPrompt]. Kept pure and tiny so the exact text the model
+ * sees is testable and stable.
  */
 object PromptAssembler {
 
-    /** The grounding contract the model is held to — cite sources, refuse ungrounded answers. */
+    /** The grounding contract the model is held to — use what's given, cite sources, don't guess. */
     const val SYSTEM: String =
-        "You are Advisor, a private on-device assistant for the Operations Sandbox suite. " +
-            "Answer using only the CONTEXT below, which is drawn from the user's own LifeOps, " +
-            "Citation and Logistics data. Cite the sources you use as [n]. If the context does not " +
-            "answer the question, say so plainly rather than guessing."
+        "You are Advisor, a private on-device assistant for the Operations Sandbox suite. Answer " +
+            "using the user's IDENTITY, recalled MEMORY, the CONTEXT drawn from their own LifeOps, " +
+            "Citation and Logistics data, and any REASONING provided. Cite app context you use as " +
+            "[n]. If none of it answers the question, say so plainly rather than guessing."
 
     /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
     const val MAX_EXCERPT = 400
 
-    fun assemble(question: String, chunks: List<RetrievedChunk>): AdvisorPrompt {
+    fun assemble(
+        question: String,
+        chunks: List<RetrievedChunk>,
+        identity: Identity = Identity.EMPTY,
+        memories: List<MemoryRecord> = emptyList(),
+        derived: List<String> = emptyList()
+    ): AdvisorPrompt {
         val blocks = chunks.mapIndexed { index, chunk ->
             ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
         }
-        return AdvisorPrompt(SYSTEM, blocks, question.trim())
+        return AdvisorPrompt(
+            system = SYSTEM,
+            identity = identity.toContextLines(),
+            memories = memories,
+            context = blocks,
+            derived = derived,
+            question = question.trim()
+        )
     }
 
     private fun excerpt(body: String): String {

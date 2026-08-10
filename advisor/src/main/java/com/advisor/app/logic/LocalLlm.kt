@@ -51,27 +51,47 @@ class PlaceholderLlmEngine : LocalLlmEngine {
     )
 
     override fun generate(prompt: AdvisorPrompt): String {
-        if (prompt.context.isEmpty()) {
-            return "I couldn't find anything in your granted data to answer that.\n\n" +
-                "This is a placeholder assistant: it retrieves and cites your own records but does " +
-                "not yet run a language model. Check that the relevant app is enabled in " +
-                "Permissions, or rephrase using words that appear in your tasks, books or pantry."
+        val hasContext = prompt.context.isNotEmpty()
+        val hasMemory = prompt.memories.isNotEmpty()
+
+        if (!hasContext && !hasMemory) {
+            return "I couldn't find anything in your granted data or long-term memory to answer " +
+                "that.\n\nThis is a placeholder assistant: it retrieves and cites your own records " +
+                "but does not yet run a language model. Check that the relevant app is enabled in " +
+                "Permissions, add a memory, or rephrase using words that appear in your data."
         }
 
-        val bySource = prompt.context.groupBy { it.document.source }
-        val sourcesLine = bySource.keys.joinToString(", ") { it.displayName }
-
         return buildString {
-            append("Based on your own ").append(sourcesLine).append(" data, here's what's relevant:\n")
-            for (block in prompt.context) {
-                append("\n• ")
-                append(block.document.title.ifBlank { block.document.kind })
-                val detail = firstLine(block.excerpt)
-                if (detail.isNotBlank() && !detail.equals(block.document.title, ignoreCase = true)) {
-                    append(" — ").append(detail)
+            if (hasContext) {
+                val sourcesLine = prompt.context
+                    .map { it.document.source }.distinct().joinToString(", ") { it.displayName }
+                append("Based on your own ").append(sourcesLine).append(" data, here's what's relevant:\n")
+                for (block in prompt.context) {
+                    append("\n• ")
+                    append(block.document.title.ifBlank { block.document.kind })
+                    val detail = firstLine(block.excerpt)
+                    if (detail.isNotBlank() && !detail.equals(block.document.title, ignoreCase = true)) {
+                        append(" — ").append(detail)
+                    }
+                    append(" [").append(block.ref).append(']')
                 }
-                append(" [").append(block.ref).append(']')
             }
+
+            if (hasMemory) {
+                if (hasContext) append("\n\n")
+                append("From long-term memory:")
+                prompt.memories.forEachIndexed { index, memory ->
+                    append("\n• ").append(firstLine(memory.content))
+                    if (memory.tags.isNotEmpty()) append(" (").append(memory.tags.joinToString(", ")).append(')')
+                    append(" [M").append(index + 1).append(']')
+                }
+            }
+
+            if (prompt.derived.isNotEmpty()) {
+                append("\n\nLogic engine notes:")
+                for (line in prompt.derived) append("\n• ").append(line)
+            }
+
             append("\n\n(Placeholder response — a local ")
             append(spec.parameters)
             append(" model will replace this extractive summary with real reasoning over the same ")

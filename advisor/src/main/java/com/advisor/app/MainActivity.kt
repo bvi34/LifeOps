@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -20,15 +21,17 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.advisor.app.ui.AdvisorViewModel
 import com.advisor.app.ui.ChatScreen
+import com.advisor.app.ui.MemoryScreen
 import com.advisor.app.ui.PermissionsScreen
 import com.advisor.app.ui.theme.AdvisorTheme
 
 private sealed class Dest(val route: String, val label: String, val icon: ImageVector) {
     object Chat : Dest("chat", "Advisor", Icons.AutoMirrored.Filled.Chat)
+    object Memory : Dest("memory", "Memory", Icons.Default.Bookmarks)
     object Permissions : Dest("permissions", "Permissions", Icons.Default.Shield)
 }
 
-private val navItems = listOf(Dest.Chat, Dest.Permissions)
+private val navItems = listOf(Dest.Chat, Dest.Memory, Dest.Permissions)
 
 /**
  * Advisor's single entry point: a two-tab shell — the chat and the permission gate — over the one
@@ -75,6 +78,10 @@ class MainActivity : ComponentActivity() {
                         composable(Dest.Chat.route) {
                             val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
                             ChatScreen(vm)
+                        }
+                        composable(Dest.Memory.route) {
+                            val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
+                            MemoryScreen(vm)
                         }
                         composable(Dest.Permissions.route) {
                             val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))

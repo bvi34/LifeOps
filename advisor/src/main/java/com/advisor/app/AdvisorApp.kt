@@ -3,11 +3,16 @@ package com.advisor.app
 import android.app.Application
 import android.content.Context
 import com.advisor.app.data.db.AdvisorDatabase
+import com.advisor.app.data.identity.IdentityStore
+import com.advisor.app.data.memory.AdvisorMemoryDatabase
+import com.advisor.app.data.memory.MemoryRepository
 import com.advisor.app.data.repository.AdvisorRepository
 import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.logic.LogicEngine
+import com.advisor.app.logic.NoOpLogicEngine
 import com.advisor.app.logic.PlaceholderLlmEngine
 
 /**
@@ -22,6 +27,13 @@ class AdvisorApp private constructor(private val app: Application) {
 
     val database by lazy { AdvisorDatabase.getInstance(app) }
 
+    /** The dedicated, heavily-tagged long-term memory store (its own database). */
+    val memoryDatabase by lazy { AdvisorMemoryDatabase.getInstance(app) }
+    val memoryRepository by lazy { MemoryRepository(memoryDatabase.memoryDao()) }
+
+    /** Identity-based data, persisted as portable JSON rather than in the database. */
+    val identityStore by lazy { IdentityStore(app) }
+
     /** The read-only bridges into every hosted app's data. Loaded only when granted. */
     val knowledgeSources: List<KnowledgeSource> by lazy {
         listOf(
@@ -34,8 +46,18 @@ class AdvisorApp private constructor(private val app: Application) {
     /** The language model. A deterministic placeholder today; a local 2–4B GGUF model is the target. */
     val engine by lazy { PlaceholderLlmEngine() }
 
+    /** The logic engine seam. A no-op until the real engine ships in a later commit. */
+    val logicEngine: LogicEngine by lazy { NoOpLogicEngine }
+
     val repository by lazy {
-        AdvisorRepository(database.advisorDao(), knowledgeSources, engine)
+        AdvisorRepository(
+            dao = database.advisorDao(),
+            sources = knowledgeSources,
+            engine = engine,
+            memory = memoryRepository,
+            identityStore = identityStore,
+            logicEngine = logicEngine
+        )
     }
 
     companion object {

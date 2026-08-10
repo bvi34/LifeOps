@@ -26,10 +26,12 @@ the receipts.
 
 > **Advisor** (the private, on-device assistant) is a peer module — see **[docs/ADVISOR.md](docs/ADVISOR.md)**.
 > It's the suite's **RAG** layer: it answers questions grounded in your own data across LifeOps,
-> Citation and Logistics, under an explicit **per-app permission gate** (denied by default). The
+> Citation and Logistics, under an explicit **per-app permission gate** (denied by default). It also
+> keeps **identity-based data** as a portable JSON file and a **dedicated, heavily-tagged long-term
+> memory** database it recalls from, with a **logic-engine** seam for future derived reasoning. The
 > language model is a **placeholder** today — a small local model (≈2–4B params, Q4 GGUF, on-device)
-> is the intended drop-in — but the retrieval, permissions and prompt assembly around it are real and
-> JVM-unit-tested in `advisor/logic/`. It requests no `INTERNET`; nothing leaves the device.
+> is the intended drop-in — but the retrieval, permissions, recall and prompt assembly around it are
+> real and JVM-unit-tested in `advisor/logic/`. It requests no `INTERNET`; nothing leaves the device.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

@@ -67,6 +67,8 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
+    // Identity-based data is persisted as a portable JSON file (IdentityStore), read/written here.
+    implementation(libs.gson)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")
