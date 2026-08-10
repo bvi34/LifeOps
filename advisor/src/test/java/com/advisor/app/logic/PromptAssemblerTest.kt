@@ -43,4 +43,20 @@ class PromptAssemblerTest {
         val prompt = PromptAssembler.assemble("anything", emptyList())
         assertTrue(prompt.render().contains("CONTEXT: (none available)"))
     }
+
+    @Test
+    fun render_includes_recent_conversation_turns() {
+        val prompt = PromptAssembler.assemble(
+            "who wrote it",
+            emptyList(),
+            conversation = listOf(
+                ConversationTurn(fromUser = true, text = "tell me about Dune"),
+                ConversationTurn(fromUser = false, text = "Dune is a novel by Frank Herbert")
+            )
+        )
+        val text = prompt.render()
+        assertTrue(text.contains("CONVERSATION"))
+        assertTrue(text.contains("User: tell me about Dune"))
+        assertTrue(text.contains("Advisor: Dune is a novel by Frank Herbert"))
+    }
 }

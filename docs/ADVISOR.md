@@ -38,20 +38,64 @@ change.
 A question flows through these stages, in order:
 
 ```
-permissions → retrieve → recall memory → logic engine → augment (assemble prompt) → generate → apply writes
-                                                 ↑            ↑                                      │
-                            identity + profiles ─┴────────────┘                                      │
-                                    ↑                                                                │
-                                    └──────────────── @remember(<profile>) directives ──────────────┘
+                    ┌── write command? ─→ apply writes (profiles + memory) → confirm ──┐
+                    │── function match? ─→ run capability (count / tally / lookup) ────┤
+                    │                                                                   │
+permissions → load corpus → retrieve → recall → logic engine → augment → generate → apply writes
+                                            ↑         ↑                                     │
+                       identity + profiles ─┴─────────┘                                     │
+                                    ↑                                                       │
+                                    └──── @remember(<profile>) / @memorize directives ──────┘
 ```
+
+0. **Write commands** (`logic/WriteIntent`, in the repository, *before* the gate). An explicit
+   instruction to persist — "remember that …", "add to LLM persona that …", "save … to memory" — is a
+   command, not a question, so it's performed directly and confirmed, bypassing retrieval and the C3A
+   gate that would otherwise ask for clarification about a fact it has no grounding for. This is what
+   makes the write capability real *today*, on the deterministic placeholder, without waiting on the
+   model to emit a directive. `WriteIntent` is deliberately conservative — it ignores anything phrased
+   as a question — so ordinary recall ("do you remember what I said?") falls through untouched.
+
+0b. **Function dispatch** (`logic/FunctionRouter`, `logic/AdvisorFunction`, in the repository, after the
+   corpus is loaded but before retrieval). Some questions are **computations**, not lookups — "how many
+   times have I said X", "count my word usage in my tasks" — and extractive RAG can only *surface* rows,
+   so it answers them badly (it matched "count" to the word "Count" in pantry labels). The router hands
+   the question to the first registered `AdvisorFunction` that handles it; the function *computes* the
+   answer over the user's own (permission-filtered) data and returns it, skipping the RAG path. New
+   capabilities plug in by being added to the router — this is the "distribute various functions" seam.
+   Ships with four, most-specific first:
+   - **`CalculatorFunction`** — arithmetic ("what is 15% of 200", "12.5 * 3 + 2", "3 to the power of 2"),
+     evaluated by a small recursive-descent parser (no `eval`). A trigger guard keeps date/id-like text
+     ("what did I do on 2026-08-10") from being read as subtraction.
+   - **`WordUsageFunction`** — exact whole-word counts ("how many times have I said X") and most-used-word
+     summaries, scoped to the conversation, tasks, notes, memory, ….
+   - **`InventoryFunction`** — the Logistics pantry/grocery: what's running low, a specific item's stock,
+     a category-broken-down pantry summary, and the still-needed grocery list.
+   - **`AggregateFunction`** — counts and numeric roll-ups over what you collect: "how many tasks / books
+     / memories", "how many tasks are done", "how much time do my tasks take" (sum/avg/min/max of task
+     estimate minutes), "how many points have I earned" (milestone points).
+
+   The structured numbers behind inventory and aggregate come from `logic/DocumentFacts`, which recovers
+   the typed fields (stock, status, estimate minutes, points, …) from the knowledge sources' generated
+   prose in one tested place. App-backed scopes honour the permission gate — a disabled app is asked to
+   be enabled rather than counted as zero.
 
 1. **Permissions gate** (`logic/AdvisorPermissions`). Which apps Advisor may read. **Denied by
    default**: an app is off until you grant it, so the model can never see data you haven't opted
    in. The gate is enforced in the repository *before any source is loaded* — a denied app's database
    is never even opened.
 
-2. **Retrieve** (`logic/HybridRetriever`). Ranks the granted corpus against the question and returns
-   the top few `RetrievedChunk`s, one of two ways behind a single shape:
+1a. **Conversation context** (`logic/Conversation`, loaded in the repository). The recent chat turns
+   (the last handful of messages, oldest-first) are loaded per question and threaded through the rest
+   of the pipeline, so Advisor reasons over the *conversation* rather than only the latest message. A
+   terse follow-up ("who's its author?", "what about the second one?") folds the prior turns into the
+   retrieval/recall query so its subject is found, the C3A gate treats an in-progress chat as somewhere
+   for a reference to bind (so it stops re-clarifying what was just said), and the turns are rendered
+   into the prompt's `CONVERSATION` section for the model to resolve against.
+
+2. **Retrieve** (`logic/HybridRetriever`). Ranks the granted corpus against the question (with recent
+   conversation folded in) and returns the top few `RetrievedChunk`s, one of two ways behind a single
+   shape:
    - **Lexical** (`logic/Retriever`) — the default and fallback: a dependency-free TF-IDF retriever
      (title terms weighted heavier than body). No embeddings, no network — cheap, deterministic, and
      JVM-testable.
@@ -79,7 +123,7 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
 5. **Augment** (`logic/PromptAssembler`). Turns identity + standing profiles + memory + chunks +
    derived lines into an `AdvisorPrompt` with `IDENTITY`, `PROFILES`, `MEMORY`, `CONTEXT` and
    `REASONING` sections, a system instruction that demands citations, forbids ungrounded answers, and
-   documents the `@remember` write convention, and the question. `AdvisorPrompt.render()` is the flat
+   documents the `@remember` (profile) and `@memorize` (memory) write conventions, and the question. `AdvisorPrompt.render()` is the flat
    text a real GGUF model would be fed.
 
 6. **Generate** (`logic/LocalLlm`, `logic/Qwen3LlmEngine`). The `LocalLlmEngine` interface. The default
@@ -93,15 +137,19 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    the honest answer, not a hallucinated one. `ModelSpec` reports which of the two actually answered, so
    the UI stays honest.
 
-7. **Apply writes** (`logic/ProfileDirectives`, in the repository). Any `@remember(<profile>): <fact>`
-   lines the model emitted are parsed and appended to the named profiles (creating one on a new key),
-   then stripped from the answer shown to the user. This is how the model *adds to* the standing
-   profiles, not just reads them.
+7. **Apply writes** (`logic/ProfileDirectives`, `logic/MemoryDirectives`, in the repository). Any
+   `@remember(<profile>): <fact>` lines the model emitted are parsed and appended to the named profiles
+   (creating one on a new key), and any `@memorize: <fact> #tags` lines are saved to long-term memory
+   (tags become recall tags); both are then stripped from the answer shown to the user. This is how the
+   model *adds to* the standing profiles **and its own memory**, not just reads them. Assistant-written
+   memories carry `source = "advisor"`, mirroring the `advisor`-authored profile entries.
 
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
-`ProfileTest`, `ProfileDirectivesTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
+`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `ConversationTest`,
+`WordUsageFunctionTest`, `CalculatorFunctionTest`, `InventoryFunctionTest`, `AggregateFunctionTest`,
+`DocumentFactsTest`, `FunctionRouterTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
@@ -120,7 +168,9 @@ returns an `EngineDecision`:
    fires even right after a previous clarification, because answering from conflicting data is exactly
    the "being wrong" the rule forbids.
 2. **Ambiguity.** An unresolved reference ("it", "that", "the project") with nothing to bind it to
-   yields `CLARIFY` — it asks what you mean rather than guessing the subject.
+   yields `CLARIFY` — it asks what you mean rather than guessing the subject. *Once the chat is under
+   way, the recent conversation is somewhere to bind*, so a follow-up proceeds instead of re-asking
+   (the same concession as `justAsked`), and prior turns count as grounding evidence.
 3. **Grounding / uncertainty.** It measures how many of the question's content terms appear anywhere
    in identity, profiles, memory, or granted app data. Zero overlap and it won't let the model
    improvise: if the topic maps to a **denied app** it returns `INVESTIGATE` (asking you to enable
@@ -154,7 +204,10 @@ answers only when C3A says `ANSWER`.
   tag, cascading on delete). That normalization is the "tons of tagging potential": *memories for tag
   X*, *all tags with counts*, and multi-tag recall are cheap indexed queries. `MemoryRepository`
   normalizes tags (trim/lower/dedupe) and closes the recall loop by bumping stats on surfaced
-  memories.
+  memories. Memory is **written** two ways beyond the Memory tab: the model can emit a
+  `@memorize: <fact> #tags` directive (`logic/MemoryDirectives`), and a user command ("remember
+  that …") is captured by `logic/WriteIntent` and saved directly — the memory counterpart to the
+  `@remember(<profile>)` profile-write convention.
 
 - **Unifying engine** (`logic/LogicEngine`, `logic/C3AEngine`). `LogicEngine.process(LogicInput) →
   LogicOutput`, wired into the repository between recall and assembly — see
@@ -211,8 +264,10 @@ surfaces that).
 `MainActivity` is a three-tab shell over the one `AdvisorApp` runtime:
 
 - **Advisor** — the chat. Ask in plain language; each answer carries the sources retrieval cited, and
-  when C3A asks instead of answering, that turn is styled as a "Needs your input" clarification. The
-  empty state and a footer are honest that the model is a placeholder and name what's running.
+  when C3A asks instead of answering, that turn is styled as a "Needs your input" clarification. A
+  **clear-conversation** action in the top bar wipes the chat history (with a confirm dialog; memory,
+  profiles and identity are untouched). The empty state and a footer are honest that the model is a
+  placeholder and name what's running.
 - **Memory** — the long-term memory manager: add memories with free-form tags, filter by tag facet,
   set salience, and pin the ones that should always be reachable.
 - **Profiles** — the standing-profiles manager: create project profiles, add entries to any profile,
@@ -334,9 +389,27 @@ vectors are simply never consulted — revocation stays instant.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
 - `LogicEngineTest` — the no-op default and derived lines reaching the prompt's REASONING section.
 - `C3AEngineTest` — answer-when-grounded, clarify-when-empty, contradiction → clarify, ambiguity →
-  clarify, denied-app → investigate, no-double-asking, and greeting handling.
+  clarify, denied-app → investigate, no-double-asking, greeting handling, and *ambiguity resolved once
+  the conversation gives context*.
+- `ConversationTest` — the recent-turns retrieval query (folded-in subject, last-turns-only cap) and
+  the "chat is under way" signal.
+- `WordUsageFunctionTest` — specific whole-word counts (subject, word boundaries, zero matches), the
+  most-used-words summary, scope parsing / citations, and the disabled-app gate.
+- `CalculatorFunctionTest` — precedence, percent/power/word operators, integer formatting, division by
+  zero, and the non-math / date-hijack guard.
+- `InventoryFunctionTest` — low stock, item lookup, on-the-list fallback, category summary, needed-only
+  groceries, and the Logistics permission gate.
+- `AggregateFunctionTest` — counts (with a status filter), task-time sum/average, milestone-point total,
+  cross-app counts (books, memories), and the LifeOps gate.
+- `DocumentFactsTest` — recovering stock/unit/category/low, grocery quantity/needed, task status/
+  priority/estimate, and milestone points from the sources' prose.
+- `FunctionRouterTest` — routing each question to the right capability, falling through for others, and
+  first-match-wins ordering.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
+- `MemoryDirectivesTest` — `@memorize` parsing, `#tag` extraction (lower-cased/de-duped), and stripping.
+- `WriteIntentTest` — command detection: "add to <profile> …" → profile write, "remember that … #tag"
+  → memory write, question phrasings and ordinary sentences left as normal Q&A.
 - `IdentityJsonTest` / `ProfileJsonTest` — the identity and profile JSON round-trips.
 
 The Android glue (both Room stores, the identity + profile file stores, knowledge sources, UI, the

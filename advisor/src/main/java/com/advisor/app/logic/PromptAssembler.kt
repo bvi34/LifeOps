@@ -23,7 +23,8 @@ data class AdvisorPrompt(
     val memories: List<MemoryRecord>,
     val context: List<ContextBlock>,
     val derived: List<String>,
-    val question: String
+    val question: String,
+    val conversation: List<ConversationTurn> = emptyList()
 ) {
     /** Flatten to the single prompt string a local model receives. */
     fun render(): String = buildString {
@@ -72,6 +73,14 @@ data class AdvisorPrompt(
             append('\n')
         }
 
+        if (conversation.isNotEmpty()) {
+            append("CONVERSATION (recent turns, oldest first — resolve follow-ups against this):\n")
+            for (turn in conversation) {
+                append(if (turn.fromUser) "User: " else "Advisor: ").append(turn.text).append('\n')
+            }
+            append('\n')
+        }
+
         append("QUESTION: ").append(question).append('\n')
         append("ANSWER:")
     }
@@ -88,11 +97,13 @@ object PromptAssembler {
     const val SYSTEM: String =
         "You are Advisor, a private on-device assistant for the Operations Sandbox suite. Answer " +
             "using the user's IDENTITY, the standing PROFILES (referenced by name), recalled MEMORY, " +
-            "the CONTEXT drawn from their own LifeOps, Citation and Logistics data, and any REASONING " +
+            "the CONTEXT drawn from their own LifeOps, Citation and Logistics data, the recent " +
+            "CONVERSATION (to resolve follow-up references like \"it\" or \"that\"), and any REASONING " +
             "provided. Cite app context you use as [n]. If none of it answers the question, say so " +
             "plainly rather than guessing. To save a durable fact to a standing profile, add a line: " +
             "@remember(<profile>): <fact> — use an existing profile key (e.g. user, llm-persona) or " +
-            "a new project key."
+            "a new project key. To save a durable fact to long-term memory, add a line: " +
+            "@memorize: <fact> #tag1 #tag2 (tags optional)."
 
     /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
     const val MAX_EXCERPT = 400
@@ -103,7 +114,8 @@ object PromptAssembler {
         identity: Identity = Identity.EMPTY,
         memories: List<MemoryRecord> = emptyList(),
         profiles: List<Profile> = emptyList(),
-        derived: List<String> = emptyList()
+        derived: List<String> = emptyList(),
+        conversation: List<ConversationTurn> = emptyList()
     ): AdvisorPrompt {
         val blocks = chunks.mapIndexed { index, chunk ->
             ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
@@ -115,7 +127,8 @@ object PromptAssembler {
             memories = memories,
             context = blocks,
             derived = derived,
-            question = question.trim()
+            question = question.trim(),
+            conversation = conversation
         )
     }
 

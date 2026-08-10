@@ -30,6 +30,10 @@ interface AdvisorDao {
     @Query("SELECT * FROM advisor_messages WHERE role = :role ORDER BY createdAt DESC LIMIT 1")
     suspend fun lastMessageOf(role: String): AdvisorMessageEntity?
 
+    /** The most recent [limit] messages, newest first — reverse for chronological conversation context. */
+    @Query("SELECT * FROM advisor_messages ORDER BY createdAt DESC LIMIT :limit")
+    suspend fun recentMessages(limit: Int): List<AdvisorMessageEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addMessage(message: AdvisorMessageEntity)
 
