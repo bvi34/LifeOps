@@ -17,7 +17,7 @@ import java.io.File
  *  - `advisor.db` — granted per-app permissions + saved conversation,
  *  - `advisor_memory.db` — the dedicated, tagged long-term memory store,
  *  - `identity.json` — the identity-based data,
- *  - `profiles/*.json` — the standing named profiles (user, LLM persona, projects).
+ *  - the `*.json` files under `profiles/` — the standing named profiles (user, LLM persona, projects).
  *
  * Advisor does not own the knowledge it reasons over (that lives in the other apps and is backed up
  * by their contributors), so nothing else is included. Restore swaps the two database files and
