@@ -56,6 +56,19 @@ permissions → load corpus → retrieve → recall → logic engine → augment
    model to emit a directive. `WriteIntent` is deliberately conservative — it ignores anything phrased
    as a question — so ordinary recall ("do you remember what I said?") falls through untouched.
 
+0a. **Small talk** (`logic/SmallTalk`, in the repository, right after write commands). A purely
+   conversational or meta turn — "hi", "thanks", "bye", "ok", "what can you do?", "who are you?" — is
+   not a data question, so it would otherwise dead-end in the C3A gate's *"I don't have anything…"* or
+   the placeholder's *"I couldn't find anything…"*. Instead `SmallTalk` recognises greetings, thanks,
+   farewells, acknowledgements and capability/identity questions and replies warmly and immediately,
+   **personalised from what the turn already holds** — the user's name (from identity), the assistant's
+   own name (from a persona profile), and which apps are enabled (the capability reply lists them, with
+   examples, and points at Permissions when none are). Like `WriteIntent` it's the deterministic social
+   counterpart that works *today* on the placeholder, and it's deliberately conservative: it fires only
+   when the **whole** message is social/meta (every word a social word or harmless filler, or a known
+   meta phrase), so a grounded question — even one that opens with "hi, …" — carries real content and
+   falls straight through to the pipeline. Pure and JVM-tested (`SmallTalkTest`).
+
 0b. **Function dispatch** (`logic/FunctionRouter`, `logic/AdvisorFunction`, in the repository, after the
    corpus is loaded but before retrieval). Some questions are **computations**, not lookups — "how many
    times have I said X", "count my word usage in my tasks" — and extractive RAG can only *surface* rows,
@@ -147,7 +160,7 @@ permissions → load corpus → retrieve → recall → logic engine → augment
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
-`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `ConversationTest`,
+`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `SmallTalkTest`, `ConversationTest`,
 `WordUsageFunctionTest`, `CalculatorFunctionTest`, `InventoryFunctionTest`, `AggregateFunctionTest`,
 `DocumentFactsTest`, `FunctionRouterTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.

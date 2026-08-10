@@ -60,6 +60,38 @@ class PlaceholderLlmEngineTest {
     }
 
     @Test
+    fun a_when_scoped_list_question_gets_a_conversational_lead() {
+        val chunk = RetrievedChunk(
+            KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "File taxes", "Task: File taxes. Due today"),
+            1.0
+        )
+        val answer = engine.generate(PromptAssembler.assemble("what's due today?", listOf(chunk)))
+        assertTrue("fuses data into a natural lead", answer.contains("It looks like today you have"))
+        assertTrue("still surfaces the item", answer.contains("File taxes"))
+        assertTrue("still cites", answer.contains("[1]"))
+    }
+
+    @Test
+    fun a_this_week_list_question_names_the_week() {
+        val chunk = RetrievedChunk(
+            KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "Ship the report", "Task: Ship the report"),
+            1.0
+        )
+        val answer = engine.generate(PromptAssembler.assemble("what should I tackle this week?", listOf(chunk)))
+        assertTrue(answer.contains("It looks like this week you have"))
+    }
+
+    @Test
+    fun a_factual_lookup_gets_a_plain_found_lead() {
+        val chunk = RetrievedChunk(
+            KnowledgeDocument("d0", SourceApp.CITATION, "book", "Dune", "Author: Frank Herbert"),
+            1.0
+        )
+        val answer = engine.generate(PromptAssembler.assemble("who wrote Dune", listOf(chunk)))
+        assertTrue("no forced list framing for a look-up", answer.contains("Here's what I found in your Citation"))
+    }
+
+    @Test
     fun grounded_answer_cites_and_is_deterministic() {
         val prompt = promptWith("Mow the lawn", "File taxes")
         val a = engine.generate(prompt)
