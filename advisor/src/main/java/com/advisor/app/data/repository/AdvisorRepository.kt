@@ -14,12 +14,14 @@ import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
+import com.advisor.app.logic.AdvisorPrompt
 import com.advisor.app.logic.AssistantNaming
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
+import com.advisor.app.logic.GroundingResult
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
@@ -34,7 +36,9 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.RelevanceDirectives
 import com.advisor.app.logic.RelevanceEngine
+import com.advisor.app.logic.RetrievedChunk
 import com.advisor.app.logic.SmallTalk
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
@@ -270,30 +274,69 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
-        // Hand the model the logic engine's notes plus what the relevance filter set aside and why, so
-        // it can be honest about near-misses ("nothing you're reading now, but 2 are on your to-read list").
-        val derived = logic.derivedContext + listOfNotNull(grounding.filterNote().takeIf { it.isNotBlank() })
-        val prompt = PromptAssembler.assemble(
-            question, chunks, identity, recalled, profiles, derived, conversation
-        )
-        // A real local model runs for seconds and can block on native inference — keep it off the UI
-        // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
-        val raw = withContext(Dispatchers.Default) { engine.generate(prompt) }
+        // First pass. The prompt carries the grounded context plus the logic notes and the relevance
+        // filter's summary, so the model can be honest about near-misses. A real local model runs for
+        // seconds and can block on native inference, so keep generation off the UI thread; the
+        // placeholder engine is instant, so this is free when no model is loaded.
+        var groundingResult = grounding
+        var groundChunks = chunks
+        var raw = withContext(Dispatchers.Default) {
+            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+        }
+
+        // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
+        // @relevance(n): <verdict> line. Apply those verdicts over the deterministic baseline
+        // (RelevanceEngine.reassess) and — only when that actually changes the grounded set — let the
+        // model answer again over just the candidates that fit. Bounded to one round so it always
+        // terminates, and inert for the placeholder (which never emits @relevance).
+        val votes = RelevanceDirectives.parse(raw)
+        if (votes.isNotEmpty()) {
+            val refToId = groundChunks.mapIndexed { index, chunk -> (index + 1) to chunk.document.id }.toMap()
+            val overrides = votes.mapNotNull { v -> refToId[v.ref]?.let { it to v.category } }.toMap()
+            val refined = RelevanceEngine.reassess(groundingResult, overrides)
+            if (refined.grounding.map { it.document.id } != groundChunks.map { it.document.id }) {
+                groundingResult = refined
+                groundChunks = refined.grounding
+                raw = withContext(Dispatchers.Default) {
+                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+                }
+            }
+        }
 
         // Apply any writes the model emitted — @remember(<profile>): … to a standing profile and
-        // @memorize: … to long-term memory — then show a clean answer with the directives removed.
+        // @memorize: … to long-term memory — then show a clean answer with every directive (writes and
+        // relevance votes alike) removed.
         for (append in ProfileDirectives.parse(raw)) {
             profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
         }
         for (write in MemoryDirectives.parse(raw)) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
         }
-        val text = MemoryDirectives.strip(ProfileDirectives.strip(raw))
+        val text = RelevanceDirectives.strip(MemoryDirectives.strip(ProfileDirectives.strip(raw)))
 
         memory.markRecalled(recalled.map { it.id })
-        persistTurn(question, text, chunks.map { it.document }, KIND_NORMAL)
+        persistTurn(question, text, groundChunks.map { it.document }, KIND_NORMAL)
 
-        return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+        return AdvisorAnswer(text, groundChunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Assemble the RAG prompt for a grounded answer: the logic engine's notes plus the relevance
+     * filter's one-line summary of what it set aside become the model's REASONING context, so the model
+     * can explain near-misses rather than pretend the filtered rows never existed.
+     */
+    private fun groundedPrompt(
+        question: String,
+        chunks: List<RetrievedChunk>,
+        identity: Identity,
+        recalled: List<MemoryRecord>,
+        profiles: List<Profile>,
+        logicNotes: List<String>,
+        grounding: GroundingResult,
+        conversation: List<ConversationTurn>
+    ): AdvisorPrompt {
+        val derived = logicNotes + listOfNotNull(grounding.filterNote().takeIf { it.isNotBlank() })
+        return PromptAssembler.assemble(question, chunks, identity, recalled, profiles, derived, conversation)
     }
 
     /**
