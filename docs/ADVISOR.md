@@ -235,9 +235,16 @@ first two are pure and JVM-tested:
   the placeholder vs. the real Qwen3 weights so the UI's model card is truthful.
 - **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It looks for a `qwen3-4b*.gguf` under the
   app's `files/models` (or external files), loads it once through the `advisor-llm` native library over
-  JNI, and generates on-device. The `.so` and the weights are provisioned **out of band**, so every
-  native call is guarded: no library or no file ⇒ `isReady = false` ⇒ the placeholder answers. Dropping
-  the GGUF onto the device is the whole activation step — no code change.
+  JNI, and generates on-device. Every native call is guarded: no library or no file ⇒ `isReady = false`
+  ⇒ the placeholder answers. Dropping the GGUF onto the device is the whole activation step — no code
+  change.
+
+The native library is built from `advisor/src/main/cpp/` (`advisor_llm.cpp` + `CMakeLists.txt`, which
+fetches a pinned llama.cpp). It is **opt-in**: a plain build ships no `.so` and uses the placeholder,
+so no NDK is needed for day-to-day work. Compile the real backend with
+`-Padvisor.buildNativeLlm=true` (needs the NDK + CMake; arm64-v8a only). See
+[`advisor/src/main/cpp/README.md`](../advisor/src/main/cpp/README.md) for building and for pushing the
+weights onto a device.
 
 Nothing upstream changes: permissions, retrieval, prompt assembly, citations, and the C3A decision gate
 are already model-agnostic — the wired model still only runs when C3A returns `ANSWER`, and generation
