@@ -37,7 +37,7 @@ class Retriever(private val documents: List<KnowledgeDocument>) {
      * Ties break toward the more recent document so "what did I do lately" surfaces fresh rows.
      */
     fun retrieve(query: String, topK: Int = DEFAULT_TOP_K): List<RetrievedChunk> {
-        val queryTerms = tokenize(query).toSet()
+        val queryTerms = QueryUnderstanding.expandTerms(tokenize(query))
         if (queryTerms.isEmpty()) return emptyList()
 
         val scored = documents.indices.map { i ->
@@ -73,7 +73,7 @@ class Retriever(private val documents: List<KnowledgeDocument>) {
 
         /** Lowercase, split on non-alphanumerics, drop very short tokens and stop-words. */
         fun tokenize(text: String): List<String> =
-            text.lowercase()
+            QueryUnderstanding.normalize(text)
                 .split(NON_WORD)
                 .filter { it.length >= 2 && it !in STOPWORDS }
 

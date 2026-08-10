@@ -35,10 +35,10 @@ class C3AEngine(
 
     override fun process(input: LogicInput): LogicOutput {
         val question = input.question.trim()
-        val queryTerms = Retriever.tokenize(question).toSet()
-        // Social words (hello, thanks, …) aren't something to be uncertain about.
+        val queryTerms = QueryUnderstanding.expandTerms(Retriever.tokenize(question))
+        // Social words (hello, thanks, …) and polite filler aren't something to be uncertain about.
         val contentTerms = queryTerms - GREETING_WORDS
-        val rawTokens = question.lowercase().split(NON_WORD).filter { it.isNotBlank() }
+        val rawTokens = QueryUnderstanding.normalize(question).split(NON_WORD).filter { it.isNotBlank() }
         val deicticRef = deicticReference(question, rawTokens)
 
         // Once the chat is underway, a bare reference or a thin question has somewhere to bind — the
