@@ -19,6 +19,7 @@ import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.LogicInput
+import com.advisor.app.logic.MemoryDirectives
 import com.advisor.app.logic.MemoryRecall
 import com.advisor.app.logic.MemoryRecord
 import com.advisor.app.logic.ModelSpec
@@ -29,6 +30,8 @@ import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
+import com.advisor.app.logic.WriteIntent
+import com.advisor.app.logic.WriteIntentResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -162,6 +165,12 @@ class AdvisorRepository(
         // Standing profiles are always-on context — no query, referenced by name.
         val profiles = profileStore.list().filter { it.alwaysInclude }
 
+        // An explicit write command ("remember that …", "add to LLM persona that …") is an
+        // instruction, not a question — perform it directly and confirm, before the C3A gate that
+        // would otherwise ask for clarification about a fact it has no grounding for.
+        val intent = WriteIntent.detect(question, profiles)
+        if (intent.hasWrites) return applyWriteCommand(question, intent)
+
         // Load only what the user has granted — denied apps are never read.
         val corpus = ArrayList<KnowledgeDocument>()
         for (source in sources) {
@@ -206,16 +215,42 @@ class AdvisorRepository(
         // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
         val raw = withContext(Dispatchers.Default) { engine.generate(prompt) }
 
-        // Apply any @remember(<profile>): … writes the model emitted, then show a clean answer.
+        // Apply any writes the model emitted — @remember(<profile>): … to a standing profile and
+        // @memorize: … to long-term memory — then show a clean answer with the directives removed.
         for (append in ProfileDirectives.parse(raw)) {
             profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
         }
-        val text = ProfileDirectives.strip(raw)
+        for (write in MemoryDirectives.parse(raw)) {
+            memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
+        }
+        val text = MemoryDirectives.strip(ProfileDirectives.strip(raw))
 
         memory.markRecalled(recalled.map { it.id })
         persistTurn(question, text, chunks.map { it.document }, KIND_NORMAL)
 
         return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Perform an explicit user write command and confirm it, bypassing retrieval and the model — a
+     * "remember this" / "add to <profile>" turn is an instruction to persist, not a question to answer.
+     * Profile writes are tagged as assistant-authored (the assistant made the write on request) and
+     * memory writes carry the [SOURCE_ADVISOR] source, mirroring the model-directive write paths.
+     */
+    private suspend fun applyWriteCommand(question: String, intent: WriteIntentResult): AdvisorAnswer {
+        val lines = ArrayList<String>()
+        for (append in intent.profileAppends) {
+            val profile = profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
+            lines += "Saved to your ${profile.name} profile:\n• ${append.text}"
+        }
+        for (write in intent.memoryWrites) {
+            memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
+            val tagNote = if (write.tags.isEmpty()) "" else " (tags: ${write.tags.joinToString(", ")})"
+            lines += "Saved to long-term memory:\n• ${write.content}$tagNote"
+        }
+        val text = lines.joinToString("\n\n")
+        persistTurn(question, text, emptyList(), KIND_NORMAL)
+        return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
     }
 
     private suspend fun persistTurn(
@@ -259,5 +294,7 @@ class AdvisorRepository(
         const val ROLE_ADVISOR = "advisor"
         const val KIND_NORMAL = "normal"
         const val KIND_CLARIFICATION = "clarification"
+        /** Marks a memory the assistant wrote (via a user command or a @memorize directive). */
+        const val SOURCE_ADVISOR = "advisor"
     }
 }

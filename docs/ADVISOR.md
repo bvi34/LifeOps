@@ -38,12 +38,22 @@ change.
 A question flows through these stages, in order:
 
 ```
+                         ┌── write command? ──→ apply writes (profiles + memory) → confirm ──┐
+                         │                                                                    │
 permissions → retrieve → recall memory → logic engine → augment (assemble prompt) → generate → apply writes
                                                  ↑            ↑                                      │
                             identity + profiles ─┴────────────┘                                      │
                                     ↑                                                                │
-                                    └──────────────── @remember(<profile>) directives ──────────────┘
+                                    └──────── @remember(<profile>) / @memorize directives ──────────┘
 ```
+
+0. **Write commands** (`logic/WriteIntent`, in the repository, *before* the gate). An explicit
+   instruction to persist — "remember that …", "add to LLM persona that …", "save … to memory" — is a
+   command, not a question, so it's performed directly and confirmed, bypassing retrieval and the C3A
+   gate that would otherwise ask for clarification about a fact it has no grounding for. This is what
+   makes the write capability real *today*, on the deterministic placeholder, without waiting on the
+   model to emit a directive. `WriteIntent` is deliberately conservative — it ignores anything phrased
+   as a question — so ordinary recall ("do you remember what I said?") falls through untouched.
 
 1. **Permissions gate** (`logic/AdvisorPermissions`). Which apps Advisor may read. **Denied by
    default**: an app is off until you grant it, so the model can never see data you haven't opted
@@ -79,7 +89,7 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
 5. **Augment** (`logic/PromptAssembler`). Turns identity + standing profiles + memory + chunks +
    derived lines into an `AdvisorPrompt` with `IDENTITY`, `PROFILES`, `MEMORY`, `CONTEXT` and
    `REASONING` sections, a system instruction that demands citations, forbids ungrounded answers, and
-   documents the `@remember` write convention, and the question. `AdvisorPrompt.render()` is the flat
+   documents the `@remember` (profile) and `@memorize` (memory) write conventions, and the question. `AdvisorPrompt.render()` is the flat
    text a real GGUF model would be fed.
 
 6. **Generate** (`logic/LocalLlm`, `logic/Qwen3LlmEngine`). The `LocalLlmEngine` interface. The default
@@ -93,15 +103,18 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    the honest answer, not a hallucinated one. `ModelSpec` reports which of the two actually answered, so
    the UI stays honest.
 
-7. **Apply writes** (`logic/ProfileDirectives`, in the repository). Any `@remember(<profile>): <fact>`
-   lines the model emitted are parsed and appended to the named profiles (creating one on a new key),
-   then stripped from the answer shown to the user. This is how the model *adds to* the standing
-   profiles, not just reads them.
+7. **Apply writes** (`logic/ProfileDirectives`, `logic/MemoryDirectives`, in the repository). Any
+   `@remember(<profile>): <fact>` lines the model emitted are parsed and appended to the named profiles
+   (creating one on a new key), and any `@memorize: <fact> #tags` lines are saved to long-term memory
+   (tags become recall tags); both are then stripped from the answer shown to the user. This is how the
+   model *adds to* the standing profiles **and its own memory**, not just reads them. Assistant-written
+   memories carry `source = "advisor"`, mirroring the `advisor`-authored profile entries.
 
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
-`ProfileTest`, `ProfileDirectivesTest`, `C3AEngineTest`) — the same discipline as `:backupkit` and
+`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `C3AEngineTest`) —
+the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
@@ -154,7 +167,10 @@ answers only when C3A says `ANSWER`.
   tag, cascading on delete). That normalization is the "tons of tagging potential": *memories for tag
   X*, *all tags with counts*, and multi-tag recall are cheap indexed queries. `MemoryRepository`
   normalizes tags (trim/lower/dedupe) and closes the recall loop by bumping stats on surfaced
-  memories.
+  memories. Memory is **written** two ways beyond the Memory tab: the model can emit a
+  `@memorize: <fact> #tags` directive (`logic/MemoryDirectives`), and a user command ("remember
+  that …") is captured by `logic/WriteIntent` and saved directly — the memory counterpart to the
+  `@remember(<profile>)` profile-write convention.
 
 - **Unifying engine** (`logic/LogicEngine`, `logic/C3AEngine`). `LogicEngine.process(LogicInput) →
   LogicOutput`, wired into the repository between recall and assembly — see
@@ -337,6 +353,9 @@ vectors are simply never consulted — revocation stays instant.
   clarify, denied-app → investigate, no-double-asking, and greeting handling.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
+- `MemoryDirectivesTest` — `@memorize` parsing, `#tag` extraction (lower-cased/de-duped), and stripping.
+- `WriteIntentTest` — command detection: "add to <profile> …" → profile write, "remember that … #tag"
+  → memory write, question phrasings and ordinary sentences left as normal Q&A.
 - `IdentityJsonTest` / `ProfileJsonTest` — the identity and profile JSON round-trips.
 
 The Android glue (both Room stores, the identity + profile file stores, knowledge sources, UI, the
