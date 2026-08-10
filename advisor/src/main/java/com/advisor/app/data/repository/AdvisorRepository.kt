@@ -33,6 +33,7 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.SmallTalk
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
 import com.advisor.app.logic.WriteIntent
@@ -176,6 +177,22 @@ class AdvisorRepository(
         // would otherwise ask for clarification about a fact it has no grounding for.
         val intent = WriteIntent.detect(question, profiles)
         if (intent.hasWrites) return applyWriteCommand(question, intent)
+
+        // A purely social or meta turn ("hi", "thanks", "what can you do?") isn't a data question —
+        // reply warmly and immediately from what we already hold (the user's name, the enabled apps)
+        // rather than dead-ending in the grounding gate. Grounded questions, even ones that open with
+        // "hi, …", carry real content words and so fall straight through to the retrieval pipeline.
+        SmallTalk.detect(
+            question,
+            SmallTalk.Context(
+                userName = identity.name,
+                assistantName = SmallTalk.assistantNameFrom(profiles),
+                grantedApps = permissions.granted
+            )
+        )?.let { chat ->
+            persistTurn(question, chat.text, emptyList(), KIND_NORMAL)
+            return AdvisorAnswer(chat.text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
+        }
 
         // Load only what the user has granted — denied apps are never read.
         val corpus = ArrayList<KnowledgeDocument>()
