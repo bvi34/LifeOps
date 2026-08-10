@@ -69,15 +69,13 @@ class PlaceholderLlmEngine : LocalLlmEngine {
 
         return buildString {
             if (personalFacts.isNotEmpty()) {
-                append("I found this in your profile:")
+                append(personalLead(prompt.question))
                 for (fact in personalFacts) append("\n• ").append(fact)
             }
 
             if (hasContext) {
                 if (isNotEmpty()) append("\n\n")
-                val sourcesLine = prompt.context
-                    .map { it.document.source }.distinct().joinToString(", ") { it.displayName }
-                append("I checked your ").append(sourcesLine).append(" data and found the most relevant bits:\n")
+                append(contextLead(prompt))
                 for (block in prompt.context) {
                     append("\n• ")
                     append(block.document.title.ifBlank { block.document.kind })
@@ -90,8 +88,9 @@ class PlaceholderLlmEngine : LocalLlmEngine {
             }
 
             if (hasMemory) {
-                if (isNotEmpty()) append("\n\n")
-                append("I also remembered:")
+                val sole = isEmpty()
+                if (!sole) append("\n\n")
+                append(if (sole) "Here's what I remembered:" else "This also jogged my memory —")
                 prompt.memories.forEachIndexed { index, memory ->
                     append("\n• ").append(firstLine(memory.content))
                     if (memory.tags.isNotEmpty()) append(" (").append(memory.tags.joinToString(", ")).append(')')
@@ -99,23 +98,67 @@ class PlaceholderLlmEngine : LocalLlmEngine {
                 }
             }
 
-            if (hasProfiles) {
-                if (isNotEmpty()) append("\n\n")
-                append("Standing profiles in context: ")
-                append(prompt.profiles.joinToString(", ") { it.name })
-                append('.')
+            // A profiles-only turn (no data, no memory) still deserves a warm, useful reply rather than
+            // silence — name what standing context is in play so the user knows what I'm working from.
+            if (isEmpty() && hasProfiles) {
+                append("I don't have a specific record for that, but I've got your ")
+                append(humanJoin(prompt.profiles.map { it.name }))
+                append(if (prompt.profiles.size == 1) " profile in mind." else " profiles in mind.")
+                append(" Ask me anything about them, or tell me something new to remember.")
             }
 
-            if (prompt.derived.isNotEmpty()) {
-                append("\n\nLogic engine notes:")
-                for (line in prompt.derived) append("\n• ").append(line)
-            }
-
-            append("\n\n(Placeholder response — a local ")
-            append(spec.parameters)
-            append(" model will replace this extractive summary with real reasoning over the same ")
-            append("retrieved, cited context.)")
+            append("\n\n(On-device placeholder — I'm surfacing your own data here; a local ")
+            append(spec.parameters).append(" model will turn this into a fuller reply.)")
         }
+    }
+
+    /** Warm lead-in for a profile/identity answer, tuned to whether the question is about the user. */
+    private fun personalLead(question: String): String =
+        if (IdentityQuestions.isAboutUser(question)) "Here's what I've got about you:"
+        else "Here's what I have on that from your profile:"
+
+    /**
+     * A conversational lead-in that fuses the data into a sentence — "It looks like today you have …"
+     * for list/when-scoped questions ("what's due today?", "what should I tackle this week?"), and a
+     * plainer "Here's what I found in your …" for factual look-ups. The bullets (with their [n]
+     * citations) follow either way.
+     */
+    private fun contextLead(prompt: AdvisorPrompt): String {
+        val sources = humanJoin(prompt.context.map { it.document.source.displayName }.distinct())
+        val scope = scopePhrase(prompt.question)
+        val listLike = scope.isNotEmpty() || LIST_HINT.containsMatchIn(prompt.question.lowercase())
+        return if (listLike) {
+            val prefix = if (scope.isNotEmpty()) "$scope " else ""
+            "It looks like ${prefix}you have ${countWord(prompt.context.size)} in your $sources:"
+        } else {
+            "Here's what I found in your $sources:"
+        }
+    }
+
+    /** The time window the question is about, for the "It looks like <today> you have …" lead, or "". */
+    private fun scopePhrase(question: String): String {
+        val q = question.lowercase()
+        return when {
+            "today" in q -> "today"
+            "tonight" in q -> "tonight"
+            "tomorrow" in q -> "tomorrow"
+            "this week" in q || Regex("\\bweek\\b").containsMatchIn(q) -> "this week"
+            "this month" in q -> "this month"
+            else -> ""
+        }
+    }
+
+    private fun countWord(n: Int): String = when (n) {
+        1 -> "one thing"
+        2 -> "a couple of things"
+        else -> "$n things"
+    }
+
+    private fun humanJoin(items: List<String>): String = when (items.size) {
+        0 -> ""
+        1 -> items[0]
+        2 -> "${items[0]} and ${items[1]}"
+        else -> items.dropLast(1).joinToString(", ") + ", and " + items.last()
     }
 
     private fun firstLine(text: String): String =
@@ -149,4 +192,14 @@ class PlaceholderLlmEngine : LocalLlmEngine {
 
     private fun overlaps(text: String, queryTerms: Set<String>): Boolean =
         queryTerms.isNotEmpty() && Retriever.tokenize(text).any { it in queryTerms }
+
+    private companion object {
+        // Phrasings that read as "list what I have" rather than a factual look-up — they get the
+        // "It looks like you have …" fused lead. Kept broad but content-bearing (no bare greetings).
+        val LIST_HINT = Regex(
+            "\\b(due|pending|upcoming|coming up|left|remaining|outstanding|scheduled|" +
+                "on my plate|to-?do|todos?|tackle|priorit(?:y|ies)|deadlines?|" +
+                "should i|do i have|have i got|what'?s on|what do i|anything (?:due|left|pending))\\b"
+        )
+    }
 }
