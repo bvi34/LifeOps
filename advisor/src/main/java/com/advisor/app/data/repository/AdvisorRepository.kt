@@ -13,6 +13,8 @@ import com.advisor.app.llm.AdvisorModelInfo
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorPermissions
+import com.advisor.app.logic.Conversation
+import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.KnowledgeDocument
@@ -171,6 +173,17 @@ class AdvisorRepository(
         val intent = WriteIntent.detect(question, profiles)
         if (intent.hasWrites) return applyWriteCommand(question, intent)
 
+        // Recent chat history, oldest-first, so retrieval, the C3A gate and the prompt all reason over
+        // the conversation — not just this one message. Loaded before the turn is persisted, so it's
+        // strictly the prior turns.
+        val conversation = dao.recentMessages(HISTORY_TURNS)
+            .asReversed()
+            .map { ConversationTurn(fromUser = it.role == ROLE_USER, text = it.text) }
+            .filter { it.text.isNotBlank() }
+        // A terse follow-up ("who's its author?") carries its subject in the prior turns — fold them
+        // into the query so retrieval and recall find what the follow-up is actually about.
+        val retrievalQuery = Conversation.retrievalQuery(conversation, question)
+
         // Load only what the user has granted — denied apps are never read.
         val corpus = ArrayList<KnowledgeDocument>()
         for (source in sources) {
@@ -180,10 +193,10 @@ class AdvisorRepository(
         }
         // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
         // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
-        val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, question) }
+        val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
 
         // Recall long-term memory (always available; not permission-gated).
-        val recalled = MemoryRecall.recall(question, memory.allRecords())
+        val recalled = MemoryRecall.recall(retrievalQuery, memory.allRecords())
 
         // The C3A unifying engine decides whether to answer, ask for clarification, or flag that a
         // source is needed. justAsked = the previous turn was itself a clarification, so it won't loop.
@@ -197,7 +210,8 @@ class AdvisorRepository(
                 profiles = profiles,
                 grantedApps = permissions.granted,
                 deniedApps = SourceApp.entries.toSet() - permissions.granted,
-                justAsked = justAsked
+                justAsked = justAsked,
+                conversation = conversation
             )
         )
 
@@ -210,7 +224,9 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
-        val prompt = PromptAssembler.assemble(question, chunks, identity, recalled, profiles, logic.derivedContext)
+        val prompt = PromptAssembler.assemble(
+            question, chunks, identity, recalled, profiles, logic.derivedContext, conversation
+        )
         // A real local model runs for seconds and can block on native inference — keep it off the UI
         // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
         val raw = withContext(Dispatchers.Default) { engine.generate(prompt) }
@@ -296,5 +312,7 @@ class AdvisorRepository(
         const val KIND_CLARIFICATION = "clarification"
         /** Marks a memory the assistant wrote (via a user command or a @memorize directive). */
         const val SOURCE_ADVISOR = "advisor"
+        /** How many recent messages feed the conversation context (≈ the last handful of exchanges). */
+        const val HISTORY_TURNS = 8
     }
 }

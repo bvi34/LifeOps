@@ -41,6 +41,11 @@ class C3AEngine(
         val rawTokens = question.lowercase().split(NON_WORD).filter { it.isNotBlank() }
         val deicticRef = deicticReference(question, rawTokens)
 
+        // Once the chat is underway, a bare reference or a thin question has somewhere to bind — the
+        // prior turns. So (like justAsked) we don't stop to clarify what the conversation already
+        // establishes; we hand the history to the model and let it resolve the follow-up.
+        val leanOnContext = input.justAsked || Conversation.hasContext(input.conversation)
+
         // 1. Contradictions always stop the engine — it must not answer from conflicting facts.
         val contradictions = detectContradictions(input)
         if (contradictions.isNotEmpty()) {
@@ -55,9 +60,10 @@ class C3AEngine(
             )
         }
 
-        // No real content (a greeting/aside) — answer, unless it leans on an unresolved reference.
+        // No real content (a greeting/aside) — answer, unless it leans on an unresolved reference with
+        // no conversation to bind it to.
         if (contentTerms.isEmpty()) {
-            return if (deicticRef != null && !input.justAsked) clarifyAmbiguity(deicticRef)
+            return if (deicticRef != null && !leanOnContext) clarifyAmbiguity(deicticRef)
             else answer(input, overlap = 0)
         }
 
@@ -75,9 +81,12 @@ class C3AEngine(
         }
 
         // Ungrounded from here down.
-        if (input.justAsked) {
-            // Already asked once last turn — honour the rule (we asked) and proceed with a caveat.
-            return answer(input, overlap, extraNote = "Grounding is thin, but a clarification was already requested — proceeding.")
+        if (leanOnContext) {
+            // Either we already asked last turn, or the conversation is underway — honour the rule
+            // (we don't re-interrogate what context already frames) and proceed with a caveat.
+            val why = if (input.justAsked) "a clarification was already requested"
+            else "the recent conversation gives context"
+            return answer(input, overlap, extraNote = "Grounding is thin, but $why — proceeding.")
         }
 
         if (deicticRef != null) return clarifyAmbiguity(deicticRef)
@@ -117,6 +126,9 @@ class C3AEngine(
         if (input.profiles.isNotEmpty()) {
             notes += "Standing profiles in context: ${input.profiles.joinToString(", ") { it.name }}."
         }
+        if (input.conversation.isNotEmpty()) {
+            notes += "Considering ${input.conversation.size} recent conversation turn(s) for context."
+        }
         if (extraNote != null) notes += extraNote
         return LogicOutput(derivedContext = notes, decision = EngineDecision.ANSWER)
     }
@@ -150,6 +162,8 @@ class C3AEngine(
             for (entry in profile.entries) evidence += Retriever.tokenize(entry.text)
         }
         for (line in input.identity.toContextLines()) evidence += Retriever.tokenize(line)
+        // Recent turns are grounding too — a follow-up's subject usually lives in what was just said.
+        for (turn in input.conversation) evidence += Retriever.tokenize(turn.text)
         return queryTerms.count { it in evidence }
     }
 

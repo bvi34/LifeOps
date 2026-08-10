@@ -39,7 +39,9 @@ data class LogicInput(
     val profiles: List<Profile> = emptyList(),
     val grantedApps: Set<SourceApp> = emptySet(),
     val deniedApps: Set<SourceApp> = emptySet(),
-    val justAsked: Boolean = false
+    val justAsked: Boolean = false,
+    /** The recent chat turns leading up to [question], oldest first — context for follow-ups. */
+    val conversation: List<ConversationTurn> = emptyList()
 )
 
 /**

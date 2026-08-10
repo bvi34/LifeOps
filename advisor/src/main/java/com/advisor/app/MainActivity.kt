@@ -10,6 +10,7 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -52,9 +53,17 @@ class MainActivity : ComponentActivity() {
                 val nav = rememberNavController()
                 val backStack by nav.currentBackStackEntryAsState()
                 val current = backStack?.destination
+                // One runtime-backed ViewModel for the whole shell, so the top bar's clear-chat action
+                // and the chat screen operate on the same conversation.
+                val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
 
                 Scaffold(
-                    topBar = { TopAppBarTitle(current?.route) },
+                    topBar = {
+                        AdvisorTopBar(
+                            route = current?.route,
+                            onClearChat = { vm.clearConversation() }
+                        )
+                    },
                     bottomBar = {
                         NavigationBar {
                             navItems.forEach { dest ->
@@ -84,22 +93,10 @@ class MainActivity : ComponentActivity() {
                             .padding(padding)
                             .consumeWindowInsets(padding)
                     ) {
-                        composable(Dest.Chat.route) {
-                            val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
-                            ChatScreen(vm)
-                        }
-                        composable(Dest.Memory.route) {
-                            val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
-                            MemoryScreen(vm)
-                        }
-                        composable(Dest.Profiles.route) {
-                            val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
-                            ProfilesScreen(vm)
-                        }
-                        composable(Dest.Permissions.route) {
-                            val vm: AdvisorViewModel = viewModel(factory = AdvisorViewModel.Factory(app.repository))
-                            PermissionsScreen(vm)
-                        }
+                        composable(Dest.Chat.route) { ChatScreen(vm) }
+                        composable(Dest.Memory.route) { MemoryScreen(vm) }
+                        composable(Dest.Profiles.route) { ProfilesScreen(vm) }
+                        composable(Dest.Permissions.route) { PermissionsScreen(vm) }
                     }
                 }
             }
@@ -109,7 +106,38 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TopAppBarTitle(route: String?) {
+private fun AdvisorTopBar(route: String?, onClearChat: () -> Unit) {
     val title = navItems.firstOrNull { it.route == route }?.label ?: "Advisor"
-    TopAppBar(title = { Text(title) })
+    var confirmClear by remember { mutableStateOf(false) }
+
+    TopAppBar(
+        title = { Text(title) },
+        actions = {
+            // A clear-conversation action, offered only on the chat tab.
+            if (route == Dest.Chat.route) {
+                IconButton(onClick = { confirmClear = true }) {
+                    Icon(Icons.Outlined.DeleteSweep, contentDescription = "Clear conversation")
+                }
+            }
+        }
+    )
+
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear conversation?") },
+            text = {
+                Text(
+                    "This removes the chat history on this device. Your long-term memory, standing " +
+                        "profiles and identity are untouched."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { confirmClear = false; onClearChat() }) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
+            }
+        )
+    }
 }

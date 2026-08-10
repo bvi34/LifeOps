@@ -54,8 +54,9 @@ class PlaceholderLlmEngine : LocalLlmEngine {
         val hasMemory = prompt.memories.isNotEmpty()
         val hasProfiles = prompt.profiles.isNotEmpty()
         val hasIdentity = prompt.identity.isNotEmpty()
+        val hasConversation = prompt.conversation.isNotEmpty()
 
-        if (!hasContext && !hasMemory && !hasProfiles && !hasIdentity) {
+        if (!hasContext && !hasMemory && !hasProfiles && !hasIdentity && !hasConversation) {
             return "I couldn't find anything in your granted data or long-term memory to answer " +
                 "that.\n\nThis is a placeholder assistant: it retrieves and cites your own records " +
                 "but does not yet run a language model. Check that the relevant app is enabled in " +
@@ -128,7 +129,10 @@ class PlaceholderLlmEngine : LocalLlmEngine {
      */
     private fun personalFacts(prompt: AdvisorPrompt): List<String> {
         val aboutUser = IdentityQuestions.isAboutUser(prompt.question)
-        val queryTerms = Retriever.tokenize(prompt.question).toSet()
+        // A terse follow-up ("and my email?") carries its subject in the previous user turn, so match
+        // against the recent conversation too, not just this message.
+        val recentUserTurn = prompt.conversation.lastOrNull { it.fromUser }?.text.orEmpty()
+        val queryTerms = (Retriever.tokenize(prompt.question) + Retriever.tokenize(recentUserTurn)).toSet()
         val facts = LinkedHashSet<String>()
 
         for (line in prompt.identity) {

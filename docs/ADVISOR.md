@@ -60,8 +60,17 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
    in. The gate is enforced in the repository *before any source is loaded* — a denied app's database
    is never even opened.
 
-2. **Retrieve** (`logic/HybridRetriever`). Ranks the granted corpus against the question and returns
-   the top few `RetrievedChunk`s, one of two ways behind a single shape:
+1a. **Conversation context** (`logic/Conversation`, loaded in the repository). The recent chat turns
+   (the last handful of messages, oldest-first) are loaded per question and threaded through the rest
+   of the pipeline, so Advisor reasons over the *conversation* rather than only the latest message. A
+   terse follow-up ("who's its author?", "what about the second one?") folds the prior turns into the
+   retrieval/recall query so its subject is found, the C3A gate treats an in-progress chat as somewhere
+   for a reference to bind (so it stops re-clarifying what was just said), and the turns are rendered
+   into the prompt's `CONVERSATION` section for the model to resolve against.
+
+2. **Retrieve** (`logic/HybridRetriever`). Ranks the granted corpus against the question (with recent
+   conversation folded in) and returns the top few `RetrievedChunk`s, one of two ways behind a single
+   shape:
    - **Lexical** (`logic/Retriever`) — the default and fallback: a dependency-free TF-IDF retriever
      (title terms weighted heavier than body). No embeddings, no network — cheap, deterministic, and
      JVM-testable.
@@ -113,8 +122,8 @@ permissions → retrieve → recall memory → logic engine → augment (assembl
 All the reasoning stages are **framework-free** and live under `advisor/logic/`, unit-tested on the
 JVM (`RetrieverTest`, `PromptAssemblerTest`, `AdvisorPermissionsTest`, `PlaceholderLlmEngineTest`,
 `Qwen3ChatFormatTest`, `Qwen3LlmEngineTest`, `IdentityTest`, `MemoryRecallTest`, `LogicEngineTest`,
-`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `C3AEngineTest`) —
-the same discipline as `:backupkit` and
+`ProfileTest`, `ProfileDirectivesTest`, `MemoryDirectivesTest`, `WriteIntentTest`, `ConversationTest`,
+`C3AEngineTest`) — the same discipline as `:backupkit` and
 Citation's `:core`. Only the native `LlmBackend` (`llm/LlamaCppBackend`) touches Android/JNI.
 
 ## The C3A engine
@@ -133,7 +142,9 @@ returns an `EngineDecision`:
    fires even right after a previous clarification, because answering from conflicting data is exactly
    the "being wrong" the rule forbids.
 2. **Ambiguity.** An unresolved reference ("it", "that", "the project") with nothing to bind it to
-   yields `CLARIFY` — it asks what you mean rather than guessing the subject.
+   yields `CLARIFY` — it asks what you mean rather than guessing the subject. *Once the chat is under
+   way, the recent conversation is somewhere to bind*, so a follow-up proceeds instead of re-asking
+   (the same concession as `justAsked`), and prior turns count as grounding evidence.
 3. **Grounding / uncertainty.** It measures how many of the question's content terms appear anywhere
    in identity, profiles, memory, or granted app data. Zero overlap and it won't let the model
    improvise: if the topic maps to a **denied app** it returns `INVESTIGATE` (asking you to enable
@@ -227,8 +238,10 @@ surfaces that).
 `MainActivity` is a three-tab shell over the one `AdvisorApp` runtime:
 
 - **Advisor** — the chat. Ask in plain language; each answer carries the sources retrieval cited, and
-  when C3A asks instead of answering, that turn is styled as a "Needs your input" clarification. The
-  empty state and a footer are honest that the model is a placeholder and name what's running.
+  when C3A asks instead of answering, that turn is styled as a "Needs your input" clarification. A
+  **clear-conversation** action in the top bar wipes the chat history (with a confirm dialog; memory,
+  profiles and identity are untouched). The empty state and a footer are honest that the model is a
+  placeholder and name what's running.
 - **Memory** — the long-term memory manager: add memories with free-form tags, filter by tag facet,
   set salience, and pin the ones that should always be reachable.
 - **Profiles** — the standing-profiles manager: create project profiles, add entries to any profile,
@@ -350,7 +363,10 @@ vectors are simply never consulted — revocation stays instant.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
 - `LogicEngineTest` — the no-op default and derived lines reaching the prompt's REASONING section.
 - `C3AEngineTest` — answer-when-grounded, clarify-when-empty, contradiction → clarify, ambiguity →
-  clarify, denied-app → investigate, no-double-asking, and greeting handling.
+  clarify, denied-app → investigate, no-double-asking, greeting handling, and *ambiguity resolved once
+  the conversation gives context*.
+- `ConversationTest` — the recent-turns retrieval query (folded-in subject, last-turns-only cap) and
+  the "chat is under way" signal.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
 - `MemoryDirectivesTest` — `@memorize` parsing, `#tag` extraction (lower-cased/de-duped), and stripping.
