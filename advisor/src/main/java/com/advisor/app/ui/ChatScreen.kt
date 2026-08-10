@@ -16,9 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 /**
- * The Advisor chat. A scrolling conversation over a text field. The model is a placeholder, so the
- * screen is honest about it: an empty state and a footer both say what's really running, and every
- * answer carries the citations retrieval found.
+ * The Advisor chat. A scrolling conversation over a text field. The screen is honest about what's
+ * running: the empty state names the live model (Qwen3-4B, or the placeholder while its weights aren't
+ * on the device yet), and every answer carries the citations retrieval found.
  */
 @Composable
 fun ChatScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {

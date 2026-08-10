@@ -1,10 +1,9 @@
 package com.advisor.app.logic
 
 /**
- * Describes the language model behind the Advisor. Today this only ever describes the
- * [PlaceholderLlmEngine]; the fields exist so the UI can honestly show "what's running" and so the
- * intended target — a small local model in the 2–4B range, Q4-quantised GGUF, loaded on-device — is
- * documented at the seam where it will actually plug in.
+ * Describes the language model behind the Advisor, so the UI can honestly show "what's running". It
+ * describes either the real weights — a local **Qwen3-4B**, Q4_K_M GGUF, loaded on-device (see
+ * [Qwen3LlmEngine]) — or the [PlaceholderLlmEngine] that stands in until those weights are present.
  */
 data class ModelSpec(
     val name: String,
@@ -22,10 +21,10 @@ data class ModelSpec(
 }
 
 /**
- * The **G**eneration step. A real implementation would load a GGUF model (llama.cpp / MediaPipe /
- * ONNX Runtime, TBD) and run [AdvisorPrompt.render] through it entirely on-device. Everything
- * upstream — permissions, retrieval, prompt assembly — is already real and model-agnostic, so
- * swapping this one interface for an actual engine is the whole remaining job.
+ * The **G**eneration step. The real implementation ([Qwen3LlmEngine]) loads a Qwen3-4B GGUF over
+ * llama.cpp and runs the assembled prompt through it entirely on-device; [PlaceholderLlmEngine] stands
+ * in until the weights are present. Everything upstream — permissions, retrieval, prompt assembly — is
+ * model-agnostic, so this one interface is the only seam the model plugs into.
  */
 interface LocalLlmEngine {
     val spec: ModelSpec
