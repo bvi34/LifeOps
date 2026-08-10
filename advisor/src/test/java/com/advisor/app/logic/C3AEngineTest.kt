@@ -84,4 +84,20 @@ class C3AEngineTest {
             "expected a reasoning note about conversation context, got ${out.derivedContext}"
         }
     }
+
+    @Test
+    fun conversational_lifeops_words_map_to_denied_app() {
+        val out = engine.process(
+            input("what chores should I tackle?").copy(deniedApps = setOf(SourceApp.LIFEOPS))
+        )
+        assertEquals(EngineDecision.INVESTIGATE, out.decision)
+    }
+
+    @Test
+    fun conversational_logistics_words_map_to_denied_app() {
+        val out = engine.process(
+            input("do we need to buy food?").copy(deniedApps = setOf(SourceApp.LOGISTICS))
+        )
+        assertEquals(EngineDecision.INVESTIGATE, out.decision)
+    }
 }

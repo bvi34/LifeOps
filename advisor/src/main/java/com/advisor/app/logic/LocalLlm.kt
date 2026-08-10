@@ -69,7 +69,7 @@ class PlaceholderLlmEngine : LocalLlmEngine {
 
         return buildString {
             if (personalFacts.isNotEmpty()) {
-                append("From your profile:")
+                append("I found this in your profile:")
                 for (fact in personalFacts) append("\n• ").append(fact)
             }
 
@@ -77,7 +77,7 @@ class PlaceholderLlmEngine : LocalLlmEngine {
                 if (isNotEmpty()) append("\n\n")
                 val sourcesLine = prompt.context
                     .map { it.document.source }.distinct().joinToString(", ") { it.displayName }
-                append("Based on your own ").append(sourcesLine).append(" data, here's what's relevant:\n")
+                append("I checked your ").append(sourcesLine).append(" data and found the most relevant bits:\n")
                 for (block in prompt.context) {
                     append("\n• ")
                     append(block.document.title.ifBlank { block.document.kind })
@@ -91,7 +91,7 @@ class PlaceholderLlmEngine : LocalLlmEngine {
 
             if (hasMemory) {
                 if (isNotEmpty()) append("\n\n")
-                append("From long-term memory:")
+                append("I also remembered:")
                 prompt.memories.forEachIndexed { index, memory ->
                     append("\n• ").append(firstLine(memory.content))
                     if (memory.tags.isNotEmpty()) append(" (").append(memory.tags.joinToString(", ")).append(')')

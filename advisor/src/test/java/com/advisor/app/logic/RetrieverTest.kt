@@ -48,6 +48,27 @@ class RetrieverTest {
     }
 
     @Test
+    fun understands_conversational_task_words() {
+        val results = Retriever(corpus).retrieve("hey, what chores should I tackle?")
+        assertTrue("expected task phrasing to find LifeOps tasks", results.isNotEmpty())
+        assertEquals("t1", results.first().document.id)
+    }
+
+    @Test
+    fun understands_everyday_food_phrasing() {
+        val results = Retriever(corpus).retrieve("do we need to buy food soon?")
+        assertTrue("expected food phrasing to find Logistics data", results.isNotEmpty())
+        assertEquals("p1", results.first().document.id)
+    }
+
+    @Test
+    fun expands_contractions_before_matching() {
+        val results = Retriever(corpus).retrieve("what's the kotlin novel?")
+        assertTrue("expected contraction and novel synonym to find reading data", results.isNotEmpty())
+        assertTrue(results.first().document.id in setOf("t2", "b1"))
+    }
+
+    @Test
     fun respects_top_k_limit() {
         val many = (1..20).map { doc("d$it", "task number $it", "flour task $it") }
         val results = Retriever(many).retrieve("flour", topK = 5)
