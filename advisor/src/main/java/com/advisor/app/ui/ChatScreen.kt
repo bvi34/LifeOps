@@ -32,7 +32,10 @@ fun ChatScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
-    Column(modifier.fillMaxSize()) {
+    // imePadding lifts the whole column (and so the input row at its foot) above the soft keyboard.
+    // Needed because the app targets SDK 35, where edge-to-edge is enforced and the manifest's
+    // adjustResize no longer shrinks the window for the IME — the insets have to be consumed here.
+    Column(modifier.fillMaxSize().imePadding()) {
         if (permissions.isEmpty) {
             NoPermissionsBanner()
         }
