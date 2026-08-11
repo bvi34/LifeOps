@@ -44,6 +44,9 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
 
     val model: ModelSpec get() = repo.model
 
+    /** Ground-truth diagnostic for the model card — the loaded file, or why it's still placeholder. */
+    val modelStatus: String get() = repo.modelStatus
+
     val permissions: StateFlow<AdvisorPermissions> =
         repo.observePermissions().stateIn(
             viewModelScope, SharingStarted.WhileSubscribed(5_000), AdvisorPermissions.NONE

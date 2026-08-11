@@ -4,10 +4,13 @@
 // fully-formatted (ChatML) prompt, entirely on-device. It exposes exactly the three methods the
 // Kotlin `external fun`s declare: nativeLoad / nativeGenerate / nativeFree.
 //
-// API pin: written against **llama.cpp tag b4000** (set as LLAMA_CPP_TAG in CMakeLists.txt). Newer
-// tags rename several symbols — e.g. `llama_load_model_from_file` → `llama_model_load_from_file`,
-// `llama_new_context_with_model` → `llama_init_from_model`, and tokenize/detokenize move to a
-// `llama_vocab` handle. If you bump the tag, update these calls and the pin together.
+// API pin: written against **llama.cpp tag b5500** (set as LLAMA_CPP_TAG in CMakeLists.txt) — the
+// modern, post-refactor API that supports Qwen3 (b4000 predated it). Notable shape vs. older tags:
+//   * lifecycle: llama_model_load_from_file / llama_init_from_model / llama_model_free
+//   * a `const llama_vocab*` handle (llama_model_get_vocab) owns tokenize / detokenize / eog
+//   * cache reset is llama_kv_self_clear; embedding size is llama_model_n_embd
+// llama.cpp renames these fairly often, so if you bump the tag again, reconcile the symbols below and
+// update this pin in the same change.
 
 #include <jni.h>
 #include <android/log.h>
@@ -24,17 +27,18 @@
 
 namespace {
 
-// One loaded model + its inference context. The opaque `handle` the Kotlin side holds is a pointer
-// to this, cast to jlong.
+// One loaded model + its inference context (and the vocab handle the tag exposes for tokenization).
+// The opaque `handle` the Kotlin side holds is a pointer to this, cast to jlong.
 struct AdvisorLlm {
-    llama_model*   model = nullptr;
-    llama_context* ctx   = nullptr;
+    llama_model*       model = nullptr;
+    llama_context*     ctx   = nullptr;
+    const llama_vocab* vocab = nullptr;
 };
 
 // Decode a single token id back to its text piece.
-std::string token_to_piece(const llama_model* model, llama_token id) {
+std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     char buf[256];
-    int n = llama_token_to_piece(model, id, buf, sizeof(buf), 0, /*special=*/false);
+    int n = llama_token_to_piece(vocab, id, buf, sizeof(buf), 0, /*special=*/false);
     if (n < 0) return {};
     return std::string(buf, n);
 }
@@ -68,10 +72,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0; // pure CPU inference on-device
 
-    llama_model* model = llama_load_model_from_file(path, mp);
+    llama_model* model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jpath, path);
     if (model == nullptr) {
-        LOGW("llama_load_model_from_file returned null");
+        LOGW("llama_model_load_from_file returned null");
         return 0;
     }
 
@@ -82,14 +86,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
-    llama_context* ctx = llama_new_context_with_model(model, cp);
+    llama_context* ctx = llama_init_from_model(model, cp);
     if (ctx == nullptr) {
-        LOGW("llama_new_context_with_model returned null");
-        llama_free_model(model);
+        LOGW("llama_init_from_model returned null");
+        llama_model_free(model);
         return 0;
     }
 
-    auto* h = new AdvisorLlm{model, ctx};
+    auto* h = new AdvisorLlm{model, ctx, llama_model_get_vocab(model)};
     LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d", (int) cp.n_ctx, threads);
     return reinterpret_cast<jlong>(h);
 }
@@ -103,7 +107,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     if (h == nullptr || h->ctx == nullptr) return env->NewStringUTF("");
 
     // Each ask re-sends the full assembled prompt, so start from a clean slate.
-    llama_kv_cache_clear(h->ctx);
+    llama_kv_self_clear(h->ctx);
 
     // Collect stop strings.
     std::vector<std::string> stops;
@@ -124,7 +128,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     int n_max = (int) text.size() + 8;
     std::vector<llama_token> tokens(n_max);
     int n_prompt = llama_tokenize(
-            h->model, text.c_str(), (int) text.size(),
+            h->vocab, text.c_str(), (int) text.size(),
             tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/true);
     if (n_prompt < 0) {
         LOGW("tokenization failed (%d)", n_prompt);
@@ -156,9 +160,9 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         }
 
         llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
-        if (llama_token_is_eog(h->model, id)) break;
+        if (llama_vocab_is_eog(h->vocab, id)) break;
 
-        out += token_to_piece(h->model, id);
+        out += token_to_piece(h->vocab, id);
 
         size_t cut = first_stop(out, stops);
         if (cut != std::string::npos) {
@@ -178,7 +182,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
     if (h == nullptr) return;
     if (h->ctx)   llama_free(h->ctx);
-    if (h->model) llama_free_model(h->model);
+    if (h->model) llama_model_free(h->model);
     delete h;
 }
 
@@ -188,11 +192,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
 // Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
 //
 // A second, small model loaded in *embedding* mode (mean-pooled) that turns a piece of text into one
-// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b4000
+// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b5500
 // API pin with the generation backend above.
 //
 // NOTE: unlike nativeGenerate, this path has not been compiled/verified on-device in this repo yet
-// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b4000
+// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b5500
 // API and the stock `examples/embedding` pooling pattern; validate it when you first import an
 // embedding model. The Kotlin side is fully guarded — any load/encode failure falls back to lexical
 // retrieval — so a mismatch degrades gracefully rather than crashing.
@@ -201,9 +205,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
 namespace {
 
 struct AdvisorEmbed {
-    llama_model*   model = nullptr;
-    llama_context* ctx   = nullptr;
-    int            n_embd = 0;
+    llama_model*       model  = nullptr;
+    llama_context*     ctx    = nullptr;
+    const llama_vocab* vocab  = nullptr;
+    int                n_embd = 0;
 };
 
 } // namespace
@@ -223,10 +228,10 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     llama_model_params mp = llama_model_default_params();
     mp.n_gpu_layers = 0; // pure CPU inference on-device
 
-    llama_model* model = llama_load_model_from_file(path, mp);
+    llama_model* model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jpath, path);
     if (model == nullptr) {
-        LOGW("embedding: llama_load_model_from_file returned null");
+        LOGW("embedding: llama_model_load_from_file returned null");
         return 0;
     }
 
@@ -241,14 +246,14 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
-    llama_context* ctx = llama_new_context_with_model(model, cp);
+    llama_context* ctx = llama_init_from_model(model, cp);
     if (ctx == nullptr) {
-        LOGW("embedding: llama_new_context_with_model returned null");
-        llama_free_model(model);
+        LOGW("embedding: llama_init_from_model returned null");
+        llama_model_free(model);
         return 0;
     }
 
-    auto* h = new AdvisorEmbed{model, ctx, llama_n_embd(model)};
+    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model)};
     LOGI("Loaded embedding GGUF; n_embd=%d threads=%d", h->n_embd, threads);
     return reinterpret_cast<jlong>(h);
 }
@@ -274,7 +279,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     int n_max = (int) input.size() + 8;
     std::vector<llama_token> tokens(n_max);
     int n_tok = llama_tokenize(
-            h->model, input.c_str(), (int) input.size(),
+            h->vocab, input.c_str(), (int) input.size(),
             tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/false);
     if (n_tok <= 0) {
         LOGW("embedding: tokenization failed (%d)", n_tok);
@@ -285,7 +290,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     tokens.resize(n_tok);
 
     // One sequence; all positions marked as outputs so mean-pooling sees every token.
-    llama_kv_cache_clear(h->ctx);
+    llama_kv_self_clear(h->ctx);
     llama_batch batch = llama_batch_init(n_tok, 0, 1);
     for (int i = 0; i < n_tok; i++) {
         batch.token[i]     = tokens[i];
@@ -319,7 +324,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeFree(JNIEnv* /*env*/, jobject /*
     auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
     if (h == nullptr) return;
     if (h->ctx)   llama_free(h->ctx);
-    if (h->model) llama_free_model(h->model);
+    if (h->model) llama_model_free(h->model);
     delete h;
 }
 

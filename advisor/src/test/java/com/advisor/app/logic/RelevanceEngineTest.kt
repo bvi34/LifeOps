@@ -36,6 +36,17 @@ class RelevanceEngineTest {
     }
 
     @Test
+    fun explicit_reading_status_query_keeps_only_reading_books() {
+        // Exactly the failing screenshot: 1 READING among several TO_READ, asked by state name.
+        val result = RelevanceEngine.assess(
+            "What Books are in a READING status?",
+            listOf(chunk(toRead), chunk(reading), chunk(done),
+                chunk(book("d", "TLS Mastery", "TO_READ")), chunk(book("e", "SSH Mastery", "TO_READ")))
+        )
+        assertEquals(listOf("citation:book:a"), result.grounding.map { it.document.id })
+    }
+
+    @Test
     fun the_pantry_item_is_named_an_object_type_mismatch() {
         val result = RelevanceEngine.assess("what am I reading?", listOf(chunk(miracleWhip), chunk(reading)))
         val whip = result.assessments.first { it.document.id == "logistics:pantry:1" }

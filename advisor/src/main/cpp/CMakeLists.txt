@@ -11,7 +11,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # llama.cpp is pinned. advisor_llm.cpp is written against this tag's API; bump them together.
-set(LLAMA_CPP_TAG "b4000" CACHE STRING "llama.cpp release tag to build against")
+set(LLAMA_CPP_TAG "b5500" CACHE STRING "llama.cpp release tag to build against")
 
 # Keep the fetched build lean — we only need the library, not tools/tests/server/curl.
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

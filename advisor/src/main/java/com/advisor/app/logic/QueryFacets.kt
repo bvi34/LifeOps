@@ -35,7 +35,11 @@ data class QueryFacets(
                 when {
                     TO_READ_CUE.containsMatchIn(q) -> return KnowledgeFacets.TO_READ
                     FINISHED_CUE.containsMatchIn(q) -> return KnowledgeFacets.DONE
-                    READING_NOW_CUE.containsMatchIn(q) -> return KnowledgeFacets.READING
+                    // "currently reading", "am I reading", "in a READING status/state", or a bare
+                    // "reading" — the word only reaches this book branch as a state cue, so it means
+                    // in-progress. Checked last so "reading list" (to-read) and the rest win first.
+                    READING_NOW_CUE.containsMatchIn(q) || READING_WORD.containsMatchIn(q) ->
+                        return KnowledgeFacets.READING
                 }
             }
             // Task/project lifecycle.
@@ -60,18 +64,22 @@ data class QueryFacets(
             Regex("""\b(grocery|groceries|shopping list|to buy)\b""") to ObjectType.GROCERY_ITEM
         )
 
+        // Explicit state names ("to_read", "to-read status") as well as conversational phrasings.
         private val TO_READ_CUE = Regex(
-            """\b(to[- ]?read|want to read|going to read|plan(?:ning)? to read|read next|reading list|""" +
+            """\b(to[-_ ]?read|want to read|going to read|plan(?:ning)? to read|read next|reading list|""" +
                 """to be read|tbr|haven'?t read|not read yet|unread|read soon|queued?)\b"""
         )
+        // Bare "done/completed/finished" count here (this branch is book-only, so they mean finished),
+        // as do "done/finished/completed status/state".
         private val FINISHED_CUE = Regex(
-            """\b(finished|already read|have i read|have read|i(?:'ve| have) read|did i read|""" +
-                """done reading|read this year|completed reading)\b"""
+            """\b(finished|done|completed|complete|already read|have i read|have read|""" +
+                """i(?:'ve| have) read|did i read|done reading|read this year)\b"""
         )
         private val READING_NOW_CUE = Regex(
             """\b(currently|right now|these days|at the moment|in progress|reading now|am i reading|""" +
-                """i(?:'m| am) reading|book am i on|reading currently)\b"""
+                """i(?:'m| am) reading|book am i on|reading currently|reading status|reading state)\b"""
         )
+        private val READING_WORD = Regex("""\breading\b""")
 
         private val DONE_CUE = Regex("""\b(done|completed|complete|finished|accomplished)\b""")
         private val DOING_CUE = Regex("""\b(in progress|in-progress|working on|doing|underway|started)\b""")
