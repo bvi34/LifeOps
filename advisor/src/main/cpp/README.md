@@ -72,12 +72,15 @@ model — or in a build without the native library — retrieval is lexical, so 
 
 > Unlike the generation path, the embedding JNI functions have **not** been compiled/verified on a
 > device in this repo yet (they need an embedding GGUF to exercise). They're written against the same
-> `b4000` API and the stock `examples/embedding` pooling pattern; the Kotlin side is fully guarded, so
+> `b5500` API and the stock `examples/embedding` pooling pattern; the Kotlin side is fully guarded, so
 > a mismatch falls back to lexical retrieval rather than crashing. Validate them when you first import
 > an embedding model, and treat them the same as the generation calls when bumping the tag.
 
 ## Bumping llama.cpp
 
-`advisor_llm.cpp` is written against the API of the pinned tag (`LLAMA_CPP_TAG`, currently `b4000`).
-llama.cpp renames symbols fairly often (model/context init, vocab-based tokenize, batch helpers), so
-if you raise the tag, update the calls in `advisor_llm.cpp` in the same change.
+`advisor_llm.cpp` is written against the API of the pinned tag (`LLAMA_CPP_TAG`, currently `b5500` —
+the first line that supports **Qwen3**; the earlier `b4000` predated it and could not load the model).
+llama.cpp renames symbols fairly often (model/context init, the `llama_vocab` handle for
+tokenize/detokenize/eog, cache reset), so if you raise the tag, update the calls in `advisor_llm.cpp`
+in the same change. Note the cache-reset call in particular: `b5500` uses `llama_kv_self_clear`, which
+a later refactor (~`b5750`) replaces with the `llama_memory_*` API.
