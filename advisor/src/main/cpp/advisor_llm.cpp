@@ -27,6 +27,26 @@
 
 namespace {
 
+// Route llama.cpp / ggml's own diagnostics into logcat. Without this the library logs to stderr, which
+// Android drops — so a load failure ("unknown model architecture", "unsupported quantization", "unable
+// to allocate", …) would be invisible and all we'd see is our own "returned null". With it, the real
+// reason shows under the `advisor-llm` tag.
+void advisor_log_cb(ggml_log_level level, const char* text, void* /*user*/) {
+    int prio = level == GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR
+             : level == GGML_LOG_LEVEL_WARN  ? ANDROID_LOG_WARN
+             : ANDROID_LOG_INFO;
+    __android_log_print(prio, LOG_TAG, "%s", text ? text : "");
+}
+
+// Install the log bridge and initialize the backend exactly once, whichever entry point runs first.
+void ensure_backend_ready() {
+    static bool ready = false;
+    if (ready) return;
+    llama_log_set(advisor_log_cb, nullptr);
+    llama_backend_init();
+    ready = true;
+}
+
 // One loaded model + its inference context (and the vocab handle the tag exposes for tokenization).
 // The opaque `handle` the Kotlin side holds is a pointer to this, cast to jlong.
 struct AdvisorLlm {
@@ -61,11 +81,7 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*/, jstring jpath) {
-    static bool backend_ready = false;
-    if (!backend_ready) {
-        llama_backend_init();
-        backend_ready = true;
-    }
+    ensure_backend_ready();
 
     const char* path = env->GetStringUTFChars(jpath, nullptr);
 
@@ -217,11 +233,7 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL
 Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz*/, jstring jpath) {
-    static bool backend_ready = false;
-    if (!backend_ready) {
-        llama_backend_init();
-        backend_ready = true;
-    }
+    ensure_backend_ready();
 
     const char* path = env->GetStringUTFChars(jpath, nullptr);
 
