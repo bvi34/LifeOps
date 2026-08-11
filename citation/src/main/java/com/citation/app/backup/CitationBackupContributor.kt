@@ -31,8 +31,10 @@ class CitationBackupContributor(private val context: Context) : BackupContributo
     override val appId = AppId.CITATION
     override val displayName = "Citation"
 
-    // Matches CitationDatabase @Database(version = 3).
-    override val dataVersion = 3
+    // Matches CitationDatabase @Database(version = 5). Bump this in lockstep with the @Database
+    // version so the archive manifest (and the sandbox's "Backup format v_" label) truthfully
+    // records which schema the backed-up citation.db was written at.
+    override val dataVersion = 5
 
     override fun backup(sink: BackupSink) {
         // Fold the WAL into the main db so the file copy is current and self-contained.
