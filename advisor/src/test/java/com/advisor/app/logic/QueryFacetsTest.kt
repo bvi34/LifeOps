@@ -23,6 +23,14 @@ class QueryFacetsTest {
     }
 
     @Test
+    fun explicit_state_name_phrasing_infers_the_state() {
+        // The screenshot case: the literal state name, not a conversational phrasing.
+        assertEquals(KnowledgeFacets.READING, QueryFacets.infer("What Books are in a READING status?").state)
+        assertEquals(KnowledgeFacets.TO_READ, QueryFacets.infer("which books are TO_READ?").state)
+        assertEquals(KnowledgeFacets.DONE, QueryFacets.infer("show books in a DONE status").state)
+    }
+
+    @Test
     fun task_words_infer_task_type() {
         val f = QueryFacets.infer("what tasks are still pending?")
         assertTrue(ObjectType.TASK in f.objectTypes)
