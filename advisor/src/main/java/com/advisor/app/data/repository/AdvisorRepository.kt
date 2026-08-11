@@ -14,11 +14,14 @@ import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
+import com.advisor.app.logic.AdvisorPrompt
+import com.advisor.app.logic.AssistantNaming
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
+import com.advisor.app.logic.GroundingResult
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
@@ -33,6 +36,9 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.RelevanceDirectives
+import com.advisor.app.logic.RelevanceEngine
+import com.advisor.app.logic.RetrievedChunk
 import com.advisor.app.logic.SmallTalk
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
@@ -178,6 +184,13 @@ class AdvisorRepository(
         val intent = WriteIntent.detect(question, profiles)
         if (intent.hasWrites) return applyWriteCommand(question, intent)
 
+        // A request to rename the assistant ("can you call yourself Ava?", "go by Ava now") is a
+        // command to persist how it should refer to itself, not a data question — save it to the persona
+        // profile and confirm, before retrieval would otherwise treat it as a look-up and dump rows.
+        AssistantNaming.detect(question)?.let { newName ->
+            return applyAssistantRename(question, newName, profiles)
+        }
+
         // A purely social or meta turn ("hi", "thanks", "what can you do?") isn't a data question —
         // reply warmly and immediately from what we already hold (the user's name, the enabled apps)
         // rather than dead-ending in the grounding gate. Grounded questions, even ones that open with
@@ -222,7 +235,15 @@ class AdvisorRepository(
 
         // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
         // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
-        val chunks = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+        val retrieved = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+
+        // Categorical relevance grounding: judge each candidate against what the question actually asks
+        // for — object type (a *book*?) and lifecycle state (one I'm *reading* now?) — and keep only what
+        // fits, so a pantry item or a to-read book never dumps into "what am I reading?". Facets are
+        // inferred from the current question (not the conversation-folded retrieval query), and the
+        // baseline is deterministic here — a real model can override any verdict via RelevanceEngine.
+        val grounding = RelevanceEngine.assess(question, retrieved)
+        val chunks = grounding.grounding
 
         // Recall long-term memory (always available; not permission-gated).
         val recalled = MemoryRecall.recall(retrievalQuery, memory.allRecords())
@@ -253,27 +274,69 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
-        val prompt = PromptAssembler.assemble(
-            question, chunks, identity, recalled, profiles, logic.derivedContext, conversation
-        )
-        // A real local model runs for seconds and can block on native inference — keep it off the UI
-        // thread. The placeholder engine is instant, so this is free when the model isn't loaded.
-        val raw = withContext(Dispatchers.Default) { engine.generate(prompt) }
+        // First pass. The prompt carries the grounded context plus the logic notes and the relevance
+        // filter's summary, so the model can be honest about near-misses. A real local model runs for
+        // seconds and can block on native inference, so keep generation off the UI thread; the
+        // placeholder engine is instant, so this is free when no model is loaded.
+        var groundingResult = grounding
+        var groundChunks = chunks
+        var raw = withContext(Dispatchers.Default) {
+            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+        }
+
+        // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
+        // @relevance(n): <verdict> line. Apply those verdicts over the deterministic baseline
+        // (RelevanceEngine.reassess) and — only when that actually changes the grounded set — let the
+        // model answer again over just the candidates that fit. Bounded to one round so it always
+        // terminates, and inert for the placeholder (which never emits @relevance).
+        val votes = RelevanceDirectives.parse(raw)
+        if (votes.isNotEmpty()) {
+            val refToId = groundChunks.mapIndexed { index, chunk -> (index + 1) to chunk.document.id }.toMap()
+            val overrides = votes.mapNotNull { v -> refToId[v.ref]?.let { it to v.category } }.toMap()
+            val refined = RelevanceEngine.reassess(groundingResult, overrides)
+            if (refined.grounding.map { it.document.id } != groundChunks.map { it.document.id }) {
+                groundingResult = refined
+                groundChunks = refined.grounding
+                raw = withContext(Dispatchers.Default) {
+                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+                }
+            }
+        }
 
         // Apply any writes the model emitted — @remember(<profile>): … to a standing profile and
-        // @memorize: … to long-term memory — then show a clean answer with the directives removed.
+        // @memorize: … to long-term memory — then show a clean answer with every directive (writes and
+        // relevance votes alike) removed.
         for (append in ProfileDirectives.parse(raw)) {
             profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
         }
         for (write in MemoryDirectives.parse(raw)) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
         }
-        val text = MemoryDirectives.strip(ProfileDirectives.strip(raw))
+        val text = RelevanceDirectives.strip(MemoryDirectives.strip(ProfileDirectives.strip(raw)))
 
         memory.markRecalled(recalled.map { it.id })
-        persistTurn(question, text, chunks.map { it.document }, KIND_NORMAL)
+        persistTurn(question, text, groundChunks.map { it.document }, KIND_NORMAL)
 
-        return AdvisorAnswer(text, chunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+        return AdvisorAnswer(text, groundChunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Assemble the RAG prompt for a grounded answer: the logic engine's notes plus the relevance
+     * filter's one-line summary of what it set aside become the model's REASONING context, so the model
+     * can explain near-misses rather than pretend the filtered rows never existed.
+     */
+    private fun groundedPrompt(
+        question: String,
+        chunks: List<RetrievedChunk>,
+        identity: Identity,
+        recalled: List<MemoryRecord>,
+        profiles: List<Profile>,
+        logicNotes: List<String>,
+        grounding: GroundingResult,
+        conversation: List<ConversationTurn>
+    ): AdvisorPrompt {
+        val derived = logicNotes + listOfNotNull(grounding.filterNote().takeIf { it.isNotBlank() })
+        return PromptAssembler.assemble(question, chunks, identity, recalled, profiles, derived, conversation)
     }
 
     /**
@@ -309,6 +372,25 @@ class AdvisorRepository(
         }
         persistTurn(question, result.text, result.citations, KIND_NORMAL)
         return AdvisorAnswer(result.text, result.citations, emptyList(), engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Persist a request to rename the assistant to [newName] and confirm it, bypassing retrieval and the
+     * model. The name is appended to the standing **persona** profile as a plain instruction, which is
+     * where [SmallTalk.assistantNameFrom] reads it — so from the next turn on the assistant introduces
+     * itself and signs off as [newName]. Falls back to the seeded [PERSONA_PROFILE_KEY] when no persona
+     * profile is in context yet (the store creates it on write).
+     */
+    private suspend fun applyAssistantRename(
+        question: String,
+        newName: String,
+        profiles: List<Profile>
+    ): AdvisorAnswer {
+        val personaKey = profiles.firstOrNull { it.kind == ProfileKind.PERSONA }?.key ?: PERSONA_PROFILE_KEY
+        profileStore.append(personaKey, "You are called $newName.", ProfileEntry.AUTHOR_ADVISOR)
+        val text = "Done — I'll go by $newName from now on."
+        persistTurn(question, text, emptyList(), KIND_NORMAL)
+        return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
     }
 
     /**
@@ -385,6 +467,8 @@ class AdvisorRepository(
         const val KIND_CLARIFICATION = "clarification"
         /** Marks a memory the assistant wrote (via a user command or a @memorize directive). */
         const val SOURCE_ADVISOR = "advisor"
+        /** The seeded persona profile the assistant's name is stored in (see [ProfileStore]). */
+        const val PERSONA_PROFILE_KEY = "llm-persona"
         /** How many recent messages feed the conversation context (≈ the last handful of exchanges). */
         const val HISTORY_TURNS = 8
     }
