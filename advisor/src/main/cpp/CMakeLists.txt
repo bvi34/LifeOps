@@ -14,7 +14,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # NOT a CACHE var on purpose: a cached value persists in .cxx/CMakeCache.txt across builds, so a plain
 # `set(... CACHE ...)` would let a stale tag from an earlier configure silently win over a bump here
 # (and FetchContent would then reuse the old clone). A normal set is re-evaluated every configure.
-set(LLAMA_CPP_TAG "b5500")
+set(LLAMA_CPP_TAG "b5600")
 
 # Keep the fetched build lean — we only need the library, not tools/tests/server/curl.
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)
