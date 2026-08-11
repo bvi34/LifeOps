@@ -92,6 +92,14 @@ abstract class CitationDatabase : RoomDatabase() {
                     CitationDatabase::class.java,
                     "citation.db"
                 ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    // A restore can swap in a `citation.db` written by a *newer* Citation build than
+                    // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
+                    // default reaction to that downgrade is to throw on open — a permanent boot-crash.
+                    // There is no data-preserving way to run a schema backwards, so degrade instead of
+                    // crash: drop and recreate the schema at this build's version. The owned EPUB/PDF
+                    // and sync-envelope files under `filesDir/sovereign` are restored separately and
+                    // are unaffected; only the (newer, unreadable) sovereign DB rows are lost.
+                    .fallbackToDestructiveMigrationOnDowngrade()
                     .build().also { instance = it }
             }
 
