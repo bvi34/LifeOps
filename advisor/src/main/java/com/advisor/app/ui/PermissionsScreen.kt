@@ -107,6 +107,8 @@ private fun ModelCard(vm: AdvisorViewModel) {
 
     Text("Model", style = MaterialTheme.typography.titleMedium)
     Text(vm.model.label(), style = MaterialTheme.typography.bodyMedium)
+    // Ground truth from the backend: the loaded file, or exactly why it's still the placeholder.
+    Text("Status: ${vm.modelStatus}", style = MaterialTheme.typography.bodySmall)
 
     when (val s = modelState) {
         is ModelUiState.Importing -> {
@@ -144,9 +146,10 @@ private fun ModelCard(vm: AdvisorViewModel) {
                 )
                 Text(
                     if (vm.model.isPlaceholder) {
-                        "A model file is installed, but this build doesn't include the native " +
-                            "inference runtime, so Advisor is still using the deterministic " +
-                            "placeholder. Rebuild with -Padvisor.buildNativeLlm=true to run it."
+                        "A model file is installed, but Advisor is still on the deterministic " +
+                            "placeholder — see Status above. If it says the native runtime isn't in " +
+                            "this build, rebuild with -Padvisor.buildNativeLlm=true; if it failed to " +
+                            "load, the GGUF is likely the wrong format or too large for this device."
                     } else {
                         "Advisor runs Qwen3-4B locally via llama.cpp — fully on-device, no network. " +
                             "It reasons over the same retrieved, cited context the pipeline assembled."

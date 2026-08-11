@@ -20,6 +20,9 @@ class Qwen3LlmEngine(
     override val spec: ModelSpec
         get() = if (backend.isReady) LOADED else fallback.spec
 
+    /** The backend's own account of what's loaded, or exactly why it isn't (see [LlmBackend.detail]). */
+    override val status: String get() = backend.detail
+
     override fun generate(prompt: AdvisorPrompt): String {
         if (!backend.isReady) return fallback.generate(prompt)
 

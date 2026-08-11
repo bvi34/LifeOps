@@ -29,6 +29,14 @@ data class ModelSpec(
 interface LocalLlmEngine {
     val spec: ModelSpec
 
+    /**
+     * A one-line, ground-truth diagnostic of what the generation layer is actually doing — the loaded
+     * model file when a real model is running, or *why* it's still on the placeholder (native runtime
+     * not in the build / no model file installed / a file that failed to load). Surfaced on the model
+     * card so "why am I on the placeholder?" has a precise answer instead of a guess.
+     */
+    val status: String get() = ""
+
     /** Produce an answer for [prompt]. Must run fully on-device; no network, no I/O. */
     fun generate(prompt: AdvisorPrompt): String
 }
@@ -48,6 +56,8 @@ class PlaceholderLlmEngine : LocalLlmEngine {
         quantization = "Q4_K_M / GGUF",
         isPlaceholder = true
     )
+
+    override val status: String get() = "No language model loaded — using the deterministic placeholder."
 
     override fun generate(prompt: AdvisorPrompt): String {
         val hasContext = prompt.context.isNotEmpty()

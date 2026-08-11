@@ -90,6 +90,9 @@ class AdvisorRepository(
 
     val model: ModelSpec get() = engine.spec
 
+    /** Ground-truth diagnostic of the generation layer — the loaded file, or why it's still placeholder. */
+    val modelStatus: String get() = engine.status
+
     /** True when retrieval is running semantically (an embedding model is loaded), not lexically. */
     val semanticRetrieval: Boolean get() = retriever.isSemantic
 
