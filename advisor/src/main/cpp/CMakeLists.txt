@@ -23,6 +23,18 @@ set(LLAMA_BUILD_SERVER   OFF CACHE BOOL "" FORCE)
 set(LLAMA_CURL           OFF CACHE BOOL "" FORCE)
 set(GGML_OPENMP          OFF CACHE BOOL "" FORCE)
 
+# Optional GPU offload via ggml's Vulkan backend (advisor.gpu=true → -DADVISOR_GPU=ON from Gradle).
+# Chosen over OpenCL because it accelerates the Q4_K_M model as-is (llama.cpp's OpenCL backend only
+# handles Q4_0). It needs, on the *build host*: the Vulkan glslc shader compiler and a host C++ compiler
+# (llama.cpp builds its vulkan-shaders-gen tool for the host). At runtime it uses the device's own
+# Vulkan driver (the NDK provides libvulkan for the Android side). If glslc isn't found, point CMake at
+# it with -DVulkan_GLSLC_EXECUTABLE=<path-to-glslc> (the LunarG Vulkan SDK or the NDK ships one).
+option(ADVISOR_GPU "Build the Vulkan GPU backend and offload model layers to the device GPU" OFF)
+if (ADVISOR_GPU)
+    set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    message(STATUS "advisor-llm: GPU offload ON — building ggml Vulkan backend")
+endif()
+
 include(FetchContent)
 FetchContent_Declare(
         llama_cpp
@@ -33,6 +45,11 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(llama_cpp)
 
 add_library(advisor-llm SHARED advisor_llm.cpp)
+
+# Tell the C++ whether a GPU backend is in the build, so it offloads layers only when one exists.
+if (ADVISOR_GPU)
+    target_compile_definitions(advisor-llm PRIVATE ADVISOR_GPU_OFFLOAD=1)
+endif()
 
 # `android` and `log` are NDK system libraries; `llama` comes from the fetched project.
 find_library(log-lib log)

@@ -86,7 +86,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     const char* path = env->GetStringUTFChars(jpath, nullptr);
 
     llama_model_params mp = llama_model_default_params();
-    mp.n_gpu_layers = 0; // pure CPU inference on-device
+#ifdef ADVISOR_GPU_OFFLOAD
+    mp.n_gpu_layers = 99; // offload all transformer layers to the GPU (Vulkan backend compiled in)
+#else
+    mp.n_gpu_layers = 0;  // pure CPU inference on-device (no GPU backend in this build)
+#endif
 
     llama_model* model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jpath, path);
@@ -110,7 +114,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     auto* h = new AdvisorLlm{model, ctx, llama_model_get_vocab(model)};
-    LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d", (int) cp.n_ctx, threads);
+    LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d n_gpu_layers=%d", (int) cp.n_ctx, threads, mp.n_gpu_layers);
     return reinterpret_cast<jlong>(h);
 }
 

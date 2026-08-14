@@ -22,6 +22,31 @@ Only the `arm64-v8a` ABI is built — a 4B Q4 model isn't realistic on 32-bit or
 When the property is **off** (the default), no `.so` is produced; `LlamaCppBackend` reports
 not-ready and Advisor answers with its deterministic placeholder engine.
 
+### Optional: GPU offload (Vulkan)
+
+By default the model runs on the CPU (`backend CPU`, all layers CPU-assigned). To offload the layers
+to the device GPU (e.g. an Adreno), add `-Padvisor.gpu=true`:
+
+```
+./gradlew :app:assembleDebug -Padvisor.buildNativeLlm=true -Padvisor.gpu=true
+```
+
+This builds ggml's **Vulkan** backend and sets `n_gpu_layers = 99` so the transformer layers run on the
+GPU. Vulkan (not the Adreno-tuned OpenCL backend) is used deliberately: OpenCL only accelerates `Q4_0`,
+whereas Vulkan runs the `Q4_K_M` weights we ship as-is.
+
+It's **off by default** because it adds *build-host* requirements the CPU build doesn't have:
+
+- **`glslc`** — the Vulkan shader compiler. Ships with the LunarG Vulkan SDK, and with the NDK under
+  `shader-tools/`. If CMake can't find it, pass `-DVulkan_GLSLC_EXECUTABLE=<path>\glslc.exe`.
+- **a host C++ compiler** — llama.cpp builds its `vulkan-shaders-gen` tool for the *host* (it detects
+  MSVC/clang/gcc). On Windows, having Visual Studio Build Tools or the NDK clang on PATH satisfies this.
+
+At runtime the Android side uses the device's own Vulkan driver (the NDK provides `libvulkan`). Confirm
+offload in logcat: the load line prints `n_gpu_layers=99` and ggml lists a Vulkan device instead of only
+`backend CPU`. If a Vulkan build or device init fails, the Kotlin side falls back to the placeholder, so
+the CPU path stays available — flip the flag back off to return to the known-good CPU build.
+
 The CMake build produces `libadvisor-llm.so` alongside its llama.cpp dependencies (`libllama.so`,
 `libggml.so`). AGP's `externalNativeBuild` packages all of them into the APK's `lib/arm64-v8a/`, and
 the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 26), so the Kotlin side
