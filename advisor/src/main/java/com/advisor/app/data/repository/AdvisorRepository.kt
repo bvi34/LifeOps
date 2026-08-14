@@ -181,6 +181,14 @@ class AdvisorRepository(
         // Standing profiles are always-on context — no query, referenced by name.
         val profiles = profileStore.list().filter { it.alwaysInclude }
 
+        // Whether a real language model is loaded (not the extractive placeholder). When it is, we let
+        // *it* drive the conversation — the pre-model shortcuts below (canned small talk, the C3A
+        // "ask instead of guessing" gate) exist because the placeholder can't reason or chat; a real
+        // model can, so we hand those turns to it (with all the same grounding) rather than intercepting
+        // them. Explicit write commands and computed functions still run first — those are tools, not
+        // guesses. This is the "User ⇄ LLM, engine assists" flow.
+        val hasModel = !engine.spec.isPlaceholder
+
         // An explicit write command ("remember that …", "add to LLM persona that …") is an
         // instruction, not a question — perform it directly and confirm, before the C3A gate that
         // would otherwise ask for clarification about a fact it has no grounding for.
@@ -194,20 +202,22 @@ class AdvisorRepository(
             return applyAssistantRename(question, newName, profiles)
         }
 
-        // A purely social or meta turn ("hi", "thanks", "what can you do?") isn't a data question —
-        // reply warmly and immediately from what we already hold (the user's name, the enabled apps)
-        // rather than dead-ending in the grounding gate. Grounded questions, even ones that open with
-        // "hi, …", carry real content words and so fall straight through to the retrieval pipeline.
-        SmallTalk.detect(
-            question,
-            SmallTalk.Context(
-                userName = identity.name,
-                assistantName = SmallTalk.assistantNameFrom(profiles),
-                grantedApps = permissions.granted
-            )
-        )?.let { chat ->
-            persistTurn(question, chat.text, emptyList(), KIND_NORMAL)
-            return AdvisorAnswer(chat.text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
+        // A purely social or meta turn ("hi", "thanks", "what can you do?") isn't a data question. With
+        // only the placeholder, reply warmly from what we already hold rather than dead-ending in the
+        // grounding gate. With a real model loaded, let it handle the chit-chat itself — it's more
+        // natural, and the system prompt already tells it who it is and what it can do.
+        if (!hasModel) {
+            SmallTalk.detect(
+                question,
+                SmallTalk.Context(
+                    userName = identity.name,
+                    assistantName = SmallTalk.assistantNameFrom(profiles),
+                    grantedApps = permissions.granted
+                )
+            )?.let { chat ->
+                persistTurn(question, chat.text, emptyList(), KIND_NORMAL)
+                return AdvisorAnswer(chat.text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
+            }
         }
 
         // Load only what the user has granted — denied apps are never read.
@@ -269,8 +279,11 @@ class AdvisorRepository(
         )
 
         // "Not knowing is acceptable. Being wrong without asking is not." — when the engine is
-        // uncertain it asks the user, and the model is not invoked to resolve it internally.
-        if (logic.asksUser) {
+        // uncertain it asks the user. This deterministic gate is the placeholder's safety net (it can't
+        // reason about thin grounding, so it must not improvise). A real model can: the system prompt
+        // already tells it to say so plainly and ask one natural follow-up when nothing fits — so we let
+        // it handle uncertainty conversationally instead of returning a canned clarification here.
+        if (logic.asksUser && !hasModel) {
             val text = logic.clarification
                 ?: "I need a bit more to answer that — could you clarify?"
             persistTurn(question, text, emptyList(), KIND_CLARIFICATION)

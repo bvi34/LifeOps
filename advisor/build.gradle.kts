@@ -20,6 +20,12 @@ plugins {
 // ships without the .so and Advisor falls back to its deterministic placeholder engine at runtime.
 val buildNativeLlm = (providers.gradleProperty("advisor.buildNativeLlm").orNull ?: "false").toBoolean()
 
+// Opt-in GPU offload: build ggml's Vulkan backend and offload the model's layers to the device GPU
+// (e.g. an Adreno). OFF by default because it adds host build-tool requirements (glslc + a host C++
+// compiler for llama.cpp's vulkan-shaders-gen) that a plain CPU build doesn't need — so enabling it
+// can't silently break the working CPU build. Requires advisor.buildNativeLlm too.
+val buildGpu = (providers.gradleProperty("advisor.gpu").orNull ?: "false").toBoolean()
+
 android {
     namespace = "com.advisor.app"
     compileSdk = 35
@@ -32,7 +38,11 @@ android {
             // A 4B Q4 model is only realistic on 64-bit ARM; don't bloat other ABIs with the weights' runtime.
             ndk { abiFilters += "arm64-v8a" }
             externalNativeBuild {
-                cmake { cppFlags += "-O3" }
+                cmake {
+                    cppFlags += "-O3"
+                    // Hand the GPU choice to CMakeLists (which turns on GGML_VULKAN + a build-time offload flag).
+                    arguments += "-DADVISOR_GPU=${if (buildGpu) "ON" else "OFF"}"
+                }
             }
         }
     }
