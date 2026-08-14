@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <chrono>
 
 #include "llama.h"
 
@@ -177,6 +178,16 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    // The first decode processes the whole prompt (prefill) — the slow, silent phase on CPU — then each
+    // later decode is a single token. Log prefill completion and periodic progress so the minutes-long
+    // gap is visible instead of looking hung.
+    LOGI("nativeGenerate: prompt=%d tokens; prefill…", (int) tokens.size());
+    const auto t_start = std::chrono::steady_clock::now();
+    auto elapsed_ms = [&]() {
+        return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - t_start).count();
+    };
+
     std::string out;
     llama_batch batch = llama_batch_get_one(tokens.data(), (int) tokens.size());
 
@@ -187,12 +198,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
             LOGW("llama_decode failed");
             break;
         }
+        if (generated == 0) LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
 
         llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
         if (llama_vocab_is_eog(h->vocab, id)) break;
 
         out += token_to_piece(h->vocab, id);
         produced++;
+        if (produced % 32 == 0) LOGI("nativeGenerate: %d tokens so far (%lld ms)…", produced, elapsed_ms());
 
         size_t cut = first_stop(out, stops);
         if (cut != std::string::npos) {
@@ -204,7 +217,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
 
     llama_sampler_free(smpl);
-    LOGI("nativeGenerate: produced %d tokens (%zu chars)", produced, out.size());
+    const long long ms = elapsed_ms();
+    const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
+    LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
+         produced, out.size(), ms, tps);
     return env->NewStringUTF(out.c_str());
 }
 
