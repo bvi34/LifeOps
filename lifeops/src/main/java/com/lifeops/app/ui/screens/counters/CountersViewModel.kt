@@ -10,6 +10,7 @@ import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.repository.AspectRepository
 import com.lifeops.app.data.repository.CounterRepository
 import com.lifeops.app.data.repository.WeekRepository
+import com.lifeops.app.data.repository.WellnessRepository
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +55,8 @@ data class CountersUiState(
 class CountersViewModel(
     private val counterRepository: CounterRepository,
     private val aspectRepository: AspectRepository,
-    private val weekRepository: WeekRepository
+    private val weekRepository: WeekRepository,
+    private val wellnessRepository: WellnessRepository
 ) : ViewModel() {
 
     private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
@@ -180,6 +182,17 @@ class CountersViewModel(
         viewModelScope.launch { counterService.log(counter.id, delta = delta, occurredAt = occurredAtMillis) }
     }
 
+    /**
+     * Attach a wellness check-in to the moment a habit was marked. Offered (never forced) right
+     * after ticking a habit, so completing a habit can double as a quick energy/sensory read.
+     * Persists a standard daytime CHECKIN, so it also flows into the wellness reports.
+     */
+    fun logWellnessCheckin(energy: Int, sensory: Int, note: String?) {
+        viewModelScope.launch {
+            wellnessRepository.logCheckin(energy = energy, sensory = sensory, note = note)
+        }
+    }
+
     fun categoryNameFor(categoryId: String?): String? {
         if (categoryId == null) return null
         return _uiState.value.categoriesByAspect.values.flatten().firstOrNull { it.id == categoryId }?.name
@@ -189,9 +202,10 @@ class CountersViewModel(
 class CountersViewModelFactory(
     private val counterRepository: CounterRepository,
     private val aspectRepository: AspectRepository,
-    private val weekRepository: WeekRepository
+    private val weekRepository: WeekRepository,
+    private val wellnessRepository: WellnessRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        CountersViewModel(counterRepository, aspectRepository, weekRepository) as T
+        CountersViewModel(counterRepository, aspectRepository, weekRepository, wellnessRepository) as T
 }
