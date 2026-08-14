@@ -358,7 +358,8 @@ fun LifeOpsNavHost(
                 composable("counters") {
                     val vm = viewModel<com.lifeops.app.ui.screens.counters.CountersViewModel>(
                         factory = CountersViewModelFactory(
-                            app.counterRepository, app.aspectRepository, app.weekRepository
+                            app.counterRepository, app.aspectRepository, app.weekRepository,
+                            app.wellnessRepository
                         )
                     )
                     CountersScreen(

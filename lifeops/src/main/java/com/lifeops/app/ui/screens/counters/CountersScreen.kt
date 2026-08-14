@@ -44,6 +44,14 @@ fun CountersScreen(
     var showCreate by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Counter?>(null) }
     var backdating by remember { mutableStateOf<Counter?>(null) }
+    // After a habit is ticked, offer (never force) a quick wellness read tied to that moment.
+    var wellnessPromptFor by remember { mutableStateOf<Counter?>(null) }
+
+    // Log the tick, then — for habits only — surface the optional wellness check-in.
+    val increment: (Counter) -> Unit = { counter ->
+        viewModel.increment(counter)
+        if (counter.isHabit) wellnessPromptFor = counter
+    }
 
     val categoriesFlat = remember(state.categoriesByAspect) { state.categoriesByAspect.values.flatten() }
 
@@ -78,7 +86,7 @@ fun CountersScreen(
                         last7DayTotals = state.last7DayTotals,
                         habits = state.dashboardHabits,
                         categoryNameFor = { id -> categoriesFlat.firstOrNull { it.id == id }?.name },
-                        onIncrement = { viewModel.increment(it) },
+                        onIncrement = increment,
                         onOpenCounter = { onOpenCounter(it.id) }
                     )
                 }
@@ -98,7 +106,7 @@ fun CountersScreen(
                         weekCount = state.weeklyTotals[counter.id] ?: 0,
                         totalCount = state.cumulativeTotals[counter.id] ?: 0,
                         last7Days = state.last7DaysByCounter[counter.id] ?: List(7) { 0 },
-                        onIncrement = { viewModel.increment(counter) },
+                        onIncrement = { increment(counter) },
                         onOpen = { onOpenCounter(counter.id) },
                         onEdit = { editing = counter },
                         onBackdate = { backdating = counter },
@@ -148,6 +156,65 @@ fun CountersScreen(
             onDismiss = { backdating = null }
         )
     }
+
+    // The habit tick is already saved by the time this shows; the wellness check is a bonus the
+    // user can fill in or skip.
+    wellnessPromptFor?.let { counter ->
+        HabitWellnessCheckDialog(
+            habitName = counter.name,
+            onSubmit = { energy, sensory, why ->
+                viewModel.logWellnessCheckin(energy, sensory, why); wellnessPromptFor = null
+            },
+            onDismiss = { wellnessPromptFor = null }
+        )
+    }
+}
+
+/**
+ * Optional wellness read shown right after a habit is marked. Same energy/sensory strip as the
+ * daytime [com.lifeops.app.ui.screens.wellness.CheckInDialog] (and logged as the same CHECKIN), but
+ * framed around the just-completed habit and dismissable with "Skip" — the habit is already logged.
+ */
+@Composable
+private fun HabitWellnessCheckDialog(
+    habitName: String,
+    onSubmit: (energy: Int, sensory: Int, why: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var energy by remember { mutableStateOf<Int?>(null) }
+    var sensory by remember { mutableStateOf<Int?>(null) }
+    var why by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nice — how are you?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "You just logged \"$habitName\". Add a quick wellness check?",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                com.lifeops.app.ui.screens.wellness.RatingRow("Energy (1 low → 10 high)", energy) { energy = it }
+                com.lifeops.app.ui.screens.wellness.RatingRow("Sensory load (1 calm → 10 overloaded)", sensory) { sensory = it }
+                OutlinedTextField(
+                    value = why,
+                    onValueChange = { why = it },
+                    label = { Text("Why? (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = false,
+                    maxLines = 3
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSubmit(energy!!, sensory!!, why) },
+                enabled = energy != null && sensory != null
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Skip") } }
+    )
 }
 
 
