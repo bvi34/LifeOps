@@ -124,7 +124,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         jint maxTokens, jfloat temperature, jfloat topP, jint topK, jobjectArray jstops) {
 
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
-    if (h == nullptr || h->ctx == nullptr) return env->NewStringUTF("");
+    if (h == nullptr || h->ctx == nullptr) {
+        LOGW("nativeGenerate called with no loaded model (handle/ctx null)");
+        return env->NewStringUTF("");
+    }
+    LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
 
     // Each ask re-sends the full assembled prompt, so start from a clean slate.
     llama_kv_self_clear(h->ctx);
@@ -173,6 +177,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_batch batch = llama_batch_get_one(tokens.data(), (int) tokens.size());
 
     const int budget = maxTokens > 0 ? maxTokens : 512;
+    int produced = 0;
     for (int generated = 0; generated < budget; generated++) {
         if (llama_decode(h->ctx, batch) != 0) {
             LOGW("llama_decode failed");
@@ -183,6 +188,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         if (llama_vocab_is_eog(h->vocab, id)) break;
 
         out += token_to_piece(h->vocab, id);
+        produced++;
 
         size_t cut = first_stop(out, stops);
         if (cut != std::string::npos) {
@@ -194,6 +200,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
 
     llama_sampler_free(smpl);
+    LOGI("nativeGenerate: produced %d tokens (%zu chars)", produced, out.size());
     return env->NewStringUTF(out.c_str());
 }
 
