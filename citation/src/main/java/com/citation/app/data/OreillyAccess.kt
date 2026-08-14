@@ -2,9 +2,11 @@ package com.citation.app.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.citation.core.oreilly.OreillyLibraryProxy
+import java.security.KeyStore
 
 /**
  * Encrypted, on-device store for your **library O'Reilly access** — the EZproxy host plus your
@@ -19,18 +21,9 @@ import com.citation.core.oreilly.OreillyLibraryProxy
  */
 class OreillyAccess(context: Context) {
 
-    private val prefs: SharedPreferences by lazy {
-        val key = MasterKey.Builder(context.applicationContext)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context.applicationContext,
-            "oreilly_access",
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private val appContext = context.applicationContext
+
+    private val prefs: SharedPreferences by lazy { openPrefs(appContext) }
 
     /** The configured library proxy host, defaulting to Mid-Continent Public Library. */
     fun proxyHost(): String =
@@ -76,8 +69,66 @@ class OreillyAccess(context: Context) {
     data class Credentials(val card: String, val pin: String)
 
     private companion object {
+        const val TAG = "OreillyAccess"
+        const val PREFS_NAME = "oreilly_access"
         const val KEY_PROXY = "proxy_host"
         const val KEY_CARD = "card"
         const val KEY_PIN = "pin"
+        const val ANDROID_KEYSTORE = "AndroidKeyStore"
+
+        /**
+         * Open the encrypted store, recovering from the classic reinstall/restore failure instead
+         * of taking the whole app down on launch.
+         *
+         * The `oreilly_access` prefs file holds a Tink keyset wrapped by a hardware-bound Android
+         * Keystore master key. That master key is **never** part of a backup and is regenerated on
+         * reinstall, but the encrypted file itself can be restored by system auto-backup or left
+         * behind on disk. When the surviving keyset is then decrypted with a fresh, non-matching
+         * key, Tink throws [javax.crypto.AEADBadTagException] straight out of
+         * [EncryptedSharedPreferences.create] — the fatal crash seen after a reinstall.
+         *
+         * The ciphertext is unrecoverable without the original key, so on that failure we drop the
+         * unreadable keyset (and the possibly-mismatched master key) and rebuild the store empty.
+         * The card/PIN have to be re-entered, but they never left the device anyway and the app
+         * opens. The proxy host isn't a secret and falls back to its default.
+         */
+        fun openPrefs(context: Context): SharedPreferences =
+            runCatching { buildPrefs(context) }.getOrElse { failure ->
+                Log.w(TAG, "Encrypted store unreadable (likely reinstall/restore); rebuilding it", failure)
+                wipeCorruptStore(context)
+                // A second failure here is a genuine, unexpected problem — let it surface.
+                buildPrefs(context)
+            }
+
+        fun buildPrefs(context: Context): SharedPreferences {
+            val key = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            return EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                key,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }
+
+        /**
+         * Discard the undecryptable store so [buildPrefs] can mint a fresh keyset. Clearing through
+         * [Context.getSharedPreferences] also evicts the in-process cache entry the failed
+         * `create` left behind (a raw file delete alone would be shadowed by that cache), and we
+         * drop the Keystore master key in case the key entry itself is the mismatched party.
+         */
+        fun wipeCorruptStore(context: Context) {
+            runCatching {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
+            }
+            runCatching {
+                val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+                if (ks.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
+                    ks.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
+                }
+            }
+        }
     }
 }

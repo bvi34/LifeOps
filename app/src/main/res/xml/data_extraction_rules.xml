@@ -3,16 +3,23 @@
   Android 12+ (API 31+) backup/transfer rules for the container app. Mirrors backup_rules.xml:
   both databases and shared prefs are backed up; Citation's large owned files are left to the
   Operations Sandbox zip.
+
+  oreilly_access.xml (Citation's EncryptedSharedPreferences) is excluded from both cloud-backup and
+  device-transfer: its Tink keyset is wrapped by a hardware-bound Android Keystore key that never
+  travels with a backup, so a restored copy can't be decrypted and crashes the app on launch with
+  AEADBadTagException. The card/PIN are re-entered on the device instead.
 -->
 <data-extraction-rules>
     <cloud-backup>
         <include domain="database" path="lifeops.db" />
         <include domain="database" path="citation.db" />
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="oreilly_access.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="lifeops.db" />
         <include domain="database" path="citation.db" />
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="oreilly_access.xml" />
     </device-transfer>
 </data-extraction-rules>

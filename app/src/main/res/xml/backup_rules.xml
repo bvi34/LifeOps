@@ -5,9 +5,15 @@
   be large and would blow the OS backup quota; the Operations Sandbox zip is where those are kept.
   A WAL checkpoint runs when the app is backgrounded (see LifeOpsApp) so lifeops.db is current;
   Citation's db is checkpointed at backup time by its contributor.
+
+  oreilly_access.xml is Citation's EncryptedSharedPreferences file. Its Tink keyset is wrapped by a
+  hardware-bound Android Keystore key that is never part of a backup and is regenerated on reinstall,
+  so restoring the file leaves a keyset no key can decrypt — a fatal AEADBadTagException on launch.
+  Encrypted prefs must therefore stay out of backup; it is re-entered on the device instead.
 -->
 <full-backup-content>
     <include domain="database" path="lifeops.db" />
     <include domain="database" path="citation.db" />
     <include domain="sharedpref" path="." />
+    <exclude domain="sharedpref" path="oreilly_access.xml" />
 </full-backup-content>
