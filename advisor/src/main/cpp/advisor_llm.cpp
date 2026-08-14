@@ -101,6 +101,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = 4096;
+    // The whole assembled prompt is submitted as one batch, so n_batch must be able to hold a full
+    // context — the default (2048) is smaller than n_ctx, and a prompt between the two would trip
+    // llama_decode's `n_tokens <= n_batch` assert and abort (SIGABRT). Match it to n_ctx.
+    cp.n_batch = 4096;
     unsigned hw = std::thread::hardware_concurrency();
     int threads = hw > 1 ? static_cast<int>(hw / 2) : 1; // leave headroom for the UI
     cp.n_threads       = threads;
