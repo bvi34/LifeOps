@@ -29,7 +29,8 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O2" CACHE STRING "" FORCE)
 # NOT a CACHE var on purpose: a cached value persists in .cxx/CMakeCache.txt across builds, so a plain
 # `set(... CACHE ...)` would let a stale tag from an earlier configure silently win over a bump here
 # (and FetchContent would then reuse the old clone). A normal set is re-evaluated every configure.
-set(LLAMA_CPP_TAG "b5600")
+# Updated from b5600 to b6489 to use the modern llama_batch_init API (llama_batch_get_one was removed).
+set(LLAMA_CPP_TAG "b6489")
 
 # Keep the fetched build lean — we only need the library, not tools/tests/server/curl.
 set(LLAMA_BUILD_TESTS    OFF CACHE BOOL "" FORCE)

@@ -4,11 +4,12 @@
 // fully-formatted (ChatML) prompt, entirely on-device. It exposes exactly the three methods the
 // Kotlin `external fun`s declare: nativeLoad / nativeGenerate / nativeFree.
 //
-// API pin: written against **llama.cpp tag b5600** (set as LLAMA_CPP_TAG in CMakeLists.txt) — the
-// modern, post-refactor API that supports Qwen3 (b4000 predated it). Notable shape vs. older tags:
+// API pin: written against **llama.cpp tag b6489** — the modern API with llama_batch_init support.
+// Notable shape vs. older tags:
 //   * lifecycle: llama_model_load_from_file / llama_init_from_model / llama_model_free
 //   * a `const llama_vocab*` handle (llama_model_get_vocab) owns tokenize / detokenize / eog
 //   * cache reset is llama_kv_self_clear; embedding size is llama_model_n_embd
+//   * batch API: llama_batch_init / llama_batch_free (replaced deprecated llama_batch_get_one)
 // llama.cpp renames these fairly often, so if you bump the tag again, reconcile the symbols below and
 // update this pin in the same change.
 
@@ -189,7 +190,17 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     };
 
     std::string out;
-    llama_batch batch = llama_batch_get_one(tokens.data(), (int) tokens.size());
+    // Use llama_batch_init for the prompt batch (modern API, works with latest llama.cpp).
+    // llama_batch_get_one was deprecated after b5600 and removed in newer versions.
+    llama_batch batch = llama_batch_init((int) tokens.size(), 0, 1);
+    for (int i = 0; i < (int) tokens.size(); i++) {
+        batch.token[i]     = tokens[i];
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]    = 0; // no logits needed during prefill
+    }
+    batch.n_tokens = (int) tokens.size();
 
     const int budget = maxTokens > 0 ? maxTokens : 512;
     int produced = 0;
@@ -213,9 +224,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
             break;
         }
 
-        batch = llama_batch_get_one(&id, 1);
+        // For single-token decode, reuse the batch with one token.
+        batch.n_tokens = 1;
+        batch.token[0]  = id;
+        batch.pos[0]    = batch.pos[0] + 1; // advance position
+        batch.logits[0] = 1; // request logits for the last token
     }
 
+    llama_batch_free(batch);
     llama_sampler_free(smpl);
     const long long ms = elapsed_ms();
     const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
@@ -239,11 +255,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
 // Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
 //
 // A second, small model loaded in *embedding* mode (mean-pooled) that turns a piece of text into one
-// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b5600
+// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b6489
 // API pin with the generation backend above.
 //
 // NOTE: unlike nativeGenerate, this path has not been compiled/verified on-device in this repo yet
-// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b5600
+// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b6489
 // API and the stock `examples/embedding` pooling pattern; validate it when you first import an
 // embedding model. The Kotlin side is fully guarded — any load/encode failure falls back to lexical
 // retrieval — so a mismatch degrades gracefully rather than crashing.
