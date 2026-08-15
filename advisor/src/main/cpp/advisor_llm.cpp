@@ -4,7 +4,7 @@
 // fully-formatted (ChatML) prompt, entirely on-device. It exposes exactly the three methods the
 // Kotlin `external fun`s declare: nativeLoad / nativeGenerate / nativeFree.
 //
-// API pin: written against **llama.cpp tag b6489** — the modern API with llama_batch_init support.
+// API pin: written against **llama.cpp tag b6490** — the modern API with llama_batch_init support.
 // Notable shape vs. older tags:
 //   * lifecycle: llama_model_load_from_file / llama_init_from_model / llama_model_free
 //   * a `const llama_vocab*` handle (llama_model_get_vocab) owns tokenize / detokenize / eog
@@ -255,11 +255,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
 // Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
 //
 // A second, small model loaded in *embedding* mode (mean-pooled) that turns a piece of text into one
-// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b6489
+// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b6490
 // API pin with the generation backend above.
 //
 // NOTE: unlike nativeGenerate, this path has not been compiled/verified on-device in this repo yet
-// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b6489
+// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b6490
 // API and the stock `examples/embedding` pooling pattern; validate it when you first import an
 // embedding model. The Kotlin side is fully guarded — any load/encode failure falls back to lexical
 // retrieval — so a mismatch degrades gracefully rather than crashing.
