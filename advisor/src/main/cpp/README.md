@@ -106,8 +106,9 @@ model — or in a build without the native library — retrieval is lexical, so 
 `advisor_llm.cpp` is written against the API of the pinned tag (`LLAMA_CPP_TAG`, currently `b6490`).
 llama.cpp renames symbols fairly often (model/context init, the `llama_vocab` handle for
 tokenize/detokenize/eog, cache reset), so if you raise the tag, update the calls in `advisor_llm.cpp`
-in the same change. Note the cache-reset call in particular: recent versions use `llama_kv_self_clear`,
-which may be replaced with the `llama_memory_*` API in future tags.
+in the same change. Note the cache-reset call in particular: at `b6490` it's
+`llama_memory_clear(llama_get_memory(ctx), true)` — the older `llama_kv_self_clear` was removed, so a
+plain tag bump onto a newer `llama.cpp` may rename this again.
 
 The key API change from `b5600` to `b6490` was replacing `llama_batch_get_one()` (deprecated and removed)
 with `llama_batch_init()` for batch management. When bumping again, verify that all batch-related calls
