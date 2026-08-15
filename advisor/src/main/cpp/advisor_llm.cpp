@@ -198,12 +198,17 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         batch.pos[i]       = i;
         batch.n_seq_id[i]  = 1;
         batch.seq_id[i][0] = 0;
-        batch.logits[i]    = 0; // no logits needed during prefill
+        // Request logits only for the final prompt token. The previous code requested none for the
+        // prefill batch, then immediately sampled from -1. Keep the prefill graph otherwise identical.
+        batch.logits[i]    = (i == (int) tokens.size() - 1) ? 1 : 0;
     }
     batch.n_tokens = (int) tokens.size();
 
     const int budget = maxTokens > 0 ? maxTokens : 512;
     int produced = 0;
+    // The first generated token must occupy the position immediately after the prompt. Keep this
+    // independent from batch.pos[0], which belongs to prompt position zero after prefill.
+    int next_pos = (int) tokens.size();
     for (int generated = 0; generated < budget; generated++) {
         if (llama_decode(h->ctx, batch) != 0) {
             LOGW("llama_decode failed");
@@ -227,7 +232,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         // For single-token decode, reuse the batch with one token.
         batch.n_tokens = 1;
         batch.token[0]  = id;
-        batch.pos[0]    = batch.pos[0] + 1; // advance position
+        batch.pos[0]    = next_pos++;
         batch.logits[0] = 1; // request logits for the last token
     }
 
