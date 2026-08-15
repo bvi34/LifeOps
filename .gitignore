@@ -1,28 +1,19 @@
-# Gradle
-.gradle/
+```
+# Build artifacts
 build/
-**/build/
-local.properties
+dist/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
 
-# Android Studio / IntelliJ
-*.iml
-.idea/
-*.iws
-*.ipr
-captures/
-.externalNativeBuild/
-.cxx/
-
-# Keys & secrets
-*.jks
-*.keystore
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Claude Code
-.claude/
-
-# Kotlin compiler
-.kotlin/
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+```
