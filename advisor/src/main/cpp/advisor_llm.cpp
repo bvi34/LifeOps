@@ -8,7 +8,7 @@
 // Notable shape vs. older tags:
 //   * lifecycle: llama_model_load_from_file / llama_init_from_model / llama_model_free
 //   * a `const llama_vocab*` handle (llama_model_get_vocab) owns tokenize / detokenize / eog
-//   * cache reset is llama_kv_self_clear; embedding size is llama_model_n_embd
+//   * cache reset is llama_memory_clear(llama_get_memory(ctx), true); embedding size is llama_model_n_embd
 //   * batch API: llama_batch_init / llama_batch_free (replaced deprecated llama_batch_get_one)
 // llama.cpp renames these fairly often, so if you bump the tag again, reconcile the symbols below and
 // update this pin in the same change.
@@ -137,7 +137,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
 
     // Each ask re-sends the full assembled prompt, so start from a clean slate.
-    llama_kv_self_clear(h->ctx);
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
     // Collect stop strings.
     std::vector<std::string> stops;
@@ -349,7 +349,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     tokens.resize(n_tok);
 
     // One sequence; all positions marked as outputs so mean-pooling sees every token.
-    llama_kv_self_clear(h->ctx);
+    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
     llama_batch batch = llama_batch_init(n_tok, 0, 1);
     for (int i = 0; i < n_tok; i++) {
         batch.token[i]     = tokens[i];
