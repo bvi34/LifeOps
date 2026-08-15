@@ -10,6 +10,21 @@ project(advisor_llm CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# CRITICAL for speed: AGP's *debug* app variant configures this native build as CMAKE_BUILD_TYPE=Debug,
+# which compiles the fetched ggml/llama.cpp at -O0. Unoptimized ggml is ~15-30x slower — enough that a
+# ~500-token prompt takes minutes to prefill on-device. Our global -O3 (CMAKE_CXX_FLAGS) is overridden
+# by the Debug per-config flags (-O0 comes later on the command line and wins), so force the Debug-config
+# C/C++ flags to be optimized too. This must be set before FetchContent builds llama.cpp so its targets
+# inherit it. (Release/RelWithDebInfo variants are already optimized.)
+#
+# -O2, not -O3: at -O3 the NDK clang miscompiled a ggml kernel and prefill SIGSEGV'd on the first decode
+# (the same decode ran fine, if slowly, at -O0). -O2 gives essentially all of ggml's speed — its hot
+# paths are hand-written SIMD, largely unaffected by O2-vs-O3 — without the aggressive transforms. We
+# also keep asserts enabled (no -DNDEBUG) so a real out-of-bounds surfaces as a GGML_ASSERT abort (with a
+# message, via our log bridge) instead of a bare SIGSEGV.
+set(CMAKE_C_FLAGS_DEBUG   "-O2" CACHE STRING "" FORCE)
+set(CMAKE_CXX_FLAGS_DEBUG "-O2" CACHE STRING "" FORCE)
+
 # llama.cpp is pinned. advisor_llm.cpp is written against this tag's API; bump them together.
 # NOT a CACHE var on purpose: a cached value persists in .cxx/CMakeCache.txt across builds, so a plain
 # `set(... CACHE ...)` would let a stale tag from an earlier configure silently win over a bump here
