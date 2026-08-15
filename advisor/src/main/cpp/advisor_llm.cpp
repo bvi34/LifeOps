@@ -107,6 +107,9 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     // context — the default (2048) is smaller than n_ctx, and a prompt between the two would trip
     // llama_decode's `n_tokens <= n_batch` assert and abort (SIGABRT). Match it to n_ctx.
     cp.n_batch = 4096;
+    // TEST: force the non-Flash-Attention CPU path. The baseline logs show Flash Attention being
+    // auto-enabled immediately before the first prefill that never returns.
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     unsigned hw = std::thread::hardware_concurrency();
     int threads = hw > 1 ? static_cast<int>(hw / 2) : 1; // leave headroom for the UI
     cp.n_threads       = threads;
@@ -120,7 +123,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     auto* h = new AdvisorLlm{model, ctx, llama_model_get_vocab(model)};
-    LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d n_gpu_layers=%d", (int) cp.n_ctx, threads, mp.n_gpu_layers);
+    LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d n_gpu_layers=%d flash_attn=disabled", (int) cp.n_ctx, threads, mp.n_gpu_layers);
     return reinterpret_cast<jlong>(h);
 }
 
