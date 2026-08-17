@@ -67,6 +67,29 @@ size_t first_stop(const std::string& text, const std::vector<std::string>& stops
     return best;
 }
 
+std::string prompt_head(const std::string& text) {
+    std::string head = text.substr(0, 120);
+    for (char& c : head) {
+        if (c == '\n' || c == '\r') c = ' ';
+    }
+    return head;
+}
+
+uint64_t prompt_hash_value(const std::string& text) {
+    uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : text) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+std::string prompt_hash(const std::string& text) {
+    char buf[17];
+    snprintf(buf, sizeof(buf), "%016llx", (unsigned long long) prompt_hash_value(text));
+    return std::string(buf);
+}
+
 } // namespace
 
 extern "C" {
@@ -140,7 +163,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     std::string text(prompt);
     env->ReleaseStringUTFChars(jprompt, prompt);
     LOGI("nativeGenerate: received prompt chars=%zu hash=%s head=%s",
-         text.size(), sha256(text).c_str(), prompt_head(text).c_str());
+         text.size(), prompt_hash(text).c_str(), prompt_head(text).c_str());
 
     int n_max = (int) text.size() + 8;
     std::vector<llama_token> tokens(n_max);
