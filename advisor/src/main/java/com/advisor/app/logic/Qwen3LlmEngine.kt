@@ -22,24 +22,19 @@ class Qwen3LlmEngine(
     override val spec: ModelSpec
         get() = if (backend.isReady) LOADED else fallback.spec
 
-    /** The backend's own account of what's loaded, or exactly why it isn't (see [LlmBackend.detail]). */
     override val status: String get() = backend.detail
 
     override fun generate(prompt: AdvisorPrompt): String {
         if (!backend.isReady) return fallback.generate(prompt)
-
         val formatted = Qwen3ChatFormat.forPrompt(prompt)
         Log.i(TAG, "Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
-        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace('\n', '\\n')}")
+        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace('\n', "\\n")}")
         val raw = runCatching { backend.generate(formatted, params) }.getOrNull()
         val answer = raw?.let { Qwen3ChatFormat.cleanOutput(it) }.orEmpty()
-
-        // A blank or failed generation is never a good answer — fall back rather than show nothing.
         return if (answer.isBlank()) fallback.generate(prompt) else answer
     }
 
     companion object {
-        /** The intended weights: Qwen3-4B, 4-bit K-quant GGUF, loaded on-device. */
         val LOADED = ModelSpec(
             name = "Qwen3-4B",
             parameters = "4B",
