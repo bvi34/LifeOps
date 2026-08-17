@@ -29,10 +29,6 @@
 
 namespace {
 
-// Route llama.cpp / ggml's own diagnostics into logcat. Without this the library logs to stderr, which
-// Android drops — so a load failure ("unknown model architecture", "unsupported quantization", "unable
-// to allocate", …) would be invisible and all we'd see is our own "returned null". With it, the real
-// reason shows under the `advisor-llm` tag.
 void advisor_log_cb(ggml_log_level level, const char* text, void* /*user*/) {
     int prio = level == GGML_LOG_LEVEL_ERROR ? ANDROID_LOG_ERROR
              : level == GGML_LOG_LEVEL_WARN  ? ANDROID_LOG_WARN
@@ -40,7 +36,6 @@ void advisor_log_cb(ggml_log_level level, const char* text, void* /*user*/) {
     __android_log_print(prio, LOG_TAG, "%s", text ? text : "");
 }
 
-// Install the log bridge and initialize the backend exactly once, whichever entry point runs first.
 void ensure_backend_ready() {
     static bool ready = false;
     if (ready) return;
@@ -49,15 +44,12 @@ void ensure_backend_ready() {
     ready = true;
 }
 
-// One loaded model + its inference context (and the vocab handle the tag exposes for tokenization).
-// The opaque `handle` the Kotlin side holds is a pointer to this, cast to jlong.
 struct AdvisorLlm {
     llama_model*       model = nullptr;
     llama_context*     ctx   = nullptr;
     const llama_vocab* vocab = nullptr;
 };
 
-// Decode a single token id back to its text piece.
 std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     char buf[256];
     int n = llama_token_to_piece(vocab, id, buf, sizeof(buf), 0, /*special=*/false);
@@ -65,8 +57,6 @@ std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     return std::string(buf, n);
 }
 
-// True once `text` ends with, or contains, any of the stop strings — returns the cut length.
-// Returns std::string::npos when no stop is present.
 size_t first_stop(const std::string& text, const std::vector<std::string>& stops) {
     size_t best = std::string::npos;
     for (const auto& s : stops) {
@@ -89,9 +79,9 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 
     llama_model_params mp = llama_model_default_params();
 #ifdef ADVISOR_GPU_OFFLOAD
-    mp.n_gpu_layers = 99; // offload all transformer layers to the GPU (Vulkan backend compiled in)
+    mp.n_gpu_layers = 99;
 #else
-    mp.n_gpu_layers = 0;  // pure CPU inference on-device (no GPU backend in this build)
+    mp.n_gpu_layers = 0;
 #endif
 
     llama_model* model = llama_model_load_from_file(path, mp);
@@ -103,15 +93,12 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = 4096;
-    // The whole assembled prompt is submitted as one batch, so n_batch must be able to hold a full
-    // context — the default (2048) is smaller than n_ctx, and a prompt between the two would trip
-    // llama_decode's `n_tokens <= n_batch` assert and abort (SIGABRT). Match it to n_ctx.
+    // Keep n_batch at context size, but intentionally use smaller llama_batch objects during
+    // prefill. This isolates large-prefill execution from the model/context configuration.
     cp.n_batch = 4096;
-    // TEST: force the non-Flash-Attention CPU path. The baseline logs show Flash Attention being
-    // auto-enabled immediately before the first prefill that never returns.
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1; // leave headroom for the UI
+    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
@@ -139,10 +126,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
 
-    // Each ask re-sends the full assembled prompt, so start from a clean slate.
     llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
-    // Collect stop strings.
     std::vector<std::string> stops;
     jsize nstops = jstops ? env->GetArrayLength(jstops) : 0;
     for (jsize i = 0; i < nstops; i++) {
@@ -157,7 +142,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     std::string text(prompt);
     env->ReleaseStringUTFChars(jprompt, prompt);
 
-    // Tokenize the prompt (add BOS, parse special tokens so ChatML control tokens are honored).
     int n_max = (int) text.size() + 8;
     std::vector<llama_token> tokens(n_max);
     int n_prompt = llama_tokenize(
@@ -175,17 +159,18 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         tokens.erase(tokens.begin(), tokens.begin() + (n_prompt - (n_ctx - 1)));
     }
 
-    // Sampler chain: top-k → top-p → temperature → sample. Matches GenerationParams defaults.
     llama_sampler* smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     llama_sampler_chain_add(smpl, llama_sampler_init_top_k(topK));
     llama_sampler_chain_add(smpl, llama_sampler_init_top_p(topP, 1));
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    // The first decode processes the whole prompt (prefill) — the slow, silent phase on CPU — then each
-    // later decode is a single token. Log prefill completion and periodic progress so the minutes-long
-    // gap is visible instead of looking hung.
-    LOGI("nativeGenerate: prompt=%d tokens; prefill…", (int) tokens.size());
+    // TEST: chunk prompt prefill into small batches. The previous implementation submitted the
+    // entire prompt in one llama_decode(). A 490-token prompt reached that call and then produced
+    // no return on the target device. Keep the model, context, quantization, sampler, and prompt
+    // unchanged while varying only prefill batch size.
+    constexpr int PREFILL_CHUNK = 32;
+    LOGI("nativeGenerate: prompt=%d tokens; prefill in %d-token chunks…", (int) tokens.size(), PREFILL_CHUNK);
     const auto t_start = std::chrono::steady_clock::now();
     auto elapsed_ms = [&]() {
         return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -193,58 +178,72 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     };
 
     std::string out;
-    // Use llama_batch_init for the prompt batch (modern API, works with latest llama.cpp).
-    // llama_batch_get_one was deprecated after b5600 and removed in newer versions.
-    llama_batch batch = llama_batch_init((int) tokens.size(), 0, 1);
-    for (int i = 0; i < (int) tokens.size(); i++) {
-        batch.token[i]     = tokens[i];
-        batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
-        // Request logits only for the final prompt token. The previous code requested none for the
-        // prefill batch, then immediately sampled from -1. Keep the prefill graph otherwise identical.
-        batch.logits[i]    = (i == (int) tokens.size() - 1) ? 1 : 0;
-    }
-    batch.n_tokens = (int) tokens.size();
+    llama_batch batch = llama_batch_init(PREFILL_CHUNK, 0, 1);
+    bool prefill_ok = true;
 
-    const int budget = maxTokens > 0 ? maxTokens : 512;
-    int produced = 0;
-    // The first generated token must occupy the position immediately after the prompt. Keep this
-    // independent from batch.pos[0], which belongs to prompt position zero after prefill.
-    int next_pos = (int) tokens.size();
-    for (int generated = 0; generated < budget; generated++) {
+    for (int offset = 0; offset < (int) tokens.size(); offset += PREFILL_CHUNK) {
+        const int count = std::min(PREFILL_CHUNK, (int) tokens.size() - offset);
+        batch.n_tokens = count;
+        for (int i = 0; i < count; i++) {
+            const int token_index = offset + i;
+            batch.token[i]     = tokens[token_index];
+            batch.pos[i]       = token_index;
+            batch.n_seq_id[i]  = 1;
+            batch.seq_id[i][0] = 0;
+            batch.logits[i]    = (token_index == (int) tokens.size() - 1) ? 1 : 0;
+        }
+
+        LOGI("nativeGenerate: prefill chunk offset=%d count=%d", offset, count);
         if (llama_decode(h->ctx, batch) != 0) {
-            LOGW("llama_decode failed");
+            LOGW("nativeGenerate: prefill llama_decode failed at offset=%d count=%d", offset, count);
+            prefill_ok = false;
             break;
         }
-        if (generated == 0) LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
+    }
 
-        llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
-        if (llama_vocab_is_eog(h->vocab, id)) break;
+    if (prefill_ok) {
+        LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
+        const int budget = maxTokens > 0 ? maxTokens : 512;
+        int produced = 0;
+        int next_pos = (int) tokens.size();
 
-        out += token_to_piece(h->vocab, id);
-        produced++;
-        if (produced % 32 == 0) LOGI("nativeGenerate: %d tokens so far (%lld ms)…", produced, elapsed_ms());
+        // Sample the first token from logits requested on the final prefill chunk, then decode
+        // generated tokens one at a time.
+        for (int generated = 0; generated < budget; generated++) {
+            llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
+            if (llama_vocab_is_eog(h->vocab, id)) break;
 
-        size_t cut = first_stop(out, stops);
-        if (cut != std::string::npos) {
-            out.resize(cut);
-            break;
+            out += token_to_piece(h->vocab, id);
+            produced++;
+            if (produced % 32 == 0) LOGI("nativeGenerate: %d tokens so far (%lld ms)…", produced, elapsed_ms());
+
+            size_t cut = first_stop(out, stops);
+            if (cut != std::string::npos) {
+                out.resize(cut);
+                break;
+            }
+
+            batch.n_tokens = 1;
+            batch.token[0]  = id;
+            batch.pos[0]    = next_pos++;
+            batch.n_seq_id[0]  = 1;
+            batch.seq_id[0][0] = 0;
+            batch.logits[0] = 1;
+
+            if (llama_decode(h->ctx, batch) != 0) {
+                LOGW("nativeGenerate: decode failed after %d generated tokens", produced);
+                break;
+            }
         }
 
-        // For single-token decode, reuse the batch with one token.
-        batch.n_tokens = 1;
-        batch.token[0]  = id;
-        batch.pos[0]    = next_pos++;
-        batch.logits[0] = 1; // request logits for the last token
+        const long long ms = elapsed_ms();
+        const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
+        LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
+             produced, out.size(), ms, tps);
     }
 
     llama_batch_free(batch);
     llama_sampler_free(smpl);
-    const long long ms = elapsed_ms();
-    const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
-    LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
-         produced, out.size(), ms, tps);
     return env->NewStringUTF(out.c_str());
 }
 
@@ -261,16 +260,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*t
 
 // ---------------------------------------------------------------------------
 // Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
-//
-// A second, small model loaded in *embedding* mode (mean-pooled) that turns a piece of text into one
-// vector, so EmbeddingRetriever can rank the corpus by meaning. It shares this library and the b6490
-// API pin with the generation backend above.
-//
-// NOTE: unlike nativeGenerate, this path has not been compiled/verified on-device in this repo yet
-// (it needs an embedding GGUF, which is provisioned separately). It is written against the same b6490
-// API and the stock `examples/embedding` pooling pattern; validate it when you first import an
-// embedding model. The Kotlin side is fully guarded — any load/encode failure falls back to lexical
-// retrieval — so a mismatch degrades gracefully rather than crashing.
 // ---------------------------------------------------------------------------
 
 namespace {
@@ -293,7 +282,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     const char* path = env->GetStringUTFChars(jpath, nullptr);
 
     llama_model_params mp = llama_model_default_params();
-    mp.n_gpu_layers = 0; // pure CPU inference on-device
+    mp.n_gpu_layers = 0;
 
     llama_model* model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jpath, path);
@@ -303,10 +292,10 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     }
 
     llama_context_params cp = llama_context_default_params();
-    cp.embeddings   = true;                       // produce embeddings, not logits
-    cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;    // one vector per input, mean over tokens
-    cp.n_ctx        = 2048;                        // embedding inputs are short (title + body excerpt)
-    cp.n_batch      = 2048;                        // decode the whole sequence in one batch (pooling)
+    cp.embeddings   = true;
+    cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+    cp.n_ctx        = 2048;
+    cp.n_batch      = 2048;
     cp.n_ubatch     = 2048;
     unsigned hw = std::thread::hardware_concurrency();
     int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
@@ -342,7 +331,6 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     std::string input(text ? text : "");
     env->ReleaseStringUTFChars(jtext, text);
 
-    // Tokenize (add BOS/EOS per the model; embedding models don't use ChatML control tokens).
     int n_max = (int) input.size() + 8;
     std::vector<llama_token> tokens(n_max);
     int n_tok = llama_tokenize(
@@ -353,11 +341,11 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
         return env->NewFloatArray(0);
     }
     const int n_ctx = (int) llama_n_ctx(h->ctx);
-    if (n_tok > n_ctx) n_tok = n_ctx; // truncate over-long inputs rather than fail
+    if (n_tok > n_ctx) n_tok = n_ctx;
     tokens.resize(n_tok);
 
-    // One sequence; all positions marked as outputs so mean-pooling sees every token.
     llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
+
     llama_batch batch = llama_batch_init(n_tok, 0, 1);
     for (int i = 0; i < n_tok; i++) {
         batch.token[i]     = tokens[i];
@@ -371,7 +359,7 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     jfloatArray result = env->NewFloatArray(0);
     if (llama_decode(h->ctx, batch) == 0) {
         const float* emb = llama_get_embeddings_seq(h->ctx, 0);
-        if (emb == nullptr) emb = llama_get_embeddings(h->ctx); // non-pooled fallback
+        if (emb == nullptr) emb = llama_get_embeddings(h->ctx);
         if (emb != nullptr && h->n_embd > 0) {
             result = env->NewFloatArray(h->n_embd);
             env->SetFloatArrayRegion(result, 0, h->n_embd, emb);
