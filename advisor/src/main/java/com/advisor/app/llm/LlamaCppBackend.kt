@@ -43,6 +43,8 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     override fun generate(prompt: String, params: GenerationParams): String {
         if (!ensureLoaded()) return ""
+        Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
+        Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace('\n', '\\n')}")
         return runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,
@@ -90,6 +92,12 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     }
 
     private fun signature(path: String, size: Long): String = "$path:$size"
+
+    private fun sha256(text: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        return digest.digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+            .take(16)
+    }
 
     // --- JNI: implemented by the `advisor-llm` native library (llama.cpp) ---
 

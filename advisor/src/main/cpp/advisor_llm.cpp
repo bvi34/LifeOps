@@ -67,6 +67,29 @@ size_t first_stop(const std::string& text, const std::vector<std::string>& stops
     return best;
 }
 
+std::string prompt_head(const std::string& text) {
+    std::string head = text.substr(0, 120);
+    for (char& c : head) {
+        if (c == '\n' || c == '\r') c = ' ';
+    }
+    return head;
+}
+
+uint64_t prompt_hash_value(const std::string& text) {
+    uint64_t h = 1469598103934665603ULL;
+    for (unsigned char c : text) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
+std::string prompt_hash(const std::string& text) {
+    char buf[17];
+    snprintf(buf, sizeof(buf), "%016llx", (unsigned long long) prompt_hash_value(text));
+    return std::string(buf);
+}
+
 } // namespace
 
 extern "C" {
@@ -93,8 +116,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 
     llama_context_params cp = llama_context_default_params();
     cp.n_ctx = 4096;
-    // Keep n_batch at context size, but intentionally use smaller llama_batch objects during
-    // prefill. This isolates large-prefill execution from the model/context configuration.
     cp.n_batch = 4096;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     unsigned hw = std::thread::hardware_concurrency();
@@ -141,6 +162,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     const char* prompt = env->GetStringUTFChars(jprompt, nullptr);
     std::string text(prompt);
     env->ReleaseStringUTFChars(jprompt, prompt);
+    LOGI("nativeGenerate: received prompt chars=%zu hash=%s head=%s",
+         text.size(), prompt_hash(text).c_str(), prompt_head(text).c_str());
 
     int n_max = (int) text.size() + 8;
     std::vector<llama_token> tokens(n_max);
@@ -152,6 +175,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         return env->NewStringUTF("");
     }
     tokens.resize(n_prompt);
+    LOGI("nativeGenerate: tokenized prompt=%d tokens", n_prompt);
 
     const int n_ctx = (int) llama_n_ctx(h->ctx);
     if (n_prompt >= n_ctx) {
@@ -165,12 +189,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    // TEST: chunk prompt prefill into small batches. The previous implementation submitted the
-    // entire prompt in one llama_decode(). A 490-token prompt reached that call and then produced
-    // no return on the target device. Keep the model, context, quantization, sampler, and prompt
-    // unchanged while varying only prefill batch size.
-    constexpr int PREFILL_CHUNK = 32;
-    LOGI("nativeGenerate: prompt=%d tokens; prefill in %d-token chunks…", (int) tokens.size(), PREFILL_CHUNK);
+    LOGI("nativeGenerate: prompt=%d tokens; prefill…", (int) tokens.size());
     const auto t_start = std::chrono::steady_clock::now();
     auto elapsed_ms = [&]() {
         return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -178,22 +197,20 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     };
 
     std::string out;
-    llama_batch batch = llama_batch_init(PREFILL_CHUNK, 0, 1);
-    bool prefill_ok = true;
+    llama_batch batch = llama_batch_init((int) tokens.size(), 0, 1);
+    for (int i = 0; i < (int) tokens.size(); i++) {
+        batch.token[i]     = tokens[i];
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i]    = (i == (int) tokens.size() - 1) ? 1 : 0;
+    }
+    batch.n_tokens = (int) tokens.size();
 
-    for (int offset = 0; offset < (int) tokens.size(); offset += PREFILL_CHUNK) {
-        const int count = std::min(PREFILL_CHUNK, (int) tokens.size() - offset);
-        batch.n_tokens = count;
-        for (int i = 0; i < count; i++) {
-            const int token_index = offset + i;
-            batch.token[i]     = tokens[token_index];
-            batch.pos[i]       = token_index;
-            batch.n_seq_id[i]  = 1;
-            batch.seq_id[i][0] = 0;
-            batch.logits[i]    = (token_index == (int) tokens.size() - 1) ? 1 : 0;
-        }
-
-        LOGI("nativeGenerate: prefill chunk offset=%d count=%d", offset, count);
+    const int budget = maxTokens > 0 ? maxTokens : 512;
+    int produced = 0;
+    int next_pos = (int) tokens.size();
+    for (int generated = 0; generated < budget; generated++) {
         if (llama_decode(h->ctx, batch) != 0) {
             LOGW("nativeGenerate: prefill llama_decode failed at offset=%d count=%d", offset, count);
             prefill_ok = false;
@@ -236,10 +253,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
             }
         }
 
-        const long long ms = elapsed_ms();
-        const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
-        LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
-             produced, out.size(), ms, tps);
+        batch.n_tokens = 1;
+        batch.token[0]  = id;
+        batch.pos[0]    = next_pos++;
+        batch.logits[0] = 1;
     }
 
     llama_batch_free(batch);
@@ -250,133 +267,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
 JNIEXPORT void JNICALL
 Java_com_advisor_app_llm_LlamaCppBackend_nativeFree(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
-    if (h == nullptr) return;
-    if (h->ctx)   llama_free(h->ctx);
-    if (h->model) llama_model_free(h->model);
-    delete h;
-}
-
-} // extern "C" (generation)
-
-// ---------------------------------------------------------------------------
-// Embedding backend — the native side of com.advisor.app.llm.LlamaCppEmbedder.
-// ---------------------------------------------------------------------------
-
-namespace {
-
-struct AdvisorEmbed {
-    llama_model*       model  = nullptr;
-    llama_context*     ctx    = nullptr;
-    const llama_vocab* vocab  = nullptr;
-    int                n_embd = 0;
-};
-
-} // namespace
-
-extern "C" {
-
-JNIEXPORT jlong JNICALL
-Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz*/, jstring jpath) {
-    ensure_backend_ready();
-
-    const char* path = env->GetStringUTFChars(jpath, nullptr);
-
-    llama_model_params mp = llama_model_default_params();
-    mp.n_gpu_layers = 0;
-
-    llama_model* model = llama_model_load_from_file(path, mp);
-    env->ReleaseStringUTFChars(jpath, path);
-    if (model == nullptr) {
-        LOGW("embedding: llama_model_load_from_file returned null");
-        return 0;
-    }
-
-    llama_context_params cp = llama_context_default_params();
-    cp.embeddings   = true;
-    cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;
-    cp.n_ctx        = 2048;
-    cp.n_batch      = 2048;
-    cp.n_ubatch     = 2048;
-    unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
-    cp.n_threads       = threads;
-    cp.n_threads_batch = threads;
-
-    llama_context* ctx = llama_init_from_model(model, cp);
-    if (ctx == nullptr) {
-        LOGW("embedding: llama_init_from_model returned null");
-        llama_model_free(model);
-        return 0;
-    }
-
-    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model)};
-    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d", h->n_embd, threads);
-    return reinterpret_cast<jlong>(h);
-}
-
-JNIEXPORT jint JNICALL
-Java_com_advisor_app_llm_LlamaCppEmbedder_nativeDim(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
-    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
-    return h == nullptr ? 0 : h->n_embd;
-}
-
-JNIEXPORT jfloatArray JNICALL
-Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
-        JNIEnv* env, jobject /*thiz*/, jlong handle, jstring jtext) {
-
-    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
-    if (h == nullptr || h->ctx == nullptr) return env->NewFloatArray(0);
-
-    const char* text = env->GetStringUTFChars(jtext, nullptr);
-    std::string input(text ? text : "");
-    env->ReleaseStringUTFChars(jtext, text);
-
-    int n_max = (int) input.size() + 8;
-    std::vector<llama_token> tokens(n_max);
-    int n_tok = llama_tokenize(
-            h->vocab, input.c_str(), (int) input.size(),
-            tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/false);
-    if (n_tok <= 0) {
-        LOGW("embedding: tokenization failed (%d)", n_tok);
-        return env->NewFloatArray(0);
-    }
-    const int n_ctx = (int) llama_n_ctx(h->ctx);
-    if (n_tok > n_ctx) n_tok = n_ctx;
-    tokens.resize(n_tok);
-
-    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
-
-    llama_batch batch = llama_batch_init(n_tok, 0, 1);
-    for (int i = 0; i < n_tok; i++) {
-        batch.token[i]     = tokens[i];
-        batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
-        batch.logits[i]    = 1;
-    }
-    batch.n_tokens = n_tok;
-
-    jfloatArray result = env->NewFloatArray(0);
-    if (llama_decode(h->ctx, batch) == 0) {
-        const float* emb = llama_get_embeddings_seq(h->ctx, 0);
-        if (emb == nullptr) emb = llama_get_embeddings(h->ctx);
-        if (emb != nullptr && h->n_embd > 0) {
-            result = env->NewFloatArray(h->n_embd);
-            env->SetFloatArrayRegion(result, 0, h->n_embd, emb);
-        } else {
-            LOGW("embedding: no embeddings returned");
-        }
-    } else {
-        LOGW("embedding: llama_decode failed");
-    }
-
-    llama_batch_free(batch);
-    return result;
-}
-
-JNIEXPORT void JNICALL
-Java_com_advisor_app_llm_LlamaCppEmbedder_nativeFree(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
-    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
     if (h == nullptr) return;
     if (h->ctx)   llama_free(h->ctx);
     if (h->model) llama_model_free(h->model);
