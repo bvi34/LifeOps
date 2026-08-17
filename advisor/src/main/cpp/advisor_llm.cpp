@@ -212,22 +212,45 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     int next_pos = (int) tokens.size();
     for (int generated = 0; generated < budget; generated++) {
         if (llama_decode(h->ctx, batch) != 0) {
-            LOGW("llama_decode failed");
+            LOGW("nativeGenerate: prefill llama_decode failed at offset=%d count=%d", offset, count);
+            prefill_ok = false;
             break;
         }
-        if (generated == 0) LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
+    }
 
-        llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
-        if (llama_vocab_is_eog(h->vocab, id)) break;
+    if (prefill_ok) {
+        LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
+        const int budget = maxTokens > 0 ? maxTokens : 512;
+        int produced = 0;
+        int next_pos = (int) tokens.size();
 
-        out += token_to_piece(h->vocab, id);
-        produced++;
-        if (produced % 32 == 0) LOGI("nativeGenerate: %d tokens so far (%lld ms)…", produced, elapsed_ms());
+        // Sample the first token from logits requested on the final prefill chunk, then decode
+        // generated tokens one at a time.
+        for (int generated = 0; generated < budget; generated++) {
+            llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
+            if (llama_vocab_is_eog(h->vocab, id)) break;
 
-        size_t cut = first_stop(out, stops);
-        if (cut != std::string::npos) {
-            out.resize(cut);
-            break;
+            out += token_to_piece(h->vocab, id);
+            produced++;
+            if (produced % 32 == 0) LOGI("nativeGenerate: %d tokens so far (%lld ms)…", produced, elapsed_ms());
+
+            size_t cut = first_stop(out, stops);
+            if (cut != std::string::npos) {
+                out.resize(cut);
+                break;
+            }
+
+            batch.n_tokens = 1;
+            batch.token[0]  = id;
+            batch.pos[0]    = next_pos++;
+            batch.n_seq_id[0]  = 1;
+            batch.seq_id[0][0] = 0;
+            batch.logits[0] = 1;
+
+            if (llama_decode(h->ctx, batch) != 0) {
+                LOGW("nativeGenerate: decode failed after %d generated tokens", produced);
+                break;
+            }
         }
 
         batch.n_tokens = 1;
@@ -238,10 +261,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
 
     llama_batch_free(batch);
     llama_sampler_free(smpl);
-    const long long ms = elapsed_ms();
-    const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
-    LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
-         produced, out.size(), ms, tps);
     return env->NewStringUTF(out.c_str());
 }
 
