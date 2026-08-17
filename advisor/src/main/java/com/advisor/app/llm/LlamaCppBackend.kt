@@ -44,7 +44,7 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     override fun generate(prompt: String, params: GenerationParams): String {
         if (!ensureLoaded()) return ""
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
-        Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace('\n', '\\n')}")
+        Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace('\n', "\\n")}")
         return runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,
@@ -65,11 +65,6 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         }
     }
 
-    /**
-     * Load the weights on first use (off the main thread — generation is dispatched there). The store
-     * is re-read each time so a newly imported model is picked up; a file that already failed to load
-     * is remembered by (path, size) and skipped until it changes.
-     */
     private fun ensureLoaded(): Boolean {
         if (handle != 0L) return true
         if (!NATIVE_AVAILABLE) return false
@@ -99,8 +94,6 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
             .take(16)
     }
 
-    // --- JNI: implemented by the `advisor-llm` native library (llama.cpp) ---
-
     private external fun nativeLoad(modelPath: String): Long
     private external fun nativeGenerate(
         handle: Long, prompt: String, maxTokens: Int, temperature: Float,
@@ -110,8 +103,6 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     companion object {
         private const val TAG = "LlamaCppBackend"
-
-        /** True once the native library is present; false (and logged) when it isn't in the build. */
         private val NATIVE_AVAILABLE: Boolean = runCatching {
             System.loadLibrary("advisor-llm")
             true
