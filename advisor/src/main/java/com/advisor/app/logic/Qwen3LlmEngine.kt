@@ -1,5 +1,7 @@
 package com.advisor.app.logic
 
+import android.util.Log
+
 /**
  * The Advisor's real generation step, backed by a local **Qwen3-4B** model (Q4_K_M GGUF) running fully
  * on-device through an [LlmBackend]. It formats the assembled [AdvisorPrompt] with Qwen3's chat
@@ -27,6 +29,8 @@ class Qwen3LlmEngine(
         if (!backend.isReady) return fallback.generate(prompt)
 
         val formatted = Qwen3ChatFormat.forPrompt(prompt)
+        Log.i(TAG, "Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
+        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace('\n', '\\n')}")
         val raw = runCatching { backend.generate(formatted, params) }.getOrNull()
         val answer = raw?.let { Qwen3ChatFormat.cleanOutput(it) }.orEmpty()
 
@@ -42,5 +46,13 @@ class Qwen3LlmEngine(
             quantization = "Q4_K_M / GGUF",
             isPlaceholder = false
         )
+
+        private const val TAG = "Qwen3LlmEngine"
+
+        private fun sha256(text: String): String {
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            return digest.digest(text.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
+                .take(16)
+        }
     }
 }
