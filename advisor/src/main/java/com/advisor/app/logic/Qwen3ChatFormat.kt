@@ -15,9 +15,36 @@ object Qwen3ChatFormat {
     const val IM_START = "<|im_start|>"
     const val IM_END = "<|im_end|>"
 
-    /** Build the full ChatML prompt for [prompt]. Thinking is disabled by default. */
-    fun forPrompt(prompt: AdvisorPrompt, enableThinking: Boolean = false): String =
-        build(prompt.system.trim(), userContent(prompt), enableThinking)
+    /**
+     * Build the full ChatML prompt for [prompt]: the system instruction, the prior conversation as
+     * real ChatML turns, then this question's augmentation as the final user turn.
+     *
+     * The prior turns must be real turns. Rendered as flat text inside one user message — `User: …`
+     * / `Advisor: …` lines — nothing closes the assistant's previous message, so the model continues
+     * it: each reply opens by restating the one before, that reply is persisted, and the next prompt
+     * feeds it back, so answers grow without bound. An `<|im_end|>` after each assistant turn is what
+     * says "this one is finished; write a new one".
+     *
+     * It also makes the prompt cheap to re-run. Everything up to the final user turn is byte-identical
+     * from one question to the next, which is exactly the prefix the native backend keeps in its KV
+     * cache instead of re-prefilling — so the volatile per-question material (retrieved CONTEXT, the
+     * question) belongs last, where it is here.
+     */
+    fun forPrompt(prompt: AdvisorPrompt, enableThinking: Boolean = false): String = buildString {
+        val system = prompt.system.trim()
+        if (system.isNotBlank()) {
+            append(IM_START).append("system\n").append(system).append(IM_END).append('\n')
+        }
+        for (turn in prompt.conversation) {
+            val text = turn.text.trim()
+            if (text.isEmpty()) continue
+            append(IM_START).append(if (turn.fromUser) "user\n" else "assistant\n")
+            append(text).append(IM_END).append('\n')
+        }
+        append(IM_START).append("user\n").append(userContent(prompt)).append(IM_END).append('\n')
+        append(IM_START).append("assistant\n")
+        if (!enableThinking) append("<think>\n\n</think>\n\n")
+    }
 
     /** Build a ChatML prompt from a [system] instruction and a [user] turn. */
     fun build(system: String, user: String, enableThinking: Boolean = false): String = buildString {
@@ -47,9 +74,13 @@ object Qwen3ChatFormat {
         return text.trim()
     }
 
-    /** The user turn: everything the assembler rendered, minus the system preamble and trailing cue. */
+    /**
+     * The final user turn: everything the assembler rendered, minus the system preamble, minus the
+     * conversation (emitted as real turns by [forPrompt]), minus the trailing `ANSWER:` cue — the
+     * cue's job is done by the open assistant turn that follows.
+     */
     private fun userContent(prompt: AdvisorPrompt): String {
-        val body = prompt.render().removePrefix(prompt.system).trimStart()
+        val body = prompt.render(includeConversation = false).removePrefix(prompt.system).trimStart()
         return body.removeSuffix("ANSWER:").trimEnd()
     }
 

@@ -2,16 +2,20 @@ package com.advisor.app
 
 import android.app.Application
 import android.content.Context
+import androidx.room.RoomDatabase
 import com.advisor.app.data.db.AdvisorDatabase
 import com.advisor.app.data.identity.IdentityStore
 import com.advisor.app.data.memory.AdvisorMemoryDatabase
 import com.advisor.app.data.memory.MemoryRepository
 import com.advisor.app.data.profile.ProfileStore
+import com.advisor.app.data.prompt.SystemPromptStore
 import com.advisor.app.data.repository.AdvisorRepository
+import com.advisor.app.data.source.CachingKnowledgeSource
 import com.advisor.app.data.source.CitationKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.data.source.RoomChangeFeed
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.llm.LlamaCppBackend
@@ -20,6 +24,9 @@ import com.advisor.app.logic.C3AEngine
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.Qwen3LlmEngine
+import com.citation.app.data.db.CitationDatabase
+import com.lifeops.app.data.db.LifeOpsDatabase
+import com.logistics.app.data.db.LogisticsDatabase
 
 /**
  * Advisor's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
@@ -43,14 +50,36 @@ class AdvisorApp private constructor(private val app: Application) {
     /** Standing, always-on named profiles (user, LLM persona, projects), persisted as JSON. */
     val profileStore by lazy { ProfileStore(app) }
 
-    /** The read-only bridges into every hosted app's data. Loaded only when granted. */
+    /** The user-editable standing instruction the model is given before every question. */
+    val systemPromptStore by lazy { SystemPromptStore(app) }
+
+    /**
+     * The read-only bridges into every hosted app's data. Loaded only when granted.
+     *
+     * Each is wrapped in a [CachingKnowledgeSource] so a question does not re-read whole tables and
+     * rebuild a document per row when nothing has been written since the last one. The table lists
+     * below are what each source actually reads — keep them in step with the source, since a table
+     * missing here means a stale snapshot until something else in the same database changes. A name
+     * that does not exist is caught at subscribe time and simply disables that source's cache.
+     */
     val knowledgeSources: List<KnowledgeSource> by lazy {
         listOf(
-            LifeOpsKnowledgeSource(app),
-            CitationKnowledgeSource(app),
-            LogisticsKnowledgeSource(app)
+            LifeOpsKnowledgeSource(app).cachedOn("aspects", "tasks", "projects", "milestones") {
+                LifeOpsDatabase.getInstance(app)
+            },
+            CitationKnowledgeSource(app).cachedOn("books", "notes") {
+                CitationDatabase.get(app)
+            },
+            LogisticsKnowledgeSource(app).cachedOn("pantry_items", "grocery_items") {
+                LogisticsDatabase.getInstance(app)
+            }
         )
     }
+
+    private fun KnowledgeSource.cachedOn(
+        vararg tables: String,
+        database: () -> RoomDatabase
+    ): KnowledgeSource = CachingKnowledgeSource(this, RoomChangeFeed(arrayOf(*tables), database))
 
     /** Owns the on-device model file: in-app import of a Qwen3-4B GGUF, its status, and removal. */
     val modelStore by lazy { AdvisorModelStore(app) }
@@ -82,6 +111,7 @@ class AdvisorApp private constructor(private val app: Application) {
             engine = engine,
             memory = memoryRepository,
             identityStore = identityStore,
+            systemPromptStore = systemPromptStore,
             profileStore = profileStore,
             logicEngine = logicEngine,
             modelStore = modelStore,

@@ -26,8 +26,18 @@ data class AdvisorPrompt(
     val question: String,
     val conversation: List<ConversationTurn> = emptyList()
 ) {
-    /** Flatten to the single prompt string a local model receives. */
-    fun render(): String = buildString {
+    /**
+     * Flatten to a single prompt string.
+     *
+     * [includeConversation] exists because a chat model must not be handed prior turns as flat text.
+     * A line like `Advisor: <previous answer>` sitting in the middle of a user message has nothing
+     * marking it as *finished*, so the model reads it as something to continue: it restates the
+     * previous answer and appends to it. That answer is then persisted and fed back on the next turn,
+     * so every reply grows by the whole of the one before it. [Qwen3ChatFormat] therefore renders the
+     * conversation as real ChatML turns, each closed with an end-of-turn token, and asks for the body
+     * without it. The flat form stays the default for callers that reason over the text directly.
+     */
+    fun render(includeConversation: Boolean = true): String = buildString {
         append(system).append("\n\n")
 
         if (identity.isNotEmpty()) {
@@ -73,7 +83,7 @@ data class AdvisorPrompt(
             append('\n')
         }
 
-        if (conversation.isNotEmpty()) {
+        if (includeConversation && conversation.isNotEmpty()) {
             append("CONVERSATION (recent turns, oldest first — resolve follow-ups against this):\n")
             for (turn in conversation) {
                 append(if (turn.fromUser) "User: " else "Advisor: ").append(turn.text).append('\n')
@@ -99,9 +109,9 @@ object PromptAssembler {
             "conversational, and practical: acknowledge what the user seems to mean, translate casual " +
             "phrasing into the app concepts you know (tasks, goals, books, notes, groceries, pantry, " +
             "recipes), and answer in plain language rather than database-speak. Fuse the data into the " +
-            "reply: open with a short, natural sentence that frames what you found — for example " +
-            "\"It looks like today you have…\" or \"Here's what I found in your notes…\" — and weave " +
-            "the specifics into it, rather than dumping a bare list. Use the user's " +
+            "reply: open with a short, natural sentence, phrased freshly each time, that frames what you " +
+            "found, and weave the specifics into it rather than dumping a bare list. Never repeat or " +
+            "restate an earlier reply — answer only what was just asked. Use the user's " +
             "IDENTITY, the standing PROFILES (referenced by name), recalled MEMORY, the CONTEXT drawn " +
             "from their own LifeOps, Citation and Logistics data, the recent CONVERSATION (to resolve " +
             "follow-up references like \"it\" or \"that\"), and any REASONING provided. Cite app " +
@@ -121,13 +131,14 @@ object PromptAssembler {
         memories: List<MemoryRecord> = emptyList(),
         profiles: List<Profile> = emptyList(),
         derived: List<String> = emptyList(),
-        conversation: List<ConversationTurn> = emptyList()
+        conversation: List<ConversationTurn> = emptyList(),
+        system: String = SYSTEM
     ): AdvisorPrompt {
         val blocks = chunks.mapIndexed { index, chunk ->
             ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
         }
         return AdvisorPrompt(
-            system = SYSTEM,
+            system = system.trim().ifBlank { SYSTEM },
             identity = identity.toContextLines(),
             profiles = profiles,
             memories = memories,

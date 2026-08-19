@@ -18,4 +18,11 @@ interface KnowledgeSource {
 
     /** Snapshot this app's current data as documents. Called at query time, so it is always live. */
     suspend fun load(): List<KnowledgeDocument>
+
+    /**
+     * Release anything this source is holding in memory. Called when the app's permission is revoked,
+     * so a withdrawn app's rows do not linger in a cache. A plain source holds nothing between calls,
+     * so the default is to do nothing; [CachingKnowledgeSource] overrides it.
+     */
+    fun evict() {}
 }
