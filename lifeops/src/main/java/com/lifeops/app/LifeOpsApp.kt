@@ -59,6 +59,9 @@ class LifeOpsApp private constructor(private val app: Application) {
             com.lifeops.app.worker.AlarmBusyBlockReminderScheduler(app)
         )
     }
+    val googleCalendarSyncRepository by lazy {
+        com.lifeops.app.data.repository.GoogleCalendarSyncRepository(app, busyBlockRepository, personRepository)
+    }
     val searchRepository by lazy { SearchRepository(database) }
     val timeEntryRepository by lazy { TimeEntryRepository(database.timeEntryDao()) }
     // App-scoped so a running task timer survives navigation between This Week and the task
@@ -293,6 +296,11 @@ class LifeOpsApp private constructor(private val app: Application) {
         // (see SleepTrackingService). No-op when the user has turned tracking off.
         if (preferencesRepository.sleepTrackingEnabled) {
             runCatching { com.lifeops.app.service.SleepTrackingService.start(app) }
+        }
+        // Periodic Google Calendar sync, opt-in via the Calendar Sync screen. A manual "Sync now"
+        // there works regardless of this toggle.
+        if (preferencesRepository.googleCalendarSyncEnabled && preferencesRepository.googleCalendarId != null) {
+            com.lifeops.app.worker.GoogleCalendarSyncWorker.schedulePeriodic(app)
         }
     }
 

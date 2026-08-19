@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.BusyBlock
+import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.repository.BusyBlockRepository
+import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,12 +23,15 @@ data class CalendarUiState(
     /** The user's own busy blocks (personId == null). */
     val blocks: List<BusyBlock> = emptyList(),
     /** Tasks that carry a due date, for overlaying the week as all-day items. */
-    val dueTasks: List<Task> = emptyList()
+    val dueTasks: List<Task> = emptyList(),
+    /** The household roster, for tagging people onto an event. */
+    val allPeople: List<Person> = emptyList()
 )
 
 class CalendarViewModel(
     private val busyBlockRepository: BusyBlockRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val personRepository: PersonRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -36,6 +41,11 @@ class CalendarViewModel(
         viewModelScope.launch {
             busyBlockRepository.observeMine().collectLatest { blocks ->
                 _uiState.update { it.copy(blocks = blocks) }
+            }
+        }
+        viewModelScope.launch {
+            personRepository.observeAll().collectLatest { people ->
+                _uiState.update { it.copy(allPeople = people.filter { p -> !p.isArchived }) }
             }
         }
         refreshDueTasks()
@@ -76,9 +86,10 @@ class CalendarViewModel(
 
 class CalendarViewModelFactory(
     private val busyBlockRepository: BusyBlockRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val personRepository: PersonRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        CalendarViewModel(busyBlockRepository, taskRepository) as T
+        CalendarViewModel(busyBlockRepository, taskRepository, personRepository) as T
 }

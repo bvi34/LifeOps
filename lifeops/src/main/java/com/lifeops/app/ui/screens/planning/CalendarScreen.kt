@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -53,7 +54,8 @@ private val RANGE_FMT = DateTimeFormatter.ofPattern("MMM d")
 @Composable
 fun CalendarScreen(
     viewModel: CalendarViewModel,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenSync: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var addingBlock by remember { mutableStateOf(false) }
@@ -64,7 +66,16 @@ fun CalendarScreen(
     val today = LocalDate.now()
 
     Scaffold(
-        topBar = { AppHeader(navigationIcon = { BackNavIcon(onBack) }) },
+        topBar = {
+            AppHeader(
+                navigationIcon = { BackNavIcon(onBack) },
+                actions = {
+                    IconButton(onClick = onOpenSync) {
+                        Icon(Icons.Default.Sync, contentDescription = "Google Calendar sync")
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { addingBlock = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Add busy time")
@@ -111,6 +122,7 @@ fun CalendarScreen(
                             isToday = date == today,
                             blocks = dayBlocks,
                             dueTaskTitles = dayTasks.map { it.title },
+                            allPeople = state.allPeople,
                             onEditBlock = { editingBlock = it },
                             onDeleteBlock = { viewModel.deleteBlock(it.id) }
                         )
@@ -128,7 +140,8 @@ fun CalendarScreen(
                 viewModel.saveBlock(block)
                 addingBlock = false; editingBlock = null
             },
-            onDismiss = { addingBlock = false; editingBlock = null }
+            onDismiss = { addingBlock = false; editingBlock = null },
+            allPeople = state.allPeople
         )
     }
 }
@@ -139,6 +152,7 @@ private fun DaySection(
     isToday: Boolean,
     blocks: List<BusyBlock>,
     dueTaskTitles: List<String>,
+    allPeople: List<com.lifeops.app.data.model.Person>,
     onEditBlock: (BusyBlock) -> Unit,
     onDeleteBlock: (BusyBlock) -> Unit
 ) {
@@ -158,7 +172,12 @@ private fun DaySection(
             )
         } else {
             blocks.forEach { block ->
-                BusyBlockRow(block = block, onEdit = { onEditBlock(block) }, onDelete = { onDeleteBlock(block) })
+                BusyBlockRow(
+                    block = block,
+                    onEdit = { onEditBlock(block) },
+                    onDelete = { onDeleteBlock(block) },
+                    allPeople = allPeople
+                )
             }
             dueTaskTitles.forEach { title ->
                 Text(

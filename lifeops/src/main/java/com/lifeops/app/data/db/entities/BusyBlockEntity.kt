@@ -42,5 +42,12 @@ data class BusyBlockEntity(
     // Whether a start-of-block reminder is scheduled. NOT NULL with a matching
     // @ColumnInfo(defaultValue) so the additive migration passes Room's schema validation.
     @ColumnInfo(defaultValue = "0")
-    val reminderEnabled: Boolean = false
+    val reminderEnabled: Boolean = false,
+    // Google Calendar linkage (own-schedule blocks only; see GoogleCalendarSyncRepository).
+    // Both null until synced: googleEventId identifies the CalendarContract.Events row this block
+    // maps to (so a later sync updates it in place instead of duplicating it), googleCalendarId
+    // the on-device calendar it lives in. A row with a non-null googleEventId and no local edits
+    // pending is either something LifeOps pushed or something pulled in from that calendar.
+    val googleEventId: Long? = null,
+    val googleCalendarId: Long? = null
 )

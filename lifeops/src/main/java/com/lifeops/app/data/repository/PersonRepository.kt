@@ -30,6 +30,9 @@ class PersonRepository(private val personDao: PersonDao) {
 
     suspend fun getById(id: String): Person? = personDao.getById(id)?.toModel()
 
+    /** Full roster snapshot — used by the Google Calendar sync engine to resolve #tags. */
+    suspend fun getAll(): List<Person> = personDao.getAll().map { it.toModel() }
+
     suspend fun createPerson(name: String): Person {
         val person = Person(id = UUID.randomUUID().toString(), name = name.trim(), createdAt = DateUtil.now())
         personDao.upsertPerson(person.toEntity())

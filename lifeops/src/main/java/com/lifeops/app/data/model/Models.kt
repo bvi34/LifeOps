@@ -104,7 +104,13 @@ data class BusyBlock(
     val createdAt: String,
     // When true (own-schedule blocks only), a reminder notification fires as the block starts —
     // once for a one-off, every matching day for a weekly block.
-    val reminderEnabled: Boolean = false
+    val reminderEnabled: Boolean = false,
+    // Google Calendar linkage; see BusyBlockEntity. Null until synced.
+    val googleEventId: Long? = null,
+    val googleCalendarId: Long? = null,
+    // People tagged on this event, hydrated from the busy_block_people join table by
+    // BusyBlockRepository (not a column on the entity — see BusyBlockRepository.upsert).
+    val peopleIds: List<String> = emptyList()
 )
 
 data class TaskAttachment(

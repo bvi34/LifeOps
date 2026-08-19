@@ -10,6 +10,12 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Google Calendar sync: reads/writes the on-device calendar provider, which the Google
+         Calendar app keeps synced with the signed-in Google account — no separate OAuth setup
+         needed. Both permissions are dangerous/runtime; requested from the Calendar Sync screen. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
     <!-- Sleep tracking: a foreground service keeps a live process so the screen on/off receiver
          (which the OS only delivers to a runtime-registered receiver) can capture activity overnight.
          SPECIAL_USE — no standard FGS type fits "infer sleep from on-device screen/charging activity". -->

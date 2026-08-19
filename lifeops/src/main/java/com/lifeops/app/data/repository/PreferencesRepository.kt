@@ -97,6 +97,35 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getBoolean("onboarding_shown", false)
         set(value) { prefs.edit().putBoolean("onboarding_shown", value).apply() }
 
+    // --- Google Calendar sync (see GoogleCalendarSyncRepository) ---
+
+    /** The device-calendar id (CalendarContract.Calendars._ID) chosen as the sync target. */
+    var googleCalendarId: Long?
+        get() = prefs.getLong("google_calendar_id", -1L).takeIf { it >= 0L }
+        set(value) {
+            prefs.edit().apply { if (value == null) remove("google_calendar_id") else putLong("google_calendar_id", value) }.apply()
+        }
+
+    /** Display name of the chosen calendar, cached so the settings screen has something to show
+     *  before the calendar list reloads. */
+    var googleCalendarDisplayName: String?
+        get() = prefs.getString("google_calendar_display_name", null)
+        set(value) {
+            prefs.edit().apply { if (value == null) remove("google_calendar_display_name") else putString("google_calendar_display_name", value) }.apply()
+        }
+
+    /** Master switch for the periodic background sync worker; manual "Sync now" ignores this. */
+    var googleCalendarSyncEnabled: Boolean
+        get() = prefs.getBoolean("google_calendar_sync_enabled", false)
+        set(value) { prefs.edit().putBoolean("google_calendar_sync_enabled", value).apply() }
+
+    /** ISO-8601 instant of the last successful sync, for display; null = never synced. */
+    var googleCalendarLastSyncedAt: String?
+        get() = prefs.getString("google_calendar_last_synced_at", null)
+        set(value) {
+            prefs.edit().apply { if (value == null) remove("google_calendar_last_synced_at") else putString("google_calendar_last_synced_at", value) }.apply()
+        }
+
     private val _themePresetFlow = MutableStateFlow(
         ThemePreset.from(prefs.getString("theme_preset", ThemePreset.DEFAULT.name) ?: ThemePreset.DEFAULT.name)
     )

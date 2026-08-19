@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.BusyBlock
+import com.lifeops.app.data.model.Person
 import com.lifeops.app.util.DateUtil
 import java.util.UUID
 
@@ -48,15 +50,6 @@ fun formatClock(minutes: Int): String {
     return "%02d:%02d".format(h, m)
 }
 
-private fun parseClock(text: String): Int? {
-    val parts = text.trim().split(":")
-    if (parts.size != 2) return null
-    val h = parts[0].toIntOrNull() ?: return null
-    val m = parts[1].toIntOrNull() ?: return null
-    if (h !in 0..23 || m !in 0..59) return null
-    return h * 60 + m
-}
-
 /** Human recurrence summary: "Weekdays", "Every day", "Mon, Wed, Fri", or a one-off's date. */
 fun busyRecurrenceSummary(block: BusyBlock): String {
     block.specificDate?.let { return DateUtil.formatDate(it) }
@@ -70,18 +63,29 @@ fun busyRecurrenceSummary(block: BusyBlock): String {
 
 /** One row in a schedule list: time range, title, recurrence, and edit/delete actions. */
 @Composable
-fun BusyBlockRow(block: BusyBlock, onEdit: () -> Unit, onDelete: () -> Unit) {
+fun BusyBlockRow(
+    block: BusyBlock,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    allPeople: List<Person> = emptyList()
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "${formatClock(block.startMinutes)}–${formatClock(block.endMinutes)}  ${block.title}",
+                "${formatClock12h(block.startMinutes)}–${formatClock12h(block.endMinutes)}  ${block.title}",
                 style = MaterialTheme.typography.bodyMedium
             )
+            val peopleNames = allPeople.filter { it.id in block.peopleIds }.map { it.name }
+            val subtitle = buildList {
+                add(busyRecurrenceSummary(block))
+                if (block.reminderEnabled) add("🔔 Reminder")
+                if (peopleNames.isNotEmpty()) add("with " + peopleNames.joinToString(", "))
+            }.joinToString("  ·  ")
             Text(
-                busyRecurrenceSummary(block) + if (block.reminderEnabled) "  ·  🔔 Reminder" else "",
+                subtitle,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
             )
@@ -100,21 +104,21 @@ fun BusyBlockEditorDialog(
     existing: BusyBlock?,
     personId: String?,
     onSave: (BusyBlock) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    allPeople: List<Person> = emptyList()
 ) {
     var title by remember { mutableStateOf(existing?.title ?: "") }
-    var startText by remember { mutableStateOf(formatClock(existing?.startMinutes ?: 540)) }   // 09:00
-    var endText by remember { mutableStateOf(formatClock(existing?.endMinutes ?: 1020)) }       // 17:00
+    var startMinutes by remember { mutableStateOf(existing?.startMinutes ?: 540) }   // 9:00 AM
+    var endMinutes by remember { mutableStateOf(existing?.endMinutes ?: 1020) }      // 5:00 PM
     var weekly by remember { mutableStateOf(existing?.specificDate == null) }
     var daysMask by remember { mutableStateOf(existing?.takeIf { it.specificDate == null }?.daysMask ?: WEEKDAYS_MASK) }
     var dateText by remember { mutableStateOf(existing?.specificDate ?: "") }
     // Reminders are an own-schedule feature only; a person's block never notifies.
     val remindersSupported = personId == null
     var remind by remember { mutableStateOf(existing?.reminderEnabled ?: false) }
+    var taggedPeople by remember { mutableStateOf(existing?.peopleIds?.toSet() ?: emptySet()) }
 
-    val start = parseClock(startText)
-    val end = parseClock(endText)
-    val timesValid = start != null && end != null && start < end
+    val timesValid = startMinutes < endMinutes
     val recurrenceValid = if (weekly) daysMask != 0 else DateUtil.isValidDate(dateText.trim())
     val canSave = title.isNotBlank() && timesValid && recurrenceValid
 
@@ -130,24 +134,21 @@ fun BusyBlockEditorDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    OutlinedTextField(
-                        value = startText,
-                        onValueChange = { startText = it },
-                        label = { Text("Start") },
-                        placeholder = { Text("HH:mm") },
-                        isError = start == null,
-                        singleLine = true,
-                        modifier = Modifier.width(120.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    TimePickerButton(
+                        label = "Start",
+                        minutes = startMinutes,
+                        onMinutesSelected = { startMinutes = it }
                     )
-                    OutlinedTextField(
-                        value = endText,
-                        onValueChange = { endText = it },
-                        label = { Text("End") },
-                        placeholder = { Text("HH:mm") },
-                        isError = end == null || (start != null && end != null && end <= start),
-                        singleLine = true,
-                        modifier = Modifier.padding(start = 8.dp).width(120.dp)
+                    Spacer(Modifier.width(8.dp))
+                    TimePickerButton(
+                        label = "End",
+                        minutes = endMinutes,
+                        onMinutesSelected = { endMinutes = it },
+                        isError = !timesValid
                     )
                 }
 
@@ -188,6 +189,29 @@ fun BusyBlockEditorDialog(
                         Text("Remind me when it starts", style = MaterialTheme.typography.bodyMedium)
                     }
                 }
+
+                if (allPeople.isNotEmpty()) {
+                    Text(
+                        "People",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        allPeople.forEach { person ->
+                            FilterChip(
+                                selected = person.id in taggedPeople,
+                                onClick = {
+                                    taggedPeople = if (person.id in taggedPeople) {
+                                        taggedPeople - person.id
+                                    } else {
+                                        taggedPeople + person.id
+                                    }
+                                },
+                                label = { Text(person.name) }
+                            )
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -198,13 +222,16 @@ fun BusyBlockEditorDialog(
                         BusyBlock(
                             id = existing?.id ?: UUID.randomUUID().toString(),
                             title = title.trim(),
-                            startMinutes = start!!,
-                            endMinutes = end!!,
+                            startMinutes = startMinutes,
+                            endMinutes = endMinutes,
                             daysMask = if (weekly) daysMask else 0,
                             specificDate = if (weekly) null else dateText.trim(),
                             personId = personId,
                             createdAt = existing?.createdAt ?: DateUtil.now(),
-                            reminderEnabled = remindersSupported && remind
+                            reminderEnabled = remindersSupported && remind,
+                            googleEventId = existing?.googleEventId,
+                            googleCalendarId = existing?.googleCalendarId,
+                            peopleIds = taggedPeople.toList()
                         )
                     )
                 }
