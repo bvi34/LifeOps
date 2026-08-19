@@ -44,7 +44,7 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     override fun generate(prompt: String, params: GenerationParams): String {
         if (!ensureLoaded()) return ""
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
-        Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace('\n', "\\n")}")
+        Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace("\n", "\\n")}")
         return runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,

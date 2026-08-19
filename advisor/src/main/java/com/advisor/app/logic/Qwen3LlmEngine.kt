@@ -28,7 +28,7 @@ class Qwen3LlmEngine(
         if (!backend.isReady) return fallback.generate(prompt)
         val formatted = Qwen3ChatFormat.forPrompt(prompt)
         Log.i(TAG, "Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
-        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace('\n', "\\n")}")
+        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace("\n", "\\n")}")
         val raw = runCatching { backend.generate(formatted, params) }.getOrNull()
         val answer = raw?.let { Qwen3ChatFormat.cleanOutput(it) }.orEmpty()
         return if (answer.isBlank()) fallback.generate(prompt) else answer
