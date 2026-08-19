@@ -61,6 +61,10 @@ void ensure_backend_ready() {
 // caller indefinitely, and return whatever text was produced so Kotlin can fall back and log.
 constexpr long long GENERATE_DEADLINE_MS = 180000;
 
+// Shortest shared prefix worth keeping across calls. Small overlaps are common between unrelated
+// prompts (the ChatML preamble alone is a handful of tokens) and save nothing worth the bookkeeping.
+constexpr int MIN_PREFIX_REUSE = 32;
+
 struct AdvisorLlm {
     llama_model*       model = nullptr;
     llama_context*     ctx   = nullptr;
@@ -68,7 +72,20 @@ struct AdvisorLlm {
     // Set for the duration of a generate call; zero means "no deadline in force".
     std::atomic<long long> deadline_at_ms{0};
     std::atomic<bool>      aborted{false};
+    // The prompt tokens whose KV entries are currently in the cache, so the next call can keep the
+    // part it shares and prefill only what actually changed. Prompt tokens only — the generated reply
+    // also sits in the cache but is never part of the next prompt, so it always falls after the shared
+    // prefix and is dropped with everything else beyond it. Empty means "cache holds nothing usable".
+    std::vector<llama_token> cached_prompt;
 };
+
+// How many leading tokens two prompts share.
+size_t common_prefix(const std::vector<llama_token>& a, const std::vector<llama_token>& b) {
+    const size_t limit = std::min(a.size(), b.size());
+    size_t n = 0;
+    while (n < limit && a[n] == b[n]) n++;
+    return n;
+}
 
 long long steady_now_ms() {
     return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -281,7 +298,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
         return 0;
     }
 
-    auto* h = new AdvisorLlm{model, ctx, llama_model_get_vocab(model)};
+    auto* h = new AdvisorLlm();
+    h->model = model;
+    h->ctx   = ctx;
+    h->vocab = llama_model_get_vocab(model);
     llama_set_abort_callback(ctx, advisor_abort_cb, h);
     LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=disabled",
          (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers);
@@ -311,8 +331,6 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
     log_thread_scheduling("nativeGenerate thread");
-
-    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
     std::vector<std::string> stops;
     jsize nstops = jstops ? env->GetArrayLength(jstops) : 0;
@@ -357,9 +375,34 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     // turns a compute-bound prefill into a memory-bound one and is what made generation look hung.
     // llama_decode splits the batch into n_ubatch (512) micro-batches internally, so a normal prompt
     // is still a single pass; there is nothing to hand-roll here.
-    const int n_prefill = (int) tokens.size();
-    LOGI("nativeGenerate: prompt=%d tokens; prefill in one batch (n_ubatch=%d)…",
-         n_prefill, (int) llama_n_ubatch(h->ctx));
+    // Keep the KV entries this prompt shares with the last one. Advisor's prompts are a stable
+    // ~320-token system preamble followed by per-turn context, so a conversation re-prefilled roughly
+    // two thirds of every prompt from scratch when this call unconditionally cleared the cache. Match
+    // on tokens rather than assuming where the stable part ends, so the saving tracks whatever the
+    // prompt assembler actually keeps constant.
+    //
+    // Correctness rests on one rule: everything from the first differing token onward must go. That
+    // covers the previous reply, which always falls beyond the shared prefix. Keep at most
+    // n_prompt - 1 so there is always a token left to decode — the sampler reads its logits.
+    llama_memory_t mem = llama_get_memory(h->ctx);
+    int n_reused = 0;
+    if (!h->cached_prompt.empty()) {
+        const int shared = (int) common_prefix(h->cached_prompt, tokens);
+        const int keep   = std::min(shared, (int) tokens.size() - 1);
+        // Below a threshold the bookkeeping outweighs the saving; just start clean.
+        if (keep >= MIN_PREFIX_REUSE && llama_memory_seq_rm(mem, 0, keep, -1)) {
+            n_reused = keep;
+        }
+    }
+    if (n_reused == 0) {
+        llama_memory_clear(mem, /*data=*/true);
+    }
+    // Assume failure: only a completed prefill leaves the cache describing this prompt.
+    h->cached_prompt.clear();
+
+    const int n_prefill = (int) tokens.size() - n_reused;
+    LOGI("nativeGenerate: prompt=%d tokens (%d reused from cache, %d to prefill); one batch (n_ubatch=%d)…",
+         (int) tokens.size(), n_reused, n_prefill, (int) llama_n_ubatch(h->ctx));
     const auto t_start = std::chrono::steady_clock::now();
     auto elapsed_ms = [&]() {
         return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -377,8 +420,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_batch batch = llama_batch_init(std::max(1, n_prefill), 0, 1);
     batch.n_tokens = n_prefill;
     for (int i = 0; i < n_prefill; i++) {
-        batch.token[i]     = tokens[i];
-        batch.pos[i]       = i;
+        // Positions continue from the reused prefix — they index the whole prompt, not this batch.
+        const int pos = n_reused + i;
+        batch.token[i]     = tokens[pos];
+        batch.pos[i]       = pos;
         batch.n_seq_id[i]  = 1;
         batch.seq_id[i][0] = 0;
         // Only the last prompt token needs logits — that's what the first sample reads.
@@ -386,6 +431,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
 
     bool prefill_ok = llama_decode(h->ctx, batch) == 0;
+    if (prefill_ok) h->cached_prompt = tokens;
     const ResSnapshot res_after_prefill = sample_resources();
     log_resource_delta("prefill", res_before_prefill, res_after_prefill);
     if (!prefill_ok) {
@@ -398,7 +444,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         LOGI("nativeGenerate: prefill done in %lld ms; streaming…", elapsed_ms());
         const int budget = maxTokens > 0 ? maxTokens : 512;
         int produced = 0;
-        int next_pos = (int) tokens.size();
+        int next_pos = (int) tokens.size();  // whole prompt, reused prefix included
 
         // Sample the first token from the logits requested on the final prompt token, then decode
         // generated tokens one at a time.
