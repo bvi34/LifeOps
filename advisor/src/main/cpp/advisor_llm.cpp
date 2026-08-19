@@ -16,6 +16,8 @@
 #include <jni.h>
 #include <android/log.h>
 
+#include <algorithm>
+#include <atomic>
 #include <string>
 #include <vector>
 #include <thread>
@@ -44,11 +46,37 @@ void ensure_backend_ready() {
     ready = true;
 }
 
+// How long a single nativeGenerate call may run before it gives up. Inference on a phone is slow but
+// bounded; anything past this is a pathology (a mis-built ggml, a device thrashing its page cache),
+// and without a ceiling it presents as the app hanging forever with nothing in logcat. ggml polls the
+// abort callback between graph nodes, so we surrender inside llama_decode instead of blocking the
+// caller indefinitely, and return whatever text was produced so Kotlin can fall back and log.
+constexpr long long GENERATE_DEADLINE_MS = 180000;
+
 struct AdvisorLlm {
     llama_model*       model = nullptr;
     llama_context*     ctx   = nullptr;
     const llama_vocab* vocab = nullptr;
+    // Set for the duration of a generate call; zero means "no deadline in force".
+    std::atomic<long long> deadline_at_ms{0};
+    std::atomic<bool>      aborted{false};
 };
+
+long long steady_now_ms() {
+    return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Called by ggml from the compute threads between graph nodes; returning true aborts the graph and
+// makes llama_decode fail rather than run on forever.
+bool advisor_abort_cb(void* data) {
+    auto* h = static_cast<AdvisorLlm*>(data);
+    if (h == nullptr) return false;
+    const long long at = h->deadline_at_ms.load(std::memory_order_relaxed);
+    if (at == 0 || steady_now_ms() < at) return false;
+    h->aborted.store(true, std::memory_order_relaxed);
+    return true;
+}
 
 std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     char buf[256];
@@ -92,10 +120,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     llama_context_params cp = llama_context_default_params();
-    cp.n_ctx = 4096;
-    // Keep n_batch at context size, but intentionally use smaller llama_batch objects during
-    // prefill. This isolates large-prefill execution from the model/context configuration.
-    cp.n_batch = 4096;
+    // 2048, not 4096: the KV cache is anonymous (non-evictable) memory — 576 MiB at 4096 vs 288 MiB
+    // here — and it competes with the 2.3 GiB of mmap'd weights for the page cache. When the weights
+    // can't stay resident, every decode re-faults them from flash and inference collapses. Advisor's
+    // prompts run ~500 tokens, so 2048 leaves ample room for prompt + reply.
+    cp.n_ctx = 2048;
+    // n_batch must cover a full-context prompt in one llama_decode (see the SIGABRT fixed earlier);
+    // n_ubatch stays at the default 512 so a typical prompt is a *single* pass over the weights.
+    cp.n_batch = cp.n_ctx;
     cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
     unsigned hw = std::thread::hardware_concurrency();
     int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
@@ -110,7 +142,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     auto* h = new AdvisorLlm{model, ctx, llama_model_get_vocab(model)};
-    LOGI("Loaded Qwen3-4B GGUF; ctx=%d threads=%d n_gpu_layers=%d flash_attn=disabled", (int) cp.n_ctx, threads, mp.n_gpu_layers);
+    llama_set_abort_callback(ctx, advisor_abort_cb, h);
+    LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=disabled",
+         (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers);
+    // The single most useful line in this log: it names the ISA extensions ggml was actually compiled
+    // with. `dotprod = 1` / `matmul_int8 = 1` mean the fast Q4_K and GEMM kernels are in; zeros mean the
+    // build fell back to baseline armv8-a and prefill will be several times slower than it should be
+    // (see GGML_CPU_ARM_ARCH in CMakeLists.txt).
+    LOGI("ggml build: %s", llama_print_system_info());
     return reinterpret_cast<jlong>(h);
 }
 
@@ -165,40 +204,43 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_sampler_chain_add(smpl, llama_sampler_init_temp(temperature));
     llama_sampler_chain_add(smpl, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    // TEST: chunk prompt prefill into small batches. The previous implementation submitted the
-    // entire prompt in one llama_decode(). A 490-token prompt reached that call and then produced
-    // no return on the target device. Keep the model, context, quantization, sampler, and prompt
-    // unchanged while varying only prefill batch size.
-    constexpr int PREFILL_CHUNK = 32;
-    LOGI("nativeGenerate: prompt=%d tokens; prefill in %d-token chunks…", (int) tokens.size(), PREFILL_CHUNK);
+    // Prefill the whole prompt in ONE llama_decode. An earlier revision split it into 32-token
+    // chunks as a diagnostic and the chunking was never taken back out — but every chunk is a full
+    // sweep over all 2.3 GiB of weights, so a 490-token prompt paid for ~16 sweeps instead of 1. That
+    // turns a compute-bound prefill into a memory-bound one and is what made generation look hung.
+    // llama_decode splits the batch into n_ubatch (512) micro-batches internally, so a normal prompt
+    // is still a single pass; there is nothing to hand-roll here.
+    const int n_prefill = (int) tokens.size();
+    LOGI("nativeGenerate: prompt=%d tokens; prefill in one batch (n_ubatch=%d)…",
+         n_prefill, (int) llama_n_ubatch(h->ctx));
     const auto t_start = std::chrono::steady_clock::now();
     auto elapsed_ms = [&]() {
         return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - t_start).count();
     };
 
+    // Arm the watchdog for the whole call so a pathologically slow decode fails loudly instead of
+    // pinning a coroutine forever. Cleared on every exit path below.
+    h->aborted.store(false, std::memory_order_relaxed);
+    h->deadline_at_ms.store(steady_now_ms() + GENERATE_DEADLINE_MS, std::memory_order_relaxed);
+
     std::string out;
-    llama_batch batch = llama_batch_init(PREFILL_CHUNK, 0, 1);
-    bool prefill_ok = true;
+    llama_batch batch = llama_batch_init(std::max(1, n_prefill), 0, 1);
+    batch.n_tokens = n_prefill;
+    for (int i = 0; i < n_prefill; i++) {
+        batch.token[i]     = tokens[i];
+        batch.pos[i]       = i;
+        batch.n_seq_id[i]  = 1;
+        batch.seq_id[i][0] = 0;
+        // Only the last prompt token needs logits — that's what the first sample reads.
+        batch.logits[i]    = (i == n_prefill - 1) ? 1 : 0;
+    }
 
-    for (int offset = 0; offset < (int) tokens.size(); offset += PREFILL_CHUNK) {
-        const int count = std::min(PREFILL_CHUNK, (int) tokens.size() - offset);
-        batch.n_tokens = count;
-        for (int i = 0; i < count; i++) {
-            const int token_index = offset + i;
-            batch.token[i]     = tokens[token_index];
-            batch.pos[i]       = token_index;
-            batch.n_seq_id[i]  = 1;
-            batch.seq_id[i][0] = 0;
-            batch.logits[i]    = (token_index == (int) tokens.size() - 1) ? 1 : 0;
-        }
-
-        LOGI("nativeGenerate: prefill chunk offset=%d count=%d", offset, count);
-        if (llama_decode(h->ctx, batch) != 0) {
-            LOGW("nativeGenerate: prefill llama_decode failed at offset=%d count=%d", offset, count);
-            prefill_ok = false;
-            break;
-        }
+    bool prefill_ok = llama_decode(h->ctx, batch) == 0;
+    if (!prefill_ok) {
+        LOGW("nativeGenerate: prefill llama_decode failed after %lld ms (%d tokens)%s",
+             elapsed_ms(), n_prefill,
+             h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
     }
 
     if (prefill_ok) {
@@ -207,7 +249,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         int produced = 0;
         int next_pos = (int) tokens.size();
 
-        // Sample the first token from logits requested on the final prefill chunk, then decode
+        // Sample the first token from the logits requested on the final prompt token, then decode
         // generated tokens one at a time.
         for (int generated = 0; generated < budget; generated++) {
             llama_token id = llama_sampler_sample(smpl, h->ctx, -1);
@@ -231,7 +273,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
             batch.logits[0] = 1;
 
             if (llama_decode(h->ctx, batch) != 0) {
-                LOGW("nativeGenerate: decode failed after %d generated tokens", produced);
+                LOGW("nativeGenerate: decode failed after %d generated tokens%s", produced,
+                     h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
                 break;
             }
         }
@@ -242,6 +285,12 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
              produced, out.size(), ms, tps);
     }
 
+    // llama.cpp's own accounting: separate prompt-eval (prefill) and eval (decode) ms/token. If the
+    // model ever feels slow again, this line says which half is slow before anyone changes code.
+    llama_perf_context_print(h->ctx);
+    llama_perf_context_reset(h->ctx);
+
+    h->deadline_at_ms.store(0, std::memory_order_relaxed);
     llama_batch_free(batch);
     llama_sampler_free(smpl);
     return env->NewStringUTF(out.c_str());
@@ -287,7 +336,12 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     llama_model* model = llama_model_load_from_file(path, mp);
     env->ReleaseStringUTFChars(jpath, path);
     if (model == nullptr) {
-        LOGW("embedding: llama_model_load_from_file returned null");
+        // Almost always an architecture llama.cpp doesn't know at this pin rather than a bad file —
+        // the ggml log line just above names it ("unknown model architecture: '<arch>'"). Jina v5 /
+        // EuroBERT GGUFs hit this at b6490; use a bge / gte / e5 / MiniLM / nomic-embed GGUF instead.
+        LOGW("embedding: llama_model_load_from_file returned null — see the llama_model_load error "
+             "above; an unsupported architecture at this llama.cpp pin is the usual cause. "
+             "Retrieval stays lexical.");
         return 0;
     }
 

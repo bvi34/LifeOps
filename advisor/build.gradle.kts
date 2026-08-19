@@ -26,6 +26,14 @@ val buildNativeLlm = (providers.gradleProperty("advisor.buildNativeLlm").orNull 
 // can't silently break the working CPU build. Requires advisor.buildNativeLlm too.
 val buildGpu = (providers.gradleProperty("advisor.gpu").orNull ?: "false").toBoolean()
 
+// The ARM ISA baseline ggml is compiled against. Android is a cross-compile, so ggml can't probe the
+// device and — left alone — emits no `-march` at all, falling back to plain armv8-a kernels without
+// dotprod/i8mm. That costs several times the prefill speed on a modern phone. The default targets
+// ARMv8.6-class cores (Snapdragon 8 Gen 1 / 8+ Gen 1 and newer); override it for older arm64 hardware,
+// where an unsupported extension is a SIGILL rather than a graceful fallback:
+//   -Padvisor.cpuArch=armv8.2-a+dotprod+fp16
+val advisorCpuArch = providers.gradleProperty("advisor.cpuArch").orNull ?: "armv8.2-a+dotprod+i8mm+fp16"
+
 android {
     namespace = "com.advisor.app"
     compileSdk = 35
@@ -42,6 +50,8 @@ android {
                     cppFlags += "-O3"
                     // Hand the GPU choice to CMakeLists (which turns on GGML_VULKAN + a build-time offload flag).
                     arguments += "-DADVISOR_GPU=${if (buildGpu) "ON" else "OFF"}"
+                    // Hand the ISA baseline to CMakeLists (which forwards it to ggml's GGML_CPU_ARM_ARCH).
+                    arguments += "-DADVISOR_CPU_ARCH=$advisorCpuArch"
                 }
             }
         }
