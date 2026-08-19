@@ -12,16 +12,31 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # CRITICAL for speed: AGP's *debug* app variant configures this native build as CMAKE_BUILD_TYPE=Debug,
 # which compiles the fetched ggml/llama.cpp at -O0. Unoptimized ggml is ~15-30x slower — enough that a
-# ~500-token prompt takes minutes to prefill on-device. Our global -O3 (CMAKE_CXX_FLAGS) is overridden
-# by the Debug per-config flags (-O0 comes later on the command line and wins), so force the Debug-config
-# C/C++ flags to be optimized too. This must be set before FetchContent builds llama.cpp so its targets
-# inherit it. (Release/RelWithDebInfo variants are already optimized.)
+# ~500-token prompt takes minutes to prefill on-device.
 #
-# -O2, not -O3: at -O3 the NDK clang miscompiled a ggml kernel and prefill SIGSEGV'd on the first decode
-# (the same decode ran fine, if slowly, at -O0). -O2 gives essentially all of ggml's speed — its hot
-# paths are hand-written SIMD, largely unaffected by O2-vs-O3 — without the aggressive transforms. We
-# also keep asserts enabled (no -DNDEBUG) so a real out-of-bounds surfaces as a GGML_ASSERT abort (with a
-# message, via our log bridge) instead of a bare SIGSEGV.
+# Fixing that by overriding CMAKE_<LANG>_FLAGS_DEBUG (what this file used to do) is a bet, not a
+# guarantee: those variables are emitted EARLY on the compile command, so any -O0 that the NDK
+# toolchain file or AGP appends afterwards silently wins, and nothing in the build output says so.
+# add_compile_options lands in the directory's COMPILE_OPTIONS property, which clang sees LAST — so
+# this -O2 beats any -O0 upstream of it no matter who injected it. It must come before FetchContent
+# adds llama.cpp, since only subdirectories added afterwards inherit the property.
+#
+# Language matters as much as position. AGP's `cppFlags` covers C++ ONLY, and ggml's hot compute —
+# ggml.c, ggml-cpu.c, quants.c, arch/arm/quants.c — is C. Building the C++ half optimized and the C
+# half at -O0 produces exactly the symptom this backend spent a dozen PRs on: model loading and
+# tokenization (C++) are fast, so the build looks healthy, while prefill burns ~1.2 GFLOP/s per core
+# — roughly 30x off — and does not respond to -march or ISA flags, because unoptimized intrinsics
+# spill to the stack whether or not the CPU has dotprod and i8mm. So set this for both languages.
+#
+# -O2, not -O3: at -O3 the NDK clang miscompiled a ggml kernel and prefill SIGSEGV'd on the first
+# decode. -O2 gives essentially all of ggml's speed — its hot paths are hand-written SIMD, largely
+# unaffected by O2-vs-O3 — without the aggressive transforms. NDEBUG disables the plain asserts in
+# ggml's inner loops; GGML_ASSERT is unconditional in ggml.h, so a real out-of-bounds still aborts
+# with a message through our log bridge.
+add_compile_options(-O2)
+add_compile_definitions(NDEBUG)
+
+# Belt and braces: also fix the per-config flags, so the compile line is optimized from both ends.
 set(CMAKE_C_FLAGS_DEBUG   "-O2" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-O2" CACHE STRING "" FORCE)
 
@@ -103,6 +118,15 @@ option(ADVISOR_MMAP "Load the model with mmap instead of reading it into anonymo
 if (ADVISOR_MMAP)
     target_compile_definitions(advisor-llm PRIVATE ADVISOR_USE_MMAP=1)
 endif()
+
+# Print what the compiler is actually being handed. Whether ggml ends up optimized decided ~30x of
+# inference speed here and was invisible on-device (the ISA feature line reports what the preprocessor
+# saw, not what the optimizer did), so it belongs in the build log rather than in an inference:
+#   ./gradlew :app:assembleDebug -Padvisor.buildNativeLlm=true --info | grep 'advisor-llm: flags'
+get_directory_property(ADVISOR_EFFECTIVE_OPTIONS COMPILE_OPTIONS)
+message(STATUS "advisor-llm: flags build_type=${CMAKE_BUILD_TYPE} compile_options=${ADVISOR_EFFECTIVE_OPTIONS}")
+message(STATUS "advisor-llm: flags C   ='${CMAKE_C_FLAGS}' + debug='${CMAKE_C_FLAGS_DEBUG}'")
+message(STATUS "advisor-llm: flags CXX ='${CMAKE_CXX_FLAGS}' + debug='${CMAKE_CXX_FLAGS_DEBUG}'")
 
 # `android` and `log` are NDK system libraries; `llama` comes from the fetched project.
 find_library(log-lib log)
