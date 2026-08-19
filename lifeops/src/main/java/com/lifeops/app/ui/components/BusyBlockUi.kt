@@ -42,6 +42,7 @@ import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.RelationshipImbalance
+import java.time.LocalDate
 import java.util.UUID
 
 // Index 0..6 maps to bit 0..6 = Monday..Sunday, matching BusyBlocks.occursOn.
@@ -103,7 +104,9 @@ fun BusyBlockRow(
 
 /**
  * Create/edit dialog for a busy block. [existing] non-null edits in place; [personId] stamps the
- * owner (null = the user's own schedule). [onSave] receives the fully-built block.
+ * owner (null = the user's own schedule). [onSave] receives the fully-built block. [initialDate]
+ * (yyyy-MM-dd) seeds a brand-new block as a one-off on that day — set when the user starts the add
+ * from a specific date, e.g. tapping a day on the calendar; ignored when [existing] is non-null.
  */
 @Composable
 fun BusyBlockEditorDialog(
@@ -112,14 +115,23 @@ fun BusyBlockEditorDialog(
     onSave: (BusyBlock) -> Unit,
     onDismiss: () -> Unit,
     allPeople: List<Person> = emptyList(),
-    imbalances: List<RelationshipImbalance> = emptyList()
+    imbalances: List<RelationshipImbalance> = emptyList(),
+    initialDate: String? = null
 ) {
+    val seededDate = initialDate?.takeIf { existing == null && DateUtil.isValidDate(it) }
     var title by remember { mutableStateOf(existing?.title ?: "") }
     var startMinutes by remember { mutableStateOf(existing?.startMinutes ?: 540) }   // 9:00 AM
     var endMinutes by remember { mutableStateOf(existing?.endMinutes ?: 1020) }      // 5:00 PM
-    var weekly by remember { mutableStateOf(existing?.specificDate == null) }
-    var daysMask by remember { mutableStateOf(existing?.takeIf { it.specificDate == null }?.daysMask ?: WEEKDAYS_MASK) }
-    var dateText by remember { mutableStateOf(existing?.specificDate ?: "") }
+    var weekly by remember { mutableStateOf(existing?.specificDate == null && seededDate == null) }
+    // Seeded from a day: if the user flips this to weekly, "every <that weekday>" is the sane default.
+    var daysMask by remember {
+        mutableStateOf(
+            existing?.takeIf { it.specificDate == null }?.daysMask
+                ?: seededDate?.let { 1 shl (LocalDate.parse(it).dayOfWeek.value - 1) }
+                ?: WEEKDAYS_MASK
+        )
+    }
+    var dateText by remember { mutableStateOf(existing?.specificDate ?: seededDate ?: "") }
     // Reminders are an own-schedule feature only; a person's block never notifies.
     val remindersSupported = personId == null
     var remind by remember { mutableStateOf(existing?.reminderEnabled ?: false) }
@@ -131,7 +143,15 @@ fun BusyBlockEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Add busy time" else "Edit busy time") },
+        title = {
+            Text(
+                when {
+                    existing != null -> "Edit busy time"
+                    seededDate != null -> "Add busy time · ${DateUtil.formatDate(seededDate)}"
+                    else -> "Add busy time"
+                }
+            )
+        },
         text = {
             Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
