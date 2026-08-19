@@ -96,6 +96,14 @@ if (ADVISOR_GPU)
     target_compile_definitions(advisor-llm PRIVATE ADVISOR_GPU_OFFLOAD=1)
 endif()
 
+# Weight loading strategy: OFF (the default) reads the GGUF into anonymous memory, ON mmaps the file.
+# See the comment in nativeLoad — on a memory-tight phone, file-backed weights get evicted and re-read
+# from flash on every forward pass, which no kernel-level speedup can compensate for.
+option(ADVISOR_MMAP "Load the model with mmap instead of reading it into anonymous memory" OFF)
+if (ADVISOR_MMAP)
+    target_compile_definitions(advisor-llm PRIVATE ADVISOR_USE_MMAP=1)
+endif()
+
 # `android` and `log` are NDK system libraries; `llama` comes from the fetched project.
 find_library(log-lib log)
 find_library(android-lib android)
