@@ -70,6 +70,9 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 
         EmbeddingModelCard(vm)
 
+        Spacer(Modifier.height(8.dp))
+        SystemPromptCard(vm)
+
         Text("Reasoning (C3A)", style = MaterialTheme.typography.titleMedium)
         Text(
             "A unifying engine coordinates identity, profiles, memory and app data, and checks for " +
@@ -254,6 +257,67 @@ private fun EmbeddingModelCard(vm: AdvisorViewModel) {
                 )
                 OutlinedButton(onClick = { pickModel.launch(arrayOf("*/*")) }) {
                     Text("Import embedding model (.gguf)…")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Editor for the standing instruction the model is given before every question — tone, what to lead
+ * with, what never to do. Shown here beside the model cards because it is the same kind of setting:
+ * it changes how the model behaves, and it takes effect on the next question with no restart.
+ *
+ * The draft is local to the editor so typing never re-runs anything, and it re-seeds whenever the
+ * saved value changes (including after a reset). Saving a blank box resets rather than clearing —
+ * a model with no standing instruction answers unusably.
+ */
+@Composable
+private fun SystemPromptCard(vm: AdvisorViewModel) {
+    val saved by vm.systemPrompt.collectAsStateWithLifecycle()
+    var draft by remember(saved.text) { mutableStateOf(saved.text) }
+    val dirty = draft.trim() != saved.text.trim()
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("System prompt", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.weight(1f))
+                if (saved.isCustom) {
+                    Text("Customised", style = MaterialTheme.typography.labelSmall)
+                }
+            }
+            Text(
+                "The standing instruction given to the model before every question. It's stored as a " +
+                    "plain text file (advisor/system-prompt.txt) you can also edit directly, and it's " +
+                    "included in backup. Changes apply to your next question.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            OutlinedTextField(
+                value = draft,
+                onValueChange = { draft = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Instruction") },
+                minLines = 6,
+                maxLines = 16,
+                textStyle = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { vm.saveSystemPrompt(draft) }, enabled = dirty) {
+                    Text("Save")
+                }
+                OutlinedButton(
+                    onClick = { draft = saved.text },
+                    enabled = dirty
+                ) {
+                    Text("Discard")
+                }
+                Spacer(Modifier.weight(1f))
+                TextButton(
+                    onClick = { vm.resetSystemPrompt() },
+                    enabled = saved.isCustom
+                ) {
+                    Text("Reset to default")
                 }
             }
         }

@@ -1,6 +1,7 @@
 package com.advisor.app.logic
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -58,5 +59,42 @@ class PromptAssemblerTest {
         assertTrue(text.contains("CONVERSATION"))
         assertTrue(text.contains("User: tell me about Dune"))
         assertTrue(text.contains("Advisor: Dune is a novel by Frank Herbert"))
+    }
+
+    @Test
+    fun a_user_written_system_prompt_replaces_the_default() {
+        val prompt = PromptAssembler.assemble(
+            "anything", emptyList(), system = "Answer only in haiku."
+        )
+        assertEquals("Answer only in haiku.", prompt.system)
+        assertTrue(prompt.render().startsWith("Answer only in haiku."))
+    }
+
+    @Test
+    fun a_blank_system_prompt_falls_back_to_the_default_rather_than_none() {
+        // An empty standing instruction makes the model answer unusably, so it must not be reachable
+        // by clearing the editor.
+        assertEquals(PromptAssembler.SYSTEM, PromptAssembler.assemble("q", emptyList(), system = "   ").system)
+        assertEquals(PromptAssembler.SYSTEM, PromptAssembler.assemble("q", emptyList()).system)
+    }
+
+    @Test
+    fun the_default_prompt_forbids_restating_earlier_replies() {
+        // Guards the other half of the runaway-answer bug: the shipped instruction used to offer a
+        // literal example opener, which the model reproduced verbatim on every turn.
+        assertTrue(PromptAssembler.SYSTEM.contains("Never repeat or restate an earlier reply"))
+        assertFalse(PromptAssembler.SYSTEM.contains("It looks like today you have"))
+    }
+
+    @Test
+    fun conversation_can_be_left_out_for_callers_that_emit_real_turns() {
+        val prompt = PromptAssembler.assemble(
+            "follow up",
+            emptyList(),
+            conversation = listOf(ConversationTurn(fromUser = false, text = "an earlier answer"))
+        )
+        assertTrue(prompt.render().contains("an earlier answer"))
+        assertFalse(prompt.render(includeConversation = false).contains("an earlier answer"))
+        assertFalse(prompt.render(includeConversation = false).contains("CONVERSATION"))
     }
 }

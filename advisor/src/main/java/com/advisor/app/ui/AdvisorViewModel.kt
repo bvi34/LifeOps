@@ -23,6 +23,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** A rendered conversation row for the chat UI. */
+/** The system-prompt editor's state: what the model is currently told, and whether that is the user's. */
+data class SystemPromptUiState(
+    val text: String = "",
+    val isCustom: Boolean = false
+)
+
 data class ChatMessage(
     val id: String,
     val fromUser: Boolean,
@@ -99,9 +105,36 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     /** True when an embedding model is active, so retrieval is semantic rather than lexical. */
     val semanticRetrieval: Boolean get() = repo.semanticRetrieval
 
+    // --- the standing system prompt (user-editable) ---
+
+    private val _systemPrompt = MutableStateFlow(SystemPromptUiState())
+    val systemPrompt: StateFlow<SystemPromptUiState> = _systemPrompt.asStateFlow()
+
+    /** The shipped instruction, shown as the reset target and as the editor's starting point. */
+    val defaultSystemPrompt: String get() = repo.defaultSystemPrompt
+
+    fun refreshSystemPrompt() = viewModelScope.launch {
+        _systemPrompt.value = SystemPromptUiState(
+            text = repo.loadSystemPrompt(),
+            isCustom = repo.isSystemPromptCustom()
+        )
+    }
+
+    /** Save a new standing instruction. Blank resets to the shipped default rather than clearing it. */
+    fun saveSystemPrompt(text: String) = viewModelScope.launch {
+        repo.saveSystemPrompt(text)
+        refreshSystemPrompt().join()
+    }
+
+    fun resetSystemPrompt() = viewModelScope.launch {
+        repo.resetSystemPrompt()
+        refreshSystemPrompt().join()
+    }
+
     init {
         viewModelScope.launch { _identity.value = repo.loadIdentity() }
         refreshProfiles()
+        refreshSystemPrompt()
     }
 
     fun refreshModel() { _modelState.value = ModelUiState.Idle(repo.modelInfo()) }

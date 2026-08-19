@@ -16,6 +16,99 @@ class Qwen3ChatFormatTest {
         return PromptAssembler.assemble(question, chunks)
     }
 
+    private fun withConversation(question: String, vararg turns: ConversationTurn): AdvisorPrompt =
+        PromptAssembler.assemble(question, emptyList(), conversation = turns.toList())
+
+    @Test
+    fun prior_turns_are_real_chatml_turns_not_flat_text() {
+        val out = Qwen3ChatFormat.forPrompt(
+            withConversation(
+                "What's your name?",
+                ConversationTurn(fromUser = true, text = "test"),
+                ConversationTurn(fromUser = false, text = "It looks like today you've been testing the waters.")
+            )
+        )
+        // The regression: prior turns rendered as "Advisor: …" inside one user message have nothing
+        // closing them, so the model continues the previous answer instead of writing a new one, and
+        // every reply grows by the whole of the one before it.
+        assertFalse("no flat Advisor: label", out.contains("Advisor: It looks like"))
+        assertFalse("no flat conversation block", out.contains("CONVERSATION (recent turns"))
+        assertTrue(
+            "prior assistant turn is closed with an end-of-turn token",
+            out.contains("<|im_start|>assistant\nIt looks like today you've been testing the waters.<|im_end|>")
+        )
+        assertTrue(
+            "prior user turn is a real turn",
+            out.contains("<|im_start|>user\ntest<|im_end|>")
+        )
+    }
+
+    @Test
+    fun turns_are_ordered_oldest_first_then_this_question_last() {
+        val out = Qwen3ChatFormat.forPrompt(
+            withConversation(
+                "what can you do?",
+                ConversationTurn(fromUser = true, text = "test"),
+                ConversationTurn(fromUser = false, text = "first reply"),
+                ConversationTurn(fromUser = true, text = "second question")
+            )
+        )
+        val system = out.indexOf("<|im_start|>system")
+        val oldest = out.indexOf("test<|im_end|>")
+        val reply = out.indexOf("first reply<|im_end|>")
+        val newer = out.indexOf("second question<|im_end|>")
+        val question = out.indexOf("what can you do?")
+        val open = out.lastIndexOf("<|im_start|>assistant")
+        assertTrue("system first", system == 0)
+        assertTrue("oldest turn before newer", oldest < reply && reply < newer)
+        assertTrue("this question comes after the history", newer < question)
+        assertTrue("the open assistant turn is last", question < open)
+        assertTrue("assistant turn left open for the model", out.endsWith("<think>\n\n</think>\n\n"))
+    }
+
+    @Test
+    fun the_prefix_before_this_question_is_stable_across_turns() {
+        // The native backend keeps whatever leading text two consecutive prompts share, so everything
+        // volatile has to come last. Two questions over the same history must agree up to the final
+        // user turn — that shared span is what is not re-prefilled.
+        val history = arrayOf(
+            ConversationTurn(fromUser = true, text = "test"),
+            ConversationTurn(fromUser = false, text = "first reply")
+        )
+        val a = Qwen3ChatFormat.forPrompt(withConversation("question one", *history))
+        val b = Qwen3ChatFormat.forPrompt(withConversation("a totally different question", *history))
+        val shared = a.commonPrefixWith(b)
+        assertTrue(
+            "history is inside the shared prefix (was ${shared.length} chars)",
+            shared.contains("first reply<|im_end|>")
+        )
+        assertFalse("the question itself is not", shared.contains("question one"))
+    }
+
+    @Test
+    fun blank_turns_are_dropped_rather_than_emitted_as_empty_turns() {
+        val out = Qwen3ChatFormat.forPrompt(
+            withConversation(
+                "hi",
+                ConversationTurn(fromUser = false, text = "   "),
+                ConversationTurn(fromUser = true, text = "real")
+            )
+        )
+        assertFalse(out.contains("<|im_start|>assistant\n<|im_end|>"))
+        assertTrue(out.contains("<|im_start|>user\nreal<|im_end|>"))
+    }
+
+    @Test
+    fun no_conversation_still_produces_system_then_user_then_open_assistant() {
+        val out = Qwen3ChatFormat.forPrompt(grounded("what is due?", "Ship the release"))
+        val sys = out.indexOf("<|im_start|>system")
+        val user = out.indexOf("<|im_start|>user")
+        val asst = out.lastIndexOf("<|im_start|>assistant")
+        assertTrue(sys == 0 && sys < user && user < asst)
+        assertTrue("the grounded context rides in the final user turn", out.contains("Ship the release"))
+        assertFalse("the ANSWER: cue is replaced by the open assistant turn", out.contains("ANSWER:"))
+    }
+
     @Test
     fun build_emits_chatml_turns_in_order() {
         val out = Qwen3ChatFormat.build("SYS", "hello", enableThinking = false)

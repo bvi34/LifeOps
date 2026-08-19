@@ -56,6 +56,22 @@ cannot spare it gets the app LMK-killed rather than silently crawling.
 
 To compare the two, rebuild with `-Padvisor.mmap=true`.
 
+### Prompt cache reuse
+
+`nativeGenerate` keeps the KV entries the new prompt shares with the previous one and prefills only
+the remainder, reporting both counts:
+
+```
+nativeGenerate: prompt=520 tokens (320 reused from cache, 200 to prefill); one batch (n_ubatch=512)…
+```
+
+Advisor's prompts open with a stable ~320-token system preamble, so within a conversation this is
+usually most of the prompt. Correctness rests on one rule — everything from the first *differing*
+token onward is dropped, which includes the previous reply — so if you change how the prompt is
+assembled, nothing here needs updating: the match is on tokens, not on assumed structure. The one
+thing to preserve is that a batch entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the
+batch. Reordering the assembler to put more stable text first directly increases the reuse.
+
 ### Reading the speed logs
 
 `nativeGenerate` prints its own prefill/streaming timings and then llama.cpp's

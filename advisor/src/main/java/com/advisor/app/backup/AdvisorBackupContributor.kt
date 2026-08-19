@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
 import com.advisor.app.data.db.AdvisorDatabase
 import com.advisor.app.data.identity.IdentityStore
+import com.advisor.app.data.prompt.SystemPromptStore
 import com.advisor.app.data.memory.AdvisorMemoryDatabase
 import com.advisor.app.data.profile.ProfileStore
 import com.operations.backupkit.AppId
@@ -17,6 +18,7 @@ import java.io.File
  *  - `advisor.db` — granted per-app permissions + saved conversation,
  *  - `advisor_memory.db` — the dedicated, tagged long-term memory store,
  *  - `identity.json` — the identity-based data,
+ *  - `system-prompt.txt` — the user's standing instruction, when they have written one,
  *  - the `*.json` files under `profiles/` — the standing named profiles (user, LLM persona, projects).
  *
  * Advisor does not own the knowledge it reasons over (that lives in the other apps and is backed up
@@ -29,8 +31,9 @@ class AdvisorBackupContributor(private val context: Context) : BackupContributor
     override val appId = AppId.ADVISOR
     override val displayName = "Advisor"
 
-    // v3 added the standing profiles. v2 added the memory DB + identity JSON; v1 was advisor.db alone.
-    override val dataVersion = 3
+    // v4 added the user-written system prompt. v3 added the standing profiles. v2 added the memory DB
+    // + identity JSON; v1 was advisor.db alone.
+    override val dataVersion = 4
 
     override fun backup(sink: BackupSink) {
         checkpoint(AdvisorDatabase.getInstance(context).query(WAL))
@@ -42,6 +45,15 @@ class AdvisorBackupContributor(private val context: Context) : BackupContributor
         val identity = IdentityStore.file(context)
         if (identity.exists()) {
             sink.entry(IDENTITY_ENTRY).use { out -> identity.inputStream().use { it.copyTo(out) } }
+        }
+
+        // Only present once the user has actually written their own; its absence means "use the
+        // shipped default", which is what a restore onto a fresh install should also mean.
+        val systemPrompt = SystemPromptStore.file(context)
+        if (systemPrompt.exists()) {
+            sink.entry(SYSTEM_PROMPT_ENTRY).use { out ->
+                systemPrompt.inputStream().use { it.copyTo(out) }
+            }
         }
 
         val profiles = ProfileStore.dir(context).listFiles { f -> f.extension == "json" } ?: emptyArray()
@@ -61,6 +73,11 @@ class AdvisorBackupContributor(private val context: Context) : BackupContributor
         }
         source.open(IDENTITY_ENTRY)?.use { input ->
             val file = IdentityStore.file(context)
+            file.parentFile?.mkdirs()
+            file.outputStream().use { input.copyTo(it) }
+        }
+        source.open(SYSTEM_PROMPT_ENTRY)?.use { input ->
+            val file = SystemPromptStore.file(context)
             file.parentFile?.mkdirs()
             file.outputStream().use { input.copyTo(it) }
         }
@@ -95,6 +112,7 @@ class AdvisorBackupContributor(private val context: Context) : BackupContributor
         const val DB_ENTRY = "advisor.db"
         const val MEMORY_ENTRY = "advisor_memory.db"
         const val IDENTITY_ENTRY = "identity.json"
+        const val SYSTEM_PROMPT_ENTRY = "system-prompt.txt"
         const val PROFILES_DIR = "profiles"
     }
 }

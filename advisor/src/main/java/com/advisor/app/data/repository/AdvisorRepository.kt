@@ -4,6 +4,7 @@ import com.advisor.app.data.db.dao.AdvisorDao
 import com.advisor.app.data.db.entities.AdvisorMessageEntity
 import com.advisor.app.data.db.entities.AppPermissionEntity
 import com.advisor.app.data.identity.IdentityStore
+import com.advisor.app.data.prompt.SystemPromptStore
 import com.advisor.app.data.memory.MemoryRepository
 import com.advisor.app.data.memory.TagCount
 import android.net.Uri
@@ -80,6 +81,7 @@ class AdvisorRepository(
     private val engine: LocalLlmEngine,
     private val memory: MemoryRepository,
     private val identityStore: IdentityStore,
+    private val systemPromptStore: SystemPromptStore,
     private val profileStore: ProfileStore,
     private val logicEngine: LogicEngine,
     private val modelStore: AdvisorModelStore,
@@ -97,6 +99,23 @@ class AdvisorRepository(
     val semanticRetrieval: Boolean get() = retriever.isSemantic
 
     // --- on-device model file (in-app import; no network, nothing leaves the device) ---
+
+    // --- the standing system prompt (user-editable) ---
+
+    /** The instruction the model is given before every question — the user's, or the shipped default. */
+    suspend fun loadSystemPrompt(): String = systemPromptStore.load()
+
+    /** The shipped default, for the editor's "reset" affordance and its placeholder text. */
+    val defaultSystemPrompt: String get() = SystemPromptStore.DEFAULT
+
+    /** True when the user has replaced the default. */
+    suspend fun isSystemPromptCustom(): Boolean = systemPromptStore.isCustom()
+
+    /** Save a new standing instruction; blank resets to the shipped default. */
+    suspend fun saveSystemPrompt(text: String) = systemPromptStore.save(text)
+
+    /** Discard any customisation and go back to the shipped default. */
+    suspend fun resetSystemPrompt() = systemPromptStore.reset()
 
     /** Status of the installed model file, independent of whether the native runtime is in the build. */
     fun modelInfo(): AdvisorModelInfo = modelStore.info()
@@ -181,6 +200,10 @@ class AdvisorRepository(
         // Standing profiles are always-on context — no query, referenced by name.
         val profiles = profileStore.list().filter { it.alwaysInclude }
 
+        // The standing instruction, which the user may have rewritten. Read once per question (the
+        // store memoises it) so a save takes effect on the very next answer with no restart.
+        val systemPrompt = systemPromptStore.load()
+
         // Whether a real language model is loaded (not the extractive placeholder). When it is, we let
         // *it* drive the conversation — the pre-model shortcuts below (canned small talk, the C3A
         // "ask instead of guessing" gate) exist because the placeholder can't reason or chat; a real
@@ -220,11 +243,15 @@ class AdvisorRepository(
             }
         }
 
-        // Load only what the user has granted — denied apps are never read.
+        // Load only what the user has granted — denied apps are never read. Sources cache their
+        // snapshot between questions (rebuilding when their tables change), so revoking an app must
+        // also evict it: otherwise its rows would sit in memory after the user withdrew access.
         val corpus = ArrayList<KnowledgeDocument>()
         for (source in sources) {
             if (permissions.isGranted(source.source)) {
                 corpus += runCatching { source.load() }.getOrDefault(emptyList())
+            } else {
+                source.evict()
             }
         }
 
@@ -297,7 +324,7 @@ class AdvisorRepository(
         var groundingResult = grounding
         var groundChunks = chunks
         var raw = withContext(Dispatchers.Default) {
-            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
         }
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
@@ -314,7 +341,7 @@ class AdvisorRepository(
                 groundingResult = refined
                 groundChunks = refined.grounding
                 raw = withContext(Dispatchers.Default) {
-                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation))
+                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
                 }
             }
         }
@@ -349,10 +376,13 @@ class AdvisorRepository(
         profiles: List<Profile>,
         logicNotes: List<String>,
         grounding: GroundingResult,
-        conversation: List<ConversationTurn>
+        conversation: List<ConversationTurn>,
+        systemPrompt: String
     ): AdvisorPrompt {
         val derived = logicNotes + listOfNotNull(grounding.filterNote().takeIf { it.isNotBlank() })
-        return PromptAssembler.assemble(question, chunks, identity, recalled, profiles, derived, conversation)
+        return PromptAssembler.assemble(
+            question, chunks, identity, recalled, profiles, derived, conversation, systemPrompt
+        )
     }
 
     /**
