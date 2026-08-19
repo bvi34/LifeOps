@@ -15,11 +15,14 @@
 
 #include <jni.h>
 #include <android/log.h>
+#include <sched.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -130,6 +133,54 @@ long long rss_mib() {
     fclose(f);
     if (read != 2) return -1;
     return rss_pages * (long long) sysconf(_SC_PAGESIZE) / (1024 * 1024);
+}
+
+// Where this thread is actually allowed to run. On Android a thread's cgroup/cpuset is set by its
+// scheduling priority, and a background-classified thread can be confined to the little cores (and
+// given a small share of them) — which throttles inference by a large factor while leaving both the
+// compiled kernels and the memory system entirely innocent. Like the fault counters, this is the kind
+// of thing that is invisible in a wall-clock number and obvious the moment it is printed.
+void log_thread_scheduling(const char* label) {
+    const pid_t tid = (pid_t) syscall(SYS_gettid);
+
+    std::string cpus = "?";
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    if (sched_getaffinity(tid, sizeof(set), &set) == 0) {
+        cpus.clear();
+        for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+            if (!CPU_ISSET(cpu, &set)) continue;
+            if (!cpus.empty()) cpus += ",";
+            cpus += std::to_string(cpu);
+        }
+        if (cpus.empty()) cpus = "none";
+    }
+
+    // e.g. "4:cpuset:/background" — the line that says the thread was demoted to the little cores.
+    std::string cpuset = "?";
+    char path[64];
+    snprintf(path, sizeof(path), "/proc/self/task/%d/cgroup", (int) tid);
+    FILE* f = fopen(path, "re");
+    if (f != nullptr) {
+        char line[256];
+        while (fgets(line, sizeof(line), f) != nullptr) {
+            if (strstr(line, ":cpuset:") == nullptr) continue;
+            std::string found(line);
+            while (!found.empty() && (found.back() == '\n' || found.back() == '\r')) found.pop_back();
+            cpuset = found;
+            break;
+        }
+        fclose(f);
+    }
+
+    // getpriority legitimately returns -1 for a nice of -1, so errno is the only way to tell it apart
+    // from a failure.
+    errno = 0;
+    const int nice_value = getpriority(PRIO_PROCESS, tid);
+    const std::string nice_text = errno == 0 ? std::to_string(nice_value) : std::string("?");
+    LOGI("%s: tid=%d nice=%s policy=%d affinity=[%s] online_cpus=%ld cpuset=%s",
+         label, (int) tid, nice_text.c_str(), sched_getscheduler(tid), cpus.c_str(),
+         sysconf(_SC_NPROCESSORS_ONLN), cpuset.c_str());
 }
 
 ResSnapshot sample_resources() {
@@ -259,6 +310,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         return env->NewStringUTF("");
     }
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
+    log_thread_scheduling("nativeGenerate thread");
 
     llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
 
