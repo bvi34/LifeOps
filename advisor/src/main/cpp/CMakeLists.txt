@@ -25,6 +25,33 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_FLAGS_DEBUG   "-O2" CACHE STRING "" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-O2" CACHE STRING "" FORCE)
 
+# CRITICAL for speed #2: give ggml the ARM ISA extensions this device actually has.
+#
+# ggml only probes the CPU when it builds *for the machine it is running on* (GGML_NATIVE). An Android
+# build is a cross-compile, so ggml sets GGML_NATIVE_DEFAULT=OFF, and with neither GGML_CPU_ARM_ARCH nor
+# GGML_CPU_ALL_VARIANTS set it appends **no `-march` at all** (see ggml/src/ggml-cpu/CMakeLists.txt, the
+# `if (GGML_NATIVE) ... else()` branch). The NDK's default for arm64-v8a is plain `armv8-a`, so
+# `__ARM_FEATURE_DOTPROD` and `__ARM_FEATURE_MATMUL_INT8` are undefined and ggml compiles the *baseline*
+# NEON kernels: no `vdotq_s32` in the Q4_K dot product, and no i8mm (`vmmlaq_s32`) in the batched GEMM
+# that prefill is made of. On a modern phone that is several times slower than the same source built
+# with the extensions — the difference between a prompt prefilling in seconds and one that looks hung.
+#
+# `armv8.2-a+dotprod+fp16` is safe on essentially every arm64 Android phone since ~2018 (Cortex-A75/A55
+# and newer). `+i8mm` is ARMv8.6 (Cortex-X2/A710/A510 and newer, i.e. Snapdragon 8 Gen 1 / 8+ Gen 1 and
+# up) and is the single biggest prefill lever, so it is in the default. If the APK has to run on an
+# older arm64 device, drop it — an unsupported extension is a SIGILL at the first matmul, not a
+# graceful fallback:
+#
+#     ./gradlew :app:assembleDebug -Padvisor.buildNativeLlm=true -Padvisor.cpuArch=armv8.2-a+dotprod+fp16
+#
+# nativeLoad logs llama_print_system_info() at startup; check `dotprod = 1` / `matmul_int8 = 1` there to
+# confirm what actually got compiled in rather than assuming.
+if (NOT ADVISOR_CPU_ARCH)
+    set(ADVISOR_CPU_ARCH "armv8.2-a+dotprod+i8mm+fp16")
+endif()
+set(GGML_CPU_ARM_ARCH "${ADVISOR_CPU_ARCH}" CACHE STRING "" FORCE)
+message(STATUS "advisor-llm: ggml ARM arch = ${GGML_CPU_ARM_ARCH}")
+
 # llama.cpp is pinned. advisor_llm.cpp is written against this tag's API; bump them together.
 # NOT a CACHE var on purpose: a cached value persists in .cxx/CMakeCache.txt across builds, so a plain
 # `set(... CACHE ...)` would let a stale tag from an earlier configure silently win over a bump here

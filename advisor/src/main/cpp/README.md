@@ -19,6 +19,41 @@ Requirements: Android **NDK** and **CMake** (installed via the SDK Manager or An
 Tools), and network access on the first configure so CMake's `FetchContent` can clone llama.cpp.
 Only the `arm64-v8a` ABI is built — a 4B Q4 model isn't realistic on 32-bit or on most emulators.
 
+### CPU instruction set (`advisor.cpuArch`) — read this before blaming the model
+
+ggml only auto-detects CPU features when it builds *for the host*. An Android build is a cross-compile,
+so ggml turns that off and — unless told otherwise — passes **no `-march` at all**, leaving the NDK's
+plain `armv8-a` default. That silently drops the `dotprod` Q4_K kernels and the `i8mm` matmul that
+prompt prefill is made of, and costs several times the speed: enough that a ~500-token prompt looks
+like the app has hung.
+
+The build therefore pins the ISA baseline itself, defaulting to `armv8.2-a+dotprod+i8mm+fp16`
+(ARMv8.6-class cores — Snapdragon 8 Gen 1 / 8+ Gen 1 and newer). Override it for older arm64 hardware,
+where an unsupported extension is a **SIGILL at the first matmul**, not a graceful fallback:
+
+```
+./gradlew :app:assembleDebug -Padvisor.buildNativeLlm=true -Padvisor.cpuArch=armv8.2-a+dotprod+fp16
+```
+
+Confirm what actually got compiled in — don't assume. `nativeLoad` logs llama.cpp's own system-info
+line at startup:
+
+```
+adb logcat -s advisor-llm | grep 'ggml build'
+```
+
+`dotprod = 1` and `matmul_int8 = 1` mean the fast kernels are in. Zeros mean the build fell back to the
+baseline and prefill will crawl.
+
+### Reading the speed logs
+
+`nativeGenerate` prints its own prefill/streaming timings and then llama.cpp's
+`llama_perf_context_print`, which separates **prompt eval** (prefill) from **eval** (token generation)
+in ms/token. Check that split before changing code: a slow prefill and a slow decode have different
+causes. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
+ggml's abort callback, so a pathological run fails with a logged message and falls back to the
+placeholder engine instead of pinning the caller forever.
+
 When the property is **off** (the default), no `.so` is produced; `LlamaCppBackend` reports
 not-ready and Advisor answers with its deterministic placeholder engine.
 
@@ -85,6 +120,12 @@ meaning. It shares this library; no separate build step is needed.
 Provision it exactly like the generation weights, but with a **small sentence-embedding GGUF**
 (tens to a couple hundred MB — e.g. a `bge`, `e5`, `gte`, `minilm` or `nomic-embed` GGUF). The
 Permissions screen's **Semantic retrieval** card imports one in-app, or side-load it:
+
+> **The GGUF's architecture has to be one this llama.cpp pin knows.** A file that loads fine in a
+> newer llama.cpp can still fail here — e.g. Jina Embeddings v5 (`general.architecture = eurobert`)
+> is rejected at `b6490` with `unknown model architecture: 'eurobert'`, and retrieval silently stays
+> lexical. The failure is visible in logcat (`adb logcat -s advisor-llm | grep -i 'architecture'`);
+> the model families listed above are all supported at this pin.
 
 ```
 adb push advisor-embed.gguf \
