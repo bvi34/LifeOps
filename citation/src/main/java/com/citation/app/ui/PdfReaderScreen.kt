@@ -14,13 +14,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -47,14 +51,21 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
 
 /**
  * The **PDF render track**: positioned glyphs don't reflow, so a PDF is rendered *page by page* as a
- * bitmap via the platform `PdfRenderer` — never forced through the flowing-text reader. The page is
- * shown whole (fit to the viewport) and made **gestural**: pinch to zoom, drag to pan while zoomed,
- * and double-tap to toggle a 2.5× zoom at the tapped point. A note here is page-anchored (the core
- * `TextAnchor.Pdf`), captured with the passage quote you paste.
+ * bitmap via the platform `PdfRenderer`. The page is shown whole (fit to the viewport) and made
+ * **gestural**: pinch to zoom, drag to pan while zoomed, and double-tap to toggle a 2.5× zoom at the
+ * tapped point. A note here is page-anchored (the core `TextAnchor.Pdf`), captured with the passage
+ * quote you type.
+ *
+ * This is the *ground truth* view — exactly what the file says, figures, tables, and all. Because it
+ * is a picture of glyphs there is nothing on screen to select, so **Read as text** hands off to the
+ * flowing reader over the same book's reflowed text (`PdfFlow`), where a passage can be selected and
+ * quoted properly. The hand-off keeps your place: it opens at the chapter covering this page, and
+ * coming back opens at the page you were reading.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,8 +81,12 @@ fun PdfReaderScreen(session: CitationRepository.PdfSession, vm: ReaderViewModel)
         onDispose { runCatching { renderer?.close() } }
     }
 
-    var pageIndex by remember { mutableIntStateOf(0) }
+    // Arriving from the text track (or reopening) lands on the page the reader was last showing.
+    val initialPage by vm.pdfInitialPage.collectAsStateWithLifecycle()
+    var pageIndex by remember(session.file.path) { mutableIntStateOf(initialPage) }
     val pageCount = renderer?.pageCount ?: 0
+    val flowReady by vm.pdfFlowReady.collectAsStateWithLifecycle()
+    val reflowing by vm.reflowing.collectAsStateWithLifecycle()
     // Each page turn is a reading-progress signal for the engaged-time meter (idle pages don't count).
     LaunchedEffect(pageIndex) { vm.onReadingProgress() }
     var showNote by remember { mutableStateOf(false) }
@@ -105,6 +120,18 @@ fun PdfReaderScreen(session: CitationRepository.PdfSession, vm: ReaderViewModel)
                     }
                 },
                 actions = {
+                    // The one action that makes a PDF quotable: leave the bitmap, read the text.
+                    // Extracts on first use, so this is also how an older import gets its text track.
+                    if (reflowing) {
+                        CircularProgressIndicator(Modifier.padding(horizontal = 12.dp).size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        IconButton(onClick = { vm.readPdfAsText(pageIndex) }) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.Notes,
+                                contentDescription = if (flowReady) "Read as text" else "Extract text and read"
+                            )
+                        }
+                    }
                     IconButton(onClick = { showNote = !showNote }) {
                         Icon(Icons.Default.Add, contentDescription = "Add note")
                     }
@@ -117,8 +144,16 @@ fun PdfReaderScreen(session: CitationRepository.PdfSession, vm: ReaderViewModel)
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
                     OutlinedTextField(
                         value = quote, onValueChange = { quote = it },
-                        label = { Text("Passage on this page (paste the quote)") },
+                        label = { Text("Passage on this page (type the quote)") },
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    // A rendered page has no selectable text, so quoting here means retyping. Say
+                    // where the selectable copy is rather than leaving the field a dead end.
+                    Text(
+                        "Tip: “Read as text” selects and quotes passages for you — the note still cites this page.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                     OutlinedTextField(
                         value = body, onValueChange = { body = it },

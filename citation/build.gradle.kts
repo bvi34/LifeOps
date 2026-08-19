@@ -45,6 +45,10 @@ dependencies {
     // The Operations Sandbox backup format/engine (pure JVM). Citation supplies a BackupContributor.
     implementation(project(":backupkit"))
 
+    // PDF text extraction for the reflow track (see data/pdf/PdfPageText). The same PDFBox-Android
+    // port :logistics already uses for the Walmart order import, so the app carries it either way.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
