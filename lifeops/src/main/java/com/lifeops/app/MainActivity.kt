@@ -348,9 +348,10 @@ fun LifeOpsNavHost(
                     )
                 }
                 composable("calendar_sync") {
+                    val context = androidx.compose.ui.platform.LocalContext.current
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.CalendarSyncViewModel>(
                         factory = com.lifeops.app.ui.screens.planning.CalendarSyncViewModelFactory(
-                            applicationContext, app.googleCalendarSyncRepository, app.preferencesRepository
+                            context.applicationContext, app.googleCalendarSyncRepository, app.preferencesRepository
                         )
                     )
                     com.lifeops.app.ui.screens.planning.CalendarSyncScreen(vm) { navController.navigateUp() }
