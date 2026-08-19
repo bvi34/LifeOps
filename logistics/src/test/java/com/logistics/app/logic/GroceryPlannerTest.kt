@@ -26,6 +26,31 @@ class GroceryPlannerTest {
         assertEquals(1.0, GroceryPlanner.restockQuantity(onHand = 0.0, threshold = null), 0.0)
     }
 
+    @Test
+    fun restockNetsOutWhatsAlreadyOnTheList() {
+        // 0.5 on hand, want 3 → deficit 3, but 2 are already on the list, so only top up by 1.
+        assertEquals(
+            1.0,
+            GroceryPlanner.restockQuantity(onHand = 0.5, threshold = 3.0, alreadyOnList = 2.0),
+            0.0
+        )
+    }
+
+    @Test
+    fun restockAddsNothingMoreOnceTheListAlreadyMeetsTarget() {
+        // Re-running the sweep without buying anything shouldn't double what's on the list.
+        assertEquals(
+            0.0,
+            GroceryPlanner.restockQuantity(onHand = 0.5, threshold = 3.0, alreadyOnList = 3.0),
+            0.0
+        )
+        assertEquals(
+            0.0,
+            GroceryPlanner.restockQuantity(onHand = 0.0, threshold = null, alreadyOnList = 1.0),
+            0.0
+        )
+    }
+
     // --- missingIngredients ---
 
     @Test
@@ -63,5 +88,17 @@ class GroceryPlannerTest {
         )
         val missing = GroceryPlanner.missingIngredients(needed, emptySet(), emptySet())
         assertEquals(2, missing.size)
+    }
+
+    @Test
+    fun skipsFoodsAlreadyOnTheGroceryList() {
+        // Re-running "from recipe" shouldn't pile a second "Flour" line onto the list.
+        val missing = GroceryPlanner.missingIngredients(
+            ingredientFoods = listOf(NeededFood("f1", "Flour"), NeededFood("f2", "Sugar")),
+            stockedFoodIds = emptySet(),
+            stockedNames = emptySet(),
+            alreadyOnListNames = setOf("flour")
+        )
+        assertEquals(listOf(NeededFood("f2", "Sugar")), missing)
     }
 }

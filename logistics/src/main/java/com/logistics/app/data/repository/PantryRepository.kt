@@ -298,8 +298,10 @@ class PantryRepository(
 
     /**
      * Sweep the pantry for anything at/under its alert level (or simply run out) and add each to the
-     * grocery list, suggesting how many to buy via [GroceryPlanner.restockQuantity]. Returns how many
-     * lines were added or topped up.
+     * grocery list, suggesting how many to buy via [GroceryPlanner.restockQuantity]. Nets out whatever
+     * that line already has on the grocery list, so re-running the sweep tops the list up to the
+     * target instead of stacking another full deficit on top each time. Returns how many lines were
+     * added or topped up.
      */
     suspend fun addLowStockToGrocery(): Int {
         var added = 0
@@ -307,9 +309,12 @@ class PantryRepository(
             val low = (item.lowStockThreshold != null && item.quantity <= item.lowStockThreshold) ||
                 item.quantity <= 0.0
             if (!low) continue
+            val alreadyOnList = dao.getGroceryByName(item.name)?.quantity ?: 0.0
+            val quantity = GroceryPlanner.restockQuantity(item.quantity, item.lowStockThreshold, alreadyOnList)
+            if (quantity <= 0.0) continue
             addGroceryItem(
                 name = item.name,
-                quantity = GroceryPlanner.restockQuantity(item.quantity, item.lowStockThreshold),
+                quantity = quantity,
                 unit = item.unit,
                 category = item.category,
                 foodItemId = item.foodItemId,
@@ -322,8 +327,9 @@ class PantryRepository(
 
     /**
      * Add a recipe's *missing* ingredients — the catalog foods it needs that aren't already on the
-     * shelf (matched by id first, then name; only counting rows that actually have stock). Returns
-     * how many lines were added. Requires [catalog.ingredientFoods] to resolve the recipe.
+     * shelf (matched by id first, then name; only counting rows that actually have stock) or already
+     * sitting on the grocery list. Returns how many lines were added. Requires [catalog.ingredientFoods]
+     * to resolve the recipe.
      */
     suspend fun addRecipeMissingToGrocery(recipeId: String): Int {
         val needed = catalog.ingredientFoods(recipeId)
@@ -331,7 +337,8 @@ class PantryRepository(
         val pantry = dao.getAll().filter { it.quantity > 0.0 }
         val stockedIds = pantry.mapNotNull { it.foodItemId }.toSet()
         val stockedNames = pantry.map { it.name }.toSet()
-        val missing = GroceryPlanner.missingIngredients(needed, stockedIds, stockedNames)
+        val onListNames = dao.getAllGrocery().map { it.name }.toSet()
+        val missing = GroceryPlanner.missingIngredients(needed, stockedIds, stockedNames, onListNames)
         for (food in missing) {
             addGroceryItem(
                 name = food.name,
