@@ -34,6 +34,11 @@ val buildGpu = (providers.gradleProperty("advisor.gpu").orNull ?: "false").toBoo
 //   -Padvisor.cpuArch=armv8.2-a+dotprod+fp16
 val advisorCpuArch = providers.gradleProperty("advisor.cpuArch").orNull ?: "armv8.2-a+dotprod+i8mm+fp16"
 
+// Load the weights with mmap (file-backed, evictable) instead of reading them into anonymous memory.
+// Off by default: file-backed weights are what the kernel drops first under pressure, and a phone that
+// re-reads 2.3 GiB from flash per forward pass never finishes a prompt. -Padvisor.mmap=true to compare.
+val advisorMmap = (providers.gradleProperty("advisor.mmap").orNull ?: "false").toBoolean()
+
 android {
     namespace = "com.advisor.app"
     compileSdk = 35
@@ -52,6 +57,7 @@ android {
                     arguments += "-DADVISOR_GPU=${if (buildGpu) "ON" else "OFF"}"
                     // Hand the ISA baseline to CMakeLists (which forwards it to ggml's GGML_CPU_ARM_ARCH).
                     arguments += "-DADVISOR_CPU_ARCH=$advisorCpuArch"
+                    arguments += "-DADVISOR_MMAP=${if (advisorMmap) "ON" else "OFF"}"
                 }
             }
         }

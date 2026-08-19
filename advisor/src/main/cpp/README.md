@@ -45,12 +45,38 @@ adb logcat -s advisor-llm | grep 'ggml build'
 `dotprod = 1` and `matmul_int8 = 1` mean the fast kernels are in. Zeros mean the build fell back to the
 baseline and prefill will crawl.
 
+### Weight loading (`advisor.mmap`)
+
+By default the GGUF is **read into anonymous memory**, not mmap'd. mmap'd weights are file-backed, so
+they are the first thing the kernel drops under memory pressure — and once dropped, every forward pass
+re-reads them from flash. That cost is invisible to compiler flags and CPU features, so it can look
+exactly like slow kernels while being pure I/O. Anonymous memory goes to zram (compressed in RAM)
+instead of being evicted. The trade is a slower first load and a hard RAM commit: a device that truly
+cannot spare it gets the app LMK-killed rather than silently crawling.
+
+To compare the two, rebuild with `-Padvisor.mmap=true`.
+
 ### Reading the speed logs
 
 `nativeGenerate` prints its own prefill/streaming timings and then llama.cpp's
 `llama_perf_context_print`, which separates **prompt eval** (prefill) from **eval** (token generation)
 in ms/token. Check that split before changing code: a slow prefill and a slow decode have different
-causes. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
+causes.
+
+It also prints a resource line per phase, which is what tells you *why* a phase was slow — wall clock
+alone can't, and guessing has cost this backend several rebuild cycles:
+
+```
+prefill: 186766 ms wall, 41000 ms cpu (0.2x busy), majflt +540112, minflt +9021, rss 900 MiB, MemAvailable 380 MiB
+```
+
+- **`Nx busy`** is CPU-time over wall-time. With `n_threads` workers actually computing it approaches
+  `n_threads` (4 here). Near or below 1x means the threads are blocked, not working — so faster kernels
+  cannot help.
+- **`majflt`** counts 4 KiB pages fetched from flash. The weights are ~2.3 GiB ≈ 580k pages; a delta
+  near that for a *single* forward pass means the model is being re-read from storage each pass, and
+  the fix is to shrink the working set (smaller model or quant), not to tune the compute.
+- **`rss` vs `MemAvailable`** at load says up front whether the device can hold the model at all. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
 ggml's abort callback, so a pathological run fails with a logged message and falls back to the
 placeholder engine instead of pinning the caller forever.
 

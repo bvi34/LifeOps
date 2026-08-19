@@ -15,9 +15,14 @@
 
 #include <jni.h>
 #include <android/log.h>
+#include <sys/resource.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <thread>
@@ -78,6 +83,78 @@ bool advisor_abort_cb(void* data) {
     return true;
 }
 
+// Whether a slow decode is starved of CPU or starved of memory is not something you can read off a
+// wall clock, and guessing wrong costs a full rebuild-and-run cycle. These sample the kernel's own
+// counters so one run answers it:
+//   * cpu_ms / wall_ms — with n_threads workers pegged this approaches n_threads. Near 1x or below
+//     means the threads are blocked, not computing.
+//   * major faults — each one is a 4 KiB page fetched from flash. The weights are ~2.3 GiB = ~580k
+//     pages; a delta near that per forward pass means the mmap'd weights are not staying resident and
+//     every pass re-reads the model from storage.
+struct ResSnapshot {
+    long      majflt   = 0;
+    long      minflt   = 0;
+    long long cpu_ms   = 0;
+    long long wall_ms  = 0;
+};
+
+long long timeval_ms(const struct timeval& tv) {
+    return (long long) tv.tv_sec * 1000 + tv.tv_usec / 1000;
+}
+
+// Reads a "<key>: <value> kB" line out of a /proc meminfo-style file. Returns -1 if absent.
+long long proc_kb(const char* path, const char* key) {
+    FILE* f = fopen(path, "re");
+    if (f == nullptr) return -1;
+    char line[256];
+    const size_t key_len = strlen(key);
+    long long value = -1;
+    while (fgets(line, sizeof(line), f) != nullptr) {
+        if (strncmp(line, key, key_len) == 0 && line[key_len] == ':') {
+            value = strtoll(line + key_len + 1, nullptr, 10);
+            break;
+        }
+    }
+    fclose(f);
+    return value;
+}
+
+// Resident set size of this process, in MiB (-1 if unavailable). /proc/self/statm field 2 is RSS in
+// pages — it counts the mmap'd model pages that are *currently* resident, which is exactly what the
+// page-cache question turns on.
+long long rss_mib() {
+    FILE* f = fopen("/proc/self/statm", "re");
+    if (f == nullptr) return -1;
+    long long total_pages = 0, rss_pages = 0;
+    const int read = fscanf(f, "%lld %lld", &total_pages, &rss_pages);
+    fclose(f);
+    if (read != 2) return -1;
+    return rss_pages * (long long) sysconf(_SC_PAGESIZE) / (1024 * 1024);
+}
+
+ResSnapshot sample_resources() {
+    ResSnapshot snap;
+    struct rusage ru {};
+    if (getrusage(RUSAGE_SELF, &ru) == 0) {
+        snap.majflt = ru.ru_majflt;
+        snap.minflt = ru.ru_minflt;
+        snap.cpu_ms = timeval_ms(ru.ru_utime) + timeval_ms(ru.ru_stime);
+    }
+    snap.wall_ms = steady_now_ms();
+    return snap;
+}
+
+// One line that says whether `label` was CPU-bound or storage-bound.
+void log_resource_delta(const char* label, const ResSnapshot& before, const ResSnapshot& after) {
+    const long long wall = after.wall_ms - before.wall_ms;
+    const long long cpu  = after.cpu_ms  - before.cpu_ms;
+    const double    busy = wall > 0 ? (double) cpu / (double) wall : 0.0;
+    LOGI("%s: %lld ms wall, %lld ms cpu (%.1fx busy), majflt +%ld, minflt +%ld, rss %lld MiB, "
+         "MemAvailable %lld MiB",
+         label, wall, cpu, busy, after.majflt - before.majflt, after.minflt - before.minflt,
+         rss_mib(), proc_kb("/proc/meminfo", "MemAvailable") / 1024);
+}
+
 std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     char buf[256];
     int n = llama_token_to_piece(vocab, id, buf, sizeof(buf), 0, /*special=*/false);
@@ -110,6 +187,18 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     mp.n_gpu_layers = 99;
 #else
     mp.n_gpu_layers = 0;
+#endif
+    // mmap off by default on Android. mmap'd weights are *file-backed*, so under memory pressure the
+    // kernel simply drops them and the next forward pass re-reads 2.3 GiB from flash — repeatedly, for
+    // every pass, at a cost that no amount of kernel optimisation touches. Reading the file into
+    // anonymous memory instead puts the weights where Android's zram can compress them rather than
+    // evict them. The trade is a slower first load and a hard commit: if the device genuinely cannot
+    // spare the RAM, the app gets LMK-killed, which is at least an honest failure rather than a
+    // generation that never returns. Flip back with -Padvisor.mmap=true to compare.
+#ifdef ADVISOR_USE_MMAP
+    mp.use_mmap = true;
+#else
+    mp.use_mmap = false;
 #endif
 
     llama_model* model = llama_model_load_from_file(path, mp);
@@ -150,6 +239,12 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     // build fell back to baseline armv8-a and prefill will be several times slower than it should be
     // (see GGML_CPU_ARM_ARCH in CMakeLists.txt).
     LOGI("ggml build: %s", llama_print_system_info());
+    // The weights are mmap'd, so `load` finishing quickly means nothing was read yet — it says nothing
+    // about whether the device can hold them. MemAvailable does: if it is well under the model size,
+    // every forward pass will re-fault the weights from flash no matter how fast the kernels are.
+    LOGI("device memory at load: rss %lld MiB, MemAvailable %lld MiB, MemTotal %lld MiB",
+         rss_mib(), proc_kb("/proc/meminfo", "MemAvailable") / 1024,
+         proc_kb("/proc/meminfo", "MemTotal") / 1024);
     return reinterpret_cast<jlong>(h);
 }
 
@@ -224,6 +319,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     h->aborted.store(false, std::memory_order_relaxed);
     h->deadline_at_ms.store(steady_now_ms() + GENERATE_DEADLINE_MS, std::memory_order_relaxed);
 
+    const ResSnapshot res_before_prefill = sample_resources();
+
     std::string out;
     llama_batch batch = llama_batch_init(std::max(1, n_prefill), 0, 1);
     batch.n_tokens = n_prefill;
@@ -237,6 +334,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     }
 
     bool prefill_ok = llama_decode(h->ctx, batch) == 0;
+    const ResSnapshot res_after_prefill = sample_resources();
+    log_resource_delta("prefill", res_before_prefill, res_after_prefill);
     if (!prefill_ok) {
         LOGW("nativeGenerate: prefill llama_decode failed after %lld ms (%d tokens)%s",
              elapsed_ms(), n_prefill,
@@ -283,6 +382,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         const double tps = produced > 0 && ms > 0 ? produced * 1000.0 / ms : 0.0;
         LOGI("nativeGenerate: produced %d tokens (%zu chars) in %lld ms, %.1f tok/s",
              produced, out.size(), ms, tps);
+        log_resource_delta("generation", res_after_prefill, sample_resources());
     }
 
     // llama.cpp's own accounting: separate prompt-eval (prefill) and eval (decode) ms/token. If the
