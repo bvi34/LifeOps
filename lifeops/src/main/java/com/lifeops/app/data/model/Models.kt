@@ -634,6 +634,27 @@ enum class SunSensitivity(val value: String, val label: String) {
 }
 
 /**
+ * Where a person sits in the household/relationship graph — the grouping RelationshipAnalytics
+ * uses to spot imbalance (e.g. one child getting far less 1:1 time than a sibling). Unset (null
+ * on Person) means "don't include this person in relationship analytics" — colleagues or
+ * loosely-tracked contacts you don't want nudges about.
+ */
+enum class Relationship(val value: String, val label: String) {
+    SPOUSE("spouse", "Spouse/Partner"),
+    CHILD("child", "Child"),
+    PARENT("parent", "Parent"),
+    SIBLING("sibling", "Sibling"),
+    EXTENDED_FAMILY("extended_family", "Extended Family"),
+    FRIEND("friend", "Friend"),
+    COLLEAGUE("colleague", "Colleague"),
+    OTHER("other", "Other");
+
+    companion object {
+        fun from(value: String?): Relationship? = entries.firstOrNull { it.value == value }
+    }
+}
+
+/**
  * A household member. Weather-comfort preferences are all nullable ("no opinion" = never rules a
  * time out), so a person can be as simple as a name or as detailed as a full comfort profile.
  * Timeline notes are separate ([PersonNote]); task involvement is a many-to-many join.
@@ -650,7 +671,9 @@ data class Person(
     val activityPreferences: String? = null,
     val isArchived: Boolean = false,
     val sortOrder: Int = 0,
-    val createdAt: String
+    val createdAt: String,
+    // Null = not tracked in relationship-balance analytics (see RelationshipAnalytics).
+    val relationship: Relationship? = null
 )
 
 data class PersonNote(

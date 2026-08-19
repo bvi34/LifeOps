@@ -141,7 +141,8 @@ fun CalendarScreen(
                 addingBlock = false; editingBlock = null
             },
             onDismiss = { addingBlock = false; editingBlock = null },
-            allPeople = state.allPeople
+            allPeople = state.allPeople,
+            imbalances = state.imbalances
         )
     }
 }

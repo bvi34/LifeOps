@@ -157,11 +157,12 @@ fun WeatherAlertEntity.toModel() = WeatherAlert(
 
 fun PersonEntity.toModel() = Person(
     id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
-    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt
+    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt,
+    Relationship.from(relationship)
 )
 fun Person.toEntity() = PersonEntity(
     id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
-    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt
+    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt, relationship?.value
 )
 
 fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)

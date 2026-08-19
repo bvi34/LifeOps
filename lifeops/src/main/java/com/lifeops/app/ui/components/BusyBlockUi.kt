@@ -9,12 +9,17 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -36,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.RelationshipImbalance
 import java.util.UUID
 
 // Index 0..6 maps to bit 0..6 = Monday..Sunday, matching BusyBlocks.occursOn.
@@ -105,7 +111,8 @@ fun BusyBlockEditorDialog(
     personId: String?,
     onSave: (BusyBlock) -> Unit,
     onDismiss: () -> Unit,
-    allPeople: List<Person> = emptyList()
+    allPeople: List<Person> = emptyList(),
+    imbalances: List<RelationshipImbalance> = emptyList()
 ) {
     var title by remember { mutableStateOf(existing?.title ?: "") }
     var startMinutes by remember { mutableStateOf(existing?.startMinutes ?: 540) }   // 9:00 AM
@@ -126,7 +133,7 @@ fun BusyBlockEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "Add busy time" else "Edit busy time") },
         text = {
-            Column {
+            Column(modifier = Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -187,6 +194,33 @@ fun BusyBlockEditorDialog(
                     ) {
                         Checkbox(checked = remind, onCheckedChange = { remind = it })
                         Text("Remind me when it starts", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+
+                // Relationship-balance nudges only make sense while booking something new — once
+                // you're editing an existing block the moment to act on "haven't seen them" has
+                // already passed for this booking.
+                if (existing == null && imbalances.isNotEmpty()) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            imbalances.take(2).forEach { imbalance ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        imbalance.message,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (imbalance.person.id !in taggedPeople) {
+                                        TextButton(onClick = { taggedPeople = taggedPeople + imbalance.person.id }) {
+                                            Text("Tag")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 

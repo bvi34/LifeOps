@@ -10,10 +10,13 @@ import com.lifeops.app.data.repository.BusyBlockRepository
 import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.RelationshipAnalytics
+import com.lifeops.app.util.RelationshipImbalance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -25,7 +28,9 @@ data class CalendarUiState(
     /** Tasks that carry a due date, for overlaying the week as all-day items. */
     val dueTasks: List<Task> = emptyList(),
     /** The household roster, for tagging people onto an event. */
-    val allPeople: List<Person> = emptyList()
+    val allPeople: List<Person> = emptyList(),
+    /** Relationship-balance nudges (see RelationshipAnalytics), most-overdue first. */
+    val imbalances: List<RelationshipImbalance> = emptyList()
 )
 
 class CalendarViewModel(
@@ -39,13 +44,16 @@ class CalendarViewModel(
 
     init {
         viewModelScope.launch {
-            busyBlockRepository.observeMine().collectLatest { blocks ->
-                _uiState.update { it.copy(blocks = blocks) }
-            }
-        }
-        viewModelScope.launch {
-            personRepository.observeAll().collectLatest { people ->
-                _uiState.update { it.copy(allPeople = people.filter { p -> !p.isArchived }) }
+            combine(busyBlockRepository.observeMine(), personRepository.observeAll()) { blocks, people ->
+                blocks to people.filter { !it.isArchived }
+            }.collectLatest { (blocks, people) ->
+                _uiState.update {
+                    it.copy(
+                        blocks = blocks,
+                        allPeople = people,
+                        imbalances = RelationshipAnalytics.findImbalances(people, blocks)
+                    )
+                }
             }
         }
         refreshDueTasks()

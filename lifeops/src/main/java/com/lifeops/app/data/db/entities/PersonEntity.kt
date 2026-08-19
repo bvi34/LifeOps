@@ -31,5 +31,7 @@ data class PersonEntity(
     val activityPreferences: String?,
     val isArchived: Boolean,
     val sortOrder: Int,
-    val createdAt: String
+    val createdAt: String,
+    /** Relationship.value, or null to exclude this person from relationship-balance analytics. */
+    val relationship: String? = null
 )

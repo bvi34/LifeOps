@@ -402,7 +402,7 @@ fun LifeOpsNavHost(
                 }
                 composable("people") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.PeopleViewModel>(
-                        factory = PeopleViewModelFactory(app.personRepository)
+                        factory = PeopleViewModelFactory(app.personRepository, app.busyBlockRepository)
                     )
                     PeopleScreen(
                         vm,
