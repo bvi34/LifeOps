@@ -149,8 +149,8 @@ fun PersonDetailScreen(
     if (editing && person != null) {
         ProfileEditorDialog(
             person = person,
-            onSave = { name, heat, cold, uv, wind, rain, sun, prefs, relationship ->
-                viewModel.saveProfile(name, heat, cold, uv, wind, rain, sun, prefs, relationship)
+            onSave = { name, heat, cold, uv, wind, rain, sun, prefs, relationship, email, phone ->
+                viewModel.saveProfile(name, heat, cold, uv, wind, rain, sun, prefs, relationship, email, phone)
                 editing = false
             },
             onDismiss = { editing = false }
@@ -219,6 +219,13 @@ private fun ProfileCard(person: Person, onEdit: () -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         AssistChip(onClick = {}, enabled = false, label = { Text(it.label) })
                     }
+                }
+                if (!person.email.isNullOrBlank() || !person.phone.isNullOrBlank()) {
+                    Text(
+                        listOfNotNull(person.email, person.phone).joinToString("   ·   "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
                 }
                 Text(
                     "Sun sensitivity: ${person.sunSensitivity.label}",
@@ -346,11 +353,14 @@ private fun ProfileEditorDialog(
     onSave: (
         name: String,
         heatMax: Int?, coldMin: Int?, uvMax: Int?, windMax: Int?, rainMax: Int?,
-        sun: SunSensitivity, prefs: String?, relationship: Relationship?
+        sun: SunSensitivity, prefs: String?, relationship: Relationship?,
+        email: String?, phone: String?
     ) -> Unit,
     onDismiss: () -> Unit
 ) {
     var name by remember { mutableStateOf(person.name) }
+    var email by remember { mutableStateOf(person.email ?: "") }
+    var phone by remember { mutableStateOf(person.phone ?: "") }
     var heat by remember { mutableStateOf(person.heatToleranceMaxF?.toString() ?: "") }
     var cold by remember { mutableStateOf(person.coldToleranceMinF?.toString() ?: "") }
     var uv by remember { mutableStateOf(person.uvMax?.toString() ?: "") }
@@ -371,6 +381,25 @@ private fun ProfileEditorDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    "Contact (matches this person to a Google Calendar event's attendees)",
+                    style = MaterialTheme.typography.labelMedium
+                )
+                OutlinedTextField(
+                    value = email, onValueChange = { email = it },
+                    label = { Text("Email (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Phone (optional)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth()
                 )
 
                 Text("Weather comfort (leave blank for no limit)", style = MaterialTheme.typography.labelMedium)
@@ -415,7 +444,8 @@ private fun ProfileEditorDialog(
                         name.trim(),
                         heat.toIntOrNull(), cold.toIntOrNull(), uv.toIntOrNull(),
                         wind.toIntOrNull(), rain.toIntOrNull(), sun,
-                        prefs.trim().ifBlank { null }, relationship
+                        prefs.trim().ifBlank { null }, relationship,
+                        email.trim().ifBlank { null }, phone.trim().ifBlank { null }
                     )
                 },
                 enabled = name.isNotBlank()

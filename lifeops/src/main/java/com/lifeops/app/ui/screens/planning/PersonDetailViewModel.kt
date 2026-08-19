@@ -91,7 +91,9 @@ class PersonDetailViewModel(
         maxPrecipitationPct: Int?,
         sunSensitivity: SunSensitivity,
         activityPreferences: String?,
-        relationship: Relationship?
+        relationship: Relationship?,
+        email: String?,
+        phone: String?
     ) {
         val person = _uiState.value.person ?: return
         if (name.isBlank()) return
@@ -106,7 +108,9 @@ class PersonDetailViewModel(
                     maxPrecipitationPct = maxPrecipitationPct,
                     sunSensitivity = sunSensitivity,
                     activityPreferences = activityPreferences?.trim()?.ifBlank { null },
-                    relationship = relationship
+                    relationship = relationship,
+                    email = email?.trim()?.ifBlank { null },
+                    phone = phone?.trim()?.ifBlank { null }
                 )
             )
         }

@@ -33,5 +33,8 @@ data class PersonEntity(
     val sortOrder: Int,
     val createdAt: String,
     /** Relationship.value, or null to exclude this person from relationship-balance analytics. */
-    val relationship: String? = null
+    val relationship: String? = null,
+    /** Contact identity for Google Calendar attendee matching (see GoogleCalendarSyncRepository). */
+    val email: String? = null,
+    val phone: String? = null
 )

@@ -673,7 +673,13 @@ data class Person(
     val sortOrder: Int = 0,
     val createdAt: String,
     // Null = not tracked in relationship-balance analytics (see RelationshipAnalytics).
-    val relationship: Relationship? = null
+    val relationship: Relationship? = null,
+    // Contact identity: how GoogleCalendarSyncRepository recognizes this person on a pulled-in
+    // event's attendee list (matched case-insensitively) and where it sends a pushed event's
+    // attendee row. Phone is informational for now — Android calendar events don't carry phone
+    // numbers, but it's here for whichever future contact-matching source needs it.
+    val email: String? = null,
+    val phone: String? = null
 )
 
 data class PersonNote(

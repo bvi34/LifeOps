@@ -1,15 +1,18 @@
 package com.lifeops.app.data.repository
 
 import android.Manifest
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
 import android.content.pm.PackageManager
+import android.provider.CalendarContract.Attendees
 import android.provider.CalendarContract.Calendars
 import android.provider.CalendarContract.Events
 import android.provider.CalendarContract.Instances
 import androidx.core.content.ContextCompat
 import com.lifeops.app.data.model.BusyBlock
+import com.lifeops.app.data.model.Person
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,14 +40,21 @@ data class CalendarSyncResult(
  * Provider (CalendarContract) — the same provider the Google Calendar app keeps in sync with the
  * signed-in Google account, so this needs no separate OAuth setup of its own.
  *
- * People are carried as plain #tags: a block tagged with "Mom" pushes as an event whose
- * description ends with "Tags: #Mom", and an incoming event whose title/description contains
- * "#Mom" tags the pulled-in block with that person (matched by name, case/space-insensitive).
+ * People are carried two ways, both round-tripping in either direction:
+ *  - Plain #tags: a block tagged with "Mom" pushes as an event whose description ends with
+ *    "Tags: #Mom", and an incoming event whose title/description contains "#Mom" tags the
+ *    pulled-in block with that person (matched by name, case/space-insensitive).
+ *  - Attendees: a tagged person with an email pushes as a real CalendarContract.Attendees row on
+ *    the event, and an incoming event's attendees are matched against Person.email — a match
+ *    tags that person; no match auto-creates a new Person from the attendee's email/display name
+ *    (see PersonRepository.findOrCreateByEmail). This is the "knows who it is, or generates a new
+ *    person" identity resolution — email is a firmer signal than a hashtag, so a person can be
+ *    recognized on an event nobody hand-tagged.
  *
  * Push: every own-schedule block (personId == null) is written as an event (insert first time,
- * update thereafter via the stored googleEventId — never duplicated). One-off blocks map to a
- * single-occurrence event; weekly-recurring blocks map to a weekly RRULE event starting at the
- * next matching day.
+ * update thereafter via the stored googleEventId — never duplicated) and its attendee rows are
+ * replaced to match the block's tagged people. One-off blocks map to a single-occurrence event;
+ * weekly-recurring blocks map to a weekly RRULE event starting at the next matching day.
  *
  * Pull: every occurrence (CalendarContract.Instances already expands recurring Google events) in
  * a rolling window is materialized as its own one-off busy block, so arbitrary Google recurrence
@@ -121,15 +131,39 @@ class GoogleCalendarSyncRepository(
             if (eventId != null && eventId != existingId) {
                 busyBlockRepository.upsert(block.copy(googleEventId = eventId, googleCalendarId = calendarId))
             }
+            if (eventId != null) syncAttendees(resolver, eventId, block, peopleById)
             pushed++
         }
         return pushed
     }
 
+    /** Replace an event's attendee rows with one per tagged person that has an email set. */
+    private fun syncAttendees(
+        resolver: ContentResolver,
+        eventId: Long,
+        block: BusyBlock,
+        peopleById: Map<String, Person>
+    ) {
+        resolver.delete(Attendees.CONTENT_URI, "${Attendees.EVENT_ID} = ?", arrayOf(eventId.toString()))
+        block.peopleIds.forEach { personId ->
+            val person = peopleById[personId] ?: return@forEach
+            val email = person.email?.trim()?.takeIf { it.isNotBlank() } ?: return@forEach
+            val values = ContentValues().apply {
+                put(Attendees.EVENT_ID, eventId)
+                put(Attendees.ATTENDEE_EMAIL, email)
+                put(Attendees.ATTENDEE_NAME, person.name)
+                put(Attendees.ATTENDEE_RELATIONSHIP, Attendees.RELATIONSHIP_ATTENDEE)
+                put(Attendees.ATTENDEE_TYPE, Attendees.TYPE_REQUIRED)
+                put(Attendees.ATTENDEE_STATUS, Attendees.ATTENDEE_STATUS_NONE)
+            }
+            resolver.insert(Attendees.CONTENT_URI, values)
+        }
+    }
+
     private fun buildEventValues(
         block: BusyBlock,
         calendarId: Long,
-        peopleById: Map<String, com.lifeops.app.data.model.Person>
+        peopleById: Map<String, Person>
     ): ContentValues? {
         val zone = ZoneId.systemDefault()
         val tags = block.peopleIds.mapNotNull { peopleById[it]?.name }
@@ -162,6 +196,11 @@ class GoogleCalendarSyncRepository(
 
     private suspend fun pull(calendarId: Long): Int {
         val people = personRepository.getAll()
+        val resolver = appContext.contentResolver
+        // Attendee rows are per-event, not per-occurrence, and a recurring event's instances all
+        // share one event id — cache so a weekly standing event isn't queried once per occurrence.
+        val attendeeCache = mutableMapOf<Long, List<AttendeeInfo>>()
+        val ownerAccount = ownerAccountFor(resolver, calendarId)?.trim()?.lowercase()
         val zone = ZoneId.systemDefault()
         val windowStart = ZonedDateTime.now(zone).minusDays(1).toInstant().toEpochMilli()
         val windowEnd = ZonedDateTime.now(zone).plusDays(PULL_WINDOW_DAYS).toInstant().toEpochMilli()
@@ -173,7 +212,7 @@ class GoogleCalendarSyncRepository(
             Instances.TITLE, Instances.DESCRIPTION, Instances.ALL_DAY
         )
         var pulled = 0
-        appContext.contentResolver.query(
+        resolver.query(
             builder.build(), projection,
             "${Instances.CALENDAR_ID} = ?", arrayOf(calendarId.toString()),
             "${Instances.BEGIN} ASC"
@@ -202,7 +241,14 @@ class GoogleCalendarSyncRepository(
 
                 val tags = Regex("#(\\w+)").findAll("$title $description")
                     .map { it.groupValues[1].lowercase() }.toSet()
-                val taggedPeople = people.filter { it.name.replace(" ", "").lowercase() in tags }.map { it.id }
+                val taggedByHashtag = people.filter { it.name.replace(" ", "").lowercase() in tags }.map { it.id }
+
+                // Attendee emails are a firmer identity signal than a hashtag: match an existing
+                // person by email, or mint a new one — skipping the calendar owner (yourself).
+                val attendeePersonIds = attendeeCache.getOrPut(eventId) { attendeesFor(resolver, eventId) }
+                    .filter { it.email.lowercase() != ownerAccount }
+                    .map { personRepository.findOrCreateByEmail(it.email, it.name).id }
+                val taggedPeople = (taggedByHashtag + attendeePersonIds).distinct()
 
                 val existing = busyBlockRepository.findByGoogleInstance(eventId, calendarId, date.toString())
                 busyBlockRepository.upsert(
@@ -226,6 +272,34 @@ class GoogleCalendarSyncRepository(
         }
         return pulled
     }
+
+    /** This calendar's own account — attendee matching skips it so you don't get tagged as yourself. */
+    private fun ownerAccountFor(resolver: ContentResolver, calendarId: Long): String? {
+        var owner: String? = null
+        resolver.query(
+            Calendars.CONTENT_URI, arrayOf(Calendars.OWNER_ACCOUNT),
+            "${Calendars._ID} = ?", arrayOf(calendarId.toString()), null
+        )?.use { c -> if (c.moveToFirst()) owner = c.getString(c.getColumnIndexOrThrow(Calendars.OWNER_ACCOUNT)) }
+        return owner
+    }
+
+    private fun attendeesFor(resolver: ContentResolver, eventId: Long): List<AttendeeInfo> {
+        val out = mutableListOf<AttendeeInfo>()
+        resolver.query(
+            Attendees.CONTENT_URI, arrayOf(Attendees.ATTENDEE_EMAIL, Attendees.ATTENDEE_NAME),
+            "${Attendees.EVENT_ID} = ?", arrayOf(eventId.toString()), null
+        )?.use { c ->
+            val idxEmail = c.getColumnIndexOrThrow(Attendees.ATTENDEE_EMAIL)
+            val idxName = c.getColumnIndexOrThrow(Attendees.ATTENDEE_NAME)
+            while (c.moveToNext()) {
+                val email = c.getString(idxEmail)?.trim()?.takeIf { it.isNotBlank() } ?: continue
+                out += AttendeeInfo(email = email, name = c.getString(idxName))
+            }
+        }
+        return out
+    }
+
+    private data class AttendeeInfo(val email: String, val name: String?)
 
     companion object {
         private val RRULE_DAYS = listOf("MO", "TU", "WE", "TH", "FR", "SA", "SU")

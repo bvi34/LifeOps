@@ -131,6 +131,13 @@ private fun PersonCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
+                if (!person.email.isNullOrBlank()) {
+                    Text(
+                        person.email,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {

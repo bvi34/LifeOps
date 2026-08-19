@@ -35,6 +35,10 @@ interface PersonDao {
     @Query("SELECT * FROM persons")
     suspend fun getAll(): List<PersonEntity>
 
+    /** Case-insensitive email match — how a pulled-in Google Calendar attendee is recognized. */
+    @Query("SELECT * FROM persons WHERE email IS NOT NULL AND LOWER(email) = LOWER(:email) LIMIT 1")
+    suspend fun findByEmail(email: String): PersonEntity?
+
     // --- Notes ---
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
