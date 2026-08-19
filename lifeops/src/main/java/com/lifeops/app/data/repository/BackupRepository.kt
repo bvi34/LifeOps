@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 15,
+    val version: Int = 16,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -58,6 +58,8 @@ private data class BackupData(
     val busyBlocks: List<BusyBlockEntity> = emptyList(),
     // v15: milestones — rare accomplishments. Nullable FKs → aspects/persons (SET_NULL).
     val milestones: List<MilestoneEntity> = emptyList(),
+    // v16: people tagged on a busy block (calendar events), FK → busy_blocks/persons.
+    val busyBlockPeople: List<BusyBlockPersonEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -95,6 +97,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             taskAttachments = db.taskAttachmentDao().getAll(),
             busyBlocks = db.busyBlockDao().getAll(),
             milestones = db.milestoneDao().getAll(),
+            busyBlockPeople = db.busyBlockDao().getAllPeopleLinks(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -179,6 +182,8 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (ta in data.taskAttachments) db.taskAttachmentDao().insert(ta)
                 // Busy blocks: after persons (nullable FK personId → persons).
                 for (bb in data.busyBlocks) db.busyBlockDao().upsert(bb)
+                // Busy block people: after both busy blocks and persons (FKs to both).
+                for (link in data.busyBlockPeople) db.busyBlockDao().attachPerson(link)
                 // Milestones: after aspects and persons (nullable FKs, SET_NULL). Restore-only —
                 // upsert never re-runs the immediate point grant, so restoring can't double-mint.
                 for (m in data.milestones) db.milestoneDao().upsert(m)

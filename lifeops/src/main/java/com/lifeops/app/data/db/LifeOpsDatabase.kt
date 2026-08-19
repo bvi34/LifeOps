@@ -972,6 +972,49 @@ private val MIGRATION_45_46 = object : Migration(45, 46) {
     }
 }
 
+private val MIGRATION_46_47 = object : Migration(46, 47) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Calendar people-tagging + Google Calendar sync linkage. All additive.
+        // No SQL DEFAULTs on the join table — BusyBlockPersonEntity carries no
+        // @ColumnInfo(defaultValue), matching the task_people precedent (MIGRATION_29_30).
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS busy_block_people (
+                busyBlockId TEXT NOT NULL,
+                personId TEXT NOT NULL,
+                PRIMARY KEY(busyBlockId, personId),
+                FOREIGN KEY(busyBlockId) REFERENCES busy_blocks(id) ON DELETE CASCADE,
+                FOREIGN KEY(personId) REFERENCES persons(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_busy_block_people_busyBlockId ON busy_block_people(busyBlockId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_busy_block_people_personId ON busy_block_people(personId)")
+
+        // googleEventId/googleCalendarId: which CalendarContract event (own-schedule blocks only)
+        // this block maps to, so a later sync updates in place instead of duplicating.
+        db.execSQL("ALTER TABLE busy_blocks ADD COLUMN googleEventId INTEGER")
+        db.execSQL("ALTER TABLE busy_blocks ADD COLUMN googleCalendarId INTEGER")
+    }
+}
+
+private val MIGRATION_47_48 = object : Migration(47, 48) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Relationship-balance analytics (RelationshipAnalytics): which relationship bucket a
+        // person is in, so booked time can be compared within it (e.g. one child vs a sibling).
+        // Nullable/no SQL DEFAULT — a person with no relationship set is simply excluded.
+        db.execSQL("ALTER TABLE persons ADD COLUMN relationship TEXT")
+    }
+}
+
+private val MIGRATION_48_49 = object : Migration(48, 49) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Contact identity for Google Calendar attendee matching (GoogleCalendarSyncRepository):
+        // an incoming event's attendee list is matched against Person.email to recognize who it's
+        // with, auto-creating a person when nothing matches. Both nullable, no SQL DEFAULT.
+        db.execSQL("ALTER TABLE persons ADD COLUMN email TEXT")
+        db.execSQL("ALTER TABLE persons ADD COLUMN phone TEXT")
+    }
+}
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -1020,9 +1063,10 @@ private val MIGRATION_45_46 = object : Migration(45, 46) {
         BusyBlockEntity::class,
         PhoneActivityEventEntity::class,
         GameUnlockEntity::class,
-        MilestoneEntity::class
+        MilestoneEntity::class,
+        BusyBlockPersonEntity::class
     ],
-    version = 46,
+    version = 49,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
@@ -1071,7 +1115,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
                     .build()
                     .also { INSTANCE = it }
             }

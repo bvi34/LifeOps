@@ -338,10 +338,22 @@ fun LifeOpsNavHost(
                 composable("calendar") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.CalendarViewModel>(
                         factory = com.lifeops.app.ui.screens.planning.CalendarViewModelFactory(
-                            app.busyBlockRepository, app.taskRepository
+                            app.busyBlockRepository, app.taskRepository, app.personRepository
                         )
                     )
-                    com.lifeops.app.ui.screens.planning.CalendarScreen(vm) { navController.navigateUp() }
+                    com.lifeops.app.ui.screens.planning.CalendarScreen(
+                        viewModel = vm,
+                        onBack = { navController.navigateUp() },
+                        onOpenSync = { navController.navigate("calendar_sync") }
+                    )
+                }
+                composable("calendar_sync") {
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.CalendarSyncViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.CalendarSyncViewModelFactory(
+                            applicationContext, app.googleCalendarSyncRepository, app.preferencesRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.CalendarSyncScreen(vm) { navController.navigateUp() }
                 }
                 composable("future_tasks") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.FutureTasksViewModel>(
@@ -390,7 +402,7 @@ fun LifeOpsNavHost(
                 }
                 composable("people") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.PeopleViewModel>(
-                        factory = PeopleViewModelFactory(app.personRepository)
+                        factory = PeopleViewModelFactory(app.personRepository, app.busyBlockRepository)
                     )
                     PeopleScreen(
                         vm,

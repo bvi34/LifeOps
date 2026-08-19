@@ -104,7 +104,13 @@ data class BusyBlock(
     val createdAt: String,
     // When true (own-schedule blocks only), a reminder notification fires as the block starts —
     // once for a one-off, every matching day for a weekly block.
-    val reminderEnabled: Boolean = false
+    val reminderEnabled: Boolean = false,
+    // Google Calendar linkage; see BusyBlockEntity. Null until synced.
+    val googleEventId: Long? = null,
+    val googleCalendarId: Long? = null,
+    // People tagged on this event, hydrated from the busy_block_people join table by
+    // BusyBlockRepository (not a column on the entity — see BusyBlockRepository.upsert).
+    val peopleIds: List<String> = emptyList()
 )
 
 data class TaskAttachment(
@@ -628,6 +634,27 @@ enum class SunSensitivity(val value: String, val label: String) {
 }
 
 /**
+ * Where a person sits in the household/relationship graph — the grouping RelationshipAnalytics
+ * uses to spot imbalance (e.g. one child getting far less 1:1 time than a sibling). Unset (null
+ * on Person) means "don't include this person in relationship analytics" — colleagues or
+ * loosely-tracked contacts you don't want nudges about.
+ */
+enum class Relationship(val value: String, val label: String) {
+    SPOUSE("spouse", "Spouse/Partner"),
+    CHILD("child", "Child"),
+    PARENT("parent", "Parent"),
+    SIBLING("sibling", "Sibling"),
+    EXTENDED_FAMILY("extended_family", "Extended Family"),
+    FRIEND("friend", "Friend"),
+    COLLEAGUE("colleague", "Colleague"),
+    OTHER("other", "Other");
+
+    companion object {
+        fun from(value: String?): Relationship? = entries.firstOrNull { it.value == value }
+    }
+}
+
+/**
  * A household member. Weather-comfort preferences are all nullable ("no opinion" = never rules a
  * time out), so a person can be as simple as a name or as detailed as a full comfort profile.
  * Timeline notes are separate ([PersonNote]); task involvement is a many-to-many join.
@@ -644,7 +671,15 @@ data class Person(
     val activityPreferences: String? = null,
     val isArchived: Boolean = false,
     val sortOrder: Int = 0,
-    val createdAt: String
+    val createdAt: String,
+    // Null = not tracked in relationship-balance analytics (see RelationshipAnalytics).
+    val relationship: Relationship? = null,
+    // Contact identity: how GoogleCalendarSyncRepository recognizes this person on a pulled-in
+    // event's attendee list (matched case-insensitively) and where it sends a pushed event's
+    // attendee row. Phone is informational for now — Android calendar events don't carry phone
+    // numbers, but it's here for whichever future contact-matching source needs it.
+    val email: String? = null,
+    val phone: String? = null
 )
 
 data class PersonNote(

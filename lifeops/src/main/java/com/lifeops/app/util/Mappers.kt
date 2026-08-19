@@ -54,8 +54,8 @@ fun TaskNote.toEntity() = TaskNoteEntity(id, taskId, content, createdAt, subtask
 fun TaskAttachmentEntity.toModel() = TaskAttachment(id, taskId, imageData, caption, createdAt)
 fun TaskAttachment.toEntity() = TaskAttachmentEntity(id, taskId, imageData, caption, createdAt)
 
-fun BusyBlockEntity.toModel() = BusyBlock(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt, reminderEnabled)
-fun BusyBlock.toEntity() = BusyBlockEntity(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt, reminderEnabled)
+fun BusyBlockEntity.toModel() = BusyBlock(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt, reminderEnabled, googleEventId, googleCalendarId)
+fun BusyBlock.toEntity() = BusyBlockEntity(id, title, startMinutes, endMinutes, daysMask, specificDate, personId, createdAt, reminderEnabled, googleEventId, googleCalendarId)
 
 fun TimeEntryEntity.toModel() = TimeEntry(id, taskId, durationMinutes, note, recordedAt, subtaskId)
 fun TimeEntry.toEntity() = TimeEntryEntity(id, taskId, durationMinutes, note, recordedAt, subtaskId)
@@ -157,11 +157,13 @@ fun WeatherAlertEntity.toModel() = WeatherAlert(
 
 fun PersonEntity.toModel() = Person(
     id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
-    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt
+    SunSensitivity.from(sunSensitivity), activityPreferences, isArchived, sortOrder, createdAt,
+    Relationship.from(relationship), email, phone
 )
 fun Person.toEntity() = PersonEntity(
     id, name, heatToleranceMaxF, coldToleranceMinF, uvMax, windMaxMph, maxPrecipitationPct,
-    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt
+    sunSensitivity.value, activityPreferences, isArchived, sortOrder, createdAt, relationship?.value,
+    email, phone
 )
 
 fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)

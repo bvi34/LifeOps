@@ -30,8 +30,36 @@ class PersonRepository(private val personDao: PersonDao) {
 
     suspend fun getById(id: String): Person? = personDao.getById(id)?.toModel()
 
+    /** Full roster snapshot — used by the Google Calendar sync engine to resolve #tags. */
+    suspend fun getAll(): List<Person> = personDao.getAll().map { it.toModel() }
+
     suspend fun createPerson(name: String): Person {
         val person = Person(id = UUID.randomUUID().toString(), name = name.trim(), createdAt = DateUtil.now())
+        personDao.upsertPerson(person.toEntity())
+        return person
+    }
+
+    /** Case-insensitive email lookup — how a pulled-in Google Calendar attendee is recognized. */
+    suspend fun findByEmail(email: String): Person? =
+        email.trim().takeIf { it.isNotBlank() }?.let { personDao.findByEmail(it)?.toModel() }
+
+    /**
+     * The person matching [email] (case-insensitive), or a freshly-created one if nothing matches
+     * — the "generates a new person if it doesn't have someone who matches" half of Google
+     * Calendar sync. [displayName] seeds the new person's name (falls back to the email's local
+     * part when blank); ignored on a match, since renaming someone from calendar metadata alone
+     * would be surprising.
+     */
+    suspend fun findOrCreateByEmail(email: String, displayName: String?): Person {
+        val trimmedEmail = email.trim()
+        findByEmail(trimmedEmail)?.let { return it }
+        val name = displayName?.trim()?.takeIf { it.isNotBlank() } ?: trimmedEmail.substringBefore("@")
+        val person = Person(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            email = trimmedEmail,
+            createdAt = DateUtil.now()
+        )
         personDao.upsertPerson(person.toEntity())
         return person
     }

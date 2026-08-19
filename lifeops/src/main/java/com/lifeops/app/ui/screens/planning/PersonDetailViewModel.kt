@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.BusyBlock
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.PersonNote
+import com.lifeops.app.data.model.Relationship
 import com.lifeops.app.data.model.SunSensitivity
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.repository.BusyBlockRepository
@@ -89,7 +90,10 @@ class PersonDetailViewModel(
         windMaxMph: Int?,
         maxPrecipitationPct: Int?,
         sunSensitivity: SunSensitivity,
-        activityPreferences: String?
+        activityPreferences: String?,
+        relationship: Relationship?,
+        email: String?,
+        phone: String?
     ) {
         val person = _uiState.value.person ?: return
         if (name.isBlank()) return
@@ -103,7 +107,10 @@ class PersonDetailViewModel(
                     windMaxMph = windMaxMph,
                     maxPrecipitationPct = maxPrecipitationPct,
                     sunSensitivity = sunSensitivity,
-                    activityPreferences = activityPreferences?.trim()?.ifBlank { null }
+                    activityPreferences = activityPreferences?.trim()?.ifBlank { null },
+                    relationship = relationship,
+                    email = email?.trim()?.ifBlank { null },
+                    phone = phone?.trim()?.ifBlank { null }
                 )
             )
         }

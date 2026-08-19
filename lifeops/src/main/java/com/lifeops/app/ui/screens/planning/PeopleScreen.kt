@@ -19,6 +19,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
+import com.lifeops.app.util.PersonBookingStats
 
 /**
  * The People page: household members whose weather-comfort preferences and notes drive
@@ -60,6 +61,7 @@ fun PeopleScreen(
                     PersonCard(
                         person = person,
                         taskCount = state.taskCounts[person.id] ?: 0,
+                        bookingStats = state.bookingStats[person.id],
                         onOpen = { onOpenPerson(person.id) },
                         onArchiveToggle = { viewModel.setArchived(person, !person.isArchived) },
                         onDelete = { viewModel.delete(person) }
@@ -81,6 +83,7 @@ fun PeopleScreen(
 private fun PersonCard(
     person: Person,
     taskCount: Int,
+    bookingStats: PersonBookingStats?,
     onOpen: () -> Unit,
     onArchiveToggle: () -> Unit,
     onDelete: () -> Unit
@@ -101,6 +104,14 @@ private fun PersonCard(
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = dim)
                     )
+                    person.relationship?.let {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            it.label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (person.isArchived) {
                         Spacer(Modifier.width(8.dp))
                         Text(
@@ -115,10 +126,18 @@ private fun PersonCard(
                         append(preferenceSummary(person))
                         append("   ·   ")
                         append("$taskCount task${if (taskCount == 1) "" else "s"}")
+                        lastBookedSummary(bookingStats)?.let { append("   ·   "); append(it) }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
+                if (!person.email.isNullOrBlank()) {
+                    Text(
+                        person.email,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {
@@ -149,6 +168,17 @@ private fun preferenceSummary(person: Person): String {
         person.maxPrecipitationPct?.let { add("rain≤${it}%") }
     }
     return if (parts.isEmpty()) "No weather limits set" else parts.joinToString("  ")
+}
+
+/** "Booked 2d ago" / "Never booked" for a person with a relationship tracked; null if untracked. */
+private fun lastBookedSummary(stats: PersonBookingStats?): String? {
+    if (stats == null) return null
+    val days = stats.daysSinceLastBooked ?: return "Never booked"
+    return when (days) {
+        0 -> "Booked today"
+        1 -> "Booked 1d ago"
+        else -> "Booked ${days}d ago"
+    }
 }
 
 @Composable

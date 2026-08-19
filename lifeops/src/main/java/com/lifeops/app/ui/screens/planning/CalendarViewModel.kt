@@ -4,14 +4,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.BusyBlock
+import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.repository.BusyBlockRepository
+import com.lifeops.app.data.repository.PersonRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.RelationshipAnalytics
+import com.lifeops.app.util.RelationshipImbalance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -21,12 +26,17 @@ data class CalendarUiState(
     /** The user's own busy blocks (personId == null). */
     val blocks: List<BusyBlock> = emptyList(),
     /** Tasks that carry a due date, for overlaying the week as all-day items. */
-    val dueTasks: List<Task> = emptyList()
+    val dueTasks: List<Task> = emptyList(),
+    /** The household roster, for tagging people onto an event. */
+    val allPeople: List<Person> = emptyList(),
+    /** Relationship-balance nudges (see RelationshipAnalytics), most-overdue first. */
+    val imbalances: List<RelationshipImbalance> = emptyList()
 )
 
 class CalendarViewModel(
     private val busyBlockRepository: BusyBlockRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val personRepository: PersonRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(CalendarUiState())
@@ -34,8 +44,16 @@ class CalendarViewModel(
 
     init {
         viewModelScope.launch {
-            busyBlockRepository.observeMine().collectLatest { blocks ->
-                _uiState.update { it.copy(blocks = blocks) }
+            combine(busyBlockRepository.observeMine(), personRepository.observeAll()) { blocks, people ->
+                blocks to people.filter { !it.isArchived }
+            }.collectLatest { (blocks, people) ->
+                _uiState.update {
+                    it.copy(
+                        blocks = blocks,
+                        allPeople = people,
+                        imbalances = RelationshipAnalytics.findImbalances(people, blocks)
+                    )
+                }
             }
         }
         refreshDueTasks()
@@ -76,9 +94,10 @@ class CalendarViewModel(
 
 class CalendarViewModelFactory(
     private val busyBlockRepository: BusyBlockRepository,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    private val personRepository: PersonRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        CalendarViewModel(busyBlockRepository, taskRepository) as T
+        CalendarViewModel(busyBlockRepository, taskRepository, personRepository) as T
 }
