@@ -52,7 +52,11 @@ android {
             ndk { abiFilters += "arm64-v8a" }
             externalNativeBuild {
                 cmake {
-                    cppFlags += "-O3"
+                    // Both languages: ggml's hot compute is C, and `cppFlags` covers C++ only.
+                    // CMakeLists pins the real optimization level via add_compile_options (which
+                    // clang sees last); these are the baseline it builds on.
+                    cppFlags += "-O2"
+                    cFlags += "-O2"
                     // Hand the GPU choice to CMakeLists (which turns on GGML_VULKAN + a build-time offload flag).
                     arguments += "-DADVISOR_GPU=${if (buildGpu) "ON" else "OFF"}"
                     // Hand the ISA baseline to CMakeLists (which forwards it to ggml's GGML_CPU_ARM_ARCH).
