@@ -5,6 +5,7 @@ import android.content.Context
 import com.citation.app.data.CitationRepository
 import com.citation.app.data.OreillyAccess
 import com.citation.app.data.db.CitationDatabase
+import com.citation.app.data.pdf.PdfPageText
 import com.citation.app.data.store.FileStores
 import com.citation.app.work.RoyalRoadScheduler
 import com.citation.app.work.SyncWorker
@@ -34,7 +35,10 @@ class CitationApplication private constructor(private val app: Application) {
         val db = CitationDatabase.get(app)
         val files = FileStores(app)
         val oreillyAccess = OreillyAccess(app)
-        repository = appScope.async { CitationRepository.create(db, files, oreillyAccess) }
+        // PDF text extraction (the reflow track) needs a Context for PDFBox's resource loader, so it
+        // is built here and handed to the repository as a seam.
+        val pdfText = PdfPageText(app)
+        repository = appScope.async { CitationRepository.create(db, files, oreillyAccess, pdfText) }
         // Register the periodic RR jobs (poll favourites, advance backfill, evict stale cache).
         RoyalRoadScheduler.schedule(app)
         // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).

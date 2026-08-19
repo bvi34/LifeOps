@@ -53,7 +53,7 @@ other feature bolts onto this spine.
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
 resolver, the sync protocol, the PDF/O'Reilly pieces, and the storage aggregator below, **`:core`
-has 125 passing JVM unit tests** across 25 suites (run `gradle :core:test`).
+has 268 passing JVM unit tests** across 43 suites (run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -211,7 +211,8 @@ Two more sources, each on its own track (core pieces unit-tested):
 
 | Area | Type(s) | What it does |
 |---|---|---|
-| **PDF render track** | `pdf/PdfTrack` | Positioned glyphs don't reflow, so a PDF renders *pages*, never through the flowing reader. View↔PDF coordinate transform (Y-flip, **zoom-stable quads**), page/quad anchor construction, and the SHA-256 import identity (strong-positive dedup). |
+| **PDF render track** | `pdf/PdfTrack` | Positioned glyphs don't reflow, so a PDF renders *pages* as the ground-truth view. View↔PDF coordinate transform (Y-flip, **zoom-stable quads**), page/quad anchor construction, and the SHA-256 import identity (strong-positive dedup). |
+| **PDF reflow track** | `pdf/PdfFlow` | The *second* view over the same file: extracted page text → the format-blind `Book`, so a PDF becomes **selectable and quotable** instead of a picture of glyphs. Cleans running heads/folios, heals line-break hyphens, rejoins wrapped lines into paragraphs. Chunks **whole pages** into chapters and encodes each chapter's page map into its `sourceRef`, so an offset maps back to a page (`pageOf`) and a page back to a chapter (`chapterForPage`). **Declines** (returns null) when there's no text layer — a scan stays paged-only rather than opening blank. |
 | **External anchor** | `anchor/TextAnchor.External` | A read-in-place anchor for content Citation never holds: the source reader's opaque **location token** + the frozen quote. Resolves via deep link (best-effort), not text matching; `NoteResolver` + `SyncCodec` handle it. |
 | **O'Reilly deep-link** | `oreilly/OreillyLink` | Build/parse the URL to a book + position, so reopening lands one tap from your spot. Optionally routes through a library proxy (see below); parsing is host-agnostic, so a proxied position round-trips unchanged. Also builds the **browse** URL (O'Reilly's catalog, proxied) and pulls a book's `slug` out of a catalog link, title-cased into a readable library name (`titleFromSlug`). |
 | **Library proxy** | `oreilly/OreillyLibraryProxy` | EZproxy host rewriting — `learning.oreilly.com` → `learning-oreilly-com.mcpl.idm.oclc.org` — so you reach the licensed content on a **library card**, not a personal O'Reilly account. Encode (`.`→`-`, `-`→`--`) is reversible, so hosts round-trip; `rewrite` is idempotent. Defaults to Mid-Continent Public Library, any EZproxy host is configurable. |
@@ -219,7 +220,16 @@ Two more sources, each on its own track (core pieces unit-tested):
 | **Auto-reauth** | `oreilly/EzproxyLogin` | The reauth brain: detect an OCLC/EZproxy sign-in page (`isLoginPage`) and build a safe credential-fill/submit script (`fillScript`). Selectors lead with MCPL's confirmed form (`POST mcpl.idm.oclc.org/login`; card `name=user id=cardnum`, PIN `name=pass id=pin` — the card field is itself `type=password`, so the card never falls back to a `type=password` selector), then generic fallbacks for other libraries. Credentials are embedded as JSON string literals so a card/PIN can't break out of the script. It's the *user's own* library credential into the *library's* form — it never touches O'Reilly's DRM or federated tokens. |
 
 **Android wiring:** `PdfReaderScreen` renders pages via the platform `PdfRenderer` (own track, page
-nav, page-anchored notes); PDF import hashes + dedups into the owned store. `OreillyReaderScreen`
+nav, page-anchored notes); PDF import hashes + dedups into the owned store. **Reading a PDF as text**
+is one tap from the paged view: `data/pdf/PdfPageText` (PDFBox-Android, the port `:logistics` already
+carries) extracts the text layer page by page, `PdfFlow` reflows it, and the chapters are stored
+inline against the same book — so the existing flowing reader renders it with selection, typography,
+and search, and the rendered page stays one tap back for the figure the reflow flattened. The reflow
+is **derived, never a conversion**: the imported file is untouched, both tracks read the same book,
+and switching either way keeps your place (page → the chapter covering it, chapter → the page you're
+on). A selection made in the reflowed text still captures a **`TextAnchor.Pdf`** — page + quote, no
+glyph quads — so a PDF note cites its page whichever track you took, with no second anchor shape and
+no change to the sync contract. A scan with no text layer says so and stays on pages. `OreillyReaderScreen`
 hosts O'Reilly's own reader in a WebView (**no content cache** — licensed), routed through your
 library's EZproxy so you read on a library card; when the proxy session lapses and bounces to the
 OCLC sign-in page it **auto-reauths** from your saved card + PIN (`EzproxyLogin.fillScript`, with a
