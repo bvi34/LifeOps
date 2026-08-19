@@ -76,7 +76,19 @@ prefill: 186766 ms wall, 41000 ms cpu (0.2x busy), majflt +540112, minflt +9021,
 - **`majflt`** counts 4 KiB pages fetched from flash. The weights are ~2.3 GiB ≈ 580k pages; a delta
   near that for a *single* forward pass means the model is being re-read from storage each pass, and
   the fix is to shrink the working set (smaller model or quant), not to tune the compute.
-- **`rss` vs `MemAvailable`** at load says up front whether the device can hold the model at all. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
+- **`rss` vs `MemAvailable`** at load says up front whether the device can hold the model at all.
+
+`nativeGenerate` also prints the scheduling context of the thread it runs on:
+
+```
+nativeGenerate thread: tid=26858 nice=0 policy=0 affinity=[0,1,2,3,4,5,6,7] online_cpus=8 cpuset=4:cpuset:/
+```
+
+On Android a thread's cpuset follows its priority, and a background-classified thread can be pinned to
+the little cores with a small share of them — throttling inference by a large factor while the compiled
+kernels and the memory system are both blameless. An `affinity` covering only the little cores, a
+`cpuset` of `/background`, or a `nice` of 10 is that fault; the fix is on the Kotlin side (which
+dispatcher/priority the call runs on), not in this file. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
 ggml's abort callback, so a pathological run fails with a logged message and falls back to the
 placeholder engine instead of pinning the caller forever.
 
