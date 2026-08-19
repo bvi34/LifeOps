@@ -38,7 +38,9 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
         Text("Data access", style = MaterialTheme.typography.titleMedium)
         Text(
             "Advisor is offline and reads only what you allow here. Each app stays off until you " +
-                "turn it on; turning it off stops Advisor from reading that app on the next question.",
+                "turn it on; turning it off stops Advisor from reading that app on the next question. " +
+                "The one thing it writes is a task you explicitly ask it to add, into an app you have " +
+                "turned on.",
             style = MaterialTheme.typography.bodySmall
         )
 
@@ -89,7 +91,7 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 }
 
 private fun describe(app: SourceApp): String = when (app) {
-    SourceApp.LIFEOPS -> "Tasks, aspects, projects and milestones."
+    SourceApp.LIFEOPS -> "Tasks, aspects, projects and milestones. Can add a task when you ask for one."
     SourceApp.CITATION -> "Your library and reading notes."
     SourceApp.LOGISTICS -> "Pantry stock and grocery list."
 }

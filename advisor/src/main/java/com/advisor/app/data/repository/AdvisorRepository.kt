@@ -43,6 +43,9 @@ import com.advisor.app.logic.RetrievedChunk
 import com.advisor.app.logic.SmallTalk
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.SourceApp
+import com.advisor.app.logic.TaskIntent
+import com.advisor.app.logic.TaskWriteResult
+import com.advisor.app.logic.TaskWriter
 import com.advisor.app.logic.WriteIntent
 import com.advisor.app.logic.WriteIntentResult
 import kotlinx.coroutines.Dispatchers
@@ -87,7 +90,9 @@ class AdvisorRepository(
     private val modelStore: AdvisorModelStore,
     private val embeddingModelStore: EmbeddingModelStore,
     private val retriever: HybridRetriever = HybridRetriever(),
-    private val functions: FunctionRouter = FunctionRouter.DEFAULT
+    private val functions: FunctionRouter = FunctionRouter.DEFAULT,
+    /** The one write capability into another app: creating a task the user asked for. */
+    private val taskWriter: TaskWriter? = null
 ) {
 
     val model: ModelSpec get() = engine.spec
@@ -211,6 +216,11 @@ class AdvisorRepository(
         // them. Explicit write commands and computed functions still run first — those are tools, not
         // guesses. This is the "User ⇄ LLM, engine assists" flow.
         val hasModel = !engine.spec.isPlaceholder
+
+        // "add a task to Life Ops called X" is a command to *another app*, and the one thing that
+        // must never be improvised: with no way to write, a model simply says it did it (and leaves
+        // behind a memory note instead of a task). Perform it for real, or say plainly why not.
+        TaskIntent.detect(question)?.let { return applyTaskCommand(question, it, permissions) }
 
         // An explicit write command ("remember that …", "add to LLM persona that …") is an
         // instruction, not a question — perform it directly and confirm, before the C3A gate that
@@ -437,6 +447,57 @@ class AdvisorRepository(
         val text = "Done — I'll go by $newName from now on."
         persistTurn(question, text, emptyList(), KIND_NORMAL)
         return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Carry out an explicit "make me a task" command against the owning app and confirm what actually
+     * happened — created, skipped as a same-week duplicate, or not written at all.
+     *
+     * The permission gate applies to writing exactly as it does to reading: an app the user hasn't
+     * granted is not written to, and the reply says so instead of failing silently. When the command
+     * is clear but unnamed, it asks for the title rather than inventing one — the same "not knowing is
+     * acceptable, being wrong without asking is not" rule the C3A gate follows.
+     */
+    private suspend fun applyTaskCommand(
+        question: String,
+        intent: TaskIntent.Result,
+        permissions: AdvisorPermissions
+    ): AdvisorAnswer {
+        if (intent is TaskIntent.Result.NeedsTitle) {
+            val ask = "I can add that task — what should I call it?"
+            persistTurn(question, ask, emptyList(), KIND_CLARIFICATION)
+            return AdvisorAnswer(ask, emptyList(), emptyList(), engine.spec, EngineDecision.CLARIFY)
+        }
+        val command = (intent as TaskIntent.Result.Create).command
+        val writer = taskWriter?.takeIf { it.app == command.app }
+        val text = when {
+            writer == null ->
+                "I can't add tasks to ${command.app.displayName} — I can only read from it."
+            !permissions.isGranted(command.app) ->
+                "I'd need access to ${command.app.displayName} first — turn it on in Permissions and " +
+                    "ask me again, and I'll add \"${command.title}\"."
+            else -> confirm(writer.create(command))
+        }
+        persistTurn(question, text, emptyList(), KIND_NORMAL)
+        return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
+    }
+
+    /** Put a [TaskWriteResult] into words — only ever describing what the app reported back. */
+    private fun confirm(result: TaskWriteResult): String = when (result) {
+        is TaskWriteResult.Created -> buildString {
+            append("Added \"").append(result.title).append("\"")
+            result.target?.let { append(" under ").append(it) }
+            result.weekLabel?.let { append(" to this week (").append(it).append(')') }
+            append('.')
+            result.unmatchedTarget?.let {
+                append(" I couldn't find \"").append(it)
+                append("\" in there, so it isn't filed under anything — tell me where it belongs and ")
+                append("you can move it.")
+            }
+        }
+        is TaskWriteResult.Duplicate ->
+            "\"${result.title}\" is already on this week's list, so I left the existing one alone."
+        is TaskWriteResult.Failed -> "I couldn't add that task: ${result.reason}"
     }
 
     /**
