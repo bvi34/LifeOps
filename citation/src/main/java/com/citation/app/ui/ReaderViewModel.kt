@@ -112,6 +112,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
+    // Set only when an import arriving from *outside* the app fails; drawn as an alert over the
+    // reader (see reportImportProblem), because such an import has no picker screen to report back to.
+    private val _importAlert = MutableStateFlow<String?>(null)
+    val importAlert: StateFlow<String?> = _importAlert.asStateFlow()
+
     // --- Engaged-reading meter -----------------------------------------------------------------
     // Measures only *active* reading time: it accrues between progress signals (page turns, scrolls,
     // chapter advances), each interval capped, and pauses when the reader isn't visible. So leaving
@@ -184,13 +189,22 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _kindleLibrary = MutableStateFlow<CitationRepository.KindleLibrary?>(null)
     val kindleLibrary: StateFlow<CitationRepository.KindleLibrary?> = _kindleLibrary.asStateFlow()
 
-    fun importEpub(bytes: ByteArray) {
+    /**
+     * Imports an EPUB. [openAfter] is set when the file arrived as an "open this book" intent from
+     * another app: there the point of the tap was to read it, so the import lands in the reader
+     * rather than in a status line the user would have to go looking for.
+     */
+    fun importEpub(bytes: ByteArray, openAfter: Boolean = false) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
             _status.value = if (book != null) {
                 "Imported “${book.metadata.title}” (${book.chapters.size} chapters)"
             } else {
                 "That file didn’t parse as an EPUB."
+            }
+            if (openAfter) {
+                val key = book?.key
+                if (key != null) open(key.toString()) else _importAlert.value = "That file didn’t parse as an EPUB."
             }
         }
     }
@@ -784,4 +798,16 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     }
 
     fun clearStatus() { _status.value = null }
+
+    /** Dismisses the import alert once the user has read it. */
+    fun dismissImportAlert() { _importAlert.value = null }
+
+    /**
+     * Reports an import that failed on its way in from another app — a file that couldn't be read,
+     * or one that turned out to be neither an EPUB nor a PDF. This can't ride the [status] line: a
+     * file opened from outside lands the user in the reader, and status is only drawn on the New and
+     * Settings tabs, so a failure there would be invisible. The alert is surfaced over whatever is
+     * on screen instead.
+     */
+    fun reportImportProblem(message: String) { _importAlert.value = message }
 }

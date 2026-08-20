@@ -60,6 +60,21 @@ deliberately:
 - FileProvider authorities — namespaced to `${applicationId}.lifeops.fileprovider` and
   `${applicationId}.citation.fileprovider` so the two providers don't collide under one applicationId.
 
+### Who answers for a file type
+
+The modules' intent filters merge into one app, so two activities advertising the same MIME type
+would put the *same* app on the chooser twice. One module owns each type outright:
+
+| Gesture | Type | Lands in | Why |
+|---|---|---|---|
+| **Open** (`ACTION_VIEW`) | `application/pdf`, `application/epub+zip`, `application/epub` | **Citation** | Reading is Citation's whole job. Tapping a book — in either of its formats — opens the reader, which imports the file and picks up on the page you left. |
+| **Share** (`ACTION_SEND`) | `application/pdf` | **Logistics** | A Walmart order PDF is a *grocery* document, not something to read. Sharing it is the deliberate gesture, so it doesn't have to compete with every book tap. |
+| **Share** (`ACTION_SEND`) | `text/plain` | LifeOps (JSON import), Logistics (recipe link / order text), Citation (a passage) | Ambiguous by nature — a chooser here is honest, so all three offer themselves. |
+| **Select text** (`PROCESS_TEXT`) | `text/plain` | Citation | The capture ladder — see `CITATION.md`. |
+
+Citation sniffs the opened file's **magic number** (`%PDF`, `PK`) rather than trusting the intent's
+MIME type, which senders get wrong routinely (an EPUB commonly arrives as `application/octet-stream`).
+
 ---
 
 ## The backup archive (`:backupkit`)

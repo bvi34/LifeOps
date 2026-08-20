@@ -139,6 +139,22 @@ citation.db v4 → v5 migration). The **Import EPUB** picker now accepts `applic
 too, so a manually-downloaded AO3 EPUB is selectable. On the LifeOps side AO3 telemetry maps to the
 **Fun** reading category, like Royal Road.
 
+## Opening a book from outside the app
+
+`MainActivity` is the system's handler for **opening** an EPUB or a PDF (`ACTION_VIEW`) — tap a book
+in a file manager, a browser download, or another app's "open with" and it lands here, not in a
+generic viewer. The activity reads the file, sniffs its **magic number** (`%PDF`, `PK`) rather than
+trusting the intent's MIME type (senders type EPUBs as `application/epub`, `application/epub+zip`, or
+`application/octet-stream` more or less at random), and hands the bytes to the same
+`importEpub`/`importPdf` the New tab's pickers use. The import then **opens** — the point of the tap
+was to read the thing, so it lands in the reader rather than in a status line on a tab you'd have to
+go find. A file that can't be read, or that is neither format, raises an alert over the reader
+(`ReaderViewModel.importAlert`) for the same reason.
+
+PDFs used to open in Logistics (its Walmart-order import). Logistics now takes the deliberate
+*share*-a-PDF gesture instead, and Citation has the open — see `OPERATIONS_SANDBOX.md`, "Who answers
+for a file type".
+
 ## Notes complete (milestone 4 — core built + verified)
 
 The note **degradation/resolution engine** lives in `:core` as `note/NoteResolver` (unit-tested): it
