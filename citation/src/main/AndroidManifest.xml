@@ -16,19 +16,25 @@
 
         <!-- No longer a launcher: the Operations Sandbox home opens this explicitly. The theme,
              previously inherited from the application, is set on the activity so the reader keeps
-             its own look. The VIEW filter (open an EPUB from another app) stays. -->
+             its own look. The VIEW filter (open an EPUB or PDF from another app) stays. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Citation"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Open an EPUB shared/opened from another app straight into ingestion. -->
+            <!-- Open a book file from another app (a file manager, a browser download, a share
+                 sheet's "open with") straight into ingestion. Citation owns reading, so it is the
+                 default for both of its owned formats: EPUB and PDF. `application/epub` is listed
+                 alongside `application/epub+zip` because browsers and file managers commonly type
+                 EPUBs with the shorter form. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:mimeType="application/epub+zip" />
+                <data android:mimeType="application/epub" />
+                <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
 

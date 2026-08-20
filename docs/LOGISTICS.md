@@ -17,7 +17,7 @@ what's left, and what went into each meal is a **ledger**, not a vibe.
 | **Log meal** | "For *X* meal, here's what I used." **Search** the shelf to grab specific items, name a meal (optionally from a LifeOps recipe), mark what you took, and Logistics deducts it from the pantry. |
 | **History** | Every past meal, newest first, with the items it drew down — **Make again** re-deducts the same items in one tap. |
 | **Recipes** | Grab a recipe from any link (schema.org data) into **LifeOps'** recipe book, and browse the recipes already there. |
-| **Import** | Fill the pantry from a **Walmart order** — open the order's PDF or paste its text, review the parsed lines, confirm. |
+| **Import** | Fill the pantry from a **Walmart order** — pick the order's PDF, share it to Logistics, or paste its text, review the parsed lines, confirm. |
 
 ## How it relates to LifeOps
 
@@ -58,7 +58,7 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 ├── ui/               Compose: pantry · grocery · importflow · meal · history · recipe (+ theme)
 ├── backup/           LogisticsBackupContributor (whole-file logistics.db copy)
 ├── LogisticsApp.kt   tiny runtime container (install/get), like LifeOpsApp
-└── MainActivity.kt   tabbed shell; also handles VIEW pdf / SEND text|link intents
+└── MainActivity.kt   tabbed shell; also handles SEND pdf|text|link intents
 ```
 
 The split mirrors LifeOps' growth/weather approach: **everything that can be pure logic is**, so the
