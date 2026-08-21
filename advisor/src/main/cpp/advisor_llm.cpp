@@ -449,11 +449,17 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     llama_context_params cp = llama_context_default_params();
-    // 2048, not 4096: the KV cache is anonymous (non-evictable) memory — 576 MiB at 4096 vs 288 MiB
-    // here — and it competes with the 2.3 GiB of mmap'd weights for the page cache. When the weights
-    // can't stay resident, every decode re-faults them from flash and inference collapses. Advisor's
-    // prompts run ~500 tokens, so 2048 leaves ample room for prompt + reply.
-    cp.n_ctx = 2048;
+    // The KV cache is anonymous, non-evictable memory competing with 2.3 GiB of weights for RAM, and
+    // when the weights can't stay resident every decode re-faults them from flash and inference
+    // collapses — so context length is a memory decision here, not a capacity one.
+    //
+    // Quantizing the cache to Q8_0 (below) roughly halves its cost per token, which buys length: 3072
+    // tokens at Q8_0 is about 235 MiB, still *less* than the 288 MiB that 2048 tokens cost at f16
+    // before. That extra room is not for longer answers — it is what lets more of the conversation
+    // stay in the prompt, and the whole of it is prefix that the next turn reuses instead of
+    // prefilling. If the quantized cache turns out to be unavailable, the fallback below returns to
+    // 2048 rather than paying 432 MiB for the same window.
+    cp.n_ctx = 3072;
     // n_batch must cover a full-context prompt in one llama_decode (see the SIGABRT fixed earlier);
     // n_ubatch stays at the default 512 so a typical prompt is a *single* pass over the weights.
     cp.n_batch = cp.n_ctx;
@@ -494,10 +500,13 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     llama_context* ctx = llama_init_from_model(model, cp);
     bool quantized_kv = ctx != nullptr;
     if (ctx == nullptr) {
-        LOGW("flash attention + Q8_0 KV cache unavailable on this build; retrying with f16 KV");
+        LOGW("flash attention + Q8_0 KV cache unavailable on this build; retrying with f16 KV at 2048");
         cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
         cp.type_k = GGML_TYPE_F16;
         cp.type_v = GGML_TYPE_F16;
+        // An f16 cache costs twice as much per token, so give back the length rather than the RAM.
+        cp.n_ctx   = 2048;
+        cp.n_batch = cp.n_ctx;
         ctx = llama_init_from_model(model, cp);
     }
     if (ctx == nullptr) {
@@ -739,6 +748,16 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_batch_free(batch);
     llama_sampler_free(smpl);
     return env->NewStringUTF(out.c_str());
+}
+
+// The context length this model actually got, so the Kotlin side can size a prompt to it instead of
+// assuming. It is not a constant: it depends on whether the quantized KV cache was available.
+JNIEXPORT jint JNICALL
+Java_com_advisor_app_llm_LlamaCppBackend_nativeContextTokens(
+        JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorLlm*>(handle);
+    if (h == nullptr || h->ctx == nullptr) return 0;
+    return (jint) llama_n_ctx(h->ctx);
 }
 
 JNIEXPORT void JNICALL

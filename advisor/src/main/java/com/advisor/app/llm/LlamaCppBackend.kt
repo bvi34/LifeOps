@@ -50,6 +50,18 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         onToken: (String) -> Unit
     ): String = run(prompt, params, TokenSink(onToken))
 
+    /**
+     * The loaded model's real context length, or the conservative floor until one is loaded. Reading
+     * it does not force a load: a caller sizing a prompt before warm-up finishes should get the safe
+     * answer, not block for gigabytes of I/O.
+     */
+    override val contextTokens: Int
+        get() {
+            if (handle == 0L) return LlmBackend.DEFAULT_CONTEXT_TOKENS
+            val reported = runCatching { nativeContextTokens(handle) }.getOrDefault(0)
+            return if (reported > 0) reported else LlmBackend.DEFAULT_CONTEXT_TOKENS
+        }
+
     override fun warmUp() {
         if (!ensureLoaded()) Log.i(TAG, "Warm-up: no model to load; staying on the placeholder.")
     }
@@ -128,6 +140,7 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         handle: Long, prompt: String, maxTokens: Int, temperature: Float,
         topP: Float, topK: Int, stop: Array<String>, listener: TokenSink?
     ): String
+    private external fun nativeContextTokens(handle: Long): Int
     private external fun nativeFree(handle: Long)
 
     companion object {

@@ -59,6 +59,13 @@ interface LocalLlmEngine {
      * default does nothing, which is right for an engine that has nothing to load.
      */
     fun warmUp() {}
+
+    /**
+     * How many tokens of prompt this engine can be given. Callers size the prompt to it — chiefly how
+     * much of the conversation still fits — so it reports the model's real window when there is one,
+     * and a conservative floor when there isn't.
+     */
+    val contextTokens: Int get() = LlmBackend.DEFAULT_CONTEXT_TOKENS
 }
 
 /**

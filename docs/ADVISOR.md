@@ -375,6 +375,28 @@ Nothing upstream changes: permissions, retrieval, prompt assembly, citations, an
 are already model-agnostic — the wired model still only runs when C3A returns `ANSWER`, and generation
 runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes seconds.
 
+### Fitting the prompt to the context window
+
+Every token of prompt is a token to prefill, at the few tens of tokens a second a 4B model manages on
+a phone — so prompt size is latency, and what is *reusable* between turns is latency saved.
+
+- **`PromptBudget`** sizes the prompt against the model's real context window (`LlmBackend.contextTokens`,
+  read from the loaded model rather than assumed) minus the reply and a safety margin. Its estimates
+  run deliberately high: the job is keeping a prompt under a hard limit. What overflows is history,
+  dropped here on purpose — the native backend's own overflow handling truncates from the *head*,
+  which is where the system instruction lives, so a long conversation would otherwise cost the model
+  its grounding contract exactly when it needed it.
+- **`ConversationWindow`** decides which prior turns go in. Not "the last N": the KV cache keeps
+  whatever a prompt shares with the previous one, and the history is exactly the shareable part, so a
+  sliding window would move every message every turn and re-prefill the lot. The window is anchored to
+  the conversation's length instead — its start moves only in strides and grows between them, so the
+  cost is paid once every few turns rather than continuously. It is a pure function of that length, so
+  nothing has to be remembered between questions for two prompts to agree.
+- **`PromptAssembler.CONTEXT_BUDGET`** shares one character budget across the retrieved rows rather
+  than giving each the per-row cap. CONTEXT is the volatile half of the prompt — it changes with every
+  question, so none of it is ever reused — and its cost otherwise scaled with however many rows
+  retrieval happened to return.
+
 ### The answer arrives as it is written
 
 A 4B model on a phone produces a few tokens a second, so a reply is tens of seconds of work. It is

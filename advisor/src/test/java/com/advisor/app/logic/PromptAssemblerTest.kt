@@ -122,4 +122,40 @@ class PromptAssemblerTest {
         assertEquals(prompt.context, PromptAssembler.blocks(chunks))
         assertEquals(listOf(1, 2, 3), PromptAssembler.blocks(chunks).map { it.ref })
     }
+
+    @Test
+    fun a_lone_row_gets_the_full_excerpt() {
+        val body = "x".repeat(1000)
+        val prompt = PromptAssembler.assemble("what's due", listOf(chunk("a", "A", body)))
+        // Trimmed to the per-row cap (plus the ellipsis the trim adds), not to a share of the budget.
+        assertEquals(PromptAssembler.MAX_EXCERPT, PromptAssembler.excerptShare(1))
+        assertTrue(prompt.context.single().excerpt.length <= PromptAssembler.MAX_EXCERPT + 1)
+    }
+
+    @Test
+    fun many_rows_share_one_budget_instead_of_each_taking_the_cap() {
+        val chunks = (1..6).map { chunk("d$it", "T$it", "x".repeat(1000)) }
+        val prompt = PromptAssembler.assemble("what's due", chunks)
+        val total = prompt.context.sumOf { it.excerpt.length }
+        // Six rows at the old flat cap would be ~2400 characters of volatile prompt.
+        assertTrue("context was $total chars", total <= PromptAssembler.CONTEXT_BUDGET + chunks.size)
+        assertEquals(6, prompt.context.size)
+    }
+
+    @Test
+    fun a_row_is_never_trimmed_below_the_floor() {
+        val chunks = (1..40).map { chunk("d$it", "T$it", "x".repeat(1000)) }
+        val share = PromptAssembler.excerptShare(chunks.size)
+        assertEquals(PromptAssembler.MIN_EXCERPT, share)
+        val prompt = PromptAssembler.assemble("what's due", chunks)
+        assertTrue(prompt.context.all { it.excerpt.length >= PromptAssembler.MIN_EXCERPT })
+    }
+
+    @Test
+    fun short_bodies_are_untouched_by_the_budget() {
+        // The common case: rows are a line or two, so nothing is trimmed at all.
+        val chunks = (1..6).map { chunk("d$it", "T$it", "Task: mow the lawn") }
+        val prompt = PromptAssembler.assemble("what's due", chunks)
+        assertTrue(prompt.context.all { it.excerpt == "Task: mow the lawn" })
+    }
 }

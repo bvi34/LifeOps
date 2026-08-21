@@ -28,6 +28,16 @@ interface LlmBackend {
     /** A short label for what is loaded (e.g. the resolved GGUF filename), for diagnostics. */
     val detail: String
 
+    /**
+     * How many tokens of context this model has, for callers sizing a prompt to it.
+     *
+     * Not a constant, and not something to assume: a backend may end up with a different window than
+     * it asked for. The default is the conservative floor — building a prompt for a window larger than
+     * the real one is how a prompt gets truncated, and truncation takes the *front*, which is where
+     * the system instruction lives.
+     */
+    val contextTokens: Int get() = DEFAULT_CONTEXT_TOKENS
+
     /** Run [prompt] (already in the model's chat format) to completion and return the raw text. */
     fun generate(prompt: String, params: GenerationParams = GenerationParams()): String
 
@@ -63,6 +73,9 @@ interface LlmBackend {
     fun close() {}
 
     companion object {
+        /** The smallest context any backend here is built with; assumed until one says otherwise. */
+        const val DEFAULT_CONTEXT_TOKENS = 2048
+
         /** A backend that never loads; the engine then falls back to the extractive placeholder. */
         val NONE: LlmBackend = object : LlmBackend {
             override val isReady = false

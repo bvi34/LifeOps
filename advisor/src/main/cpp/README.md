@@ -110,12 +110,17 @@ the remainder, reporting both counts:
 nativeGenerate: prompt=520 tokens (320 reused from cache, 200 to prefill); one batch (n_ubatch=512)…
 ```
 
-Advisor's prompts open with a stable ~320-token system preamble, so within a conversation this is
-usually most of the prompt. Correctness rests on one rule — everything from the first *differing*
-token onward is dropped, which includes the previous reply — so if you change how the prompt is
-assembled, nothing here needs updating: the match is on tokens, not on assumed structure. The one
-thing to preserve is that a batch entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the
-batch. Reordering the assembler to put more stable text first directly increases the reuse.
+Correctness rests on one rule — everything from the first *differing* token onward is dropped, which
+includes the previous reply — so if you change how the prompt is assembled, nothing here needs
+updating: the match is on tokens, not on assumed structure. The one thing to preserve is that a batch
+entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the batch.
+
+How much this saves is decided on the Kotlin side, not here. The prompt is
+`system + history + this question`, so the history is the reusable part — and a "last N messages"
+window would move every message in it on every turn, leaving only the ~450-token system preamble to
+reuse. `ConversationWindow` therefore anchors the window: its start moves only in strides, and grows
+between them, so most turns reuse the whole history and the full cost is paid once every few turns.
+Reordering the assembler to put more stable text first increases the reuse the same way.
 
 ### Streaming the answer out
 

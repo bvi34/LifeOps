@@ -21,6 +21,7 @@ import com.advisor.app.logic.AssistantNaming
 import com.advisor.app.logic.Citations
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
+import com.advisor.app.logic.ConversationWindow
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
@@ -39,6 +40,7 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.PromptBudget
 import com.advisor.app.logic.RelevanceDirectives
 import com.advisor.app.logic.RelevanceEngine
 import com.advisor.app.logic.RetrievedChunk
@@ -285,7 +287,14 @@ class AdvisorRepository(
         // Recent chat history, oldest-first, so retrieval, the C3A gate and the prompt all reason over
         // the conversation — not just this one message. Loaded before the turn is persisted, so it's
         // strictly the prior turns.
-        val conversation = dao.recentMessages(HISTORY_TURNS)
+        //
+        // How far back to read is anchored to the conversation's length rather than being a fixed
+        // "last N": the model's KV cache keeps whatever this prompt shares with the previous one, and
+        // the history is exactly the shareable part, so a window that slid every turn would throw away
+        // the reuse and re-prefill the lot. See ConversationWindow.
+        val totalMessages = dao.countMessages()
+        val windowStart = ConversationWindow.startIndex(totalMessages)
+        val conversation = dao.recentMessages(totalMessages - windowStart)
             .asReversed()
             .map { ConversationTurn(fromUser = it.role == ROLE_USER, text = it.text) }
             .filter { it.text.isNotBlank() }
@@ -337,20 +346,42 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
-        // First pass. The prompt carries the grounded context plus the logic notes and the relevance
-        // filter's summary, so the model can be honest about near-misses. A real local model runs for
-        // seconds and can block on native inference, so keep generation off the UI thread; the
-        // placeholder engine is instant, so this is free when no model is loaded.
+        // The grounded set the answer is built from; the refinement round below may narrow it.
         var groundingResult = grounding
         var groundChunks = chunks
+
+        // How much of that history actually fits, measured against the rest of this prompt rather than
+        // guessed. What overflows is dropped here, deliberately: the native backend's own overflow
+        // handling truncates from the *head*, which is where the system instruction lives, so a long
+        // conversation would otherwise cost the model its grounding contract precisely when it needed
+        // it. Measured by rendering the prompt without its conversation — the only part whose size
+        // this decides.
+        //
+        // Trimming is stride-aligned like the window itself, and settled once: the refinement pass
+        // reuses this same history rather than recomputing a window that a shrinking CONTEXT would let
+        // grow, which would move the shared prefix for no gain.
+        val promptConversation = ConversationWindow.fit(
+            conversation,
+            PromptBudget.historyChars(
+                groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, emptyList(), systemPrompt)
+                    .render(includeConversation = false),
+                engine.contextTokens
+            )
+        )
+
         // Directives are the app's private bookkeeping, not part of the reply, so what streams out is
         // the answer with them removed — including one still being typed, which the whole-line strip
         // patterns cannot match yet.
         val stream: ((String) -> Unit)? = onPartial?.let { emit ->
             { text: String -> emit(AnswerText.inProgress(text)) }
         }
+
+        // First pass. The prompt carries the grounded context plus the logic notes and the relevance
+        // filter's summary, so the model can be honest about near-misses. A real local model runs for
+        // seconds and can block on native inference, so keep generation off the UI thread; the
+        // placeholder engine is instant, so this is free when no model is loaded.
         var raw = withContext(Dispatchers.Default) {
-            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt, stream)
+            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
         }
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
@@ -388,7 +419,7 @@ class AdvisorRepository(
 
                 if (leanedOnDropped || nothingLeftStanding) {
                     raw = withContext(Dispatchers.Default) {
-                        generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt, stream)
+                        generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
                     }
                 }
             }
@@ -640,7 +671,5 @@ class AdvisorRepository(
         const val SOURCE_ADVISOR = "advisor"
         /** The seeded persona profile the assistant's name is stored in (see [ProfileStore]). */
         const val PERSONA_PROFILE_KEY = "llm-persona"
-        /** How many recent messages feed the conversation context (≈ the last handful of exchanges). */
-        const val HISTORY_TURNS = 8
     }
 }

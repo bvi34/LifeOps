@@ -31,6 +31,8 @@ class Qwen3LlmEngine(
 
     override fun warmUp() = backend.warmUp()
 
+    override val contextTokens: Int get() = backend.contextTokens
+
     private fun run(prompt: AdvisorPrompt, onPartial: ((String) -> Unit)?): String {
         if (!backend.isReady) return fallback.generate(prompt)
         val formatted = Qwen3ChatFormat.forPrompt(prompt)

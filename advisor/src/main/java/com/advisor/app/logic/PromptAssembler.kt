@@ -126,8 +126,22 @@ object PromptAssembler {
             "it plainly instead (for example: \"add a task to LifeOps called <title>\"). " +
             RelevanceDirectives.INSTRUCTION
 
-    /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
+    /** The most of any one row's body worth showing, however few rows came back. */
     const val MAX_EXCERPT = 400
+
+    /**
+     * Total characters of retrieved body text across the whole CONTEXT block.
+     *
+     * [MAX_EXCERPT] alone is a per-row cap, so the cost of the block scales with how many rows
+     * retrieval happened to return: six of them could put ~2400 characters into the prompt. That is
+     * the *volatile* half — it changes with every question, so unlike the system preamble none of it
+     * is ever reused from the previous turn's KV cache, and all of it is prefilled again. Sharing one
+     * budget between the rows bounds that cost whatever retrieval returns.
+     */
+    const val CONTEXT_BUDGET = 1200
+
+    /** No row is trimmed below this: a shorter excerpt is noise, and a citation to noise is worse. */
+    const val MIN_EXCERPT = 120
 
     /**
      * The citation numbering [chunks] are shown under — `[1]`, `[2]`, … in retrieval order. Exposed
@@ -135,10 +149,20 @@ object PromptAssembler {
      * markers back means knowing which document each one stood for, and a second copy of "index + 1"
      * elsewhere would be a numbering that could silently drift from the one the model saw.
      */
-    fun blocks(chunks: List<RetrievedChunk>): List<ContextBlock> =
-        chunks.mapIndexed { index, chunk ->
-            ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
+    fun blocks(chunks: List<RetrievedChunk>): List<ContextBlock> {
+        val share = excerptShare(chunks.size)
+        return chunks.mapIndexed { index, chunk ->
+            ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body, share))
         }
+    }
+
+    /**
+     * How much of each row's body to show when [count] of them have to share [CONTEXT_BUDGET]. Few
+     * rows get [MAX_EXCERPT] each; many are trimmed, but never past [MIN_EXCERPT] — so the block can
+     * exceed the budget rather than degrade into fragments, which is the right way to be wrong.
+     */
+    fun excerptShare(count: Int): Int =
+        if (count <= 0) MAX_EXCERPT else (CONTEXT_BUDGET / count).coerceIn(MIN_EXCERPT, MAX_EXCERPT)
 
     fun assemble(
         question: String,
@@ -163,10 +187,10 @@ object PromptAssembler {
         )
     }
 
-    private fun excerpt(body: String): String {
+    private fun excerpt(body: String, limit: Int = MAX_EXCERPT): String {
         val clean = body.trim()
-        if (clean.length <= MAX_EXCERPT) return clean
-        val cut = clean.take(MAX_EXCERPT)
+        if (clean.length <= limit) return clean
+        val cut = clean.take(limit)
         // Prefer a word boundary so we don't slice a word in half.
         val trimmed = cut.substringBeforeLast(' ', cut)
         return "$trimmed…"
