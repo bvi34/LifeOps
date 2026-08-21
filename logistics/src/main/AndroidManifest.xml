@@ -18,19 +18,16 @@
             android:theme="@style/Theme.Logistics"
             android:windowSoftInputMode="adjustResize">
 
-            <!-- Open/share a Walmart order PDF straight into the import flow. -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:mimeType="application/pdf" />
-            </intent-filter>
-
-            <!-- Share a recipe link (or plain order text) from another app into Logistics. -->
+            <!-- Share a recipe link (or plain order text) from another app into Logistics, or share
+                 a Walmart order PDF straight into the import flow. Note the action: *opening* a PDF
+                 (ACTION_VIEW) belongs to Citation, which owns reading — a grocery order is the rare
+                 PDF, a book the common one, so Logistics takes the deliberate "share to Logistics"
+                 gesture rather than every PDF tap on the device. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
 

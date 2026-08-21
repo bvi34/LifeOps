@@ -3,6 +3,7 @@ package com.advisor.app
 import android.app.Application
 import android.content.Context
 import androidx.room.RoomDatabase
+import com.advisor.app.data.action.LifeOpsTaskWriter
 import com.advisor.app.data.db.AdvisorDatabase
 import com.advisor.app.data.identity.IdentityStore
 import com.advisor.app.data.memory.AdvisorMemoryDatabase
@@ -24,6 +25,7 @@ import com.advisor.app.logic.C3AEngine
 import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.Qwen3LlmEngine
+import com.advisor.app.logic.TaskWriter
 import com.citation.app.data.db.CitationDatabase
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.logistics.app.data.db.LogisticsDatabase
@@ -104,6 +106,13 @@ class AdvisorApp private constructor(private val app: Application) {
     /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */
     val logicEngine: LogicEngine by lazy { C3AEngine() }
 
+    /**
+     * The one place Advisor *writes* into another app: creating a LifeOps task the user explicitly
+     * asked for, through LifeOps' own connection route. Still permission-gated — the repository checks
+     * the LifeOps grant before calling it, exactly as it does before reading.
+     */
+    val taskWriter: TaskWriter by lazy { LifeOpsTaskWriter(app) }
+
     val repository by lazy {
         AdvisorRepository(
             dao = database.advisorDao(),
@@ -116,7 +125,8 @@ class AdvisorApp private constructor(private val app: Application) {
             logicEngine = logicEngine,
             modelStore = modelStore,
             embeddingModelStore = embeddingModelStore,
-            retriever = retriever
+            retriever = retriever,
+            taskWriter = taskWriter
         )
     }
 

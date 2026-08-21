@@ -119,7 +119,12 @@ object PromptAssembler {
             "guessing, and ask one natural follow-up question. To save a durable fact to a standing " +
             "profile, add a line: @remember(<profile>): <fact> — use an existing profile key (e.g. " +
             "user, llm-persona) or a new project key. To save a durable fact to long-term memory, add " +
-            "a line: @memorize: <fact> #tag1 #tag2 (tags optional). " + RelevanceDirectives.INSTRUCTION
+            "a line: @memorize: <fact> #tag1 #tag2 (tags optional). You cannot create, change or " +
+            "delete anything in LifeOps, Citation or Logistics — you only read them. Requests to add " +
+            "a task are carried out before they ever reach you, so if one is in front of you it was " +
+            "not understood: never say you added, created or changed a task, goal or project. Ask for " +
+            "it plainly instead (for example: \"add a task to LifeOps called <title>\"). " +
+            RelevanceDirectives.INSTRUCTION
 
     /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
     const val MAX_EXCERPT = 400

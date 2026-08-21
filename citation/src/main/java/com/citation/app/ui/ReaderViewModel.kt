@@ -11,6 +11,7 @@ import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
+import com.citation.core.pdf.PdfFlow
 import com.citation.core.reader.ReadingMeter
 import com.citation.core.note.NoteType
 import com.citation.core.note.TagCount
@@ -111,6 +112,11 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
+    // Set only when an import arriving from *outside* the app fails; drawn as an alert over the
+    // reader (see reportImportProblem), because such an import has no picker screen to report back to.
+    private val _importAlert = MutableStateFlow<String?>(null)
+    val importAlert: StateFlow<String?> = _importAlert.asStateFlow()
+
     // --- Engaged-reading meter -----------------------------------------------------------------
     // Measures only *active* reading time: it accrues between progress signals (page turns, scrolls,
     // chapter advances), each interval capped, and pauses when the reader isn't visible. So leaving
@@ -183,13 +189,22 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private val _kindleLibrary = MutableStateFlow<CitationRepository.KindleLibrary?>(null)
     val kindleLibrary: StateFlow<CitationRepository.KindleLibrary?> = _kindleLibrary.asStateFlow()
 
-    fun importEpub(bytes: ByteArray) {
+    /**
+     * Imports an EPUB. [openAfter] is set when the file arrived as an "open this book" intent from
+     * another app: there the point of the tap was to read it, so the import lands in the reader
+     * rather than in a status line the user would have to go looking for.
+     */
+    fun importEpub(bytes: ByteArray, openAfter: Boolean = false) {
         viewModelScope.launch {
             val book = repository.importEpub(bytes)
             _status.value = if (book != null) {
                 "Imported “${book.metadata.title}” (${book.chapters.size} chapters)"
             } else {
                 "That file didn’t parse as an EPUB."
+            }
+            if (openAfter) {
+                val key = book?.key
+                if (key != null) open(key.toString()) else _importAlert.value = "That file didn’t parse as an EPUB."
             }
         }
     }
@@ -200,7 +215,13 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             val warmCacheStale = repository.oreillyWarmCacheStale(bookKey)
             repository.markOpened(bookKey) // stamp for the Read tab's resume
             when (repository.sourceTypeOf(bookKey)) {
-                SourceType.PDF -> _pdfSession.value = repository.pdfSession(bookKey)
+                SourceType.PDF -> {
+                    // Pages are the ground truth, so a PDF always opens paged; the reader offers the
+                    // reflowed text track when one exists (and can build it on demand when it doesn't).
+                    _pdfInitialPage.value = 0
+                    _pdfFlowReady.value = repository.hasPdfFlow(bookKey)
+                    _pdfSession.value = repository.pdfSession(bookKey)
+                }
                 SourceType.OREILLY ->
                     _oreillySession.value = repository.oreillySession(bookKey)?.copy(purgeWarmCache = warmCacheStale)
                 SourceType.KINDLE -> {
@@ -233,7 +254,86 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             _status.value = "Imported PDF “$title”."
             _pdfSession.value = repository.pdfSession(key)
             startReadingSession(key)
+            // The pages are readable immediately; the reflowed text track is built behind them so
+            // "Read as text" is ready by the time you look for it (and says so when it isn't).
+            if (!repository.hasPdfFlow(key)) reflow(key, announce = true)
         }
+    }
+
+    // --- PDF: the two tracks over one file ------------------------------------------------------
+    // A PDF is a picture of glyphs, so the paged render can't be selected from. Reflowing extracts its
+    // text into the same format-blind Book the flowing reader already draws, which is what makes a PDF
+    // quotable at all. The reflow is derived: the file and its pages remain the ground truth, and the
+    // reader switches between them without losing your place.
+
+    private val _pdfFlowReady = MutableStateFlow(false)
+    /** Whether the open PDF has a reflowed text track available (drives the reader's track toggle). */
+    val pdfFlowReady: StateFlow<Boolean> = _pdfFlowReady.asStateFlow()
+
+    private val _pdfInitialPage = MutableStateFlow(0)
+    /** The page the paged reader opens on — carried over when arriving from the text track. */
+    val pdfInitialPage: StateFlow<Int> = _pdfInitialPage.asStateFlow()
+
+    private val _reflowing = MutableStateFlow(false)
+    /** True while a PDF's text is being extracted — the toggle shows progress rather than nothing. */
+    val reflowing: StateFlow<Boolean> = _reflowing.asStateFlow()
+
+    /** Extract + reflow [bookKey], reporting the outcome. Returns true when a text track now exists. */
+    private suspend fun reflow(bookKey: String, announce: Boolean): Boolean {
+        if (_reflowing.value) return false // an extraction is already running; don't start a second
+        _reflowing.value = true
+        val result = try { repository.reflowPdf(bookKey) } finally { _reflowing.value = false }
+        val ready = result is CitationRepository.ReflowResult.Reflowed
+        _pdfFlowReady.value = ready
+        if (announce) {
+            _status.value = when (result) {
+                is CitationRepository.ReflowResult.Reflowed ->
+                    "Text extracted — ${result.pages} page${if (result.pages == 1) "" else "s"} readable as text."
+                CitationRepository.ReflowResult.NoTextLayer ->
+                    "No text layer in this PDF (it's a scan) — pages only."
+                CitationRepository.ReflowResult.Unreadable ->
+                    "Couldn't read that PDF's text."
+            }
+        }
+        return ready
+    }
+
+    /**
+     * Switch the open PDF from rendered pages to its reflowed text, landing on the chapter that holds
+     * the page you were looking at. Extracts on demand if the track isn't built yet; a scan with no
+     * text layer says so and stays on the pages.
+     */
+    fun readPdfAsText(fromPage: Int) {
+        val session = _pdfSession.value ?: return
+        viewModelScope.launch {
+            if (!repository.hasPdfFlow(session.bookKey) && !reflow(session.bookKey, announce = true)) return@launch
+            val result = repository.openBook(session.bookKey) ?: return@launch
+            val book = result.book
+            val chapter = PdfFlow.chapterForPage(book.chapters, fromPage)
+            _openBook.value = book
+            _chapterOrdinal.value = chapter
+            pendingScrollChapter = chapter
+            pendingScrollOffset = 0
+            _pdfFlowReady.value = true
+            _pdfSession.value = null // the flowing reader takes over the screen
+        }
+    }
+
+    /**
+     * Switch the open reflowed PDF back to its rendered pages — the ground truth, for the figure or
+     * table the reflow flattened. [nearOffset] is where the flowing reader was looking, so the paged
+     * view opens on that same page.
+     */
+    fun readPdfAsPages(nearOffset: Int) {
+        val book = _openBook.value ?: return
+        val bookKey = book.key?.toString() ?: return
+        if (book.metadata.source != SourceType.PDF) return
+        val chapter = book.chapterAt(_chapterOrdinal.value)
+        val page = chapter?.let { PdfFlow.pageOf(it, nearOffset) } ?: 0
+        // Page first, then the session: the paged reader reads the landing page as it composes.
+        _pdfInitialPage.value = page
+        _openBook.value = null
+        _pdfSession.value = repository.pdfSession(bookKey)
     }
 
     /**
@@ -698,4 +798,16 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     }
 
     fun clearStatus() { _status.value = null }
+
+    /** Dismisses the import alert once the user has read it. */
+    fun dismissImportAlert() { _importAlert.value = null }
+
+    /**
+     * Reports an import that failed on its way in from another app — a file that couldn't be read,
+     * or one that turned out to be neither an EPUB nor a PDF. This can't ride the [status] line: a
+     * file opened from outside lands the user in the reader, and status is only drawn on the New and
+     * Settings tabs, so a failure there would be invisible. The alert is surfaced over whatever is
+     * on screen instead.
+     */
+    fun reportImportProblem(message: String) { _importAlert.value = message }
 }

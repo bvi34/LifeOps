@@ -87,6 +87,13 @@ class PromptAssemblerTest {
     }
 
     @Test
+    fun the_default_prompt_forbids_claiming_writes_it_cannot_make() {
+        // The model has no way to create anything in the other apps (task commands are performed
+        // before it is ever asked), so it must never report having done so.
+        assertTrue(PromptAssembler.SYSTEM.contains("never say you added, created or changed a task"))
+    }
+
+    @Test
     fun conversation_can_be_left_out_for_callers_that_emit_real_turns() {
         val prompt = PromptAssembler.assemble(
             "follow up",
@@ -95,6 +102,7 @@ class PromptAssemblerTest {
         )
         assertTrue(prompt.render().contains("an earlier answer"))
         assertFalse(prompt.render(includeConversation = false).contains("an earlier answer"))
-        assertFalse(prompt.render(includeConversation = false).contains("CONVERSATION"))
+        // The section header, not the bare word — the standing instruction names CONVERSATION too.
+        assertFalse(prompt.render(includeConversation = false).contains("CONVERSATION (recent turns"))
     }
 }

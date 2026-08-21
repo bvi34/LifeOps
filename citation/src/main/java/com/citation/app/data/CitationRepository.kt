@@ -26,12 +26,14 @@ import com.citation.core.key.KeyAllocator
 import com.citation.core.manifest.StorageInventory
 import com.citation.core.manifest.StorageReport
 import com.citation.core.model.Book
+import com.citation.core.model.Chapter
 import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.PassageReference
 import com.citation.core.note.SourceDescriptor
+import com.citation.core.pdf.PdfFlow
 import com.citation.core.store.Ownership
 import com.citation.core.store.Store
 import com.citation.core.sync.AcquireBookIntent
@@ -69,7 +71,9 @@ class CitationRepository private constructor(
     /** Downloads AO3's official EPUB export; AO3 works are ingested as owned EPUB snapshots. */
     private val ao3Client: Ao3Client,
     /** Encrypted library card/PIN + proxy host for read-in-place O'Reilly (never synced). */
-    private val oreillyAccess: OreillyAccess
+    private val oreillyAccess: OreillyAccess,
+    /** Pulls the text layer out of an owned PDF, for the reflow track. */
+    private val pdfText: PdfTextSource = PdfTextSource.NONE
 ) {
 
     val books: Flow<List<BookSummary>> =
@@ -276,7 +280,11 @@ class CitationRepository private constructor(
         when (entity.sourceType) {
             SourceType.ROYAL_ROAD.name ->
                 entity.sourceId?.toLongOrNull()?.let { royalRoad.forget(it) }
-            SourceType.PDF.name -> files.deleteOwned(bookKey, "pdf")
+            SourceType.PDF.name -> {
+                files.deleteOwned(bookKey, "pdf")
+                // Drops the reflowed text track with it (absent when the PDF was never reflowed).
+                db.chapterDao().deleteForBook(bookKey)
+            }
             // AO3 is an owned EPUB snapshot — its raw file + inline chapters are removed like an EPUB.
             SourceType.EPUB.name, SourceType.AO3.name -> {
                 files.deleteOwned(bookKey, "epub")
@@ -340,6 +348,68 @@ class CitationRepository private constructor(
     /** The owned PDF file for [bookKey], for the paged reader to render. */
     fun pdfSession(bookKey: String): PdfSession =
         PdfSession(bookKey, java.io.File(files.sovereignDir, "$bookKey.pdf"))
+
+    // --- PDF reflow (the second track over the same file) ---------------------------------------
+
+    /**
+     * Pulls the text layer out of an owned PDF, one page at a time. Implemented in the Android layer
+     * (PDFBox); a seam rather than a direct call so the repository stays testable without a device
+     * and so a different extractor can be dropped in later.
+     */
+    fun interface PdfTextSource {
+        suspend fun pages(file: java.io.File): List<String>
+
+        companion object {
+            /** No extractor wired: every PDF stays paged-only. */
+            val NONE = PdfTextSource { emptyList() }
+        }
+    }
+
+    /** What [reflowPdf] managed to do — the three outcomes the UI has to say something about. */
+    sealed interface ReflowResult {
+        /** The PDF now has a flowing track of [chapters] chapters over [pages] pages. */
+        data class Reflowed(val chapters: Int, val pages: Int) : ReflowResult
+        /** A scan (or an image-only PDF): no text layer to reflow, so it stays paged-only. */
+        data object NoTextLayer : ReflowResult
+        /** The file couldn't be read at all (missing, corrupt, or no extractor wired). */
+        data object Unreadable : ReflowResult
+    }
+
+    /**
+     * Build the **reflowed text track** for an imported PDF: extract its pages, reflow them into the
+     * format-blind [Book] the flowing reader already renders, and store the chapters inline against
+     * the existing book record.
+     *
+     * The PDF file itself is untouched and the paged track stays available — this *adds* a way to
+     * read the same book, it doesn't convert it. That matters because reflow is lossy (columns,
+     * tables, equations), so the rendered page remains the ground truth you can always fall back to.
+     * Re-running it replaces the stored chapters, so a bad reflow can simply be rebuilt.
+     *
+     * Notes already captured are unaffected: they are anchored by page + quote, not by chapter.
+     */
+    suspend fun reflowPdf(bookKey: String, now: Long = System.currentTimeMillis()): ReflowResult {
+        val entity = db.bookDao().get(bookKey) ?: return ReflowResult.Unreadable
+        if (entity.sourceType != SourceType.PDF.name) return ReflowResult.Unreadable
+        val file = java.io.File(files.sovereignDir, "$bookKey.pdf")
+        if (!file.exists()) return ReflowResult.Unreadable
+
+        val pages = pdfText.pages(file)
+        if (pages.isEmpty()) return ReflowResult.Unreadable
+        val book = PdfFlow.build(pages, entity.title, entity.author)
+            ?: return ReflowResult.NoTextLayer
+
+        // Replace any earlier reflow wholesale — chapter ordinals are positional, so a rebuild with
+        // fewer chapters must not leave the tail of the old one behind.
+        db.chapterDao().deleteForBook(bookKey)
+        db.chapterDao().upsertAll(
+            book.chapters.map { CitationMappers.chapterToEntity(bookKey, it, storeInline = true, now = now) }
+        )
+        return ReflowResult.Reflowed(chapters = book.chapters.size, pages = pages.size)
+    }
+
+    /** Whether [bookKey] already has a reflowed text track stored (so the reader can offer it). */
+    suspend fun hasPdfFlow(bookKey: String): Boolean =
+        db.chapterDao().cachedOrdinals(bookKey).isNotEmpty()
 
     /**
      * Capture a note on a PDF page. Anchored with a [TextAnchor.Pdf] (page + quads + quote); when the
@@ -645,15 +715,7 @@ class CitationRepository private constructor(
     ): Note {
         val chapter = book.chapterAt(chapterOrdinal) ?: error("no chapter $chapterOrdinal")
         val descriptor = descriptorFor(book)
-        val highlight = Highlight.captureFlowing(
-            key = keys.next(EntityType.HIGHLIGHT),
-            source = descriptor,
-            chapterText = chapter.text,
-            chapterOrdinal = chapterOrdinal,
-            selectionStart = selectionStart,
-            selectionEnd = selectionEnd,
-            createdAt = now
-        )
+        val highlight = highlightFor(book, chapter, chapterOrdinal, selectionStart, selectionEnd, descriptor, now)
         val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now)
 
         val versioned = mailbox.post(NotePacket.of(note))
@@ -664,6 +726,50 @@ class CitationRepository private constructor(
         checkpointKey(EntityType.NOTE)
         persistSyncState()
         return note
+    }
+
+    /**
+     * Build the highlight for a flowing-text selection, typed by what the book actually *is*.
+     *
+     * Every source but one anchors by chapter ordinal + quote. A **reflowed PDF** is the exception:
+     * its chapters are a derived view of a fixed-page document, so the durable citation is the
+     * *page*, not the chapter — and the page is what lets the note jump back to the paged reader, or
+     * survive a rebuilt reflow that chunks the pages differently. So a selection made in the flowing
+     * reader over a reflowed PDF still produces the [TextAnchor.Pdf] the PDF track already uses
+     * (with no glyph quads — the selection came from text, not from rectangles on a bitmap), which
+     * keeps one anchor type per source and leaves the sync contract untouched.
+     */
+    private fun highlightFor(
+        book: Book,
+        chapter: Chapter,
+        chapterOrdinal: Int,
+        selectionStart: Int,
+        selectionEnd: Int,
+        descriptor: SourceDescriptor,
+        now: Long
+    ): Highlight {
+        if (book.metadata.source != SourceType.PDF || !PdfFlow.isFlowRef(chapter.sourceRef)) {
+            return Highlight.captureFlowing(
+                key = keys.next(EntityType.HIGHLIGHT),
+                source = descriptor,
+                chapterText = chapter.text,
+                chapterOrdinal = chapterOrdinal,
+                selectionStart = selectionStart,
+                selectionEnd = selectionEnd,
+                createdAt = now
+            )
+        }
+        val start = selectionStart.coerceIn(0, chapter.text.length)
+        val end = selectionEnd.coerceIn(start, chapter.text.length)
+        val quote = chapter.text.substring(start, end)
+        val page = PdfFlow.pageOf(chapter, start) ?: 0
+        return Highlight(
+            key = keys.next(EntityType.HIGHLIGHT),
+            source = descriptor,
+            quotedSnapshot = quote,
+            anchor = com.citation.core.pdf.PdfTrack.anchor(page, quote, emptyList()),
+            createdAt = now
+        )
     }
 
     /**
@@ -1092,7 +1198,8 @@ class CitationRepository private constructor(
         suspend fun create(
             db: CitationDatabase,
             files: FileStores,
-            oreillyAccess: OreillyAccess
+            oreillyAccess: OreillyAccess,
+            pdfText: PdfTextSource = PdfTextSource.NONE
         ): CitationRepository {
             val watermarks = db.syncStateDao().watermarks().associate { it.type to it.highWater }
             val keys = KeyAllocator(seed = watermarks)
@@ -1107,7 +1214,7 @@ class CitationRepository private constructor(
             }
             mailbox.seedOutbox(pending)
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad, Ao3Client(), oreillyAccess).also { repo ->
+            return CitationRepository(db, files, keys, mailbox, royalRoad, Ao3Client(), oreillyAccess, pdfText).also { repo ->
                 // Write the reseeded backlog to the file-drop now so LifeOps can pick it up without
                 // waiting for the next capture or the periodic worker.
                 if (pending.isNotEmpty()) repo.flushOutbox()

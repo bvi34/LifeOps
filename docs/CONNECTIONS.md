@@ -95,7 +95,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 
 | Resource | Actions | Service | Notes |
 |---|---|---|---|
-| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. |
+| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). |
 | `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
 | `project` | `create`, `update`, `complete`, `reopen` | `ProjectService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |

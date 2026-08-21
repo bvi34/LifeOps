@@ -38,7 +38,8 @@ change.
 A question flows through these stages, in order:
 
 ```
-                    ┌── write command? ─→ apply writes (profiles + memory) → confirm ──┐
+                    ┌── task command? ──→ create it in the owning app → confirm ───────┐
+                    │── write command? ─→ apply writes (profiles + memory) → confirm ──┤
                     │── function match? ─→ run capability (count / tally / lookup) ────┤
                     │                                                                   │
 permissions → load corpus → retrieve → recall → logic engine → augment → generate → apply writes
@@ -48,7 +49,19 @@ permissions → load corpus → retrieve → recall → logic engine → augment
                                     └──── @remember(<profile>) / @memorize directives ──────┘
 ```
 
-0. **Write commands** (`logic/WriteIntent`, in the repository, *before* the gate). An explicit
+0. **Task commands** (`logic/TaskIntent`, `logic/TaskWriter`, in the repository, *first*). "Add a task
+   to Life Ops called X" is an instruction to change **another app**, and the one thing that must never
+   be improvised: the model cannot write to LifeOps, so left to itself it simply *says* it added the
+   task (and, being told it may write to memory, leaves a `@memorize` note behind as the only trace).
+   `TaskIntent` parses the command — the act (add/create/make/…), the noun (task/to-do), the title
+   ("titled X", `"X"`, `task: X`, or the words trailing the noun), the target the user named ("to life
+   ops"), and any stated priority — and the repository performs it through `TaskWriter`, then confirms
+   **from the returned result**: created (and where), skipped as a same-week duplicate, or not written
+   and why. It is as conservative as `WriteIntent`: a question about tasks ("what tasks did I add?") is
+   never a command, though a polite request ("can you add a task…?") is one; and a command with no
+   title asks for the title rather than inventing one. See *Writing back* below for the write side.
+
+0a. **Write commands** (`logic/WriteIntent`, in the repository, *before* the gate). An explicit
    instruction to persist — "remember that …", "add to LLM persona that …", "save … to memory" — is a
    command, not a question, so it's performed directly and confirmed, bypassing retrieval and the C3A
    gate that would otherwise ask for clarification about a fact it has no grounding for. This is what
@@ -56,7 +69,7 @@ permissions → load corpus → retrieve → recall → logic engine → augment
    model to emit a directive. `WriteIntent` is deliberately conservative — it ignores anything phrased
    as a question — so ordinary recall ("do you remember what I said?") falls through untouched.
 
-0a. **Small talk** (`logic/SmallTalk`, in the repository, right after write commands). A purely
+0b. **Small talk** (`logic/SmallTalk`, in the repository, right after write commands). A purely
    conversational or meta turn — "hi", "thanks", "bye", "ok", "what can you do?", "who are you?" — is
    not a data question, so it would otherwise dead-end in the C3A gate's *"I don't have anything…"* or
    the placeholder's *"I couldn't find anything…"*. Instead `SmallTalk` recognises greetings, thanks,
@@ -69,7 +82,7 @@ permissions → load corpus → retrieve → recall → logic engine → augment
    meta phrase), so a grounded question — even one that opens with "hi, …" — carries real content and
    falls straight through to the pipeline. Pure and JVM-tested (`SmallTalkTest`).
 
-0b. **Function dispatch** (`logic/FunctionRouter`, `logic/AdvisorFunction`, in the repository, after the
+0c. **Function dispatch** (`logic/FunctionRouter`, `logic/AdvisorFunction`, in the repository, after the
    corpus is loaded but before retrieval). Some questions are **computations**, not lookups — "how many
    times have I said X", "count my word usage in my tasks" — and extractive RAG can only *surface* rows,
    so it answers them badly (it matched "count" to the word "Count" in pantry labels). The router hands
@@ -244,7 +257,8 @@ answers only when C3A says `ANSWER`.
 ## Knowledge sources — reading across the suite
 
 The corpus is assembled live at query time from the other apps' own databases, via a `KnowledgeSource`
-per app (`data/source/`). Each reads its app's rows (read-only — Advisor never writes) and flattens
+per app (`data/source/`). Each reads its app's rows (read-only — the sources never write; the single
+write path is *Writing back*, below) and flattens
 them into `KnowledgeDocument`s with a traceable id (`"<app>:<kind>:<rowId>"`). This mirrors how
 Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 
@@ -256,6 +270,32 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 
 Because the corpus is read fresh each time and never cached in Advisor's own store, revoking an app
 takes effect on the very next question — there is no stale copy to leak.
+
+---
+
+## Writing back — the one thing Advisor changes
+
+Advisor writes into exactly one place outside its own stores: a **task the user explicitly asked it to
+create**. `logic/TaskWriter` is the seam (framework-free, so the pipeline stays JVM-testable) and
+`data/action/LifeOpsTaskWriter` implements it for LifeOps.
+
+It does not touch LifeOps' tables. It resolves the target the user named — against active projects
+first, then aspects, then categories, matching on the name ignoring case, spacing and punctuation, and
+resolving an ambiguous partial match to *nothing* rather than guessing — and then calls LifeOps' own
+`/v1/LifeOps/local/task/create` connection route (see `docs/CONNECTIONS.md`). So the task is created by
+the same code path LifeOps' own UI uses, with the same policy: current-week resolution, same-week
+duplicate-title protection, resource-value scoring, queued-vs-pending placement and reminder
+scheduling. A name that matched nothing is reported in the reply, not silently dropped — and when the
+name looks like it was part of the title all along ("… to the website"), the title the user typed is
+kept instead.
+
+The permission gate covers writing exactly as it covers reading: an app the user has not granted is not
+written to, and the reply says so. The Permissions screen states this on the LifeOps card.
+
+The model is told, in the system prompt, that it cannot create, change or delete anything in the other
+apps and must never claim it did — a task command is carried out before the model is ever asked, so a
+creation request that reaches it is one that wasn't understood, and the honest reply is to ask for it
+plainly.
 
 ---
 
@@ -421,6 +461,9 @@ vectors are simply never consulted — revocation stays instant.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
 - `ProfileDirectivesTest` — `@remember` parsing, key slugging, and directive stripping.
 - `MemoryDirectivesTest` — `@memorize` parsing, `#tag` extraction (lower-cased/de-duped), and stripping.
+- `TaskIntentTest` — "add a task to life ops titled X" → a task command with title, target and
+  priority; week scope trimmed off the title; questions about tasks, and the profile/memory write
+  commands, left to their own paths; a nameless command asking for the title.
 - `WriteIntentTest` — command detection: "add to <profile> …" → profile write, "remember that … #tag"
   → memory write, question phrasings and ordinary sentences left as normal Q&A.
 - `IdentityJsonTest` / `ProfileJsonTest` — the identity and profile JSON round-trips.

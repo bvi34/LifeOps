@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -51,8 +52,8 @@ private val navItems = listOf(Dest.Pantry, Dest.Grocery, Dest.Meal, Dest.History
 
 /**
  * Logistics' single entry point. A tabbed shell — Pantry, Grocery list, Log meal, History, Recipes,
- * Import — over the one [LogisticsApp] runtime. It also accepts a Walmart PDF opened/shared from
- * another app (→ Import) and a shared recipe link or order text (→ Recipes / Import).
+ * Import — over the one [LogisticsApp] runtime. It also accepts a Walmart PDF shared from another
+ * app (→ Import) and a shared recipe link or order text (→ Recipes / Import).
  */
 class MainActivity : ComponentActivity() {
 
@@ -60,15 +61,22 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = LogisticsApp.get(this)
 
-        // Interpret how we were opened.
-        val viewPdf: Uri? = if (intent?.action == Intent.ACTION_VIEW && intent.type == "application/pdf") intent.data else null
+        // Interpret how we were opened. A Walmart order PDF arrives by *sharing* it to Logistics;
+        // plainly opening a PDF goes to Citation, which owns reading. An explicit ACTION_VIEW is
+        // still honoured for anything that routes one here directly.
+        val importPdfUri: Uri? = when {
+            intent?.action == Intent.ACTION_SEND && intent.type == "application/pdf" ->
+                IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+            intent?.action == Intent.ACTION_VIEW && intent.type == "application/pdf" -> intent.data
+            else -> null
+        }
         val sharedText: String? = intent
             ?.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
             ?.getStringExtra(Intent.EXTRA_TEXT)
         val sharedUrl = sharedText?.takeIf { it.trim().startsWith("http", ignoreCase = true) }
         val orderText = sharedText?.takeUnless { it.trim().startsWith("http", ignoreCase = true) }
         val startRoute = when {
-            viewPdf != null || orderText != null -> Dest.Import.route
+            importPdfUri != null || orderText != null -> Dest.Import.route
             sharedUrl != null -> Dest.Recipes.route
             else -> Dest.Pantry.route
         }
@@ -115,7 +123,7 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Dest.Import.route) {
                             val vm: ImportViewModel = viewModel(factory = ImportViewModel.Factory(app.pantryRepository))
-                            ImportScreen(vm, initialPdf = viewPdf, initialText = orderText)
+                            ImportScreen(vm, initialPdf = importPdfUri, initialText = orderText)
                         }
                         composable(Dest.Meal.route) {
                             val vm: LogMealViewModel = viewModel(factory = LogMealViewModel.Factory(app.pantryRepository, app.catalog))

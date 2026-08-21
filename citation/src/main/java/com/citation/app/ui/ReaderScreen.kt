@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,6 +86,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
 import com.citation.core.model.Book
+import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
@@ -210,6 +212,13 @@ private fun FlowingReader(vm: ReaderViewModel) {
                     if (vm.isRoyalRoadOpen) {
                         IconButton(onClick = { vm.favoriteRoyalRoad() }) {
                             Icon(Icons.Default.Star, contentDescription = "Favourite (full backfill)")
+                        }
+                    }
+                    // A reflowed PDF is a derived view: the rendered page is always one tap away, for
+                    // the figure or table the reflow flattened. It opens on the page you're reading.
+                    if (book.metadata.source == SourceType.PDF) {
+                        IconButton(onClick = { vm.readPdfAsPages(hintProvider.value()) }) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = "Show the page")
                         }
                     }
                     IconButton(onClick = {
