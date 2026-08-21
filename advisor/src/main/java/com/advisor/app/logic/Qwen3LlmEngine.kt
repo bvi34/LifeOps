@@ -29,6 +29,8 @@ class Qwen3LlmEngine(
     override fun generate(prompt: AdvisorPrompt, onPartial: (String) -> Unit): String =
         run(prompt, onPartial)
 
+    override fun warmUp() = backend.warmUp()
+
     private fun run(prompt: AdvisorPrompt, onPartial: ((String) -> Unit)?): String {
         if (!backend.isReady) return fallback.generate(prompt)
         val formatted = Qwen3ChatFormat.forPrompt(prompt)

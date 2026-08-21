@@ -45,6 +45,20 @@ interface LlmBackend {
     fun generate(prompt: String, params: GenerationParams, onToken: (String) -> Unit): String =
         generate(prompt, params)
 
+    /**
+     * Load the model now, if it isn't already, so the first question doesn't pay for it.
+     *
+     * Loading a multi-gigabyte GGUF is tens of seconds of I/O and page allocation, and it happened
+     * inside the first `generate` — landing entirely on the first question the user asked, on top of
+     * that question's own retrieval and inference. Doing it when the assistant is opened instead moves
+     * that cost to a moment when nobody is waiting on an answer.
+     *
+     * Blocking, and safe to call repeatedly: a backend that is already loaded returns immediately, and
+     * a concurrent question simply waits for the same load rather than starting a second one. The
+     * default does nothing, which is right for a backend with nothing to load.
+     */
+    fun warmUp() {}
+
     /** Release native resources. Safe to call more than once. */
     fun close() {}
 

@@ -53,6 +53,12 @@ interface LocalLlmEngine {
      * watching it arrive would be pointless.
      */
     fun generate(prompt: AdvisorPrompt, onPartial: (String) -> Unit): String = generate(prompt)
+
+    /**
+     * Get whatever this engine needs in memory ready ahead of the first question. Blocking; the
+     * default does nothing, which is right for an engine that has nothing to load.
+     */
+    fun warmUp() {}
 }
 
 /**

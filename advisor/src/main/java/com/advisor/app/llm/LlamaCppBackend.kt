@@ -50,6 +50,10 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         onToken: (String) -> Unit
     ): String = run(prompt, params, TokenSink(onToken))
 
+    override fun warmUp() {
+        if (!ensureLoaded()) Log.i(TAG, "Warm-up: no model to load; staying on the placeholder.")
+    }
+
     private fun run(prompt: String, params: GenerationParams, sink: TokenSink?): String {
         if (!ensureLoaded()) return ""
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")

@@ -13,7 +13,12 @@ class Qwen3LlmEngineTest {
         private val reply: (String) -> String = { "" }
     ) : LlmBackend {
         var lastPrompt: String? = null
+        var warmedUp = false
         override val detail = "fake"
+
+        override fun warmUp() {
+            warmedUp = true
+        }
         override fun generate(prompt: String, params: GenerationParams): String {
             lastPrompt = prompt
             return reply(prompt)
@@ -127,5 +132,12 @@ class Qwen3LlmEngineTest {
 
         assertEquals(PlaceholderLlmEngine().generate(grounded()), answer)
         assertTrue(seen.all { it.isEmpty() })
+    }
+
+    @Test
+    fun warm_up_reaches_the_backend_so_the_first_question_does_not_pay_to_load() {
+        val backend = FakeBackend(isReady = true)
+        Qwen3LlmEngine(backend).warmUp()
+        assertTrue(backend.warmedUp)
     }
 }

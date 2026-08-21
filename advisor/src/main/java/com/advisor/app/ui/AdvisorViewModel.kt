@@ -204,6 +204,14 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
         repo.setPermission(app, granted)
     }
 
+    init {
+        // Opening the assistant is the signal that a question is coming, so start loading the weights
+        // now: it is tens of seconds of I/O that otherwise lands on the first question, on top of that
+        // question's own work. Fire-and-forget — nothing waits on it, and a question asked while it is
+        // still loading simply joins the same load.
+        viewModelScope.launch { repo.warmUpModel() }
+    }
+
     fun ask(question: String) {
         val q = question.trim()
         if (q.isEmpty() || _thinking.value) return

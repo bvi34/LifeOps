@@ -411,6 +411,13 @@ class AdvisorRepository(
         return AdvisorAnswer(text, groundChunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
     }
 
+    /**
+     * Load the model ahead of the first question, so opening the assistant pays for it rather than the
+     * first thing the user asks. Off the main thread — this reads gigabytes — and safe to call more
+     * than once; a question asked mid-load waits for the same load rather than starting another.
+     */
+    suspend fun warmUpModel() = withContext(Dispatchers.Default) { engine.warmUp() }
+
     /** Build the grounded prompt and run it through the engine, streaming when a caller is watching. */
     private fun generate(
         question: String,
