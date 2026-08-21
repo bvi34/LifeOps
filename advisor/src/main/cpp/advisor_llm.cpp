@@ -65,6 +65,114 @@ constexpr long long GENERATE_DEADLINE_MS = 180000;
 // prompts (the ChatML preamble alone is a handful of tokens) and save nothing worth the bookkeeping.
 constexpr int MIN_PREFIX_REUSE = 32;
 
+// The set of CPUs worth running inference on. A phone's cores are not interchangeable: on this class
+// of SoC (a Snapdragon 8+ Gen 1, say) four Cortex-A510s sit alongside three A710s and an X2 running
+// at nearly twice the clock with several times the vector throughput. ggml synchronizes its worker
+// threads at a barrier after every graph node, so the *slowest* worker sets the pace of every matmul
+// — one thread scheduled onto a little core throttles the entire forward pass, and nothing in a
+// wall-clock number says that is what happened.
+//
+// Nothing arranges this on its own: asking for n_threads says how many workers to run, never where,
+// so left alone the kernel is free to spread them across both clusters.
+struct BigCores {
+    cpu_set_t mask{};
+    int       count = 0;
+};
+
+// A human-readable "0,1,2,3" for a CPU mask.
+std::string cpu_list(const cpu_set_t& mask) {
+    std::string out;
+    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (!CPU_ISSET(cpu, &mask)) continue;
+        if (!out.empty()) out += ",";
+        out += std::to_string(cpu);
+    }
+    return out.empty() ? "none" : out;
+}
+
+// The policy half of pick_big_cores: given each core's clock ceiling in kHz (0 where it could not be
+// read), which cores belong to the fastest cluster(s) — anything within 80% of the top clock. That
+// captures the usual big+mid+little split (an X2 at 3.2 GHz and A710s at 2.75 GHz are both "big";
+// A510s at 1.8 GHz are not) without hard-coding a CPU numbering that differs per SoC.
+//
+// Returns an empty set — meaning "no opinion, leave affinity alone" — in the two cases where pinning
+// would be wrong rather than merely unhelpful: nothing readable to go on, and a homogeneous CPU, where
+// there is no little cluster to stay off and pinning only takes away the scheduler's freedom to move
+// work off a hot core. Kept pure and separate so it can be exercised against real topologies on the
+// host (see hosttest/cpu_topology_test.cpp) rather than only on a phone.
+BigCores select_big_cores(const std::vector<long long>& khz) {
+    BigCores out;
+    CPU_ZERO(&out.mask);
+
+    const size_t n_cpu = khz.size();
+    if (n_cpu <= 1 || n_cpu > (size_t) CPU_SETSIZE) return out;
+
+    long long top = 0;
+    for (long long value : khz) top = std::max(top, value);
+    if (top <= 0) return out;
+
+    const long long cutoff = top / 10 * 8;
+    for (size_t cpu = 0; cpu < n_cpu; cpu++) {
+        if (khz[cpu] < cutoff) continue;
+        CPU_SET((int) cpu, &out.mask);
+        out.count++;
+    }
+    if (out.count >= (int) n_cpu) {
+        CPU_ZERO(&out.mask);
+        out.count = 0;
+    }
+    return out;
+}
+
+// Read every core's clock ceiling out of cpufreq and hand it to the policy above. A core whose
+// cpufreq node is missing reads 0; if *none* of them are readable (some devices restrict the node)
+// the policy sees nothing to go on and declines to pin, which is the intended fallback.
+BigCores pick_big_cores() {
+    const long n_cpu = sysconf(_SC_NPROCESSORS_CONF);
+    if (n_cpu <= 1 || n_cpu > CPU_SETSIZE) return BigCores{};
+
+    std::vector<long long> khz((size_t) n_cpu, 0);
+    for (long cpu = 0; cpu < n_cpu; cpu++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%ld/cpufreq/cpuinfo_max_freq", cpu);
+        FILE* f = fopen(path, "re");
+        if (f == nullptr) continue;
+        long long value = 0;
+        if (fscanf(f, "%lld", &value) == 1 && value > 0) khz[(size_t) cpu] = value;
+        fclose(f);
+    }
+    return select_big_cores(khz);
+}
+
+// Pins the calling thread to [cores] for a scope, restoring the mask it had on the way out.
+// Both entry points run on a *shared* thread — a Kotlin coroutine dispatcher's — which must not keep
+// the pinning after the call returns. The ggml workers created inside the scope inherit the mask and
+// keep it, which is the entire point: that is how the compute threads end up on the big cores.
+class BigCoreScope {
+public:
+    explicit BigCoreScope(const BigCores& cores) {
+        if (cores.count <= 0) return;
+        if (sched_getaffinity(0, sizeof(cpu_set_t), &previous_) != 0) return;
+        if (sched_setaffinity(0, sizeof(cpu_set_t), &cores.mask) != 0) {
+            LOGW("could not pin the inference thread to CPUs [%s] (errno %d); leaving affinity alone",
+                 cpu_list(cores.mask).c_str(), errno);
+            return;
+        }
+        restore_ = true;
+    }
+
+    ~BigCoreScope() {
+        if (restore_) sched_setaffinity(0, sizeof(cpu_set_t), &previous_);
+    }
+
+    BigCoreScope(const BigCoreScope&) = delete;
+    BigCoreScope& operator=(const BigCoreScope&) = delete;
+
+private:
+    cpu_set_t previous_{};
+    bool      restore_ = false;
+};
+
 struct AdvisorLlm {
     llama_model*       model = nullptr;
     llama_context*     ctx   = nullptr;
@@ -77,6 +185,8 @@ struct AdvisorLlm {
     // also sits in the cache but is never part of the next prompt, so it always falls after the shared
     // prefix and is dropped with everything else beyond it. Empty means "cache holds nothing usable".
     std::vector<llama_token> cached_prompt;
+    // The CPUs the compute threads belong on, decided once at load (see pick_big_cores).
+    BigCores big_cores;
 };
 
 // How many leading tokens two prompts share.
@@ -163,15 +273,7 @@ void log_thread_scheduling(const char* label) {
     std::string cpus = "?";
     cpu_set_t set;
     CPU_ZERO(&set);
-    if (sched_getaffinity(tid, sizeof(set), &set) == 0) {
-        cpus.clear();
-        for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-            if (!CPU_ISSET(cpu, &set)) continue;
-            if (!cpus.empty()) cpus += ",";
-            cpus += std::to_string(cpu);
-        }
-        if (cpus.empty()) cpus = "none";
-    }
+    if (sched_getaffinity(tid, sizeof(set), &set) == 0) cpus = cpu_list(set);
 
     // e.g. "4:cpuset:/background" — the line that says the thread was demoted to the little cores.
     std::string cpuset = "?";
@@ -285,13 +387,49 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     // n_batch must cover a full-context prompt in one llama_decode (see the SIGABRT fixed earlier);
     // n_ubatch stays at the default 512 so a typical prompt is a *single* pass over the weights.
     cp.n_batch = cp.n_ctx;
-    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
-    unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
+
+    // Run on the big cluster, and size the thread count from it. `hardware_concurrency() / 2` was a
+    // stand-in for "the fast half of the cores" that happens to be right on an 8-core 4+4 phone and
+    // wrong everywhere else; ask the device instead. When the topology says nothing useful
+    // (pick_big_cores returns empty) fall back to exactly the old number, so no device gets worse.
+    const BigCores big = pick_big_cores();
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int threads = big.count > 0 ? big.count : (hw > 1 ? static_cast<int>(hw / 2) : 1);
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
+    // Prefill is compute-bound and decode is memory-bandwidth-bound, but both are barrier-synchronized
+    // across the same worker set, so they want the same answer here: every thread on a fast core, none
+    // on a slow one. Pin for the whole of context creation — whichever thread first runs a graph is
+    // the one whose affinity ggml's workers inherit.
+    BigCoreScope pinned(big);
+
+    // Flash attention + a Q8_0 KV cache. FA was switched off while chasing a prefill stall (the cause
+    // turned out to be unoptimized ggml and chunked prefill, both since fixed) and never switched back
+    // on; it is also the precondition for quantizing the V cache. At n_ctx=2048 Qwen3-4B's cache is
+    // 2 * 36 layers * 8 KV heads * 128 dims * 2 bytes = 144 KiB/token = 288 MiB at f16, and roughly
+    // half that at Q8_0. That memory is anonymous and non-evictable, so halving it hands ~140 MiB back
+    // to the thing that actually decides inference speed on a phone: whether the 2.3 GiB of weights
+    // stay resident. Q8_0 is near-lossless for a KV cache — far less lossy than the Q4_K_M weights it
+    // sits beside.
+    //
+    // llama.cpp refuses a quantized V cache without FA, and FA itself can be unavailable on a given
+    // backend build (the Vulkan path especially), in which case llama_init_from_model returns null. So
+    // ask for the fast pair, and on failure fall back to exactly the previous configuration rather
+    // than leaving the model unloadable.
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    cp.type_k = GGML_TYPE_Q8_0;
+    cp.type_v = GGML_TYPE_Q8_0;
+
     llama_context* ctx = llama_init_from_model(model, cp);
+    bool quantized_kv = ctx != nullptr;
+    if (ctx == nullptr) {
+        LOGW("flash attention + Q8_0 KV cache unavailable on this build; retrying with f16 KV");
+        cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+        cp.type_k = GGML_TYPE_F16;
+        cp.type_v = GGML_TYPE_F16;
+        ctx = llama_init_from_model(model, cp);
+    }
     if (ctx == nullptr) {
         LOGW("llama_init_from_model returned null");
         llama_model_free(model);
@@ -302,9 +440,18 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     h->model = model;
     h->ctx   = ctx;
     h->vocab = llama_model_get_vocab(model);
+    h->big_cores = big;
     llama_set_abort_callback(ctx, advisor_abort_cb, h);
-    LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=disabled",
-         (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers);
+    LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=%s kv=%s",
+         (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers,
+         llama_flash_attn_type_name(cp.flash_attn_type), quantized_kv ? "q8_0" : "f16");
+    // Which cores the workers were put on, and why that number of threads. An `affinity` that spans
+    // the little cores here means pick_big_cores found nothing to go on and the scheduler is free to
+    // place a worker on a core that will hold every other worker at the barrier.
+    LOGI("inference cpus: %s (%d of %ld online) — %s",
+         big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned",
+         threads, sysconf(_SC_NPROCESSORS_ONLN),
+         big.count > 0 ? "pinned to the fastest cluster" : "topology unreadable or homogeneous");
     // The single most useful line in this log: it names the ISA extensions ggml was actually compiled
     // with. `dotprod = 1` / `matmul_int8 = 1` mean the fast Q4_K and GEMM kernels are in; zeros mean the
     // build fell back to baseline armv8-a and prefill will be several times slower than it should be
@@ -329,6 +476,10 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         LOGW("nativeGenerate called with no loaded model (handle/ctx null)");
         return env->NewStringUTF("");
     }
+    // Pinned for the duration of the call: ggml may create its workers on the first decode rather
+    // than at context creation, and they inherit the mask of whoever gets there first.
+    BigCoreScope pinned(h->big_cores);
+
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
     log_thread_scheduling("nativeGenerate thread");
 
@@ -516,6 +667,7 @@ struct AdvisorEmbed {
     llama_context*     ctx    = nullptr;
     const llama_vocab* vocab  = nullptr;
     int                n_embd = 0;
+    BigCores           big_cores;
 };
 
 } // namespace
@@ -549,11 +701,16 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     cp.n_ctx        = 2048;
     cp.n_batch      = 2048;
     cp.n_ubatch     = 2048;
-    unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
+    // Same reasoning as the generation context: the big cluster, sized from the device rather than
+    // from a guess at what half the cores means. Embedding a corpus is a long barrier-synchronized
+    // batch job, so a worker on a little core costs here exactly as it does in prefill.
+    const BigCores big = pick_big_cores();
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int threads = big.count > 0 ? big.count : (hw > 1 ? static_cast<int>(hw / 2) : 1);
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
+    BigCoreScope pinned(big);
     llama_context* ctx = llama_init_from_model(model, cp);
     if (ctx == nullptr) {
         LOGW("embedding: llama_init_from_model returned null");
@@ -561,8 +718,9 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
         return 0;
     }
 
-    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model)};
-    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d", h->n_embd, threads);
+    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model), big};
+    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d cpus=%s", h->n_embd, threads,
+         big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned");
     return reinterpret_cast<jlong>(h);
 }
 
@@ -578,6 +736,8 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
 
     auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
     if (h == nullptr || h->ctx == nullptr) return env->NewFloatArray(0);
+
+    BigCoreScope pinned(h->big_cores);
 
     const char* text = env->GetStringUTFChars(jtext, nullptr);
     std::string input(text ? text : "");

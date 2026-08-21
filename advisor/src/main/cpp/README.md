@@ -45,6 +45,51 @@ adb logcat -s advisor-llm | grep 'ggml build'
 `dotprod = 1` and `matmul_int8 = 1` mean the fast kernels are in. Zeros mean the build fell back to the
 baseline and prefill will crawl.
 
+### CPU affinity — which cores the workers run on
+
+ggml synchronizes its worker threads at a barrier after **every graph node**, so the slowest worker
+sets the pace of every matmul. On a big.LITTLE phone that makes core placement a first-order
+performance decision: one worker scheduled onto a Cortex-A510 holds the other three at the barrier for
+the whole forward pass. Asking for `n_threads` says how many workers to run, not *where*, so left
+alone the kernel is free to spread them across both clusters.
+
+`nativeLoad` therefore reads each core's ceiling from
+`/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq`, keeps everything within 80% of the top clock,
+and pins to that set — on a Snapdragon 8+ Gen 1 that is the three A710s plus the X2, and the four
+A510s are excluded. The thread count comes from the same set, replacing a `hardware_concurrency() / 2`
+that only happened to be right on an 8-core 4+4 phone. The pin is applied again around
+`nativeGenerate`, because ggml may create its workers on the first decode rather than at context
+creation, and they inherit the mask of whichever thread gets there first. It is scoped: the shared
+Kotlin dispatcher thread that made the call gets its original mask back, while the ggml workers keep
+theirs.
+
+Two topologies deliberately get **no** pinning — a homogeneous CPU (no little cluster to stay off, so
+pinning only stops the scheduler moving work off a hot core) and one whose cpufreq nodes can't be read
+(nothing to go on). Both fall back to the previous thread count, so no device gets worse. What actually
+happened is in the log:
+
+```
+inference cpus: 4,5,6,7 (4 of 8 online) — pinned to the fastest cluster
+```
+
+### KV cache: flash attention and Q8_0
+
+`nativeLoad` asks for flash attention with a **Q8_0** K and V cache. At `n_ctx = 2048` Qwen3-4B's cache
+is `2 x 36 layers x 8 KV heads x 128 dims x 2 bytes` = 144 KiB/token = **288 MiB** at f16, and roughly
+half that at Q8_0. That memory is anonymous and non-evictable, so halving it hands ~140 MiB back to the
+question that actually decides inference speed on a phone — whether the 2.3 GiB of weights stay
+resident. Q8_0 is near-lossless for a cache sitting beside Q4_K_M weights.
+
+Flash attention had been switched off while chasing a prefill stall whose real causes (unoptimized ggml
+and chunked prefill) are both fixed; it is also the precondition for quantizing the V cache, which
+llama.cpp refuses without it. Since FA can be unavailable on a given backend build — the Vulkan path
+especially — a failed context creation retries with `AUTO` + f16 rather than leaving the model
+unloadable. The load line reports which one you got:
+
+```
+Loaded Qwen3-4B GGUF; ctx=2048 ... flash_attn=enabled kv=q8_0
+```
+
 ### Weight loading (`advisor.mmap`)
 
 By default the GGUF is **read into anonymous memory**, not mmap'd. mmap'd weights are file-backed, so
@@ -102,9 +147,9 @@ nativeGenerate thread: tid=26858 nice=0 policy=0 affinity=[0,1,2,3,4,5,6,7] onli
 
 On Android a thread's cpuset follows its priority, and a background-classified thread can be pinned to
 the little cores with a small share of them — throttling inference by a large factor while the compiled
-kernels and the memory system are both blameless. An `affinity` covering only the little cores, a
-`cpuset` of `/background`, or a `nice` of 10 is that fault; the fix is on the Kotlin side (which
-dispatcher/priority the call runs on), not in this file. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
+kernels and the memory system are both blameless. A `cpuset` of `/background` or a `nice` of 10 is that
+fault, and the fix for it is on the Kotlin side (which dispatcher/priority the call runs on), not in
+this file. The `affinity` list, by contrast, is now chosen here — see below. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
 ggml's abort callback, so a pathological run fails with a logged message and falls back to the
 placeholder engine instead of pinning the caller forever.
 
@@ -141,6 +186,24 @@ The CMake build produces `libadvisor-llm.so` alongside its llama.cpp dependencie
 the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 26), so the Kotlin side
 only needs `System.loadLibrary("advisor-llm")`. This build has been verified for `arm64-v8a` against
 the pinned tag with the NDK's CMake toolchain.
+
+## Checking a change without a device
+
+`hosttest/run.sh` verifies this file with no NDK, no Android SDK and no phone:
+
+```
+advisor/src/main/cpp/hosttest/run.sh
+```
+
+It syntax-checks `advisor_llm.cpp` against the headers of the **pinned** llama.cpp tag (read out of
+`CMakeLists.txt`, fetched and cached), using the host JDK's real `jni.h` and a stub `<android/log.h>` —
+which is what catches the API drift a tag bump causes, normally discoverable only on a machine with the
+NDK. It then compiles and runs the big-core selection tests against `select_big_cores` lifted straight
+out of this file, so the test can't drift from the shipping policy. Nothing in `hosttest/` is part of
+the Android build: CMake compiles `advisor_llm.cpp` and nothing else.
+
+It is a check, not a build. It links nothing and runs no inference, so it says nothing about whether a
+change is *fast* — that still needs the logs above, on a device.
 
 ## Providing the model weights
 
