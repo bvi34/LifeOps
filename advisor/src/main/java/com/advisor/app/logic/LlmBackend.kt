@@ -31,6 +31,20 @@ interface LlmBackend {
     /** Run [prompt] (already in the model's chat format) to completion and return the raw text. */
     fun generate(prompt: String, params: GenerationParams = GenerationParams()): String
 
+    /**
+     * As [generate], but hands each piece of the answer to [onToken] as it is produced, and still
+     * returns the whole raw text. The pieces are raw model output in order, so concatenating them
+     * reconstructs the return value — they are not cleaned, and a piece is not a word or a token, just
+     * however many bytes were settled at that moment.
+     *
+     * A generation on a phone runs for tens of seconds, so whether a caller can show it arriving is
+     * the difference between a spinner and a reply. The default ignores [onToken] and delegates, so a
+     * backend that cannot stream (or a test fake) needs no implementation and simply reports its
+     * answer at the end.
+     */
+    fun generate(prompt: String, params: GenerationParams, onToken: (String) -> Unit): String =
+        generate(prompt, params)
+
     /** Release native resources. Safe to call more than once. */
     fun close() {}
 

@@ -16,6 +16,7 @@ import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.AdvisorPrompt
+import com.advisor.app.logic.AnswerText
 import com.advisor.app.logic.AssistantNaming
 import com.advisor.app.logic.Citations
 import com.advisor.app.logic.Conversation
@@ -199,7 +200,15 @@ class AdvisorRepository(
      * Answer [question] against the granted apps, the user's identity, and recalled long-term
      * memory. Persists the turn and bumps recall stats on the memories that were surfaced.
      */
-    suspend fun ask(question: String): AdvisorAnswer {
+    /**
+     * Answer [question] over the user's granted data.
+     *
+     * [onPartial] is optional and, when given, is called with the answer as it forms — the whole of it
+     * so far, ready to display. A real 4B model runs for tens of seconds on-device, so this is the
+     * difference between watching a spinner and watching a reply; callers that don't care (tests, the
+     * placeholder path) simply omit it.
+     */
+    suspend fun ask(question: String, onPartial: ((String) -> Unit)? = null): AdvisorAnswer {
         val permissions = currentPermissions()
         val identity = loadIdentity()
 
@@ -334,8 +343,14 @@ class AdvisorRepository(
         // placeholder engine is instant, so this is free when no model is loaded.
         var groundingResult = grounding
         var groundChunks = chunks
+        // Directives are the app's private bookkeeping, not part of the reply, so what streams out is
+        // the answer with them removed — including one still being typed, which the whole-line strip
+        // patterns cannot match yet.
+        val stream: ((String) -> Unit)? = onPartial?.let { emit ->
+            { text: String -> emit(AnswerText.inProgress(text)) }
+        }
         var raw = withContext(Dispatchers.Default) {
-            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt, stream)
         }
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
@@ -373,7 +388,7 @@ class AdvisorRepository(
 
                 if (leanedOnDropped || nothingLeftStanding) {
                     raw = withContext(Dispatchers.Default) {
-                        engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+                        generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt, stream)
                     }
                 }
             }
@@ -388,12 +403,31 @@ class AdvisorRepository(
         for (write in MemoryDirectives.parse(raw)) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
         }
-        val text = RelevanceDirectives.strip(MemoryDirectives.strip(ProfileDirectives.strip(raw)))
+        val text = AnswerText.finished(raw)
 
         memory.markRecalled(recalled.map { it.id })
         persistTurn(question, text, groundChunks.map { it.document }, KIND_NORMAL)
 
         return AdvisorAnswer(text, groundChunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /** Build the grounded prompt and run it through the engine, streaming when a caller is watching. */
+    private fun generate(
+        question: String,
+        chunks: List<RetrievedChunk>,
+        identity: Identity,
+        recalled: List<MemoryRecord>,
+        profiles: List<Profile>,
+        logicNotes: List<String>,
+        grounding: GroundingResult,
+        conversation: List<ConversationTurn>,
+        systemPrompt: String,
+        onPartial: ((String) -> Unit)?
+    ): String {
+        val prompt = groundedPrompt(
+            question, chunks, identity, recalled, profiles, logicNotes, grounding, conversation, systemPrompt
+        )
+        return if (onPartial == null) engine.generate(prompt) else engine.generate(prompt, onPartial)
     }
 
     /**

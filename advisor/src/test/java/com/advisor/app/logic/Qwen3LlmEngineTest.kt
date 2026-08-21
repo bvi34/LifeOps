@@ -18,6 +18,18 @@ class Qwen3LlmEngineTest {
             lastPrompt = prompt
             return reply(prompt)
         }
+
+        /** Streams the scripted reply one character at a time — the worst case for partial cleaning. */
+        override fun generate(
+            prompt: String,
+            params: GenerationParams,
+            onToken: (String) -> Unit
+        ): String {
+            lastPrompt = prompt
+            val text = reply(prompt)
+            for (ch in text) onToken(ch.toString())
+            return text
+        }
     }
 
     private fun grounded(): AdvisorPrompt {
@@ -75,5 +87,45 @@ class Qwen3LlmEngineTest {
 
         assertFalse(answer.isBlank())
         assertTrue(answer.contains("Mow the lawn"))
+    }
+
+    @Test
+    fun streaming_reports_the_answer_as_it_forms_and_still_returns_it_whole() {
+        val backend = FakeBackend(isReady = true) { "Mow the lawn.<|im_end|>" }
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertEquals("Mow the lawn.", answer)
+        // Cumulative, so the last thing reported is the finished answer and the UI never has to
+        // reassemble anything.
+        assertEquals(answer, seen.last())
+        assertTrue(seen.size > 1)
+        // Every report is a prefix of the answer: text is only ever added or retracted as a whole,
+        // never rewritten into something the user did not see arrive.
+        assertTrue(seen.all { answer.startsWith(it) })
+        // The control token is never shown, not even as the "<|" that begins it.
+        assertTrue(seen.none { it.contains("<|") })
+    }
+
+    @Test
+    fun streaming_falls_back_to_the_placeholder_when_no_model_is_loaded() {
+        val backend = FakeBackend(isReady = false)
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertTrue(answer.isNotBlank())
+        assertTrue(seen.isEmpty())
+    }
+
+    @Test
+    fun a_reply_that_is_only_reasoning_streams_nothing_and_falls_back() {
+        // cleanOutput reduces this to blank, so the engine falls back — and nothing partial should
+        // have been shown for an answer that turns out not to exist.
+        val backend = FakeBackend(isReady = true) { "<think>hmm</think>" }
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertEquals(PlaceholderLlmEngine().generate(grounded()), answer)
+        assertTrue(seen.all { it.isEmpty() })
     }
 }

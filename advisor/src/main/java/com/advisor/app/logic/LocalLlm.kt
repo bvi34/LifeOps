@@ -39,6 +39,20 @@ interface LocalLlmEngine {
 
     /** Produce an answer for [prompt]. Must run fully on-device; no network, no I/O. */
     fun generate(prompt: AdvisorPrompt): String
+
+    /**
+     * As [generate], but reports the answer as it forms: [onPartial] is called with the whole answer
+     * so far, cleaned and ready to display, each time more of it is settled.
+     *
+     * Cumulative rather than incremental on purpose. Cleaning can *retract* text — a control token
+     * turns out to be one, a reasoning block closes and is dropped — so a caller that appended deltas
+     * would have to undo them. Being handed the current state instead means displaying it is a plain
+     * assignment.
+     *
+     * The default runs the non-streaming path, which is right for any engine fast enough that
+     * watching it arrive would be pointless.
+     */
+    fun generate(prompt: AdvisorPrompt, onPartial: (String) -> Unit): String = generate(prompt)
 }
 
 /**

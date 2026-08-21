@@ -332,6 +332,76 @@ std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     return std::string(buf, n);
 }
 
+// How much of [s] ends on a complete UTF-8 sequence. A token's bytes are not characters: a single
+// emoji or CJK glyph is routinely split across two tokens, so streaming each piece the moment it is
+// produced would hand a truncated sequence to the JVM. Everything up to this point is safe to emit;
+// the remainder waits for the bytes that finish it.
+size_t complete_utf8_prefix(const std::string& s) {
+    const size_t n = s.size();
+    // A sequence is at most 4 bytes, so only the last few can be incomplete.
+    for (size_t back = 1; back <= 4 && back <= n; back++) {
+        const unsigned char c = (unsigned char) s[n - back];
+        if ((c & 0xC0) == 0x80) continue;  // continuation byte; keep walking back to the lead
+        size_t need;
+        if      ((c & 0x80) == 0x00) need = 1;
+        else if ((c & 0xE0) == 0xC0) need = 2;
+        else if ((c & 0xF0) == 0xE0) need = 3;
+        else if ((c & 0xF8) == 0xF0) need = 4;
+        else return n;                     // not a lead byte at all; hold nothing back
+        return back >= need ? n : n - back;
+    }
+    return n;
+}
+
+// The Kotlin object that receives each piece of the answer as it is produced, or null when the caller
+// did not ask to stream. Bytes rather than a jstring on purpose: NewStringUTF wants *modified* UTF-8
+// and rejects (or mangles) the 4-byte sequences that emoji are made of, so the conversion belongs on
+// the Kotlin side where the standard decoder can do it.
+struct TokenSink {
+    jobject   obj    = nullptr;
+    jmethodID method = nullptr;
+
+    bool valid() const { return obj != nullptr && method != nullptr; }
+};
+
+TokenSink resolve_sink(JNIEnv* env, jobject listener) {
+    TokenSink sink;
+    if (listener == nullptr) return sink;
+    jclass cls = env->GetObjectClass(listener);
+    if (cls == nullptr) return sink;
+    sink.method = env->GetMethodID(cls, "onToken", "([B)V");
+    env->DeleteLocalRef(cls);
+    if (sink.method == nullptr) {
+        env->ExceptionClear();
+        LOGW("token listener has no onToken([B)V; streaming disabled for this call");
+        return sink;
+    }
+    sink.obj = listener;
+    return sink;
+}
+
+// Hand [text] to the listener. Returns false if the callback threw, in which case the caller stops
+// streaming but lets generation finish — a broken listener must not lose the answer.
+bool emit_to_sink(JNIEnv* env, const TokenSink& sink, const std::string& text) {
+    if (!sink.valid() || text.empty()) return true;
+    jbyteArray bytes = env->NewByteArray((jsize) text.size());
+    if (bytes == nullptr) {
+        env->ExceptionClear();
+        return false;
+    }
+    env->SetByteArrayRegion(bytes, 0, (jsize) text.size(),
+                            reinterpret_cast<const jbyte*>(text.data()));
+    env->CallVoidMethod(sink.obj, sink.method, bytes);
+    env->DeleteLocalRef(bytes);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        LOGW("token listener threw; continuing without streaming");
+        return false;
+    }
+    return true;
+}
+
 size_t first_stop(const std::string& text, const std::vector<std::string>& stops) {
     size_t best = std::string::npos;
     for (const auto& s : stops) {
@@ -469,7 +539,8 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 JNIEXPORT jstring JNICALL
 Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         JNIEnv* env, jobject /*thiz*/, jlong handle, jstring jprompt,
-        jint maxTokens, jfloat temperature, jfloat topP, jint topK, jobjectArray jstops) {
+        jint maxTokens, jfloat temperature, jfloat topP, jint topK, jobjectArray jstops,
+        jobject jlistener) {
 
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
     if (h == nullptr || h->ctx == nullptr) {
@@ -492,6 +563,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         env->ReleaseStringUTFChars(js, s);
         env->DeleteLocalRef(js);
     }
+
+    // Text is streamed to the caller as it is produced, but never further than it is *settled*: a
+    // stop sequence arrives one token at a time, so the tail that could still turn out to be the
+    // start of one is held back rather than shown and retracted.
+    TokenSink sink = resolve_sink(env, jlistener);
+    size_t longest_stop = 0;
+    for (const auto& stop : stops) longest_stop = std::max(longest_stop, stop.size());
+    size_t emitted = 0;
 
     const char* prompt = env->GetStringUTFChars(jprompt, nullptr);
     std::string text(prompt);
@@ -613,6 +692,17 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
                 break;
             }
 
+            // Everything except the last `longest_stop` bytes can no longer become a stop sequence,
+            // and of that, everything up to the last complete UTF-8 sequence is safe to hand over.
+            if (sink.valid() && out.size() > emitted + longest_stop) {
+                const size_t window = out.size() - longest_stop - emitted;
+                const size_t safe = emitted + complete_utf8_prefix(out.substr(emitted, window));
+                if (safe > emitted) {
+                    if (emit_to_sink(env, sink, out.substr(emitted, safe - emitted))) emitted = safe;
+                    else sink = TokenSink{};
+                }
+            }
+
             batch.n_tokens = 1;
             batch.token[0]  = id;
             batch.pos[0]    = next_pos++;
@@ -625,6 +715,12 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
                      h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
                 break;
             }
+        }
+
+        // Whatever the loop ended on — a stop sequence, end-of-generation, the token budget or a
+        // failed decode — the held-back tail is settled now.
+        if (sink.valid() && emitted < out.size()) {
+            emit_to_sink(env, sink, out.substr(emitted));
         }
 
         const long long ms = elapsed_ms();

@@ -375,6 +375,27 @@ Nothing upstream changes: permissions, retrieval, prompt assembly, citations, an
 are already model-agnostic — the wired model still only runs when C3A returns `ANSWER`, and generation
 runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes seconds.
 
+### The answer arrives as it is written
+
+A 4B model on a phone produces a few tokens a second, so a reply is tens of seconds of work. It is
+streamed rather than waited for: `LlmBackend` and `LocalLlmEngine` each have a streaming overload,
+`AdvisorRepository.ask` takes an optional `onPartial`, and the chat shows the reply forming.
+
+Two decisions are load-bearing:
+
+- **Each update is the whole answer so far, not the newest piece.** Cleaning can *retract* text — a
+  control token turns out to be one, a reasoning block closes and is dropped — so a caller appending
+  deltas would have to undo them. Handed the current state instead, the UI just assigns it.
+- **Nothing is shown before it is settled.** The native side holds back a tail that could still become
+  a stop sequence, and any bytes that don't yet complete a UTF-8 character (`advisor_llm.cpp`);
+  `Qwen3ChatFormat.cleanPartial` holds back a marker that has begun but not finished (`<|im_`) and an
+  unclosed `<think>` block; `AnswerText.inProgress` hides a directive still being typed. The rule
+  throughout is that text may be added or retracted as a whole, but never shown wrong and corrected.
+
+A turn is only written to the database once its answer exists, so the question being answered is
+carried in the ViewModel (`pendingQuestion`) and shown until the stored turn replaces it — otherwise
+the question would appear *after* its own answer.
+
 ---
 
 ## Semantic retrieval

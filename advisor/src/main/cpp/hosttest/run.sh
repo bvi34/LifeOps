@@ -56,11 +56,22 @@ ${CXX:-g++} -fsyntax-only -std=c++17 -Wall -Wextra -Wno-unused-parameter \
     -I"$CACHE/$TAG" -I"$CACHE/stub" -I"$JDK/include" -I"$JDK/include/linux" "$SRC"
 echo "advisor_llm.cpp: OK"
 
+# Lift the functions under test straight out of the shipping file so the tests can never drift.
+extract() {
+    awk "/^$2/,/^}\$/" "$SRC" > "$CACHE/$1.inc"
+    [ -s "$CACHE/$1.inc" ] || { echo "could not extract $1 from advisor_llm.cpp" >&2; exit 1; }
+}
+extract select_big_cores     "BigCores select_big_cores"
+extract complete_utf8_prefix "size_t complete_utf8_prefix"
+
 echo
 echo "== big-core selection tests =="
-# Lift select_big_cores straight out of the shipping file so the test can never drift from it.
-awk '/^BigCores select_big_cores/,/^}$/' "$SRC" > "$CACHE/select_big_cores.inc"
-[ -s "$CACHE/select_big_cores.inc" ] || { echo "could not extract select_big_cores" >&2; exit 1; }
 ${CXX:-g++} -std=c++17 -Wall -Wextra -I"$CACHE" -o "$CACHE/cpu_topology_test" \
     "$HERE/cpu_topology_test.cpp"
 "$CACHE/cpu_topology_test"
+
+echo
+echo "== utf-8 boundary tests =="
+${CXX:-g++} -std=c++17 -Wall -Wextra -I"$CACHE" -o "$CACHE/utf8_boundary_test" \
+    "$HERE/utf8_boundary_test.cpp"
+"$CACHE/utf8_boundary_test"

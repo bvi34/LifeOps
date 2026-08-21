@@ -41,19 +41,44 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
             }
         }
 
-    override fun generate(prompt: String, params: GenerationParams): String {
+    override fun generate(prompt: String, params: GenerationParams): String =
+        run(prompt, params, sink = null)
+
+    override fun generate(
+        prompt: String,
+        params: GenerationParams,
+        onToken: (String) -> Unit
+    ): String = run(prompt, params, TokenSink(onToken))
+
+    private fun run(prompt: String, params: GenerationParams, sink: TokenSink?): String {
         if (!ensureLoaded()) return ""
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
         Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace("\n", "\\n")}")
         return runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,
-                params.topP, params.topK, params.stop.toTypedArray()
+                params.topP, params.topK, params.stop.toTypedArray(), sink
             )
         }.getOrElse {
             Log.w(TAG, "Qwen3 generation failed; falling back.", it)
             ""
         }
+    }
+
+    /**
+     * What the native side calls as each piece of the answer settles.
+     *
+     * Bytes, not a `String`, because a token boundary is not a character boundary — a single emoji is
+     * routinely split across two tokens — and JNI's `NewStringUTF` expects *modified* UTF-8, which the
+     * four-byte sequences emoji are made of are not. Native holds back an incomplete sequence and
+     * hands over whole ones; decoding them belongs here, where the standard decoder can do it.
+     *
+     * Nothing in Kotlin calls [onToken] — the native side resolves it by name — so a shrinker would
+     * be free to rename or remove it and streaming would silently stop with no error anywhere.
+     * `consumer-rules.pro` keeps it; the signature there and the one native looks up must agree.
+     */
+    private class TokenSink(private val emit: (String) -> Unit) {
+        fun onToken(utf8: ByteArray) = emit(String(utf8, Charsets.UTF_8))
     }
 
     override fun close() {
@@ -97,7 +122,7 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     private external fun nativeLoad(modelPath: String): Long
     private external fun nativeGenerate(
         handle: Long, prompt: String, maxTokens: Int, temperature: Float,
-        topP: Float, topK: Int, stop: Array<String>
+        topP: Float, topK: Int, stop: Array<String>, listener: TokenSink?
     ): String
     private external fun nativeFree(handle: Long)
 

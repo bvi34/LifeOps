@@ -117,6 +117,25 @@ assembled, nothing here needs updating: the match is on tokens, not on assumed s
 thing to preserve is that a batch entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the
 batch. Reordering the assembler to put more stable text first directly increases the reuse.
 
+### Streaming the answer out
+
+`nativeGenerate` takes an optional listener and calls its `onToken([B)V` for each piece of the answer
+as it is produced, while still returning the whole text. Two things are deliberately *not* streamed the
+moment they are generated:
+
+- the last `longest_stop` bytes, which could still turn out to be the start of a stop sequence — text
+  is held back rather than shown and retracted;
+- a trailing incomplete UTF-8 sequence. A token boundary is not a character boundary (one emoji is
+  routinely split across two tokens), so `complete_utf8_prefix` emits whole characters only.
+
+The pieces are **bytes**, not a `jstring`, because `NewStringUTF` expects *modified* UTF-8 and the
+four-byte sequences emoji are made of are not that; decoding happens on the Kotlin side. The callback
+is resolved by name through JNI, so `advisor/consumer-rules.pro` keeps it from being renamed by a
+shrinker — its signature there and the one looked up here have to agree.
+
+If the listener throws, streaming stops and generation continues: a broken listener must not cost the
+answer.
+
 ### Reading the speed logs
 
 `nativeGenerate` prints its own prefill/streaming timings and then llama.cpp's

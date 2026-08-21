@@ -45,7 +45,10 @@ android {
 
     defaultConfig {
         minSdk = 26
-        // Code shrinking is the consuming app's (:app) responsibility.
+        // Code shrinking is the consuming app's (:app) responsibility — but two things in this module
+        // are reached only from native code, by name, and a shrinker cannot see that. These rules
+        // travel with the module so :app keeps them without having to know why.
+        consumerProguardFiles("consumer-rules.pro")
 
         if (buildNativeLlm) {
             // A 4B Q4 model is only realistic on 64-bit ARM; don't bloat other ABIs with the weights' runtime.

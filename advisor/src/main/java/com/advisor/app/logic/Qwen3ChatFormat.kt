@@ -79,6 +79,36 @@ object Qwen3ChatFormat {
      * conversation (emitted as real turns by [forPrompt]), minus the trailing `ANSWER:` cue — the
      * cue's job is done by the open assistant turn that follows.
      */
+    /**
+     * [cleanOutput] for a completion that is still arriving. Same rules, plus the two cases that only
+     * exist mid-stream, where a construct has begun but hasn't finished:
+     *
+     * - an opened `<think>` with no `</think>` yet — its contents are reasoning, and showing them
+     *   before the block closes would flash the model's scratchpad and then take it back;
+     * - a trailing fragment that is the beginning of a marker — `<`, `<|im_`, `<thi` — which
+     *   [cleanOutput] can only recognise once it is whole.
+     *
+     * Both are simply held back until the rest of them lands. The second is matched against the
+     * markers themselves rather than by swallowing any trailing `<`, so prose that happens to contain
+     * one ("under 5 < 6 items") still streams normally.
+     */
+    fun cleanPartial(raw: String): String {
+        var text = cleanOutput(raw)
+        // cleanOutput drops a *closed* think block, so one still present here was never closed.
+        val openThink = text.indexOf("<think>")
+        if (openThink >= 0) text = text.substring(0, openThink)
+        val open = text.lastIndexOf('<')
+        if (open >= 0 && isPartialMarker(text.substring(open))) text = text.substring(0, open)
+        return text.trim()
+    }
+
+    /** Whether [tail] is the start of a marker that hasn't finished arriving. */
+    private fun isPartialMarker(tail: String): Boolean =
+        MARKER_STARTS.any { it.startsWith(tail) } || (tail.startsWith("<|") && !tail.contains("|>"))
+
+    /** The markers whose opening bytes must not be shown: control tokens, and think tags. */
+    private val MARKER_STARTS = listOf("<|", "<think>", "</think>")
+
     private fun userContent(prompt: AdvisorPrompt): String {
         val body = prompt.render(includeConversation = false).removePrefix(prompt.system).trimStart()
         return body.removeSuffix("ANSWER:").trimEnd()
