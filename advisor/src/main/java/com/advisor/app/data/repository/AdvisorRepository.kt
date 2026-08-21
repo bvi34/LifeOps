@@ -17,6 +17,7 @@ import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.AdvisorPrompt
 import com.advisor.app.logic.AssistantNaming
+import com.advisor.app.logic.Citations
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.EngineDecision
@@ -339,8 +340,7 @@ class AdvisorRepository(
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
         // @relevance(n): <verdict> line. Apply those verdicts over the deterministic baseline
-        // (RelevanceEngine.reassess) and — only when that actually changes the grounded set — let the
-        // model answer again over just the candidates that fit. Bounded to one round so it always
+        // (RelevanceEngine.reassess) and drop what no longer fits. Bounded to one round so it always
         // terminates, and inert for the placeholder (which never emits @relevance).
         val votes = RelevanceDirectives.parse(raw)
         if (votes.isNotEmpty()) {
@@ -348,10 +348,33 @@ class AdvisorRepository(
             val overrides = votes.mapNotNull { v -> refToId[v.ref]?.let { it to v.category } }.toMap()
             val refined = RelevanceEngine.reassess(groundingResult, overrides)
             if (refined.grounding.map { it.document.id } != groundChunks.map { it.document.id }) {
+                val kept = refined.grounding.map { it.document.id }.toSet()
+                val dropped = groundChunks.map { it.document.id }.toSet() - kept
+                // Whether to answer again is the most expensive decision in this pipeline: a second
+                // pass is a second full generation, tens of seconds on-device, and the system prompt
+                // asks for these verdicts on *every* turn — so re-running whenever one arrives made
+                // the routine cost of a question two generations rather than one.
+                //
+                // It is only worth paying when the first answer actually leaned on something the model
+                // has just disqualified. The `[n]` markers say exactly that: an answer that never cited
+                // a dropped candidate did not rest on it, and asking again over a set it already
+                // ignored reproduces the same reply for the same cost. The exception is a refinement
+                // that leaves *nothing* standing — the answer was grounded in candidates that are all
+                // now disqualified, so it has to be made honestly over an empty set.
+                val leanedOnDropped =
+                    Citations.citedIds(raw, PromptAssembler.blocks(groundChunks)).any { it in dropped }
+                val nothingLeftStanding = refined.grounding.isEmpty() && groundChunks.isNotEmpty()
+
+                // Either way the misfits stop being shown as sources: when the answer stands, nothing
+                // in its text points at them — that is exactly why it stands — so dropping them leaves
+                // no dangling reference.
                 groundingResult = refined
                 groundChunks = refined.grounding
-                raw = withContext(Dispatchers.Default) {
-                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+
+                if (leanedOnDropped || nothingLeftStanding) {
+                    raw = withContext(Dispatchers.Default) {
+                        engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+                    }
                 }
             }
         }

@@ -105,4 +105,21 @@ class PromptAssemblerTest {
         // The section header, not the bare word — the standing instruction names CONVERSATION too.
         assertFalse(prompt.render(includeConversation = false).contains("CONVERSATION (recent turns"))
     }
+
+    /**
+     * The exposed numbering must be *the* numbering. A reader that maps an answer's `[n]` back to a
+     * document is only correct while it agrees with what the prompt showed, so the two cannot be
+     * allowed to come from separate copies of "index + 1".
+     */
+    @Test
+    fun exposed_ref_numbering_is_the_one_the_prompt_shows() {
+        val chunks = listOf(
+            chunk("lifeops:task:1", "Water the plants", "body a"),
+            chunk("citation:book:7", "Dune", "body b"),
+            chunk("logistics:item:4", "Oat milk", "body c")
+        )
+        val prompt = PromptAssembler.assemble("what's up?", chunks)
+        assertEquals(prompt.context, PromptAssembler.blocks(chunks))
+        assertEquals(listOf(1, 2, 3), PromptAssembler.blocks(chunks).map { it.ref })
+    }
 }

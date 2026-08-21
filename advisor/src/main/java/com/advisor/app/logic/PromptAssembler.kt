@@ -129,6 +129,17 @@ object PromptAssembler {
     /** Long bodies are trimmed so a small model's context window isn't spent on one row. */
     const val MAX_EXCERPT = 400
 
+    /**
+     * The citation numbering [chunks] are shown under — `[1]`, `[2]`, … in retrieval order. Exposed
+     * because the numbering has to be reproducible outside prompt assembly: reading an answer's `[n]`
+     * markers back means knowing which document each one stood for, and a second copy of "index + 1"
+     * elsewhere would be a numbering that could silently drift from the one the model saw.
+     */
+    fun blocks(chunks: List<RetrievedChunk>): List<ContextBlock> =
+        chunks.mapIndexed { index, chunk ->
+            ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
+        }
+
     fun assemble(
         question: String,
         chunks: List<RetrievedChunk>,
@@ -139,9 +150,7 @@ object PromptAssembler {
         conversation: List<ConversationTurn> = emptyList(),
         system: String = SYSTEM
     ): AdvisorPrompt {
-        val blocks = chunks.mapIndexed { index, chunk ->
-            ContextBlock(index + 1, chunk.document, excerpt(chunk.document.body))
-        }
+        val blocks = blocks(chunks)
         return AdvisorPrompt(
             system = system.trim().ifBlank { SYSTEM },
             identity = identity.toContextLines(),
