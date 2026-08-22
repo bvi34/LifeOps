@@ -34,6 +34,14 @@ interface AdvisorDao {
     @Query("SELECT * FROM advisor_messages ORDER BY createdAt DESC LIMIT :limit")
     suspend fun recentMessages(limit: Int): List<AdvisorMessageEntity>
 
+    /**
+     * How many messages the conversation holds. The prompt's history window is anchored to this — it
+     * is a stable, monotonic number, which is what lets two consecutive prompts agree on where the
+     * history starts and so share it in the model's KV cache (see [com.advisor.app.logic.ConversationWindow]).
+     */
+    @Query("SELECT COUNT(*) FROM advisor_messages")
+    suspend fun countMessages(): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addMessage(message: AdvisorMessageEntity)
 

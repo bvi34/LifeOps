@@ -49,6 +49,33 @@ class LlamaCppEmbedder(private val modelStore: EmbeddingModelStore) : Embedder {
         }
     }
 
+    /**
+     * Embed many texts in as few passes over the model as it allows.
+     *
+     * The default implementation of this is one [embed] per text, and each of those is a full sweep
+     * over the embedding model's weights — so indexing a corpus of a few hundred documents paid for a
+     * few hundred sweeps. The native side packs several documents into each `llama_decode` instead.
+     * That matters most exactly when it is most visible: the vector cache is in-memory, so the whole
+     * corpus is embedded again on the first question after every app start.
+     *
+     * A document that fails comes back empty rather than taking the batch with it, which is what lets
+     * [com.advisor.app.logic.EmbeddingRetriever] cache what worked and retry the rest next question.
+     */
+    override fun embedAll(texts: List<String>): List<FloatArray> {
+        if (texts.isEmpty()) return emptyList()
+        if (!ensureLoaded()) return texts.map { EMPTY }
+        return runCatching {
+            val raw = nativeEmbedAll(handle, texts.toTypedArray())
+            texts.indices.map { i ->
+                val vector = raw.getOrNull(i)
+                if (vector == null || vector.isEmpty()) EMPTY else EmbeddingMath.normalize(vector)
+            }
+        }.getOrElse {
+            Log.w(TAG, "Batch embedding failed; falling back to lexical retrieval.", it)
+            texts.map { EMPTY }
+        }
+    }
+
     fun close() {
         synchronized(lock) {
             if (handle != 0L) {
@@ -88,6 +115,7 @@ class LlamaCppEmbedder(private val modelStore: EmbeddingModelStore) : Embedder {
     private external fun nativeLoad(modelPath: String): Long
     private external fun nativeDim(handle: Long): Int
     private external fun nativeEmbed(handle: Long, text: String): FloatArray
+    private external fun nativeEmbedAll(handle: Long, texts: Array<String>): Array<FloatArray?>
     private external fun nativeFree(handle: Long)
 
     companion object {

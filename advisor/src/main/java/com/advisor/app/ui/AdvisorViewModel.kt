@@ -92,6 +92,22 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     private val _thinking = MutableStateFlow(false)
     val thinking: StateFlow<Boolean> = _thinking.asStateFlow()
 
+    /**
+     * The answer currently being written, or null when none is. Non-null means the model has started
+     * producing text; [thinking] with a null value here is the retrieval work that comes first.
+     */
+    private val _streaming = MutableStateFlow<String?>(null)
+    val streaming: StateFlow<String?> = _streaming.asStateFlow()
+
+    /**
+     * The question being answered right now, or null when idle. A turn is only written to the
+     * database once its answer exists, which was invisible while an answer took a spinner's worth of
+     * time — but with the reply arriving live, a question that showed up *after* its own answer would
+     * be plainly wrong. This carries it on screen in the meantime; the stored turn replaces it.
+     */
+    private val _pendingQuestion = MutableStateFlow<String?>(null)
+    val pendingQuestion: StateFlow<String?> = _pendingQuestion.asStateFlow()
+
     // --- on-device model file ---
 
     private val _modelState = MutableStateFlow<ModelUiState>(ModelUiState.Idle(repo.modelInfo()))
@@ -188,22 +204,40 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
         repo.setPermission(app, granted)
     }
 
+    init {
+        // Opening the assistant is the signal that a question is coming, so start loading the weights
+        // now: it is tens of seconds of I/O that otherwise lands on the first question, on top of that
+        // question's own work. Fire-and-forget — nothing waits on it, and a question asked while it is
+        // still loading simply joins the same load.
+        viewModelScope.launch { repo.warmUpModel() }
+    }
+
     fun ask(question: String) {
         val q = question.trim()
         if (q.isEmpty() || _thinking.value) return
         viewModelScope.launch {
             _thinking.value = true
+            _streaming.value = null
+            _pendingQuestion.value = q
             try {
-                repo.ask(q)
+                // The answer arrives a few characters at a time over tens of seconds. Each update is
+                // the whole reply so far, so showing it is an assignment — and the flow drops
+                // intermediate values under load rather than queueing UI work behind the model.
+                repo.ask(q) { partial -> _streaming.value = partial }
                 // The model may have written to a profile via @remember — reflect that.
                 refreshProfiles()
             } finally {
+                // The finished turn is in the database now and arrives through `messages`; clearing
+                // these in the same breath is what stops the exchange appearing twice.
+                _streaming.value = null
+                _pendingQuestion.value = null
                 _thinking.value = false
             }
         }
     }
 
     fun clearConversation() = viewModelScope.launch { repo.clearConversation() }
+
 
     fun remember(content: String, tagsCsv: String, salience: Int, pinned: Boolean) = viewModelScope.launch {
         val tags = tagsCsv.split(',').map { it.trim() }.filter { it.isNotBlank() }

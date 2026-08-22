@@ -27,8 +27,15 @@ interface Embedder {
     fun embed(text: String): FloatArray
 
     /**
-     * Embed several texts. The default is a simple loop; a native backend can override it to batch the
-     * work in one native call. Order matches the input.
+     * Embed [texts] together. Implementations that can should do so in as few passes over the model as
+     * possible: this is how the corpus is indexed, and one pass per document is one sweep over the
+     * model's weights per document — the dominant cost of the first question after a cold start.
+     *
+     * Order matches [texts], and a text that could not be embedded comes back as an empty array rather
+     * than failing the batch, so a caller can keep what worked and retry the rest.
+     *
+     * The default is one [embed] per text, which is correct but slow; it exists so a simple embedder
+     * needs no batching code.
      */
     fun embedAll(texts: List<String>): List<FloatArray> = texts.map { embed(it) }
 

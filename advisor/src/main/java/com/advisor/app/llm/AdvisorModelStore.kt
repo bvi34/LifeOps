@@ -22,11 +22,16 @@ data class AdvisorModelInfo(
 }
 
 /**
- * Owns Advisor's on-device model **file** — importing a Qwen3-4B GGUF the user picked from device
+ * Owns Advisor's on-device model **file** — importing a generation GGUF the user picked from device
  * storage into the app's private `files/models`, reporting it, and removing it. This is the "native"
  * (in-app, no `adb`) way to provision the weights, and it keeps Advisor's promise intact: the file is
  * *copied in* from a document the user chose, so there is no `INTERNET` permission and nothing leaves
  * the device.
+ *
+ * Any generation GGUF is accepted, not only `qwen3-4b*`. Model size is the one thing that most decides
+ * how fast an answer arrives — decode is bound by how many bytes of weights are read per token, so a
+ * 1.7B model answers at roughly twice the rate of a 4B one — and that trade belongs to whoever is
+ * holding the phone. The name is kept as imported so the model card can say what is actually running.
  *
  * [LlamaCppBackend] loads whatever this store reports as installed, so an import is picked up on the
  * next question without a code change or (for a fresh, never-loaded model) a restart.
@@ -39,14 +44,14 @@ class AdvisorModelStore(context: Context) {
     fun modelsDir(): File = File(appContext.filesDir, "models")
 
     /**
-     * The installed Qwen3-4B GGUF, if any — internal storage first, then an `adb push`ed copy under
+     * The installed generation GGUF, if any — internal storage first, then an `adb push`ed copy under
      * external files. The shortest matching name wins (the canonical drop-in).
      */
     fun installedModel(): File? {
         val dirs = listOfNotNull(modelsDir(), appContext.getExternalFilesDir("models"))
         for (dir in dirs) {
             dir.listFiles()
-                ?.filter { it.isFile && it.length() > 0 && isQwen3Gguf(it.name) }
+                ?.filter { it.isFile && it.length() > 0 && isGenerationGguf(it.name) }
                 ?.minByOrNull { it.name.length }
                 ?.let { return it }
         }
@@ -109,9 +114,9 @@ class AdvisorModelStore(context: Context) {
                 }
             }
 
-            // One installed model at a time: clear any previous qwen3 file, then commit the new one.
+            // One installed model at a time: clear any previous generation file, then commit the new one.
             dir.listFiles()
-                ?.filter { it.name != part.name && (isQwen3Gguf(it.name) || it.name.endsWith(".part")) }
+                ?.filter { it.name != part.name && (isGenerationGguf(it.name) || it.name.endsWith(".part")) }
                 ?.forEach { it.delete() }
             if (!part.renameTo(target)) {
                 part.delete()
@@ -124,16 +129,19 @@ class AdvisorModelStore(context: Context) {
     fun delete(): Boolean {
         var deleted = false
         modelsDir().listFiles()
-            ?.filter { isQwen3Gguf(it.name) || it.name.endsWith(".part") }
+            ?.filter { isGenerationGguf(it.name) || it.name.endsWith(".part") }
             ?.forEach { if (it.delete()) deleted = true }
         return deleted
     }
 
-    /** Keep the imported name when it's clearly a Qwen3-4B GGUF; otherwise use the canonical name. */
+    /**
+     * Keep the imported filename, which is what lets the model card name the model that is actually
+     * installed instead of the one the code was written against. Only a name this store would not
+     * find again — missing, or one the embedding store would claim — falls back to the canonical name.
+     */
     private fun resolveTargetName(srcName: String?): String {
         val name = srcName?.substringAfterLast('/')?.trim().orEmpty()
-        return if (name.endsWith(".gguf", true) && name.lowercase(Locale.US).startsWith("qwen3-4b")) name
-        else DEFAULT_NAME
+        return if (isGenerationGguf(name)) name else DEFAULT_NAME
     }
 
     private fun queryName(uri: Uri): String? =
@@ -150,9 +158,14 @@ class AdvisorModelStore(context: Context) {
         const val DEFAULT_NAME = "qwen3-4b-q4_k_m.gguf"
         private const val SLACK_BYTES = 64L * 1024 * 1024 // keep a little headroom
 
-        fun isQwen3Gguf(name: String): Boolean {
+        /**
+         * Whether [name] is a generation model this store owns: any `.gguf` that isn't the *embedding*
+         * model. Both live in the same directory, so the two stores have to partition it between them
+         * — and the embedding side already keys on its own name markers, so this is the complement.
+         */
+        fun isGenerationGguf(name: String): Boolean {
             val lower = name.lowercase(Locale.US)
-            return lower.startsWith("qwen3-4b") && lower.endsWith(".gguf")
+            return lower.endsWith(".gguf") && !EmbeddingModelStore.isEmbeddingGguf(lower)
         }
 
         fun humanBytes(bytes: Long): String {

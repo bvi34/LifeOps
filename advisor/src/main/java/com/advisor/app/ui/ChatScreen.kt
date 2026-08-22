@@ -25,11 +25,22 @@ fun ChatScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
     val messages by vm.messages.collectAsStateWithLifecycle()
     val permissions by vm.permissions.collectAsStateWithLifecycle()
     val thinking by vm.thinking.collectAsStateWithLifecycle()
+    val streaming by vm.streaming.collectAsStateWithLifecycle()
+    val pendingQuestion by vm.pendingQuestion.collectAsStateWithLifecycle()
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
+    // The rows after the stored turns: the question being answered, and the answer as it is written.
+    val liveRows = (if (pendingQuestion != null) 1 else 0) + (if (streaming != null) 1 else 0)
+
+    // Follow the answer as it is written, not just when a turn is added. Scrolling without animation
+    // keeps up with text arriving every few hundred milliseconds — an animated scroll would still be
+    // running when the next update lands, and never catch up.
+    LaunchedEffect(messages.size, liveRows, streaming) {
+        val last = messages.size + liveRows - 1
+        if (last >= 0) {
+            if (streaming != null) listState.scrollToItem(last) else listState.animateScrollToItem(last)
+        }
     }
 
     // imePadding lifts the whole column (and so the input row at its foot) above the soft keyboard.
@@ -54,7 +65,15 @@ fun ChatScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
             items(messages, key = { it.id }) { message ->
                 MessageBubble(message)
             }
-            if (thinking) {
+            // The exchange in flight. Both are replaced by the stored turn the moment it lands, so
+            // they are keyed distinctly from anything in `messages` and never outlive the answer.
+            pendingQuestion?.let { question ->
+                item(key = "pending-question") { PendingQuestionBubble(question) }
+            }
+            streaming?.let { partial ->
+                item(key = "streaming") { StreamingBubble(partial) }
+            }
+            if (thinking && streaming == null) {
                 item { ThinkingRow() }
             }
         }
@@ -122,6 +141,46 @@ private fun EmptyState(modelLabel: String) {
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+/** The question being answered, shown exactly as it will look once the turn is stored. */
+@Composable
+private fun PendingQuestionBubble(question: String) {
+    MessageBubble(ChatMessage(id = "pending-question", fromUser = true, text = question, citationIds = emptyList()))
+}
+
+/**
+ * The answer as it is being written. Deliberately the same shape and colour as a finished advisor
+ * bubble, so the reply does not visibly jump when generation ends and the stored turn takes over —
+ * only the caret after it goes away.
+ *
+ * An empty [partial] is normal and brief: the model has begun, but everything so far is a control
+ * token or a directive being typed, none of which is the user's to read.
+ */
+@Composable
+private fun StreamingBubble(partial: String) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.widthIn(max = 320.dp)
+        ) {
+            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                if (partial.isBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp)
+                        Text("Writing…", style = MaterialTheme.typography.bodySmall)
+                    }
+                } else {
+                    Text(partial, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
     }
 }
 

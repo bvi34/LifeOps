@@ -65,6 +65,114 @@ constexpr long long GENERATE_DEADLINE_MS = 180000;
 // prompts (the ChatML preamble alone is a handful of tokens) and save nothing worth the bookkeeping.
 constexpr int MIN_PREFIX_REUSE = 32;
 
+// The set of CPUs worth running inference on. A phone's cores are not interchangeable: on this class
+// of SoC (a Snapdragon 8+ Gen 1, say) four Cortex-A510s sit alongside three A710s and an X2 running
+// at nearly twice the clock with several times the vector throughput. ggml synchronizes its worker
+// threads at a barrier after every graph node, so the *slowest* worker sets the pace of every matmul
+// — one thread scheduled onto a little core throttles the entire forward pass, and nothing in a
+// wall-clock number says that is what happened.
+//
+// Nothing arranges this on its own: asking for n_threads says how many workers to run, never where,
+// so left alone the kernel is free to spread them across both clusters.
+struct BigCores {
+    cpu_set_t mask{};
+    int       count = 0;
+};
+
+// A human-readable "0,1,2,3" for a CPU mask.
+std::string cpu_list(const cpu_set_t& mask) {
+    std::string out;
+    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+        if (!CPU_ISSET(cpu, &mask)) continue;
+        if (!out.empty()) out += ",";
+        out += std::to_string(cpu);
+    }
+    return out.empty() ? "none" : out;
+}
+
+// The policy half of pick_big_cores: given each core's clock ceiling in kHz (0 where it could not be
+// read), which cores belong to the fastest cluster(s) — anything within 80% of the top clock. That
+// captures the usual big+mid+little split (an X2 at 3.2 GHz and A710s at 2.75 GHz are both "big";
+// A510s at 1.8 GHz are not) without hard-coding a CPU numbering that differs per SoC.
+//
+// Returns an empty set — meaning "no opinion, leave affinity alone" — in the two cases where pinning
+// would be wrong rather than merely unhelpful: nothing readable to go on, and a homogeneous CPU, where
+// there is no little cluster to stay off and pinning only takes away the scheduler's freedom to move
+// work off a hot core. Kept pure and separate so it can be exercised against real topologies on the
+// host (see hosttest/cpu_topology_test.cpp) rather than only on a phone.
+BigCores select_big_cores(const std::vector<long long>& khz) {
+    BigCores out;
+    CPU_ZERO(&out.mask);
+
+    const size_t n_cpu = khz.size();
+    if (n_cpu <= 1 || n_cpu > (size_t) CPU_SETSIZE) return out;
+
+    long long top = 0;
+    for (long long value : khz) top = std::max(top, value);
+    if (top <= 0) return out;
+
+    const long long cutoff = top / 10 * 8;
+    for (size_t cpu = 0; cpu < n_cpu; cpu++) {
+        if (khz[cpu] < cutoff) continue;
+        CPU_SET((int) cpu, &out.mask);
+        out.count++;
+    }
+    if (out.count >= (int) n_cpu) {
+        CPU_ZERO(&out.mask);
+        out.count = 0;
+    }
+    return out;
+}
+
+// Read every core's clock ceiling out of cpufreq and hand it to the policy above. A core whose
+// cpufreq node is missing reads 0; if *none* of them are readable (some devices restrict the node)
+// the policy sees nothing to go on and declines to pin, which is the intended fallback.
+BigCores pick_big_cores() {
+    const long n_cpu = sysconf(_SC_NPROCESSORS_CONF);
+    if (n_cpu <= 1 || n_cpu > CPU_SETSIZE) return BigCores{};
+
+    std::vector<long long> khz((size_t) n_cpu, 0);
+    for (long cpu = 0; cpu < n_cpu; cpu++) {
+        char path[128];
+        snprintf(path, sizeof(path), "/sys/devices/system/cpu/cpu%ld/cpufreq/cpuinfo_max_freq", cpu);
+        FILE* f = fopen(path, "re");
+        if (f == nullptr) continue;
+        long long value = 0;
+        if (fscanf(f, "%lld", &value) == 1 && value > 0) khz[(size_t) cpu] = value;
+        fclose(f);
+    }
+    return select_big_cores(khz);
+}
+
+// Pins the calling thread to [cores] for a scope, restoring the mask it had on the way out.
+// Both entry points run on a *shared* thread — a Kotlin coroutine dispatcher's — which must not keep
+// the pinning after the call returns. The ggml workers created inside the scope inherit the mask and
+// keep it, which is the entire point: that is how the compute threads end up on the big cores.
+class BigCoreScope {
+public:
+    explicit BigCoreScope(const BigCores& cores) {
+        if (cores.count <= 0) return;
+        if (sched_getaffinity(0, sizeof(cpu_set_t), &previous_) != 0) return;
+        if (sched_setaffinity(0, sizeof(cpu_set_t), &cores.mask) != 0) {
+            LOGW("could not pin the inference thread to CPUs [%s] (errno %d); leaving affinity alone",
+                 cpu_list(cores.mask).c_str(), errno);
+            return;
+        }
+        restore_ = true;
+    }
+
+    ~BigCoreScope() {
+        if (restore_) sched_setaffinity(0, sizeof(cpu_set_t), &previous_);
+    }
+
+    BigCoreScope(const BigCoreScope&) = delete;
+    BigCoreScope& operator=(const BigCoreScope&) = delete;
+
+private:
+    cpu_set_t previous_{};
+    bool      restore_ = false;
+};
+
 struct AdvisorLlm {
     llama_model*       model = nullptr;
     llama_context*     ctx   = nullptr;
@@ -77,6 +185,8 @@ struct AdvisorLlm {
     // also sits in the cache but is never part of the next prompt, so it always falls after the shared
     // prefix and is dropped with everything else beyond it. Empty means "cache holds nothing usable".
     std::vector<llama_token> cached_prompt;
+    // The CPUs the compute threads belong on, decided once at load (see pick_big_cores).
+    BigCores big_cores;
 };
 
 // How many leading tokens two prompts share.
@@ -163,15 +273,7 @@ void log_thread_scheduling(const char* label) {
     std::string cpus = "?";
     cpu_set_t set;
     CPU_ZERO(&set);
-    if (sched_getaffinity(tid, sizeof(set), &set) == 0) {
-        cpus.clear();
-        for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
-            if (!CPU_ISSET(cpu, &set)) continue;
-            if (!cpus.empty()) cpus += ",";
-            cpus += std::to_string(cpu);
-        }
-        if (cpus.empty()) cpus = "none";
-    }
+    if (sched_getaffinity(tid, sizeof(set), &set) == 0) cpus = cpu_list(set);
 
     // e.g. "4:cpuset:/background" — the line that says the thread was demoted to the little cores.
     std::string cpuset = "?";
@@ -230,6 +332,76 @@ std::string token_to_piece(const llama_vocab* vocab, llama_token id) {
     return std::string(buf, n);
 }
 
+// How much of [s] ends on a complete UTF-8 sequence. A token's bytes are not characters: a single
+// emoji or CJK glyph is routinely split across two tokens, so streaming each piece the moment it is
+// produced would hand a truncated sequence to the JVM. Everything up to this point is safe to emit;
+// the remainder waits for the bytes that finish it.
+size_t complete_utf8_prefix(const std::string& s) {
+    const size_t n = s.size();
+    // A sequence is at most 4 bytes, so only the last few can be incomplete.
+    for (size_t back = 1; back <= 4 && back <= n; back++) {
+        const unsigned char c = (unsigned char) s[n - back];
+        if ((c & 0xC0) == 0x80) continue;  // continuation byte; keep walking back to the lead
+        size_t need;
+        if      ((c & 0x80) == 0x00) need = 1;
+        else if ((c & 0xE0) == 0xC0) need = 2;
+        else if ((c & 0xF0) == 0xE0) need = 3;
+        else if ((c & 0xF8) == 0xF0) need = 4;
+        else return n;                     // not a lead byte at all; hold nothing back
+        return back >= need ? n : n - back;
+    }
+    return n;
+}
+
+// The Kotlin object that receives each piece of the answer as it is produced, or null when the caller
+// did not ask to stream. Bytes rather than a jstring on purpose: NewStringUTF wants *modified* UTF-8
+// and rejects (or mangles) the 4-byte sequences that emoji are made of, so the conversion belongs on
+// the Kotlin side where the standard decoder can do it.
+struct TokenSink {
+    jobject   obj    = nullptr;
+    jmethodID method = nullptr;
+
+    bool valid() const { return obj != nullptr && method != nullptr; }
+};
+
+TokenSink resolve_sink(JNIEnv* env, jobject listener) {
+    TokenSink sink;
+    if (listener == nullptr) return sink;
+    jclass cls = env->GetObjectClass(listener);
+    if (cls == nullptr) return sink;
+    sink.method = env->GetMethodID(cls, "onToken", "([B)V");
+    env->DeleteLocalRef(cls);
+    if (sink.method == nullptr) {
+        env->ExceptionClear();
+        LOGW("token listener has no onToken([B)V; streaming disabled for this call");
+        return sink;
+    }
+    sink.obj = listener;
+    return sink;
+}
+
+// Hand [text] to the listener. Returns false if the callback threw, in which case the caller stops
+// streaming but lets generation finish — a broken listener must not lose the answer.
+bool emit_to_sink(JNIEnv* env, const TokenSink& sink, const std::string& text) {
+    if (!sink.valid() || text.empty()) return true;
+    jbyteArray bytes = env->NewByteArray((jsize) text.size());
+    if (bytes == nullptr) {
+        env->ExceptionClear();
+        return false;
+    }
+    env->SetByteArrayRegion(bytes, 0, (jsize) text.size(),
+                            reinterpret_cast<const jbyte*>(text.data()));
+    env->CallVoidMethod(sink.obj, sink.method, bytes);
+    env->DeleteLocalRef(bytes);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        LOGW("token listener threw; continuing without streaming");
+        return false;
+    }
+    return true;
+}
+
 size_t first_stop(const std::string& text, const std::vector<std::string>& stops) {
     size_t best = std::string::npos;
     for (const auto& s : stops) {
@@ -277,21 +449,66 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     }
 
     llama_context_params cp = llama_context_default_params();
-    // 2048, not 4096: the KV cache is anonymous (non-evictable) memory — 576 MiB at 4096 vs 288 MiB
-    // here — and it competes with the 2.3 GiB of mmap'd weights for the page cache. When the weights
-    // can't stay resident, every decode re-faults them from flash and inference collapses. Advisor's
-    // prompts run ~500 tokens, so 2048 leaves ample room for prompt + reply.
-    cp.n_ctx = 2048;
+    // The KV cache is anonymous, non-evictable memory competing with 2.3 GiB of weights for RAM, and
+    // when the weights can't stay resident every decode re-faults them from flash and inference
+    // collapses — so context length is a memory decision here, not a capacity one.
+    //
+    // Quantizing the cache to Q8_0 (below) roughly halves its cost per token, which buys length: 3072
+    // tokens at Q8_0 is about 235 MiB, still *less* than the 288 MiB that 2048 tokens cost at f16
+    // before. That extra room is not for longer answers — it is what lets more of the conversation
+    // stay in the prompt, and the whole of it is prefix that the next turn reuses instead of
+    // prefilling. If the quantized cache turns out to be unavailable, the fallback below returns to
+    // 2048 rather than paying 432 MiB for the same window.
+    cp.n_ctx = 3072;
     // n_batch must cover a full-context prompt in one llama_decode (see the SIGABRT fixed earlier);
     // n_ubatch stays at the default 512 so a typical prompt is a *single* pass over the weights.
     cp.n_batch = cp.n_ctx;
-    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_DISABLED;
-    unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
+
+    // Run on the big cluster, and size the thread count from it. `hardware_concurrency() / 2` was a
+    // stand-in for "the fast half of the cores" that happens to be right on an 8-core 4+4 phone and
+    // wrong everywhere else; ask the device instead. When the topology says nothing useful
+    // (pick_big_cores returns empty) fall back to exactly the old number, so no device gets worse.
+    const BigCores big = pick_big_cores();
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int threads = big.count > 0 ? big.count : (hw > 1 ? static_cast<int>(hw / 2) : 1);
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
+    // Prefill is compute-bound and decode is memory-bandwidth-bound, but both are barrier-synchronized
+    // across the same worker set, so they want the same answer here: every thread on a fast core, none
+    // on a slow one. Pin for the whole of context creation — whichever thread first runs a graph is
+    // the one whose affinity ggml's workers inherit.
+    BigCoreScope pinned(big);
+
+    // Flash attention + a Q8_0 KV cache. FA was switched off while chasing a prefill stall (the cause
+    // turned out to be unoptimized ggml and chunked prefill, both since fixed) and never switched back
+    // on; it is also the precondition for quantizing the V cache. At n_ctx=2048 Qwen3-4B's cache is
+    // 2 * 36 layers * 8 KV heads * 128 dims * 2 bytes = 144 KiB/token = 288 MiB at f16, and roughly
+    // half that at Q8_0. That memory is anonymous and non-evictable, so halving it hands ~140 MiB back
+    // to the thing that actually decides inference speed on a phone: whether the 2.3 GiB of weights
+    // stay resident. Q8_0 is near-lossless for a KV cache — far less lossy than the Q4_K_M weights it
+    // sits beside.
+    //
+    // llama.cpp refuses a quantized V cache without FA, and FA itself can be unavailable on a given
+    // backend build (the Vulkan path especially), in which case llama_init_from_model returns null. So
+    // ask for the fast pair, and on failure fall back to exactly the previous configuration rather
+    // than leaving the model unloadable.
+    cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+    cp.type_k = GGML_TYPE_Q8_0;
+    cp.type_v = GGML_TYPE_Q8_0;
+
     llama_context* ctx = llama_init_from_model(model, cp);
+    bool quantized_kv = ctx != nullptr;
+    if (ctx == nullptr) {
+        LOGW("flash attention + Q8_0 KV cache unavailable on this build; retrying with f16 KV at 2048");
+        cp.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO;
+        cp.type_k = GGML_TYPE_F16;
+        cp.type_v = GGML_TYPE_F16;
+        // An f16 cache costs twice as much per token, so give back the length rather than the RAM.
+        cp.n_ctx   = 2048;
+        cp.n_batch = cp.n_ctx;
+        ctx = llama_init_from_model(model, cp);
+    }
     if (ctx == nullptr) {
         LOGW("llama_init_from_model returned null");
         llama_model_free(model);
@@ -302,9 +519,18 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
     h->model = model;
     h->ctx   = ctx;
     h->vocab = llama_model_get_vocab(model);
+    h->big_cores = big;
     llama_set_abort_callback(ctx, advisor_abort_cb, h);
-    LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=disabled",
-         (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers);
+    LOGI("Loaded Qwen3-4B GGUF; ctx=%d n_batch=%d n_ubatch=%d threads=%d n_gpu_layers=%d flash_attn=%s kv=%s",
+         (int) cp.n_ctx, (int) cp.n_batch, (int) cp.n_ubatch, threads, mp.n_gpu_layers,
+         llama_flash_attn_type_name(cp.flash_attn_type), quantized_kv ? "q8_0" : "f16");
+    // Which cores the workers were put on, and why that number of threads. An `affinity` that spans
+    // the little cores here means pick_big_cores found nothing to go on and the scheduler is free to
+    // place a worker on a core that will hold every other worker at the barrier.
+    LOGI("inference cpus: %s (%d of %ld online) — %s",
+         big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned",
+         threads, sysconf(_SC_NPROCESSORS_ONLN),
+         big.count > 0 ? "pinned to the fastest cluster" : "topology unreadable or homogeneous");
     // The single most useful line in this log: it names the ISA extensions ggml was actually compiled
     // with. `dotprod = 1` / `matmul_int8 = 1` mean the fast Q4_K and GEMM kernels are in; zeros mean the
     // build fell back to baseline armv8-a and prefill will be several times slower than it should be
@@ -322,13 +548,18 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeLoad(JNIEnv* env, jobject /*thiz*
 JNIEXPORT jstring JNICALL
 Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         JNIEnv* env, jobject /*thiz*/, jlong handle, jstring jprompt,
-        jint maxTokens, jfloat temperature, jfloat topP, jint topK, jobjectArray jstops) {
+        jint maxTokens, jfloat temperature, jfloat topP, jint topK, jobjectArray jstops,
+        jobject jlistener) {
 
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
     if (h == nullptr || h->ctx == nullptr) {
         LOGW("nativeGenerate called with no loaded model (handle/ctx null)");
         return env->NewStringUTF("");
     }
+    // Pinned for the duration of the call: ggml may create its workers on the first decode rather
+    // than at context creation, and they inherit the mask of whoever gets there first.
+    BigCoreScope pinned(h->big_cores);
+
     LOGI("nativeGenerate: start (budget=%d tokens)", maxTokens);
     log_thread_scheduling("nativeGenerate thread");
 
@@ -341,6 +572,14 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
         env->ReleaseStringUTFChars(js, s);
         env->DeleteLocalRef(js);
     }
+
+    // Text is streamed to the caller as it is produced, but never further than it is *settled*: a
+    // stop sequence arrives one token at a time, so the tail that could still turn out to be the
+    // start of one is held back rather than shown and retracted.
+    TokenSink sink = resolve_sink(env, jlistener);
+    size_t longest_stop = 0;
+    for (const auto& stop : stops) longest_stop = std::max(longest_stop, stop.size());
+    size_t emitted = 0;
 
     const char* prompt = env->GetStringUTFChars(jprompt, nullptr);
     std::string text(prompt);
@@ -462,6 +701,17 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
                 break;
             }
 
+            // Everything except the last `longest_stop` bytes can no longer become a stop sequence,
+            // and of that, everything up to the last complete UTF-8 sequence is safe to hand over.
+            if (sink.valid() && out.size() > emitted + longest_stop) {
+                const size_t window = out.size() - longest_stop - emitted;
+                const size_t safe = emitted + complete_utf8_prefix(out.substr(emitted, window));
+                if (safe > emitted) {
+                    if (emit_to_sink(env, sink, out.substr(emitted, safe - emitted))) emitted = safe;
+                    else sink = TokenSink{};
+                }
+            }
+
             batch.n_tokens = 1;
             batch.token[0]  = id;
             batch.pos[0]    = next_pos++;
@@ -474,6 +724,12 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
                      h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
                 break;
             }
+        }
+
+        // Whatever the loop ended on — a stop sequence, end-of-generation, the token budget or a
+        // failed decode — the held-back tail is settled now.
+        if (sink.valid() && emitted < out.size()) {
+            emit_to_sink(env, sink, out.substr(emitted));
         }
 
         const long long ms = elapsed_ms();
@@ -492,6 +748,16 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_batch_free(batch);
     llama_sampler_free(smpl);
     return env->NewStringUTF(out.c_str());
+}
+
+// The context length this model actually got, so the Kotlin side can size a prompt to it instead of
+// assuming. It is not a constant: it depends on whether the quantized KV cache was available.
+JNIEXPORT jint JNICALL
+Java_com_advisor_app_llm_LlamaCppBackend_nativeContextTokens(
+        JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorLlm*>(handle);
+    if (h == nullptr || h->ctx == nullptr) return 0;
+    return (jint) llama_n_ctx(h->ctx);
 }
 
 JNIEXPORT void JNICALL
@@ -516,7 +782,101 @@ struct AdvisorEmbed {
     llama_context*     ctx    = nullptr;
     const llama_vocab* vocab  = nullptr;
     int                n_embd = 0;
+    BigCores           big_cores;
+    // How many documents may share one llama_decode, and how many tokens each may contribute. Read
+    // back from the context rather than assumed: a context that could not be created with room for
+    // several sequences falls back to one, and the packing below then degenerates to one at a time.
+    int                n_seq_max     = 1;
+    int                n_ctx_per_seq = 512;
 };
+
+// Sequences per embedding batch, and tokens allowed to each. Indexing a corpus is hundreds of short
+// documents, and one llama_decode per document means one sweep over the model's weights per document
+// — the same mistake that made generation's prefill look hung when it was chunked. Eight at a time
+// amortises that sweep across eight documents. 512 tokens is what sentence-embedding models
+// (bge / e5 / gte / MiniLM / nomic) are trained for, so a larger per-document window would cost
+// memory to hold text the model was never going to use well.
+constexpr int EMBED_SEQS         = 8;
+constexpr int EMBED_TOKENS_PER_SEQ = 512;
+
+// Embed [texts] in as few llama_decode calls as the context allows. Returns one vector per input, in
+// order; an entry is empty when that text could not be embedded, so a single bad document costs its
+// own vector and not the batch's.
+std::vector<std::vector<float>> embed_texts(AdvisorEmbed* h, const std::vector<std::string>& texts) {
+    std::vector<std::vector<float>> out(texts.size());
+    if (h == nullptr || h->ctx == nullptr || h->n_embd <= 0) return out;
+
+    // Tokenize everything up front: packing needs to know the sizes before it can decide the batches.
+    std::vector<std::vector<llama_token>> tokens(texts.size());
+    for (size_t i = 0; i < texts.size(); i++) {
+        const std::string& text = texts[i];
+        if (text.empty()) continue;
+        std::vector<llama_token> buf(text.size() + 8);
+        const int n = llama_tokenize(
+                h->vocab, text.c_str(), (int) text.size(),
+                buf.data(), (int) buf.size(), /*add_special=*/true, /*parse_special=*/false);
+        if (n <= 0) {
+            LOGW("embedding: tokenization failed (%d) for document %zu", n, i);
+            continue;
+        }
+        buf.resize(std::min(n, h->n_ctx_per_seq));
+        tokens[i] = std::move(buf);
+    }
+
+    const int batch_capacity = (int) llama_n_batch(h->ctx);
+    llama_batch batch = llama_batch_init(batch_capacity, 0, 1);
+    llama_memory_t mem = llama_get_memory(h->ctx);
+
+    // Which input each sequence slot in the current batch belongs to.
+    std::vector<size_t> slot_of;
+    int packed_tokens = 0;
+    int decodes = 0;
+
+    auto flush = [&]() {
+        if (slot_of.empty()) return;
+        decodes++;
+        batch.n_tokens = packed_tokens;
+        if (llama_decode(h->ctx, batch) == 0) {
+            for (size_t seq = 0; seq < slot_of.size(); seq++) {
+                const float* emb = llama_get_embeddings_seq(h->ctx, (llama_seq_id) seq);
+                if (emb == nullptr) continue;
+                out[slot_of[seq]].assign(emb, emb + h->n_embd);
+            }
+        } else {
+            LOGW("embedding: llama_decode failed for a batch of %zu documents", slot_of.size());
+        }
+        slot_of.clear();
+        packed_tokens = 0;
+        llama_memory_clear(mem, /*data=*/true);
+    };
+
+    llama_memory_clear(mem, /*data=*/true);
+    for (size_t i = 0; i < texts.size(); i++) {
+        const std::vector<llama_token>& seq = tokens[i];
+        if (seq.empty()) continue;
+        const bool no_room = (int) slot_of.size() >= h->n_seq_max ||
+                             packed_tokens + (int) seq.size() > batch_capacity;
+        if (no_room) flush();
+
+        const auto seq_id = (llama_seq_id) slot_of.size();
+        for (size_t t = 0; t < seq.size(); t++) {
+            const int at = packed_tokens + (int) t;
+            batch.token[at]     = seq[t];
+            batch.pos[at]       = (llama_pos) t;
+            batch.n_seq_id[at]  = 1;
+            batch.seq_id[at][0] = seq_id;
+            // Mean pooling reads every token's output, not just the last.
+            batch.logits[at]    = 1;
+        }
+        packed_tokens += (int) seq.size();
+        slot_of.push_back(i);
+    }
+    flush();
+
+    llama_batch_free(batch);
+    LOGI("embedding: %zu documents in %d decode(s)", texts.size(), decodes);
+    return out;
+}
 
 } // namespace
 
@@ -546,23 +906,47 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     llama_context_params cp = llama_context_default_params();
     cp.embeddings   = true;
     cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;
-    cp.n_ctx        = 2048;
-    cp.n_batch      = 2048;
-    cp.n_ubatch     = 2048;
-    unsigned hw = std::thread::hardware_concurrency();
-    int threads = hw > 1 ? static_cast<int>(hw / 2) : 1;
+    // Room for EMBED_SEQS documents of EMBED_TOKENS_PER_SEQ tokens in one decode. n_ubatch has to
+    // cover the whole batch: a non-causal embedding model cannot have a sequence split across
+    // micro-batches, so this is one pass over the weights for all eight documents.
+    cp.n_seq_max    = EMBED_SEQS;
+    cp.n_ctx        = EMBED_SEQS * EMBED_TOKENS_PER_SEQ;
+    cp.n_batch      = cp.n_ctx;
+    cp.n_ubatch     = cp.n_ctx;
+    // Same reasoning as the generation context: the big cluster, sized from the device rather than
+    // from a guess at what half the cores means. Embedding a corpus is a long barrier-synchronized
+    // batch job, so a worker on a little core costs here exactly as it does in prefill.
+    const BigCores big = pick_big_cores();
+    const unsigned hw = std::thread::hardware_concurrency();
+    const int threads = big.count > 0 ? big.count : (hw > 1 ? static_cast<int>(hw / 2) : 1);
     cp.n_threads       = threads;
     cp.n_threads_batch = threads;
 
+    BigCoreScope pinned(big);
     llama_context* ctx = llama_init_from_model(model, cp);
+    if (ctx == nullptr) {
+        // Batching is an optimisation, not a requirement: retry as a single sequence rather than
+        // leave retrieval on the lexical fallback because a model wouldn't take the wider context.
+        LOGW("embedding: could not create a batched context; retrying with one sequence");
+        cp.n_seq_max = 1;
+        cp.n_ctx     = EMBED_TOKENS_PER_SEQ;
+        cp.n_batch   = cp.n_ctx;
+        cp.n_ubatch  = cp.n_ctx;
+        ctx = llama_init_from_model(model, cp);
+    }
     if (ctx == nullptr) {
         LOGW("embedding: llama_init_from_model returned null");
         llama_model_free(model);
         return 0;
     }
 
-    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model)};
-    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d", h->n_embd, threads);
+    auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model), big};
+    // Read the limits back rather than assuming the request was honoured; the packing follows these.
+    h->n_seq_max     = std::max(1, (int) llama_n_seq_max(ctx));
+    h->n_ctx_per_seq = std::max(1, (int) llama_n_ctx(ctx) / h->n_seq_max);
+    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d cpus=%s batch=%d docs x %d tokens",
+         h->n_embd, threads, big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned",
+         h->n_seq_max, h->n_ctx_per_seq);
     return reinterpret_cast<jlong>(h);
 }
 
@@ -579,51 +963,69 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
     if (h == nullptr || h->ctx == nullptr) return env->NewFloatArray(0);
 
+    BigCoreScope pinned(h->big_cores);
+
     const char* text = env->GetStringUTFChars(jtext, nullptr);
     std::string input(text ? text : "");
     env->ReleaseStringUTFChars(jtext, text);
 
-    int n_max = (int) input.size() + 8;
-    std::vector<llama_token> tokens(n_max);
-    int n_tok = llama_tokenize(
-            h->vocab, input.c_str(), (int) input.size(),
-            tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/false);
-    if (n_tok <= 0) {
-        LOGW("embedding: tokenization failed (%d)", n_tok);
+    const std::vector<std::vector<float>> vectors = embed_texts(h, {input});
+    if (vectors.empty() || vectors[0].empty()) {
+        LOGW("embedding: no embedding returned");
         return env->NewFloatArray(0);
     }
-    const int n_ctx = (int) llama_n_ctx(h->ctx);
-    if (n_tok > n_ctx) n_tok = n_ctx;
-    tokens.resize(n_tok);
 
-    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
-
-    llama_batch batch = llama_batch_init(n_tok, 0, 1);
-    for (int i = 0; i < n_tok; i++) {
-        batch.token[i]     = tokens[i];
-        batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
-        batch.logits[i]    = 1;
+    jfloatArray result = env->NewFloatArray((jsize) vectors[0].size());
+    if (result != nullptr) {
+        env->SetFloatArrayRegion(result, 0, (jsize) vectors[0].size(), vectors[0].data());
     }
-    batch.n_tokens = n_tok;
-
-    jfloatArray result = env->NewFloatArray(0);
-    if (llama_decode(h->ctx, batch) == 0) {
-        const float* emb = llama_get_embeddings_seq(h->ctx, 0);
-        if (emb == nullptr) emb = llama_get_embeddings(h->ctx);
-        if (emb != nullptr && h->n_embd > 0) {
-            result = env->NewFloatArray(h->n_embd);
-            env->SetFloatArrayRegion(result, 0, h->n_embd, emb);
-        } else {
-            LOGW("embedding: no embeddings returned");
-        }
-    } else {
-        LOGW("embedding: llama_decode failed");
-    }
-
-    llama_batch_free(batch);
     return result;
+}
+
+// Embed many documents at once. Indexing the corpus is the cold-start cost of semantic retrieval, and
+// doing it a document at a time meant a separate pass over the model's weights for each one; this
+// packs several into every llama_decode. Returns one float[] per input, in order, empty where a
+// document could not be embedded — so the Kotlin side can cache what worked and retry the rest rather
+// than losing the batch.
+JNIEXPORT jobjectArray JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbedAll(
+        JNIEnv* env, jobject /*thiz*/, jlong handle, jobjectArray jtexts) {
+
+    const jsize count = jtexts ? env->GetArrayLength(jtexts) : 0;
+    jclass float_array_class = env->FindClass("[F");
+    jobjectArray results = env->NewObjectArray(count, float_array_class, nullptr);
+    if (results == nullptr) return nullptr;
+
+    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
+    if (h == nullptr || h->ctx == nullptr || count == 0) return results;
+
+    BigCoreScope pinned(h->big_cores);
+
+    std::vector<std::string> texts((size_t) count);
+    for (jsize i = 0; i < count; i++) {
+        auto js = (jstring) env->GetObjectArrayElement(jtexts, i);
+        if (js == nullptr) continue;
+        const char* text = env->GetStringUTFChars(js, nullptr);
+        if (text != nullptr) {
+            texts[(size_t) i] = text;
+            env->ReleaseStringUTFChars(js, text);
+        }
+        env->DeleteLocalRef(js);
+    }
+
+    const std::vector<std::vector<float>> vectors = embed_texts(h, texts);
+    for (jsize i = 0; i < count; i++) {
+        const std::vector<float>& vec = vectors[(size_t) i];
+        if (vec.empty()) continue;
+        jfloatArray one = env->NewFloatArray((jsize) vec.size());
+        if (one == nullptr) break;
+        env->SetFloatArrayRegion(one, 0, (jsize) vec.size(), vec.data());
+        env->SetObjectArrayElement(results, i, one);
+        // The array is referenced by `results` now; drop this frame's own reference so a large
+        // corpus doesn't exhaust the local reference table mid-batch.
+        env->DeleteLocalRef(one);
+    }
+    return results;
 }
 
 JNIEXPORT void JNICALL

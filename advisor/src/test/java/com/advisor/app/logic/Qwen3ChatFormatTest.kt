@@ -163,4 +163,39 @@ class Qwen3ChatFormatTest {
         // Plain text passes through, trimmed.
         assertEquals("Just an answer.", Qwen3ChatFormat.cleanOutput("  Just an answer.  "))
     }
+
+    // --- streaming: the completion is still arriving ---
+
+    @Test
+    fun a_partial_answer_is_shown_as_it_stands() {
+        assertEquals("Mow the", Qwen3ChatFormat.cleanPartial("Mow the"))
+        assertEquals("Mow the lawn.", Qwen3ChatFormat.cleanPartial("Mow the lawn."))
+    }
+
+    @Test
+    fun an_unclosed_think_block_is_held_back_until_it_closes() {
+        // Reasoning is the model's scratchpad; showing it and then retracting it is worse than waiting.
+        assertEquals("", Qwen3ChatFormat.cleanPartial("<think>the user is asking"))
+        assertEquals("Mow the lawn.", Qwen3ChatFormat.cleanPartial("<think>reasoning</think>Mow the lawn."))
+    }
+
+    @Test
+    fun a_control_token_arriving_byte_by_byte_never_shows() {
+        assertEquals("Mow the lawn.", Qwen3ChatFormat.cleanPartial("Mow the lawn.<|"))
+        assertEquals("Mow the lawn.", Qwen3ChatFormat.cleanPartial("Mow the lawn.<|im_"))
+        assertEquals("Mow the lawn.", Qwen3ChatFormat.cleanPartial("Mow the lawn.<|im_end|>"))
+    }
+
+    @Test
+    fun prose_containing_an_angle_bracket_still_streams() {
+        // Only the beginnings of real markers are held back, so ordinary text is never withheld
+        // waiting for a closing bracket that is not coming.
+        assertEquals("under 5 < 6 items", Qwen3ChatFormat.cleanPartial("under 5 < 6 items"))
+    }
+
+    @Test
+    fun a_finished_completion_reads_the_same_either_way() {
+        val raw = "Mow the lawn.<|im_end|>"
+        assertEquals(Qwen3ChatFormat.cleanOutput(raw), Qwen3ChatFormat.cleanPartial(raw))
+    }
 }

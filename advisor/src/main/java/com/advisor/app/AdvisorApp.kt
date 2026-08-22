@@ -26,9 +26,11 @@ import com.advisor.app.logic.HybridRetriever
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.Qwen3LlmEngine
 import com.advisor.app.logic.TaskWriter
+import com.advisor.app.logic.VectorCache
 import com.citation.app.data.db.CitationDatabase
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.logistics.app.data.db.LogisticsDatabase
+import java.io.File
 
 /**
  * Advisor's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
@@ -91,9 +93,19 @@ class AdvisorApp private constructor(private val app: Application) {
 
     /**
      * Retrieval strategy: semantic when an embedding model is loaded (via [LlamaCppEmbedder]), else the
-     * deterministic lexical retriever. The vector cache is held here so it lives across questions.
+     * deterministic lexical retriever. The vector cache is held here so it lives across questions —
+     * and, being file-backed, across app starts: embedding the corpus is the slowest thing that
+     * happens on a first question, and there is no reason to repeat it every launch.
+     *
+     * It lives in `cacheDir` because that is what it is. The system may delete it under storage
+     * pressure and nothing breaks: the vectors are recomputed, which costs time and nothing else.
      */
-    val retriever by lazy { HybridRetriever(LlamaCppEmbedder(embeddingModelStore)) }
+    val retriever by lazy {
+        HybridRetriever(
+            LlamaCppEmbedder(embeddingModelStore),
+            VectorCache.persistent(File(app.cacheDir, "advisor-vectors.bin"))
+        )
+    }
 
     /**
      * The language model: a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the

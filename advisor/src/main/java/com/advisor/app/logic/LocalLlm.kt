@@ -39,6 +39,33 @@ interface LocalLlmEngine {
 
     /** Produce an answer for [prompt]. Must run fully on-device; no network, no I/O. */
     fun generate(prompt: AdvisorPrompt): String
+
+    /**
+     * As [generate], but reports the answer as it forms: [onPartial] is called with the whole answer
+     * so far, cleaned and ready to display, each time more of it is settled.
+     *
+     * Cumulative rather than incremental on purpose. Cleaning can *retract* text — a control token
+     * turns out to be one, a reasoning block closes and is dropped — so a caller that appended deltas
+     * would have to undo them. Being handed the current state instead means displaying it is a plain
+     * assignment.
+     *
+     * The default runs the non-streaming path, which is right for any engine fast enough that
+     * watching it arrive would be pointless.
+     */
+    fun generate(prompt: AdvisorPrompt, onPartial: (String) -> Unit): String = generate(prompt)
+
+    /**
+     * Get whatever this engine needs in memory ready ahead of the first question. Blocking; the
+     * default does nothing, which is right for an engine that has nothing to load.
+     */
+    fun warmUp() {}
+
+    /**
+     * How many tokens of prompt this engine can be given. Callers size the prompt to it — chiefly how
+     * much of the conversation still fits — so it reports the model's real window when there is one,
+     * and a conservative floor when there isn't.
+     */
+    val contextTokens: Int get() = LlmBackend.DEFAULT_CONTEXT_TOKENS
 }
 
 /**

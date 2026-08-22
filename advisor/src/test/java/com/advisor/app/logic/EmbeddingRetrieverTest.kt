@@ -101,4 +101,51 @@ class EmbeddingRetrieverTest {
         EmbeddingRetriever(corpus, v2, cache).retrieve("who am i")
         assertEquals(3, v2.embeddedDocTexts.size) // different model id ⇒ nothing reused
     }
+
+    /**
+     * The property the native batching depends on: every miss is asked for in *one* call, so the
+     * backend can pack several documents into each pass over the model instead of one pass each.
+     */
+    @Test
+    fun every_missing_document_is_requested_in_a_single_batch() {
+        val embedder = BatchCountingEmbedder()
+        val docs = (1..12).map { doc("d$it", "Task $it", "mow the lawn $it") }
+        EmbeddingRetriever(docs, embedder, VectorCache.inMemory()).retrieve("tasks")
+
+        assertEquals(1, embedder.batchSizes.size)
+        assertEquals(12, embedder.batchSizes.single())
+    }
+
+    /**
+     * A document the model failed on must not be cached as a permanent miss — it is retried on the
+     * next question, and only it, since the rest are cached.
+     */
+    @Test
+    fun a_document_that_failed_to_embed_is_retried_not_poisoned_into_the_cache() {
+        val embedder = BatchCountingEmbedder(failFor = setOf("Task 2\nmow the lawn 2"))
+        val docs = (1..3).map { doc("d$it", "Task $it", "mow the lawn $it") }
+        val cache = VectorCache.inMemory()
+
+        EmbeddingRetriever(docs, embedder, cache).retrieve("tasks")
+        EmbeddingRetriever(docs, embedder, cache).retrieve("tasks")
+
+        // Second pass asked for only the one that failed, not all three.
+        assertEquals(listOf(3, 1), embedder.batchSizes)
+    }
+
+    /** Records how documents were grouped into [embedAll] calls, and can fail chosen texts. */
+    private class BatchCountingEmbedder(
+        private val failFor: Set<String> = emptySet()
+    ) : Embedder {
+        val batchSizes = mutableListOf<Int>()
+        override val isReady = true
+        override val id = "batch-counting"
+
+        override fun embed(text: String): FloatArray = floatArrayOf(1f, 0f)
+
+        override fun embedAll(texts: List<String>): List<FloatArray> {
+            batchSizes += texts.size
+            return texts.map { if (it in failFor) FloatArray(0) else floatArrayOf(1f, 0f) }
+        }
+    }
 }

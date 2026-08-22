@@ -16,9 +16,12 @@ import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.AdvisorPrompt
+import com.advisor.app.logic.AnswerText
 import com.advisor.app.logic.AssistantNaming
+import com.advisor.app.logic.Citations
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
+import com.advisor.app.logic.ConversationWindow
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
@@ -37,6 +40,7 @@ import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.PromptAssembler
+import com.advisor.app.logic.PromptBudget
 import com.advisor.app.logic.RelevanceDirectives
 import com.advisor.app.logic.RelevanceEngine
 import com.advisor.app.logic.RetrievedChunk
@@ -198,7 +202,15 @@ class AdvisorRepository(
      * Answer [question] against the granted apps, the user's identity, and recalled long-term
      * memory. Persists the turn and bumps recall stats on the memories that were surfaced.
      */
-    suspend fun ask(question: String): AdvisorAnswer {
+    /**
+     * Answer [question] over the user's granted data.
+     *
+     * [onPartial] is optional and, when given, is called with the answer as it forms — the whole of it
+     * so far, ready to display. A real 4B model runs for tens of seconds on-device, so this is the
+     * difference between watching a spinner and watching a reply; callers that don't care (tests, the
+     * placeholder path) simply omit it.
+     */
+    suspend fun ask(question: String, onPartial: ((String) -> Unit)? = null): AdvisorAnswer {
         val permissions = currentPermissions()
         val identity = loadIdentity()
 
@@ -275,7 +287,14 @@ class AdvisorRepository(
         // Recent chat history, oldest-first, so retrieval, the C3A gate and the prompt all reason over
         // the conversation — not just this one message. Loaded before the turn is persisted, so it's
         // strictly the prior turns.
-        val conversation = dao.recentMessages(HISTORY_TURNS)
+        //
+        // How far back to read is anchored to the conversation's length rather than being a fixed
+        // "last N": the model's KV cache keeps whatever this prompt shares with the previous one, and
+        // the history is exactly the shareable part, so a window that slid every turn would throw away
+        // the reuse and re-prefill the lot. See ConversationWindow.
+        val totalMessages = dao.countMessages()
+        val windowStart = ConversationWindow.startIndex(totalMessages)
+        val conversation = dao.recentMessages(totalMessages - windowStart)
             .asReversed()
             .map { ConversationTurn(fromUser = it.role == ROLE_USER, text = it.text) }
             .filter { it.text.isNotBlank() }
@@ -327,20 +346,47 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
+        // The grounded set the answer is built from; the refinement round below may narrow it.
+        var groundingResult = grounding
+        var groundChunks = chunks
+
+        // How much of that history actually fits, measured against the rest of this prompt rather than
+        // guessed. What overflows is dropped here, deliberately: the native backend's own overflow
+        // handling truncates from the *head*, which is where the system instruction lives, so a long
+        // conversation would otherwise cost the model its grounding contract precisely when it needed
+        // it. Measured by rendering the prompt without its conversation — the only part whose size
+        // this decides.
+        //
+        // Trimming is stride-aligned like the window itself, and settled once: the refinement pass
+        // reuses this same history rather than recomputing a window that a shrinking CONTEXT would let
+        // grow, which would move the shared prefix for no gain.
+        val promptConversation = ConversationWindow.fit(
+            conversation,
+            PromptBudget.historyChars(
+                groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, emptyList(), systemPrompt)
+                    .render(includeConversation = false),
+                engine.contextTokens
+            )
+        )
+
+        // Directives are the app's private bookkeeping, not part of the reply, so what streams out is
+        // the answer with them removed — including one still being typed, which the whole-line strip
+        // patterns cannot match yet.
+        val stream: ((String) -> Unit)? = onPartial?.let { emit ->
+            { text: String -> emit(AnswerText.inProgress(text)) }
+        }
+
         // First pass. The prompt carries the grounded context plus the logic notes and the relevance
         // filter's summary, so the model can be honest about near-misses. A real local model runs for
         // seconds and can block on native inference, so keep generation off the UI thread; the
         // placeholder engine is instant, so this is free when no model is loaded.
-        var groundingResult = grounding
-        var groundChunks = chunks
         var raw = withContext(Dispatchers.Default) {
-            engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
         }
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
         // @relevance(n): <verdict> line. Apply those verdicts over the deterministic baseline
-        // (RelevanceEngine.reassess) and — only when that actually changes the grounded set — let the
-        // model answer again over just the candidates that fit. Bounded to one round so it always
+        // (RelevanceEngine.reassess) and drop what no longer fits. Bounded to one round so it always
         // terminates, and inert for the placeholder (which never emits @relevance).
         val votes = RelevanceDirectives.parse(raw)
         if (votes.isNotEmpty()) {
@@ -348,10 +394,33 @@ class AdvisorRepository(
             val overrides = votes.mapNotNull { v -> refToId[v.ref]?.let { it to v.category } }.toMap()
             val refined = RelevanceEngine.reassess(groundingResult, overrides)
             if (refined.grounding.map { it.document.id } != groundChunks.map { it.document.id }) {
+                val kept = refined.grounding.map { it.document.id }.toSet()
+                val dropped = groundChunks.map { it.document.id }.toSet() - kept
+                // Whether to answer again is the most expensive decision in this pipeline: a second
+                // pass is a second full generation, tens of seconds on-device, and the system prompt
+                // asks for these verdicts on *every* turn — so re-running whenever one arrives made
+                // the routine cost of a question two generations rather than one.
+                //
+                // It is only worth paying when the first answer actually leaned on something the model
+                // has just disqualified. The `[n]` markers say exactly that: an answer that never cited
+                // a dropped candidate did not rest on it, and asking again over a set it already
+                // ignored reproduces the same reply for the same cost. The exception is a refinement
+                // that leaves *nothing* standing — the answer was grounded in candidates that are all
+                // now disqualified, so it has to be made honestly over an empty set.
+                val leanedOnDropped =
+                    Citations.citedIds(raw, PromptAssembler.blocks(groundChunks)).any { it in dropped }
+                val nothingLeftStanding = refined.grounding.isEmpty() && groundChunks.isNotEmpty()
+
+                // Either way the misfits stop being shown as sources: when the answer stands, nothing
+                // in its text points at them — that is exactly why it stands — so dropping them leaves
+                // no dangling reference.
                 groundingResult = refined
                 groundChunks = refined.grounding
-                raw = withContext(Dispatchers.Default) {
-                    engine.generate(groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, conversation, systemPrompt))
+
+                if (leanedOnDropped || nothingLeftStanding) {
+                    raw = withContext(Dispatchers.Default) {
+                        generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
+                    }
                 }
             }
         }
@@ -365,12 +434,38 @@ class AdvisorRepository(
         for (write in MemoryDirectives.parse(raw)) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
         }
-        val text = RelevanceDirectives.strip(MemoryDirectives.strip(ProfileDirectives.strip(raw)))
+        val text = AnswerText.finished(raw)
 
         memory.markRecalled(recalled.map { it.id })
         persistTurn(question, text, groundChunks.map { it.document }, KIND_NORMAL)
 
         return AdvisorAnswer(text, groundChunks.map { it.document }, recalled, engine.spec, EngineDecision.ANSWER)
+    }
+
+    /**
+     * Load the model ahead of the first question, so opening the assistant pays for it rather than the
+     * first thing the user asks. Off the main thread — this reads gigabytes — and safe to call more
+     * than once; a question asked mid-load waits for the same load rather than starting another.
+     */
+    suspend fun warmUpModel() = withContext(Dispatchers.Default) { engine.warmUp() }
+
+    /** Build the grounded prompt and run it through the engine, streaming when a caller is watching. */
+    private fun generate(
+        question: String,
+        chunks: List<RetrievedChunk>,
+        identity: Identity,
+        recalled: List<MemoryRecord>,
+        profiles: List<Profile>,
+        logicNotes: List<String>,
+        grounding: GroundingResult,
+        conversation: List<ConversationTurn>,
+        systemPrompt: String,
+        onPartial: ((String) -> Unit)?
+    ): String {
+        val prompt = groundedPrompt(
+            question, chunks, identity, recalled, profiles, logicNotes, grounding, conversation, systemPrompt
+        )
+        return if (onPartial == null) engine.generate(prompt) else engine.generate(prompt, onPartial)
     }
 
     /**
@@ -576,7 +671,5 @@ class AdvisorRepository(
         const val SOURCE_ADVISOR = "advisor"
         /** The seeded persona profile the assistant's name is stored in (see [ProfileStore]). */
         const val PERSONA_PROFILE_KEY = "llm-persona"
-        /** How many recent messages feed the conversation context (≈ the last handful of exchanges). */
-        const val HISTORY_TURNS = 8
     }
 }

@@ -28,13 +28,54 @@ interface LlmBackend {
     /** A short label for what is loaded (e.g. the resolved GGUF filename), for diagnostics. */
     val detail: String
 
+    /**
+     * How many tokens of context this model has, for callers sizing a prompt to it.
+     *
+     * Not a constant, and not something to assume: a backend may end up with a different window than
+     * it asked for. The default is the conservative floor — building a prompt for a window larger than
+     * the real one is how a prompt gets truncated, and truncation takes the *front*, which is where
+     * the system instruction lives.
+     */
+    val contextTokens: Int get() = DEFAULT_CONTEXT_TOKENS
+
     /** Run [prompt] (already in the model's chat format) to completion and return the raw text. */
     fun generate(prompt: String, params: GenerationParams = GenerationParams()): String
+
+    /**
+     * As [generate], but hands each piece of the answer to [onToken] as it is produced, and still
+     * returns the whole raw text. The pieces are raw model output in order, so concatenating them
+     * reconstructs the return value — they are not cleaned, and a piece is not a word or a token, just
+     * however many bytes were settled at that moment.
+     *
+     * A generation on a phone runs for tens of seconds, so whether a caller can show it arriving is
+     * the difference between a spinner and a reply. The default ignores [onToken] and delegates, so a
+     * backend that cannot stream (or a test fake) needs no implementation and simply reports its
+     * answer at the end.
+     */
+    fun generate(prompt: String, params: GenerationParams, onToken: (String) -> Unit): String =
+        generate(prompt, params)
+
+    /**
+     * Load the model now, if it isn't already, so the first question doesn't pay for it.
+     *
+     * Loading a multi-gigabyte GGUF is tens of seconds of I/O and page allocation, and it happened
+     * inside the first `generate` — landing entirely on the first question the user asked, on top of
+     * that question's own retrieval and inference. Doing it when the assistant is opened instead moves
+     * that cost to a moment when nobody is waiting on an answer.
+     *
+     * Blocking, and safe to call repeatedly: a backend that is already loaded returns immediately, and
+     * a concurrent question simply waits for the same load rather than starting a second one. The
+     * default does nothing, which is right for a backend with nothing to load.
+     */
+    fun warmUp() {}
 
     /** Release native resources. Safe to call more than once. */
     fun close() {}
 
     companion object {
+        /** The smallest context any backend here is built with; assumed until one says otherwise. */
+        const val DEFAULT_CONTEXT_TOKENS = 2048
+
         /** A backend that never loads; the engine then falls back to the extractive placeholder. */
         val NONE: LlmBackend = object : LlmBackend {
             override val isReady = false

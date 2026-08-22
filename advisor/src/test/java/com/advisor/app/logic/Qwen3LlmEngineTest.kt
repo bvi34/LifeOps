@@ -13,10 +13,28 @@ class Qwen3LlmEngineTest {
         private val reply: (String) -> String = { "" }
     ) : LlmBackend {
         var lastPrompt: String? = null
-        override val detail = "fake"
+        var warmedUp = false
+        /** A backend reports the loaded file here, and the engine's spec is read from it. */
+        override var detail = "qwen3-4b-q4_k_m.gguf"
+
+        override fun warmUp() {
+            warmedUp = true
+        }
         override fun generate(prompt: String, params: GenerationParams): String {
             lastPrompt = prompt
             return reply(prompt)
+        }
+
+        /** Streams the scripted reply one character at a time — the worst case for partial cleaning. */
+        override fun generate(
+            prompt: String,
+            params: GenerationParams,
+            onToken: (String) -> Unit
+        ): String {
+            lastPrompt = prompt
+            val text = reply(prompt)
+            for (ch in text) onToken(ch.toString())
+            return text
         }
     }
 
@@ -39,6 +57,7 @@ class Qwen3LlmEngineTest {
         assertEquals("Mow the lawn.", answer)
         assertFalse("reports the real model, not the placeholder", engine.spec.isPlaceholder)
         assertEquals("Qwen3-4B", engine.spec.name)
+        assertEquals("4B", engine.spec.parameters)
         assertTrue("feeds the backend a ChatML prompt", backend.lastPrompt!!.contains("<|im_start|>"))
     }
 
@@ -75,5 +94,73 @@ class Qwen3LlmEngineTest {
 
         assertFalse(answer.isBlank())
         assertTrue(answer.contains("Mow the lawn"))
+    }
+
+    @Test
+    fun streaming_reports_the_answer_as_it_forms_and_still_returns_it_whole() {
+        val backend = FakeBackend(isReady = true) { "Mow the lawn.<|im_end|>" }
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertEquals("Mow the lawn.", answer)
+        // Cumulative, so the last thing reported is the finished answer and the UI never has to
+        // reassemble anything.
+        assertEquals(answer, seen.last())
+        assertTrue(seen.size > 1)
+        // Every report is a prefix of the answer: text is only ever added or retracted as a whole,
+        // never rewritten into something the user did not see arrive.
+        assertTrue(seen.all { answer.startsWith(it) })
+        // The control token is never shown, not even as the "<|" that begins it.
+        assertTrue(seen.none { it.contains("<|") })
+    }
+
+    @Test
+    fun streaming_falls_back_to_the_placeholder_when_no_model_is_loaded() {
+        val backend = FakeBackend(isReady = false)
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertTrue(answer.isNotBlank())
+        assertTrue(seen.isEmpty())
+    }
+
+    @Test
+    fun a_reply_that_is_only_reasoning_streams_nothing_and_falls_back() {
+        // cleanOutput reduces this to blank, so the engine falls back — and nothing partial should
+        // have been shown for an answer that turns out not to exist.
+        val backend = FakeBackend(isReady = true) { "<think>hmm</think>" }
+        val seen = mutableListOf<String>()
+        val answer = Qwen3LlmEngine(backend).generate(grounded()) { seen += it }
+
+        assertEquals(PlaceholderLlmEngine().generate(grounded()), answer)
+        assertTrue(seen.all { it.isEmpty() })
+    }
+
+    @Test
+    fun warm_up_reaches_the_backend_so_the_first_question_does_not_pay_to_load() {
+        val backend = FakeBackend(isReady = true)
+        Qwen3LlmEngine(backend).warmUp()
+        assertTrue(backend.warmedUp)
+    }
+
+    /**
+     * The model card exists to say what is answering, so a different installed model has to be
+     * reported as itself — the size especially, since it is what decides how fast an answer arrives.
+     */
+    @Test
+    fun the_spec_names_whichever_model_is_actually_loaded() {
+        val backend = FakeBackend(isReady = true)
+        backend.detail = "qwen3-1.7b-q4_k_m.gguf"
+        val spec = Qwen3LlmEngine(backend).spec
+
+        assertEquals("Qwen3-1.7B", spec.name)
+        assertEquals("1.7B", spec.parameters)
+        assertFalse(spec.isPlaceholder)
+    }
+
+    @Test
+    fun with_no_model_loaded_the_spec_is_the_placeholders() {
+        val spec = Qwen3LlmEngine(FakeBackend(isReady = false)).spec
+        assertTrue("should not claim a real model", spec.isPlaceholder)
     }
 }

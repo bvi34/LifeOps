@@ -45,6 +45,51 @@ adb logcat -s advisor-llm | grep 'ggml build'
 `dotprod = 1` and `matmul_int8 = 1` mean the fast kernels are in. Zeros mean the build fell back to the
 baseline and prefill will crawl.
 
+### CPU affinity — which cores the workers run on
+
+ggml synchronizes its worker threads at a barrier after **every graph node**, so the slowest worker
+sets the pace of every matmul. On a big.LITTLE phone that makes core placement a first-order
+performance decision: one worker scheduled onto a Cortex-A510 holds the other three at the barrier for
+the whole forward pass. Asking for `n_threads` says how many workers to run, not *where*, so left
+alone the kernel is free to spread them across both clusters.
+
+`nativeLoad` therefore reads each core's ceiling from
+`/sys/devices/system/cpu/cpu*/cpufreq/cpuinfo_max_freq`, keeps everything within 80% of the top clock,
+and pins to that set — on a Snapdragon 8+ Gen 1 that is the three A710s plus the X2, and the four
+A510s are excluded. The thread count comes from the same set, replacing a `hardware_concurrency() / 2`
+that only happened to be right on an 8-core 4+4 phone. The pin is applied again around
+`nativeGenerate`, because ggml may create its workers on the first decode rather than at context
+creation, and they inherit the mask of whichever thread gets there first. It is scoped: the shared
+Kotlin dispatcher thread that made the call gets its original mask back, while the ggml workers keep
+theirs.
+
+Two topologies deliberately get **no** pinning — a homogeneous CPU (no little cluster to stay off, so
+pinning only stops the scheduler moving work off a hot core) and one whose cpufreq nodes can't be read
+(nothing to go on). Both fall back to the previous thread count, so no device gets worse. What actually
+happened is in the log:
+
+```
+inference cpus: 4,5,6,7 (4 of 8 online) — pinned to the fastest cluster
+```
+
+### KV cache: flash attention and Q8_0
+
+`nativeLoad` asks for flash attention with a **Q8_0** K and V cache. At `n_ctx = 2048` Qwen3-4B's cache
+is `2 x 36 layers x 8 KV heads x 128 dims x 2 bytes` = 144 KiB/token = **288 MiB** at f16, and roughly
+half that at Q8_0. That memory is anonymous and non-evictable, so halving it hands ~140 MiB back to the
+question that actually decides inference speed on a phone — whether the 2.3 GiB of weights stay
+resident. Q8_0 is near-lossless for a cache sitting beside Q4_K_M weights.
+
+Flash attention had been switched off while chasing a prefill stall whose real causes (unoptimized ggml
+and chunked prefill) are both fixed; it is also the precondition for quantizing the V cache, which
+llama.cpp refuses without it. Since FA can be unavailable on a given backend build — the Vulkan path
+especially — a failed context creation retries with `AUTO` + f16 rather than leaving the model
+unloadable. The load line reports which one you got:
+
+```
+Loaded Qwen3-4B GGUF; ctx=2048 ... flash_attn=enabled kv=q8_0
+```
+
 ### Weight loading (`advisor.mmap`)
 
 By default the GGUF is **read into anonymous memory**, not mmap'd. mmap'd weights are file-backed, so
@@ -65,12 +110,36 @@ the remainder, reporting both counts:
 nativeGenerate: prompt=520 tokens (320 reused from cache, 200 to prefill); one batch (n_ubatch=512)…
 ```
 
-Advisor's prompts open with a stable ~320-token system preamble, so within a conversation this is
-usually most of the prompt. Correctness rests on one rule — everything from the first *differing*
-token onward is dropped, which includes the previous reply — so if you change how the prompt is
-assembled, nothing here needs updating: the match is on tokens, not on assumed structure. The one
-thing to preserve is that a batch entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the
-batch. Reordering the assembler to put more stable text first directly increases the reuse.
+Correctness rests on one rule — everything from the first *differing* token onward is dropped, which
+includes the previous reply — so if you change how the prompt is assembled, nothing here needs
+updating: the match is on tokens, not on assumed structure. The one thing to preserve is that a batch
+entry's `pos` indexes the **whole prompt** (`n_reused + i`), not the batch.
+
+How much this saves is decided on the Kotlin side, not here. The prompt is
+`system + history + this question`, so the history is the reusable part — and a "last N messages"
+window would move every message in it on every turn, leaving only the ~450-token system preamble to
+reuse. `ConversationWindow` therefore anchors the window: its start moves only in strides, and grows
+between them, so most turns reuse the whole history and the full cost is paid once every few turns.
+Reordering the assembler to put more stable text first increases the reuse the same way.
+
+### Streaming the answer out
+
+`nativeGenerate` takes an optional listener and calls its `onToken([B)V` for each piece of the answer
+as it is produced, while still returning the whole text. Two things are deliberately *not* streamed the
+moment they are generated:
+
+- the last `longest_stop` bytes, which could still turn out to be the start of a stop sequence — text
+  is held back rather than shown and retracted;
+- a trailing incomplete UTF-8 sequence. A token boundary is not a character boundary (one emoji is
+  routinely split across two tokens), so `complete_utf8_prefix` emits whole characters only.
+
+The pieces are **bytes**, not a `jstring`, because `NewStringUTF` expects *modified* UTF-8 and the
+four-byte sequences emoji are made of are not that; decoding happens on the Kotlin side. The callback
+is resolved by name through JNI, so `advisor/consumer-rules.pro` keeps it from being renamed by a
+shrinker — its signature there and the one looked up here have to agree.
+
+If the listener throws, streaming stops and generation continues: a broken listener must not cost the
+answer.
 
 ### Reading the speed logs
 
@@ -102,9 +171,9 @@ nativeGenerate thread: tid=26858 nice=0 policy=0 affinity=[0,1,2,3,4,5,6,7] onli
 
 On Android a thread's cpuset follows its priority, and a background-classified thread can be pinned to
 the little cores with a small share of them — throttling inference by a large factor while the compiled
-kernels and the memory system are both blameless. An `affinity` covering only the little cores, a
-`cpuset` of `/background`, or a `nice` of 10 is that fault; the fix is on the Kotlin side (which
-dispatcher/priority the call runs on), not in this file. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
+kernels and the memory system are both blameless. A `cpuset` of `/background` or a `nice` of 10 is that
+fault, and the fix for it is on the Kotlin side (which dispatcher/priority the call runs on), not in
+this file. The `affinity` list, by contrast, is now chosen here — see below. A whole generate call is also capped by a 180 s watchdog (`GENERATE_DEADLINE_MS`) wired to
 ggml's abort callback, so a pathological run fails with a logged message and falls back to the
 placeholder engine instead of pinning the caller forever.
 
@@ -142,6 +211,24 @@ the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 26),
 only needs `System.loadLibrary("advisor-llm")`. This build has been verified for `arm64-v8a` against
 the pinned tag with the NDK's CMake toolchain.
 
+## Checking a change without a device
+
+`hosttest/run.sh` verifies this file with no NDK, no Android SDK and no phone:
+
+```
+advisor/src/main/cpp/hosttest/run.sh
+```
+
+It syntax-checks `advisor_llm.cpp` against the headers of the **pinned** llama.cpp tag (read out of
+`CMakeLists.txt`, fetched and cached), using the host JDK's real `jni.h` and a stub `<android/log.h>` —
+which is what catches the API drift a tag bump causes, normally discoverable only on a machine with the
+NDK. It then compiles and runs the big-core selection tests against `select_big_cores` lifted straight
+out of this file, so the test can't drift from the shipping policy. Nothing in `hosttest/` is part of
+the Android build: CMake compiles `advisor_llm.cpp` and nothing else.
+
+It is a check, not a build. It links nothing and runs no inference, so it says nothing about whether a
+change is *fast* — that still needs the logs above, on a device.
+
 ## Providing the model weights
 
 The `.so` is the engine; the weights ship separately (they're ~2.5 GB and don't belong in git). The
@@ -149,8 +236,8 @@ intended way to provide them is **in-app**: the Permissions screen's model card 
 file (.gguf)…** button that copies a GGUF you picked from device storage into the app's private
 `files/models/` (progress-reported, on-device, no network). Advisor loads it on the next question.
 
-At runtime `LlamaCppBackend` loads whatever `AdvisorModelStore` reports as installed — a `qwen3-4b*.gguf`
-in, in order:
+At runtime `LlamaCppBackend` loads whatever `AdvisorModelStore` reports as installed — **any** `.gguf`
+that isn't the embedding model (see below), in, in order:
 
 1. `filesDir/models/` (internal app storage — where the in-app import lands), or
 2. `getExternalFilesDir("models")` — e.g. `/sdcard/Android/data/com.operations.sandbox/files/models/`.
@@ -162,7 +249,27 @@ adb push qwen3-4b-q4_k_m.gguf \
   /sdcard/Android/data/com.operations.sandbox/files/models/qwen3-4b-q4_k_m.gguf
 ```
 
-Either way, the model card shows whether the real model or the placeholder is live.
+Either way, the model card shows whether the real model or the placeholder is live, and names the file
+it actually loaded — the spec is read from the filename rather than being a constant.
+
+### A smaller model is the only thing that moves the decode ceiling
+
+Everything else in this file is about not wasting work. Decode speed itself is bound by memory
+bandwidth: every token reads the whole of the weights, so ~2.5 GiB per token at Q4_K_M against the
+~20–25 GB/s a phone's LPDDR5 actually delivers puts a hard ceiling of roughly 6–10 tok/s on a 4B model,
+whatever the kernels do.
+
+Halving the weights roughly doubles that. A **Qwen3-1.7B** Q4_K_M (~1.1 GB) answers about twice as fast
+and drops the RAM commit that loading without mmap is straining against — often the right trade for a
+strictly grounded assistant that is quoting the user's own data back rather than reasoning from
+scratch. Any generation GGUF can be imported, so this is a choice to make on the device, not in code:
+
+```
+adb push qwen3-1.7b-q4_k_m.gguf \
+  /sdcard/Android/data/com.operations.sandbox/files/models/qwen3-1.7b-q4_k_m.gguf
+```
+
+Prefill, unlike decode, is compute-bound, and is what the ISA flags and core pinning above are for.
 
 ## Optional: the embedding model (semantic retrieval)
 
@@ -170,6 +277,22 @@ Either way, the model card shows whether the real model or the placeholder is li
 `com.advisor.app.llm.LlamaCppEmbedder` — a **second, small** model loaded in embedding mode
 (mean-pooled) that turns text into a vector so `EmbeddingRetriever` can rank the user's data by
 meaning. It shares this library; no separate build step is needed.
+
+Documents are embedded in **batches**, not one at a time: `nativeEmbedAll` packs up to eight of them
+(512 tokens each) into a single `llama_decode`, so indexing a corpus costs one pass over the model's
+weights per batch rather than per document. That is the cold-start cost of semantic retrieval — the
+vector cache is in-memory, so the corpus is re-embedded on the first question after every app start —
+and the log says what it actually did:
+
+```
+embedding: 143 documents in 18 decode(s)
+```
+
+The context is created with room for that (`n_seq_max = 8`, `n_ubatch` covering the whole batch, since
+a non-causal embedding model cannot have a sequence split across micro-batches). If a model won't take
+that shape, `nativeLoad` retries as a single sequence and the packing degenerates to one document at a
+time — batching is an optimisation, not a reason to drop back to lexical retrieval. The limits are read
+back from the created context, so the packing always matches what was actually granted.
 
 Provision it exactly like the generation weights, but with a **small sentence-embedding GGUF**
 (tens to a couple hundred MB — e.g. a `bge`, `e5`, `gte`, `minilm` or `nomic-embed` GGUF). The
@@ -187,7 +310,8 @@ adb push advisor-embed.gguf \
 ```
 
 The embedder keys on the filename (any `.gguf` whose name contains `embed`/`bge`/`gte-`/`e5-`/
-`minilm`/`nomic`), so it coexists with `qwen3-4b*.gguf` in the same directory. Without an embedding
+`minilm`/`nomic`), which is how the two stores partition the same directory: the generation store
+takes everything the embedding store does not. Without an embedding
 model — or in a build without the native library — retrieval is lexical, so this is purely additive.
 
 > Unlike the generation path, the embedding JNI functions have **not** been compiled/verified on a

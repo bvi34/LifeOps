@@ -354,7 +354,7 @@ first two are pure and JVM-tested:
   back to `PlaceholderLlmEngine` so the pipeline always yields a grounded, cited answer. `spec` reports
   the placeholder vs. the real Qwen3 weights so the UI's model card is truthful.
 - **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It loads whatever
-  **`llm/AdvisorModelStore`** reports as the installed `qwen3-4b*.gguf` (internal `files/models`, or an
+  **`llm/AdvisorModelStore`** reports as the installed generation `.gguf` (internal `files/models`, or an
   `adb push`ed copy under external files), once, through the `advisor-llm` native library over JNI, and
   generates on-device. Every native call is guarded: no library or no file ⇒ `isReady = false` ⇒ the
   placeholder answers. The store is re-checked until a model loads, so a freshly imported file is picked
@@ -374,6 +374,49 @@ weights onto a device.
 Nothing upstream changes: permissions, retrieval, prompt assembly, citations, and the C3A decision gate
 are already model-agnostic — the wired model still only runs when C3A returns `ANSWER`, and generation
 runs off the UI thread (`Dispatchers.Default`) since a real 4B model takes seconds.
+
+### Fitting the prompt to the context window
+
+Every token of prompt is a token to prefill, at the few tens of tokens a second a 4B model manages on
+a phone — so prompt size is latency, and what is *reusable* between turns is latency saved.
+
+- **`PromptBudget`** sizes the prompt against the model's real context window (`LlmBackend.contextTokens`,
+  read from the loaded model rather than assumed) minus the reply and a safety margin. Its estimates
+  run deliberately high: the job is keeping a prompt under a hard limit. What overflows is history,
+  dropped here on purpose — the native backend's own overflow handling truncates from the *head*,
+  which is where the system instruction lives, so a long conversation would otherwise cost the model
+  its grounding contract exactly when it needed it.
+- **`ConversationWindow`** decides which prior turns go in. Not "the last N": the KV cache keeps
+  whatever a prompt shares with the previous one, and the history is exactly the shareable part, so a
+  sliding window would move every message every turn and re-prefill the lot. The window is anchored to
+  the conversation's length instead — its start moves only in strides and grows between them, so the
+  cost is paid once every few turns rather than continuously. It is a pure function of that length, so
+  nothing has to be remembered between questions for two prompts to agree.
+- **`PromptAssembler.CONTEXT_BUDGET`** shares one character budget across the retrieved rows rather
+  than giving each the per-row cap. CONTEXT is the volatile half of the prompt — it changes with every
+  question, so none of it is ever reused — and its cost otherwise scaled with however many rows
+  retrieval happened to return.
+
+### The answer arrives as it is written
+
+A 4B model on a phone produces a few tokens a second, so a reply is tens of seconds of work. It is
+streamed rather than waited for: `LlmBackend` and `LocalLlmEngine` each have a streaming overload,
+`AdvisorRepository.ask` takes an optional `onPartial`, and the chat shows the reply forming.
+
+Two decisions are load-bearing:
+
+- **Each update is the whole answer so far, not the newest piece.** Cleaning can *retract* text — a
+  control token turns out to be one, a reasoning block closes and is dropped — so a caller appending
+  deltas would have to undo them. Handed the current state instead, the UI just assigns it.
+- **Nothing is shown before it is settled.** The native side holds back a tail that could still become
+  a stop sequence, and any bytes that don't yet complete a UTF-8 character (`advisor_llm.cpp`);
+  `Qwen3ChatFormat.cleanPartial` holds back a marker that has begun but not finished (`<|im_`) and an
+  unclosed `<think>` block; `AnswerText.inProgress` hides a directive still being typed. The rule
+  throughout is that text may be added or retracted as a whole, but never shown wrong and corrected.
+
+A turn is only written to the database once its answer exists, so the question being answered is
+carried in the ViewModel (`pendingQuestion`) and shown until the stored turn replaces it — otherwise
+the question would appear *after* its own answer.
 
 ---
 
@@ -413,6 +456,26 @@ vectors are simply never consulted — revocation stays instant.
 > Kotlin side is fully guarded, so until an embedding model is present (or if the native call fails)
 > retrieval is lexical — exactly as before.
 
+### The corpus is embedded once, not once per launch
+
+Embedding the corpus is the slowest thing that happens on a first question, and it used to happen on
+*every* app start — the vector cache was in-memory only. Two changes remove most of that:
+
+- `LlamaCppEmbedder.embedAll` packs several documents into each native decode, so indexing costs one
+  pass over the embedding model's weights per batch rather than per document.
+- `VectorCache.persistent` keeps the vectors in `cacheDir` between launches, so after the first run
+  there is usually nothing to embed at all.
+
+What that file holds is worth being precise about, since Advisor keeps no copy of the other apps' data
+at rest: document **ids** (already persisted anyway, as the citations on stored answers), a hash of
+each document's text, and the vectors — no titles, no bodies. It is treated as strictly disposable.
+Missing, corrupt, truncated, or written by a different embedding model all mean the same thing: an
+empty cache, rebuilt on the next question. That is also why it lives in the cache directory, where the
+system is free to delete it.
+
+The hash is what keeps it honest — editing a row changes it, so the old vector misses and the row is
+re-embedded. A vector describing text that no longer exists is never served.
+
 ---
 
 ## Testing
@@ -436,7 +499,7 @@ vectors are simply never consulted — revocation stays instant.
   of the user turn, and control-token/think-block clean-up of completions.
 - `Qwen3LlmEngineTest` — a ready backend answers and advertises Qwen3, and the unready / blank /
   throwing paths all fall back to the grounded placeholder.
-- `AdvisorModelStoreTest` — the `qwen3-4b*.gguf` filename contract the backend keys on, and the
+- `AdvisorModelStoreTest` — the filename contract that partitions generation from embedding models, and the
   byte-size formatting shown on the model card.
 - `IdentityTest` — context-line rendering of only filled fields.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.
