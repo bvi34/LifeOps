@@ -13,22 +13,16 @@ package com.advisor.app.logic
  */
 interface Embedder {
 
-    /** True once an embedding model is loaded and [embed] will return real vectors. */
-    val isReady: Boolean
-
     /**
-     * A stable identifier for the model (e.g. `"advisor-embed.gguf:384"`). It is part of every cache
-     * key, so swapping the embedding model automatically invalidates vectors made by the old one — a
-     * vector is only comparable to others from the *same* model.
-     */
-    val id: String
-
-    /** Embed a single text into a vector. Callers should guard on [isReady] first. */
-    fun embed(text: String): FloatArray
-
-    /**
-     * Embed several texts. The default is a simple loop; a native backend can override it to batch the
-     * work in one native call. Order matches the input.
+     * Embed [texts] together. Implementations that can should do so in as few passes over the model as
+     * possible: this is how the corpus is indexed, and one pass per document is one sweep over the
+     * model's weights per document — the dominant cost of the first question after a cold start.
+     *
+     * Order matches [texts], and a text that could not be embedded comes back as an empty array rather
+     * than failing the batch, so a caller can keep what worked and retry the rest.
+     *
+     * The default is one [embed] per text, which is correct but slow; it exists so a simple embedder
+     * needs no batching code.
      */
     fun embedAll(texts: List<String>): List<FloatArray> = texts.map { embed(it) }
 

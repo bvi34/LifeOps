@@ -783,7 +783,100 @@ struct AdvisorEmbed {
     const llama_vocab* vocab  = nullptr;
     int                n_embd = 0;
     BigCores           big_cores;
+    // How many documents may share one llama_decode, and how many tokens each may contribute. Read
+    // back from the context rather than assumed: a context that could not be created with room for
+    // several sequences falls back to one, and the packing below then degenerates to one at a time.
+    int                n_seq_max     = 1;
+    int                n_ctx_per_seq = 512;
 };
+
+// Sequences per embedding batch, and tokens allowed to each. Indexing a corpus is hundreds of short
+// documents, and one llama_decode per document means one sweep over the model's weights per document
+// — the same mistake that made generation's prefill look hung when it was chunked. Eight at a time
+// amortises that sweep across eight documents. 512 tokens is what sentence-embedding models
+// (bge / e5 / gte / MiniLM / nomic) are trained for, so a larger per-document window would cost
+// memory to hold text the model was never going to use well.
+constexpr int EMBED_SEQS         = 8;
+constexpr int EMBED_TOKENS_PER_SEQ = 512;
+
+// Embed [texts] in as few llama_decode calls as the context allows. Returns one vector per input, in
+// order; an entry is empty when that text could not be embedded, so a single bad document costs its
+// own vector and not the batch's.
+std::vector<std::vector<float>> embed_texts(AdvisorEmbed* h, const std::vector<std::string>& texts) {
+    std::vector<std::vector<float>> out(texts.size());
+    if (h == nullptr || h->ctx == nullptr || h->n_embd <= 0) return out;
+
+    // Tokenize everything up front: packing needs to know the sizes before it can decide the batches.
+    std::vector<std::vector<llama_token>> tokens(texts.size());
+    for (size_t i = 0; i < texts.size(); i++) {
+        const std::string& text = texts[i];
+        if (text.empty()) continue;
+        std::vector<llama_token> buf(text.size() + 8);
+        const int n = llama_tokenize(
+                h->vocab, text.c_str(), (int) text.size(),
+                buf.data(), (int) buf.size(), /*add_special=*/true, /*parse_special=*/false);
+        if (n <= 0) {
+            LOGW("embedding: tokenization failed (%d) for document %zu", n, i);
+            continue;
+        }
+        buf.resize(std::min(n, h->n_ctx_per_seq));
+        tokens[i] = std::move(buf);
+    }
+
+    const int batch_capacity = (int) llama_n_batch(h->ctx);
+    llama_batch batch = llama_batch_init(batch_capacity, 0, 1);
+    llama_memory_t mem = llama_get_memory(h->ctx);
+
+    // Which input each sequence slot in the current batch belongs to.
+    std::vector<size_t> slot_of;
+    int packed_tokens = 0;
+    int decodes = 0;
+
+    auto flush = [&]() {
+        if (slot_of.empty()) return;
+        decodes++;
+        batch.n_tokens = packed_tokens;
+        if (llama_decode(h->ctx, batch) == 0) {
+            for (size_t seq = 0; seq < slot_of.size(); seq++) {
+                const float* emb = llama_get_embeddings_seq(h->ctx, (llama_seq_id) seq);
+                if (emb == nullptr) continue;
+                out[slot_of[seq]].assign(emb, emb + h->n_embd);
+            }
+        } else {
+            LOGW("embedding: llama_decode failed for a batch of %zu documents", slot_of.size());
+        }
+        slot_of.clear();
+        packed_tokens = 0;
+        llama_memory_clear(mem, /*data=*/true);
+    };
+
+    llama_memory_clear(mem, /*data=*/true);
+    for (size_t i = 0; i < texts.size(); i++) {
+        const std::vector<llama_token>& seq = tokens[i];
+        if (seq.empty()) continue;
+        const bool no_room = (int) slot_of.size() >= h->n_seq_max ||
+                             packed_tokens + (int) seq.size() > batch_capacity;
+        if (no_room) flush();
+
+        const auto seq_id = (llama_seq_id) slot_of.size();
+        for (size_t t = 0; t < seq.size(); t++) {
+            const int at = packed_tokens + (int) t;
+            batch.token[at]     = seq[t];
+            batch.pos[at]       = (llama_pos) t;
+            batch.n_seq_id[at]  = 1;
+            batch.seq_id[at][0] = seq_id;
+            // Mean pooling reads every token's output, not just the last.
+            batch.logits[at]    = 1;
+        }
+        packed_tokens += (int) seq.size();
+        slot_of.push_back(i);
+    }
+    flush();
+
+    llama_batch_free(batch);
+    LOGI("embedding: %zu documents in %d decode(s)", texts.size(), decodes);
+    return out;
+}
 
 } // namespace
 
@@ -813,9 +906,13 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     llama_context_params cp = llama_context_default_params();
     cp.embeddings   = true;
     cp.pooling_type = LLAMA_POOLING_TYPE_MEAN;
-    cp.n_ctx        = 2048;
-    cp.n_batch      = 2048;
-    cp.n_ubatch     = 2048;
+    // Room for EMBED_SEQS documents of EMBED_TOKENS_PER_SEQ tokens in one decode. n_ubatch has to
+    // cover the whole batch: a non-causal embedding model cannot have a sequence split across
+    // micro-batches, so this is one pass over the weights for all eight documents.
+    cp.n_seq_max    = EMBED_SEQS;
+    cp.n_ctx        = EMBED_SEQS * EMBED_TOKENS_PER_SEQ;
+    cp.n_batch      = cp.n_ctx;
+    cp.n_ubatch     = cp.n_ctx;
     // Same reasoning as the generation context: the big cluster, sized from the device rather than
     // from a guess at what half the cores means. Embedding a corpus is a long barrier-synchronized
     // batch job, so a worker on a little core costs here exactly as it does in prefill.
@@ -828,14 +925,28 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeLoad(JNIEnv* env, jobject /*thiz
     BigCoreScope pinned(big);
     llama_context* ctx = llama_init_from_model(model, cp);
     if (ctx == nullptr) {
+        // Batching is an optimisation, not a requirement: retry as a single sequence rather than
+        // leave retrieval on the lexical fallback because a model wouldn't take the wider context.
+        LOGW("embedding: could not create a batched context; retrying with one sequence");
+        cp.n_seq_max = 1;
+        cp.n_ctx     = EMBED_TOKENS_PER_SEQ;
+        cp.n_batch   = cp.n_ctx;
+        cp.n_ubatch  = cp.n_ctx;
+        ctx = llama_init_from_model(model, cp);
+    }
+    if (ctx == nullptr) {
         LOGW("embedding: llama_init_from_model returned null");
         llama_model_free(model);
         return 0;
     }
 
     auto* h = new AdvisorEmbed{model, ctx, llama_model_get_vocab(model), llama_model_n_embd(model), big};
-    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d cpus=%s", h->n_embd, threads,
-         big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned");
+    // Read the limits back rather than assuming the request was honoured; the packing follows these.
+    h->n_seq_max     = std::max(1, (int) llama_n_seq_max(ctx));
+    h->n_ctx_per_seq = std::max(1, (int) llama_n_ctx(ctx) / h->n_seq_max);
+    LOGI("Loaded embedding GGUF; n_embd=%d threads=%d cpus=%s batch=%d docs x %d tokens",
+         h->n_embd, threads, big.count > 0 ? cpu_list(big.mask).c_str() : "unpinned",
+         h->n_seq_max, h->n_ctx_per_seq);
     return reinterpret_cast<jlong>(h);
 }
 
@@ -858,47 +969,63 @@ Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbed(
     std::string input(text ? text : "");
     env->ReleaseStringUTFChars(jtext, text);
 
-    int n_max = (int) input.size() + 8;
-    std::vector<llama_token> tokens(n_max);
-    int n_tok = llama_tokenize(
-            h->vocab, input.c_str(), (int) input.size(),
-            tokens.data(), n_max, /*add_special=*/true, /*parse_special=*/false);
-    if (n_tok <= 0) {
-        LOGW("embedding: tokenization failed (%d)", n_tok);
+    const std::vector<std::vector<float>> vectors = embed_texts(h, {input});
+    if (vectors.empty() || vectors[0].empty()) {
+        LOGW("embedding: no embedding returned");
         return env->NewFloatArray(0);
     }
-    const int n_ctx = (int) llama_n_ctx(h->ctx);
-    if (n_tok > n_ctx) n_tok = n_ctx;
-    tokens.resize(n_tok);
 
-    llama_memory_clear(llama_get_memory(h->ctx), /*data=*/true);
-
-    llama_batch batch = llama_batch_init(n_tok, 0, 1);
-    for (int i = 0; i < n_tok; i++) {
-        batch.token[i]     = tokens[i];
-        batch.pos[i]       = i;
-        batch.n_seq_id[i]  = 1;
-        batch.seq_id[i][0] = 0;
-        batch.logits[i]    = 1;
+    jfloatArray result = env->NewFloatArray((jsize) vectors[0].size());
+    if (result != nullptr) {
+        env->SetFloatArrayRegion(result, 0, (jsize) vectors[0].size(), vectors[0].data());
     }
-    batch.n_tokens = n_tok;
-
-    jfloatArray result = env->NewFloatArray(0);
-    if (llama_decode(h->ctx, batch) == 0) {
-        const float* emb = llama_get_embeddings_seq(h->ctx, 0);
-        if (emb == nullptr) emb = llama_get_embeddings(h->ctx);
-        if (emb != nullptr && h->n_embd > 0) {
-            result = env->NewFloatArray(h->n_embd);
-            env->SetFloatArrayRegion(result, 0, h->n_embd, emb);
-        } else {
-            LOGW("embedding: no embeddings returned");
-        }
-    } else {
-        LOGW("embedding: llama_decode failed");
-    }
-
-    llama_batch_free(batch);
     return result;
+}
+
+// Embed many documents at once. Indexing the corpus is the cold-start cost of semantic retrieval, and
+// doing it a document at a time meant a separate pass over the model's weights for each one; this
+// packs several into every llama_decode. Returns one float[] per input, in order, empty where a
+// document could not be embedded — so the Kotlin side can cache what worked and retry the rest rather
+// than losing the batch.
+JNIEXPORT jobjectArray JNICALL
+Java_com_advisor_app_llm_LlamaCppEmbedder_nativeEmbedAll(
+        JNIEnv* env, jobject /*thiz*/, jlong handle, jobjectArray jtexts) {
+
+    const jsize count = jtexts ? env->GetArrayLength(jtexts) : 0;
+    jclass float_array_class = env->FindClass("[F");
+    jobjectArray results = env->NewObjectArray(count, float_array_class, nullptr);
+    if (results == nullptr) return nullptr;
+
+    auto* h = reinterpret_cast<AdvisorEmbed*>(handle);
+    if (h == nullptr || h->ctx == nullptr || count == 0) return results;
+
+    BigCoreScope pinned(h->big_cores);
+
+    std::vector<std::string> texts((size_t) count);
+    for (jsize i = 0; i < count; i++) {
+        auto js = (jstring) env->GetObjectArrayElement(jtexts, i);
+        if (js == nullptr) continue;
+        const char* text = env->GetStringUTFChars(js, nullptr);
+        if (text != nullptr) {
+            texts[(size_t) i] = text;
+            env->ReleaseStringUTFChars(js, text);
+        }
+        env->DeleteLocalRef(js);
+    }
+
+    const std::vector<std::vector<float>> vectors = embed_texts(h, texts);
+    for (jsize i = 0; i < count; i++) {
+        const std::vector<float>& vec = vectors[(size_t) i];
+        if (vec.empty()) continue;
+        jfloatArray one = env->NewFloatArray((jsize) vec.size());
+        if (one == nullptr) break;
+        env->SetFloatArrayRegion(one, 0, (jsize) vec.size(), vec.data());
+        env->SetObjectArrayElement(results, i, one);
+        // The array is referenced by `results` now; drop this frame's own reference so a large
+        // corpus doesn't exhaust the local reference table mid-batch.
+        env->DeleteLocalRef(one);
+    }
+    return results;
 }
 
 JNIEXPORT void JNICALL

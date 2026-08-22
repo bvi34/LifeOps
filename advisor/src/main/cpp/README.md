@@ -258,6 +258,22 @@ Either way, the model card shows whether the real model or the placeholder is li
 (mean-pooled) that turns text into a vector so `EmbeddingRetriever` can rank the user's data by
 meaning. It shares this library; no separate build step is needed.
 
+Documents are embedded in **batches**, not one at a time: `nativeEmbedAll` packs up to eight of them
+(512 tokens each) into a single `llama_decode`, so indexing a corpus costs one pass over the model's
+weights per batch rather than per document. That is the cold-start cost of semantic retrieval — the
+vector cache is in-memory, so the corpus is re-embedded on the first question after every app start —
+and the log says what it actually did:
+
+```
+embedding: 143 documents in 18 decode(s)
+```
+
+The context is created with room for that (`n_seq_max = 8`, `n_ubatch` covering the whole batch, since
+a non-causal embedding model cannot have a sequence split across micro-batches). If a model won't take
+that shape, `nativeLoad` retries as a single sequence and the packing degenerates to one document at a
+time — batching is an optimisation, not a reason to drop back to lexical retrieval. The limits are read
+back from the created context, so the packing always matches what was actually granted.
+
 Provision it exactly like the generation weights, but with a **small sentence-embedding GGUF**
 (tens to a couple hundred MB — e.g. a `bge`, `e5`, `gte`, `minilm` or `nomic-embed` GGUF). The
 Permissions screen's **Semantic retrieval** card imports one in-app, or side-load it:
