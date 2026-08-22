@@ -978,7 +978,7 @@ private fun WellnessReminderSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Daytime & sleep prompts", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        if (enabled) "Energy/sensory check-ins plus the morning sleep report"
+                        if (enabled) "Better/worse + initiative check-ins plus the morning sleep report"
                         else "Turned off — no pop-ups or notifications",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)

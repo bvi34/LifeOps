@@ -24,6 +24,17 @@ interface WellnessCheckinDao {
     @Query("SELECT * FROM wellness_checkins WHERE dayKey = :dayKey ORDER BY recordedAt ASC")
     suspend fun getForDay(dayKey: String): List<WellnessCheckinEntity>
 
+    /** The newest entry at or before [atIso] — what a "better/same/worse" answer is measured against. */
+    @Query("SELECT * FROM wellness_checkins WHERE recordedAt <= :atIso ORDER BY recordedAt DESC LIMIT 1")
+    suspend fun latestBefore(atIso: String): WellnessCheckinEntity?
+
+    /** The newest entry at or before [atIso] that has an energy reading — the anchor a trend steps from. */
+    @Query(
+        "SELECT * FROM wellness_checkins WHERE energy IS NOT NULL AND recordedAt <= :atIso " +
+            "ORDER BY recordedAt DESC LIMIT 1"
+    )
+    suspend fun latestWithEnergyBefore(atIso: String): WellnessCheckinEntity?
+
     /** Full-table snapshot for backup export. */
     @Query("SELECT * FROM wellness_checkins ORDER BY recordedAt ASC")
     suspend fun getAll(): List<WellnessCheckinEntity>

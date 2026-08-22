@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                     openDestination = deepLinkDestination,
                     onDestinationConsumed = { deepLinkDestination = null }
                 )
-                // Above the nav content so an energy/sensory check-in or the morning sleep prompt
+                // Above the nav content so a daytime check-in or the morning sleep prompt
                 // can surface on whatever screen the app opened to.
                 com.lifeops.app.ui.screens.wellness.WellnessPromptHost(
                     app.wellnessRepository,

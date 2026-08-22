@@ -7,6 +7,9 @@ import com.lifeops.app.data.db.dao.CounterDailyTotal
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
+import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.WellnessCheckin
+import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.AspectRepository
 import com.lifeops.app.data.repository.CounterRepository
 import com.lifeops.app.data.repository.WeekRepository
@@ -34,6 +37,15 @@ private data class CounterSources(
     val categories: List<Category>,
     val weekly: Map<String, Int>,
     val cumulative: Map<String, Int>
+)
+
+/**
+ * The optional wellness check-in offered right after a habit is ticked: which habit prompted it,
+ * and the reading its better/same/worse answer is measured against (null before anything is logged).
+ */
+data class HabitCheckInPrompt(
+    val habitName: String,
+    val previous: WellnessCheckin?
 )
 
 data class CountersUiState(
@@ -68,6 +80,11 @@ class CountersViewModel(
 
     private val _uiState = MutableStateFlow(CountersUiState())
     val uiState: StateFlow<CountersUiState> = _uiState.asStateFlow()
+
+    // Non-null while the optional post-habit check-in is being offered. Set only once its anchor
+    // reading has been read, so the dialog opens with the "compared with" line already filled in.
+    private val _habitCheckIn = MutableStateFlow<HabitCheckInPrompt?>(null)
+    val habitCheckIn: StateFlow<HabitCheckInPrompt?> = _habitCheckIn.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -183,14 +200,44 @@ class CountersViewModel(
     }
 
     /**
-     * Attach a wellness check-in to the moment a habit was marked. Offered (never forced) right
-     * after ticking a habit, so completing a habit can double as a quick energy/sensory read.
-     * Persists a standard daytime CHECKIN, so it also flows into the wellness reports.
+     * Offer the optional check-in for the habit just ticked. The last reading is read first — it is
+     * what the better/same/worse answer is measured against — and the prompt only appears once it's
+     * in hand (mirrors WellnessViewModel.prepareSleepEstimate).
      */
-    fun logWellnessCheckin(energy: Int, sensory: Int, note: String?) {
+    fun startHabitCheckIn(counter: Counter) {
         viewModelScope.launch {
-            wellnessRepository.logCheckin(energy = energy, sensory = sensory, note = note)
+            _habitCheckIn.value = HabitCheckInPrompt(counter.name, wellnessRepository.latestReading())
         }
+    }
+
+    /** Close the prompt without recording anything — the habit tick itself is already saved. */
+    fun dismissHabitCheckIn() {
+        _habitCheckIn.value = null
+    }
+
+    /**
+     * Attach a wellness check-in to the moment a habit was marked. Offered (never forced) right
+     * after ticking a habit: better/same/worse since the last reading plus initiative, rather than
+     * the full 1–10 strips the daytime prompt used to repeat. Persists a standard daytime CHECKIN,
+     * so it also flows into the wellness reports.
+     */
+    fun logWellnessCheckin(
+        trend: WellnessTrend,
+        initiative: Initiative,
+        energy: Int?,
+        sensory: Int?,
+        note: String?
+    ) {
+        viewModelScope.launch {
+            wellnessRepository.logCheckin(
+                trend = trend,
+                initiative = initiative,
+                energy = energy,
+                sensory = sensory,
+                note = note
+            )
+        }
+        _habitCheckIn.value = null
     }
 
     fun categoryNameFor(categoryId: String?): String? {

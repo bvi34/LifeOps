@@ -114,7 +114,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `activity` | `create`, `delete` | `ActivityService` | Saved outdoor activities. |
 | `runbook` | `create`, `delete`, `stamp` | `RunbookService` | `stamp` writes a runbook's steps as subtasks on a task. |
 | `subtask` | `check`, `delete` | `RunbookService` | — |
-| `wellness` | `checkin`, `sleep` | `WellnessService` | Daytime check-in and morning sleep report. |
+| `wellness` | `checkin`, `sleep` | `WellnessService` | `checkin` takes `trend` (`BETTER`/`SAME`/`WORSE`) + `initiative` (`YES`/`NEUTRAL`/`NO`); `energy`/`sensory` are optional exact 1–10 ratings. |
 
 Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does not.
 
