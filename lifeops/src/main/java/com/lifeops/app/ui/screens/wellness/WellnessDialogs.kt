@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
+import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.WellnessCheckin
+import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.data.model.WellnessTrend
+import com.lifeops.app.util.DateUtil
 
 /** A 1–10 rating strip (matches the week self-rating control). Null = nothing chosen yet. */
 @Composable
@@ -67,23 +75,123 @@ fun RatingRow(
     }
 }
 
-/** Daytime check-in pop-up: energy 1–10, sensory 1–10, and an optional "why". */
+/**
+ * A row of mutually exclusive choices (Better/Same/Worse, Yes/Neutral/No). Null = nothing chosen.
+ */
+@Composable
+fun ChoiceRow(
+    label: String,
+    options: List<String>,
+    selectedIndex: Int?,
+    modifier: Modifier = Modifier,
+    onSelect: (Int) -> Unit
+) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            options.forEachIndexed { index, option ->
+                val isSelected = selectedIndex == index
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = if (isSelected) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .clickable { onSelect(index) }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            option,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * What a "better/same/worse" answer is measured against, e.g. "Last check-in Mar 4, 2:15 PM  ·
+ * same  ·  energy ~6". Null when nothing has been logged yet. A "~" marks an energy the app
+ * derived from a trend rather than one that was typed in.
+ */
+fun checkInAnchorLabel(previous: WellnessCheckin?): String? {
+    if (previous == null) return null
+    val kind = if (previous.kind == WellnessKind.SLEEP) "This morning" else "Last check-in"
+    return buildList {
+        add("$kind ${DateUtil.formatInstant(previous.recordedAt)}")
+        previous.trend?.let { add(it.label.lowercase()) }
+        previous.initiative?.let { add("initiative ${it.label.lowercase()}") }
+        previous.energy?.let { add("energy ${if (previous.energyDerived) "~" else ""}$it") }
+    }.joinToString("  ·  ")
+}
+
+/**
+ * The check-in pop-up — the daytime prompt, the report screen's "+", and the nudge after a habit is
+ * ticked all share it. It asks how you're doing *relative* to the last reading (better/same/worse)
+ * plus whether you feel like doing things (initiative), instead of re-scoring the same 1–10 scales
+ * every few hours; the exact ratings are still there behind "Add exact ratings" for when the numbers
+ * are worth setting. [previous] is the reading being compared against, shown for context.
+ */
 @Composable
 fun CheckInDialog(
-    onSubmit: (energy: Int, sensory: Int, why: String) -> Unit,
-    onDismiss: () -> Unit
+    onSubmit: (
+        trend: WellnessTrend,
+        initiative: Initiative,
+        energy: Int?,
+        sensory: Int?,
+        why: String
+    ) -> Unit,
+    onDismiss: () -> Unit,
+    title: String = "Check-in",
+    subtitle: String? = null,
+    dismissLabel: String = "Later",
+    previous: WellnessCheckin? = null
 ) {
+    var trend by remember { mutableStateOf<WellnessTrend?>(null) }
+    var initiative by remember { mutableStateOf<Initiative?>(null) }
+    var showExact by remember { mutableStateOf(false) }
     var energy by remember { mutableStateOf<Int?>(null) }
     var sensory by remember { mutableStateOf<Int?>(null) }
     var why by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Check-in") },
+        title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                RatingRow("Energy (1 low → 10 high)", energy) { energy = it }
-                RatingRow("Sensory load (1 calm → 10 overloaded)", sensory) { sensory = it }
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                subtitle?.let {
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+                Text(
+                    checkInAnchorLabel(previous) ?: "Nothing logged yet — this one sets the baseline.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                ChoiceRow(
+                    label = "Compared with your last reading",
+                    options = WellnessTrend.entries.map { it.label },
+                    selectedIndex = trend?.ordinal
+                ) { trend = WellnessTrend.entries[it] }
+                ChoiceRow(
+                    label = "Initiative — feel like doing things?",
+                    options = Initiative.entries.map { it.label },
+                    selectedIndex = initiative?.ordinal
+                ) { initiative = Initiative.entries[it] }
                 OutlinedTextField(
                     value = why,
                     onValueChange = { why = it },
@@ -92,16 +200,27 @@ fun CheckInDialog(
                     singleLine = false,
                     maxLines = 3
                 )
+                TextButton(
+                    onClick = {
+                        // Collapsing drops whatever was picked, so a hidden rating can't be saved.
+                        showExact = !showExact
+                        if (!showExact) { energy = null; sensory = null }
+                    }
+                ) { Text(if (showExact) "Hide exact ratings" else "Add exact ratings") }
+                if (showExact) {
+                    RatingRow("Energy (1 low → 10 high)", energy) { energy = it }
+                    RatingRow("Sensory load (1 calm → 10 overloaded)", sensory) { sensory = it }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSubmit(energy!!, sensory!!, why) },
-                enabled = energy != null && sensory != null
+                onClick = { onSubmit(trend!!, initiative!!, energy, sensory, why) },
+                enabled = trend != null && initiative != null
             ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Later") }
+            TextButton(onClick = onDismiss) { Text(dismissLabel) }
         }
     )
 }

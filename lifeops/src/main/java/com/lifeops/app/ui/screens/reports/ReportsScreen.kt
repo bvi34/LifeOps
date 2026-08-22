@@ -710,6 +710,8 @@ private fun WellnessSummaryCard(summary: WellnessSummary) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 StatBox("Avg energy", fmtAvg(summary.avgEnergy))
                 StatBox("Avg sensory", fmtAvg(summary.avgSensory))
+                // -1 (no) → +1 (yes), so it reads as a signed value rather than a 1-10 average.
+                StatBox("Initiative", summary.avgInitiative?.let { "%+.1f".format(it) } ?: "—")
                 StatBox("Avg sleep", summary.avgSleepMinutes?.let { formatMinutes(it) } ?: "—")
             }
         }

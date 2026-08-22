@@ -47,7 +47,7 @@ class WellnessCheckinWorker(
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Wellness check-in")
-            .setContentText("How's your energy and sensory load right now?")
+            .setContentText("Better, same or worse than last time? And do you feel like doing things?")
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pending)
             .setAutoCancel(true)

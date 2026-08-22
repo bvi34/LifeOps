@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.theme.parseColor
@@ -78,10 +79,12 @@ fun WellnessScreen(
     }
     if (showCheckIn) {
         CheckInDialog(
-            onSubmit = { energy, sensory, why ->
-                viewModel.logCheckin(energy, sensory, why); showCheckIn = false
+            onSubmit = { trend, initiative, energy, sensory, why ->
+                viewModel.logCheckin(trend, initiative, energy, sensory, why); showCheckIn = false
             },
-            onDismiss = { showCheckIn = false }
+            onDismiss = { showCheckIn = false },
+            // Newest-first, so the head of the feed is the reading this check-in is compared against.
+            previous = state.recent.firstOrNull()
         )
     }
     // Wait for the async screen-time estimate before showing the sleep dialog, so its duration
@@ -200,6 +203,8 @@ private fun TodayCard(today: DailyWellness?) {
             StatLine("Tired on waking", today.sleepTired?.let { "$it / 10" } ?: "—")
             HorizontalDivider(Modifier.padding(vertical = 2.dp))
             StatLine("Check-ins", today.checkinCount.toString())
+            StatLine("How it's gone", formatTrendCounts(today.trendCounts))
+            StatLine("Initiative", formatInitiative(today.avgInitiative))
             StatLine("Avg energy", formatAvg(today.avgEnergy))
             StatLine("Avg sensory load", formatAvg(today.avgSensory))
         }
@@ -221,6 +226,7 @@ private fun WeekCard(week: WeeklyWellness?) {
             }
             StatLine("Avg energy", formatAvg(week.avgEnergy))
             StatLine("Avg sensory load", formatAvg(week.avgSensory))
+            StatLine("Initiative", formatInitiative(week.avgInitiative))
             StatLine("Avg tiredness", formatAvg(week.avgTired))
             StatLine("Avg sleep", formatSleep(week.avgSleepMinutes?.toInt()))
             StatLine("Check-ins / sleep logs", "${week.checkinCount} / ${week.sleepCount}")
@@ -273,7 +279,10 @@ private fun EntryRow(entry: WellnessCheckin) {
                 }.joinToString("  ·  ")
             } else {
                 buildList {
-                    entry.energy?.let { add("Energy $it") }
+                    entry.trend?.let { add(it.label) }
+                    entry.initiative?.let { add("Initiative ${it.label.lowercase()}") }
+                    // "~" marks an energy stepped from the trend rather than one that was entered.
+                    entry.energy?.let { add("Energy ${if (entry.energyDerived) "~" else ""}$it") }
                     entry.sensory?.let { add("Sensory $it") }
                 }.joinToString("  ·  ")
             }
@@ -303,8 +312,8 @@ private fun StatLine(label: String, value: String) {
 
 @Composable
 private fun TrendsCard(state: WellnessReportState) {
-    val hasAny = state.energySpark.latest != null ||
-        state.sensorySpark.latest != null || state.sleepSpark.latest != null
+    val hasAny = state.energySpark.latest != null || state.sensorySpark.latest != null ||
+        state.initiativeSpark.latest != null || state.sleepSpark.latest != null
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("Last 3 weeks", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -315,6 +324,11 @@ private fun TrendsCard(state: WellnessReportState) {
             }
             TrendRow("Energy", state.energySpark, MaterialTheme.colorScheme.primary) { formatAvg(it?.toDouble()) }
             TrendRow("Sensory", state.sensorySpark, MaterialTheme.colorScheme.tertiary) { formatAvg(it?.toDouble()) }
+            // Same green this screen already uses for a positive delta — initiative is the one
+            // series where up is unambiguously good.
+            TrendRow("Initiative", state.initiativeSpark, Color(0xFF2E7D32)) { v ->
+                v?.let { signedOneDecimal(it.toDouble()) } ?: "—"
+            }
             TrendRow("Sleep", state.sleepSpark, MaterialTheme.colorScheme.secondary) { v ->
                 v?.let { String.format("%.1fh", it) } ?: "—"
             }
@@ -381,8 +395,9 @@ private fun InsightsCard(insights: WellnessInsights) {
                 insights.aspectEnergy.forEach { AspectEnergyRowView(it) }
             }
             Text(
-                "Based on ${insights.dayCount} day${if (insights.dayCount == 1) "" else "s"} with an energy reading. " +
-                    "Associations, not proof.",
+                "Based on ${insights.dayCount} day${if (insights.dayCount == 1) "" else "s"} with an energy reading — " +
+                    "check-in energy is stepped from your better/same/worse answers unless you set it " +
+                    "exactly. Associations, not proof.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
             )
@@ -469,6 +484,27 @@ private fun hoursEnergyInterpretation(r: Double): String {
 }
 
 private fun formatAvg(v: Double?): String = v?.let { String.format("%.1f", it) } ?: "—"
+
+/** A -1..+1 initiative average as a short read, e.g. "Mostly yes (+0.5)". */
+private fun formatInitiative(v: Double?): String {
+    if (v == null) return "—"
+    val word = when {
+        v >= 0.34 -> "Mostly yes"
+        v <= -0.34 -> "Mostly no"
+        else -> "Mixed"
+    }
+    return "$word (${signedOneDecimal(v)})"
+}
+
+private fun signedOneDecimal(v: Double): String =
+    (if (v >= 0) "+" else "−") + String.format("%.1f", abs(v))
+
+/** The day's better/same/worse answers, e.g. "2 better  ·  1 same". */
+private fun formatTrendCounts(counts: Map<WellnessTrend, Int>): String =
+    WellnessTrend.entries
+        .mapNotNull { trend -> counts[trend]?.takeIf { it > 0 }?.let { "$it ${trend.label.lowercase()}" } }
+        .joinToString("  ·  ")
+        .ifBlank { "—" }
 
 private fun formatSleep(minutes: Int?): String {
     if (minutes == null || minutes <= 0) return "—"

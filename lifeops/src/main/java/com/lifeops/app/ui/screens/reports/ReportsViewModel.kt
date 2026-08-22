@@ -31,6 +31,8 @@ data class SelfRatingPoint(val weekLabel: String, val rating: Int, val note: Str
 data class WellnessSummary(
     val avgEnergy: Float?,
     val avgSensory: Float?,
+    /** Mean of the check-ins' initiative answers on the -1 (no) → +1 (yes) scale. */
+    val avgInitiative: Float?,
     val avgSleepMinutes: Int?,
     val checkinCount: Int
 )
@@ -314,10 +316,12 @@ class ReportsViewModel(
         val checkins = wellnessRepository.getAllCheckins().filter { it.recordedAt >= cutoff }
         val energies = checkins.mapNotNull { it.energy }
         val sensories = checkins.mapNotNull { it.sensory }
+        val initiatives = checkins.mapNotNull { it.initiative?.score }
         val sleeps = checkins.mapNotNull { it.sleepMinutes }
         val wellnessSummary = if (checkins.isEmpty()) null else WellnessSummary(
             avgEnergy = energies.takeIf { it.isNotEmpty() }?.let { it.average().toFloat() },
             avgSensory = sensories.takeIf { it.isNotEmpty() }?.let { it.average().toFloat() },
+            avgInitiative = initiatives.takeIf { it.isNotEmpty() }?.let { it.average().toFloat() },
             avgSleepMinutes = sleeps.takeIf { it.isNotEmpty() }?.let { it.average().roundToInt() },
             checkinCount = checkins.size
         )

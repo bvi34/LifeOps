@@ -196,12 +196,42 @@ fun ActivityOverrideEntity.toModel() = ActivityOverride(id, activityId, field, t
 fun ActivityOverride.toEntity() = ActivityOverrideEntity(id, activityId, field, templateValue, userValue, createdAt)
 
 fun WellnessCheckinEntity.toModel() = WellnessCheckin(
-    id, WellnessKind.from(kind), recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note,
-    sleepBedtime, sleepWakeTime, sleepInterruptions, longestSleepMinutes
+    id = id,
+    kind = WellnessKind.from(kind),
+    recordedAt = recordedAt,
+    weekKey = weekKey,
+    dayKey = dayKey,
+    energy = energy,
+    sensory = sensory,
+    trend = WellnessTrend.from(trend),
+    initiative = Initiative.from(initiative),
+    energyDerived = energyDerived,
+    tired = tired,
+    sleepMinutes = sleepMinutes,
+    note = note,
+    sleepBedtime = sleepBedtime,
+    sleepWakeTime = sleepWakeTime,
+    sleepInterruptions = sleepInterruptions,
+    longestSleepMinutes = longestSleepMinutes
 )
 fun WellnessCheckin.toEntity() = WellnessCheckinEntity(
-    id, kind.value, recordedAt, weekKey, dayKey, energy, sensory, tired, sleepMinutes, note,
-    sleepBedtime, sleepWakeTime, sleepInterruptions, longestSleepMinutes
+    id = id,
+    kind = kind.value,
+    recordedAt = recordedAt,
+    weekKey = weekKey,
+    dayKey = dayKey,
+    energy = energy,
+    sensory = sensory,
+    trend = trend?.value,
+    initiative = initiative?.value,
+    energyDerived = energyDerived,
+    tired = tired,
+    sleepMinutes = sleepMinutes,
+    note = note,
+    sleepBedtime = sleepBedtime,
+    sleepWakeTime = sleepWakeTime,
+    sleepInterruptions = sleepInterruptions,
+    longestSleepMinutes = longestSleepMinutes
 )
 
 fun PhoneActivityEventEntity.toModel() = PhoneActivityEvent(

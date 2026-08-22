@@ -36,8 +36,11 @@ fun WellnessPromptHost(repo: WellnessRepository, enabled: Boolean = true) {
 
     when (state.kind) {
         WellnessPromptKind.CHECKIN -> CheckInDialog(
-            onSubmit = { e, s, w -> vm.submitCheckin(e, s, w) },
-            onDismiss = { vm.dismiss() }
+            onSubmit = { trend, initiative, energy, sensory, why ->
+                vm.submitCheckin(trend, initiative, energy, sensory, why)
+            },
+            onDismiss = { vm.dismiss() },
+            previous = state.previous
         )
         WellnessPromptKind.SLEEP -> SleepCheckInDialog(
             estimatedMinutes = state.sleepEstimateMinutes,

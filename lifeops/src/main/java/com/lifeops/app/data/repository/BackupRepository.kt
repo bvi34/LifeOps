@@ -50,7 +50,7 @@ private data class BackupData(
     val activityTemplates: List<ActivityTemplateEntity> = emptyList(),
     // v11: learned manual overrides of activity defaults.
     val activityOverrides: List<ActivityOverrideEntity> = emptyList(),
-    // v12: wellness check-ins (daytime energy/sensory + morning sleep reports). Standalone, no FK.
+    // v12: wellness check-ins (daytime trend/initiative + morning sleep reports). Standalone, no FK.
     val wellnessCheckins: List<WellnessCheckinEntity> = emptyList(),
     // v13: task image attachments (base64 JPEG), FK → tasks.
     val taskAttachments: List<TaskAttachmentEntity> = emptyList(),
@@ -264,14 +264,19 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         val rows = db.wellnessCheckinDao().getAll()
         val sb = StringBuilder()
         sb.append(Csv.row(listOf(
-            "Kind", "RecordedAt", "Day", "Energy", "Sensory", "Tired", "SleepMinutes", "Note"
+            "Kind", "RecordedAt", "Day", "Trend", "Initiative", "Energy", "EnergyDerived",
+            "Sensory", "Tired", "SleepMinutes", "Note"
         ))).append('\n')
         rows.forEach { r ->
             sb.append(Csv.row(listOf(
                 r.kind,
                 r.recordedAt,
                 r.dayKey,
+                r.trend ?: "",
+                r.initiative ?: "",
                 r.energy?.toString() ?: "",
+                // Whether the energy was stepped from the trend rather than entered by hand.
+                if (r.energyDerived) "true" else "false",
                 r.sensory?.toString() ?: "",
                 r.tired?.toString() ?: "",
                 r.sleepMinutes?.toString() ?: "",

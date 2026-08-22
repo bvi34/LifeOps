@@ -2,8 +2,10 @@ package com.lifeops.app.data.repository
 
 import android.content.Context
 import com.lifeops.app.data.db.dao.WellnessCheckinDao
+import com.lifeops.app.data.model.Initiative
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.service.SleepTrackingService
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ScreenTimeEstimator
@@ -16,7 +18,7 @@ import kotlinx.coroutines.flow.map
 import java.util.UUID
 
 /**
- * Backs the wellness check-ins: the daytime energy/sensory pop-ups and the morning sleep report,
+ * Backs the wellness check-ins: the daytime better/same/worse pop-ups and the morning sleep report,
  * plus the daily/weekly aggregation the History report reads. The morning sleep duration is
  * reconstructed from tracked phone-activity events via [PhoneActivityRepository] (the accurate path),
  * falling back to the coarser [ScreenTimeEstimator] when too little was captured; everything else is
@@ -66,21 +68,50 @@ class WellnessRepository(
     /** Reports: full check-in history, filtered by recordedAt in the caller. */
     suspend fun getAllCheckins(): List<WellnessCheckin> = dao.getAll().map { it.toModel() }
 
-    /** Persist a daytime check-in. */
-    suspend fun logCheckin(energy: Int, sensory: Int, note: String?, at: Long = System.currentTimeMillis()) {
+    /**
+     * Persist a daytime check-in. The answer is relative — [trend] against the previous reading and
+     * [initiative] (desire to do things) — because re-scoring the same 1–10 scales three times a day
+     * mostly produced repeated numbers. [energy]/[sensory] are only non-null when the user opened
+     * the optional exact ratings; otherwise the energy is stepped from the last reading by the trend
+     * (see [deriveEnergy]) and flagged as derived, so the reports' 1–10 series stays continuous.
+     */
+    suspend fun logCheckin(
+        trend: WellnessTrend,
+        initiative: Initiative,
+        energy: Int? = null,
+        sensory: Int? = null,
+        note: String? = null,
+        at: Long = System.currentTimeMillis()
+    ) {
+        val recordedAt = DateUtil.isoFromEpoch(at)
         insert(
             WellnessCheckin(
                 id = UUID.randomUUID().toString(),
                 kind = WellnessKind.CHECKIN,
-                recordedAt = DateUtil.isoFromEpoch(at),
+                recordedAt = recordedAt,
                 weekKey = DateUtil.weekIndexFor(at),
                 dayKey = DateUtil.localDateKey(at),
-                energy = energy,
+                energy = energy ?: deriveEnergy(trend, recordedAt),
                 sensory = sensory,
+                trend = trend,
+                initiative = initiative,
+                energyDerived = energy == null,
                 note = note?.takeIf { it.isNotBlank() }
             )
         )
     }
+
+    /**
+     * Step the last energy reading (check-in or morning report, whichever came last) by [trend], so a
+     * relative answer still lands on the 1–10 scale the rollups and correlations read. Derived values
+     * are themselves anchors, so a run of "worse" walks the number down.
+     */
+    private suspend fun deriveEnergy(trend: WellnessTrend, atIso: String): Int =
+        trend.energyFrom(dao.latestWithEnergyBefore(atIso)?.energy)
+
+    /** The reading a "better/same/worse" answer is measured against — null before anything is logged. */
+    suspend fun latestReading(now: Long = System.currentTimeMillis()): WellnessCheckin? =
+        dao.latestBefore(DateUtil.isoFromEpoch(now))?.toModel()
 
     /**
      * Persist a morning sleep report. [sleepMinutes] may be null when it couldn't be estimated. When

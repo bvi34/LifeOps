@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.Aspect
+import com.lifeops.app.data.model.Initiative
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.AspectRepository
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.TimeEntryRepository
@@ -25,13 +27,19 @@ import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.sqrt
 
-/** One day's rolled-up wellness: check-in averages plus that morning's sleep report. */
+/**
+ * One day's rolled-up wellness: check-in averages plus that morning's sleep report. [avgInitiative]
+ * is the mean of the day's initiative answers on the -1 (no) → +1 (yes) scale, and [trendCounts] is
+ * how many check-ins said better/same/worse.
+ */
 data class DailyWellness(
     val dayKey: String,
     val label: String,
     val checkinCount: Int,
     val avgEnergy: Double?,
     val avgSensory: Double?,
+    val avgInitiative: Double?,
+    val trendCounts: Map<WellnessTrend, Int>,
     val sleepMinutes: Int?,
     val sleepTired: Int?,
     val sleepEnergy: Int?
@@ -43,6 +51,7 @@ data class WeeklyWellness(
     val label: String,
     val avgEnergy: Double?,
     val avgSensory: Double?,
+    val avgInitiative: Double?,
     val avgTired: Double?,
     val avgSleepMinutes: Double?,
     val checkinCount: Int,
@@ -82,6 +91,7 @@ data class WellnessReportState(
     val recent: List<WellnessCheckin> = emptyList(),        // raw entries, newest first
     val energySpark: Sparkline = Sparkline(emptyList(), null),
     val sensorySpark: Sparkline = Sparkline(emptyList(), null),
+    val initiativeSpark: Sparkline = Sparkline(emptyList(), null),
     val sleepSpark: Sparkline = Sparkline(emptyList(), null),
     val insights: WellnessInsights? = null
 )
@@ -128,8 +138,14 @@ class WellnessViewModel(
     }
 
     /** Log a check-in on demand (the report's "+" — not tied to a scheduled slot). */
-    fun logCheckin(energy: Int, sensory: Int, why: String) {
-        viewModelScope.launch { wellnessService.checkin(energy, sensory, why) }
+    fun logCheckin(
+        trend: WellnessTrend,
+        initiative: Initiative,
+        energy: Int?,
+        sensory: Int?,
+        why: String
+    ) {
+        viewModelScope.launch { wellnessService.checkin(trend, initiative, energy, sensory, why) }
     }
 
     /** Log a sleep report on demand. Keeps the reconstruction only when the user didn't override the total. */
@@ -166,6 +182,7 @@ class WellnessViewModel(
         val window = (sparkDays - 1 downTo 0).map { today0.minusDays(it.toLong()).toString() }
         val energyVals = window.map { daily[it]?.avgEnergy?.toFloat() }
         val sensoryVals = window.map { daily[it]?.avgSensory?.toFloat() }
+        val initiativeVals = window.map { daily[it]?.avgInitiative?.toFloat() }
         val sleepVals = window.map { daily[it]?.sleepMinutes?.let { m -> m / 60f } }
 
         return WellnessReportState(
@@ -177,6 +194,7 @@ class WellnessViewModel(
             recent = entries.take(60),
             energySpark = Sparkline(energyVals, energyVals.lastOrNull { it != null }),
             sensorySpark = Sparkline(sensoryVals, sensoryVals.lastOrNull { it != null }),
+            initiativeSpark = Sparkline(initiativeVals, initiativeVals.lastOrNull { it != null }),
             sleepSpark = Sparkline(sleepVals, sleepVals.lastOrNull { it != null })
         )
     }
@@ -190,6 +208,8 @@ class WellnessViewModel(
             checkinCount = checkins.size,
             avgEnergy = checkins.mapNotNull { it.energy }.avgOrNull(),
             avgSensory = checkins.mapNotNull { it.sensory }.avgOrNull(),
+            avgInitiative = checkins.mapNotNull { it.initiative?.score }.avgOrNull(),
+            trendCounts = checkins.mapNotNull { it.trend }.groupingBy { it }.eachCount(),
             sleepMinutes = sleep?.sleepMinutes,
             sleepTired = sleep?.tired,
             sleepEnergy = sleep?.energy
@@ -205,6 +225,7 @@ class WellnessViewModel(
             label = DateUtil.formatDate(DateUtil.weekStartForIndex(weekKey).toString()),
             avgEnergy = allEnergy.avgOrNull(),
             avgSensory = checkins.mapNotNull { it.sensory }.avgOrNull(),
+            avgInitiative = checkins.mapNotNull { it.initiative?.score }.avgOrNull(),
             avgTired = sleeps.mapNotNull { it.tired }.avgOrNull(),
             avgSleepMinutes = sleeps.mapNotNull { it.sleepMinutes }.avgOrNull(),
             checkinCount = checkins.size,

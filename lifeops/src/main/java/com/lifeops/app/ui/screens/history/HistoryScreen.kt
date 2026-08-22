@@ -68,7 +68,7 @@ fun HistoryScreen(
             item {
                 HubCard(
                     title = "Wellness",
-                    subtitle = "Energy, sensory load, and sleep — day by day",
+                    subtitle = "Better/worse, initiative, and sleep — day by day",
                     icon = Icons.Default.Favorite,
                     onClick = onOpenWellness
                 )

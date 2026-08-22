@@ -3,6 +3,9 @@ package com.lifeops.app.ui.screens.wellness
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.WellnessCheckin
+import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.WellnessRepository
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.ScreenTimeEstimator
@@ -20,7 +23,9 @@ data class WellnessPromptState(
     val sleepEstimateMinutes: Int? = null,
     val hasUsageAccess: Boolean = true,
     /** Present when last night was reconstructed from tracked events (the accurate path). */
-    val reconstruction: SleepInferenceService.SleepReconstruction? = null
+    val reconstruction: SleepInferenceService.SleepReconstruction? = null,
+    /** The reading the check-in's better/same/worse answer is measured against; null on day one. */
+    val previous: WellnessCheckin? = null
 )
 
 /**
@@ -66,16 +71,22 @@ class WellnessPromptViewModel(
             val passed = repo.passedSlotCount(now)
             val answered = repo.checkinCountForToday(now)
             _state.value = if (passed > answered) {
-                WellnessPromptState(WellnessPromptKind.CHECKIN)
+                WellnessPromptState(WellnessPromptKind.CHECKIN, previous = repo.latestReading(now))
             } else {
                 WellnessPromptState(WellnessPromptKind.NONE)
             }
         }
     }
 
-    fun submitCheckin(energy: Int, sensory: Int, why: String) {
+    fun submitCheckin(
+        trend: WellnessTrend,
+        initiative: Initiative,
+        energy: Int?,
+        sensory: Int?,
+        why: String
+    ) {
         viewModelScope.launch {
-            wellnessService.checkin(energy, sensory, why)
+            wellnessService.checkin(trend, initiative, energy, sensory, why)
             _state.value = WellnessPromptState(WellnessPromptKind.NONE)
         }
     }
