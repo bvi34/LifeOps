@@ -354,7 +354,7 @@ first two are pure and JVM-tested:
   back to `PlaceholderLlmEngine` so the pipeline always yields a grounded, cited answer. `spec` reports
   the placeholder vs. the real Qwen3 weights so the UI's model card is truthful.
 - **`llm/LlamaCppBackend`** — the native seam (`LlmBackend`). It loads whatever
-  **`llm/AdvisorModelStore`** reports as the installed `qwen3-4b*.gguf` (internal `files/models`, or an
+  **`llm/AdvisorModelStore`** reports as the installed generation `.gguf` (internal `files/models`, or an
   `adb push`ed copy under external files), once, through the `advisor-llm` native library over JNI, and
   generates on-device. Every native call is guarded: no library or no file ⇒ `isReady = false` ⇒ the
   placeholder answers. The store is re-checked until a model loads, so a freshly imported file is picked
@@ -479,7 +479,7 @@ vectors are simply never consulted — revocation stays instant.
   of the user turn, and control-token/think-block clean-up of completions.
 - `Qwen3LlmEngineTest` — a ready backend answers and advertises Qwen3, and the unready / blank /
   throwing paths all fall back to the grounded placeholder.
-- `AdvisorModelStoreTest` — the `qwen3-4b*.gguf` filename contract the backend keys on, and the
+- `AdvisorModelStoreTest` — the filename contract that partitions generation from embedding models, and the
   byte-size formatting shown on the model card.
 - `IdentityTest` — context-line rendering of only filled fields.
 - `MemoryRecallTest` — relevance vs. exclusion, always-on pinning, tag-focus boost, salience ties, limit.

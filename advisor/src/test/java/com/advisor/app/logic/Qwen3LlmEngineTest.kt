@@ -14,7 +14,8 @@ class Qwen3LlmEngineTest {
     ) : LlmBackend {
         var lastPrompt: String? = null
         var warmedUp = false
-        override val detail = "fake"
+        /** A backend reports the loaded file here, and the engine's spec is read from it. */
+        override var detail = "qwen3-4b-q4_k_m.gguf"
 
         override fun warmUp() {
             warmedUp = true
@@ -56,6 +57,7 @@ class Qwen3LlmEngineTest {
         assertEquals("Mow the lawn.", answer)
         assertFalse("reports the real model, not the placeholder", engine.spec.isPlaceholder)
         assertEquals("Qwen3-4B", engine.spec.name)
+        assertEquals("4B", engine.spec.parameters)
         assertTrue("feeds the backend a ChatML prompt", backend.lastPrompt!!.contains("<|im_start|>"))
     }
 
@@ -139,5 +141,26 @@ class Qwen3LlmEngineTest {
         val backend = FakeBackend(isReady = true)
         Qwen3LlmEngine(backend).warmUp()
         assertTrue(backend.warmedUp)
+    }
+
+    /**
+     * The model card exists to say what is answering, so a different installed model has to be
+     * reported as itself — the size especially, since it is what decides how fast an answer arrives.
+     */
+    @Test
+    fun the_spec_names_whichever_model_is_actually_loaded() {
+        val backend = FakeBackend(isReady = true)
+        backend.detail = "qwen3-1.7b-q4_k_m.gguf"
+        val spec = Qwen3LlmEngine(backend).spec
+
+        assertEquals("Qwen3-1.7B", spec.name)
+        assertEquals("1.7B", spec.parameters)
+        assertFalse(spec.isPlaceholder)
+    }
+
+    @Test
+    fun with_no_model_loaded_the_spec_is_the_placeholders() {
+        val spec = Qwen3LlmEngine(FakeBackend(isReady = false)).spec
+        assertTrue("should not claim a real model", spec.isPlaceholder)
     }
 }

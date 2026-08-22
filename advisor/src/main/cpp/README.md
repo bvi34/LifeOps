@@ -236,8 +236,8 @@ intended way to provide them is **in-app**: the Permissions screen's model card 
 file (.gguf)…** button that copies a GGUF you picked from device storage into the app's private
 `files/models/` (progress-reported, on-device, no network). Advisor loads it on the next question.
 
-At runtime `LlamaCppBackend` loads whatever `AdvisorModelStore` reports as installed — a `qwen3-4b*.gguf`
-in, in order:
+At runtime `LlamaCppBackend` loads whatever `AdvisorModelStore` reports as installed — **any** `.gguf`
+that isn't the embedding model (see below), in, in order:
 
 1. `filesDir/models/` (internal app storage — where the in-app import lands), or
 2. `getExternalFilesDir("models")` — e.g. `/sdcard/Android/data/com.operations.sandbox/files/models/`.
@@ -249,7 +249,27 @@ adb push qwen3-4b-q4_k_m.gguf \
   /sdcard/Android/data/com.operations.sandbox/files/models/qwen3-4b-q4_k_m.gguf
 ```
 
-Either way, the model card shows whether the real model or the placeholder is live.
+Either way, the model card shows whether the real model or the placeholder is live, and names the file
+it actually loaded — the spec is read from the filename rather than being a constant.
+
+### A smaller model is the only thing that moves the decode ceiling
+
+Everything else in this file is about not wasting work. Decode speed itself is bound by memory
+bandwidth: every token reads the whole of the weights, so ~2.5 GiB per token at Q4_K_M against the
+~20–25 GB/s a phone's LPDDR5 actually delivers puts a hard ceiling of roughly 6–10 tok/s on a 4B model,
+whatever the kernels do.
+
+Halving the weights roughly doubles that. A **Qwen3-1.7B** Q4_K_M (~1.1 GB) answers about twice as fast
+and drops the RAM commit that loading without mmap is straining against — often the right trade for a
+strictly grounded assistant that is quoting the user's own data back rather than reasoning from
+scratch. Any generation GGUF can be imported, so this is a choice to make on the device, not in code:
+
+```
+adb push qwen3-1.7b-q4_k_m.gguf \
+  /sdcard/Android/data/com.operations.sandbox/files/models/qwen3-1.7b-q4_k_m.gguf
+```
+
+Prefill, unlike decode, is compute-bound, and is what the ISA flags and core pinning above are for.
 
 ## Optional: the embedding model (semantic retrieval)
 
@@ -290,7 +310,8 @@ adb push advisor-embed.gguf \
 ```
 
 The embedder keys on the filename (any `.gguf` whose name contains `embed`/`bge`/`gte-`/`e5-`/
-`minilm`/`nomic`), so it coexists with `qwen3-4b*.gguf` in the same directory. Without an embedding
+`minilm`/`nomic`), which is how the two stores partition the same directory: the generation store
+takes everything the embedding store does not. Without an embedding
 model — or in a build without the native library — retrieval is lexical, so this is purely additive.
 
 > Unlike the generation path, the embedding JNI functions have **not** been compiled/verified on a

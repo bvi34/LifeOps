@@ -19,8 +19,14 @@ class Qwen3LlmEngine(
     private val fallback: LocalLlmEngine = PlaceholderLlmEngine()
 ) : LocalLlmEngine {
 
+    /**
+     * What is actually running. Read from the loaded file's name rather than being a constant: the
+     * model card's job is to be honest about which model is answering, and any generation GGUF can be
+     * installed — reporting all of them as the one this class was written against would make the card
+     * confidently wrong about the thing it exists to report.
+     */
     override val spec: ModelSpec
-        get() = if (backend.isReady) LOADED else fallback.spec
+        get() = if (backend.isReady) GgufName.specOf(backend.detail) else fallback.spec
 
     override val status: String get() = backend.detail
 
@@ -58,13 +64,6 @@ class Qwen3LlmEngine(
     }
 
     companion object {
-        val LOADED = ModelSpec(
-            name = "Qwen3-4B",
-            parameters = "4B",
-            quantization = "Q4_K_M / GGUF",
-            isPlaceholder = false
-        )
-
         private const val TAG = "Qwen3LlmEngine"
 
         private fun sha256(text: String): String {
