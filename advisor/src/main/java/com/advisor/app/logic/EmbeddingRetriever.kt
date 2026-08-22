@@ -59,6 +59,10 @@ class EmbeddingRetriever(
                 val vec = computed.getOrNull(j)
                 if (vec != null && vec.isNotEmpty()) cache.put(keys[docIndex], vec)
             }
+            // One write per round of embedding, not one per document: the whole point of a cache that
+            // outlives the process is to make the *next* cold start cheap, and a corpus is embedded in
+            // a burst and then read many times.
+            cache.flush()
         }
 
         return keys.map { cache.get(it) ?: EMPTY }

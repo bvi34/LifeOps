@@ -456,6 +456,26 @@ vectors are simply never consulted — revocation stays instant.
 > Kotlin side is fully guarded, so until an embedding model is present (or if the native call fails)
 > retrieval is lexical — exactly as before.
 
+### The corpus is embedded once, not once per launch
+
+Embedding the corpus is the slowest thing that happens on a first question, and it used to happen on
+*every* app start — the vector cache was in-memory only. Two changes remove most of that:
+
+- `LlamaCppEmbedder.embedAll` packs several documents into each native decode, so indexing costs one
+  pass over the embedding model's weights per batch rather than per document.
+- `VectorCache.persistent` keeps the vectors in `cacheDir` between launches, so after the first run
+  there is usually nothing to embed at all.
+
+What that file holds is worth being precise about, since Advisor keeps no copy of the other apps' data
+at rest: document **ids** (already persisted anyway, as the citations on stored answers), a hash of
+each document's text, and the vectors — no titles, no bodies. It is treated as strictly disposable.
+Missing, corrupt, truncated, or written by a different embedding model all mean the same thing: an
+empty cache, rebuilt on the next question. That is also why it lives in the cache directory, where the
+system is free to delete it.
+
+The hash is what keeps it honest — editing a row changes it, so the old vector misses and the row is
+re-embedded. A vector describing text that no longer exists is never served.
+
 ---
 
 ## Testing
