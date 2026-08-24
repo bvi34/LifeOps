@@ -169,9 +169,9 @@ class LifeOpsKnowledgeSource(context: Context) : KnowledgeSource {
         val ideaNotes = db.futureProjectDao().getAllNotes().groupBy { it.projectId }
         for (idea in db.futureProjectDao().getAll()) {
             docs += KnowledgeDocument(
-                id = "lifeops:futureProject:${idea.id}",
+                id = "lifeops:idea:${idea.id}",
                 source = source,
-                kind = "futureProject",
+                kind = "idea",
                 title = idea.title,
                 body = buildString {
                     append("Future project idea: ").append(idea.title)

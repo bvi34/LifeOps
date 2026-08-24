@@ -57,7 +57,7 @@ object KnowledgeFacets {
             "book" -> ObjectType.BOOK
             "note" -> ObjectType.NOTE
             "recipe" -> ObjectType.RECIPE
-            "futureProject" -> ObjectType.IDEA
+            "idea" -> ObjectType.IDEA
             else -> ObjectType.UNKNOWN
         }
         SourceApp.LOGISTICS -> when (doc.kind) {
