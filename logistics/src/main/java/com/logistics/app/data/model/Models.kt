@@ -140,7 +140,10 @@ data class ParsedRecipe(
     val name: String,
     val servings: Double?,
     val ingredients: List<String>,
-    val sourceUrl: String? = null
+    val sourceUrl: String? = null,
+    /** The method, one step per entry. Empty when the page published no instructions — plenty of
+     *  sites emit only `recipeIngredient`, and a recipe with no steps is still worth importing. */
+    val steps: List<String> = emptyList()
 )
 
 /** One recipe ingredient line broken into parts. Any field may be blank/absent when the line is

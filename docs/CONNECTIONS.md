@@ -107,7 +107,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `timeEntry` | `log` | `TimeEntryService` | Logs minutes against a task. |
 | `book` | `create`, `update`, `setStatus`, `delete`, `addNote`, `logTime` | `BookService` | `setStatus`: `to_read`/`reading`/`done`. |
 | `food` | `createCustom`, `log`, `logAdHoc`, `confirm`, `adjust`, `promote` | `FoodService` | `unit`: `gram`/`serving`; macros are `Double`. |
-| `recipe` | `create`, `delete`, `addIngredient`, `removeIngredient` | `RecipeService` | — |
+| `recipe` | `create`, `update`, `delete`, `addIngredient`, `removeIngredient` | `RecipeService` | `create`/`update` carry `instructions` (the method, one step per line) and `sourceUrl`. On `update` an omitted field is left alone; a blank one clears it. |
 | `futureProject` | `create`, `addNote`, `archive`, `delete` | `FutureProjectService` | The "someday" backlog. |
 | `costResource` | `create`, `archive` | `CostService` | Budgets/quotas. |
 | `cost` | `log`, `delete` | `CostService` | Per-task cost entries. |

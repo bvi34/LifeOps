@@ -59,10 +59,19 @@ class LifeOpsCatalog private constructor(
      * [IngredientLineParser]; its name becomes (or reuses) a custom food, and it's attached to the
      * recipe. Imported units (cups, tbsp, …) don't fit LifeOps' strict GRAM/SERVING ingredient math,
      * so the parsed unit is preserved on the food's serving unit and the ingredient is stored as a
-     * SERVING quantity — the ingredient list stays faithful even when macros are unknown (0).
+     * SERVING quantity — the ingredient list stays faithful even when macros are unknown (0), and
+     * LifeOps' recipe screen flags those lines rather than quietly summing them as zero.
+     *
+     * The method and the source link come across too, so the imported recipe is something you can
+     * cook from and trace back — not a shopping list with a name on it.
      */
     suspend fun createImportedRecipe(parsed: ParsedRecipe): Recipe {
-        val recipe = recipeRepo.createRecipe(parsed.name, parsed.servings ?: 1.0)
+        val recipe = recipeRepo.createRecipe(
+            name = parsed.name,
+            servings = parsed.servings ?: 1.0,
+            instructions = parsed.steps.joinToString("\n").takeIf { it.isNotBlank() },
+            sourceUrl = parsed.sourceUrl
+        )
         for (raw in parsed.ingredients) {
             val ing = IngredientLineParser.parse(raw)
             if (ing.name.isBlank()) continue

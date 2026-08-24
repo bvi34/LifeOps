@@ -112,8 +112,8 @@ fun FoodItem.toEntity() = FoodItemEntity(
     source.name, fdcId, createdAt
 )
 
-fun RecipeEntity.toModel() = Recipe(id, name, servings, createdAt)
-fun Recipe.toEntity() = RecipeEntity(id, name, servings, createdAt)
+fun RecipeEntity.toModel() = Recipe(id, name, servings, createdAt, instructions, sourceUrl)
+fun Recipe.toEntity() = RecipeEntity(id, name, servings, createdAt, instructions, sourceUrl)
 
 fun RecipeIngredientEntity.toModel() = RecipeIngredient(id, recipeId, foodItemId, quantity, IngredientUnit.from(unit), sortOrder)
 fun RecipeIngredient.toEntity() = RecipeIngredientEntity(id, recipeId, foodItemId, quantity, unit.name, sortOrder)

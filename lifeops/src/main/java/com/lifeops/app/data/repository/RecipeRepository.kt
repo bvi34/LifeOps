@@ -23,14 +23,30 @@ class RecipeRepository(
     fun observeIngredients(recipeId: String): Flow<List<RecipeIngredient>> =
         recipeDao.observeIngredients(recipeId).map { list -> list.map { it.toModel() } }
 
-    suspend fun createRecipe(name: String, servings: Double = 1.0): Recipe {
-        val recipe = Recipe(UUID.randomUUID().toString(), name, servings, DateUtil.now())
+    suspend fun getById(id: String): Recipe? = recipeDao.getById(id)?.toModel()
+
+    suspend fun createRecipe(
+        name: String,
+        servings: Double = 1.0,
+        instructions: String? = null,
+        sourceUrl: String? = null
+    ): Recipe {
+        val recipe = Recipe(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            servings = servings,
+            createdAt = DateUtil.now(),
+            instructions = instructions,
+            sourceUrl = sourceUrl
+        )
         recipeDao.upsert(recipe.toEntity())
         return recipe
     }
 
-    suspend fun updateRecipe(recipe: Recipe, name: String, servings: Double) {
-        recipeDao.upsert(recipe.copy(name = name, servings = servings).toEntity())
+    /** Writes [recipe] back as-is — callers build the edited copy, so a partial edit can never
+     *  blank a field it didn't mean to touch. */
+    suspend fun updateRecipe(recipe: Recipe) {
+        recipeDao.upsert(recipe.toEntity())
     }
 
     suspend fun deleteRecipe(id: String) = recipeDao.delete(id)

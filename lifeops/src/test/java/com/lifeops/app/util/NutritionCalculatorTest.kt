@@ -57,4 +57,41 @@ class NutritionCalculatorTest {
         assertEquals(200.0, total.calories, 0.0001)
         assertEquals(20.0, total.carbsG, 0.0001)
     }
+
+    @Test
+    fun `a line with real macros has no gap`() {
+        assertNull(NutritionCalculator.macroGap(food(), quantity = 1.0, unit = IngredientUnit.SERVING))
+    }
+
+    @Test
+    fun `an all-zero food reports NO_MACROS rather than counting as zero`() {
+        val placeholder = food(calories = 0.0, carbsG = 0.0, proteinG = 0.0, fatG = 0.0)
+        assertEquals(
+            MacroGap.NO_MACROS,
+            NutritionCalculator.macroGap(placeholder, quantity = 1.0, unit = IngredientUnit.SERVING)
+        )
+    }
+
+    @Test
+    fun `a partly-known food still counts`() {
+        // Protein-only is real data, not a placeholder: only an all-zero row is a gap.
+        val partial = food(calories = 0.0, carbsG = 0.0, proteinG = 6.0, fatG = 0.0)
+        assertNull(NutritionCalculator.macroGap(partial, quantity = 1.0, unit = IngredientUnit.SERVING))
+    }
+
+    @Test
+    fun `grams against a food with no serving weight report UNRESOLVED_UNIT`() {
+        assertEquals(
+            MacroGap.UNRESOLVED_UNIT,
+            NutritionCalculator.macroGap(food(servingSizeGrams = null), quantity = 50.0, unit = IngredientUnit.GRAM)
+        )
+    }
+
+    @Test
+    fun `a deleted food reports MISSING_FOOD`() {
+        assertEquals(
+            MacroGap.MISSING_FOOD,
+            NutritionCalculator.macroGap(null, quantity = 1.0, unit = IngredientUnit.SERVING)
+        )
+    }
 }

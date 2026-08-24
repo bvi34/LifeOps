@@ -82,4 +82,95 @@ class RecipeLinkParserTest {
     fun returnsNullWhenNoRecipeData() {
         assertNull(RecipeLinkParser.parse("<html><body><p>No recipe here.</p></body></html>"))
     }
+
+    @Test
+    fun parsesHowToStepInstructions() {
+        val html = """
+            <script type="application/ld+json">
+            {"@type":"Recipe","name":"Stepped Stew","recipeIngredient":["1 lb beef"],
+             "recipeInstructions":[
+               {"@type":"HowToStep","text":"Brown the beef."},
+               {"@type":"HowToStep","text":"Simmer for an hour."}
+             ]}
+            </script>
+        """.trimIndent()
+
+        val recipe = RecipeLinkParser.parse(html)
+        assertEquals(listOf("Brown the beef.", "Simmer for an hour."), recipe!!.steps)
+    }
+
+    @Test
+    fun flattensHowToSectionInstructions() {
+        val html = """
+            <script type="application/ld+json">
+            {"@type":"Recipe","name":"Sectioned Cake","recipeIngredient":["2 eggs"],
+             "recipeInstructions":[
+               {"@type":"HowToSection","name":"Batter","itemListElement":[
+                 {"@type":"HowToStep","text":"Beat the eggs."},
+                 {"@type":"HowToStep","text":"Fold in the flour."}
+               ]},
+               {"@type":"HowToSection","name":"Bake","itemListElement":[
+                 {"@type":"HowToStep","text":"Bake 30 minutes."}
+               ]}
+             ]}
+            </script>
+        """.trimIndent()
+
+        val recipe = RecipeLinkParser.parse(html)
+        assertEquals(
+            listOf("Beat the eggs.", "Fold in the flour.", "Bake 30 minutes."),
+            recipe!!.steps
+        )
+    }
+
+    @Test
+    fun splitsASingleInstructionsBlobIntoSteps() {
+        val html = """
+            <script type="application/ld+json">
+            {"@type":"Recipe","name":"Blob Bread","recipeIngredient":["flour"],
+             "recipeInstructions":"<p>Mix the dough.</p><p>Prove for an hour &amp; knock back.</p>"}
+            </script>
+        """.trimIndent()
+
+        val recipe = RecipeLinkParser.parse(html)
+        assertEquals(listOf("Mix the dough.", "Prove for an hour & knock back."), recipe!!.steps)
+    }
+
+    @Test
+    fun keepsAnUnsplittableInstructionsStringAsOneStep() {
+        val html = """
+            <script type="application/ld+json">
+            {"@type":"Recipe","name":"One Liner","recipeIngredient":["salt"],
+             "recipeInstructions":"Stir everything together."}
+            </script>
+        """.trimIndent()
+
+        assertEquals(listOf("Stir everything together."), RecipeLinkParser.parse(html)!!.steps)
+    }
+
+    @Test
+    fun hasNoStepsWhenThePagePublishesNone() {
+        val html = """
+            <script type="application/ld+json">
+            {"@type":"Recipe","name":"Ingredients Only","recipeIngredient":["1 cup water"]}
+            </script>
+        """.trimIndent()
+
+        assertEquals(emptyList<String>(), RecipeLinkParser.parse(html)!!.steps)
+    }
+
+    @Test
+    fun readsMicrodataInstructions() {
+        val html = """
+            <div itemscope itemtype="http://schema.org/Recipe">
+              <h1 itemprop="name">Micro Soup</h1>
+              <li itemprop="recipeIngredient">3 carrots</li>
+              <li itemprop="recipeInstructions">Chop the carrots.</li>
+              <li itemprop="recipeInstructions">Boil until soft.</li>
+            </div>
+        """.trimIndent()
+
+        val recipe = RecipeLinkParser.parse(html)
+        assertEquals(listOf("Chop the carrots.", "Boil until soft."), recipe!!.steps)
+    }
 }
