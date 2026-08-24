@@ -25,11 +25,14 @@ class WordUsageFunction : AdvisorFunction {
             ?: return FunctionResult("I couldn't tell which words to count — try \"how many times have I said <word>\".")
 
         // App-backed scopes are gated: don't report zero for data the user simply hasn't enabled.
-        val app = parsed.scope.app
-        if (app != null && app !in request.grantedApps) {
+        // A scope can span two apps (books and reading notes live in Citation *and* in LifeOps'
+        // Collection), and then either one is enough to answer.
+        val apps = parsed.scope.apps
+        if (apps.isNotEmpty() && apps.none { it in request.grantedApps }) {
+            val names = apps.joinToString(" or ") { it.displayName }
             return FunctionResult(
-                "Counting ${parsed.scope.label} needs your ${app.displayName} data, which isn't " +
-                    "enabled right now. Turn ${app.displayName} on in Permissions and ask again."
+                "Counting ${parsed.scope.label} needs your $names data, which isn't " +
+                    "enabled right now. Turn $names on in Permissions and ask again."
             )
         }
 
@@ -109,7 +112,7 @@ class WordUsageFunction : AdvisorFunction {
             request.conversation.filter { it.fromUser && it.text.isNotBlank() }.map { TextUnit(it.text) }
 
         else -> request.corpus
-            .filter { it.source == parsed.scope.app && (parsed.scope.kind == null || it.kind == parsed.scope.kind) }
+            .filter { it.source in parsed.scope.apps && (parsed.scope.kind == null || it.kind == parsed.scope.kind) }
             .map { TextUnit(docText(it), it) }
     }
 
@@ -133,16 +136,18 @@ class WordUsageFunction : AdvisorFunction {
 
     private enum class Subject { USER, ASSISTANT }
 
-    private enum class Scope(val label: String, val app: SourceApp?, val kind: String?) {
-        CONVERSATION("our conversation", null, null),
-        TASKS("your tasks", SourceApp.LIFEOPS, "task"),
-        NOTES("your reading notes", SourceApp.CITATION, "note"),
-        BOOKS("your books", SourceApp.CITATION, "book"),
-        PANTRY("your pantry", SourceApp.LOGISTICS, "pantry"),
-        GROCERIES("your grocery list", SourceApp.LOGISTICS, "grocery"),
-        MEMORY("your long-term memory", null, null),
-        PROFILES("your standing profiles", null, null),
-        ALL("your enabled data", null, null)
+    private enum class Scope(val label: String, val apps: Set<SourceApp>, val kind: String?) {
+        CONVERSATION("our conversation", emptySet(), null),
+        TASKS("your tasks", setOf(SourceApp.LIFEOPS), "task"),
+        // Books and their notes are held by both apps and folded to one record per book by
+        // CorpusMerge, so scanning either app's rows is right and scanning both double-counts nothing.
+        NOTES("your reading notes", setOf(SourceApp.CITATION, SourceApp.LIFEOPS), "note"),
+        BOOKS("your books", setOf(SourceApp.CITATION, SourceApp.LIFEOPS), "book"),
+        PANTRY("your pantry", setOf(SourceApp.LOGISTICS), "pantry"),
+        GROCERIES("your grocery list", setOf(SourceApp.LOGISTICS), "grocery"),
+        MEMORY("your long-term memory", emptySet(), null),
+        PROFILES("your standing profiles", emptySet(), null),
+        ALL("your enabled data", emptySet(), null)
     }
 
     private data class Parsed(val target: String?, val scope: Scope, val subject: Subject)
