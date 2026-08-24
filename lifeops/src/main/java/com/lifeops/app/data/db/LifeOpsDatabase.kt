@@ -1040,6 +1040,13 @@ private val MIGRATION_50_51 = object : Migration(50, 51) {
     }
 }
 
+/**
+ * The schema version, in one place. [com.lifeops.app.backup.LifeOpsBackupContributor] records it in
+ * the backup manifest as the version the copied `lifeops.db` was written at, and reads it from here
+ * rather than repeating the number — the hand-copied one had drifted seven migrations behind.
+ */
+const val LIFEOPS_DB_VERSION = 51
+
 @Database(
     entities = [
         AspectEntity::class,
@@ -1091,7 +1098,7 @@ private val MIGRATION_50_51 = object : Migration(50, 51) {
         MilestoneEntity::class,
         BusyBlockPersonEntity::class
     ],
-    version = 51,
+    version = LIFEOPS_DB_VERSION,
     exportSchema = true
 )
 abstract class LifeOpsDatabase : RoomDatabase() {
