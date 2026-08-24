@@ -2,6 +2,7 @@ package com.citation.app.backup
 
 import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.citation.app.data.db.CITATION_DB_VERSION
 import com.citation.app.data.db.CitationDatabase
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
@@ -31,10 +32,10 @@ class CitationBackupContributor(private val context: Context) : BackupContributo
     override val appId = AppId.CITATION
     override val displayName = "Citation"
 
-    // Matches CitationDatabase @Database(version = 5). Bump this in lockstep with the @Database
-    // version so the archive manifest (and the sandbox's "Backup format v_" label) truthfully
-    // records which schema the backed-up citation.db was written at.
-    override val dataVersion = 5
+    // The schema the copied citation.db was written at, read from the database declaration itself
+    // so the archive manifest (and the sandbox's "Backup format v_" label) can't drift out of step
+    // with the schema it describes.
+    override val dataVersion = CITATION_DB_VERSION
 
     override fun backup(sink: BackupSink) {
         // Fold the WAL into the main db so the file copy is current and self-contained.

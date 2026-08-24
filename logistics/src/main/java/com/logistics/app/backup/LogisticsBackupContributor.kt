@@ -2,6 +2,7 @@ package com.logistics.app.backup
 
 import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.logistics.app.data.db.LOGISTICS_DB_VERSION
 import com.logistics.app.data.db.LogisticsDatabase
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
@@ -27,8 +28,9 @@ class LogisticsBackupContributor(private val context: Context) : BackupContribut
     override val appId = AppId.LOGISTICS
     override val displayName = "Logistics"
 
-    // Matches LogisticsDatabase @Database(version = 1).
-    override val dataVersion = 1
+    // The schema the copied logistics.db was written at, read from the database declaration itself
+    // so it can't drift: this said 1 while the schema had already moved to 3.
+    override val dataVersion = LOGISTICS_DB_VERSION
 
     override fun backup(sink: BackupSink) {
         // Fold the WAL into the main db so the file copy is current and self-contained.
