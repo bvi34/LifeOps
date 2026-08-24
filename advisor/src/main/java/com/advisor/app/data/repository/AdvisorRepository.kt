@@ -22,6 +22,7 @@ import com.advisor.app.logic.Citations
 import com.advisor.app.logic.Conversation
 import com.advisor.app.logic.ConversationTurn
 import com.advisor.app.logic.ConversationWindow
+import com.advisor.app.logic.CorpusMerge
 import com.advisor.app.logic.EngineDecision
 import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
@@ -268,14 +269,18 @@ class AdvisorRepository(
         // Load only what the user has granted — denied apps are never read. Sources cache their
         // snapshot between questions (rebuilding when their tables change), so revoking an app must
         // also evict it: otherwise its rows would sit in memory after the user withdrew access.
-        val corpus = ArrayList<KnowledgeDocument>()
+        val loaded = ArrayList<KnowledgeDocument>()
         for (source in sources) {
             if (permissions.isGranted(source.source)) {
-                corpus += runCatching { source.load() }.getOrDefault(emptyList())
+                loaded += runCatching { source.load() }.getOrDefault(emptyList())
             } else {
                 source.evict()
             }
         }
+        // A book read in Citation is also a row in LifeOps' Collection, and its highlights are
+        // synced onto that row's notes. Both sources are right about their own data; the corpus
+        // shouldn't carry the same thing twice. See CorpusMerge.
+        val corpus = CorpusMerge.merge(loaded)
 
         // Function dispatch: some questions are computations ("how many times have I said X",
         // "count my word usage in my tasks") that retrieval can't answer — it can only surface rows.
