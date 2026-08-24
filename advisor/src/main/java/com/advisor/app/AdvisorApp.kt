@@ -2,6 +2,7 @@ package com.advisor.app
 
 import android.app.Application
 import android.content.Context
+import android.util.Log
 import androidx.room.RoomDatabase
 import com.advisor.app.data.action.LifeOpsTaskWriter
 import com.advisor.app.data.db.AdvisorDatabase
@@ -113,7 +114,14 @@ class AdvisorApp private constructor(private val app: Application) {
      * a deterministic, grounded placeholder — so Advisor works either way and gains real reasoning the
      * moment the model file is present, with no code change.
      */
-    val engine by lazy { Qwen3LlmEngine(LlamaCppBackend(modelStore)) }
+    val engine by lazy {
+        Qwen3LlmEngine(
+            LlamaCppBackend(modelStore),
+            // The prompt-boundary diagnostics: the engine itself stays Android-free, so the Android
+            // log is attached here, at the wiring layer that already knows about the framework.
+            log = { line -> Log.i(Qwen3LlmEngine.TAG, line) }
+        )
+    }
 
     /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */
     val logicEngine: LogicEngine by lazy { C3AEngine() }
