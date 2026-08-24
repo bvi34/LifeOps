@@ -19,6 +19,8 @@ Makefile
 
 # Gradle
 .gradle/
+# Kotlin build-session scratch (KSP/incremental state), written on every build.
+.kotlin/
 ```
 /advisor/.cxx/Debug/1v242a91/arm64-v8a/_deps/llama_cpp-src/
 /advisor/.cxx/Debug/6m1p141u/arm64-v8a/_deps/llama_cpp-src/
