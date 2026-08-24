@@ -2,6 +2,7 @@
 
 package com.lifeops.app.ui.screens.dailyplan
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -30,8 +32,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.FoodItem
 import com.lifeops.app.data.model.FoodLogEntry
-import com.lifeops.app.data.model.IngredientUnit
 import com.lifeops.app.data.model.FoodLogSource
+import com.lifeops.app.data.model.IngredientUnit
 import com.lifeops.app.data.model.NutritionTotals
 import com.lifeops.app.data.model.Recipe
 import com.lifeops.app.ui.components.AppHeader
@@ -360,7 +362,12 @@ private fun PlanMealDialog(
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Four chips don't fit a dialog's width on a narrow phone, so the row scrolls
+                    // rather than clipping the last meal of the day.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
                         MEAL_TYPES.forEach { type ->
                             FilterChip(
                                 selected = mealType == type,
