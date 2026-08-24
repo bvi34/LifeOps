@@ -66,7 +66,14 @@ class CitationSyncRepositoryTest {
     // Typed as UpPacket so `listOf(Versioned(v, packet))` infers List<Versioned<UpPacket>> — the
     // invariant Versioned<T> won't widen a List<Versioned<TelemetryPacket>> to the envelope's type.
     private fun telemetry(key: EntityKey, minutes: Int, occurredAt: Long): UpPacket =
-        TelemetryPacket(key, SourceType.OREILLY, "Designing Data-Intensive Applications", minutes, occurredAt)
+        TelemetryPacket(
+            key,
+            SourceType.OREILLY,
+            "Designing Data-Intensive Applications",
+            minutes,
+            occurredAt,
+            sourceId = "prod-1"
+        )
 
     private fun note(
         bookKey: EntityKey,

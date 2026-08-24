@@ -132,11 +132,18 @@ removed from the list. So a grocery run is as auditable as an import or a meal.
 
 `RecipeFetcher` fetches the page; `RecipeLinkParser` reads its **schema.org/Recipe** data
 (`application/ld+json`, including inside an `@graph`, with a microdata fallback) into a name,
-servings, and ingredient lines. Saving materializes it as a **LifeOps recipe**: each ingredient line
-is split by `IngredientLineParser`, matched to (or created as) a LifeOps custom food, and attached.
-Imported units (cups, tbsp) don't fit LifeOps' strict GRAM/SERVING ingredient math, so the parsed
-unit is preserved on the food's serving unit and the ingredient is stored as a SERVING quantity —
-the ingredient list stays faithful even when macros are unknown.
+servings, ingredient lines, and the **method**. `recipeInstructions` is the least standardised field
+in the spec — a string, an array of strings, `HowToStep` objects, or `HowToSection`s wrapping their
+own steps — and all four shapes flatten to one plain-text step list.
+
+Saving materializes it as a **LifeOps recipe**: each ingredient line is split by
+`IngredientLineParser`, matched to (or created as) a LifeOps custom food, and attached; the steps
+land in the recipe's `instructions` and the page URL in its `sourceUrl`, so the import is something
+you can cook from and trace back rather than a shopping list with a name on it. Imported units
+(cups, tbsp) don't fit LifeOps' strict GRAM/SERVING ingredient math, so the parsed unit is preserved
+on the food's serving unit and the ingredient is stored as a SERVING quantity — the ingredient list
+stays faithful even when macros are unknown, and LifeOps' recipe screen flags those lines instead of
+summing them as zero.
 
 ## Backup
 
@@ -158,4 +165,5 @@ Pure-JVM suites under `logistics/src/test` (run with `gradle :logistics:testDebu
   no threshold) and missing-ingredient matching (by id and by case-insensitive name, de-duplicated).
 - `IngredientLineParserTest` — quantities, fractions (`1/2`, `1 1/2`, `½`), unit vs. size words,
   free-form lines.
-- `RecipeLinkParserTest` — JSON-LD, `@graph`, HTML-entity decoding, and the microdata fallback.
+- `RecipeLinkParserTest` — JSON-LD, `@graph`, HTML-entity decoding, the microdata fallback, and the
+  four shapes `recipeInstructions` arrives in (steps, sections, one blob, none).

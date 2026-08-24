@@ -20,6 +20,14 @@ import com.logistics.app.data.db.entities.PantryTxnEntity
  * The whole file is backed up wholesale by [com.logistics.app.backup.LogisticsBackupContributor],
  * exactly like LifeOps and Citation, so the Operations Sandbox "back up everything" stays complete.
  */
+/**
+ * The schema version, in one place. The backup manifest records the version the copied
+ * `logistics.db` was written at, so [com.logistics.app.backup.LogisticsBackupContributor] reads it
+ * from here rather than repeating the number — a hand-copied version drifts the moment a migration
+ * lands, and a manifest that lies about its schema is worse than no manifest.
+ */
+const val LOGISTICS_DB_VERSION = 3
+
 @Database(
     entities = [
         PantryItemEntity::class,
@@ -27,7 +35,7 @@ import com.logistics.app.data.db.entities.PantryTxnEntity
         ImportBatchEntity::class,
         GroceryItemEntity::class
     ],
-    version = 3,
+    version = LOGISTICS_DB_VERSION,
     exportSchema = true
 )
 abstract class LogisticsDatabase : RoomDatabase() {

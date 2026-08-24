@@ -60,6 +60,8 @@ data class QueryFacets(
             Regex("""\b(task|tasks|todo|todos|to-do|to-dos|chore|chores|errand|errands)\b""") to ObjectType.TASK,
             Regex("""\b(project|projects)\b""") to ObjectType.PROJECT,
             Regex("""\b(milestone|milestones|achievement|achievements)\b""") to ObjectType.MILESTONE,
+            Regex("""\b(recipe|recipes|cook|cooking|dish|dishes|bake|baking)\b""") to ObjectType.RECIPE,
+            Regex("""\b(idea|ideas|someday|future project|future projects|backlog|shelved)\b""") to ObjectType.IDEA,
             Regex("""\b(pantry|ingredient|ingredients|in stock|restock|fridge)\b""") to ObjectType.PANTRY_ITEM,
             Regex("""\b(grocery|groceries|shopping list|to buy)\b""") to ObjectType.GROCERY_ITEM
         )

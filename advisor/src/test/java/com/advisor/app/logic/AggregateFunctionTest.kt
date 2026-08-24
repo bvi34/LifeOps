@@ -71,6 +71,26 @@ class AggregateFunctionTest {
     }
 
     @Test
+    fun counts_books_held_in_the_lifeops_collection_too() {
+        // A book can live in either app; CorpusMerge has already folded any pair, so counting both
+        // apps' rows counts each book exactly once — and counting only Citation's would miss this.
+        val corpus = listOf(
+            KnowledgeDocument("lifeops:book:a", SourceApp.LIFEOPS, "book", "Dune", "Book: Dune. Reading state: READING"),
+            book("b", "Neuromancer")
+        )
+        val text = fn.run(req("how many books do I have?", corpus, granted = setOf(SourceApp.LIFEOPS, SourceApp.CITATION))).text
+        assertTrue(text, text.contains("You have 2 books"))
+    }
+
+    @Test
+    fun a_books_question_needs_either_app_enabled() {
+        val corpus = listOf(book("a", "Dune"))
+        val text = fn.run(req("how many books do I have?", corpus, granted = emptySet())).text
+        assertTrue(text, text.contains("Citation"))
+        assertTrue(text, text.contains("LifeOps"))
+    }
+
+    @Test
     fun counts_memories_without_a_permission() {
         val req = FunctionRequest(
             question = "how many memories do I have?",

@@ -2,18 +2,22 @@
 
 package com.lifeops.app.ui.screens.dailyplan
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,8 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.FoodItem
 import com.lifeops.app.data.model.FoodLogEntry
+import com.lifeops.app.data.model.FoodLogSource
 import com.lifeops.app.data.model.IngredientUnit
 import com.lifeops.app.data.model.NutritionTotals
+import com.lifeops.app.data.model.Recipe
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.util.DateUtil
 import java.time.LocalDate
@@ -53,13 +59,17 @@ fun DailyPlanScreen(viewModel: DailyPlanViewModel) {
                 onSelectDate = { viewModel.selectDate(it) }
             )
             TotalsCard(planned = state.plannedTotals, confirmed = state.confirmedTotals)
+            OutlinedButton(
+                onClick = { viewModel.showPlanDialog() },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+            ) { Text("Plan a meal from a recipe") }
             if (state.entries.isEmpty()) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(32.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Nothing logged for this day yet.",
+                        "Nothing logged or planned for this day yet.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -77,7 +87,8 @@ fun DailyPlanScreen(viewModel: DailyPlanViewModel) {
                             onConfirm = { viewModel.confirmEntry(entry.id) },
                             onStartAdjust = { viewModel.startAdjusting(entry.id) },
                             onCancelAdjust = { viewModel.cancelAdjusting() },
-                            onAdjust = { qty, unit -> viewModel.adjustEntry(entry.id, qty, unit) }
+                            onAdjust = { qty, unit -> viewModel.adjustEntry(entry.id, qty, unit) },
+                            onUnplan = { entry.weeklyMenuItemId?.let { viewModel.unplan(it) } }
                         )
                     }
                 }
@@ -95,6 +106,14 @@ fun DailyPlanScreen(viewModel: DailyPlanViewModel) {
             onAddAdHoc = { name, qty, unit, cal, carbs, protein, fat ->
                 viewModel.addAdHoc(name, qty, unit, cal, carbs, protein, fat)
             }
+        )
+    }
+
+    if (state.showPlanDialog) {
+        PlanMealDialog(
+            recipes = state.recipes,
+            onDismiss = { viewModel.hidePlanDialog() },
+            onPlan = { recipeId, servings, mealType -> viewModel.planMeal(recipeId, servings, mealType) }
         )
     }
 }
@@ -152,15 +171,20 @@ private fun LogEntryRow(
     onConfirm: () -> Unit,
     onStartAdjust: () -> Unit,
     onCancelAdjust: () -> Unit,
-    onAdjust: (Double, IngredientUnit) -> Unit
+    onAdjust: (Double, IngredientUnit) -> Unit,
+    onUnplan: () -> Unit
 ) {
+    // A planned meal is a suggestion until it's confirmed: it can be dropped outright, where an
+    // ad-hoc entry (already eaten) can only be adjusted.
+    val isPlanned = !entry.confirmed && entry.source == FoodLogSource.PLANNED && entry.weeklyMenuItemId != null
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(entry.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium)
                     Text(
-                        "${entry.quantity} ${entry.unit.name.lowercase()} · ${entry.calories.toInt()} kcal",
+                        "${entry.quantity} ${entry.unit.name.lowercase()} · ${entry.calories.toInt()} kcal" +
+                            if (isPlanned) " · planned" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                     )
@@ -168,6 +192,11 @@ private fun LogEntryRow(
                 if (!entry.confirmed) {
                     IconButton(onClick = onConfirm) {
                         Icon(Icons.Default.Check, contentDescription = "Confirm")
+                    }
+                }
+                if (isPlanned) {
+                    IconButton(onClick = onUnplan) {
+                        Icon(Icons.Default.Close, contentDescription = "Remove planned meal")
                     }
                 }
                 TextButton(onClick = onStartAdjust) { Text("Adjust") }
@@ -307,3 +336,85 @@ private fun AddFoodDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+/**
+ * Plans a recipe onto the selected day. The recipe book is the only source here — a meal you can't
+ * name from the book is just an ad-hoc log, which the + button already covers.
+ */
+@Composable
+private fun PlanMealDialog(
+    recipes: List<Recipe>,
+    onDismiss: () -> Unit,
+    onPlan: (recipeId: String, servings: Double, mealType: String?) -> Unit
+) {
+    var selectedRecipeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var servingsText by rememberSaveable { mutableStateOf("1") }
+    var mealType by rememberSaveable { mutableStateOf(MEAL_TYPES.first()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Plan a meal") },
+        text = {
+            if (recipes.isEmpty()) {
+                Text(
+                    "No recipes yet — add one in Collection first.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Four chips don't fit a dialog's width on a narrow phone, so the row scrolls
+                    // rather than clipping the last meal of the day.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        MEAL_TYPES.forEach { type ->
+                            FilterChip(
+                                selected = mealType == type,
+                                onClick = { mealType = type },
+                                label = { Text(type.replaceFirstChar { it.uppercase() }) }
+                            )
+                        }
+                    }
+                    OutlinedTextField(
+                        value = servingsText,
+                        onValueChange = { servingsText = it },
+                        label = { Text("Servings") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(recipes, key = { it.id }) { recipe ->
+                            val selected = recipe.id == selectedRecipeId
+                            TextButton(
+                                onClick = { selectedRecipeId = recipe.id },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    if (selected) "● ${recipe.name}" else recipe.name,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    selectedRecipeId?.let {
+                        onPlan(it, servingsText.toDoubleOrNull() ?: 1.0, mealType)
+                    }
+                },
+                enabled = selectedRecipeId != null
+            ) { Text("Plan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private val MEAL_TYPES = listOf("breakfast", "lunch", "snack", "dinner")

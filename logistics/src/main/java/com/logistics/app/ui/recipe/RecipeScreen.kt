@@ -158,6 +158,10 @@ private fun RecipePreviewCard(
                 Text("• $line", style = MaterialTheme.typography.bodySmall)
             }
             if (parsed.ingredients.size > 20) Text("…and ${parsed.ingredients.size - 20} more", style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (parsed.steps.isEmpty()) "No method on the page" else "${parsed.steps.size} steps",
+                style = MaterialTheme.typography.labelMedium
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(onClick = onSave, modifier = Modifier.weight(1f)) { Text("Save to LifeOps") }

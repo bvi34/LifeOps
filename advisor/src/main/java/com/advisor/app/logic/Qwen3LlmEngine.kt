@@ -1,7 +1,5 @@
 package com.advisor.app.logic
 
-import android.util.Log
-
 /**
  * The Advisor's real generation step, backed by a local **Qwen3-4B** model (Q4_K_M GGUF) running fully
  * on-device through an [LlmBackend]. It formats the assembled [AdvisorPrompt] with Qwen3's chat
@@ -16,7 +14,14 @@ import android.util.Log
 class Qwen3LlmEngine(
     private val backend: LlmBackend,
     private val params: GenerationParams = GenerationParams(),
-    private val fallback: LocalLlmEngine = PlaceholderLlmEngine()
+    private val fallback: LocalLlmEngine = PlaceholderLlmEngine(),
+    /**
+     * Where the prompt-boundary diagnostics go. A sink rather than a direct `android.util.Log` call
+     * because everything under `logic/` is framework-free and JVM-tested; the Android log is wired in
+     * by [com.advisor.app.AdvisorApp]. Defaults to discarding, so a test never needs a mocked
+     * framework to exercise generation.
+     */
+    private val log: (String) -> Unit = {}
 ) : LocalLlmEngine {
 
     /**
@@ -42,8 +47,8 @@ class Qwen3LlmEngine(
     private fun run(prompt: AdvisorPrompt, onPartial: ((String) -> Unit)?): String {
         if (!backend.isReady) return fallback.generate(prompt)
         val formatted = Qwen3ChatFormat.forPrompt(prompt)
-        Log.i(TAG, "Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
-        Log.i(TAG, "Qwen3 prompt boundary head=${formatted.take(120).replace("\n", "\\n")}")
+        log("Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
+        log("Qwen3 prompt boundary head=${formatted.take(120).replace("\n", "\\n")}")
         val raw = runCatching {
             if (onPartial == null) {
                 backend.generate(formatted, params)
@@ -64,7 +69,8 @@ class Qwen3LlmEngine(
     }
 
     companion object {
-        private const val TAG = "Qwen3LlmEngine"
+        /** The Android log tag [com.advisor.app.AdvisorApp] stamps the diagnostics with. */
+        const val TAG = "Qwen3LlmEngine"
 
         private fun sha256(text: String): String {
             val digest = java.security.MessageDigest.getInstance("SHA-256")

@@ -13,6 +13,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * never pointed here, so notes and owned content are structurally safe from reclamation (the
  * disposable RR chapter bodies live in a separate file store instead).
  */
+/**
+ * The schema version, in one place. [com.citation.app.backup.CitationBackupContributor] records it
+ * in the backup manifest as the version the copied `citation.db` was written at, and reads it from
+ * here rather than repeating the number — the same version stated twice drifts the moment a
+ * migration lands.
+ */
+const val CITATION_DB_VERSION = 5
+
 @Database(
     entities = [
         BookEntity::class,
@@ -24,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RrFictionEntity::class,
         RrChapterMetaEntity::class
     ],
-    version = 5,
+    version = CITATION_DB_VERSION,
     exportSchema = true
 )
 abstract class CitationDatabase : RoomDatabase() {

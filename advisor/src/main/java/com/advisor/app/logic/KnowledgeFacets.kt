@@ -14,6 +14,8 @@ enum class ObjectType(val label: String) {
     PROJECT("project"),
     MILESTONE("milestone"),
     ASPECT("life area"),
+    RECIPE("recipe"),
+    IDEA("shelved idea"),
     PANTRY_ITEM("pantry item"),
     GROCERY_ITEM("grocery item"),
     MEMORY("memory"),
@@ -31,6 +33,8 @@ enum class ObjectType(val label: String) {
  *  - books: `reading`, `to_read`, `done`
  *  - tasks/projects: `done`, `doing`, `todo`
  *  - pantry: `low`, `stocked`  ·  grocery: `needed`, `bought`
+ *  - recipes and shelved ideas: none — a recipe has no lifecycle, and an idea's active/archived
+ *    split is a shelf, not a state a question ever asks to match
  *
  * A record with no meaningful state (an aspect, a note) reports `null`, which the engine treats as "no
  * state to disagree about" — it never manufactures a state mismatch out of thin air.
@@ -48,6 +52,12 @@ object KnowledgeFacets {
             "project" -> ObjectType.PROJECT
             "milestone" -> ObjectType.MILESTONE
             "aspect" -> ObjectType.ASPECT
+            // The Collection. A LifeOps book is the same kind of thing as a Citation one — same
+            // facet, same "Reading state:" phrasing — so a reading question judges both alike.
+            "book" -> ObjectType.BOOK
+            "note" -> ObjectType.NOTE
+            "recipe" -> ObjectType.RECIPE
+            "idea" -> ObjectType.IDEA
             else -> ObjectType.UNKNOWN
         }
         SourceApp.LOGISTICS -> when (doc.kind) {

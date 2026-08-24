@@ -8,6 +8,7 @@ import com.lifeops.app.connection.local.LocalCostConnection
 import com.lifeops.app.connection.local.LocalCounterConnection
 import com.lifeops.app.connection.local.LocalFoodConnection
 import com.lifeops.app.connection.local.LocalFutureProjectConnection
+import com.lifeops.app.connection.local.LocalMenuConnection
 import com.lifeops.app.connection.local.LocalNoteConnection
 import com.lifeops.app.connection.local.LocalPersonConnection
 import com.lifeops.app.connection.local.LocalProjectConnection
@@ -24,6 +25,7 @@ import com.lifeops.app.connection.service.CostService
 import com.lifeops.app.connection.service.CounterService
 import com.lifeops.app.connection.service.FoodService
 import com.lifeops.app.connection.service.FutureProjectService
+import com.lifeops.app.connection.service.MealPlanService
 import com.lifeops.app.connection.service.NoteService
 import com.lifeops.app.connection.service.PersonService
 import com.lifeops.app.connection.service.ProjectService
@@ -56,6 +58,7 @@ object Connections {
         val book: BookService,
         val recipe: RecipeService,
         val food: FoodService,
+        val mealPlan: MealPlanService,
         val futureProject: FutureProjectService,
         val cost: CostService,
         val activity: ActivityService,
@@ -76,6 +79,7 @@ object Connections {
         LocalScheduleConnection.register(registry, services.busyBlock, services.timeEntry)
         LocalBookConnection.register(registry, services.book)
         LocalFoodConnection.register(registry, services.food, services.recipe)
+        LocalMenuConnection.register(registry, services.mealPlan)
         LocalFutureProjectConnection.register(registry, services.futureProject)
         LocalCostConnection.register(registry, services.cost)
         LocalActivityConnection.register(registry, services.activity)

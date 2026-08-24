@@ -20,7 +20,10 @@ import com.lifeops.app.data.model.IngredientUnit
  *  - `food/confirm`  — params: entryId (required).
  *  - `food/adjust`   — params: entryId (required), quantity (double, required), unit, foodItemId (swap).
  *  - `food/promote`  — params: entryId (required). Promote an ad-hoc entry to a custom food.
- *  - `recipe/create` — params: name (required), servings (double, default 1).
+ *  - `recipe/create` — params: name (required), servings (double, default 1), instructions,
+ *    sourceUrl.
+ *  - `recipe/update` — params: id (required), name, servings (double), instructions, sourceUrl.
+ *    An omitted field is left alone; a blank one clears it.
  *  - `recipe/delete` — params: id (required).
  *  - `recipe/addIngredient`    — params: recipeId (required), foodItemId (required), quantity
  *    (double, required), unit.
@@ -97,8 +100,26 @@ object LocalFoodConnection {
         // --- recipes ---
         registry.register("local", "recipe", "create") { request ->
             val p = request.params
-            val recipe = recipeService.create(p.requireString("name"), p.getDouble("servings") ?: 1.0)
+            val recipe = recipeService.create(
+                name = p.requireString("name"),
+                servings = p.getDouble("servings") ?: 1.0,
+                instructions = p.getString("instructions"),
+                sourceUrl = p.getString("sourceUrl")
+            )
             ConnectionResult.ok("id" to recipe.id)
+        }
+
+        registry.register("local", "recipe", "update") { request ->
+            val p = request.params
+            val id = p.requireString("id")
+            recipeService.update(
+                id = id,
+                name = p.getString("name"),
+                servings = p.getDouble("servings"),
+                instructions = p.getString("instructions"),
+                sourceUrl = p.getString("sourceUrl")
+            )?.let { ConnectionResult.ok("id" to it.id) }
+                ?: ConnectionResult.fail(ConnectionError.NOT_FOUND, "No recipe with id '$id'")
         }
 
         registry.register("local", "recipe", "delete") { request ->

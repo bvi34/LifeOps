@@ -2,6 +2,7 @@ package com.lifeops.app.backup
 
 import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.lifeops.app.data.db.LIFEOPS_DB_VERSION
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
@@ -33,8 +34,9 @@ class LifeOpsBackupContributor(private val context: Context) : BackupContributor
     override val appId = AppId.LIFEOPS
     override val displayName = "LifeOps"
 
-    // Matches LifeOpsDatabase @Database(version = 44).
-    override val dataVersion = 44
+    // The schema the copied lifeops.db was written at, read from the database declaration itself so
+    // it can't drift: this said 44 while the schema had already reached 51.
+    override val dataVersion = LIFEOPS_DB_VERSION
 
     override fun backup(sink: BackupSink) {
         // Fold the WAL into the main db so the file copy is current and self-contained.

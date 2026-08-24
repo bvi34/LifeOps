@@ -83,7 +83,8 @@ class CitationSyncRepository(
                                 title = packet.title,
                                 sourceType = packet.sourceType.name,
                                 minutes = packet.minutesRead,
-                                occurredAt = packet.occurredAt
+                                occurredAt = packet.occurredAt,
+                                sourceId = packet.sourceId
                             )
                             telemetry++
                         }

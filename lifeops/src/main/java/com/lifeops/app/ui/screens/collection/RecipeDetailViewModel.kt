@@ -10,6 +10,8 @@ import com.lifeops.app.data.model.RecipeIngredient
 import com.lifeops.app.data.model.RecipeNutrition
 import com.lifeops.app.data.repository.FoodItemRepository
 import com.lifeops.app.data.repository.RecipeRepository
+import com.lifeops.app.util.MacroGap
+import com.lifeops.app.util.NutritionCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,7 +20,12 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-data class IngredientRow(val ingredient: RecipeIngredient, val foodName: String)
+/** One ingredient line, with the reason it adds nothing to the totals when it doesn't ([gap]). */
+data class IngredientRow(
+    val ingredient: RecipeIngredient,
+    val foodName: String,
+    val gap: MacroGap? = null
+)
 
 data class RecipeDetailUiState(
     val recipe: Recipe? = null,
@@ -48,8 +55,12 @@ class RecipeDetailViewModel(
             ) { recipe, ingredients -> recipe to ingredients }
                 .collectLatest { (recipe, ingredients) ->
                     val rows = ingredients.map { ingredient ->
-                        val name = foodItemRepository.getById(ingredient.foodItemId)?.name ?: "Unknown food"
-                        IngredientRow(ingredient, name)
+                        val food = foodItemRepository.getById(ingredient.foodItemId)
+                        IngredientRow(
+                            ingredient = ingredient,
+                            foodName = food?.name ?: "Unknown food",
+                            gap = NutritionCalculator.macroGap(food, ingredient.quantity, ingredient.unit)
+                        )
                     }
                     val nutrition = recipeRepository.getNutrition(recipeId)
                     _uiState.update { it.copy(recipe = recipe, ingredients = rows, nutrition = nutrition) }
@@ -60,10 +71,17 @@ class RecipeDetailViewModel(
     fun showEditDialog() = _uiState.update { it.copy(showEditDialog = true) }
     fun hideEditDialog() = _uiState.update { it.copy(showEditDialog = false) }
 
-    fun rename(name: String, servings: Double) {
-        val recipe = _uiState.value.recipe ?: return
+    /** Saves the edit dialog. Blank instructions/source clear the field; the recipe service
+     *  treats a blank string as "clear" and a null as "leave alone". */
+    fun edit(name: String, servings: Double, instructions: String, sourceUrl: String) {
         viewModelScope.launch {
-            recipeService.update(recipe, name, servings)
+            recipeService.update(
+                id = recipeId,
+                name = name,
+                servings = servings,
+                instructions = instructions,
+                sourceUrl = sourceUrl
+            )
             _uiState.update { it.copy(showEditDialog = false) }
         }
     }

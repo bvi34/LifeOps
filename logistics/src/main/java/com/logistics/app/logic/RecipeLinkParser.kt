@@ -12,13 +12,20 @@ import com.logistics.app.data.model.ParsedRecipe
  *
  *  1. **schema.org/Recipe JSON-LD** (`<script type="application/ld+json">`) — what almost every
  *     modern recipe site emits, including inside an `@graph`.
- *  2. **Microdata fallback** (`itemprop="recipeIngredient"` / `recipeYield` / `name`) for the
- *     stragglers.
+ *  2. **Microdata fallback** (`itemprop="recipeIngredient"` / `recipeYield` / `recipeInstructions`
+ *     / `name`) for the stragglers.
+ *
+ * Both paths pull the **method** as well as the ingredients: a recipe you can't cook from is just a
+ * shopping list, so the steps ride into LifeOps' recipe book alongside the source link.
  *
  * Framework-free (HTML in, [ParsedRecipe] out) so it's unit-tested on the JVM; the Android side only
  * does the network fetch (see [com.logistics.app.net.RecipeFetcher]).
  */
 object RecipeLinkParser {
+
+    /** Step separators inside a single instructions blob: block-level tags or a bare newline. */
+    private val STEP_SPLIT = Regex("(?i)</(?:p|li|div)>|<br\\s*/?>|\\r?\\n")
+    private val WHITESPACE = Regex("\\s+")
 
     private val LD_JSON = Regex(
         """<script[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>""",
@@ -73,7 +80,58 @@ object RecipeLinkParser {
             .map { decodeEntities(it).trim() }
             .filter { it.isNotBlank() }
         val servings = parseYield(obj.get("recipeYield"))
-        return ParsedRecipe(name = name, servings = servings, ingredients = ingredients, sourceUrl = sourceUrl)
+        val steps = parseInstructions(obj.get("recipeInstructions"))
+        return ParsedRecipe(
+            name = name,
+            servings = servings,
+            ingredients = ingredients,
+            sourceUrl = sourceUrl,
+            steps = steps
+        )
+    }
+
+    /**
+     * `recipeInstructions` is the least standardised field in schema.org/Recipe. In the wild it is
+     * one of: a single string (often with HTML in it), an array of strings, an array of `HowToStep`
+     * objects, or an array of `HowToSection`s each wrapping its own steps. All four collapse to the
+     * same thing here — a flat list of plain-text steps.
+     */
+    private fun parseInstructions(element: JsonElement?): List<String> {
+        if (element == null) return emptyList()
+        val out = ArrayList<String>()
+        collectInstructions(element, out, depth = 0)
+        return out
+    }
+
+    private fun collectInstructions(element: JsonElement, out: MutableList<String>, depth: Int) {
+        // Sections nest steps one level down; the depth cap only stops a pathological document
+        // from recursing — it is far deeper than any real page needs.
+        if (depth > 4) return
+        when {
+            element.isJsonArray -> for (e in element.asJsonArray) collectInstructions(e, out, depth + 1)
+            element.isJsonObject -> {
+                val obj = element.asJsonObject
+                // A HowToSection carries its steps in itemListElement; a HowToStep carries text.
+                val nested = obj.get("itemListElement")
+                if (nested != null) {
+                    collectInstructions(nested, out, depth + 1)
+                    return
+                }
+                val text = obj.get("text") ?: obj.get("name") ?: return
+                if (text.isJsonPrimitive) addStep(text.asString, out)
+            }
+            element.isJsonPrimitive -> {
+                // One string holding the whole method: sites separate steps with markup or plain
+                // newlines, so split on both and keep whatever survives.
+                val parts = element.asString.split(STEP_SPLIT)
+                if (parts.size > 1) parts.forEach { addStep(it, out) } else addStep(element.asString, out)
+            }
+        }
+    }
+
+    private fun addStep(raw: String, out: MutableList<String>) {
+        val text = decodeEntities(stripTags(raw)).replace(WHITESPACE, " ").trim()
+        if (text.isNotBlank()) out += text
     }
 
     private fun stringList(element: JsonElement?): List<String> {
@@ -120,7 +178,15 @@ object RecipeLinkParser {
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         ).find(html)?.let { Regex("""\d+""").find(stripTags(it.groupValues[1]))?.value?.toDoubleOrNull() }
 
-        return ParsedRecipe(name, servings, ingredients, sourceUrl)
+        val steps = Regex(
+            """itemprop\s*=\s*["']recipeInstructions["'][^>]*>(.*?)</""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).findAll(html)
+            .map { decodeEntities(stripTags(it.groupValues[1])).replace(WHITESPACE, " ").trim() }
+            .filter { it.isNotBlank() }
+            .toList()
+
+        return ParsedRecipe(name, servings, ingredients, sourceUrl, steps)
     }
 
     private fun titleOf(html: String): String? =

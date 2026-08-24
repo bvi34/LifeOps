@@ -48,4 +48,27 @@ class KnowledgeFacetsTest {
     fun a_typeless_record_has_no_state() {
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "aspect", "Aspect (life area): Body")))
     }
+
+    @Test
+    fun classifies_the_lifeops_collection() {
+        assertEquals(ObjectType.BOOK, KnowledgeFacets.objectTypeOf(doc(SourceApp.LIFEOPS, "book", "")))
+        assertEquals(ObjectType.NOTE, KnowledgeFacets.objectTypeOf(doc(SourceApp.LIFEOPS, "note", "")))
+        assertEquals(ObjectType.RECIPE, KnowledgeFacets.objectTypeOf(doc(SourceApp.LIFEOPS, "recipe", "")))
+        assertEquals(ObjectType.IDEA, KnowledgeFacets.objectTypeOf(doc(SourceApp.LIFEOPS, "idea", "")))
+    }
+
+    @Test
+    fun a_lifeops_book_reports_the_same_reading_state_as_a_citation_one() {
+        assertEquals(
+            KnowledgeFacets.READING,
+            KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "book", "Book: X. Source: LifeOps. Reading state: READING"))
+        )
+    }
+
+    @Test
+    fun a_recipe_or_an_idea_has_no_state_to_disagree_about() {
+        // "Serves 2" and "(active)" are not lifecycle states, and must never be read as one.
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "recipe", "Recipe: Stew. Serves 2.")))
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "idea", "Future project idea: X (active)")))
+    }
 }

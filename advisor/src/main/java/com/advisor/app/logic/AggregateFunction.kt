@@ -66,15 +66,19 @@ class AggregateFunction : AdvisorFunction {
     // --- counts ---
 
     private fun count(plan: Plan.Count, request: FunctionRequest): FunctionResult {
-        val app = plan.scope.app
-        if (app != null && app !in request.grantedApps) return enable(app.displayName)
+        // A scope can span two apps (a book is a Citation record *and* a LifeOps Collection row),
+        // and then either one being enabled is enough to answer.
+        val apps = plan.scope.apps
+        if (apps.isNotEmpty() && apps.none { it in request.grantedApps }) {
+            return enable(apps.joinToString(" or ") { it.displayName })
+        }
 
         val docs = when (plan.scope) {
-            Scope.TASKS -> kind(request, "task")
-            Scope.PROJECTS -> kind(request, "project")
-            Scope.MILESTONES -> kind(request, "milestone")
-            Scope.BOOKS -> kind(request, "book")
-            Scope.NOTES -> kind(request, "note")
+            Scope.TASKS -> kind(request, "task", plan.scope.apps)
+            Scope.PROJECTS -> kind(request, "project", plan.scope.apps)
+            Scope.MILESTONES -> kind(request, "milestone", plan.scope.apps)
+            Scope.BOOKS -> kind(request, "book", plan.scope.apps)
+            Scope.NOTES -> kind(request, "note", plan.scope.apps)
             Scope.MEMORIES -> null
             Scope.PROFILES -> null
         }
@@ -101,10 +105,17 @@ class AggregateFunction : AdvisorFunction {
 
     // --- helpers ---
 
-    private fun kind(request: FunctionRequest, kind: String): List<KnowledgeDocument> {
-        val app = if (kind == "book" || kind == "note") SourceApp.CITATION else SourceApp.LIFEOPS
-        return request.corpus.filter { it.source == app && it.kind == kind }
-    }
+    /**
+     * The corpus rows of one [kind], from the apps that hold it. CorpusMerge has already folded a
+     * book (and a synced note) held by both apps into one record, so spanning both apps counts each
+     * thing exactly once — and counting only one app would now *miss* the folded ones.
+     */
+    private fun kind(
+        request: FunctionRequest,
+        kind: String,
+        apps: Set<SourceApp> = setOf(SourceApp.LIFEOPS)
+    ): List<KnowledgeDocument> =
+        request.corpus.filter { it.source in apps && it.kind == kind }
 
     private fun enable(app: String) =
         FunctionResult("That needs your $app data, which isn't enabled right now. Turn $app on in Permissions and ask again.")
@@ -136,9 +147,12 @@ class AggregateFunction : AdvisorFunction {
 
     private enum class Op { SUM, AVERAGE, MIN, MAX, COUNT }
     private enum class Metric { TASK_TIME, MILESTONE_POINTS }
-    private enum class Scope(val app: SourceApp?) {
-        TASKS(SourceApp.LIFEOPS), PROJECTS(SourceApp.LIFEOPS), MILESTONES(SourceApp.LIFEOPS),
-        BOOKS(SourceApp.CITATION), NOTES(SourceApp.CITATION), MEMORIES(null), PROFILES(null)
+    private enum class Scope(val apps: Set<SourceApp>) {
+        TASKS(setOf(SourceApp.LIFEOPS)), PROJECTS(setOf(SourceApp.LIFEOPS)),
+        MILESTONES(setOf(SourceApp.LIFEOPS)),
+        BOOKS(setOf(SourceApp.CITATION, SourceApp.LIFEOPS)),
+        NOTES(setOf(SourceApp.CITATION, SourceApp.LIFEOPS)),
+        MEMORIES(emptySet()), PROFILES(emptySet())
     }
 
     private sealed interface Plan {

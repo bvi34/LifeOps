@@ -52,4 +52,26 @@ class QueryFacetsTest {
         assertNull(f.state)
         assertFalse(f.hasOpinion)
     }
+
+    @Test
+    fun recipe_words_infer_recipe_type() {
+        val f = QueryFacets.infer("what recipes use beef?")
+        assertTrue(ObjectType.RECIPE in f.objectTypes)
+        // A recipe carries no lifecycle, so nothing should be stamped on the question either.
+        assertNull(f.state)
+    }
+
+    @Test
+    fun someday_words_infer_the_shelved_idea_type() {
+        assertTrue(ObjectType.IDEA in QueryFacets.infer("what ideas did I shelve?").objectTypes)
+        assertTrue(ObjectType.IDEA in QueryFacets.infer("anything in my someday list?").objectTypes)
+    }
+
+    @Test
+    fun a_future_project_question_wants_both_ideas_and_projects() {
+        // "future project" is literally both words; collecting both types is the point.
+        val f = QueryFacets.infer("what future projects have I written down?")
+        assertTrue(ObjectType.IDEA in f.objectTypes)
+        assertTrue(ObjectType.PROJECT in f.objectTypes)
+    }
 }

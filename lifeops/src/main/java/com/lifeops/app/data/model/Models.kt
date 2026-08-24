@@ -475,7 +475,12 @@ data class Recipe(
     val id: String,
     val name: String,
     val servings: Double = 1.0,
-    val createdAt: String
+    val createdAt: String,
+    /** The method, as free text (one step per line). Null when the recipe is ingredients-only —
+     *  an old row, or an import from a page that published no steps. */
+    val instructions: String? = null,
+    /** Where the recipe came from, when it was imported from a link. Null for hand-entered ones. */
+    val sourceUrl: String? = null
 )
 
 data class RecipeIngredient(

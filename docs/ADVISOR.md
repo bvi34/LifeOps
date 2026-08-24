@@ -264,9 +264,26 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 
 | Source | Reads |
 |---|---|
-| **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, projects, milestones |
+| **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, projects, milestones — and the **Collection**: books (reading state, logged minutes, category) with their notes, recipes (servings, ingredient names, method, source link), and the someday backlog of future projects with their notes |
 | **Citation** | library books (title, author, reading state) and reading notes |
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
+
+The Collection is indexed because that's where a whole class of question lives — "what can I make
+with the beef", "didn't I have an idea about X", "how long have I spent on this book" — and until it
+was, Advisor could only answer from the week's machinery. Recipes and future projects have no
+lifecycle state, so `KnowledgeFacets` reports none for them rather than inventing one; a LifeOps book
+uses the same `Reading state:` phrasing as a Citation one, so a reading question judges both alike.
+
+**One thing, one record.** A book read in Citation is also a row in LifeOps' Collection, and a
+highlight captured in Citation is synced onto that row's notes — so with both apps granted the corpus
+would carry each of them twice. `logic/CorpusMerge` folds the pairs after loading, keeping whichever
+side holds more of what gets asked about: **books fold to LifeOps** (reading status, minutes logged,
+category, finish date), with Citation's one exclusive fact — the favourite flag — carried across, and
+**notes fold to Citation** (it keeps the note's frozen title and author; LifeOps' row is a mirror).
+Books pair by row key, since LifeOps stores a synced book under Citation's own key and a rename in
+LifeOps can't split them, or failing that by title; notes pair by key alone, since a synced note's
+LifeOps row id is literally `citation:<noteKey>`. A record whose counterpart isn't loaded is left
+exactly as it is, so granting one app alone loses nothing.
 
 Because the corpus is read fresh each time and never cached in Advisor's own store, revoking an app
 takes effect on the very next question — there is no stale copy to leak.
@@ -519,6 +536,9 @@ re-embedded. A vector describing text that no longer exists is never served.
   cross-app counts (books, memories), and the LifeOps gate.
 - `DocumentFactsTest` — recovering stock/unit/category/low, grocery quantity/needed, task status/
   priority/estimate, and milestone points from the sources' prose.
+- `CorpusMergeTest` — folding a book both apps hold into one record (by row key when the titles have
+  diverged, by title otherwise), carrying the favourite flag across, dropping LifeOps' mirror of a
+  synced note while keeping one written in LifeOps, and leaving unpaired records be.
 - `FunctionRouterTest` — routing each question to the right capability, falling through for others, and
   first-match-wins ordering.
 - `ProfileTest` — append immutability, recent-entry cap, header/key rendering, context lines.
