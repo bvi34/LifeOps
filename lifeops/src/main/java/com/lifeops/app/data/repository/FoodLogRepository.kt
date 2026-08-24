@@ -7,6 +7,7 @@ import com.lifeops.app.data.model.FoodLogEntry
 import com.lifeops.app.data.model.FoodLogSource
 import com.lifeops.app.data.model.FoodSource
 import com.lifeops.app.data.model.IngredientUnit
+import com.lifeops.app.data.model.NutritionTotals
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.NutritionCalculator
 import com.lifeops.app.util.toEntity
@@ -82,6 +83,51 @@ class FoodLogRepository(
         )
         foodLogDao.insert(entry.toEntity())
         return entry
+    }
+
+    /**
+     * The **planned** (unconfirmed) diary entry a menu item stands for: macros come from the
+     * recipe, not from a food row, so the entry survives the recipe being edited afterwards — the
+     * same snapshot-at-write rule the rest of the diary follows. [loggedAt] places it on the day it
+     * was planned for; Confirm and Adjust then work on it like any other entry.
+     */
+    suspend fun logPlannedMeal(
+        name: String,
+        servings: Double,
+        totals: NutritionTotals,
+        loggedAt: String,
+        weeklyMenuItemId: String
+    ): FoodLogEntry {
+        val entry = FoodLogEntry(
+            id = UUID.randomUUID().toString(),
+            foodItemId = null,
+            name = name,
+            quantity = servings,
+            unit = IngredientUnit.SERVING,
+            calories = totals.calories,
+            carbsG = totals.carbsG,
+            proteinG = totals.proteinG,
+            fatG = totals.fatG,
+            loggedAt = loggedAt,
+            source = FoodLogSource.PLANNED,
+            confirmed = false,
+            confirmedAt = null,
+            weeklyMenuItemId = weeklyMenuItemId
+        )
+        foodLogDao.insert(entry.toEntity())
+        return entry
+    }
+
+    /**
+     * Drops the still-unconfirmed entry a menu item wrote. A confirmed (or adjusted) entry is left
+     * alone — by then it records what was actually eaten, and unplanning a meal must not rewrite
+     * diary history.
+     */
+    suspend fun deletePlannedEntryFor(weeklyMenuItemId: String): Boolean {
+        val entry = foodLogDao.getByWeeklyMenuItemId(weeklyMenuItemId) ?: return false
+        if (entry.confirmed) return false
+        foodLogDao.delete(entry.id)
+        return true
     }
 
     suspend fun getRecentFoodItems(limit: Int = 20): List<FoodItem> =

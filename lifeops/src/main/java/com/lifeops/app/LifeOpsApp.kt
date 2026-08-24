@@ -125,6 +125,7 @@ class LifeOpsApp private constructor(private val app: Application) {
     val foodItemRepository by lazy { FoodItemRepository(database.foodItemDao()) }
     val recipeRepository by lazy { RecipeRepository(database.recipeDao(), database.foodItemDao()) }
     val foodLogRepository by lazy { FoodLogRepository(database.foodLogDao(), database.foodItemDao()) }
+    val weeklyMenuRepository by lazy { WeeklyMenuRepository(database.weeklyMenuItemDao()) }
     val bookRepository by lazy { BookRepository(database.bookDao()) }
     // The LifeOps side of the Citation sync seam. Both apps share this process's filesDir, so the
     // mailbox is the folder Citation drops its outbound envelope into (filesDir/sovereign/sync).
@@ -196,6 +197,11 @@ class LifeOpsApp private constructor(private val app: Application) {
     val foodService by lazy {
         com.lifeops.app.connection.service.FoodService(foodItemRepository, foodLogRepository)
     }
+    val mealPlanService by lazy {
+        com.lifeops.app.connection.service.MealPlanService(
+            weeklyMenuRepository, recipeRepository, foodLogRepository
+        )
+    }
     val futureProjectService by lazy {
         com.lifeops.app.connection.service.FutureProjectService(futureProjectRepository)
     }
@@ -226,6 +232,7 @@ class LifeOpsApp private constructor(private val app: Application) {
                 book = bookService,
                 recipe = recipeService,
                 food = foodService,
+                mealPlan = mealPlanService,
                 futureProject = futureProjectService,
                 cost = costService,
                 activity = activityService,

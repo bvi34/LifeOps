@@ -7,8 +7,11 @@ import com.lifeops.app.data.model.FoodItem
 import com.lifeops.app.data.model.FoodLogEntry
 import com.lifeops.app.data.model.IngredientUnit
 import com.lifeops.app.data.model.NutritionTotals
+import com.lifeops.app.data.model.Recipe
 import com.lifeops.app.data.repository.FoodItemRepository
 import com.lifeops.app.data.repository.FoodLogRepository
+import com.lifeops.app.data.repository.RecipeRepository
+import com.lifeops.app.data.repository.WeeklyMenuRepository
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,16 +31,24 @@ data class DailyPlanUiState(
     val searchQuery: String = "",
     val searchResults: List<FoodItem> = emptyList(),
     val showAddDialog: Boolean = false,
-    val adjustingEntryId: String? = null
+    val adjustingEntryId: String? = null,
+    /** The recipe book, for planning a meal onto this day. */
+    val recipes: List<Recipe> = emptyList(),
+    val showPlanDialog: Boolean = false
 )
 
 class DailyPlanViewModel(
     private val foodLogRepository: FoodLogRepository,
-    private val foodItemRepository: FoodItemRepository
+    private val foodItemRepository: FoodItemRepository,
+    private val recipeRepository: RecipeRepository,
+    weeklyMenuRepository: WeeklyMenuRepository
 ) : ViewModel() {
 
     private val foodService =
         com.lifeops.app.connection.service.FoodService(foodItemRepository, foodLogRepository)
+    private val mealPlanService = com.lifeops.app.connection.service.MealPlanService(
+        weeklyMenuRepository, recipeRepository, foodLogRepository
+    )
 
     private val _weekStartDate = MutableStateFlow(DateUtil.currentWeekStart().toString())
     private val _selectedDate = MutableStateFlow(LocalDate.now().toString())
@@ -62,6 +73,11 @@ class DailyPlanViewModel(
                         )
                     }
                 }
+        }
+        viewModelScope.launch {
+            recipeRepository.observeAll().collectLatest { recipes ->
+                _uiState.update { it.copy(recipes = recipes) }
+            }
         }
     }
 
@@ -93,6 +109,27 @@ class DailyPlanViewModel(
             foodService.adjustEntry(entryId, quantity, unit)
             _uiState.update { it.copy(adjustingEntryId = null) }
         }
+    }
+
+    fun showPlanDialog() = _uiState.update { it.copy(showPlanDialog = true) }
+    fun hidePlanDialog() = _uiState.update { it.copy(showPlanDialog = false) }
+
+    /** Commits a recipe to the selected day; the planned entry shows up in the day's list. */
+    fun planMeal(recipeId: String, servings: Double, mealType: String?) {
+        viewModelScope.launch {
+            mealPlanService.plan(
+                date = _selectedDate.value,
+                recipeId = recipeId,
+                servings = servings,
+                mealType = mealType
+            )
+            _uiState.update { it.copy(showPlanDialog = false) }
+        }
+    }
+
+    /** Takes a planned meal back off the day (a confirmed entry is kept — it's history by then). */
+    fun unplan(weeklyMenuItemId: String) {
+        viewModelScope.launch { mealPlanService.unplan(weeklyMenuItemId) }
     }
 
     fun showAddDialog() = _uiState.update { it.copy(showAddDialog = true, searchQuery = "", searchResults = emptyList()) }
@@ -127,9 +164,11 @@ private fun List<FoodLogEntry>.sumTotals(): NutritionTotals = fold(NutritionTota
 
 class DailyPlanViewModelFactory(
     private val foodLogRepository: FoodLogRepository,
-    private val foodItemRepository: FoodItemRepository
+    private val foodItemRepository: FoodItemRepository,
+    private val recipeRepository: RecipeRepository,
+    private val weeklyMenuRepository: WeeklyMenuRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        DailyPlanViewModel(foodLogRepository, foodItemRepository) as T
+        DailyPlanViewModel(foodLogRepository, foodItemRepository, recipeRepository, weeklyMenuRepository) as T
 }

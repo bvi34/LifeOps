@@ -257,7 +257,8 @@ fun LifeOpsNavHost(
                     )
                     val dailyPlanVm = viewModel<com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel>(
                         factory = com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModelFactory(
-                            app.foodLogRepository, app.foodItemRepository
+                            app.foodLogRepository, app.foodItemRepository,
+                            app.recipeRepository, app.weeklyMenuRepository
                         )
                     )
                     val recipeVm = viewModel<com.lifeops.app.ui.screens.collection.RecipeViewModel>(
