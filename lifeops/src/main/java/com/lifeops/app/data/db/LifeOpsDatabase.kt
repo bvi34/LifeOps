@@ -1040,12 +1040,58 @@ private val MIGRATION_50_51 = object : Migration(50, 51) {
     }
 }
 
+private val MIGRATION_51_52 = object : Migration(51, 52) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // People sync (see com.lifeops.app.data.repository.PeopleSyncRepository). LifeOps keeps
+        // owning this table and every foreign key into it — task_people, busy_block_people,
+        // busy_blocks and milestones are untouched. What it gains is the bookkeeping to be a *peer*
+        // on the People seam rather than the only place a household roster exists:
+        //
+        //  - personKey: the identity a person keeps across peers, as distinct from `id`, which is
+        //    only this database's row id. Backfilled from `id` so existing people already have one,
+        //    and the first sync publishes them under a key People will keep.
+        //  - syncVersion: this peer's monotonic stamp. Every local edit bumps it and the outbound
+        //    envelope is "every row above the other peer's ack", so the outbox is derived from the
+        //    rows instead of being a second, separately-corruptible queue. Existing rows are seeded
+        //    at 1 precisely so the household already in LifeOps flows into People on the first run.
+        //  - updatedAt: the merge clock, epoch millis. Zero for rows that predate the seam, which
+        //    is the honest answer — we do not know when they were last touched, and a fabricated
+        //    timestamp would win merges it has no right to.
+        db.execSQL("ALTER TABLE persons ADD COLUMN personKey TEXT")
+        db.execSQL("ALTER TABLE persons ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE persons ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE persons SET personKey = id WHERE personKey IS NULL")
+        db.execSQL("UPDATE persons SET syncVersion = 1 WHERE syncVersion = 0")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_persons_syncVersion ON persons(syncVersion)")
+
+        // Deleting a person here is a real delete — task_people, busy_block_people, busy_blocks and
+        // milestones all cascade off it, and that behaviour predates the seam. But a deleted row has
+        // nothing left to publish, so without a trace of it the other peer would simply hand the
+        // person back on the next round. This table is that trace: the key, kept long enough to be
+        // published once as a withdrawal. People, whose removal is an archive rather than a delete,
+        // needs no equivalent — its row is still there to speak for itself.
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS person_tombstones (
+                personKey TEXT NOT NULL PRIMARY KEY,
+                name TEXT NOT NULL,
+                deletedAt INTEGER NOT NULL,
+                syncVersion INTEGER NOT NULL
+            )
+            """.trimIndent()
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_person_tombstones_syncVersion ON person_tombstones(syncVersion)"
+        )
+    }
+}
+
 /**
  * The schema version, in one place. [com.lifeops.app.backup.LifeOpsBackupContributor] records it in
  * the backup manifest as the version the copied `lifeops.db` was written at, and reads it from here
  * rather than repeating the number — the hand-copied one had drifted seven migrations behind.
  */
-const val LIFEOPS_DB_VERSION = 51
+const val LIFEOPS_DB_VERSION = 52
 
 @Database(
     entities = [
@@ -1085,6 +1131,7 @@ const val LIFEOPS_DB_VERSION = 51
         WeatherAlertEntity::class,
         PersonEntity::class,
         PersonNoteEntity::class,
+        PersonTombstoneEntity::class,
         TaskPersonEntity::class,
         TaskWeatherRequirementEntity::class,
         ActivityTemplateEntity::class,
@@ -1147,7 +1194,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52)
                     .build()
                     .also { INSTANCE = it }
             }

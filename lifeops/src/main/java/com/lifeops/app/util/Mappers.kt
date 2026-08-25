@@ -166,6 +166,26 @@ fun Person.toEntity() = PersonEntity(
     email, phone
 )
 
+/**
+ * This person as the People sync seam sees them — identity only.
+ *
+ * The weather-comfort tolerances, sun sensitivity and sort order are pointedly absent: they are
+ * LifeOps' own reading of a person, no other peer can show or edit them, and putting them on a
+ * shared wire would invite a peer that has never heard of a UV index to overwrite them with a
+ * stale copy.
+ */
+fun PersonEntity.toPacket() = com.people.app.sync.PersonPacket(
+    personKey = personKey ?: id,
+    name = name,
+    relationship = relationship,
+    email = email,
+    phone = phone,
+    note = activityPreferences,
+    archived = isArchived,
+    updatedAt = updatedAt,
+    deleted = false
+)
+
 fun PersonNoteEntity.toModel() = PersonNote(id, personId, content, createdAt)
 fun PersonNote.toEntity() = PersonNoteEntity(id, personId, content, createdAt)
 

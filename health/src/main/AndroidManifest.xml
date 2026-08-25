@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Health requests no permissions at all — no INTERNET, no sensors, no contacts. Everything it
+         holds is typed in by hand and stays in the app's own database. Household medical notes are
+         the last data in this suite that should be able to leave the device, so the module simply
+         has no means to send them. -->
+
+    <!-- Health is a library module: no app-level attributes here (name/icon/theme/label live on the
+         :app host). Only Health's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. The theme is set on
+             the activity so Health keeps its own launch look. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Health"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

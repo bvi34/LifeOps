@@ -3,9 +3,11 @@ package com.operations.sandbox
 import android.content.Context
 import com.advisor.app.backup.AdvisorBackupContributor
 import com.citation.app.backup.CitationBackupContributor
+import com.health.app.backup.HealthBackupContributor
 import com.lifeops.app.backup.LifeOpsBackupContributor
 import com.logistics.app.backup.LogisticsBackupContributor
 import com.operations.backupkit.AppId
+import com.people.app.backup.PeopleBackupContributor
 import com.operations.backupkit.BackupContributor
 import com.operations.backupkit.BackupEngine
 import com.operations.backupkit.BackupManifest
@@ -30,7 +32,9 @@ class BackupCenter(context: Context, private val sandboxVersion: String) {
         LifeOpsBackupContributor(appContext),
         CitationBackupContributor(appContext),
         LogisticsBackupContributor(appContext),
-        AdvisorBackupContributor(appContext)
+        AdvisorBackupContributor(appContext),
+        HealthBackupContributor(appContext),
+        PeopleBackupContributor(appContext)
     )
 
     /** Write the [selected] apps into [out] as a single archive. [out] is closed by the engine. */

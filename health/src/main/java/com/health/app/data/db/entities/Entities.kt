@@ -1,0 +1,182 @@
+package com.health.app.data.db.entities
+
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+/**
+ * Health's tables.
+ *
+ * Two conventions run through all of them, and both are deliberate:
+ *
+ *  - **Instants are epoch millis, dates are ISO strings.** When a temperature was taken is a moment
+ *    — it is compared, subtracted and windowed by `logic/`, so it is a `Long`. A birth date is a
+ *    calendar fact that must not shift when someone changes time zone, so it is `yyyy-MM-dd` text.
+ *  - **Every row belongs to a profile.** There is no "current person" hiding in a global; the
+ *    profile id is on the row, because the whole point of this app is more than one person.
+ *
+ * Cross-table links (`episodeId`, `medicationId`) are plain nullable ids rather than Room foreign
+ * keys: a reading taken before anyone declared an illness is still a real reading, and deleting a
+ * medication should not delete the record that a dose of it was given. The profile link is the one
+ * exception — see the cascade in [ProfileEntity]'s note.
+ */
+
+/**
+ * One person being tracked. [colorArgb] is how they're told apart at a glance across every screen,
+ * and [baselineTempC] is their own normal when they know it (some people simply run at 36.4, and a
+ * 37.6 means more for them than the population threshold suggests).
+ *
+ * Deleting a profile deletes that person's readings, symptoms, doses, episodes and notes with it —
+ * see the cascade queries in the DAO. "Delete this person's data" has to mean it.
+ */
+@Entity(tableName = "profiles", indices = [Index("name"), Index("syncVersion")])
+data class ProfileEntity(
+    @PrimaryKey val id: String,
+    /**
+     * The identity this person keeps across the People sync seam, as distinct from [id], which is
+     * only this database's row id. Null until the seam stamps one.
+     *
+     * Health is a **bind-only** peer: it keeps the people it already tracks in step, but never grows
+     * a profile for a household member nobody is tracking the health of. See `HealthSyncService`.
+     */
+    val personKey: String? = null,
+    /** Bumped by every local edit, left alone by every write that arrived over the seam. */
+    val syncVersion: Long = 0L,
+    val name: String,
+    /** Free text — "Me", "Daughter", "Mum". Not an enum; households don't fit one. */
+    val relationship: String?,
+    /** ISO `yyyy-MM-dd`, or null. Drives the age-aware fever rules, so it is worth asking for. */
+    val birthDate: String?,
+    val colorArgb: Long,
+    val baselineTempC: Double?,
+    /**
+     * Allergies, conditions, the doctor's number — whatever you'd want in front of you at 3am.
+     *
+     * **Never published over the People seam**, even though People has a field of the same name.
+     * They are not the same field: People's note is "likes hiking, hates crowds", and this one is
+     * medical. Mapping one onto the other would quietly copy a person's conditions into the
+     * household directory and from there into LifeOps — which is exactly the kind of leak a shared
+     * wire makes easy and nobody asked for. See `HealthRepository.toPacket`.
+     */
+    val notes: String?,
+    val sortOrder: Int,
+    val archived: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * One measurement. [type] says which; [value] is always in the canonical unit for that type
+ * (temperature in °C, weight in kg, pressure in mmHg), with [secondaryValue] carrying diastolic for
+ * blood pressure and nothing else. [site] is only meaningful for temperature and is what makes an
+ * armpit reading comparable to an ear one.
+ */
+@Entity(
+    tableName = "readings",
+    indices = [Index("profileId"), Index("takenAt"), Index("type"), Index("episodeId")]
+)
+data class ReadingEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val episodeId: String?,
+    val type: String,
+    val value: Double,
+    val secondaryValue: Double?,
+    val site: String?,
+    val takenAt: Long,
+    val note: String?,
+    val createdAt: Long
+)
+
+/** One symptom, from when it started until it stops ([endedAt] null while it's still going). */
+@Entity(
+    tableName = "symptoms",
+    indices = [Index("profileId"), Index("episodeId"), Index("startedAt")]
+)
+data class SymptomEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val episodeId: String?,
+    val name: String,
+    /** 1–5, mild to severe. A number you can chart beats an adjective you can't. */
+    val severity: Int,
+    val startedAt: Long,
+    val endedAt: Long?,
+    val note: String?
+)
+
+/**
+ * A medicine as it is kept for one person, with the limits from its own label. Every limit is
+ * nullable because bottles differ, and Health will not invent a restriction nobody wrote down.
+ */
+@Entity(tableName = "medications", indices = [Index("profileId"), Index("name")])
+data class MedicationEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val name: String,
+    /** As printed: "160 mg / 5 mL". Kept as text because that's how labels read. */
+    val strength: String?,
+    val form: String?,
+    val doseAmount: Double?,
+    val doseUnit: String,
+    val minIntervalHours: Double?,
+    val maxDosesPer24h: Int?,
+    val maxAmountPer24h: Double?,
+    val note: String?,
+    val active: Boolean,
+    val createdAt: Long
+)
+
+/**
+ * One dose actually given. [medicationName] is denormalised on purpose: the history of what someone
+ * was given must survive the medicine being renamed or deleted from the list.
+ */
+@Entity(
+    tableName = "doses",
+    indices = [Index("profileId"), Index("medicationId"), Index("takenAt"), Index("episodeId")]
+)
+data class DoseEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val medicationId: String?,
+    val medicationName: String,
+    val amount: Double,
+    val unit: String,
+    val takenAt: Long,
+    val note: String?,
+    val episodeId: String?
+)
+
+/**
+ * A bout of illness — the thing readings, symptoms and doses hang off so they can be read back as
+ * one story instead of a scatter of rows. Open while [endedAt] is null; one open episode per person
+ * at a time is enforced by the repository, not the schema.
+ */
+@Entity(tableName = "episodes", indices = [Index("profileId"), Index("startedAt")])
+data class EpisodeEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val title: String,
+    val startedAt: Long,
+    val endedAt: Long?,
+    val note: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * The care log: fluids taken, a bath, a doctor's call, what they said. This is the "and such" of
+ * looking after someone — the part you cannot reconstruct afterwards and always wish you had.
+ */
+@Entity(
+    tableName = "care_notes",
+    indices = [Index("profileId"), Index("episodeId"), Index("at")]
+)
+data class CareNoteEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val episodeId: String?,
+    val kind: String,
+    val text: String,
+    val at: Long
+)

@@ -42,6 +42,11 @@ dependencies {
     // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps
     // reads to ingest reading telemetry and notes. LifeOps is just another peer on the seam.
     implementation(project(":core"))
+    // The People directory module. LifeOps depends on it for the *sync contract* — the packet,
+    // envelope, binder and merge rule the two peers share — not to read People's database: the
+    // household roster is replicated over a mailbox, not borrowed live the way Logistics borrows
+    // LifeOps' food catalog. LifeOps keeps owning its own `persons` table and every key into it.
+    implementation(project(":people"))
     implementation(libs.androidx.compose.ui.graphics)
 
     implementation(libs.androidx.core.ktx)

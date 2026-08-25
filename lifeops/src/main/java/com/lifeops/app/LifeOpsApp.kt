@@ -137,6 +137,17 @@ class LifeOpsApp private constructor(private val app: Application) {
             writeAckedVersion = { preferencesRepository.citationSyncAckedVersion = it }
         )
     }
+    // The LifeOps side of the People sync seam. People and LifeOps each keep their own roster and
+    // reconcile over a folder both can see (filesDir/people-sync) — the same mailbox arrangement the
+    // Citation seam uses, but symmetric, because here both ends can edit the same person.
+    val peopleSyncRepository by lazy {
+        PeopleSyncRepository(
+            personRepository,
+            java.io.File(app.filesDir, com.people.app.PeopleApp.SYNC_DIR),
+            readCursor = { peer -> preferencesRepository.peopleSyncCursor(peer) },
+            writeCursor = { peer, version -> preferencesRepository.setPeopleSyncCursor(peer, version) }
+        )
+    }
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     val personRepository by lazy { PersonRepository(database.personDao()) }
@@ -292,6 +303,11 @@ class LifeOpsApp private constructor(private val app: Application) {
             // last launch, so time entries + book notes are current before Reports/Books render.
             // Best-effort: a missing or half-written envelope must never block startup.
             runCatching { citationSyncRepository.sync() }
+            // Reconcile the household roster with People the same way, and for the same reason: the
+            // People screen and LifeOps' own person pickers should agree before either is rendered.
+            // On a first run this is also how the household LifeOps already knows about reaches a
+            // freshly-installed People — the seam does the work an import step would have.
+            runCatching { peopleSyncRepository.sync() }
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(app)

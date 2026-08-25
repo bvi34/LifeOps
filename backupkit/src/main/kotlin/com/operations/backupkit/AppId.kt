@@ -14,7 +14,9 @@ enum class AppId(val key: String, val defaultDisplayName: String) {
     LIFEOPS("lifeops", "LifeOps"),
     CITATION("citation", "Citation"),
     LOGISTICS("logistics", "Logistics"),
-    ADVISOR("advisor", "Advisor");
+    ADVISOR("advisor", "Advisor"),
+    HEALTH("health", "Health"),
+    PEOPLE("people", "People");
 
     companion object {
         fun fromKey(key: String): AppId? = entries.firstOrNull { it.key == key }

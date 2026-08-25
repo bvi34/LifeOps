@@ -37,6 +37,16 @@ class PreferencesRepository(context: Context) {
         get() = prefs.getLong("citation_sync_acked_version", 0L)
         set(value) { prefs.edit().putLong("citation_sync_acked_version", value).apply() }
 
+    /**
+     * The highest version of a People-seam peer's packets LifeOps has durably taken. Keyed by peer
+     * so a third peer joining the folder needs no new preference, no migration, and no code here.
+     */
+    fun peopleSyncCursor(peer: String): Long = prefs.getLong("people_sync_cursor_$peer", 0L)
+
+    fun setPeopleSyncCursor(peer: String, version: Long) {
+        prefs.edit().putLong("people_sync_cursor_$peer", version).apply()
+    }
+
     var defaultReminderHour: Int
         get() = prefs.getInt("default_reminder_hour", 9).coerceIn(0, 23)
         set(value) { prefs.edit().putInt("default_reminder_hour", value.coerceIn(0, 23)).apply() }

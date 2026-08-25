@@ -4,8 +4,8 @@ Operations Sandbox is the **container** the whole suite ships inside — think a
 Docker-style host crossed with a single sign-on hub. It is the one installed app and the one
 launcher icon. Opening it gives you a home screen that:
 
-- lists the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**, and
-  **Advisor**),
+- lists the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
+  **Advisor**, **Health**, and **People**),
 - opens any one of them, and
 - backs the **whole suite up into a single `.zip`** and **restores from that same zip**.
 
@@ -157,8 +157,14 @@ reopen it** — reopening just the hosted screen would reuse the now-closed data
 
 Adding another hosted app later is authoring, not engineering: add an `AppId`, ship a
 `BackupContributor`, and register it in `BackupCenter` (and add the module as an `:app` dependency).
-**Advisor** (`:advisor`) is the most recent example — a permission-gated RAG assistant that reads the
-other apps' data to answer grounded questions; see **[ADVISOR.md](ADVISOR.md)**.
+**Advisor** (`:advisor`) is a permission-gated RAG assistant that reads the other apps' data to
+answer grounded questions; see **[ADVISOR.md](ADVISOR.md)**. **Health** (`:health`) is the most
+recent example, and the cleanest illustration of how small the plug is: an `AppId.HEALTH`, a
+whole-file `HealthBackupContributor`, one line in `BackupCenter`, one in `SandboxApplication`, one
+branch in `openApp`, and one entry in Advisor's (permission-gated) source list — see
+**[HEALTH.md](HEALTH.md)**. **People** (`:people`) plugs in the same way and then does something no
+other hosted app does: it **syncs two-way with LifeOps** over a shared folder rather than reading its
+database, because both ends can edit the same person — see **[PEOPLE.md](PEOPLE.md)**.
 
 ---
 

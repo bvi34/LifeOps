@@ -18,15 +18,16 @@ the receipts.
 
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
 > single installed application and the central hub the whole suite opens through. One launcher that
-> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), Logistics (`:logistics`), or
-> Advisor (`:advisor`), and one place to back the whole suite up into a single `.zip` and restore
-> from it. LifeOps, Citation, Logistics and Advisor are library modules hosted in that one process —
+> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), Logistics (`:logistics`),
+> Advisor (`:advisor`), Health (`:health`), or People (`:people`), and one place to back the whole
+> suite up into a single `.zip` and restore from it. LifeOps, Citation, Logistics, Advisor, Health
+> and People are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`.
 
 > **Advisor** (the private, on-device assistant) is a peer module — see **[docs/ADVISOR.md](docs/ADVISOR.md)**.
 > It's the suite's **RAG** layer: it answers questions grounded in your own data across LifeOps,
-> Citation and Logistics, under an explicit **per-app permission gate** (denied by default). It also
+> Citation, Logistics, Health and People, under an explicit **per-app permission gate** (denied by default). It also
 > keeps **identity-based data** as a portable JSON file, a set of **standing named profiles** (user,
 > LLM persona, projects) it references by name and can write to via a `@remember` directive, and a
 > **dedicated, heavily-tagged long-term memory** database it recalls from. A **unifying engine (C3A)**
@@ -38,6 +39,31 @@ the receipts.
 > deterministic, grounded placeholder, so Advisor works either way. The retrieval, permissions, recall
 > and prompt assembly around it are real and JVM-unit-tested in `advisor/logic/`. It requests no
 > `INTERNET`; nothing leaves the device.
+
+> **People** (the household directory) is a peer module — see **[docs/PEOPLE.md](docs/PEOPLE.md)**.
+> It owns *who*: the roster, how to reach someone, the dates that come round, and the notes you keep
+> about them — and it keeps **LifeOps in step over a two-way sync seam**, the same mailbox spine
+> Citation rides. Both apps can edit the same person (LifeOps mints them from calendar attendees;
+> you type birth dates into People), so the roster is **replicated rather than borrowed**: each peer
+> keeps its own rows and they reconcile. **Health is on the seam too**, as a *bind-only* peer: it
+> keeps the people it already tracks in step (a birth date arriving from People is exactly what its
+> age-aware fever rules need) but never grows a medical profile for a household member nobody is
+> tracking. The merge rule is *newer wins field by field, but a blank never beats a value* —
+> record-level last-write-wins would let whichever app you touched last erase the other's half of
+> the person. LifeOps' `persons` table and all five foreign keys into it were
+> left exactly as they were; the migration that made it a peer is purely additive. The contract —
+> packet, binder, merge, engine — is pure JVM in `people/sync/` and unit-tested, including a full
+> two-peer round.
+
+> **Health** (the household health tracker) is a peer module — see **[docs/HEALTH.md](docs/HEALTH.md)**.
+> It keeps a **profile per person** and, against each of them, the temperatures and other readings
+> taken, the symptoms they've got, the medicines they're on with the spacing and daily limits from
+> the label, and the **illnesses** all of it hangs off — so "when was the last dose", "is this higher
+> than the last one" and "which day did the fever start" are already answered rather than
+> reconstructed at 3am. The two judgements it makes — whether a reading is a fever, given where it was
+> taken and how old the person is, and whether the next dose is due yet under both the interval and a
+> rolling 24-hour allowance — live in `health/logic/` and are JVM-unit-tested. It requests **no
+> permissions at all**, `INTERNET` included. It records; it does not give medical advice.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
