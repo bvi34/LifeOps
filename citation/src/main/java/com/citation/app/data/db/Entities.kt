@@ -47,6 +47,15 @@ data class BookEntity(
     val coverPath: String? = null,
     /** How many chapters the book has, so the library can show progress without loading them. */
     val chapterCount: Int = 0,
+    /**
+     * How far through the book, 0..1, as the reader last measured it — in characters.
+     *
+     * Stored rather than derived because the library cannot compute it: character-accurate progress
+     * needs every chapter's length, and loading a whole book to draw one row of a shelf would be
+     * absurd. The reader has the book in hand and writes this as it goes, so the shelf and the page
+     * agree. Zero means "not measured yet", and the shelf falls back to the chapter-count estimate.
+     */
+    val progressFraction: Float = 0f,
     /** The publisher's nested contents, serialized by `BlockCodec`; empty for sources without one. */
     val tocJson: String? = null,
     // Wall-clock of the last time this book was opened in a reader, so the Read tab can resume the

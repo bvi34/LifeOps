@@ -315,9 +315,22 @@ class CitationRepository private constructor(
         return book
     }
 
-    /** Persist the reader's last position for restore-on-reopen. */
-    suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
+    /**
+     * Persist the reader's last position for restore-on-reopen, and — when the reader can measure
+     * it — how far through the book that is.
+     *
+     * The fraction is passed in rather than computed here because measuring it in characters needs
+     * every chapter's length, and the reader already has the book open. The library then reads back
+     * the same number the page showed, instead of a chapter-count estimate that disagrees with it.
+     */
+    suspend fun savePosition(
+        bookKey: String,
+        chapterOrdinal: Int,
+        charOffset: Int,
+        progressFraction: Float? = null
+    ) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
+        progressFraction?.let { db.bookDao().saveProgress(bookKey, it.coerceIn(0f, 1f)) }
     }
 
     /**
@@ -1747,7 +1760,9 @@ class CitationRepository private constructor(
         val coverPath: String? = null,
         val chapterCount: Int = 0,
         val isFavorite: Boolean = false,
-        val addedAt: Long = 0
+        val addedAt: Long = 0,
+        /** What the reader last measured in characters, or 0 when it never has. */
+        val progressFraction: Float = 0f
     ) {
         /** "The Expanse #1", or null. */
         val seriesLabel: String?
@@ -1757,11 +1772,16 @@ class CitationRepository private constructor(
                 "$name #$trimmed"
             }
 
-        /** Chapter-granular progress; 0 for a book never opened, 1 for one marked done. */
+        /**
+         * How far through: what the reader measured in characters when it has, otherwise a coarse
+         * chapter estimate. 0 for a book never opened, 1 for one marked done.
+         */
         val progress: Float
             get() = when {
                 readingState == "DONE" -> 1f
-                chapterCount <= 0 || lastOpenedAt == null -> 0f
+                lastOpenedAt == null -> 0f
+                progressFraction > 0f -> progressFraction.coerceIn(0f, 1f)
+                chapterCount <= 0 -> 0f
                 else -> ((lastChapterOrdinal + 1).toFloat() / chapterCount).coerceIn(0f, 1f)
             }
     }

@@ -118,6 +118,7 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
     val kindleSession by vm.kindleSession.collectAsStateWithLifecycle()
     val catalogsOpen by vm.catalogsOpen.collectAsStateWithLifecycle()
+    val keepAwake by vm.keepAwake.collectAsStateWithLifecycle()
 
     // Pause the engaged-reading meter whenever the app leaves the foreground, and resume on return —
     // so backgrounded time never accrues. Guarded inside the VM (no-op when no book is being read),
@@ -133,6 +134,16 @@ fun ReaderScreen(vm: ReaderViewModel) {
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Keep the screen on while *any* reader is open — the flowing text, a PDF's pages, a licensed
+    // book in its own WebView. It is the window flag rather than a wake lock: scoped to this
+    // composable, released the moment reading stops, and needing no permission.
+    val reading = openBook != null || pdfSession != null || oreillySession != null || kindleSession != null
+    val readerView = LocalView.current
+    DisposableEffect(readerView, reading, keepAwake) {
+        readerView.keepScreenOn = reading && keepAwake
+        onDispose { readerView.keepScreenOn = false }
     }
 
     // The immersive readers (PDF, O'Reilly, flowing text) each preempt the tab shell. When none is
@@ -203,10 +214,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
     // A selection the reader asked to look up; the sheet decides where to send it.
     var lookup by remember { mutableStateOf<Lookup.Query?>(null) }
 
-    // Keep the screen on while a book is open — a reader that dims mid-paragraph is the single most
-    // common complaint about reading on a phone. On by default because that is what reading wants;
-    // one tap away in Display for anyone who would rather it didn't.
-    var keepAwake by rememberSaveable { mutableStateOf(true) }
+    val keepAwake by vm.keepAwake.collectAsStateWithLifecycle()
 
     // Note composer + the note opened by tapping a highlight.
     var noteQuote by remember { mutableStateOf("") }
@@ -224,13 +232,6 @@ private fun FlowingReader(vm: ReaderViewModel) {
     toolbar.onAddNote = { quote -> noteQuote = quote; noteBody = ""; noteHint = hintProvider.value(); showNote = true }
     toolbar.onHighlight = { quote -> vm.captureNoteForQuote(quote, "", hintProvider.value()) }
     toolbar.onLookUp = { selection -> lookup = Lookup.of(selection).takeIf { !it.isEmpty } }
-
-    // The window flag, not a wake lock: it is scoped to this composable, released the moment the
-    // reader leaves the screen, and needs no permission.
-    DisposableEffect(view, keepAwake) {
-        view.keepScreenOn = keepAwake
-        onDispose { view.keepScreenOn = false }
-    }
 
     val background = theme.background()
     val foreground = theme.foreground()
@@ -373,7 +374,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
 
     if (showFormat) {
         FormatSheet(
-            keepAwake = keepAwake, onKeepAwake = { keepAwake = it },
+            keepAwake = keepAwake, onKeepAwake = vm::setKeepAwake,
             fontSize = fontSize, onFontSize = { fontSize = it },
             serif = serif, onSerif = { serif = it },
             lineSpacing = lineSpacing, onLineSpacing = { lineSpacing = it },

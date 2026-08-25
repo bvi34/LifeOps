@@ -53,7 +53,7 @@ other feature bolts onto this spine.
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
 resolver, the sync protocol, the PDF/O'Reilly pieces, the structured document model, the OPDS
-catalog engine, the library query layer, and the storage aggregator below, **`:core` has 346 passing
+catalog engine, the library query layer, and the storage aggregator below, **`:core` has 405 passing
 JVM unit tests** (run `gradle :core:test`).
 
 ### `:citation` (Android)
@@ -346,7 +346,7 @@ A flat, unsorted, unsearchable column of titles works for a dozen books and is u
 
 | Area | Type(s) | What it does |
 |---|---|---|
-| **Shelf model** | `library/LibraryEntry` | One book as a shelf sees it, with **chapter-granular progress** — the only measure that means the same thing in every reader track. Honest at the edges: an unopened book reads 0%, not 1/n, and a finished one reads 100% whether or not its last chapter was scrolled to the bottom. |
+| **Shelf model** | `library/LibraryEntry` | One book as a shelf sees it, with progress preferring what the reader measured in characters and falling back to a coarse chapter estimate for a book not opened since. Honest at the edges: an unopened book reads 0%, not 1/n, and a finished one reads 100% whether or not its last chapter was scrolled to the bottom. |
 | **Sort** | `library/LibrarySort`, `LibrarySorting` | Recent / added / title / author / series / progress. *The Time Machine* files under T-i-m-e; "H. G. Wells" sorts as "Wells, H. G."; a series reads in order with standalone books after it; never-opened books sort after opened ones rather than jumbling in at zero. |
 | **Filter + search** | `library/LibraryFilter`, `LibraryQuery` | AND-of-tokens across title, author, series and subjects — narrowing as you type, the same rule note search uses. Composable filters for shelf, source, reading state, subject and starred. |
 | **Facets** | `library/Facet` | Subject and series counts, most-used first. |
@@ -390,6 +390,40 @@ attached, folders walk in and out with the system Back gesture, and a book that 
 says so instead of offering a button that would fail. On download the catalog's metadata is
 **merged over** the file's — additive, with the file's own values winning, since those came from the
 publisher's package document — and a cover is fetched if the file had none.
+
+
+## Reading mechanics — search, bookmarks, progress, lookup (core built + verified)
+
+The features a reader is judged on, each written where the honest answer is harder than the obvious
+one.
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **In-book search** | `reader/BookSearch` | The most-missed feature in any reader. Matching folds case and normalises whitespace — so a phrase the source happens to break across a line still matches — but reports offsets into the **real** text, because the offset must serve as both a jump target and a highlight range in the canonical text. The walk compares against a normalised view *without ever materialising one*, so there is only one set of offsets in existence and no chance of returning the wrong one. Snippets cut at word boundaries and elide visibly. A chapter not yet downloaded contributes nothing, because "not here" and "not fetched" are different claims. |
+| **Progress** | `reader/ReadingProgress` | Characters, not chapters. "Chapter 3 / 40" is a location: three chapters into a book whose first three are a foreword, a preface and a note on the text is not 7.5% read. Percent never rounds up to 100 before the end. |
+| **Time left** | `reader/ReadingPace`, `TimeLeft` | Every reader app either asks you for a words-per-minute or invents one. Citation already measures **engaged** time honestly (`ReadingMeter` voids the stretch where you walked away), so the pace is simply observed. It reports whether it is `confident` yet and callers show **nothing** rather than a guess — an invented "4 hours left" on the first page is worse than no number, because the reader cannot tell it was invented. Jumps and stalls are dropped rather than smoothed; old observations decay so a dense technical book after a novel is followed. |
+| **Bookmarks** | `reader/Bookmark`, `Bookmarks` | A **position, not a passage** — which is why the reader needed both. Conflating them means either highlighting a sentence you did not care about to mark your place, or scrolling a list of positions hunting for the one that was about something. But an offset alone is as fragile as an anchor-by-offset, so a bookmark freezes the line it was set on and re-resolves through `FuzzyAnchor`: an edit earlier in the chapter moves it with the words, a deleted passage degrades to the chapter rather than jumping somewhere wrong. Sovereign — it outlives its book like a note. |
+| **Lookup** | `reader/Lookup` | The hard part is deciding *what the word is*. A selection arrives as `“Whither,` or `mansions.` or a whole clause dragged by accident; handing that to a dictionary returns nothing, which reads as the feature being broken rather than the query being wrong. Ends are stripped, insides kept (`don't`, `well-being`), and a phrase is never offered a dictionary entry it cannot have. |
+
+**Android wiring:** search takes over the top of the reader rather than a separate screen — you want
+a passage in order to get back to it, so the page stays underneath and the results stay up after you
+land. Matches are lit in a colour distinct from a highlight, because a search match is transient and
+not yours. A bookmark ribbon in the top bar toggles on the page you are *looking at* (the viewport,
+not the last debounced save), and the list is reached from the contents sheet — both answer "take me
+somewhere in this book", so they share a route instead of each claiming an icon. The bottom bar
+tracks the whole book by characters, with time-left shown only once the estimate has earned it.
+**Keep screen on** is a window flag scoped to the reader — released the moment reading stops, no
+permission, no wake lock — applied across every reader track and on by default. **Look up** joins Add
+note and Highlight in the selection toolbar as a single item: what a selection is worth looking up
+*as* depends on what it turns out to be, and the toolbar cannot know that without a clipboard round
+trip it should not pay just to decide what to draw; the platform's own dictionary leads where a
+handler exists, with web fallbacks in the same list rather than hidden behind a failure.
+
+Room v7 adds `bookmarks` (sovereign: it nulls rather than cascades, outliving its book) and
+`reading_pace` (pure observation, safe to lose, rebuilt within an hour of reading), plus
+`books.progressFraction` — the library cannot compute character-accurate progress without loading
+every chapter, so the reader writes what it measured and the shelf reads it back, which is what keeps
+the library and the page from quoting different numbers for the same book.
 
 
 ## Storage visibility (milestone 7 — core built + verified)
@@ -478,14 +512,16 @@ emits **engaged-time telemetry** (honest, idle-proof, source-tagged) up the sync
 
 The reader now renders books rather than only their words: structure as ranges over the unchanged
 canonical text, the publisher's nested contents, covers and illustrations, and the shelf metadata a
-library needs. The library is a shelf you can search, sort, facet and organise; and **OPDS** connects
+library needs. It also does the things a reader is judged on — search inside the book, bookmarks that
+survive the text moving, progress in characters with a time estimate learned from your own honest
+reading, a screen that stays on, and word lookup from the selection. The library is a shelf you can search, sort, facet and organise; and **OPDS** connects
 it to catalogs — a Calibre server, Standard Ebooks, Gutenberg, Feedbooks, Kavita/Komga — which is
 what turns Citation from an app you put files into, into an app connected to libraries.
 
 The framework-independent spine — internal model, structured document model, keys, dedup,
 EPUB/RR/PDF/O'Reilly ingestion, OPDS catalogs, the library query layer, notes + degradation +
 retrieval, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
-logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**346 tests**); the
+logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**405 tests**); the
 Android reader (`:citation`) adds Room storage, the Compose readers and shelves, the capture entry
 points, WorkManager jobs, the catalog client, and the sync transport on top (buildable with the
 Android SDK).

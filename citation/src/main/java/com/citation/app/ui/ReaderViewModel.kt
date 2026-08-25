@@ -125,6 +125,17 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** Characters covered since the last pace report, paired with the meter's engaged time. */
     private var paceCharacters = 0
 
+    private val _keepAwake = MutableStateFlow(true)
+
+    /**
+     * Whether the screen stays on while reading. On by default — a reader that dims mid-paragraph is
+     * the most common complaint about reading on a phone — and held here rather than in one screen
+     * so it covers every reader track, not just the flowing one.
+     */
+    val keepAwake: StateFlow<Boolean> = _keepAwake.asStateFlow()
+
+    fun setKeepAwake(on: Boolean) { _keepAwake.value = on }
+
     // --- In-book search ---------------------------------------------------------------------------
 
     private val _searchQuery = MutableStateFlow("")
@@ -1295,8 +1306,15 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** Persist the reader's live position (current chapter + in-chapter scroll offset in px). */
     fun savePosition(chapterOrdinal: Int, charOffset: Int) {
         onReadingProgress() // scrolling/paging within a chapter is reading progress
-        val key = _openBook.value?.key?.toString() ?: return
-        viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset) }
+        val book = _openBook.value ?: return
+        val key = book.key?.toString() ?: return
+        // Record how far through the book this is, so the library quotes the same number the page
+        // does. Only the paged reader passes a canonical character offset here; scroll mode's
+        // pixel offset would measure nothing, so it reports through the live position instead.
+        val measured = _position.value
+            .takeIf { it.first == chapterOrdinal }
+            ?.let { ReadingProgress.at(book, it.first, it.second).fraction }
+        viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset, measured) }
     }
 
     /**

@@ -114,7 +114,8 @@ object CitationMappers {
             coverPath = book.coverPath,
             chapterCount = book.chapterCount,
             isFavorite = book.isFavorite,
-            addedAt = book.createdAt
+            addedAt = book.createdAt,
+            progressFraction = book.progressFraction
         )
 
     /**
@@ -138,7 +139,8 @@ object CitationMappers {
             lastChapterOrdinal = book.lastChapterOrdinal,
             chapterCount = book.chapterCount,
             isFavorite = book.isFavorite,
-            collectionIds = collectionIds
+            collectionIds = collectionIds,
+            measuredProgress = book.progressFraction
         )
 
     fun lifecycleOf(book: BookEntity): BookLifecycle =

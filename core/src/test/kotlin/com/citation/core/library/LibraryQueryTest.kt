@@ -85,6 +85,34 @@ class LibraryQueryTest {
     }
 
     @Test
+    fun `the reader's own measurement wins over the chapter estimate`() {
+        // Chapter 5 of 16 is 31% by chapter count, but the reader measured 12% in characters —
+        // front matter is short. The shelf must quote the number the page quoted.
+        val measured = shelf.first { it.key == "B-1" }.copy(measuredProgress = 0.12f)
+        assertEquals(0.12f, measured.progress)
+        assertTrue(measured.progressIsMeasured)
+    }
+
+    @Test
+    fun `a book not opened since the measurement existed falls back to chapters`() {
+        val entry = shelf.first { it.key == "B-1" }
+        assertEquals(5f / 16f, entry.progress)
+        assertFalse(entry.progressIsMeasured)
+    }
+
+    @Test
+    fun `a finished book reads finished however it was measured`() {
+        val done = shelf.first { it.key == "B-4" }.copy(measuredProgress = 0.4f)
+        assertEquals(1f, done.progress)
+    }
+
+    @Test
+    fun `an unopened book reads zero even if a stale measurement lingers`() {
+        val unopened = shelf.first { it.key == "B-2" }.copy(measuredProgress = 0.5f)
+        assertEquals(0f, unopened.progress)
+    }
+
+    @Test
     fun `progress sorting surfaces the half-read pile and buries the finished`() {
         val ordered = LibraryQuery.apply(shelf, sort = LibrarySort.PROGRESS).map { it.key }
         assertEquals("B-1", ordered.first())

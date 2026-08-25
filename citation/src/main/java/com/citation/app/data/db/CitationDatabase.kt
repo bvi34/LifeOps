@@ -169,9 +169,16 @@ abstract class CitationDatabase : RoomDatabase() {
          * cascades when a book is removed, matching how notes and highlights already outlive their
          * source; the frozen snippet keeps it legible either way. `reading_pace` is the opposite:
          * pure observation, safe to lose, and it rebuilds itself within an hour of reading.
+         *
+         * `books.progressFraction` comes with them: the library cannot compute character-accurate
+         * progress without loading every chapter, so the reader writes what it measured and the
+         * shelf reads it back. Books never opened since carry 0 and fall back to the chapter-count
+         * estimate, which is what the shelf showed before.
          */
         private val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN progressFraction REAL NOT NULL DEFAULT 0")
+
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS `bookmarks` (" +
                         "`key` TEXT NOT NULL, `bookKey` TEXT, `chapterOrdinal` INTEGER NOT NULL, " +

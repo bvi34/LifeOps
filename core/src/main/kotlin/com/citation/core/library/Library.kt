@@ -29,13 +29,24 @@ data class LibraryEntry(
     val lastChapterOrdinal: Int = 0,
     val chapterCount: Int = 0,
     val isFavorite: Boolean = false,
-    val collectionIds: Set<String> = emptySet()
+    val collectionIds: Set<String> = emptySet(),
+    /**
+     * How far through the book the *reader* last measured, in characters, or 0 when it never has.
+     *
+     * The shelf cannot compute this itself — character-accurate progress needs every chapter's
+     * length — so the reader records what it measured and the shelf reads it back. That is what
+     * keeps the library and the page from quoting different numbers for the same book.
+     */
+    val measuredProgress: Float = 0f
 ) {
 
     /**
-     * How far through, as a fraction. Chapter-granular, because that is the only progress measure
-     * that means the same thing in every reader track — a PDF page count, a web serial's chapter
-     * list and an EPUB spine all agree on "which chapter", and none agree on "which page".
+     * How far through, as a fraction.
+     *
+     * Prefers what the reader measured in characters; falls back to chapters for a book not opened
+     * since that measurement existed. The fallback is deliberately coarse and known to be — chapters
+     * are not the same size, and in most books not even close — but it is the only thing derivable
+     * from a shelf row, and it is what the shelf showed before.
      *
      * A finished book reads 1.0 even if its last chapter was never scrolled to the bottom; an
      * unopened one reads 0.0 rather than 1/n, because opening chapter one is not progress.
@@ -43,9 +54,14 @@ data class LibraryEntry(
     val progress: Float
         get() = when {
             readingState == ReadingState.DONE -> 1f
-            chapterCount <= 0 || lastOpenedAt == null -> 0f
+            lastOpenedAt == null -> 0f
+            measuredProgress > 0f -> measuredProgress.coerceIn(0f, 1f)
+            chapterCount <= 0 -> 0f
             else -> ((lastChapterOrdinal + 1).toFloat() / chapterCount).coerceIn(0f, 1f)
         }
+
+    /** Whether [progress] came from the reader's own character measurement rather than a fallback. */
+    val progressIsMeasured: Boolean get() = measuredProgress > 0f
 
     val isStarted: Boolean get() = lastOpenedAt != null && readingState != ReadingState.DONE
 

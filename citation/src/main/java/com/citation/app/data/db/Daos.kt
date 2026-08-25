@@ -24,6 +24,13 @@ interface BookDao {
     @Query("UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset WHERE key = :key")
     suspend fun savePosition(key: String, ordinal: Int, offset: Int)
 
+    /**
+     * Record how far through the book the reader measured itself to be. Written alongside the
+     * position so the shelf shows the same number the page does.
+     */
+    @Query("UPDATE books SET progressFraction = :fraction WHERE key = :key")
+    suspend fun saveProgress(key: String, fraction: Float)
+
     /** Stamp the book as just-opened, so the Read tab can resume the most recent one. */
     @Query("UPDATE books SET lastOpenedAt = :openedAt WHERE key = :key")
     suspend fun touchOpened(key: String, openedAt: Long)
