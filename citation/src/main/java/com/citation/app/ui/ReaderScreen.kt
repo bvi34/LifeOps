@@ -29,6 +29,9 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bookmark
+import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -45,6 +48,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -84,6 +88,7 @@ import com.citation.app.ui.reader.ReaderTypography
 import com.citation.app.ui.reader.RenderedChapter
 import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.reader.Paginator
+import com.citation.core.reader.Lookup
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -172,6 +177,14 @@ private fun FlowingReader(vm: ReaderViewModel) {
     val ordinal by vm.chapterOrdinal.collectAsStateWithLifecycle()
     val status by vm.status.collectAsStateWithLifecycle()
     val highlights by vm.openHighlights.collectAsStateWithLifecycle()
+    val searchRanges by vm.searchRanges.collectAsStateWithLifecycle()
+    val bookmarkHere by vm.bookmarkHere.collectAsStateWithLifecycle()
+    val searchOpen by vm.searchOpen.collectAsStateWithLifecycle()
+    val progress by vm.progress.collectAsStateWithLifecycle()
+    val timeLeft by vm.timeLeft.collectAsStateWithLifecycle()
+    val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
+    val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
+    val searchHits by vm.searchHits.collectAsStateWithLifecycle()
 
     // Typography + theme, remembered across config changes so the reader stays how you set it.
     var fontSize by rememberSaveable { mutableStateOf(18f) }
@@ -186,6 +199,14 @@ private fun FlowingReader(vm: ReaderViewModel) {
 
     var showFormat by remember { mutableStateOf(false) }
     var showToc by remember { mutableStateOf(false) }
+    var showBookmarks by remember { mutableStateOf(false) }
+    // A selection the reader asked to look up; the sheet decides where to send it.
+    var lookup by remember { mutableStateOf<Lookup.Query?>(null) }
+
+    // Keep the screen on while a book is open — a reader that dims mid-paragraph is the single most
+    // common complaint about reading on a phone. On by default because that is what reading wants;
+    // one tap away in Display for anyone who would rather it didn't.
+    var keepAwake by rememberSaveable { mutableStateOf(true) }
 
     // Note composer + the note opened by tapping a highlight.
     var noteQuote by remember { mutableStateOf("") }
@@ -202,6 +223,14 @@ private fun FlowingReader(vm: ReaderViewModel) {
     val toolbar = remember(view) { ReaderTextToolbar(view) }
     toolbar.onAddNote = { quote -> noteQuote = quote; noteBody = ""; noteHint = hintProvider.value(); showNote = true }
     toolbar.onHighlight = { quote -> vm.captureNoteForQuote(quote, "", hintProvider.value()) }
+    toolbar.onLookUp = { selection -> lookup = Lookup.of(selection).takeIf { !it.isEmpty } }
+
+    // The window flag, not a wake lock: it is scoped to this composable, released the moment the
+    // reader leaves the screen, and needs no permission.
+    DisposableEffect(view, keepAwake) {
+        view.keepScreenOn = keepAwake
+        onDispose { view.keepScreenOn = false }
+    }
 
     val background = theme.background()
     val foreground = theme.foreground()
@@ -217,8 +246,17 @@ private fun FlowingReader(vm: ReaderViewModel) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { vm.openSearch() }) {
+                        Icon(Icons.Default.Search, contentDescription = "Search this book")
+                    }
+                    IconButton(onClick = { vm.toggleBookmark(hintProvider.value()) }) {
+                        Icon(
+                            if (bookmarkHere != null) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                            contentDescription = if (bookmarkHere != null) "Remove bookmark" else "Bookmark this page"
+                        )
+                    }
                     IconButton(onClick = { showToc = true }) {
-                        Icon(Icons.Default.Menu, contentDescription = "Chapters")
+                        Icon(Icons.Default.Menu, contentDescription = "Contents")
                     }
                     IconButton(onClick = { showFormat = true }) {
                         Text("Aa", fontWeight = FontWeight.Bold)
@@ -249,12 +287,26 @@ private fun FlowingReader(vm: ReaderViewModel) {
             ReaderBottomBar(
                 ordinal = ordinal,
                 count = book.chapters.size,
+                percent = progress?.percent,
+                fraction = progress?.fraction,
+                timeLeft = timeLeft,
                 onPrev = { vm.goToChapter(ordinal - 1) },
                 onNext = { vm.goToChapter(ordinal + 1) }
             )
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().background(background)) {
+            // Search sits over the page rather than replacing it: you are looking for a passage in
+            // order to get back to it, so the book stays underneath and a hit is one tap away.
+            if (searchOpen) {
+                SearchBar(
+                    query = searchQuery,
+                    hits = searchHits,
+                    onQuery = vm::search,
+                    onHit = { vm.goToHit(it) },
+                    onClose = { vm.closeSearch() }
+                )
+            }
             if (showNote) {
                 NoteComposer(
                     quote = noteQuote,
@@ -303,6 +355,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         book = book,
                         ord = ord,
                         highlights = highlights,
+                        searchRanges = searchRanges,
                         fontSize = fontSize,
                         family = if (serif) FontFamily.Serif else FontFamily.SansSerif,
                         lineSpacing = lineSpacing,
@@ -320,6 +373,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
 
     if (showFormat) {
         FormatSheet(
+            keepAwake = keepAwake, onKeepAwake = { keepAwake = it },
             fontSize = fontSize, onFontSize = { fontSize = it },
             serif = serif, onSerif = { serif = it },
             lineSpacing = lineSpacing, onLineSpacing = { lineSpacing = it },
@@ -333,11 +387,27 @@ private fun FlowingReader(vm: ReaderViewModel) {
         TocSheet(
             book = book,
             current = ordinal,
+            bookmarkCount = bookmarks.size,
+            onOpenBookmarks = { showToc = false; showBookmarks = true },
             onSelect = { vm.goToChapter(it); showToc = false },
             onSelectEntry = { vm.goToTocEntry(it); showToc = false },
             onDismiss = { showToc = false }
         )
     }
+    if (showBookmarks) {
+        BookmarksSheet(
+            bookmarks = bookmarks,
+            onGo = { vm.goToBookmark(it); showBookmarks = false },
+            onDelete = { vm.deleteBookmark(it) },
+            onLabel = { bookmark, label -> vm.setBookmarkLabel(bookmark, label) },
+            onDismiss = { showBookmarks = false }
+        )
+    }
+
+    lookup?.let { query ->
+        LookupSheet(query = query, onDismiss = { lookup = null })
+    }
+
     openNote?.let { note ->
         NoteDetailDialog(
             note = note,
@@ -363,6 +433,8 @@ private fun ChapterPage(
     book: Book,
     ord: Int,
     highlights: List<Note>,
+    /** Canonical ranges of the live search's matches in this chapter, lit while a search is open. */
+    searchRanges: List<IntRange>,
     fontSize: Float,
     family: FontFamily,
     lineSpacing: Float,
@@ -378,6 +450,8 @@ private fun ChapterPage(
     val title = chapter?.title ?: ""
     val lastIndex = book.chapters.lastIndex
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    // A different colour from a highlight on purpose: a search match is transient and not yours.
+    val searchColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f)
     val accent = MaterialTheme.colorScheme.primary
     val secondary = MaterialTheme.colorScheme.secondary
     val bookKey = book.key?.toString()
@@ -432,17 +506,18 @@ private fun ChapterPage(
                 ?.let { note to it }
         }
     }
-    val annotated = remember(rendered, ranges, highlightColor) {
-        if (ranges.isEmpty()) {
+    // Search matches are canonical ranges like an anchor's, so they convert the same way.
+    val searchDisplayRanges = remember(rendered, searchRanges) {
+        searchRanges.map { rendered.displayRange(it) }.filter { !it.isEmpty() }
+    }
+    val annotated = remember(rendered, ranges, searchDisplayRanges, highlightColor, searchColor) {
+        if (ranges.isEmpty() && searchDisplayRanges.isEmpty()) {
             rendered.display
         } else {
             buildAnnotatedString {
                 append(rendered.display)
-                ranges.forEach { (_, range) ->
-                    val start = range.first.coerceIn(0, length)
-                    val end = (range.last + 1).coerceIn(start, length)
-                    if (end > start) addStyle(SpanStyle(background = highlightColor), start, end)
-                }
+                ranges.forEach { (_, range) -> shade(range, highlightColor) }
+                searchDisplayRanges.forEach { range -> shade(range, searchColor) }
             }
         }
     }
@@ -497,6 +572,14 @@ private fun ScrollChapterBody(
         snapshotFlow { scroll.value }.collectLatest { v ->
             delay(400)
             vm.savePosition(ord, v)
+            // Progress and pace are measured in canonical characters, so both reading modes report
+            // the same thing — the numbers must not jump when you switch between them.
+            layout?.let { l ->
+                vm.onPositionChanged(
+                    ord,
+                    rendered.canonicalOf(l.getLineStart(l.getLineForVerticalPosition(v.toFloat())))
+                )
+            }
         }
     }
     // Publish a viewport-hint provider for capture disambiguation (reads current scroll/layout lazily).
@@ -685,8 +768,10 @@ private fun PagedChapterBody(
         // Persist the page's start as a *canonical* offset — font-size independent, and independent
         // of whether the chapter was rendered with structure at all.
         LaunchedEffect(safePage, pageStarts) {
+            val canonical = rendered.canonicalOf(pageStarts.getOrElse(safePage) { 0 })
+            vm.onPositionChanged(ord, canonical)
             delay(400)
-            vm.savePosition(ord, rendered.canonicalOf(pageStarts.getOrElse(safePage) { 0 }))
+            vm.savePosition(ord, canonical)
         }
         // Capture disambiguation hint = where the current page starts, in canonical text.
         LaunchedEffect(ord) {
@@ -769,23 +854,55 @@ private fun PagedChapterBody(
 }
 
 @Composable
-private fun ReaderBottomBar(ordinal: Int, count: Int, onPrev: () -> Unit, onNext: () -> Unit) {
+private fun ReaderBottomBar(
+    ordinal: Int,
+    count: Int,
+    percent: Int?,
+    fraction: Float?,
+    timeLeft: String?,
+    onPrev: () -> Unit,
+    onNext: () -> Unit
+) {
     Surface(tonalElevation = 3.dp) {
         Column(Modifier.fillMaxWidth()) {
+            // The bar tracks the whole book by characters. Chapters are not the same size, so a bar
+            // that filled by chapter count would lie about how much is left in exactly the books
+            // where it matters most.
             LinearProgressIndicator(
-                progress = { if (count > 0) (ordinal + 1f) / count else 0f },
+                progress = { fraction ?: if (count > 0) (ordinal + 1f) / count else 0f },
                 modifier = Modifier.fillMaxWidth()
             )
             Row(
-                Modifier.fillMaxWidth().padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(onClick = onPrev, enabled = ordinal > 0) { Text("Previous") }
-                Text("Chapter ${ordinal + 1} / $count", Modifier.align(Alignment.CenterVertically))
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        buildString {
+                            percent?.let { append("$it%  ·  ") }
+                            append("Chapter ${ordinal + 1} / $count")
+                        },
+                        fontSize = 12.sp
+                    )
+                    // Shown only once the pace estimate has earned it; an invented number on the
+                    // first page is worse than none, because a reader cannot tell it was invented.
+                    timeLeft?.let {
+                        Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                    }
+                }
                 OutlinedButton(onClick = onNext, enabled = ordinal < count - 1) { Text("Next") }
             }
         }
     }
+}
+
+/** Shade a display range, clipped to the string being built. */
+private fun androidx.compose.ui.text.AnnotatedString.Builder.shade(range: IntRange, color: Color) {
+    val start = range.first.coerceIn(0, length)
+    val end = (range.last + 1).coerceIn(start, length)
+    if (end > start) addStyle(SpanStyle(background = color), start, end)
 }
 
 // --- Reading themes ----------------------------------------------------------------------------
@@ -814,6 +931,7 @@ private fun ReaderTheme.foreground(): Color = when (this) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FormatSheet(
+    keepAwake: Boolean, onKeepAwake: (Boolean) -> Unit,
     fontSize: Float, onFontSize: (Float) -> Unit,
     serif: Boolean, onSerif: (Boolean) -> Unit,
     lineSpacing: Float, onLineSpacing: (Float) -> Unit,
@@ -829,6 +947,11 @@ private fun FormatSheet(
             LabeledSlider("Text size", fontSize, 12f..30f) { onFontSize(it) }
             LabeledSlider("Line spacing", lineSpacing, 1.2f..2.2f) { onLineSpacing(it) }
             LabeledSlider("Margins", marginDp, 8f..48f) { onMargin(it) }
+
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Keep screen on", Modifier.weight(1f))
+                Switch(checked = keepAwake, onCheckedChange = onKeepAwake)
+            }
 
             Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("Reading", Modifier.weight(1f))
@@ -876,6 +999,8 @@ private fun Choice(label: String, selected: Boolean, modifier: Modifier = Modifi
 private fun TocSheet(
     book: Book,
     current: Int,
+    bookmarkCount: Int,
+    onOpenBookmarks: () -> Unit,
     onSelect: (Int) -> Unit,
     onSelectEntry: (TocEntry) -> Unit,
     onDismiss: () -> Unit
@@ -887,12 +1012,22 @@ private fun TocSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth()) {
-            Text(
-                if (entries.isEmpty()) "Chapters" else "Contents",
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
-            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    if (entries.isEmpty()) "Chapters" else "Contents",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp
+                )
+                // Contents and bookmarks answer the same question — take me somewhere in this book
+                // — so they share a route rather than each claiming a top-bar icon of their own.
+                TextButton(onClick = onOpenBookmarks) {
+                    Text(if (bookmarkCount > 0) "Bookmarks ($bookmarkCount)" else "Bookmarks")
+                }
+            }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
                 if (entries.isEmpty()) {
                     itemsIndexed(book.chapters) { i, ch ->

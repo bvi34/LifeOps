@@ -22,7 +22,11 @@ import com.citation.core.model.Book
  */
 data class Bookmark(
     val key: EntityKey,
-    val bookKey: EntityKey,
+    /**
+     * Null once the book has been removed. A bookmark is sovereign — it outlives its source the way
+     * a note does, staying readable from its frozen line rather than being deleted along with it.
+     */
+    val bookKey: EntityKey?,
     val chapterOrdinal: Int,
     /** Where it was set, in the chapter text as it read then. A hint, not the truth. */
     val charOffset: Int,

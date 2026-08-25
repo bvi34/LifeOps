@@ -150,6 +150,17 @@ class BookmarkTest {
     }
 
     @Test
+    fun `a bookmark outlives the book it was set in`() {
+        val b = bookmarkAt(book(chapterOne), 0, 74)
+        // Removing the book orphans the bookmark rather than destroying it: the frozen line and the
+        // chapter title still say what it was, exactly as an orphaned note's quote does.
+        val orphaned = b.copy(bookKey = null)
+        assertNull(orphaned.bookKey)
+        assertTrue(orphaned.display.isNotBlank())
+        assertEquals("Chapter 1", orphaned.chapterTitle)
+    }
+
+    @Test
     fun `bookmarks list in reading order, not the order they were made`() {
         val b = book(chapterOne, chapterOne, chapterOne)
         val third = bookmarkAt(b, 2, 0).copy(key = key(1))

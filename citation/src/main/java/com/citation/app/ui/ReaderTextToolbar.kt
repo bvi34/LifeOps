@@ -36,6 +36,16 @@ class ReaderTextToolbar(private val view: View) : TextToolbar {
     /** Selected passage → capture a bare highlight (an annotatable note with no body yet). */
     var onHighlight: (String) -> Unit = {}
 
+    /**
+     * Selected passage → look it up.
+     *
+     * Deliberately one item rather than a Define/Translate/Search row: what a selection is worth
+     * looking up *as* depends on what it turns out to be, and the toolbar cannot know that without
+     * reading the selection — which costs a clipboard round trip it should not pay just to decide
+     * which menu items to draw. So the choice happens after the tap, where the text is in hand.
+     */
+    var onLookUp: (String) -> Unit = {}
+
     private var actionMode: ActionMode? = null
 
     override var status: TextToolbarStatus = TextToolbarStatus.Hidden
@@ -99,11 +109,12 @@ class ReaderTextToolbar(private val view: View) : TextToolbar {
             if (onCopyRequested != null) {
                 menu.add(0, ITEM_NOTE, 0, "Add note")
                 menu.add(0, ITEM_HIGHLIGHT, 1, "Highlight")
-                menu.add(0, ITEM_COPY, 2, android.R.string.copy)
+                menu.add(0, ITEM_LOOK_UP, 2, "Look up")
+                menu.add(0, ITEM_COPY, 3, android.R.string.copy)
             }
-            if (onPasteRequested != null) menu.add(0, ITEM_PASTE, 3, android.R.string.paste)
-            if (onCutRequested != null) menu.add(0, ITEM_CUT, 4, android.R.string.cut)
-            if (onSelectAllRequested != null) menu.add(0, ITEM_SELECT_ALL, 5, android.R.string.selectAll)
+            if (onPasteRequested != null) menu.add(0, ITEM_PASTE, 4, android.R.string.paste)
+            if (onCutRequested != null) menu.add(0, ITEM_CUT, 5, android.R.string.cut)
+            if (onSelectAllRequested != null) menu.add(0, ITEM_SELECT_ALL, 6, android.R.string.selectAll)
             return true
         }
 
@@ -120,6 +131,11 @@ class ReaderTextToolbar(private val view: View) : TextToolbar {
                     val quote = selectedText()
                     mode.finish()
                     if (quote.isNotBlank()) onHighlight(quote)
+                }
+                ITEM_LOOK_UP -> {
+                    val quote = selectedText()
+                    mode.finish()
+                    if (quote.isNotBlank()) onLookUp(quote)
                 }
                 ITEM_COPY -> { onCopyRequested?.invoke(); mode.finish() }
                 ITEM_PASTE -> { onPasteRequested?.invoke(); mode.finish() }
@@ -152,5 +168,6 @@ class ReaderTextToolbar(private val view: View) : TextToolbar {
         const val ITEM_PASTE = 4
         const val ITEM_CUT = 5
         const val ITEM_SELECT_ALL = 6
+        const val ITEM_LOOK_UP = 7
     }
 }

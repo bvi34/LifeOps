@@ -25,6 +25,12 @@ import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
 import com.citation.core.pdf.PdfFlow
 import com.citation.core.reader.ReadingMeter
+import com.citation.core.reader.BookSearch
+import com.citation.core.reader.Bookmark
+import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReadingProgress
+import com.citation.core.reader.TimeLeft
 import com.citation.core.note.NoteType
 import com.citation.core.note.TagCount
 import com.citation.core.note.Tags
@@ -33,6 +39,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -65,6 +72,172 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     val triage: StateFlow<List<CaptureClusterer.ProvisionalSource>> =
         repository.notes.map { CaptureTriage.queue(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- Where you are, and how much is left ------------------------------------------------------
+    //
+    // "Chapter 3 / 40" is a location, not progress. Everything here is derived from the character
+    // position, and the time estimate comes from the reader's *own* measured pace — shown only once
+    // there is enough honest reading behind it to mean something.
+
+    private val _position = MutableStateFlow(0 to 0)
+
+    /** The pace to estimate the open book with; reloaded whenever a book is opened. */
+    private val _pace = MutableStateFlow(ReadingPace())
+
+    /** Where you are in the open book, in characters. Null when nothing is open. */
+    val progress: StateFlow<ReadingProgress.Position?> =
+        combine(_openBook, _position) { book, position ->
+            book?.let { ReadingProgress.at(it, position.first, position.second) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** "4 min left", or null when there is not yet enough evidence to say. */
+    val timeLeft: StateFlow<String?> =
+        combine(progress, _pace) { position, pace ->
+            position?.let { TimeLeft.label(pace.millisFor(it.charactersLeft)) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** "6 min left in chapter", same rules. */
+    val chapterTimeLeft: StateFlow<String?> =
+        combine(_openBook, _position, _pace) { book, position, pace ->
+            book ?: return@combine null
+            val left = ReadingProgress.charactersLeftInChapter(book, position.first, position.second)
+            TimeLeft.inChapter(pace.millisFor(left))
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * The reader moved. [charOffset] is a **canonical** offset, so both reading modes report the
+     * same thing and the numbers do not jump when you switch between them.
+     *
+     * Forward movement is banked toward the pace estimate; moving backwards is re-reading and
+     * measures nothing. A large forward jump (following a search hit, tapping the contents) is
+     * banked too, and then discarded by [ReadingPace] for being implausibly fast — which is the
+     * right place for that judgement, since only it knows what a plausible rate looks like.
+     */
+    fun onPositionChanged(chapterOrdinal: Int, charOffset: Int) {
+        val book = _openBook.value ?: return
+        val before = ReadingProgress.at(book, _position.value.first, _position.value.second)
+        val after = ReadingProgress.at(book, chapterOrdinal, charOffset)
+        val advanced = after.charactersRead - before.charactersRead
+        if (advanced > 0) paceCharacters += advanced
+        _position.value = chapterOrdinal to charOffset
+    }
+
+    /** Characters covered since the last pace report, paired with the meter's engaged time. */
+    private var paceCharacters = 0
+
+    // --- In-book search ---------------------------------------------------------------------------
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchHits = MutableStateFlow<List<BookSearch.Hit>>(emptyList())
+    val searchHits: StateFlow<List<BookSearch.Hit>> = _searchHits.asStateFlow()
+
+    private val _searchOpen = MutableStateFlow(false)
+    val searchOpen: StateFlow<Boolean> = _searchOpen.asStateFlow()
+
+    /**
+     * Hits in the chapter on screen, so the words you searched for are lit up when you land on
+     * them. Canonical ranges — the reader converts them like any other highlight.
+     */
+    val searchRanges: StateFlow<List<IntRange>> =
+        combine(_searchHits, _chapterOrdinal, _searchOpen) { hits, ordinal, open ->
+            if (!open) emptyList() else hits.filter { it.chapterOrdinal == ordinal }.map { it.range }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun openSearch() { _searchOpen.value = true }
+
+    fun closeSearch() {
+        _searchOpen.value = false
+        _searchQuery.value = ""
+        _searchHits.value = emptyList()
+    }
+
+    /**
+     * Run a search over the open book. Synchronous over the in-memory book — one person's book is
+     * small, so there is no index to build and no reason to make the caller wait on a coroutine.
+     */
+    fun search(query: String) {
+        _searchQuery.value = query
+        val book = _openBook.value
+        _searchHits.value = if (book == null) emptyList() else BookSearch.search(book, query)
+    }
+
+    /** Land on a hit: its chapter, at its offset, with the match still lit. */
+    fun goToHit(hit: BookSearch.Hit) {
+        pendingScrollChapter = hit.chapterOrdinal
+        pendingScrollOffset = hit.offset
+        goToChapter(hit.chapterOrdinal)
+    }
+
+    // --- Bookmarks --------------------------------------------------------------------------------
+
+    /** Bookmarks in the open book, in reading order. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val bookmarks: StateFlow<List<Bookmark>> =
+        _openBook.flatMapLatest { book ->
+            val key = book?.key?.toString()
+            if (key == null) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.bookmarks(key)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The bookmark covering where you are, if there is one — so one control can be a toggle. */
+    val bookmarkHere: StateFlow<Bookmark?> =
+        combine(bookmarks, _position) { marks, position ->
+            Bookmarks.existingAt(marks, position.first, position.second)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * Save this place, or remove the one already saved here.
+     *
+     * [charOffset] comes from the reader's viewport rather than the stored position, so a bookmark
+     * marks the page you are looking at rather than the last place a debounced save happened to
+     * land.
+     */
+    fun toggleBookmark(charOffset: Int) {
+        val book = _openBook.value ?: return
+        if (book.key == null) return
+        viewModelScope.launch {
+            val ordinal = _chapterOrdinal.value
+            val existing = Bookmarks.existingAt(bookmarks.value, ordinal, charOffset)
+            if (existing != null) {
+                repository.deleteBookmark(existing.key.toString())
+                _status.value = "Bookmark removed."
+            } else {
+                val saved = repository.addBookmark(book, ordinal, charOffset)
+                _status.value = "Bookmarked: ${saved.display.take(60)}"
+            }
+        }
+    }
+
+    fun deleteBookmark(bookmark: Bookmark) {
+        viewModelScope.launch { repository.deleteBookmark(bookmark.key.toString()) }
+    }
+
+    fun setBookmarkLabel(bookmark: Bookmark, label: String) {
+        viewModelScope.launch { repository.setBookmarkLabel(bookmark.key.toString(), label) }
+    }
+
+    /**
+     * Go to a bookmark, landing where its frozen line is *now*. A line that has since been deleted
+     * opens its chapter rather than jumping to an offset that no longer means anything.
+     */
+    fun goToBookmark(bookmark: Bookmark) {
+        val book = _openBook.value ?: return
+        when (val target = Bookmarks.resolve(bookmark, book)) {
+            is Bookmarks.Target.Found -> {
+                pendingScrollChapter = target.chapterOrdinal
+                pendingScrollOffset = target.charOffset
+                goToChapter(target.chapterOrdinal)
+                if (!target.exact) _status.value = "That passage was edited — landed as close as possible."
+            }
+            is Bookmarks.Target.ChapterOnly -> {
+                goToChapter(target.chapterOrdinal)
+                _status.value = "That passage is gone; opened the chapter instead."
+            }
+            Bookmarks.Target.Unavailable ->
+                _status.value = "That chapter isn’t available yet."
+        }
+    }
 
     // --- The library shelf ----------------------------------------------------------------------
     //
@@ -438,6 +611,15 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private var readingRemainderMillis = 0L
 
     /** Start metering engaged reading for [bookKey]; report + close any prior book's session first. */
+    /** Reset the position/pace state for a newly opened book, and load what we know of its pace. */
+    private fun beginPositionTracking(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
+        _position.value = chapterOrdinal to charOffset
+        paceCharacters = 0
+        _pace.value = ReadingPace()
+        if (bookKey == null) return
+        viewModelScope.launch { _pace.value = repository.paceFor(bookKey) }
+    }
+
     private fun startReadingSession(bookKey: String?) {
         bookKey ?: return
         if (readingBookKey != null && readingBookKey != bookKey) endReadingSession()
@@ -472,6 +654,18 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         val total = readingRemainderMillis + readingMeter.flushMillis()
         readingRemainderMillis = total % 60_000L
         val minutes = (total / 60_000L).toInt()
+
+        // The same engaged milliseconds that make the telemetry honest make the pace honest: this
+        // is time the meter already refused to credit if you had stepped away.
+        val characters = paceCharacters
+        paceCharacters = 0
+        if (characters > 0 && total > 0) {
+            viewModelScope.launch {
+                repository.recordPace(key, characters, total)
+                _pace.value = repository.paceFor(key)
+            }
+        }
+
         if (minutes > 0) viewModelScope.launch { repository.recordReadingTelemetry(key, minutes) }
     }
 
@@ -550,6 +744,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     pendingScrollChapter = savedChapter
                     pendingScrollOffset = result?.charOffset ?: 0
                     _chapterOrdinal.value = savedChapter
+                    beginPositionTracking(bookKey, savedChapter, result?.charOffset ?: 0)
                     if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
                 }
             }
@@ -886,6 +1081,9 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         endReadingSession()
         openRrFictionId = null
         _openBook.value = null
+        closeSearch()
+        _position.value = 0 to 0
+        _pace.value = ReadingPace()
     }
 
     /**

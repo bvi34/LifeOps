@@ -215,3 +215,54 @@ data class OpdsCatalogEntity(
     /** Wall clock of the last successful fetch, for showing which catalogs are reachable. */
     val lastOpenedAt: Long? = null
 )
+
+/**
+ * A saved place in a book.
+ *
+ * Sovereign, like a note: it is something the reader made, not something derived from a file, so
+ * eviction must never reach it and deleting the book orphans it rather than destroying it — the
+ * frozen [snippet] keeps it legible either way, exactly as a note's frozen quote does.
+ */
+@Entity(
+    tableName = "bookmarks",
+    foreignKeys = [ForeignKey(
+        entity = BookEntity::class,
+        parentColumns = ["key"],
+        childColumns = ["bookKey"],
+        onDelete = ForeignKey.SET_NULL
+    )],
+    indices = [Index("bookKey")]
+)
+data class BookmarkEntity(
+    @PrimaryKey val key: String,
+    // Nullable so a bookmark *outlives* its book, matching how highlights and notes are treated.
+    val bookKey: String?,
+    val chapterOrdinal: Int,
+    val charOffset: Int,
+    /** The line it was set on, frozen — what makes it findable again after the text moves. */
+    val snippet: String,
+    val chapterTitle: String,
+    val label: String?,
+    val createdAt: Long
+)
+
+/**
+ * Observed reading pace: characters covered over engaged milliseconds.
+ *
+ * One row per book plus a single aggregate row, so a book with little history of its own can still
+ * be estimated from how this reader reads generally, and a book with plenty uses its own — a dense
+ * technical book and a novel are not read at the same speed, and pretending otherwise makes both
+ * estimates wrong.
+ */
+@Entity(tableName = "reading_pace")
+data class ReadingPaceEntity(
+    /** A book key, or [GLOBAL] for the across-everything estimate. */
+    @PrimaryKey val bookKey: String,
+    val characters: Long,
+    val millis: Long,
+    val updatedAt: Long
+) {
+    companion object {
+        const val GLOBAL = "*"
+    }
+}

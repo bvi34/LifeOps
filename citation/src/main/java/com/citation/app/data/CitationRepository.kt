@@ -3,12 +3,14 @@ package com.citation.app.data
 import com.citation.app.data.db.BookEntity
 import com.citation.app.data.db.CitationDatabase
 import com.citation.app.data.db.BlockCodec
+import com.citation.app.data.db.BookmarkEntity
 import com.citation.app.data.db.CollectionEntity
 import com.citation.app.data.db.CollectionMemberEntity
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
 import com.citation.app.data.ao3.Ao3Client
 import com.citation.app.data.db.OpdsCatalogEntity
+import com.citation.app.data.db.ReadingPaceEntity
 import com.citation.app.data.opds.CatalogCredentials
 import com.citation.app.data.opds.OpdsClient
 import com.citation.app.data.opds.map
@@ -32,6 +34,9 @@ import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.key.KeyAllocator
 import com.citation.core.library.BookCollection
+import com.citation.core.reader.Bookmark
+import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReadingPace
 import com.citation.core.opds.CatalogPage
 import com.citation.core.opds.CatalogSource
 import com.citation.core.opds.OpdsEntry
@@ -1233,6 +1238,130 @@ class CitationRepository private constructor(
             FileEnvelopeStore(java.io.File(files.sovereignDir, "sync"))
                 .writeOutbound(SyncEngine(mailbox).buildOutbound())
         }
+    }
+
+    // --- Bookmarks ------------------------------------------------------------------------------
+    //
+    // Sovereign: a bookmark is something the reader made. It survives the book being removed (the
+    // row nulls rather than cascades) and stays legible from its frozen line, exactly as a note
+    // does — degraded, not lost.
+
+    /** Every bookmark in a book, in reading order. */
+    fun bookmarks(bookKey: String): Flow<List<Bookmark>> =
+        db.bookmarkDao().observeForBook(bookKey).map { rows -> rows.map { it.toBookmark() } }
+
+    private fun BookmarkEntity.toBookmark(): Bookmark = Bookmark(
+        key = EntityKey.parse(key)!!,
+        bookKey = bookKey?.let { EntityKey.parse(it) },
+        chapterOrdinal = chapterOrdinal,
+        charOffset = charOffset,
+        snippet = snippet,
+        chapterTitle = chapterTitle,
+        label = label,
+        createdAt = createdAt
+    )
+
+    /**
+     * Save a place, or return the one already saved there.
+     *
+     * Setting a bookmark twice on the same page means moving its label, not making a second mark,
+     * so a position within a screenful of an existing bookmark reuses it. That is what lets one
+     * control in the reader be a toggle rather than a way to accumulate near-identical rows.
+     */
+    suspend fun addBookmark(
+        book: Book,
+        chapterOrdinal: Int,
+        charOffset: Int,
+        label: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): Bookmark {
+        val bookKey = book.key ?: error("cannot bookmark an unkeyed book")
+        val existing = Bookmarks.existingAt(
+            db.bookmarkDao().forBook(bookKey.toString()).map { it.toBookmark() },
+            chapterOrdinal,
+            charOffset
+        )
+        if (existing != null) {
+            if (label != null) db.bookmarkDao().setLabel(existing.key.toString(), label.trim().takeIf { it.isNotBlank() })
+            return existing
+        }
+
+        val bookmark = Bookmarks.at(
+            key = keys.next(EntityType.BOOKMARK),
+            bookKey = bookKey,
+            book = book,
+            chapterOrdinal = chapterOrdinal,
+            charOffset = charOffset,
+            label = label,
+            now = now
+        )
+        db.bookmarkDao().upsert(
+            BookmarkEntity(
+                key = bookmark.key.toString(),
+                bookKey = bookKey.toString(),
+                chapterOrdinal = bookmark.chapterOrdinal,
+                charOffset = bookmark.charOffset,
+                snippet = bookmark.snippet,
+                chapterTitle = bookmark.chapterTitle,
+                label = bookmark.label,
+                createdAt = bookmark.createdAt
+            )
+        )
+        checkpointKey(EntityType.BOOKMARK)
+        return bookmark
+    }
+
+    suspend fun deleteBookmark(key: String) = db.bookmarkDao().delete(key)
+
+    suspend fun setBookmarkLabel(key: String, label: String?) =
+        db.bookmarkDao().setLabel(key, label?.trim()?.takeIf { it.isNotBlank() })
+
+    // --- Reading pace ----------------------------------------------------------------------------
+    //
+    // Observed, never assumed. The reading meter already refuses to count time you were not
+    // reading, so characters-per-minute can simply be measured — which is what lets a time estimate
+    // be shown at all without inventing a words-per-minute for the user.
+
+    /**
+     * Record a stretch of reading against a book and against the reader overall.
+     *
+     * Both are kept because neither alone is right: a book with little history of its own is best
+     * estimated from how this person reads generally, and a book with plenty is best estimated from
+     * itself — a dense technical book and a novel are not read at the same speed. Implausible
+     * samples are dropped inside [ReadingPace], so a jump-to-chapter cannot poison an estimate real
+     * reading built.
+     */
+    suspend fun recordPace(
+        bookKey: String,
+        characters: Int,
+        engagedMillis: Long,
+        now: Long = System.currentTimeMillis()
+    ) {
+        if (characters <= 0 || engagedMillis <= 0) return
+        listOf(bookKey, ReadingPaceEntity.GLOBAL).forEach { scope ->
+            val stored = db.readingPaceDao().get(scope)
+            val updated = ReadingPace(stored?.characters ?: 0, stored?.millis ?: 0)
+                .observe(characters, engagedMillis)
+            db.readingPaceDao().upsert(
+                ReadingPaceEntity(
+                    bookKey = scope,
+                    characters = updated.characters,
+                    millis = updated.millis,
+                    updatedAt = now
+                )
+            )
+        }
+    }
+
+    /**
+     * The pace to estimate this book with: its own once it is confident, otherwise the reader's
+     * overall pace, otherwise nothing.
+     */
+    suspend fun paceFor(bookKey: String): ReadingPace {
+        val own = db.readingPaceDao().get(bookKey)?.let { ReadingPace(it.characters, it.millis) }
+        if (own != null && own.confident) return own
+        val global = db.readingPaceDao().get(ReadingPaceEntity.GLOBAL)
+        return global?.let { ReadingPace(it.characters, it.millis) } ?: ReadingPace()
     }
 
     // --- OPDS catalogs ------------------------------------------------------------------------

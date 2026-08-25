@@ -215,3 +215,41 @@ interface OpdsCatalogDao {
     @Query("SELECT COUNT(*) FROM opds_catalogs")
     suspend fun count(): Int
 }
+
+@Dao
+interface BookmarkDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(bookmark: BookmarkEntity)
+
+    @Query("SELECT * FROM bookmarks WHERE bookKey = :bookKey ORDER BY chapterOrdinal ASC, charOffset ASC")
+    fun observeForBook(bookKey: String): Flow<List<BookmarkEntity>>
+
+    @Query("SELECT * FROM bookmarks WHERE bookKey = :bookKey ORDER BY chapterOrdinal ASC, charOffset ASC")
+    suspend fun forBook(bookKey: String): List<BookmarkEntity>
+
+    @Query("SELECT * FROM bookmarks ORDER BY createdAt DESC")
+    fun observeAll(): Flow<List<BookmarkEntity>>
+
+    @Query("DELETE FROM bookmarks WHERE key = :key")
+    suspend fun delete(key: String)
+
+    @Query("UPDATE bookmarks SET label = :label WHERE key = :key")
+    suspend fun setLabel(key: String, label: String?)
+
+    @Query("SELECT COUNT(*) FROM bookmarks WHERE bookKey = :bookKey")
+    suspend fun countForBook(bookKey: String): Int
+}
+
+@Dao
+interface ReadingPaceDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(pace: ReadingPaceEntity)
+
+    @Query("SELECT * FROM reading_pace WHERE bookKey = :bookKey")
+    suspend fun get(bookKey: String): ReadingPaceEntity?
+
+    @Query("DELETE FROM reading_pace WHERE bookKey = :bookKey")
+    suspend fun delete(bookKey: String)
+}

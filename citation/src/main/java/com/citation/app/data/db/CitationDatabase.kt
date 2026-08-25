@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * here rather than repeating the number — the same version stated twice drifts the moment a
  * migration lands.
  */
-const val CITATION_DB_VERSION = 6
+const val CITATION_DB_VERSION = 7
 
 @Database(
     entities = [
@@ -33,7 +33,9 @@ const val CITATION_DB_VERSION = 6
         RrChapterMetaEntity::class,
         CollectionEntity::class,
         CollectionMemberEntity::class,
-        OpdsCatalogEntity::class
+        OpdsCatalogEntity::class,
+        BookmarkEntity::class,
+        ReadingPaceEntity::class
     ],
     version = CITATION_DB_VERSION,
     exportSchema = true
@@ -47,6 +49,8 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun royalRoadDao(): RoyalRoadDao
     abstract fun collectionDao(): CollectionDao
     abstract fun opdsCatalogDao(): OpdsCatalogDao
+    abstract fun bookmarkDao(): BookmarkDao
+    abstract fun readingPaceDao(): ReadingPaceDao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null
@@ -158,13 +162,42 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7: saved places, and how fast this reader reads.
+         *
+         * `bookmarks` is sovereign — it is something the reader made — so it nulls rather than
+         * cascades when a book is removed, matching how notes and highlights already outlive their
+         * source; the frozen snippet keeps it legible either way. `reading_pace` is the opposite:
+         * pure observation, safe to lose, and it rebuilds itself within an hour of reading.
+         */
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bookmarks` (" +
+                        "`key` TEXT NOT NULL, `bookKey` TEXT, `chapterOrdinal` INTEGER NOT NULL, " +
+                        "`charOffset` INTEGER NOT NULL, `snippet` TEXT NOT NULL, " +
+                        "`chapterTitle` TEXT NOT NULL, `label` TEXT, `createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`key`), " +
+                        "FOREIGN KEY(`bookKey`) REFERENCES `books`(`key`) ON UPDATE NO ACTION ON DELETE SET NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookKey` ON `bookmarks` (`bookKey`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reading_pace` (" +
+                        "`bookKey` TEXT NOT NULL, `characters` INTEGER NOT NULL, " +
+                        "`millis` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`bookKey`))"
+                )
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     // A restore can swap in a `citation.db` written by a *newer* Citation build than
                     // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
                     // default reaction to that downgrade is to throw on open — a permanent boot-crash.
