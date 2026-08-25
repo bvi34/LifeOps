@@ -2,6 +2,7 @@ package com.citation.app.data
 
 import com.citation.app.data.db.BookEntity
 import com.citation.app.data.db.CitationDatabase
+import com.citation.app.data.db.BlockCodec
 import com.citation.app.data.db.CollectionEntity
 import com.citation.app.data.db.CollectionMemberEntity
 import com.citation.app.data.db.KeyWatermarkEntity
@@ -1390,7 +1391,7 @@ class CitationRepository private constructor(
         return when {
             bytes.looksLikeEpub() -> {
                 val book = importEpub(bytes, now) ?: return AcquireResult.Failed("Could not read the EPUB")
-                val key = book.key.toString()
+                val key = book.key?.toString() ?: return AcquireResult.Failed("Could not read the EPUB")
                 mergeCatalogMetadata(key, entry, source)
                 AcquireResult.Added(key, book.metadata.title)
             }
@@ -1442,6 +1443,80 @@ class CitationRepository private constructor(
     private fun ByteArray.looksLikePdf(): Boolean =
         size > 4 && this[0] == 0x25.toByte() && this[1] == 0x50.toByte() &&
             this[2] == 0x44.toByte() && this[3] == 0x46.toByte()
+
+    /**
+     * Re-read a book from the file it was imported from, to pick up what a newer parser can see.
+     *
+     * Without this, structure, covers, illustrations and shelf metadata would only ever apply to
+     * books added *after* the parser learned to find them — a library built up over a year would
+     * stay plain forever, for no reason other than when it happened to be imported. The source file
+     * is kept precisely so this is possible.
+     *
+     * The safety condition is exact and enforced per chapter: structure is written **only where the
+     * re-parsed text is byte-identical to the text already stored**. Where it is, the offsets every
+     * note anchored against are provably unchanged, so adding structure cannot move an anchor;
+     * where it somehow is not, that chapter is left exactly as it was. Titles, reading position,
+     * lifecycle and notes are never touched — only derived data is refreshed.
+     */
+    suspend fun refreshFromFile(bookKey: String, now: Long = System.currentTimeMillis()): RefreshResult {
+        val entity = db.bookDao().get(bookKey) ?: return RefreshResult.NotRefreshable
+        if (entity.sourceType != SourceType.EPUB.name && entity.sourceType != SourceType.AO3.name) {
+            return RefreshResult.NotRefreshable
+        }
+        val file = java.io.File(files.sovereignDir, "$bookKey.epub")
+        if (!file.exists()) return RefreshResult.FileMissing
+
+        val parsed = runCatching { EpubParser.parse(file.readBytes()) }.getOrNull()
+            ?: return RefreshResult.Unreadable
+
+        val stored = db.chapterDao().forBook(bookKey).associateBy { it.ordinal }
+        var updated = 0
+        var skipped = 0
+        parsed.book.chapters.forEach { chapter ->
+            val existing = stored[chapter.ordinal] ?: return@forEach
+            if (existing.text != chapter.text) {
+                skipped++
+                return@forEach
+            }
+            db.chapterDao().upsert(
+                existing.copy(
+                    blocksJson = chapter.blocks.takeIf { it.isNotEmpty() }?.let { BlockCodec.encodeBlocks(it) },
+                    anchorsJson = chapter.anchors.takeIf { it.isNotEmpty() }?.let { BlockCodec.encodeAnchors(it) }
+                )
+            )
+            updated++
+        }
+
+        val coverPath = storeBookImages(bookKey, parsed) ?: entity.coverPath
+        val meta = parsed.book.metadata
+        db.bookDao().upsert(
+            entity.copy(
+                // Derived fields only. The title the user sees, the author, the source binding and
+                // both state machines stay as they are — a refresh is not a re-import.
+                publisher = entity.publisher ?: meta.publisher,
+                published = entity.published ?: meta.published,
+                description = entity.description ?: meta.description,
+                subjectsJson = CitationMappers.mergeSubjects(entity.subjectsJson, meta.subjects),
+                series = entity.series ?: meta.series,
+                seriesIndex = entity.seriesIndex ?: meta.seriesIndex,
+                coverPath = coverPath,
+                chapterCount = if (entity.chapterCount > 0) entity.chapterCount else parsed.book.chapters.size,
+                tocJson = entity.tocJson ?: parsed.book.toc.takeIf { !it.isEmpty }?.let { BlockCodec.encodeToc(it) }
+            )
+        )
+        return RefreshResult.Refreshed(chapters = updated, unchanged = skipped)
+    }
+
+    /** What a re-read of a book's source file achieved. */
+    sealed class RefreshResult {
+        data class Refreshed(val chapters: Int, val unchanged: Int) : RefreshResult()
+
+        /** This source has no file to re-read — a serial, a read-in-place licence, a PDF. */
+        object NotRefreshable : RefreshResult()
+
+        object FileMissing : RefreshResult()
+        object Unreadable : RefreshResult()
+    }
 
     /**
      * Write a parsed EPUB's images into the sovereign store beside the book, returning the cover's

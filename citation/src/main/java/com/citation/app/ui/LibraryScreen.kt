@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -73,6 +72,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.library.BookCollection
 import com.citation.core.library.LibraryEntry
 import com.citation.core.library.LibrarySort
+import com.citation.core.model.SourceType
 import com.citation.core.sync.AcquisitionState
 import com.citation.core.sync.ReadingState
 import kotlinx.coroutines.Dispatchers
@@ -205,6 +205,7 @@ fun LibraryScreen(vm: ReaderViewModel) {
             onFavorite = { vm.setFavorite(entry.key, it) },
             onReadingState = { vm.setReadingState(entry.key, it) },
             onCollection = { id, member -> vm.setCollectionMembership(id, entry.key, member) },
+            onRefresh = { vm.refreshFromFile(entry.key); detail = null },
             onDelete = { vm.deleteBook(entry.key, entry.title); detail = null },
             onDismiss = { detail = null }
         )
@@ -437,6 +438,7 @@ private fun BookDetailSheet(
     onFavorite: (Boolean) -> Unit,
     onReadingState: (ReadingState) -> Unit,
     onCollection: (String, Boolean) -> Unit,
+    onRefresh: () -> Unit,
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -506,9 +508,17 @@ private fun BookDetailSheet(
                 }
             }
 
+            // Only owned snapshots have a file to re-read; a serial or a read-in-place licence
+            // has nothing on disk to learn more from.
+            if (entry.sourceType == SourceType.EPUB || entry.sourceType == SourceType.AO3) {
+                TextButton(onClick = onRefresh, modifier = Modifier.padding(top = 12.dp)) {
+                    Text("Refresh details from the file")
+                }
+            }
+
             TextButton(
                 onClick = { confirmDelete = true },
-                modifier = Modifier.padding(top = 12.dp)
+                modifier = Modifier.padding(top = 4.dp)
             ) {
                 Text("Remove from library", color = MaterialTheme.colorScheme.error)
             }

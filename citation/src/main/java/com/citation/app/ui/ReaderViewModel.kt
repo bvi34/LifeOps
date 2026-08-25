@@ -142,6 +142,24 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         viewModelScope.launch { repository.setReadingState(bookKey, state) }
     }
 
+    /**
+     * Re-read a book from the file it was imported from, so an older import picks up structure,
+     * a cover and shelf metadata the parser can now see. Only chapters whose text is unchanged are
+     * touched, so notes stay anchored exactly where they were.
+     */
+    fun refreshFromFile(bookKey: String) {
+        viewModelScope.launch {
+            _status.value = when (val result = repository.refreshFromFile(bookKey)) {
+                is CitationRepository.RefreshResult.Refreshed ->
+                    if (result.unchanged == 0) "Refreshed ${result.chapters} chapters from the file."
+                    else "Refreshed ${result.chapters} chapters; ${result.unchanged} were left as they were."
+                CitationRepository.RefreshResult.NotRefreshable -> "This one has no stored file to re-read."
+                CitationRepository.RefreshResult.FileMissing -> "The original file isn’t in the store any more."
+                CitationRepository.RefreshResult.Unreadable -> "Couldn’t re-read the file."
+            }
+        }
+    }
+
     fun createCollection(name: String) {
         viewModelScope.launch { repository.createCollection(name) }
     }
