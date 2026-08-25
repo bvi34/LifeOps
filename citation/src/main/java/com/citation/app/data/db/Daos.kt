@@ -260,3 +260,20 @@ interface ReadingPaceDao {
     @Query("DELETE FROM reading_pace WHERE bookKey = :bookKey")
     suspend fun delete(bookKey: String)
 }
+
+@Dao
+interface ReaderSettingsDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(settings: ReaderSettingsEntity)
+
+    @Query("SELECT * FROM reader_settings WHERE bookKey = :bookKey")
+    suspend fun get(bookKey: String): ReaderSettingsEntity?
+
+    @Query("SELECT * FROM reader_settings WHERE bookKey = :bookKey")
+    fun observe(bookKey: String): Flow<ReaderSettingsEntity?>
+
+    /** Put a book back on the global settings. */
+    @Query("DELETE FROM reader_settings WHERE bookKey = :bookKey")
+    suspend fun delete(bookKey: String)
+}

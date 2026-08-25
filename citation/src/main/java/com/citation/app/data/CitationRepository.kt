@@ -10,6 +10,8 @@ import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
 import com.citation.app.data.ao3.Ao3Client
 import com.citation.app.data.db.OpdsCatalogEntity
+import com.citation.app.data.db.ReaderSettingsCodec
+import com.citation.app.data.db.ReaderSettingsEntity
 import com.citation.app.data.db.ReadingPaceEntity
 import com.citation.app.data.opds.CatalogCredentials
 import com.citation.app.data.opds.OpdsClient
@@ -36,6 +38,7 @@ import com.citation.core.key.KeyAllocator
 import com.citation.core.library.BookCollection
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReadingPace
 import com.citation.core.opds.CatalogPage
 import com.citation.core.opds.CatalogSource
@@ -1328,6 +1331,70 @@ class CitationRepository private constructor(
 
     suspend fun setBookmarkLabel(key: String, label: String?) =
         db.bookmarkDao().setLabel(key, label?.trim()?.takeIf { it.isNotBlank() })
+
+    // --- Reader settings --------------------------------------------------------------------------
+    //
+    // Display settings used to live only in composition state, so every text size, margin and theme
+    // choice was lost on app restart. They are now stored: one global set, plus a complete set for
+    // any book told to keep its own.
+
+    /** The settings every book follows unless it has its own. */
+    val globalReaderSettings: Flow<ReaderSettings> =
+        db.readerSettingsDao().observe(ReaderSettingsEntity.GLOBAL)
+            .map { ReaderSettingsCodec.decode(it?.settingsJson) }
+
+    /**
+     * The settings a book actually opens with: its own if it has been given any, otherwise the
+     * global ones.
+     */
+    fun readerSettingsFor(bookKey: String): Flow<ReaderSettings> =
+        combine(
+            db.readerSettingsDao().observe(ReaderSettingsEntity.GLOBAL),
+            db.readerSettingsDao().observe(bookKey)
+        ) { global, own ->
+            ReaderSettingsCodec.decode(own?.settingsJson ?: global?.settingsJson)
+        }
+
+    /** Whether this book has been given settings of its own. */
+    suspend fun hasOwnReaderSettings(bookKey: String): Boolean =
+        db.readerSettingsDao().get(bookKey) != null
+
+    /**
+     * Save settings, either globally or for one book.
+     *
+     * [bookKey] null writes the global set. Writing a book's own set forks it entirely rather than
+     * layering a patch, so what you see is what that book keeps until you put it back on the
+     * global settings.
+     */
+    suspend fun saveReaderSettings(
+        settings: ReaderSettings,
+        bookKey: String? = null,
+        now: Long = System.currentTimeMillis()
+    ) {
+        db.readerSettingsDao().upsert(
+            ReaderSettingsEntity(
+                bookKey = bookKey ?: ReaderSettingsEntity.GLOBAL,
+                settingsJson = ReaderSettingsCodec.encode(settings.sanitized()),
+                updatedAt = now
+            )
+        )
+    }
+
+    /** Put a book back on the global settings. */
+    suspend fun clearReaderSettings(bookKey: String) = db.readerSettingsDao().delete(bookKey)
+
+    /**
+     * Store a font the reader picked, and return the path to use.
+     *
+     * Kept in the sovereign store because a book set in a face that vanishes is a book that changes
+     * appearance for no reason the reader can see. Named by a digest of its bytes, so picking the
+     * same file twice does not accumulate copies.
+     */
+    suspend fun storeReaderFont(bytes: ByteArray, extension: String): String? =
+        runCatching { files.writeReaderFont(bytes, extension).absolutePath }.getOrNull()
+
+    /** Fonts the reader has added, for the picker to offer again without a second trip to the files. */
+    fun readerFonts(): List<String> = files.readerFonts().map { it.absolutePath }
 
     // --- Reading pace ----------------------------------------------------------------------------
     //

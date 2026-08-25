@@ -13,6 +13,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextIndent
@@ -22,6 +24,7 @@ import androidx.compose.ui.unit.sp
 import com.citation.core.doc.BlockKind
 import com.citation.core.doc.DocumentBlock
 import com.citation.core.doc.InlineStyle
+import com.citation.core.reader.ParagraphSpacing
 
 /**
  * Turns a chapter's canonical text plus its structure into something Compose can draw — and keeps a
@@ -80,15 +83,48 @@ class RenderedChapter(
     }
 }
 
-/** The reader's live typography, so block styling scales with the user's settings. */
+/**
+ * The reader's live typography, so block styling scales with the user's settings.
+ *
+ * Carries the setting choices as well as the sizes, because they change how a *block* is built and
+ * not only how a run of characters is painted: justification and hyphenation belong to a paragraph,
+ * and indented-versus-spaced paragraphs change what separates one from the next.
+ */
 data class ReaderTypography(
     val fontSize: Float,
     val lineSpacing: Float,
     val family: FontFamily,
     val foreground: Color,
     val accent: Color,
-    val secondary: Color
-)
+    val secondary: Color,
+    val letterSpacing: Float = 0f,
+    val justify: Boolean = false,
+    val hyphenate: Boolean = true,
+    val paragraphs: ParagraphSpacing = ParagraphSpacing.INDENT
+) {
+    /**
+     * Justification is applied to running prose only.
+     *
+     * A justified heading, caption or table row stretches a few words across the whole column,
+     * which looks like a bug rather than a setting. Verse and code are never justified either —
+     * their line breaks are the author's, and stretching them destroys the thing they encode.
+     */
+    fun alignment(kind: BlockKind): TextAlign? = when {
+        !justify -> null
+        kind == BlockKind.PARAGRAPH || kind == BlockKind.BLOCKQUOTE -> TextAlign.Justify
+        else -> null
+    }
+
+    /** Hyphenation goes wherever text is set as prose; it is what keeps justification honest. */
+    val hyphens: Hyphens get() = if (hyphenate) Hyphens.Auto else Hyphens.None
+
+    /**
+     * Paragraph-level line breaking. Compose's `Paragraph` strategy does the whole-paragraph
+     * optimisation that makes hyphenation and justification produce even lines rather than one
+     * ragged one followed by a stretched one.
+     */
+    val lineBreak: LineBreak get() = if (justify || hyphenate) LineBreak.Paragraph else LineBreak.Simple
+}
 
 /**
  * Builds the drawable form of a chapter.
@@ -237,7 +273,10 @@ object ChapterRender {
                 emitter.paragraph(
                     ParagraphStyle(
                         textIndent = TextIndent(firstLine = QUOTE_INDENT.sp, restLine = QUOTE_INDENT.sp),
-                        lineHeight = (typography.fontSize * typography.lineSpacing).sp
+                        textAlign = typography.alignment(BlockKind.BLOCKQUOTE) ?: TextAlign.Unspecified,
+                        lineHeight = (typography.fontSize * typography.lineSpacing).sp,
+                        hyphens = typography.hyphens,
+                        lineBreak = typography.lineBreak
                     )
                 ) {
                     val from = emitter.displayLength
@@ -301,7 +340,12 @@ object ChapterRender {
                 // No indent on the first paragraph of a section — the convention every printed book
                 // follows, and the reason indented paragraphs don't look like a mistake.
                 val indent = !first && previousKind != BlockKind.HEADING
-                emitter.paragraph(paragraphStyle(typography, indent)) { emitter.real(body, block.start) }
+                emitter.paragraph(paragraphStyle(typography, indent)) {
+                    if (typography.paragraphs == ParagraphSpacing.SPACED && indent) {
+                        emitter.synthetic("\n", block.start)
+                    }
+                    emitter.real(body, block.start)
+                }
             }
         }
     }
@@ -389,9 +433,25 @@ object ChapterRender {
 
     // --- Styles -----------------------------------------------------------------------------------
 
+    /**
+     * Body-paragraph setting.
+     *
+     * In [ParagraphSpacing.INDENT] the first line is indented and nothing separates paragraphs —
+     * the printed convention, and what makes a novel read like a novel. In
+     * [ParagraphSpacing.SPACED] the indent goes and a blank line does the separating instead; the
+     * blank line is a synthetic character, mapped like every other one the renderer inserts, so it
+     * cannot move an anchor.
+     */
     private fun paragraphStyle(typography: ReaderTypography, indent: Boolean) = ParagraphStyle(
-        textIndent = if (indent) TextIndent(firstLine = 1.3.em) else TextIndent.None,
-        lineHeight = (typography.fontSize * typography.lineSpacing).sp
+        textIndent = if (indent && typography.paragraphs == ParagraphSpacing.INDENT) {
+            TextIndent(firstLine = 1.3.em)
+        } else {
+            TextIndent.None
+        },
+        textAlign = typography.alignment(BlockKind.PARAGRAPH) ?: TextAlign.Unspecified,
+        lineHeight = (typography.fontSize * typography.lineSpacing).sp,
+        hyphens = typography.hyphens,
+        lineBreak = typography.lineBreak
     )
 
     private fun captionStyle(typography: ReaderTypography) = ParagraphStyle(

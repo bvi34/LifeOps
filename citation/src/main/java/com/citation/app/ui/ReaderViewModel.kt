@@ -29,8 +29,11 @@ import com.citation.core.reader.BookSearch
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
 import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReaderSettings
+import com.citation.core.reader.ReaderTypeface
 import com.citation.core.reader.ReadingProgress
 import com.citation.core.reader.TimeLeft
+import com.citation.core.reader.VolumeKeys
 import com.citation.core.note.NoteType
 import com.citation.core.note.TagCount
 import com.citation.core.note.Tags
@@ -125,16 +128,126 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** Characters covered since the last pace report, paired with the meter's engaged time. */
     private var paceCharacters = 0
 
-    private val _keepAwake = MutableStateFlow(true)
+    // --- Reader settings --------------------------------------------------------------------------
+    //
+    // Display settings used to live in composition state, so a reader's text size, margins and theme
+    // were lost on every app restart. They are persisted now, and a book can be told to keep its own
+    // set — which is a *complete* fork rather than a patch, so changing the global font later cannot
+    // silently change a book you had already set up the way you wanted.
+
+    /** The settings the open book is actually being read with. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val settings: StateFlow<ReaderSettings> =
+        _openBook.flatMapLatest { book ->
+            val key = book?.key?.toString()
+            if (key == null) repository.globalReaderSettings else repository.readerSettingsFor(key)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ReaderSettings())
+
+    private val _perBookSettings = MutableStateFlow(false)
+
+    /** Whether the open book keeps settings of its own rather than following the global ones. */
+    val perBookSettings: StateFlow<Boolean> = _perBookSettings.asStateFlow()
+
+    private val _readerFonts = MutableStateFlow(repository.readerFonts())
+
+    /** Fonts the reader has added, for the picker to offer again. */
+    val readerFonts: StateFlow<List<String>> = _readerFonts.asStateFlow()
+
+    private fun refreshPerBookFlag(bookKey: String?) {
+        if (bookKey == null) {
+            _perBookSettings.value = false
+            return
+        }
+        viewModelScope.launch { _perBookSettings.value = repository.hasOwnReaderSettings(bookKey) }
+    }
 
     /**
-     * Whether the screen stays on while reading. On by default — a reader that dims mid-paragraph is
-     * the most common complaint about reading on a phone — and held here rather than in one screen
-     * so it covers every reader track, not just the flowing one.
+     * Change a setting.
+     *
+     * Writes to whichever scope the reader is currently editing: this book, when it has been given
+     * its own settings, otherwise the global set. That is what makes the "just this book" switch
+     * mean something afterwards rather than only at the moment it is flipped.
      */
-    val keepAwake: StateFlow<Boolean> = _keepAwake.asStateFlow()
+    fun updateSettings(transform: (ReaderSettings) -> ReaderSettings) {
+        val current = settings.value
+        val bookKey = _openBook.value?.key?.toString()
+        val scope = if (_perBookSettings.value) bookKey else null
+        viewModelScope.launch { repository.saveReaderSettings(transform(current), scope) }
+    }
 
-    fun setKeepAwake(on: Boolean) { _keepAwake.value = on }
+    /**
+     * Give the open book its own settings, or put it back on the global ones.
+     *
+     * Turning it on forks whatever the book is being read with right now, so nothing visibly
+     * changes at the moment of the switch — it only stops following the global set from here.
+     */
+    fun setPerBookSettings(own: Boolean) {
+        val bookKey = _openBook.value?.key?.toString() ?: return
+        val current = settings.value
+        viewModelScope.launch {
+            if (own) repository.saveReaderSettings(current, bookKey) else repository.clearReaderSettings(bookKey)
+            _perBookSettings.value = own
+        }
+    }
+
+    /** Store a font the reader picked and set the book to use it. */
+    fun addReaderFont(bytes: ByteArray, extension: String) {
+        viewModelScope.launch {
+            val path = repository.storeReaderFont(bytes, extension)
+            if (path == null) {
+                _status.value = "Couldn’t read that font file."
+                return@launch
+            }
+            _readerFonts.value = repository.readerFonts()
+            updateSettings { it.copy(typeface = ReaderTypeface.CUSTOM, customFontPath = path) }
+            _status.value = "Reading in ${java.io.File(path).name}."
+        }
+    }
+
+    /**
+     * Whether the screen stays on while reading. Read off the settings so it covers every reader
+     * track, not just the flowing one.
+     */
+    val keepAwake: StateFlow<Boolean> =
+        settings.map { it.keepAwake }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun setKeepAwake(on: Boolean) = updateSettings { it.copy(keepAwake = on) }
+
+    private val _pageTurns = MutableStateFlow(0L)
+
+    /**
+     * A ticking counter of page turns asked for by something other than a gesture — a volume key.
+     *
+     * A counter rather than the action itself, because two presses of the *same* key must both be
+     * seen: a flow carrying `NEXT_PAGE` twice in a row would not emit the second time, and the page
+     * would silently refuse to turn.
+     */
+    val pageTurns: StateFlow<Long> = _pageTurns.asStateFlow()
+
+    private var pendingPageTurn: VolumeKeys.Action? = null
+
+    /**
+     * A volume key was pressed while reading. Returns true when the reader consumed it — so the
+     * system's volume UI stays out of the way when the keys are turning pages, and behaves exactly
+     * as normal when they are not.
+     */
+    fun onVolumeKey(volumeUp: Boolean): Boolean {
+        val action = VolumeKeys.action(volumeUp, settings.value)
+        if (action == VolumeKeys.Action.IGNORE) return false
+        pendingPageTurn = action
+        _pageTurns.value = _pageTurns.value + 1
+        return true
+    }
+
+    /**
+     * Take the pending turn, if any.
+     *
+     * The reading surface acts on it rather than the ViewModel, because only the surface knows where
+     * the page boundaries are — the paginator's page starts live in the composition that measured
+     * them.
+     */
+    fun consumePageTurn(): VolumeKeys.Action? = pendingPageTurn.also { pendingPageTurn = null }
 
     // --- In-book search ---------------------------------------------------------------------------
 
@@ -624,6 +737,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     /** Start metering engaged reading for [bookKey]; report + close any prior book's session first. */
     /** Reset the position/pace state for a newly opened book, and load what we know of its pace. */
     private fun beginPositionTracking(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
+        refreshPerBookFlag(bookKey)
         _position.value = chapterOrdinal to charOffset
         paceCharacters = 0
         _pace.value = ReadingPace()
@@ -1093,6 +1207,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         openRrFictionId = null
         _openBook.value = null
         closeSearch()
+        _perBookSettings.value = false
         _position.value = 0 to 0
         _pace.value = ReadingPace()
     }

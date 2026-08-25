@@ -275,3 +275,24 @@ data class ReadingPaceEntity(
         const val GLOBAL = "*"
     }
 }
+
+/**
+ * How the reader is set up: one global row, plus a row for any book given its own settings.
+ *
+ * Per-book settings are a **complete** copy rather than a sparse patch over the global ones. A patch
+ * looks tidier and behaves worse: change the global font and a book that had overridden only its
+ * margins silently changes face too, which is the kind of surprise nobody can debug from the
+ * outside. Forking the whole set when you say "just this book" means what you see is what that book
+ * will always look like until you say otherwise.
+ */
+@Entity(tableName = "reader_settings")
+data class ReaderSettingsEntity(
+    /** A book key, or [GLOBAL] for the settings every other book follows. */
+    @PrimaryKey val bookKey: String,
+    val settingsJson: String,
+    val updatedAt: Long
+) {
+    companion object {
+        const val GLOBAL = "*"
+    }
+}

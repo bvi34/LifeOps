@@ -128,6 +128,37 @@ class FileStores(context: Context) {
     fun deleteBookAssets(bookKey: String): Boolean =
         File(sovereignDir, bookKey).deleteRecursively()
 
+    // --- Reader fonts --------------------------------------------------------------------------
+
+    private val fontDir: File get() = File(sovereignDir, "fonts").apply { mkdirs() }
+
+    /**
+     * Store a font the reader chose, named by a digest of its **bytes**.
+     *
+     * Content-addressed rather than named after the file it came from: picking the same font twice
+     * — from Downloads, then from a file manager — must not leave two copies, and a face whose file
+     * name changed is still the same face. It lives in the sovereign store because a book set in a
+     * font that vanishes is a book that changes appearance for no reason the reader can see.
+     */
+    fun writeReaderFont(bytes: ByteArray, extension: String): File {
+        val safe = extension.filter { it.isLetterOrDigit() }.lowercase().take(4).ifEmpty { "ttf" }
+        val file = File(fontDir, digestBytes(bytes) + "." + safe)
+        if (!file.exists()) file.writeBytes(bytes)
+        return file
+    }
+
+    /** Every stored font, for the picker to list what is already here. */
+    fun readerFonts(): List<File> = fontDir.listFiles()?.sortedBy { it.name }.orEmpty()
+
+    fun deleteReaderFont(path: String): Boolean =
+        File(path).takeIf { it.parentFile == fontDir && it.exists() }?.delete() ?: false
+
+    private fun digestBytes(bytes: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-1")
+            .digest(bytes)
+            .joinToString("") { "%02x".format(it) }
+            .take(24)
+
     private fun digest(value: String): String =
         java.security.MessageDigest.getInstance("SHA-1")
             .digest(value.toByteArray(Charsets.UTF_8))

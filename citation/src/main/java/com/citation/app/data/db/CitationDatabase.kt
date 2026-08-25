@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * here rather than repeating the number — the same version stated twice drifts the moment a
  * migration lands.
  */
-const val CITATION_DB_VERSION = 7
+const val CITATION_DB_VERSION = 8
 
 @Database(
     entities = [
@@ -35,7 +35,8 @@ const val CITATION_DB_VERSION = 7
         CollectionMemberEntity::class,
         OpdsCatalogEntity::class,
         BookmarkEntity::class,
-        ReadingPaceEntity::class
+        ReadingPaceEntity::class,
+        ReaderSettingsEntity::class
     ],
     version = CITATION_DB_VERSION,
     exportSchema = true
@@ -51,6 +52,7 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun opdsCatalogDao(): OpdsCatalogDao
     abstract fun bookmarkDao(): BookmarkDao
     abstract fun readingPaceDao(): ReadingPaceDao
+    abstract fun readerSettingsDao(): ReaderSettingsDao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null
@@ -198,13 +200,30 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 → v8: the reader remembers how you set it up.
+         *
+         * Display settings lived only in composition state, so every text size, margin and theme
+         * choice was lost on app restart — a reader that forgets how it is set up is one you have to
+         * re-configure every session. One global row, plus a row per book given its own settings.
+         */
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reader_settings` (" +
+                        "`bookKey` TEXT NOT NULL, `settingsJson` TEXT NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`bookKey`))"
+                )
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     // A restore can swap in a `citation.db` written by a *newer* Citation build than
                     // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
                     // default reaction to that downgrade is to throw on open — a permanent boot-crash.
