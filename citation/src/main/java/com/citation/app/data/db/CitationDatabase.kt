@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * here rather than repeating the number — the same version stated twice drifts the moment a
  * migration lands.
  */
-const val CITATION_DB_VERSION = 5
+const val CITATION_DB_VERSION = 6
 
 @Database(
     entities = [
@@ -30,7 +30,10 @@ const val CITATION_DB_VERSION = 5
         KeyWatermarkEntity::class,
         SyncStateEntity::class,
         RrFictionEntity::class,
-        RrChapterMetaEntity::class
+        RrChapterMetaEntity::class,
+        CollectionEntity::class,
+        CollectionMemberEntity::class,
+        OpdsCatalogEntity::class
     ],
     version = CITATION_DB_VERSION,
     exportSchema = true
@@ -42,6 +45,8 @@ abstract class CitationDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao
     abstract fun syncStateDao(): SyncStateDao
     abstract fun royalRoadDao(): RoyalRoadDao
+    abstract fun collectionDao(): CollectionDao
+    abstract fun opdsCatalogDao(): OpdsCatalogDao
 
     companion object {
         @Volatile private var instance: CitationDatabase? = null
@@ -93,13 +98,73 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6: the book stops being a title and an author.
+         *
+         * `books` gains the shelf metadata a library screen needs (publisher, date, blurb,
+         * subjects, series, cover, chapter count) plus the publisher's nested contents; `chapters`
+         * gains the structured view over its unchanged text. All of it is **derived** — every
+         * column here is recoverable by re-parsing the stored source file — so each is nullable or
+         * defaulted and a book imported before this migration simply reads as a book with no
+         * structure, exactly as it did yesterday. Nothing needs backfilling for the app to work.
+         *
+         * Three new tables arrive with it: user-made shelves, their membership, and saved OPDS
+         * catalogs. Catalog *credentials* are deliberately not among them — they live in the
+         * Keystore-backed store, so a copied database is not a way into someone's server.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN publisher TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN published TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN description TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN subjectsJson TEXT NOT NULL DEFAULT '[]'")
+                db.execSQL("ALTER TABLE books ADD COLUMN series TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN seriesIndex REAL")
+                db.execSQL("ALTER TABLE books ADD COLUMN coverPath TEXT")
+                db.execSQL("ALTER TABLE books ADD COLUMN chapterCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE books ADD COLUMN tocJson TEXT")
+
+                db.execSQL("ALTER TABLE chapters ADD COLUMN blocksJson TEXT")
+                db.execSQL("ALTER TABLE chapters ADD COLUMN anchorsJson TEXT")
+
+                // Books already in the library know their chapter count; fill it so progress reads
+                // correctly on the first run rather than after each book is next opened.
+                db.execSQL(
+                    "UPDATE books SET chapterCount = " +
+                        "(SELECT COUNT(*) FROM chapters WHERE chapters.bookKey = books.key)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `collections` (" +
+                        "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `position` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `collection_members` (" +
+                        "`collectionId` TEXT NOT NULL, `bookKey` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`collectionId`, `bookKey`), " +
+                        "FOREIGN KEY(`collectionId`) REFERENCES `collections`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                        "FOREIGN KEY(`bookKey`) REFERENCES `books`(`key`) ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_members_bookKey` ON `collection_members` (`bookKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_collection_members_collectionId` ON `collection_members` (`collectionId`)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `opds_catalogs` (" +
+                        "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `url` TEXT NOT NULL, " +
+                        "`position` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "`lastOpenedAt` INTEGER, PRIMARY KEY(`id`))"
+                )
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     // A restore can swap in a `citation.db` written by a *newer* Citation build than
                     // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
                     // default reaction to that downgrade is to throw on open — a permanent boot-crash.

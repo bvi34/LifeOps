@@ -44,6 +44,35 @@ interface BookDao {
     /** Remove a library entry entirely (used when the user deletes a book). */
     @Query("DELETE FROM books WHERE key = :key")
     suspend fun delete(key: String)
+
+    /**
+     * Recompute a book's chapter count from the chapters it actually has.
+     *
+     * The count is denormalised onto the book so the library can show progress for hundreds of
+     * books without loading a chapter, which means it has to be refreshed wherever chapters change
+     * — a PDF reflow, a serial's catalog growing. Cheaper and less fragile than keeping a running
+     * total in each of those places.
+     */
+    @Query("UPDATE books SET chapterCount = (SELECT COUNT(*) FROM chapters WHERE bookKey = :key) WHERE key = :key")
+    suspend fun recountChapters(key: String)
+
+    /** Set the chapter count directly, for a serial whose chapters live outside the chapters table. */
+    @Query("UPDATE books SET chapterCount = :count WHERE key = :key")
+    suspend fun setChapterCount(key: String, count: Int)
+
+    /** Star or unstar a book from the library screen. */
+    @Query("UPDATE books SET isFavorite = :favorite WHERE key = :key")
+    suspend fun setFavorite(key: String, favorite: Boolean)
+
+    @Query("UPDATE books SET readingState = :state WHERE key = :key")
+    suspend fun setReadingState(key: String, state: String)
+
+    /**
+     * Record the cover a book's import extracted. Separate from the insert because a cover can also
+     * arrive later — from a catalog entry, or a re-parse of the stored file.
+     */
+    @Query("UPDATE books SET coverPath = :path WHERE key = :key")
+    suspend fun setCoverPath(key: String, path: String?)
 }
 
 @Dao
@@ -126,4 +155,63 @@ interface SyncStateDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveSyncState(state: SyncStateEntity)
+}
+
+@Dao
+interface CollectionDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(collection: CollectionEntity)
+
+    @Query("SELECT * FROM collections ORDER BY position ASC, createdAt ASC")
+    fun observeAll(): Flow<List<CollectionEntity>>
+
+    @Query("SELECT * FROM collections ORDER BY position ASC, createdAt ASC")
+    suspend fun all(): List<CollectionEntity>
+
+    @Query("DELETE FROM collections WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("UPDATE collections SET name = :name WHERE id = :id")
+    suspend fun rename(id: String, name: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun addMember(member: CollectionMemberEntity)
+
+    @Query("DELETE FROM collection_members WHERE collectionId = :collectionId AND bookKey = :bookKey")
+    suspend fun removeMember(collectionId: String, bookKey: String)
+
+    @Query("SELECT * FROM collection_members")
+    fun observeMembers(): Flow<List<CollectionMemberEntity>>
+
+    @Query("SELECT * FROM collection_members WHERE bookKey = :bookKey")
+    suspend fun membershipsOf(bookKey: String): List<CollectionMemberEntity>
+
+    @Query("SELECT COUNT(*) FROM collection_members WHERE collectionId = :collectionId")
+    suspend fun size(collectionId: String): Int
+}
+
+@Dao
+interface OpdsCatalogDao {
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(catalog: OpdsCatalogEntity)
+
+    @Query("SELECT * FROM opds_catalogs ORDER BY position ASC, createdAt ASC")
+    fun observeAll(): Flow<List<OpdsCatalogEntity>>
+
+    @Query("SELECT * FROM opds_catalogs ORDER BY position ASC, createdAt ASC")
+    suspend fun all(): List<OpdsCatalogEntity>
+
+    @Query("SELECT * FROM opds_catalogs WHERE id = :id")
+    suspend fun get(id: String): OpdsCatalogEntity?
+
+    @Query("DELETE FROM opds_catalogs WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("UPDATE opds_catalogs SET lastOpenedAt = :openedAt WHERE id = :id")
+    suspend fun touchOpened(id: String, openedAt: Long)
+
+    @Query("SELECT COUNT(*) FROM opds_catalogs")
+    suspend fun count(): Int
 }

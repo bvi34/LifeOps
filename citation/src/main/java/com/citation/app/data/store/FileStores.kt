@@ -69,4 +69,68 @@ class FileStores(context: Context) {
     /** Remove an owned file (EPUB/PDF) from the sovereign store (used when the book is deleted). */
     fun deleteOwned(bookKey: String, extension: String): Boolean =
         File(sovereignDir, "$bookKey.$extension").let { it.exists() && it.delete() }
+
+    // --- Book assets: covers and illustrations ------------------------------------------------
+    //
+    // Images extracted from an owned EPUB live beside the book in the sovereign store, because
+    // eviction must not be able to reach them: a book whose plates had been reclaimed would render
+    // with holes in it. They are still *derived* — re-parsing the kept .epub reproduces every one —
+    // so losing them is recoverable, unlike a note.
+
+    private fun assetDir(bookKey: String): File = File(File(sovereignDir, bookKey), "assets")
+
+    /**
+     * The file an image reference maps to.
+     *
+     * Named by a digest of the source reference rather than by its path, which settles three
+     * problems at once: an EPUB href can contain `..` or an absolute path (a zip is not a trusted
+     * archive), it can contain characters the filesystem rejects, and it can nest arbitrarily deep.
+     * A flat directory of digest-named files has none of those failure modes, and the mapping stays
+     * a pure function of the reference so nothing has to be recorded to find an image again.
+     */
+    fun bookAssetFile(bookKey: String, src: String): File {
+        val extension = src.substringAfterLast('.', "").takeIf { it.length in 1..5 && it.all { c -> c.isLetterOrDigit() } }
+        val name = digest(src) + if (extension != null) ".$extension" else ""
+        return File(assetDir(bookKey), name)
+    }
+
+    /** Store one extracted image, returning where it landed. */
+    fun writeBookAsset(bookKey: String, src: String, bytes: ByteArray): File {
+        val file = bookAssetFile(bookKey, src)
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+        return file
+    }
+
+    /** The stored image for a reference, or null if this book has none. */
+    fun readBookAsset(bookKey: String, src: String): File? =
+        bookAssetFile(bookKey, src).takeIf { it.exists() }
+
+    /** The book's cover file, or null. Kept at a fixed name so the library can find it cheaply. */
+    fun coverFile(bookKey: String): File? =
+        File(File(sovereignDir, bookKey), "cover").takeIf { it.exists() && it.length() > 0 }
+
+    fun writeCover(bookKey: String, bytes: ByteArray): File {
+        val file = File(File(sovereignDir, bookKey), "cover")
+        file.parentFile?.mkdirs()
+        file.writeBytes(bytes)
+        return file
+    }
+
+    /** Total bytes of a book's stored images, for the storage screen. */
+    fun bookAssetsSize(bookKey: String): Long {
+        val dir = File(sovereignDir, bookKey)
+        if (!dir.exists()) return 0
+        return dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+    }
+
+    /** Drop a book's whole asset directory (used when the book is deleted). */
+    fun deleteBookAssets(bookKey: String): Boolean =
+        File(sovereignDir, bookKey).deleteRecursively()
+
+    private fun digest(value: String): String =
+        java.security.MessageDigest.getInstance("SHA-1")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+            .take(24)
 }
