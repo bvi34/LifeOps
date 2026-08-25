@@ -63,4 +63,10 @@ object EntityType {
     const val NOTE = "Note"
     const val HIGHLIGHT = "Highlight"
     const val CHAPTER = "Chapter"
+
+    /**
+     * A saved place in a book. Keyed like everything else so it can be addressed, deduped and — if
+     * the sync seam ever carries reading positions — spoken about across peers without collision.
+     */
+    const val BOOKMARK = "Bookmark"
 }

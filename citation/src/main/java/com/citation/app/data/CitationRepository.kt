@@ -2,9 +2,20 @@ package com.citation.app.data
 
 import com.citation.app.data.db.BookEntity
 import com.citation.app.data.db.CitationDatabase
+import com.citation.app.data.db.BlockCodec
+import com.citation.app.data.db.BookmarkEntity
+import com.citation.app.data.db.CollectionEntity
+import com.citation.app.data.db.CollectionMemberEntity
 import com.citation.app.data.db.KeyWatermarkEntity
 import com.citation.app.data.db.SyncStateEntity
 import com.citation.app.data.ao3.Ao3Client
+import com.citation.app.data.db.OpdsCatalogEntity
+import com.citation.app.data.db.ReaderSettingsCodec
+import com.citation.app.data.db.ReaderSettingsEntity
+import com.citation.app.data.db.ReadingPaceEntity
+import com.citation.app.data.opds.CatalogCredentials
+import com.citation.app.data.opds.OpdsClient
+import com.citation.app.data.opds.map
 import com.citation.app.data.rr.RoyalRoadClient
 import com.citation.app.data.rr.RoyalRoadCoordinator
 import com.citation.app.data.store.FileStores
@@ -16,6 +27,7 @@ import com.citation.core.capture.CapturePromotion
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.capture.ProvenanceLadder
 import com.citation.core.capture.RawCapture
+import com.citation.core.doc.DocumentBlock
 import com.citation.core.epub.EpubParser
 import com.citation.core.kindle.KindleNotebook
 import com.citation.core.identity.IdentityKey
@@ -23,6 +35,16 @@ import com.citation.core.identity.IdentitySet
 import com.citation.core.key.EntityKey
 import com.citation.core.key.EntityType
 import com.citation.core.key.KeyAllocator
+import com.citation.core.library.BookCollection
+import com.citation.core.reader.Bookmark
+import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReaderSettings
+import com.citation.core.reader.ReadingPace
+import com.citation.core.opds.CatalogPage
+import com.citation.core.opds.CatalogSource
+import com.citation.core.opds.OpdsEntry
+import com.citation.core.opds.OpdsFeed
+import com.citation.core.library.LibraryEntry
 import com.citation.core.manifest.StorageInventory
 import com.citation.core.manifest.StorageReport
 import com.citation.core.model.Book
@@ -49,6 +71,7 @@ import com.citation.core.sync.TelemetryPacket
 import com.citation.core.sync.SyncEngine
 import com.citation.core.sync.UpPacket
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -73,12 +96,33 @@ class CitationRepository private constructor(
     /** Encrypted library card/PIN + proxy host for read-in-place O'Reilly (never synced). */
     private val oreillyAccess: OreillyAccess,
     /** Pulls the text layer out of an owned PDF, for the reflow track. */
-    private val pdfText: PdfTextSource = PdfTextSource.NONE
+    private val pdfText: PdfTextSource = PdfTextSource.NONE,
+    /** Encrypted sign-ins for private OPDS servers (never synced, never in the database). */
+    private val catalogCredentials: CatalogCredentials? = null,
+    /** Fetches catalog pages, covers and books. The only thing here that touches a catalog server. */
+    private val opdsClient: OpdsClient = OpdsClient(catalogCredentials)
 ) {
 
     val books: Flow<List<BookSummary>> =
         db.bookDao().observeAll().map { list ->
             list.map { CitationMappers.summaryFromEntity(it) }
+        }
+
+    /**
+     * The shelf, as the pure library layer wants it: every book projected with its metadata and the
+     * collections it sits on. Membership is joined here, once for the whole library, rather than
+     * queried per book — a shelf of hundreds should cost two queries, not hundreds.
+     */
+    val library: Flow<List<LibraryEntry>> =
+        combine(db.bookDao().observeAll(), db.collectionDao().observeMembers()) { books, members ->
+            val byBook = members.groupBy({ it.bookKey }, { it.collectionId })
+            books.map { CitationMappers.libraryEntry(it, byBook[it.key]?.toSet().orEmpty()) }
+        }
+
+    /** The user's shelves, in their chosen order. */
+    val collections: Flow<List<BookCollection>> =
+        db.collectionDao().observeAll().map { list ->
+            list.map { BookCollection(id = it.id, name = it.name, position = it.position) }
         }
 
     /** The most recently opened book, for the Read tab's "pick up where you left off". */
@@ -108,7 +152,13 @@ class CitationRepository private constructor(
         // Owned content ⇒ chapters stored inline in the sovereign DB.
         val inline = Ownership.contentStore(book.metadata.source) == Store.SOVEREIGN
 
-        db.bookDao().upsert(CitationMappers.bookToEntity(book, descriptor, BookLifecycle.owned(), now))
+        // Extract the cover and illustrations before persisting, so the row that says a book has a
+        // cover is only written once the file behind it actually exists.
+        val coverPath = storeBookImages(bookKey.toString(), parsed)
+
+        db.bookDao().upsert(
+            CitationMappers.bookToEntity(book, descriptor, BookLifecycle.owned(), now, coverPath)
+        )
         db.chapterDao().upsertAll(
             book.chapters.map { CitationMappers.chapterToEntity(bookKey.toString(), it, inline, now) }
         )
@@ -206,6 +256,9 @@ class CitationRepository private constructor(
             )
             minted
         }
+        // A serial's chapters live in the borrowed file store, not the chapters table, so its
+        // progress denominator comes from the catalog the coordinator just loaded.
+        db.bookDao().setChapterCount(key.toString(), book.chapters.size)
         return book.copy(key = key)
     }
 
@@ -247,7 +300,10 @@ class CitationRepository private constructor(
             title = book.metadata.title,
             author = book.metadata.author
         )
-        db.bookDao().upsert(CitationMappers.bookToEntity(book, descriptor, BookLifecycle.owned(), now))
+        val coverPath = storeBookImages(bookKey.toString(), parsed)
+        db.bookDao().upsert(
+            CitationMappers.bookToEntity(book, descriptor, BookLifecycle.owned(), now, coverPath)
+        )
         db.chapterDao().upsertAll(
             book.chapters.map { CitationMappers.chapterToEntity(bookKey.toString(), it, storeInline = true, now) }
         )
@@ -262,9 +318,22 @@ class CitationRepository private constructor(
         return book
     }
 
-    /** Persist the reader's last position for restore-on-reopen. */
-    suspend fun savePosition(bookKey: String, chapterOrdinal: Int, charOffset: Int) {
+    /**
+     * Persist the reader's last position for restore-on-reopen, and — when the reader can measure
+     * it — how far through the book that is.
+     *
+     * The fraction is passed in rather than computed here because measuring it in characters needs
+     * every chapter's length, and the reader already has the book open. The library then reads back
+     * the same number the page showed, instead of a chapter-count estimate that disagrees with it.
+     */
+    suspend fun savePosition(
+        bookKey: String,
+        chapterOrdinal: Int,
+        charOffset: Int,
+        progressFraction: Float? = null
+    ) {
         db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
+        progressFraction?.let { db.bookDao().saveProgress(bookKey, it.coerceIn(0f, 1f)) }
     }
 
     /**
@@ -292,6 +361,9 @@ class CitationRepository private constructor(
             }
             else -> db.chapterDao().deleteForBook(bookKey)
         }
+        // Extracted covers and illustrations go with the book; they are derived from the file that
+        // was just removed, so nothing is left behind pointing at content that no longer exists.
+        files.deleteBookAssets(bookKey)
         db.bookDao().delete(bookKey)
     }
 
@@ -404,6 +476,8 @@ class CitationRepository private constructor(
         db.chapterDao().upsertAll(
             book.chapters.map { CitationMappers.chapterToEntity(bookKey, it, storeInline = true, now = now) }
         )
+        // The reflow just created the chapter track this book's progress is measured against.
+        db.bookDao().recountChapters(bookKey)
         return ReflowResult.Reflowed(chapters = book.chapters.size, pages = pages.size)
     }
 
@@ -1182,6 +1256,558 @@ class CitationRepository private constructor(
         }
     }
 
+    // --- Bookmarks ------------------------------------------------------------------------------
+    //
+    // Sovereign: a bookmark is something the reader made. It survives the book being removed (the
+    // row nulls rather than cascades) and stays legible from its frozen line, exactly as a note
+    // does — degraded, not lost.
+
+    /** Every bookmark in a book, in reading order. */
+    fun bookmarks(bookKey: String): Flow<List<Bookmark>> =
+        db.bookmarkDao().observeForBook(bookKey).map { rows -> rows.map { it.toBookmark() } }
+
+    private fun BookmarkEntity.toBookmark(): Bookmark = Bookmark(
+        key = EntityKey.parse(key)!!,
+        bookKey = bookKey?.let { EntityKey.parse(it) },
+        chapterOrdinal = chapterOrdinal,
+        charOffset = charOffset,
+        snippet = snippet,
+        chapterTitle = chapterTitle,
+        label = label,
+        createdAt = createdAt
+    )
+
+    /**
+     * Save a place, or return the one already saved there.
+     *
+     * Setting a bookmark twice on the same page means moving its label, not making a second mark,
+     * so a position within a screenful of an existing bookmark reuses it. That is what lets one
+     * control in the reader be a toggle rather than a way to accumulate near-identical rows.
+     */
+    suspend fun addBookmark(
+        book: Book,
+        chapterOrdinal: Int,
+        charOffset: Int,
+        label: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): Bookmark {
+        val bookKey = book.key ?: error("cannot bookmark an unkeyed book")
+        val existing = Bookmarks.existingAt(
+            db.bookmarkDao().forBook(bookKey.toString()).map { it.toBookmark() },
+            chapterOrdinal,
+            charOffset
+        )
+        if (existing != null) {
+            if (label != null) db.bookmarkDao().setLabel(existing.key.toString(), label.trim().takeIf { it.isNotBlank() })
+            return existing
+        }
+
+        val bookmark = Bookmarks.at(
+            key = keys.next(EntityType.BOOKMARK),
+            bookKey = bookKey,
+            book = book,
+            chapterOrdinal = chapterOrdinal,
+            charOffset = charOffset,
+            label = label,
+            now = now
+        )
+        db.bookmarkDao().upsert(
+            BookmarkEntity(
+                key = bookmark.key.toString(),
+                bookKey = bookKey.toString(),
+                chapterOrdinal = bookmark.chapterOrdinal,
+                charOffset = bookmark.charOffset,
+                snippet = bookmark.snippet,
+                chapterTitle = bookmark.chapterTitle,
+                label = bookmark.label,
+                createdAt = bookmark.createdAt
+            )
+        )
+        checkpointKey(EntityType.BOOKMARK)
+        return bookmark
+    }
+
+    suspend fun deleteBookmark(key: String) = db.bookmarkDao().delete(key)
+
+    suspend fun setBookmarkLabel(key: String, label: String?) =
+        db.bookmarkDao().setLabel(key, label?.trim()?.takeIf { it.isNotBlank() })
+
+    // --- Reader settings --------------------------------------------------------------------------
+    //
+    // Display settings used to live only in composition state, so every text size, margin and theme
+    // choice was lost on app restart. They are now stored: one global set, plus a complete set for
+    // any book told to keep its own.
+
+    /** The settings every book follows unless it has its own. */
+    val globalReaderSettings: Flow<ReaderSettings> =
+        db.readerSettingsDao().observe(ReaderSettingsEntity.GLOBAL)
+            .map { ReaderSettingsCodec.decode(it?.settingsJson) }
+
+    /**
+     * The settings a book actually opens with: its own if it has been given any, otherwise the
+     * global ones.
+     */
+    fun readerSettingsFor(bookKey: String): Flow<ReaderSettings> =
+        combine(
+            db.readerSettingsDao().observe(ReaderSettingsEntity.GLOBAL),
+            db.readerSettingsDao().observe(bookKey)
+        ) { global, own ->
+            ReaderSettingsCodec.decode(own?.settingsJson ?: global?.settingsJson)
+        }
+
+    /** Whether this book has been given settings of its own. */
+    suspend fun hasOwnReaderSettings(bookKey: String): Boolean =
+        db.readerSettingsDao().get(bookKey) != null
+
+    /**
+     * Save settings, either globally or for one book.
+     *
+     * [bookKey] null writes the global set. Writing a book's own set forks it entirely rather than
+     * layering a patch, so what you see is what that book keeps until you put it back on the
+     * global settings.
+     */
+    suspend fun saveReaderSettings(
+        settings: ReaderSettings,
+        bookKey: String? = null,
+        now: Long = System.currentTimeMillis()
+    ) {
+        db.readerSettingsDao().upsert(
+            ReaderSettingsEntity(
+                bookKey = bookKey ?: ReaderSettingsEntity.GLOBAL,
+                settingsJson = ReaderSettingsCodec.encode(settings.sanitized()),
+                updatedAt = now
+            )
+        )
+    }
+
+    /** Put a book back on the global settings. */
+    suspend fun clearReaderSettings(bookKey: String) = db.readerSettingsDao().delete(bookKey)
+
+    /**
+     * Store a font the reader picked, and return the path to use.
+     *
+     * Kept in the sovereign store because a book set in a face that vanishes is a book that changes
+     * appearance for no reason the reader can see. Named by a digest of its bytes, so picking the
+     * same file twice does not accumulate copies.
+     */
+    suspend fun storeReaderFont(bytes: ByteArray, extension: String): String? =
+        runCatching { files.writeReaderFont(bytes, extension).absolutePath }.getOrNull()
+
+    /** Fonts the reader has added, for the picker to offer again without a second trip to the files. */
+    fun readerFonts(): List<String> = files.readerFonts().map { it.absolutePath }
+
+    // --- Reading pace ----------------------------------------------------------------------------
+    //
+    // Observed, never assumed. The reading meter already refuses to count time you were not
+    // reading, so characters-per-minute can simply be measured — which is what lets a time estimate
+    // be shown at all without inventing a words-per-minute for the user.
+
+    /**
+     * Record a stretch of reading against a book and against the reader overall.
+     *
+     * Both are kept because neither alone is right: a book with little history of its own is best
+     * estimated from how this person reads generally, and a book with plenty is best estimated from
+     * itself — a dense technical book and a novel are not read at the same speed. Implausible
+     * samples are dropped inside [ReadingPace], so a jump-to-chapter cannot poison an estimate real
+     * reading built.
+     */
+    suspend fun recordPace(
+        bookKey: String,
+        characters: Int,
+        engagedMillis: Long,
+        now: Long = System.currentTimeMillis()
+    ) {
+        if (characters <= 0 || engagedMillis <= 0) return
+        listOf(bookKey, ReadingPaceEntity.GLOBAL).forEach { scope ->
+            val stored = db.readingPaceDao().get(scope)
+            val updated = ReadingPace(stored?.characters ?: 0, stored?.millis ?: 0)
+                .observe(characters, engagedMillis)
+            db.readingPaceDao().upsert(
+                ReadingPaceEntity(
+                    bookKey = scope,
+                    characters = updated.characters,
+                    millis = updated.millis,
+                    updatedAt = now
+                )
+            )
+        }
+    }
+
+    /**
+     * The pace to estimate this book with: its own once it is confident, otherwise the reader's
+     * overall pace, otherwise nothing.
+     */
+    suspend fun paceFor(bookKey: String): ReadingPace {
+        val own = db.readingPaceDao().get(bookKey)?.let { ReadingPace(it.characters, it.millis) }
+        if (own != null && own.confident) return own
+        val global = db.readingPaceDao().get(ReadingPaceEntity.GLOBAL)
+        return global?.let { ReadingPace(it.characters, it.millis) } ?: ReadingPace()
+    }
+
+    // --- OPDS catalogs ------------------------------------------------------------------------
+    //
+    // The acquisition half of a library. One protocol reaches a self-hosted Calibre server,
+    // Standard Ebooks, Gutenberg, Feedbooks, Kavita/Komga and most lending platforms, so browsing
+    // is a first-class native surface rather than a WebView pointed at somebody's site: the entries
+    // are data, which is what lets a download land in the library with its metadata attached.
+
+    /** Saved catalogs, in order, with whether a sign-in is on file for each. */
+    val catalogs: Flow<List<CatalogSource>> =
+        db.opdsCatalogDao().observeAll().map { list -> list.map { it.toSource() } }
+
+    private fun OpdsCatalogEntity.toSource(): CatalogSource {
+        val creds = catalogCredentials?.credentials(id)
+        return CatalogSource(
+            id = id,
+            name = name,
+            url = url,
+            username = creds?.username,
+            password = creds?.password,
+            position = position
+        )
+    }
+
+    /**
+     * Seed the catalog list the first time it is opened.
+     *
+     * The presets are all free and public, and exist so the screen is useful before the user has
+     * typed a server address — an empty "add a catalog" form is a worse first impression than three
+     * libraries you can browse immediately. Seeding happens once; a user who deletes them all gets
+     * an empty list, not the presets back.
+     */
+    suspend fun seedCatalogsIfEmpty(now: Long = System.currentTimeMillis()) {
+        if (db.opdsCatalogDao().count() > 0) return
+        CatalogSource.presets().forEach { preset ->
+            db.opdsCatalogDao().upsert(
+                OpdsCatalogEntity(
+                    id = preset.id,
+                    name = preset.name,
+                    url = preset.url,
+                    position = preset.position,
+                    createdAt = now
+                )
+            )
+        }
+    }
+
+    suspend fun addCatalog(
+        name: String,
+        url: String,
+        username: String? = null,
+        password: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): CatalogSource {
+        val id = "OPDS-" + now.toString(36)
+        val existing = db.opdsCatalogDao().all()
+        val entity = OpdsCatalogEntity(
+            id = id,
+            name = name.trim().ifBlank { CatalogSource.normalizeRoot(url).substringAfter("://").substringBefore('/') },
+            url = CatalogSource.normalizeRoot(url),
+            position = existing.size,
+            createdAt = now
+        )
+        db.opdsCatalogDao().upsert(entity)
+        if (!username.isNullOrBlank()) {
+            catalogCredentials?.setCredentials(id, username, password.orEmpty())
+        }
+        return entity.toSource()
+    }
+
+    /** Remove a catalog and forget its sign-in with it — the secret outliving the row would be a leak. */
+    suspend fun deleteCatalog(id: String) {
+        db.opdsCatalogDao().delete(id)
+        catalogCredentials?.clear(id)
+    }
+
+    suspend fun setCatalogCredentials(id: String, username: String, password: String) {
+        catalogCredentials?.setCredentials(id, username, password)
+    }
+
+    suspend fun catalog(id: String): CatalogSource? = db.opdsCatalogDao().get(id)?.toSource()
+
+    /** Open a catalog page: its root when [url] is null, otherwise the page a link pointed at. */
+    suspend fun openCatalog(
+        source: CatalogSource,
+        url: String? = null,
+        now: Long = System.currentTimeMillis()
+    ): OpdsClient.Result<CatalogPage> {
+        val target = url ?: source.rootUrl
+        val result = opdsClient.feed(source, target)
+        if (result is OpdsClient.Result.Success) db.opdsCatalogDao().touchOpened(source.id, now)
+        return result.map { CatalogPage(source, target, it) }
+    }
+
+    /** Search a catalog from the page currently open (which is what carries the search link). */
+    suspend fun searchCatalog(page: CatalogPage, terms: String): OpdsClient.Result<CatalogPage> =
+        opdsClient.search(page.source, page.feed, terms)
+            .map { CatalogPage(page.source, page.url, it, query = terms) }
+
+    /** Fetch a cover thumbnail for the catalog browser. Null on any failure — a cover is decoration. */
+    suspend fun catalogImage(source: CatalogSource, url: String): ByteArray? =
+        runCatching { opdsClient.image(source, url) }.getOrNull()
+
+    /** What happened when the user tapped Download on a catalog entry. */
+    sealed class AcquireResult {
+        /** In the library, and openable. */
+        data class Added(val bookKey: String, val title: String) : AcquireResult()
+
+        /** Already held — the catalog entry matched a book on the shelf, so nothing was fetched. */
+        data class AlreadyHave(val bookKey: String, val title: String) : AcquireResult()
+
+        /** Downloaded, but Citation has no reader for it. */
+        data class UnsupportedFormat(val label: String) : AcquireResult()
+
+        data class Failed(val reason: String) : AcquireResult()
+    }
+
+    /**
+     * Download a catalog entry into the library.
+     *
+     * The catalog's own metadata is merged over the file's afterwards, because a catalog usually
+     * knows more than the file does — a Calibre server has series, tags and a blurb that the EPUB's
+     * OPF often omits entirely, and losing that on the way in would make a downloaded book poorer
+     * than the row you tapped.
+     *
+     * Format is decided by what was actually served, not by what the link claimed: servers
+     * mislabel, and the bytes do not.
+     */
+    suspend fun acquire(
+        source: CatalogSource,
+        entry: OpdsEntry,
+        now: Long = System.currentTimeMillis()
+    ): AcquireResult {
+        // An ISBN the catalog states is strong enough evidence to skip a download entirely.
+        entry.isbn?.let { isbn ->
+            db.bookDao().findBySource(isbn, SourceType.EPUB.name)?.let {
+                return AcquireResult.AlreadyHave(it.key, it.title)
+            }
+        }
+
+        val link = entry.preferredDownload ?: return AcquireResult.Failed("Nothing to download")
+
+        val download = when (val result = opdsClient.download(source, link.href)) {
+            is OpdsClient.Result.Success -> result.value
+            is OpdsClient.Result.Unauthorized -> return AcquireResult.Failed("Sign-in required")
+            is OpdsClient.Result.HttpError -> return AcquireResult.Failed("Server said ${result.code}")
+            is OpdsClient.Result.Unreachable -> return AcquireResult.Failed(result.message)
+            is OpdsClient.Result.NotACatalog -> return AcquireResult.Failed("Unexpected response")
+            is OpdsClient.Result.Unsupported -> return AcquireResult.Failed("Not offered")
+        }
+
+        // Sniff the magic number rather than trusting the served type — the same rule MainActivity
+        // uses for a file handed in from outside, and for the same reason.
+        val bytes = download.bytes
+        return when {
+            bytes.looksLikeEpub() -> {
+                val book = importEpub(bytes, now) ?: return AcquireResult.Failed("Could not read the EPUB")
+                val key = book.key?.toString() ?: return AcquireResult.Failed("Could not read the EPUB")
+                mergeCatalogMetadata(key, entry, source)
+                AcquireResult.Added(key, book.metadata.title)
+            }
+            bytes.looksLikePdf() -> {
+                val key = importPdf(bytes, entry.title, now)
+                mergeCatalogMetadata(key, entry, source)
+                AcquireResult.Added(key, entry.title)
+            }
+            else -> AcquireResult.UnsupportedFormat(link.formatLabel)
+        }
+    }
+
+    /**
+     * Fill in what the catalog knew and the file did not.
+     *
+     * Deliberately additive: a value the file supplied wins, because it came from the publisher's
+     * own package document, and only the gaps are filled from the catalog row. The exception is the
+     * cover — if the book has none and the catalog offers one, fetching it is worth a round trip,
+     * since a shelf of blank rectangles is the thing a library screen most needs to avoid.
+     */
+    private suspend fun mergeCatalogMetadata(bookKey: String, entry: OpdsEntry, source: CatalogSource) {
+        val stored = db.bookDao().get(bookKey) ?: return
+        val merged = stored.copy(
+            author = stored.author ?: entry.author,
+            publisher = stored.publisher ?: entry.publisher,
+            published = stored.published ?: entry.published,
+            description = stored.description ?: entry.summary,
+            series = stored.series ?: entry.series,
+            seriesIndex = stored.seriesIndex ?: entry.seriesIndex,
+            subjectsJson = CitationMappers.mergeSubjects(stored.subjectsJson, entry.categories),
+            sourceId = stored.sourceId ?: entry.isbn
+        )
+        if (merged != stored) db.bookDao().upsert(merged)
+
+        if (stored.coverPath == null) {
+            entry.cover?.let { url ->
+                runCatching {
+                    opdsClient.image(source, url)?.let { bytes ->
+                        db.bookDao().setCoverPath(bookKey, files.writeCover(bookKey, bytes).absolutePath)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun ByteArray.looksLikeEpub(): Boolean =
+        size > 4 && this[0] == 0x50.toByte() && this[1] == 0x4B.toByte()
+
+    private fun ByteArray.looksLikePdf(): Boolean =
+        size > 4 && this[0] == 0x25.toByte() && this[1] == 0x50.toByte() &&
+            this[2] == 0x44.toByte() && this[3] == 0x46.toByte()
+
+    /**
+     * Re-read a book from the file it was imported from, to pick up what a newer parser can see.
+     *
+     * Without this, structure, covers, illustrations and shelf metadata would only ever apply to
+     * books added *after* the parser learned to find them — a library built up over a year would
+     * stay plain forever, for no reason other than when it happened to be imported. The source file
+     * is kept precisely so this is possible.
+     *
+     * The safety condition is exact and enforced per chapter: structure is written **only where the
+     * re-parsed text is byte-identical to the text already stored**. Where it is, the offsets every
+     * note anchored against are provably unchanged, so adding structure cannot move an anchor;
+     * where it somehow is not, that chapter is left exactly as it was. Titles, reading position,
+     * lifecycle and notes are never touched — only derived data is refreshed.
+     */
+    suspend fun refreshFromFile(bookKey: String, now: Long = System.currentTimeMillis()): RefreshResult {
+        val entity = db.bookDao().get(bookKey) ?: return RefreshResult.NotRefreshable
+        if (entity.sourceType != SourceType.EPUB.name && entity.sourceType != SourceType.AO3.name) {
+            return RefreshResult.NotRefreshable
+        }
+        val file = java.io.File(files.sovereignDir, "$bookKey.epub")
+        if (!file.exists()) return RefreshResult.FileMissing
+
+        val parsed = runCatching { EpubParser.parse(file.readBytes()) }.getOrNull()
+            ?: return RefreshResult.Unreadable
+
+        val stored = db.chapterDao().forBook(bookKey).associateBy { it.ordinal }
+        var updated = 0
+        var skipped = 0
+        parsed.book.chapters.forEach { chapter ->
+            val existing = stored[chapter.ordinal] ?: return@forEach
+            if (existing.text != chapter.text) {
+                skipped++
+                return@forEach
+            }
+            db.chapterDao().upsert(
+                existing.copy(
+                    blocksJson = chapter.blocks.takeIf { it.isNotEmpty() }?.let { BlockCodec.encodeBlocks(it) },
+                    anchorsJson = chapter.anchors.takeIf { it.isNotEmpty() }?.let { BlockCodec.encodeAnchors(it) }
+                )
+            )
+            updated++
+        }
+
+        val coverPath = storeBookImages(bookKey, parsed) ?: entity.coverPath
+        val meta = parsed.book.metadata
+        db.bookDao().upsert(
+            entity.copy(
+                // Derived fields only. The title the user sees, the author, the source binding and
+                // both state machines stay as they are — a refresh is not a re-import.
+                publisher = entity.publisher ?: meta.publisher,
+                published = entity.published ?: meta.published,
+                description = entity.description ?: meta.description,
+                subjectsJson = CitationMappers.mergeSubjects(entity.subjectsJson, meta.subjects),
+                series = entity.series ?: meta.series,
+                seriesIndex = entity.seriesIndex ?: meta.seriesIndex,
+                coverPath = coverPath,
+                chapterCount = if (entity.chapterCount > 0) entity.chapterCount else parsed.book.chapters.size,
+                tocJson = entity.tocJson ?: parsed.book.toc.takeIf { !it.isEmpty }?.let { BlockCodec.encodeToc(it) }
+            )
+        )
+        return RefreshResult.Refreshed(chapters = updated, unchanged = skipped)
+    }
+
+    /** What a re-read of a book's source file achieved. */
+    sealed class RefreshResult {
+        data class Refreshed(val chapters: Int, val unchanged: Int) : RefreshResult()
+
+        /** This source has no file to re-read — a serial, a read-in-place licence, a PDF. */
+        object NotRefreshable : RefreshResult()
+
+        object FileMissing : RefreshResult()
+        object Unreadable : RefreshResult()
+    }
+
+    /**
+     * Write a parsed EPUB's images into the sovereign store beside the book, returning the cover's
+     * path if it has one.
+     *
+     * Only images the content actually references are kept, plus the cover — a publisher's archive
+     * routinely carries fonts, stylesheets and unused artwork, and storing all of it would inflate
+     * a library for no reading benefit. Failures are swallowed per file: a book that is missing one
+     * plate should still open, and the kept `.epub` means every one of these is re-derivable.
+     */
+    private fun storeBookImages(bookKey: String, parsed: EpubParser.ParsedEpub): String? {
+        val referenced = parsed.book.chapters
+            .flatMap { chapter -> chapter.blocks.filterIsInstance<DocumentBlock.Image>() }
+            .map { it.src }
+            .toSet()
+
+        (referenced + listOfNotNull(parsed.coverPath)).forEach { src ->
+            val data = parsed.resources[src] ?: return@forEach
+            runCatching { files.writeBookAsset(bookKey, src, data) }
+        }
+
+        val cover = parsed.coverPath ?: return null
+        val bytes = parsed.resources[cover] ?: return null
+        return runCatching { files.writeCover(bookKey, bytes).absolutePath }.getOrNull()
+    }
+
+    // --- Collections ------------------------------------------------------------------------
+    //
+    // Shelves the user makes by hand. Deliberately not rule-based: a smart collection needs a query
+    // language and an explanation for why a book vanished from it; a shelf you put books on needs
+    // neither, and series/subject grouping already covers the automatic view.
+
+    suspend fun createCollection(name: String, now: Long = System.currentTimeMillis()): BookCollection {
+        val trimmed = name.trim().ifBlank { "Untitled shelf" }
+        val existing = db.collectionDao().all()
+        val collection = CollectionEntity(
+            id = "COL-" + now.toString(36) + "-" + (existing.size + 1),
+            name = trimmed,
+            position = existing.size,
+            createdAt = now
+        )
+        db.collectionDao().upsert(collection)
+        return BookCollection(collection.id, collection.name, collection.position)
+    }
+
+    suspend fun renameCollection(id: String, name: String) {
+        name.trim().takeIf { it.isNotBlank() }?.let { db.collectionDao().rename(id, it) }
+    }
+
+    /** Remove a shelf. The books on it are untouched — a shelf is a view, not a container. */
+    suspend fun deleteCollection(id: String) = db.collectionDao().delete(id)
+
+    suspend fun addToCollection(collectionId: String, bookKey: String, now: Long = System.currentTimeMillis()) {
+        db.collectionDao().addMember(CollectionMemberEntity(collectionId, bookKey, now))
+    }
+
+    suspend fun removeFromCollection(collectionId: String, bookKey: String) {
+        db.collectionDao().removeMember(collectionId, bookKey)
+    }
+
+    /** Which shelves a book is on, for the book detail sheet's checklist. */
+    suspend fun collectionsOf(bookKey: String): Set<String> =
+        db.collectionDao().membershipsOf(bookKey).map { it.collectionId }.toSet()
+
+    suspend fun setFavorite(bookKey: String, favorite: Boolean) =
+        db.bookDao().setFavorite(bookKey, favorite)
+
+    /** Mark a book finished (or put it back on the pile) from the library, without opening it. */
+    suspend fun setReadingState(bookKey: String, state: ReadingState) =
+        db.bookDao().setReadingState(bookKey, state.name)
+
+    /** The cover file for a book, or null — the library screen decodes it directly. */
+    fun coverFile(bookKey: String): java.io.File? = files.coverFile(bookKey)
+
+    /** The stored image behind a chapter's illustration reference, or null if it was not kept. */
+    fun bookAsset(bookKey: String, src: String): java.io.File? = files.readBookAsset(bookKey, src)
+
+    /**
+     * What the library and Read tabs show for one book, without loading a chapter. Widened from
+     * "a title and two state words" to the shelf metadata a real library screen needs — a cover, a
+     * series, subjects, and enough to compute progress.
+     */
     data class BookSummary(
         val key: String,
         val title: String,
@@ -1190,8 +1816,42 @@ class CitationRepository private constructor(
         val acquisitionState: String,
         val sourceType: String,
         val lastChapterOrdinal: Int,
-        val lastOpenedAt: Long?
-    )
+        val lastOpenedAt: Long?,
+        val series: String? = null,
+        val seriesIndex: Float? = null,
+        val subjects: List<String> = emptyList(),
+        val publisher: String? = null,
+        val published: String? = null,
+        val description: String? = null,
+        /** Absolute path of the extracted cover, or null when the book has none. */
+        val coverPath: String? = null,
+        val chapterCount: Int = 0,
+        val isFavorite: Boolean = false,
+        val addedAt: Long = 0,
+        /** What the reader last measured in characters, or 0 when it never has. */
+        val progressFraction: Float = 0f
+    ) {
+        /** "The Expanse #1", or null. */
+        val seriesLabel: String?
+            get() = series?.let { name ->
+                val index = seriesIndex ?: return@let name
+                val trimmed = if (index == index.toInt().toFloat()) index.toInt().toString() else index.toString()
+                "$name #$trimmed"
+            }
+
+        /**
+         * How far through: what the reader measured in characters when it has, otherwise a coarse
+         * chapter estimate. 0 for a book never opened, 1 for one marked done.
+         */
+        val progress: Float
+            get() = when {
+                readingState == "DONE" -> 1f
+                lastOpenedAt == null -> 0f
+                progressFraction > 0f -> progressFraction.coerceIn(0f, 1f)
+                chapterCount <= 0 -> 0f
+                else -> ((lastChapterOrdinal + 1).toFloat() / chapterCount).coerceIn(0f, 1f)
+            }
+    }
 
     companion object {
         /** Build the repository, restoring the key allocator and mailbox from persisted state. */
@@ -1199,7 +1859,8 @@ class CitationRepository private constructor(
             db: CitationDatabase,
             files: FileStores,
             oreillyAccess: OreillyAccess,
-            pdfText: PdfTextSource = PdfTextSource.NONE
+            pdfText: PdfTextSource = PdfTextSource.NONE,
+            catalogCredentials: CatalogCredentials? = null
         ): CitationRepository {
             val watermarks = db.syncStateDao().watermarks().associate { it.type to it.highWater }
             val keys = KeyAllocator(seed = watermarks)
@@ -1214,7 +1875,9 @@ class CitationRepository private constructor(
             }
             mailbox.seedOutbox(pending)
             val royalRoad = RoyalRoadCoordinator(db.royalRoadDao(), RoyalRoadClient(), files)
-            return CitationRepository(db, files, keys, mailbox, royalRoad, Ao3Client(), oreillyAccess, pdfText).also { repo ->
+            return CitationRepository(
+                db, files, keys, mailbox, royalRoad, Ao3Client(), oreillyAccess, pdfText, catalogCredentials
+            ).also { repo ->
                 // Write the reseeded backlog to the file-drop now so LifeOps can pick it up without
                 // waiting for the next capture or the periodic worker.
                 if (pending.isNotEmpty()) repo.flushOutbox()

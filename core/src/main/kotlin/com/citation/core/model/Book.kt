@@ -1,5 +1,6 @@
 package com.citation.core.model
 
+import com.citation.core.doc.DocumentBlock
 import com.citation.core.key.EntityKey
 
 /**
@@ -22,7 +23,13 @@ import com.citation.core.key.EntityKey
 data class Book(
     val key: EntityKey?,
     val metadata: BookMetadata,
-    val chapters: List<Chapter>
+    val chapters: List<Chapter>,
+    /**
+     * The publisher's own nested contents, when the source supplies one. Empty for sources that
+     * have no such thing (a web serial is its chapter list), in which case the reader falls back to
+     * listing chapters — so this is additive, never a requirement.
+     */
+    val toc: TableOfContents = TableOfContents.EMPTY
 ) {
     /** Total character length across all chapters — the cheap "how big is the text" measure. */
     val characterCount: Int get() = chapters.sumOf { it.text.length }
@@ -44,13 +51,21 @@ data class Book(
  *   PDF page range). Opaque to the reader; used by ingestion for refetch/reconcile.
  * @property text plain flowing text — the canonical anchoring surface.
  * @property html optional lightly-structured HTML for richer rendering; must reduce to [text].
+ * @property blocks the structured view *over* [text] — headings, quotes, verse, lists, tables and
+ *   illustrations, each expressed as a range into the very same characters. Empty for sources that
+ *   only ever produced flat text, in which case the reader sets everything as body paragraphs.
+ *   Structure never edits [text], which is what lets it be added to books already annotated.
+ * @property anchors `id` attribute to offset in [text], so a footnote or contents entry pointing
+ *   inside this chapter resolves to a position rather than just a file.
  */
 data class Chapter(
     val ordinal: Int,
     val title: String,
     val sourceRef: String,
     val text: String,
-    val html: String? = null
+    val html: String? = null,
+    val blocks: List<DocumentBlock> = emptyList(),
+    val anchors: Map<String, Int> = emptyMap()
 ) {
     /** Byte cost of this chapter's text (UTF-8) — feeds the integrity manifest's size accounting. */
     val byteSize: Long get() = text.toByteArray(Charsets.UTF_8).size.toLong()
@@ -69,8 +84,31 @@ data class BookMetadata(
     val title: String,
     val author: String?,
     val source: SourceType,
-    val language: String? = null
-)
+    val language: String? = null,
+    val publisher: String? = null,
+    /** Publication date as the source states it — often just a year, so kept as written. */
+    val published: String? = null,
+    /** Publisher's blurb, when the source carries one. */
+    val description: String? = null,
+    /** Subjects/genres/tags as the source labels them (BISAC headings, AO3 tags, calibre tags). */
+    val subjects: List<String> = emptyList(),
+    /** Series name, when the book belongs to one. */
+    val series: String? = null,
+    /** Position within [series]; `1.5` is a real and common value, hence a float. */
+    val seriesIndex: Float? = null,
+    /**
+     * The source's own reference to the cover image (an EPUB zip path). Resolved to a stored file
+     * by the import; opaque here so `:core` keeps no notion of a filesystem.
+     */
+    val coverRef: String? = null
+) {
+    /** "Dune #2" / "Dune" / null — the one-line series label a shelf wants. */
+    val seriesLabel: String? get() = series?.let { name ->
+        val index = seriesIndex ?: return@let name
+        val trimmed = if (index == index.toInt().toFloat()) index.toInt().toString() else index.toString()
+        "$name #$trimmed"
+    }
+}
 
 /**
  * The kind of place a [Book] came from. Drives ingestion strategy, storage ownership (borrowed vs

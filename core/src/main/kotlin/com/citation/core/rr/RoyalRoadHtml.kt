@@ -1,5 +1,7 @@
 package com.citation.core.rr
 
+import com.citation.core.doc.DocumentBlock
+import com.citation.core.doc.HtmlDocument
 import com.citation.core.epub.Html
 import com.citation.core.model.Chapter
 
@@ -19,7 +21,12 @@ import com.citation.core.model.Chapter
 object RoyalRoadHtml {
 
     /** A chapter's extracted content, before it is placed at an ordinal in a book. */
-    data class ExtractedChapter(val title: String, val text: String)
+    data class ExtractedChapter(
+        val title: String,
+        val text: String,
+        /** Structure over [text] — see [com.citation.core.doc.DocumentBlock]. */
+        val blocks: List<DocumentBlock> = emptyList()
+    )
 
     private val CHAPTER_LINK = Regex(
         "(?is)<a\\b[^>]*href\\s*=\\s*[\"']([^\"']*?/chapter/(\\d+)/[^\"']*)[\"'][^>]*>(.*?)</a>"
@@ -78,15 +85,18 @@ object RoyalRoadHtml {
     }
 
     /**
-     * Extract a single chapter page into flowing text. Royal Road wraps chapter body in a
-     * `chapter-inner`/`chapter-content` div; this pulls that block (falling back to the whole
-     * document if the class is absent) and reduces it via the shared [Html] reducer, so RR text
-     * anchors the same way EPUB text does.
+     * Extract a single chapter page into flowing text **and its structure**. Royal Road wraps the
+     * chapter body in a `chapter-inner`/`chapter-content` div; this pulls that block (falling back
+     * to the whole document if the class is absent) and reduces it via the shared reducer, so RR
+     * text anchors the same way EPUB text does — and now sets the same way too: a web serial's
+     * italics, scene breaks and block quotes are the author's, and dropping them was never a
+     * property of the source, only of the reduction.
      */
     fun extractChapter(html: String): ExtractedChapter {
         val title = Html.extractHeading(html) ?: "Untitled chapter"
         val body = contentDiv(html) ?: html
-        return ExtractedChapter(title = title, text = Html.toText(body))
+        val parsed = HtmlDocument.parse(body)
+        return ExtractedChapter(title = title, text = parsed.text, blocks = parsed.blocks)
     }
 
     /** Assemble a [Chapter] at [ref]'s ordinal from an already-fetched chapter page. */
@@ -97,7 +107,8 @@ object RoyalRoadHtml {
             title = extracted.title.ifBlank { ref.title },
             sourceRef = ref.url,
             text = extracted.text,
-            html = null
+            html = null,
+            blocks = extracted.blocks
         )
     }
 
