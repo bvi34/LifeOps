@@ -8,6 +8,7 @@ import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
+import com.citation.core.model.TocEntry
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
@@ -639,12 +640,56 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     fun captureNoteForQuote(quote: String, body: String, nearOffset: Int = 0) {
         val book = _openBook.value ?: return
         val chapter = book.chapterAt(_chapterOrdinal.value) ?: return
-        val start = nearestIndexOf(chapter.text, quote, nearOffset)
+        val cleaned = withoutRenderedOnlyCharacters(quote)
+        if (cleaned.isBlank()) {
+            _status.value = "Select some text to quote."
+            return
+        }
+        val start = nearestIndexOf(chapter.text, cleaned, nearOffset)
         if (start < 0) {
             _status.value = "Couldn’t find that passage in this chapter."
             return
         }
-        captureNote(start, start + quote.length, body)
+        captureNote(start, start + cleaned.length, body)
+    }
+
+    /**
+     * Strip the characters that exist only in the drawn page.
+     *
+     * A selection is read back as the text the user sees, and the reader draws things the chapter's
+     * canonical text does not contain: an image placeholder, a list bullet, the separators between
+     * table cells the reduction ran together. Anchoring works against the canonical text, so a
+     * selection that happened to span one of those would otherwise fail to match anything and the
+     * note would be refused — over a passage the reader can plainly see.
+     */
+    private fun withoutRenderedOnlyCharacters(quote: String): String {
+        var cleaned = quote.replace("\uFFFD", "")
+        cleaned = cleaned.replace("   ·   ", "")
+        cleaned = cleaned.removePrefix("· · ·")
+        cleaned = cleaned.trimStart()
+        cleaned = cleaned.removePrefix("• ")
+        cleaned = Regex("^\\d+\\. ").replace(cleaned, "")
+        return cleaned.trim()
+    }
+
+    /** The stored file behind an illustration reference, or null when it was not kept. */
+    fun bookAsset(bookKey: String, src: String): java.io.File? = repository.bookAsset(bookKey, src)
+
+    /**
+     * Follow a contents entry. An entry that points inside a chapter (`#fragment`) lands on that
+     * spot rather than at the chapter's first word — which is the whole reason a single-file book,
+     * or a reference work whose spine is a hundred undifferentiated documents, gets a usable
+     * contents list at all.
+     */
+    fun goToTocEntry(entry: TocEntry) {
+        val ordinal = entry.chapterOrdinal ?: return
+        val book = _openBook.value ?: return
+        val offset = entry.fragment?.let { book.chapterAt(ordinal)?.anchors?.get(it) } ?: 0
+        if (offset > 0) {
+            pendingScrollChapter = ordinal
+            pendingScrollOffset = offset
+        }
+        goToChapter(ordinal)
     }
 
     /** First index of [sub] in [text] closest to [near]; −1 if absent. */

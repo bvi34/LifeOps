@@ -65,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
@@ -78,6 +79,10 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.citation.app.ui.reader.ChapterRender
+import com.citation.app.ui.reader.ReaderTypography
+import com.citation.app.ui.reader.RenderedChapter
+import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.reader.Paginator
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -86,6 +91,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
 import com.citation.core.model.Book
+import com.citation.core.model.TocEntry
 import com.citation.core.model.SourceType
 import com.citation.core.note.Note
 import kotlinx.coroutines.delay
@@ -316,7 +322,13 @@ private fun FlowingReader(vm: ReaderViewModel) {
         )
     }
     if (showToc) {
-        TocSheet(book = book, current = ordinal, onSelect = { vm.goToChapter(it); showToc = false }, onDismiss = { showToc = false })
+        TocSheet(
+            book = book,
+            current = ordinal,
+            onSelect = { vm.goToChapter(it); showToc = false },
+            onSelectEntry = { vm.goToTocEntry(it); showToc = false },
+            onDismiss = { showToc = false }
+        )
     }
     openNote?.let { note ->
         NoteDetailDialog(
@@ -358,35 +370,83 @@ private fun ChapterPage(
     val title = chapter?.title ?: ""
     val lastIndex = book.chapters.lastIndex
     val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    val accent = MaterialTheme.colorScheme.primary
+    val secondary = MaterialTheme.colorScheme.secondary
+    val bookKey = book.key?.toString()
+
+    // Size illustrations to the text column. sp rather than dp because the placeholder the renderer
+    // reserves is measured in text units, so a plate scales with the reader's font setting like
+    // everything else on the page.
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val columnWidthDp = (configuration.screenWidthDp - marginDp * 2).coerceAtLeast(80f)
+    val imageWidthPx = with(density) { columnWidthDp.dp.toPx() }.toInt()
+    val imageWidthSp = columnWidthDp / density.fontScale
+    val imageHeightSp = (configuration.screenHeightDp * 0.55f) / density.fontScale
+
+    val blocks = chapter?.blocks.orEmpty()
+    val images = rememberChapterImages(blocks, imageWidthPx) { src ->
+        bookKey?.let { vm.bookAsset(it, src) }
+    }
+
+    // The drawable form of the chapter, and the map back to the canonical offsets everything is
+    // stored and anchored against. Rebuilt only when the text, its structure, the typography or the
+    // loaded plates change — never on a page turn.
+    val rendered = remember(text, blocks, fontSize, lineSpacing, family, foreground, images, imageWidthSp) {
+        ChapterRender.build(
+            text = text,
+            blocks = blocks,
+            typography = ReaderTypography(
+                fontSize = fontSize,
+                lineSpacing = lineSpacing,
+                family = family,
+                foreground = foreground,
+                accent = accent,
+                secondary = secondary
+            ),
+            images = images,
+            maxImageWidthSp = imageWidthSp,
+            maxImageHeightSp = imageHeightSp
+        )
+    }
 
     // Resolve each passage-note's anchor into a live range in *this* chapter (quote + fuzzy match, so a
     // re-fetched or edited chapter still lights up the right words). A deleted passage simply doesn't.
-    val ranges = remember(text, highlights, ord) {
+    // Anchors are canonical offsets; the ranges are converted once into the rendered string's
+    // coordinates, which is what the highlight and the tap target both need.
+    val ranges = remember(rendered, highlights, ord) {
         highlights.mapNotNull { note ->
             val anchor = note.references.firstOrNull()?.anchor as? TextAnchor.Flowing ?: return@mapNotNull null
             if (anchor.chapterOrdinal != ord) return@mapNotNull null
-            FuzzyAnchor.resolve(anchor, text).matchedRange?.let { note to it }
+            FuzzyAnchor.resolve(anchor, text).matchedRange
+                ?.let { rendered.displayRange(it) }
+                ?.takeIf { !it.isEmpty() }
+                ?.let { note to it }
         }
     }
-    val annotated = remember(text, ranges, highlightColor) {
-        buildAnnotatedString {
-            append(text)
-            ranges.forEach { (_, range) ->
-                val start = range.first.coerceIn(0, text.length)
-                val end = (range.last + 1).coerceIn(start, text.length)
-                if (end > start) addStyle(SpanStyle(background = highlightColor), start, end)
+    val annotated = remember(rendered, ranges, highlightColor) {
+        if (ranges.isEmpty()) {
+            rendered.display
+        } else {
+            buildAnnotatedString {
+                append(rendered.display)
+                ranges.forEach { (_, range) ->
+                    val start = range.first.coerceIn(0, length)
+                    val end = (range.last + 1).coerceIn(start, length)
+                    if (end > start) addStyle(SpanStyle(background = highlightColor), start, end)
+                }
             }
         }
     }
 
     if (paged) {
         PagedChapterBody(
-            vm, ord, lastIndex, text, title, annotated, ranges,
+            vm, ord, lastIndex, rendered, annotated, title, ranges,
             fontSize, family, lineSpacing, marginDp, foreground, turnThreshold, onOpenNote, onProvideHint
         )
     } else {
         ScrollChapterBody(
-            vm, ord, lastIndex, title, annotated, ranges,
+            vm, ord, lastIndex, title, rendered, annotated, ranges,
             fontSize, family, lineSpacing, marginDp, foreground, turnThreshold, onOpenNote, onProvideHint
         )
     }
@@ -403,6 +463,7 @@ private fun ScrollChapterBody(
     ord: Int,
     lastIndex: Int,
     title: String,
+    rendered: RenderedChapter,
     annotated: androidx.compose.ui.text.AnnotatedString,
     ranges: List<Pair<Note, IntRange>>,
     fontSize: Float,
@@ -434,7 +495,13 @@ private fun ScrollChapterBody(
     LaunchedEffect(ord) {
         onProvideHint {
             val l = layout
-            if (l != null) l.getLineStart(l.getLineForVerticalPosition(scroll.value.toFloat())) else 0
+            // The disambiguator anchors against canonical text, so the visible line's display
+            // offset is converted before it leaves here.
+            if (l != null) {
+                rendered.canonicalOf(l.getLineStart(l.getLineForVerticalPosition(scroll.value.toFloat())))
+            } else {
+                0
+            }
         }
     }
 
@@ -471,6 +538,7 @@ private fun ScrollChapterBody(
                 lineHeight = (fontSize * lineSpacing).sp,
                 fontFamily = family,
                 color = foreground,
+                inlineContent = rendered.inlineContent,
                 onTextLayout = { layout = it },
                 modifier = Modifier
                     .padding(top = 12.dp)
@@ -512,9 +580,9 @@ private fun PagedChapterBody(
     vm: ReaderViewModel,
     ord: Int,
     lastIndex: Int,
-    text: String,
-    title: String,
+    rendered: RenderedChapter,
     annotated: androidx.compose.ui.text.AnnotatedString,
+    title: String,
     ranges: List<Pair<Note, IntRange>>,
     fontSize: Float,
     family: FontFamily,
@@ -545,14 +613,17 @@ private fun PagedChapterBody(
         // Measure the whole chapter once for the current width/typography, then break it into pages.
         // Page 0 gives up room for the chapter title. Recomputed only when text, typography, or the
         // viewport changes — a page turn is a cheap index change, not a re-measure.
-        val pageStarts = remember(text, fontSize, lineSpacing, family, widthPx, heightPx) {
+        val pageStarts = remember(rendered, fontSize, lineSpacing, family, widthPx, heightPx) {
             if (widthPx <= 0 || heightPx <= 0) {
                 listOf(0)
             } else {
+                // Measured with the placeholders the renderer reserved, so a page that holds a
+                // plate accounts for its height instead of overflowing by exactly that much.
                 val layout = measurer.measure(
-                    androidx.compose.ui.text.AnnotatedString(text),
+                    rendered.display,
                     style = textStyle,
-                    constraints = Constraints(maxWidth = widthPx)
+                    constraints = Constraints(maxWidth = widthPx),
+                    placeholders = rendered.placeholders
                 )
                 val titleBlock = if (title.isBlank()) 0f else {
                     measurer.measure(
@@ -595,18 +666,26 @@ private fun PagedChapterBody(
         LaunchedEffect(ord) { restoreOffset = vm.consumePendingScroll(ord) }
         LaunchedEffect(pageStarts, restoreOffset) {
             if (restoreOffset > 0 && pageStarts.size > 1) {
-                page = pageStarts.indexOfLast { it <= restoreOffset }.coerceAtLeast(0)
+                // The stored offset is canonical, so it is translated into the rendered string's
+                // coordinates before looking for the page that holds it. That is what lets a
+                // position saved before this book had any structure still land on the right page.
+                val target = rendered.displayOf(restoreOffset)
+                page = pageStarts.indexOfLast { it <= target }.coerceAtLeast(0)
                 restoreOffset = 0
             }
         }
-        // Persist the page's start offset as you turn (debounced).
+        // Persist the page's start as a *canonical* offset — font-size independent, and independent
+        // of whether the chapter was rendered with structure at all.
         LaunchedEffect(safePage, pageStarts) {
             delay(400)
-            vm.savePosition(ord, pageStarts.getOrElse(safePage) { 0 })
+            vm.savePosition(ord, rendered.canonicalOf(pageStarts.getOrElse(safePage) { 0 }))
         }
-        // Capture disambiguation hint = the current page's start offset.
+        // Capture disambiguation hint = where the current page starts, in canonical text.
         LaunchedEffect(ord) {
-            onProvideHint { pageStartsState.value.getOrElse(page.coerceIn(0, pageStartsState.value.lastIndex)) { 0 } }
+            onProvideHint {
+                val starts = pageStartsState.value
+                rendered.canonicalOf(starts.getOrElse(page.coerceIn(0, starts.lastIndex)) { 0 })
+            }
         }
 
         AnimatedContent(
@@ -620,7 +699,7 @@ private fun PagedChapterBody(
             label = "page"
         ) { p ->
             val start = pageStarts.getOrElse(p) { 0 }
-            val end = pageStarts.getOrElse(p + 1) { text.length }
+            val end = pageStarts.getOrElse(p + 1) { rendered.length }
             val slice = annotated.subSequence(start.coerceIn(0, annotated.length), end.coerceIn(start, annotated.length))
             var layout by remember(p, pageStarts) { mutableStateOf<TextLayoutResult?>(null) }
 
@@ -653,6 +732,7 @@ private fun PagedChapterBody(
                     Text(
                         text = slice,
                         style = textStyle,
+                        inlineContent = rendered.inlineContent,
                         onTextLayout = { layout = it },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -785,32 +865,84 @@ private fun Choice(label: String, selected: Boolean, modifier: Modifier = Modifi
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TocSheet(book: Book, current: Int, onSelect: (Int) -> Unit, onDismiss: () -> Unit) {
+private fun TocSheet(
+    book: Book,
+    current: Int,
+    onSelect: (Int) -> Unit,
+    onSelectEntry: (TocEntry) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // The publisher's own contents when the book has one, otherwise the spine — which is all the
+    // reader ever used to show. For anything longer than a novel the difference is the difference
+    // between "Part II › Chapter 7 › Consistent Hashing" and a hundred numbered files.
+    val entries = remember(book) { book.toc.flatten() }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(Modifier.fillMaxWidth()) {
             Text(
-                "Chapters",
+                if (entries.isEmpty()) "Chapters" else "Contents",
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)
             )
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
-                itemsIndexed(book.chapters) { i, ch ->
-                    Text(
-                        text = "${i + 1}.  ${ch.title.ifBlank { "Chapter ${i + 1}" }}",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { onSelect(i) }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        color = if (i == current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        fontWeight = if (i == current) FontWeight.SemiBold else FontWeight.Normal,
-                        fontFamily = FontFamily.Serif
-                    )
+                if (entries.isEmpty()) {
+                    itemsIndexed(book.chapters) { i, ch ->
+                        TocRow(
+                            label = "${i + 1}.  ${ch.title.ifBlank { "Chapter ${i + 1}" }}",
+                            depth = 0,
+                            selected = i == current,
+                            enabled = true,
+                            onClick = { onSelect(i) }
+                        )
+                    }
+                } else {
+                    itemsIndexed(entries) { _, (entry, depth) ->
+                        TocRow(
+                            label = entry.title,
+                            depth = depth,
+                            selected = entry.chapterOrdinal == current,
+                            // An entry whose target isn't in the spine is still shown — it is part
+                            // of the book's shape — but there is nowhere to send you.
+                            enabled = entry.chapterOrdinal != null,
+                            onClick = { onSelectEntry(entry) }
+                        )
+                    }
                 }
             }
             Spacer(Modifier.padding(bottom = 12.dp))
         }
     }
+}
+
+@Composable
+private fun TocRow(
+    label: String,
+    depth: Int,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    Text(
+        text = label,
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(
+                start = (20 + depth * 16).dp,
+                end = 20.dp,
+                top = if (depth == 0) 12.dp else 8.dp,
+                bottom = if (depth == 0) 12.dp else 8.dp
+            ),
+        color = when {
+            selected -> MaterialTheme.colorScheme.primary
+            !enabled -> MaterialTheme.colorScheme.secondary
+            else -> MaterialTheme.colorScheme.onSurface
+        },
+        fontWeight = if (selected || depth == 0) FontWeight.SemiBold else FontWeight.Normal,
+        fontSize = if (depth == 0) 16.sp else 15.sp,
+        fontFamily = FontFamily.Serif
+    )
 }
 
 @Composable
