@@ -3,9 +3,20 @@ package com.citation.app.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.opds.OpdsClient
 import com.citation.app.data.OreillyAccess
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
+import com.citation.core.library.BookCollection
+import com.citation.core.library.Facet
+import com.citation.core.library.LibraryEntry
+import com.citation.core.library.LibraryFilter
+import com.citation.core.library.LibraryQuery
+import com.citation.core.library.LibrarySort
+import com.citation.core.opds.CatalogPage
+import com.citation.core.opds.CatalogSource
+import com.citation.core.opds.OpdsEntry
+import com.citation.core.opds.OpdsFeed
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.model.TocEntry
@@ -54,6 +65,286 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     val triage: StateFlow<List<CaptureClusterer.ProvisionalSource>> =
         repository.notes.map { CaptureTriage.queue(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // --- The library shelf ----------------------------------------------------------------------
+    //
+    // A flat, unsorted, unsearchable column of titles works for a dozen books and is useless for
+    // hundreds — and connecting a catalog makes hundreds the normal case. All the arranging is
+    // pure `:core` logic (LibraryQuery); this holds the live filter/sort the screen drives.
+
+    /** Every book with its shelf metadata and the collections it sits on. */
+    val library: StateFlow<List<LibraryEntry>> =
+        repository.library.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val collections: StateFlow<List<BookCollection>> =
+        repository.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _libraryFilter = MutableStateFlow(LibraryFilter())
+    val libraryFilter: StateFlow<LibraryFilter> = _libraryFilter.asStateFlow()
+
+    private val _librarySort = MutableStateFlow(LibrarySort.RECENT)
+    val librarySort: StateFlow<LibrarySort> = _librarySort.asStateFlow()
+
+    private val _libraryGrid = MutableStateFlow(true)
+    /** Grid of covers versus a denser list. A per-device preference, not a synced one. */
+    val libraryGrid: StateFlow<Boolean> = _libraryGrid.asStateFlow()
+
+    /** The books actually shown: the shelf, narrowed and ordered. Recomputed live as you type. */
+    val shelf: StateFlow<List<LibraryEntry>> =
+        combine(library, _libraryFilter, _librarySort) { all, filter, sort ->
+            LibraryQuery.apply(all, filter, sort)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * Subject facets over the *unfiltered* library, so the chip row stays put as you narrow rather
+     * than collapsing to whatever is left and stranding you.
+     */
+    val libraryFacets: StateFlow<List<Facet>> =
+        library.map { LibraryQuery.subjectCounts(it).take(24) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setLibraryQuery(text: String) {
+        _libraryFilter.value = _libraryFilter.value.copy(query = text)
+    }
+
+    fun setLibrarySort(sort: LibrarySort) { _librarySort.value = sort }
+
+    fun setLibraryGrid(grid: Boolean) { _libraryGrid.value = grid }
+
+    /** Tapping the active shelf clears it; tapping another switches to it. */
+    fun toggleCollectionFilter(id: String?) {
+        val current = _libraryFilter.value
+        _libraryFilter.value = current.copy(collectionId = if (current.collectionId == id) null else id)
+    }
+
+    fun toggleSubjectFilter(subject: String) {
+        val current = _libraryFilter.value
+        _libraryFilter.value = current.copy(subject = if (current.subject == subject) null else subject)
+    }
+
+    fun toggleFavoritesFilter() {
+        val current = _libraryFilter.value
+        _libraryFilter.value = current.copy(favoritesOnly = !current.favoritesOnly)
+    }
+
+    fun clearLibraryFilter() {
+        _libraryFilter.value = LibraryFilter(query = _libraryFilter.value.query)
+    }
+
+    /** The cover file for a book, or null — the shelf decodes it directly, downsampled. */
+    fun coverFile(bookKey: String): java.io.File? = repository.coverFile(bookKey)
+
+    fun setFavorite(bookKey: String, favorite: Boolean) {
+        viewModelScope.launch { repository.setFavorite(bookKey, favorite) }
+    }
+
+    fun setReadingState(bookKey: String, state: com.citation.core.sync.ReadingState) {
+        viewModelScope.launch { repository.setReadingState(bookKey, state) }
+    }
+
+    fun createCollection(name: String) {
+        viewModelScope.launch { repository.createCollection(name) }
+    }
+
+    fun renameCollection(id: String, name: String) {
+        viewModelScope.launch { repository.renameCollection(id, name) }
+    }
+
+    fun deleteCollection(id: String) {
+        viewModelScope.launch {
+            repository.deleteCollection(id)
+            if (_libraryFilter.value.collectionId == id) toggleCollectionFilter(null)
+        }
+    }
+
+    fun setCollectionMembership(collectionId: String, bookKey: String, member: Boolean) {
+        viewModelScope.launch {
+            if (member) repository.addToCollection(collectionId, bookKey)
+            else repository.removeFromCollection(collectionId, bookKey)
+        }
+    }
+
+    // --- Catalog browsing -----------------------------------------------------------------------
+    //
+    // The acquisition half of the library. Browsing is a native surface rather than a WebView on
+    // someone's site, because the entries are data: that is what lets a tap become a download that
+    // lands in the library with its series, subjects and blurb already attached.
+
+    val catalogs: StateFlow<List<CatalogSource>> =
+        repository.catalogs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _catalogPage = MutableStateFlow<CatalogPage?>(null)
+    /** The catalog page on screen, or null when the browser is closed. */
+    val catalogPage: StateFlow<CatalogPage?> = _catalogPage.asStateFlow()
+
+    private val _catalogLoading = MutableStateFlow(false)
+    val catalogLoading: StateFlow<Boolean> = _catalogLoading.asStateFlow()
+
+    private val _catalogError = MutableStateFlow<String?>(null)
+    /** Why the last catalog fetch failed, phrased for a person. Cleared on the next success. */
+    val catalogError: StateFlow<String?> = _catalogError.asStateFlow()
+
+    /** Previous pages, so Back walks up a catalog the way it walked down. */
+    private val catalogStack = ArrayDeque<CatalogPage>()
+
+    val canGoBackInCatalog: Boolean get() = catalogStack.isNotEmpty()
+
+    /** Make sure the presets exist before the catalogs list is first shown. */
+    fun ensureCatalogs() {
+        viewModelScope.launch { repository.seedCatalogsIfEmpty() }
+    }
+
+    private val _catalogsOpen = MutableStateFlow(false)
+    /** Whether the catalogs surface has taken over the shell (it preempts, like the readers do). */
+    val catalogsOpen: StateFlow<Boolean> = _catalogsOpen.asStateFlow()
+
+    fun openCatalogs() {
+        _catalogsOpen.value = true
+        ensureCatalogs()
+    }
+
+    fun closeCatalogs() {
+        closeCatalog()
+        _catalogsOpen.value = false
+    }
+
+    fun openCatalog(source: CatalogSource) {
+        catalogStack.clear()
+        loadCatalog(source, null, push = false)
+    }
+
+    /** Follow a link within the catalog currently open. */
+    fun followCatalogLink(url: String) {
+        val current = _catalogPage.value ?: return
+        loadCatalog(current.source, url, push = true)
+    }
+
+    fun retryCatalog() {
+        val current = _catalogPage.value
+        if (current != null) loadCatalog(current.source, current.url, push = false)
+    }
+
+    private fun loadCatalog(source: CatalogSource, url: String?, push: Boolean) {
+        viewModelScope.launch {
+            _catalogLoading.value = true
+            _catalogError.value = null
+            val previous = _catalogPage.value
+            when (val result = repository.openCatalog(source, url)) {
+                is OpdsClient.Result.Success -> {
+                    if (push && previous != null) catalogStack.addLast(previous)
+                    _catalogPage.value = result.value
+                }
+                else -> {
+                    _catalogError.value = catalogFailure(result)
+                    // Keep whatever page was already up, so a failed step does not empty the screen.
+                    if (previous == null) _catalogPage.value = CatalogPage(source, url ?: source.rootUrl, emptyFeed(source, url))
+                }
+            }
+            _catalogLoading.value = false
+        }
+    }
+
+    fun searchCatalog(terms: String) {
+        val current = _catalogPage.value ?: return
+        if (terms.isBlank()) return
+        viewModelScope.launch {
+            _catalogLoading.value = true
+            _catalogError.value = null
+            when (val result = repository.searchCatalog(current, terms)) {
+                is OpdsClient.Result.Success -> {
+                    catalogStack.addLast(current)
+                    _catalogPage.value = result.value
+                }
+                else -> _catalogError.value = catalogFailure(result)
+            }
+            _catalogLoading.value = false
+        }
+    }
+
+    /** Step back up the catalog. Returns false when there is nowhere left to go. */
+    fun catalogBack(): Boolean {
+        val previous = catalogStack.removeLastOrNull() ?: return false
+        _catalogPage.value = previous
+        _catalogError.value = null
+        return true
+    }
+
+    fun closeCatalog() {
+        catalogStack.clear()
+        _catalogPage.value = null
+        _catalogError.value = null
+        catalogThumbnails.clear()
+        catalogThumbnailMisses.clear()
+    }
+
+    private fun emptyFeed(source: CatalogSource, url: String?) =
+        OpdsFeed(title = source.name, id = null, links = emptyList(), entries = emptyList(), url = url ?: source.rootUrl)
+
+    private fun catalogFailure(result: OpdsClient.Result<*>): String = when (result) {
+        is OpdsClient.Result.Unauthorized -> "This catalog needs a sign-in. Add one in its settings."
+        is OpdsClient.Result.NotACatalog ->
+            if (result.looksLikeHtml) "That address is a web page, not a catalog. Try adding /opds to it."
+            else "The server didn’t answer with a catalog."
+        is OpdsClient.Result.Unreachable -> "Couldn’t reach it: ${result.message}"
+        is OpdsClient.Result.HttpError -> "The server said ${result.code}."
+        is OpdsClient.Result.Unsupported -> "This catalog doesn’t offer that."
+        is OpdsClient.Result.Success -> ""
+    }
+
+    // Thumbnails are fetched once per browsing session and dropped when the browser closes. A
+    // catalog page is a few dozen covers; caching them is what keeps scrolling back up from
+    // re-downloading the shelf, and clearing on close is what keeps that from growing unbounded.
+    // Concurrent because a screenful of covers all start loading at once; misses are remembered
+    // separately so a cover the server doesn't have is asked for once, not on every recomposition.
+    private val catalogThumbnails = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+    private val catalogThumbnailMisses = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    suspend fun catalogThumbnail(url: String): ByteArray? {
+        catalogThumbnails[url]?.let { return it }
+        if (url in catalogThumbnailMisses) return null
+        val source = _catalogPage.value?.source ?: return null
+        val bytes = repository.catalogImage(source, url)
+        if (bytes == null) catalogThumbnailMisses.add(url) else catalogThumbnails[url] = bytes
+        return bytes
+    }
+
+    private val _acquiring = MutableStateFlow<Set<String>>(emptySet())
+    /** Entry ids currently downloading, so their rows can show it. */
+    val acquiring: StateFlow<Set<String>> = _acquiring.asStateFlow()
+
+    /** Download a catalog entry into the library. */
+    fun acquire(entry: OpdsEntry) {
+        val source = _catalogPage.value?.source ?: return
+        val id = entry.id ?: entry.title
+        if (id in _acquiring.value) return
+        viewModelScope.launch {
+            _acquiring.value = _acquiring.value + id
+            val result = repository.acquire(source, entry)
+            _status.value = when (result) {
+                is CitationRepository.AcquireResult.Added -> "Added “${result.title}” to your library."
+                is CitationRepository.AcquireResult.AlreadyHave -> "“${result.title}” is already in your library."
+                is CitationRepository.AcquireResult.UnsupportedFormat ->
+                    "Citation can’t read ${result.label} files yet."
+                is CitationRepository.AcquireResult.Failed -> "Couldn’t download it: ${result.reason}"
+            }
+            _acquiring.value = _acquiring.value - id
+        }
+    }
+
+    fun addCatalog(name: String, url: String, username: String, password: String) {
+        viewModelScope.launch {
+            val added = repository.addCatalog(name, url, username.takeIf { it.isNotBlank() }, password)
+            _status.value = "Added “${added.name}”."
+        }
+    }
+
+    fun deleteCatalog(id: String) {
+        viewModelScope.launch { repository.deleteCatalog(id) }
+    }
+
+    fun setCatalogCredentials(id: String, username: String, password: String) {
+        viewModelScope.launch { repository.setCatalogCredentials(id, username, password) }
+    }
 
     // --- Notes retrieval: free-text search + tag facet, and Markdown export ---------------------
 
@@ -584,11 +875,14 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
      * cached chapter bodies (the "uncache" the user wants); if it happens to be the one open in the
      * reader, the reader is closed too. Notes on it are kept (they hold their own frozen snapshots).
      */
-    fun deleteBook(book: CitationRepository.BookSummary) {
+    fun deleteBook(book: CitationRepository.BookSummary) = deleteBook(book.key, book.title)
+
+    /** Remove a book by key, for surfaces that hold a library entry rather than a summary. */
+    fun deleteBook(bookKey: String, title: String) {
         viewModelScope.launch {
-            repository.deleteBook(book.key)
-            if (_openBook.value?.key?.toString() == book.key) closeBook()
-            _status.value = "Removed “${book.title}”."
+            repository.deleteBook(bookKey)
+            if (_openBook.value?.key?.toString() == bookKey) closeBook()
+            _status.value = "Removed “$title”."
         }
     }
 

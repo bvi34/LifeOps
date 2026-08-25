@@ -163,7 +163,7 @@ fun CitationHome(vm: ReaderViewModel) {
                 )
                 HomeTab.PERSONAL -> PersonalTab(vm)
                 HomeTab.READ -> ReadTab(vm, onGoToLibrary = { tabOrdinal = HomeTab.LIBRARY.ordinal })
-                HomeTab.LIBRARY -> LibraryTab(vm)
+                HomeTab.LIBRARY -> LibraryScreen(vm)
                 HomeTab.SETTINGS -> SettingsTab(vm)
             }
         }
@@ -236,6 +236,10 @@ private fun NewTab(
                 onClick = onBrowseOreilly,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Browse O'Reilly") }
+            Button(
+                onClick = { vm.openCatalogs() },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Browse catalogs (OPDS · Calibre)") }
             TextButton(
                 onClick = { showOreilly = true },
                 modifier = Modifier.fillMaxWidth()
@@ -450,95 +454,6 @@ private fun resumeHint(book: CitationRepository.BookSummary): String = when {
 // --- Library -----------------------------------------------------------------------------------
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
-@Composable
-private fun LibraryTab(vm: ReaderViewModel) {
-    val books by vm.books.collectAsStateWithLifecycle()
-    // The book the user long-pressed and is being asked to confirm removing.
-    var pendingRemoval by remember { mutableStateOf<CitationRepository.BookSummary?>(null) }
-
-    Scaffold(topBar = { TopAppBar(title = { Text("Library") }) }) { padding ->
-        if (books.isEmpty()) {
-            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "Your library is empty. Add something from the New tab.",
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(24.dp)
-                )
-            }
-        } else {
-            Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-                books.forEach { b ->
-                    Column(
-                        Modifier.fillMaxWidth()
-                            // Tap to open, long-press to remove/uncache — no hidden gesture, the empty
-                            // state and this list are the only library surfaces.
-                            .combinedClickable(
-                                onClick = { vm.open(b.key) },
-                                onLongClick = { pendingRemoval = b }
-                            )
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
-                    ) {
-                        Text(b.title, fontSize = 18.sp, fontFamily = FontFamily.Serif, color = MaterialTheme.colorScheme.onBackground)
-                        b.author?.let { Text(it, fontSize = 14.sp, color = MaterialTheme.colorScheme.secondary) }
-                        Text(
-                            "${b.readingState} · ${b.acquisitionState}",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                    Divider()
-                }
-            }
-        }
-    }
-
-    pendingRemoval?.let { book ->
-        RemoveBookDialog(
-            book = book,
-            onConfirm = { vm.deleteBook(book); pendingRemoval = null },
-            onDismiss = { pendingRemoval = null }
-        )
-    }
-}
-
-/**
- * Confirm removing a book from the library. For a Royal Road serial this is also the "uncache /
- * unfavourite" the user reaches for — the copy spells that out so it's clear what's reclaimed.
- */
-@Composable
-private fun RemoveBookDialog(
-    book: CitationRepository.BookSummary,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    val isRoyalRoad = book.sourceType == SourceType.ROYAL_ROAD.name
-    val isAo3 = book.sourceType == SourceType.AO3.name
-    androidx.compose.material3.AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Remove “${book.title}”?") },
-        text = {
-            Text(
-                when {
-                    isRoyalRoad ->
-                        "This un-favourites the serial and clears its cached chapters. Your notes are kept, " +
-                            "and you can add it again from Browse Royal Road."
-                    isAo3 ->
-                        "This removes the downloaded work from your library. Your notes are kept, " +
-                            "and you can download it again from Browse Archive of Our Own."
-                    else -> "This removes it from your library. Your notes are kept."
-                },
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.secondary
-            )
-        },
-        confirmButton = { Button(onClick = onConfirm) { Text("Remove") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
-}
-
-// --- Settings (sync + storage) -----------------------------------------------------------------
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsTab(vm: ReaderViewModel) {
     val status by vm.status.collectAsStateWithLifecycle()

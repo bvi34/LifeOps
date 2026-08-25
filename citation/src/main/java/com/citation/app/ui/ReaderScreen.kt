@@ -112,6 +112,7 @@ fun ReaderScreen(vm: ReaderViewModel) {
     val pdfSession by vm.pdfSession.collectAsStateWithLifecycle()
     val oreillySession by vm.oreillySession.collectAsStateWithLifecycle()
     val kindleSession by vm.kindleSession.collectAsStateWithLifecycle()
+    val catalogsOpen by vm.catalogsOpen.collectAsStateWithLifecycle()
 
     // Pause the engaged-reading meter whenever the app leaves the foreground, and resume on return —
     // so backgrounded time never accrues. Guarded inside the VM (no-op when no book is being read),
@@ -141,6 +142,13 @@ fun ReaderScreen(vm: ReaderViewModel) {
     }
     if (kindleSession != null) {
         KindleReaderScreen(kindleSession!!, vm)
+        return
+    }
+
+    // Catalog browsing preempts the shell too: it is a place you go into and come back from, not a
+    // tab you leave half-scrolled.
+    if (catalogsOpen) {
+        CatalogsScreen(vm, onClose = { vm.closeCatalogs() })
         return
     }
 
