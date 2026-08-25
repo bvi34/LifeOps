@@ -41,10 +41,10 @@ other feature bolts onto this spine.
 
 | Area | Type(s) | What it does |
 |---|---|---|
-| **Internal model** | `model/Book`, `Chapter`, `BookMetadata`, `SourceType` | The one normalized representation every format produces and the reader alone consumes. A Book = ordered Chapters of flowing text + metadata. |
+| **Internal model** | `model/Book`, `Chapter`, `BookMetadata`, `SourceType`, `TableOfContents` | The one normalized representation every format produces and the reader alone consumes. A Book = ordered Chapters of flowing text + metadata + the publisher's nested contents; a Chapter carries its structure as ranges over that same text (see *Structure over the text* below). |
 | **Entity keys** | `key/EntityKey`, `KeyAllocator` | Partitioned, Jira-style keys (`ER-Book-3`) minted **offline with zero coordination**; each app owns a namespace so peers never collide. Provenance is baked into the key. |
 | **Dedup** | `identity/IdentityKey`, `IdentitySet`, `DedupValidator` | Typed identity per source: RR fiction id (authoritative), ISBN (**edition-aware** — DDIA 1st ≠ 2nd; ISBN-10/13 of one edition match), PDF SHA (strong positive, **weak negative**). Matches on the strongest shared evidence. |
-| **EPUB** | `epub/EpubParser`, `Html` | Zip + OPF + spine → `Book`; deterministic HTML→flowing-text reduction (the stable surface notes anchor against). Dependency-free (`java.util.zip` + regex). Degrades to recovered chapters rather than throwing. |
+| **EPUB** | `epub/EpubParser`, `Html`, `TocDocuments` | Zip + OPF + spine → `Book`, plus the contents document, the cover, the illustrations and the shelf metadata; deterministic HTML→flowing-text reduction (the stable surface notes anchor against). Dependency-free (`java.util.zip` + regex). Degrades to recovered chapters rather than throwing. |
 | **Manifest** | `manifest/IntegrityManifest`, `StorageReport` | Per-favourite expected-vs-cached, gap detection, per-chapter bytes. One object answers "is it whole?" and "what does it cost?", tagged reclaimable vs irreplaceable. |
 | **Anchors** | `anchor/TextAnchor`, `FuzzyAnchor` | Typed anchors (flowing quote+locator; PDF page+quads). **Quote + fuzzy match** re-resolution survives RR edits and re-exports; a deleted passage orphans (NONE) rather than misjumping. |
 | **Notes** | `note/Note`, `Highlight`, `PassageReference`, `SourceDescriptor` | Two kinds kept distinct: **passage-anchored** (one highlight) and **freestanding synthesis** (may cite several). Each carries a **frozen quoted snapshot** + typed anchor, so a note **outlives its source** — intact-but-orphaned, never lost. |
@@ -52,8 +52,9 @@ other feature bolts onto this spine.
 | **Sync** | `sync/Mailbox`, `Packets`, `BookLifecycle`, `BindOrCreate` | Mailbox pattern (state/outbox + inbox, **monotonic version**, idempotent + resumable). Up: telemetry + note packets carrying `{sourceType, sourceId, frozen-context}`. Down: acquire-book intents. **Bind-or-create** reconciles a fuzzy center-authored book to a resolved artifact at one checkpoint. **Two orthogonal state machines** — acquisition (`wanted→resolving→acquired/unavailable`) and reading (`to-read→reading→done`) — never collapsed. |
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
-resolver, the sync protocol, the PDF/O'Reilly pieces, and the storage aggregator below, **`:core`
-has 268 passing JVM unit tests** across 43 suites (run `gradle :core:test`).
+resolver, the sync protocol, the PDF/O'Reilly pieces, the structured document model, the OPDS
+catalog engine, the library query layer, and the storage aggregator below, **`:core` has 346 passing
+JVM unit tests** (run `gradle :core:test`).
 
 ### `:citation` (Android)
 
@@ -281,6 +282,116 @@ book's ASIN appears it hands back the ASIN + a `cleanTitle`'d name (`openKindleF
 re-picking reuses the entry + notes. The old "…add a Kindle book by ASIN" dialog stays as a manual
 fallback for when you already know the ASIN.
 
+## Structure over the text, not instead of it (core built + verified)
+
+The reader was format-blind but also **structure-blind**: every chapter was reduced to a flat
+string, so italics, headings, verse, tables and illustrations were thrown away before the reader
+ever saw them. A technical PDF lost every figure; a footnoted history book silently dropped its
+apparatus; a poem read as prose.
+
+Recovering them is not "render the HTML instead", because that flat string is **load-bearing** — it
+is the surface every frozen note snapshot and every `TextAnchor` offset was captured against.
+Change one character of it and a note taken last year lands on the wrong words, silently. So
+structure is expressed as **ranges into the unchanged text**.
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Blocks** | `doc/DocumentBlock`, `BlockKind` | Paragraph, heading (with level), block quote, verse, code, list item, caption, table — each a `[start, end)` of the chapter's canonical text. Images and rules are **zero-width markers** (`start == end`) that sit *between* characters, so adding illustrations to a book you had already annotated cannot move a single anchor. |
+| **Inline** | `doc/InlineSpan`, `InlineStyle` | Italic, bold, code, underline, strikethrough, super/subscript, small caps, links, and **footnote references** kept distinct from ordinary links — likewise as ranges. |
+| **Reduction** | `doc/HtmlDocument` | The original reduction **instrumented** rather than replaced: it runs the same strip-tags / decode-entities / collapse-whitespace pipeline stage by stage while carrying an offset map, so it can say where each tag landed. Text output is identical *by construction*. |
+| **Segmentation** | `doc/Structure` | Reads structure off those positions. The reduction already emits a blank line at every block close, so a run between blank lines is a block — split further at block-element boundaries, because `<title>t</title></head><body><h1>Heading</h1>` reduces to `tHeading` with no break between them, and every EPUB chapter in the world starts exactly that way. |
+| **Entities/XML** | `doc/Entities`, `xml/Xml`, `xml/Text` | Shared, so the reduction and the heading extractor cannot drift by one entity — a drift here moves offsets. |
+
+`HtmlReductionParityTest` is the load-bearing test: it keeps the **original regex implementation
+verbatim as an oracle** and asserts byte-equality against it over adversarial markup (split
+entities, unclosed script tags, mixed line endings, malformed tags) *and* every content document in
+a real EPUB.
+
+**Android wiring:** `ui/reader/ChapterRender` turns a chapter into what Compose draws — and keeps a
+two-way offset map, which is the whole trick. The drawn string is deliberately **not** the canonical
+text: an image needs a placeholder character to sit on, a list item needs a bullet, a table needs
+separators between cells the reduction runs together, and paragraph layout replaces the blank lines
+between blocks. So the paginator, the highlighter and the selection handler all work in *display*
+offsets, and anything stored or anchored converts back first — which is why a position saved before
+a book had any structure still lands on the right page. Pagination measures with the placeholders
+the renderer reserved, so a page holding a plate accounts for its height instead of overflowing by
+exactly that much; illustrations decode **downsampled** to the text column, because a publisher's
+plate is routinely 2000px wide and decoding several at full size is how a reader runs out of memory.
+Typography follows book convention rather than web convention: paragraphs separated by a first-line
+indent rather than a blank line, and no indent on the paragraph opening a section. Royal Road
+chapters go through the same reduction, so a web serial's italics and scene breaks survive too.
+
+## A book that looks like a book (built + verified)
+
+The EPUB producer now recovers what makes a book recognisable, not just readable:
+
+| Area | What it does |
+|---|---|
+| **Contents** | The publisher's **nested** table of contents — EPUB 3 `nav`, falling back to EPUB 2 `toc.ncx` (still the only contents document in a large share of real libraries). `epub/TocDocuments` walks them one level at a time, so `Part II › Chapter 7 › "Consistent Hashing"` survives instead of a flat spine of a hundred undifferentiated files. An entry pointing **inside** a chapter (`#fragment`) resolves through `Chapter.anchors` to an offset, which is what gives a single-file book a usable contents list at all. |
+| **Cover** | By descending confidence: the EPUB 3 `cover-image` property, the EPUB 2 `<meta name="cover">` pointer, the first image in the first spine document, then any manifest image named like a cover. |
+| **Illustrations** | Every referenced image, with its href resolved from chapter-relative to zip-absolute (`../img/plate%20one.png` inside `OEBPS/text/ch1.xhtml` → `OEBPS/img/plate one.png`), percent-decoding included. |
+| **Shelf metadata** | Publisher, date, blurb, subjects, and **series** — stated two incompatible ways in the wild (calibre's `<meta name="calibre:series">` and EPUB 3's `belongs-to-collection`), both read. |
+
+Stored images live **beside the book in the sovereign store**, named by a digest of their source
+reference rather than their path: an EPUB href can contain `..`, characters the filesystem rejects,
+or arbitrary nesting, and a flat directory of digest-named files has none of those failure modes.
+Only images the content actually references are kept — a publisher's archive routinely carries
+fonts, stylesheets and unused artwork. All of it is **derived**: re-parsing the kept `.epub`
+reproduces every one, so losing them is recoverable in a way losing a note is not.
+
+## The library (core built + verified)
+
+A flat, unsorted, unsearchable column of titles works for a dozen books and is useless for hundreds
+— and connecting a catalog makes hundreds normal within a week. The arranging is pure `:core`:
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Shelf model** | `library/LibraryEntry` | One book as a shelf sees it, with **chapter-granular progress** — the only measure that means the same thing in every reader track. Honest at the edges: an unopened book reads 0%, not 1/n, and a finished one reads 100% whether or not its last chapter was scrolled to the bottom. |
+| **Sort** | `library/LibrarySort`, `LibrarySorting` | Recent / added / title / author / series / progress. *The Time Machine* files under T-i-m-e; "H. G. Wells" sorts as "Wells, H. G."; a series reads in order with standalone books after it; never-opened books sort after opened ones rather than jumbling in at zero. |
+| **Filter + search** | `library/LibraryFilter`, `LibraryQuery` | AND-of-tokens across title, author, series and subjects — narrowing as you type, the same rule note search uses. Composable filters for shelf, source, reading state, subject and starred. |
+| **Facets** | `library/Facet` | Subject and series counts, most-used first. |
+| **Shelves** | `library/BookCollection` | Manual, deliberately not rule-based: a smart collection needs a query language and an explanation for why a book vanished from it; a shelf you put books on needs neither, and series/subject grouping already gives the automatic view. |
+
+**Android wiring:** the Library tab is now covers in a grid or a list, search, a sort menu, shelf and
+subject chips (drawn from the *unfiltered* library, so the row doesn't collapse as you narrow), and
+a book detail sheet — star, mark finished, shelve, remove. A book with no cover gets a woven tile
+keyed to its own title, because a grid half full of grey rectangles is harder to scan than one with
+no covers at all. Covers decode downsampled, off the main thread.
+
+## OPDS catalogs — the acquisition half (core built + verified)
+
+The biggest gap in "universal library reader" was never a format: it was that acquisition meant
+"pick a file, or browse four specific sites". **OPDS is the one protocol that changes that.** A
+single client reaches a self-hosted Calibre content server or Calibre-Web instance, Standard Ebooks,
+Project Gutenberg, Feedbooks, Kavita and Komga, and most library lending platforms — so the work is
+in speaking it properly rather than writing an integration per source.
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Atom (OPDS 1.x)** | `opds/OpdsParser` | What nearly every real server speaks. A nesting-aware scan in the same spirit as the EPUB producer, and lenient where feeds are inconsistent: namespaces, `dc:` vs `dcterms:`, `<content>` vs `<summary>`, escaped-HTML summaries, and navigation feeds mislabelled as acquisition ones. |
+| **JSON (OPDS 2.0)** | `opds/Opds2Parser` | Readium-based servers. Normalised into the **same** `OpdsFeed`, so nothing downstream learns there are two protocols. |
+| **Classification** | `opds/OpdsLink`, `OpdsLinkKind`, `OpdsFormat` | OPDS says everything through `rel` and `type`: whether an entry is a book or a folder, downloadable or only borrowable, where its cover is, how to page and search. Decided once, as data — the UI never pattern-matches a rel string. |
+| **Feed model** | `opds/OpdsFeed`, `OpdsEntry`, `OpdsFacetGroup` | Navigation and publications already separated, paging and facets picked out, and every href **absolute** by parse time. Entry metadata mirrors `BookMetadata` deliberately — a catalog usually knows more than the file does. |
+| **URLs** | `opds/OpdsUrl`, `OpenSearchDescription` | Resolution for every way feeds state a link (absolute, protocol-relative, root-relative, relative, with spaces in it), and OpenSearch template expansion — the indirection OPDS uses instead of inventing its own search. |
+| **Catalogs** | `opds/CatalogSource`, `CatalogPage`, `CatalogDecoder` | Saved catalogs with free public presets as seeds. A typed address is normalised from what a person actually types (`nas.local:8080`) rather than what the protocol wants. The decoder sniffs the body as well as the content type, so a correct feed under the wrong type still parses and an HTML sign-in page is reported as "not a catalog" instead of silently parsing to an empty shelf. |
+
+**Android wiring:** `data/opds/OpdsClient` is the only class that touches a catalog server (the
+`NwsClient`/`NwsParser` split again). It copes with what real servers do — Basic auth, manual
+redirect hops, mislabelled types, a size cap — and returns **typed failures**, because "the NAS is
+asleep" should render as a message with a retry, not a crash. Credentials are held to the catalog's
+**own origin**, so a redirect out to a CDN cannot carry someone's server password with it, and they
+live in a Keystore-backed store (`CatalogCredentials`) rather than the database: a `citation.db`
+travels — the sandbox backup copies it, a restore swaps it in wholesale — so a database carrying
+server passwords would make every backup a credential leak.
+
+`ui/CatalogScreen` browses natively rather than in a WebView, which is the whole point: the entries
+are data, so a tap becomes a download that lands in the library with its series, subjects and blurb
+attached, folders walk in and out with the system Back gesture, and a book that can only be borrowed
+says so instead of offering a button that would fail. On download the catalog's metadata is
+**merged over** the file's — additive, with the file's own values winning, since those came from the
+publisher's package document — and a cover is fetched if the file had none.
+
+
 ## Storage visibility (milestone 7 — core built + verified)
 
 The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does
@@ -361,14 +472,32 @@ the LifeOps side (source→category→resource at week-close) is the next, LifeO
 
 ## Status
 
-All seven task-list milestones plus cross-app highlight capture are implemented; the notes layer now
-closes the loop from capture to **retrieval** — search, tags, and Markdown export — and reading now
-emits **engaged-time telemetry** (honest, idle-proof, source-tagged) up the sync seam. The
-framework-independent spine — internal model, keys, dedup, EPUB/RR/PDF/O'Reilly ingestion, notes +
-degradation + retrieval, the sync seam, storage visibility, and the capture
-provenance/clustering/promotion/triage logic + Kindle notebook parser — lives in `:core` and is fully
-JVM-tested; the Android reader (`:citation`) adds Room storage, the Compose readers, the capture entry
-points, WorkManager jobs, and the sync transport on top (buildable with the Android SDK).
+All seven task-list milestones plus cross-app highlight capture are implemented; the notes layer
+closes the loop from capture to **retrieval** — search, tags, and Markdown export — and reading
+emits **engaged-time telemetry** (honest, idle-proof, source-tagged) up the sync seam.
+
+The reader now renders books rather than only their words: structure as ranges over the unchanged
+canonical text, the publisher's nested contents, covers and illustrations, and the shelf metadata a
+library needs. The library is a shelf you can search, sort, facet and organise; and **OPDS** connects
+it to catalogs — a Calibre server, Standard Ebooks, Gutenberg, Feedbooks, Kavita/Komga — which is
+what turns Citation from an app you put files into, into an app connected to libraries.
+
+The framework-independent spine — internal model, structured document model, keys, dedup,
+EPUB/RR/PDF/O'Reilly ingestion, OPDS catalogs, the library query layer, notes + degradation +
+retrieval, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
+logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**346 tests**); the
+Android reader (`:citation`) adds Room storage, the Compose readers and shelves, the capture entry
+points, WorkManager jobs, the catalog client, and the sync transport on top (buildable with the
+Android SDK).
+
+### What "universal" still does not mean
+
+Worth stating as a boundary rather than leaving as an omission. Citation owns the unencrypted world
+and reads the walled gardens **in place**, capturing annotations only — the O'Reilly and Kindle
+pattern. It does not implement Adobe ADEPT or Readium LCP, so a DRM'd library loan cannot be
+rendered by Citation's own reader; a lending catalog's borrow links are shown honestly rather than
+offered as downloads. Fixed-layout EPUB, audiobooks, RTL and vertical writing modes, and comic
+formats are each a separate track, not a feature — none is started.
 
 ## Cross-cutting principles (already encoded in `:core`)
 

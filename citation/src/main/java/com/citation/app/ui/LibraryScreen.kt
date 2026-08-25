@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -220,7 +219,7 @@ fun LibraryScreen(vm: ReaderViewModel) {
 }
 
 @Composable
-private fun Empty(message: String, action: @Composable (() -> Unit)? = null) {
+private fun Empty(message: String, action: (@Composable () -> Unit)? = null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(

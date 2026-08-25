@@ -3,7 +3,6 @@ package com.citation.app.ui.reader
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,8 +38,9 @@ fun ChapterImage(bitmap: ImageBitmap, contentDescription: String?) {
  * straight to roughly the size actually needed.
  *
  * Every failure is silent and local — a book with one unreadable plate should still open, and the
- * renderer already falls back to naming the missing image. Images are freed when the chapter
- * changes rather than accumulating across a book.
+ * renderer already falls back to naming the missing image. The decoded set is keyed on the chapter's
+ * own images, so moving to the next chapter drops the previous one's rather than accumulating them
+ * across a book.
  */
 @Composable
 fun rememberChapterImages(
@@ -64,10 +64,6 @@ fun rememberChapterImages(
                 decode(file, targetWidthPx)?.let { src to it }
             }.toMap()
         }
-    }
-
-    DisposableEffect(sources) {
-        onDispose { loaded = emptyMap() }
     }
 
     return loaded

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -275,11 +276,13 @@ fun CatalogBrowseScreen(vm: ReaderViewModel, onClose: () -> Unit) {
             Facets(feed = feed, onFacet = vm::followCatalogLink)
 
             LazyColumn(Modifier.fillMaxSize()) {
-                items(feed.navigation, key = { it.id ?: it.title }) { entry ->
+                // Keyed by position as well as identity: a feed may repeat an id, or state none at
+                // all, and a duplicate key crashes a lazy list rather than merely looking wrong.
+                itemsIndexed(feed.navigation, key = { i, e -> "nav-$i-${e.id ?: e.title}" }) { _, entry ->
                     FolderRow(entry) { entry.navigationHref?.let(vm::followCatalogLink) }
                     Divider()
                 }
-                items(feed.publications, key = { it.id ?: it.title }) { entry ->
+                itemsIndexed(feed.publications, key = { i, e -> "pub-$i-${e.id ?: e.title}" }) { _, entry ->
                     PublicationRow(
                         entry = entry,
                         busy = (entry.id ?: entry.title) in acquiring,
