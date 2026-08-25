@@ -40,6 +40,18 @@ interface HealthDao {
     @Query("SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM profiles")
     suspend fun nextSortOrder(): Int
 
+    // --- People sync bookkeeping (see HealthSyncService) ---
+
+    /** The outbound queue, derived from the rows: everything edited since the peers' ack. */
+    @Query("SELECT * FROM profiles WHERE syncVersion > :sinceVersion ORDER BY syncVersion")
+    suspend fun profilesChangedSince(sinceVersion: Long): List<ProfileEntity>
+
+    @Query("SELECT COALESCE(MAX(syncVersion), 0) FROM profiles")
+    suspend fun maxSyncVersion(): Long
+
+    @Query("SELECT * FROM profiles WHERE personKey = :personKey LIMIT 1")
+    suspend fun getProfileByKey(personKey: String): ProfileEntity?
+
     @Upsert
     suspend fun upsertProfile(profile: ProfileEntity)
 

@@ -33,9 +33,24 @@ every query takes the profile id — and the profile bar sits on top of every ta
 a menu. A temperature filed against the wrong child is worse than one never recorded, so who you're
 looking at is always on screen and always one tap to change.
 
+**Health does not own who these people are.** People does — see **[PEOPLE.md](PEOPLE.md)** — and
+Health is a **bind-only peer** on that sync seam: names, relationships and birth dates stay in step
+with the household directory and LifeOps, while everything medical stays here. Health never grows a
+profile for a household member nobody is tracking the health of, so adding someone stays a deliberate
+act; and removing someone means *stop tracking their health*, not *remove them from the household*.
+
+Two consequences worth knowing:
+
+- A person added in People arrives with their **birth date**, which is exactly what the age-aware
+  fever thresholds below need — and which nobody wants to type twice.
+- A profile's **notes are never published**. They hold allergies, conditions and the doctor's number;
+  People has a field called `note` too, but it means "likes hiking, hates crowds". The mapper refuses
+  the association explicitly, because a shared wire makes that leak a one-line mistake.
+
 A birth date is optional but load-bearing: it is what makes the fever assessment age-aware. The
 thresholds for a six-week-old are not the thresholds for an adult, and a profile without a birth date
-is told, on its card, that it will get the adult ones.
+is told, on its card, that it will get the adult ones. It is also the field most likely to arrive
+over the seam rather than being typed here.
 
 Removing a person removes their readings, symptoms, medicines, doses, illnesses and care notes in one
 transaction. "Remove this person" has to mean it.
@@ -107,16 +122,20 @@ make, like a fever heading into its fourth day, which escalates the episode's ca
 └── MainActivity.kt   tabbed shell over the one runtime
 ```
 
-Health depends on no other app module. Nobody else in the suite owns people, temperatures or doses,
-so it owns them outright and shares them the two ways the suite already shares things: a backup
-contributor and a read-only Advisor source.
+Health owns temperatures, doses and illnesses outright and shares them the two ways the suite already
+shares things: a backup contributor and a read-only Advisor source. It does **not** own the people
+they are recorded against, so it depends on `:people` for the sync contract — the packet, binder and
+merge rule — and joins that seam as a bind-only peer. It does not read People's database; the roster
+is replicated over a mailbox, not borrowed live.
 
 ## Storage
 
 One `health.db`, seven tables:
 
 - **`profiles`** — the people. Name, relationship, birth date (ISO `yyyy-MM-dd`), colour, their own
-  baseline temperature, notes (allergies, conditions, the doctor's number).
+  baseline temperature, notes (allergies, conditions, the doctor's number), plus the `personKey` and
+  `syncVersion` that make a profile a peer's view of a household member. *Schema v2 adds those two
+  via `MIGRATION_1_2`; the colour, baseline and notes are Health's own and never leave it.*
 - **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C),
   with the site for temperatures and a nullable episode link.
 - **`symptoms`** — name, severity 1–5, started, ended (null while it's still going).

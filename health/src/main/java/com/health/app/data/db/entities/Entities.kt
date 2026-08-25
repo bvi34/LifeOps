@@ -29,9 +29,19 @@ import androidx.room.PrimaryKey
  * Deleting a profile deletes that person's readings, symptoms, doses, episodes and notes with it —
  * see the cascade queries in the DAO. "Delete this person's data" has to mean it.
  */
-@Entity(tableName = "profiles", indices = [Index("name")])
+@Entity(tableName = "profiles", indices = [Index("name"), Index("syncVersion")])
 data class ProfileEntity(
     @PrimaryKey val id: String,
+    /**
+     * The identity this person keeps across the People sync seam, as distinct from [id], which is
+     * only this database's row id. Null until the seam stamps one.
+     *
+     * Health is a **bind-only** peer: it keeps the people it already tracks in step, but never grows
+     * a profile for a household member nobody is tracking the health of. See `HealthSyncService`.
+     */
+    val personKey: String? = null,
+    /** Bumped by every local edit, left alone by every write that arrived over the seam. */
+    val syncVersion: Long = 0L,
     val name: String,
     /** Free text — "Me", "Daughter", "Mum". Not an enum; households don't fit one. */
     val relationship: String?,
@@ -39,7 +49,15 @@ data class ProfileEntity(
     val birthDate: String?,
     val colorArgb: Long,
     val baselineTempC: Double?,
-    /** Allergies, conditions, the doctor's number — whatever you'd want in front of you at 3am. */
+    /**
+     * Allergies, conditions, the doctor's number — whatever you'd want in front of you at 3am.
+     *
+     * **Never published over the People seam**, even though People has a field of the same name.
+     * They are not the same field: People's note is "likes hiking, hates crowds", and this one is
+     * medical. Mapping one onto the other would quietly copy a person's conditions into the
+     * household directory and from there into LifeOps — which is exactly the kind of leak a shared
+     * wire makes easy and nobody asked for. See `HealthRepository.toPacket`.
+     */
     val notes: String?,
     val sortOrder: Int,
     val archived: Boolean,

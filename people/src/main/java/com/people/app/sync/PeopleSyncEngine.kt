@@ -42,7 +42,22 @@ interface PeerRoster {
  */
 class PeopleSyncEngine(
     private val peer: String,
-    private val roster: PeerRoster
+    private val roster: PeerRoster,
+    /**
+     * Whether an arriving person this peer has never seen becomes a row here.
+     *
+     * True for a peer that holds the household outright — People and LifeOps both do; a person
+     * either app learns about is a person the other should know.
+     *
+     * False for a peer that only *annotates* people. Health is the case this exists for: it tracks
+     * temperatures and doses for the one or two people who are actually ill, and a household roster
+     * that silently grew a medical profile for everyone — including the adults nobody is tracking —
+     * would be worse than no sync at all. A bind-only peer still keeps every person it *has* chosen
+     * in step (names, birth dates, withdrawals), and adding someone stays an explicit act in that
+     * app. It also removes the awkward corollary: a peer that never auto-creates can delete its own
+     * row without the next round handing the person straight back.
+     */
+    private val createUnknown: Boolean = true
 ) {
 
     /** What one round did, for status and logging. */
@@ -108,8 +123,11 @@ class PeopleSyncEngine(
                 }
 
                 PersonBinder.Decision.Create -> {
-                    // A tombstone for somebody we never had is not a person to create.
-                    if (packet.deleted) {
+                    // A tombstone for somebody we never had is not a person to create — and a
+                    // bind-only peer does not create at all, it only keeps up with what it already
+                    // tracks. Either way the cursor still advances: the packet *was* taken, and a
+                    // cursor left behind it would replay the round for ever.
+                    if (packet.deleted || !createUnknown) {
                         unchanged++
                     } else {
                         roster.create(packet)

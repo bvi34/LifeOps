@@ -211,6 +211,7 @@ class PeopleRepository(private val dao: PeopleDao) {
         val existing = dao.getById(localId) ?: return
         dao.upsert(
             existing.copy(
+                personKey = adoptableKey(existing.personKey, packet.personKey),
                 name = packet.name,
                 relationship = packet.relationship,
                 birthDate = packet.birthDate,
@@ -247,6 +248,19 @@ class PeopleRepository(private val dao: PeopleDao) {
         )
         return id
     }
+
+    /**
+     * The key this row should now carry.
+     *
+     * [PersonMerge] converges the two peers onto the lower key, but a peer can only adopt it if no
+     * *other* local row already holds it — otherwise two people here would share one identity, and
+     * on the next round each would bind to whichever the query returned first. When the key is
+     * taken, the row keeps its own and the peers go on binding by name, which is weaker but correct.
+     */
+    private suspend fun adoptableKey(current: String, incoming: String): String =
+        if (incoming == current) current
+        else if (dao.getByKey(incoming) == null) incoming
+        else current
 
     suspend fun allPeople(): List<PersonEntity> = dao.getAll()
 

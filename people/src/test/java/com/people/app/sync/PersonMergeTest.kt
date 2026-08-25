@@ -65,6 +65,26 @@ class PersonMergeTest {
     }
 
     @Test
+    fun `two peers that bound by name converge on one key, from either direction`() {
+        // Each side invented its own key for the same human before they ever met.
+        val mine = base.copy(personKey = "zzz-local", updatedAt = 1_000L)
+        val theirs = base.copy(personKey = "aaa-remote", updatedAt = 2_000L)
+
+        assertEquals("aaa-remote", PersonMerge.merge(mine, theirs).merged.personKey)
+        assertEquals("aaa-remote", PersonMerge.merge(theirs, mine).merged.personKey)
+    }
+
+    @Test
+    fun `key convergence is stable once reached`() {
+        // The failure this guards against is the obvious fix — "adopt the incoming key" — under
+        // which both peers adopt the other's and swap places every round for ever.
+        val settled = base.copy(personKey = "aaa-remote", updatedAt = 2_000L)
+        val result = PersonMerge.merge(settled, settled.copy(updatedAt = 3_000L))
+        assertEquals("aaa-remote", result.merged.personKey)
+        assertFalse(PersonMerge.merge(result.merged, result.merged).changed)
+    }
+
+    @Test
     fun `archived is a state, so the newer record's answer stands`() {
         val local = base.copy(archived = true, updatedAt = 1_000L)
         val incoming = base.copy(archived = false, updatedAt = 2_000L)

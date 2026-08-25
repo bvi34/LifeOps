@@ -90,8 +90,10 @@ class PeopleSyncEngineTest {
         val merged = roster.rows.values.single()
         assertEquals("Robert", merged.name)
         assertEquals("555-0100", merged.phone)
-        // The local key stands once bound, so the two peers don't trade keys back and forth.
-        assertEquals("people-key", merged.personKey)
+        // Two invented keys for one human converge on the lower of them, deterministically, so both
+        // peers land on the same one instead of each keeping its own and relying on the name
+        // continuing to match for ever.
+        assertEquals("lifeops-key", merged.personKey)
     }
 
     @Test
@@ -108,6 +110,49 @@ class PeopleSyncEngineTest {
     }
 
     @Test
+    fun `a bind-only peer keeps up with its own people and ignores the rest`() {
+        // Health tracks one child. The household has four people; three of them are nobody Health
+        // has any business growing a medical profile for.
+        val health = FakeRoster("health")
+        health.put(PersonPacket("key-ellie", "Ellie", updatedAt = 1_000L))
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, createUnknown = false)
+
+        val applied = engine.applyInbound(
+            envelope(
+                Peers.PEOPLE,
+                1L to PersonPacket("key-ellie", "Ellie", birthDate = "2019-04-02", updatedAt = 2_000L),
+                2L to PersonPacket("key-rob", "Rob", updatedAt = 2_000L),
+                3L to PersonPacket("key-marta", "Marta", updatedAt = 2_000L)
+            ),
+            sinceVersion = 0L
+        )
+
+        assertEquals(0, applied.created)
+        assertEquals(1, applied.updated)
+        assertEquals(2, applied.unchanged)
+        assertEquals(1, health.rows.size)
+        // The person it does track gained the birth date — which is the whole point for Health.
+        assertEquals("2019-04-02", health.byName("Ellie")!!.birthDate)
+        // And the cursor still cleared all three, so the skipped two don't replay for ever.
+        assertEquals(3L, applied.ackedThrough)
+    }
+
+    @Test
+    fun `a bind-only peer still accepts a withdrawal for somebody it tracks`() {
+        val health = FakeRoster("health")
+        health.put(PersonPacket("key-ellie", "Ellie", updatedAt = 1_000L))
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, createUnknown = false)
+
+        engine.applyInbound(
+            envelope(Peers.PEOPLE, 1L to PersonPacket("key-ellie", "Ellie", deleted = true, updatedAt = 2_000L)),
+            sinceVersion = 0L
+        )
+
+        // Archived, not erased: the readings recorded against her are still there.
+        assertTrue(health.rows.values.single().archived)
+    }
+
+    @Test
     fun `outbound carries the changes in version order with our ack cursors`() {
         val envelope = engine(FakeRoster("p")).buildOutbound(
             changes = listOf(
@@ -120,6 +165,32 @@ class PeopleSyncEngineTest {
         assertEquals(listOf(1L, 3L), envelope.packets.map { it.version })
         assertEquals(12L, envelope.ackFor(Peers.LIFEOPS))
         assertEquals(0L, envelope.ackFor(Peers.HEALTH))
+    }
+
+    @Test
+    fun `binding by name survives a later rename, because the key converged`() {
+        // Round one: two peers holding the same person under their own invented keys, bound by name.
+        val people = FakeRoster("people")
+        people.put(PersonPacket("zzz-people", "Ellie", updatedAt = 1_000L))
+        val engine = PeopleSyncEngine(Peers.PEOPLE, people)
+
+        engine.applyInbound(
+            envelope(Peers.LIFEOPS, 1L to PersonPacket("aaa-lifeops", "Ellie", updatedAt = 2_000L)),
+            sinceVersion = 0L
+        )
+        assertEquals("aaa-lifeops", people.rows.values.single().personKey)
+
+        // Round two: the other peer renames her. Nothing binds by name any more — the key has to
+        // carry it, which is exactly what round one was for.
+        val applied = engine.applyInbound(
+            envelope(Peers.LIFEOPS, 2L to PersonPacket("aaa-lifeops", "Ellie Watts", updatedAt = 3_000L)),
+            sinceVersion = 1L
+        )
+
+        assertEquals(0, applied.created)
+        assertEquals(1, applied.updated)
+        assertEquals(1, people.rows.size)
+        assertEquals("Ellie Watts", people.rows.values.single().name)
     }
 
     @Test

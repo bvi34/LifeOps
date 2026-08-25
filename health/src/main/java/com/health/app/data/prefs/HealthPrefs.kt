@@ -32,6 +32,16 @@ class HealthPrefs(context: Context) {
         get() = TempUnit.fromKey(prefs.getString(KEY_TEMP_UNIT, TempUnit.CELSIUS.key)!!)
         set(value) = prefs.edit().putString(KEY_TEMP_UNIT, value.key).apply()
 
+    /**
+     * The highest version of a People-seam peer's packets Health has durably taken. Keyed by peer so
+     * a fourth peer needs no new preference and no migration.
+     */
+    fun syncCursor(peer: String): Long = prefs.getLong("sync_cursor_$peer", 0L)
+
+    fun setSyncCursor(peer: String, version: Long) {
+        prefs.edit().putLong("sync_cursor_$peer", version).apply()
+    }
+
     /** Emits on every change to [key], starting with the value at collection time. */
     private fun <T> observe(key: String, read: () -> T): Flow<T> = callbackFlow {
         trySend(read())

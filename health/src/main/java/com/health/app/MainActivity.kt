@@ -60,6 +60,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HealthTheme {
+                // Reconcile with the household directory when Health opens. The round is idempotent
+                // and best-effort — a missing or half-written envelope must never block the screen —
+                // and it is what brings a person's birth date over from People, which is exactly
+                // what the age-aware fever rules need.
+                LaunchedEffect(Unit) { runCatching { app.syncService.sync(app.peers) } }
+
                 val nav = rememberNavController()
                 val backStack by nav.currentBackStackEntryAsState()
                 val current = backStack?.destination

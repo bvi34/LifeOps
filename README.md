@@ -45,9 +45,12 @@ the receipts.
 > about them — and it keeps **LifeOps in step over a two-way sync seam**, the same mailbox spine
 > Citation rides. Both apps can edit the same person (LifeOps mints them from calendar attendees;
 > you type birth dates into People), so the roster is **replicated rather than borrowed**: each peer
-> keeps its own rows and they reconcile. The merge rule is *newer wins field by field, but a blank
-> never beats a value* — record-level last-write-wins would let whichever app you touched last erase
-> the other's half of the person. LifeOps' `persons` table and all five foreign keys into it were
+> keeps its own rows and they reconcile. **Health is on the seam too**, as a *bind-only* peer: it
+> keeps the people it already tracks in step (a birth date arriving from People is exactly what its
+> age-aware fever rules need) but never grows a medical profile for a household member nobody is
+> tracking. The merge rule is *newer wins field by field, but a blank never beats a value* —
+> record-level last-write-wins would let whichever app you touched last erase the other's half of
+> the person. LifeOps' `persons` table and all five foreign keys into it were
 > left exactly as they were; the migration that made it a peer is purely additive. The contract —
 > packet, binder, merge, engine — is pure JVM in `people/sync/` and unit-tested, including a full
 > two-peer round.

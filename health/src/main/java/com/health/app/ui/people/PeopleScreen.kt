@@ -123,6 +123,24 @@ fun PeopleScreen(vm: PeopleViewModel, showAddInitially: Boolean = false, onAddHa
                 }
             }
 
+            item(key = "directory") {
+                SectionCard(title = "Where these names come from") {
+                    Text(
+                        "The people here are the household directory's. Names, relationships and " +
+                            "birth dates stay in step with the People app and LifeOps — edit one " +
+                            "and the others follow.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "What stays in Health: the notes below, their usual temperature, and " +
+                            "everything recorded about their health. Adding someone here adds them " +
+                            "to the household; removing them only stops Health tracking them.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             item(key = "settings") {
                 SectionCard(title = "Display") {
                     Text("Show temperatures in", style = MaterialTheme.typography.bodySmall)
@@ -182,7 +200,9 @@ fun PeopleScreen(vm: PeopleViewModel, showAddInitially: Boolean = false, onAddHa
             text = {
                 Text(
                     "This deletes their readings, symptoms, medicines, doses, illnesses and care " +
-                        "notes as well. It can't be undone from inside Health — only from a backup."
+                        "notes as well. It can't be undone from inside Health — only from a backup.\n\n" +
+                        "${target.name} stays in the household directory: this only stops Health " +
+                        "tracking them."
                 )
             },
             confirmButton = {

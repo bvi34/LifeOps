@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.health.app.data.db.dao.HealthDao
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
@@ -20,7 +22,7 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 1
+const val HEALTH_DB_VERSION = 2
 
 /**
  * Health's own store: people, and everything recorded about them. Nothing here is shared with, or
@@ -51,6 +53,26 @@ abstract class HealthDatabase : RoomDatabase() {
     companion object {
         const val DB_NAME = "health.db"
 
+        /**
+         * v2 makes Health a peer on the People sync seam: a profile gains the cross-peer
+         * [ProfileEntity.personKey] and the [ProfileEntity.syncVersion] stamp that decides what gets
+         * published. Existing profiles are seeded at version 1 so the people already being tracked
+         * are offered to the household directory on the first round, and keyed from their row id so
+         * they publish under a key the other peers will keep.
+         *
+         * Health never shipped at v1, so in practice this migration runs for nobody — it exists
+         * because a schema that changes without one is a crash waiting for whoever did install it.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN personKey TEXT")
+                db.execSQL("ALTER TABLE profiles ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE profiles SET personKey = id WHERE personKey IS NULL")
+                db.execSQL("UPDATE profiles SET syncVersion = 1 WHERE syncVersion = 0")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_profiles_syncVersion ON profiles(syncVersion)")
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -60,7 +82,7 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

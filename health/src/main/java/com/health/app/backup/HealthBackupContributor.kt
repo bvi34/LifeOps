@@ -18,9 +18,12 @@ import java.io.File
  *
  * Health's preferences go with it, but only Health's: the hosted apps share one process and
  * therefore one `shared_prefs/` directory, so this contributor touches only files named `health_*`,
- * exactly as LifeOps confines itself to `lifeops*`. The two settings in there (selected person,
- * display unit) are small but worth carrying — restoring onto a new device and finding it opens on
- * the wrong family member is a poor first impression of a restore.
+ * exactly as LifeOps confines itself to `lifeops*`. The settings in there are small but worth
+ * carrying — restoring onto a new device and finding it opens on the wrong family member is a poor
+ * first impression of a restore — and they also hold Health's **People-seam cursors**. Those matter
+ * more than they look: a restore that reset them to zero would re-take every packet still sitting in
+ * the peers' envelopes, resurrecting people who had since been archived here because their old
+ * packets would arrive looking newer than nothing at all.
  *
  * Restore is a whole-file swap of `health.db`, so a Health restart is expected afterwards — the
  * sandbox surfaces that.

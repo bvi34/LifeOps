@@ -37,9 +37,16 @@ object PersonMerge {
         val older = if (newer === incoming) local else incoming
 
         val merged = PersonPacket(
-            // The key is identity, not content: once bound, the local key stands. Adopting the
-            // incoming one on every merge would make two peers trade keys back and forth forever.
-            personKey = local.personKey,
+            // Identity converges on the lower key, and this is the only rule here that is about
+            // agreement rather than content.
+            //
+            // Two peers that bound by email or name are holding the same human under two invented
+            // keys. Leaving each with its own works only for as long as the *name* keeps matching —
+            // rename the person on one side and the next round binds nothing and creates a
+            // duplicate. Simply adopting the incoming key doesn't fix it either: both sides would
+            // adopt the other's and swap, round after round. Taking the lower of the two is
+            // deterministic, so both peers reach the same key from either direction and stay there.
+            personKey = minOf(local.personKey, incoming.personKey),
             name = pick(newer.name.ifBlank { null }, older.name.ifBlank { null }) ?: local.name,
             relationship = pick(newer.relationship, older.relationship),
             birthDate = pick(newer.birthDate, older.birthDate),

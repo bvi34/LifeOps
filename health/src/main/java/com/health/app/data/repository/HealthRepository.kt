@@ -33,6 +33,8 @@ import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
+import com.people.app.sync.PersonBinder
+import com.people.app.sync.PersonPacket
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
@@ -107,7 +109,11 @@ class HealthRepository(
                 sortOrder = dao.nextSortOrder(),
                 archived = false,
                 createdAt = timestamp,
-                updatedAt = timestamp
+                updatedAt = timestamp,
+                // Locally authored: mint a key and publish on the next round, so somebody added
+                // here reaches the household directory rather than existing only in Health.
+                personKey = newId(),
+                syncVersion = dao.maxSyncVersion() + 1
             )
         )
         // First person in an empty app becomes the selection, so the app opens on them.
@@ -126,18 +132,81 @@ class HealthRepository(
                 baselineTempC = profile.baselineTempC,
                 notes = profile.notes?.trim()?.ifBlank { null },
                 archived = profile.archived,
-                updatedAt = now()
+                updatedAt = now(),
+                syncVersion = dao.maxSyncVersion() + 1
             )
         )
     }
 
-    /** Remove a person and everything recorded about them (see [HealthDao.deleteProfileCascade]). */
+    /**
+     * Remove a person and everything recorded about them (see [HealthDao.deleteProfileCascade]).
+     *
+     * Nothing is published. Removing somebody from Health means "stop tracking their health", not
+     * "remove them from the household" — the other peers keep them, and because Health never
+     * auto-creates a profile for a person it doesn't track, the next round doesn't hand them back.
+     */
     suspend fun deleteProfile(profileId: String) {
         dao.deleteProfileCascade(profileId)
         if (prefs.selectedProfileId == profileId) {
             prefs.selectedProfileId = dao.getProfiles().firstOrNull { !it.archived }?.id
         }
     }
+
+    // --- the People sync seam ---
+    //
+    // Health is a **bind-only** peer: it keeps the people it already tracks in step with the
+    // household directory — names, birth dates (which the fever rules depend on), withdrawals — but
+    // never grows a profile for a household member nobody is tracking the health of. Adding someone
+    // to Health stays a deliberate act, and removing them here means "stop tracking their health",
+    // not "remove them from the household".
+    //
+    // As everywhere on this seam: a local edit stamps a new syncVersion, a write that arrived over
+    // the seam does not.
+
+    /** Everything edited locally since [sinceVersion], as packets, oldest first. */
+    suspend fun profileChangesSince(sinceVersion: Long): List<Pair<Long, PersonPacket>> =
+        dao.profilesChangedSince(sinceVersion).map { it.syncVersion to it.toPacket() }
+
+    suspend fun currentSyncVersion(): Long = dao.maxSyncVersion()
+
+    suspend fun bindingCandidates(): List<PersonBinder.Candidate> =
+        dao.getProfiles().map { PersonBinder.Candidate(it.id, it.personKey, it.name, email = null) }
+
+    suspend fun profileEntity(id: String): ProfileEntity? = dao.getProfile(id)
+
+    /**
+     * Store a record merged from another peer, without stamping a new outgoing version.
+     *
+     * Only the identity fields are touched. [ProfileEntity.notes] is pointedly absent — Health's
+     * notes are medical and People's are not, so the seam neither publishes nor accepts them — and
+     * so are the baseline temperature and colour, which no other peer can show or edit.
+     */
+    suspend fun applyMergedProfile(localId: String, packet: PersonPacket) {
+        val existing = dao.getProfile(localId) ?: return
+        dao.upsertProfile(
+            existing.copy(
+                personKey = adoptableKey(existing.personKey, packet.personKey),
+                name = packet.name,
+                relationship = packet.relationship,
+                birthDate = packet.birthDate,
+                archived = packet.archived,
+                updatedAt = packet.updatedAt
+            )
+        )
+    }
+
+    /**
+     * The key this row should now carry.
+     *
+     * [PersonMerge] converges the two peers onto the lower key, but a peer can only adopt it if no
+     * *other* local row already holds it — otherwise two people here would share one identity, and
+     * on the next round each would bind to whichever the query returned first. When the key is
+     * taken, the row keeps its own and the peers go on binding by name, which is weaker but correct.
+     */
+    private suspend fun adoptableKey(current: String?, incoming: String): String =
+        if (incoming == current) incoming
+        else if (dao.getProfileByKey(incoming) == null) incoming
+        else current ?: incoming
 
     // --- readings -----------------------------------------------------------------------------
 
@@ -539,6 +608,35 @@ fun ProfileEntity.toModel() = Profile(
     notes = notes,
     sortOrder = sortOrder,
     archived = archived
+)
+
+/**
+ * This profile as the People sync seam sees them — identity only.
+ *
+ * Three fields are deliberately absent, and the reasons differ:
+ *
+ *  - [ProfileEntity.notes] is **medical** — allergies, conditions, the doctor's number. People has a
+ *    field called `note` too, but it means "likes hiking, hates crowds". Mapping one onto the other
+ *    would copy a person's conditions into the household directory and from there into LifeOps. A
+ *    shared wire makes that leak a one-line mistake, so it is refused explicitly rather than left to
+ *    whoever next edits this mapper.
+ *  - [ProfileEntity.baselineTempC] and the colour are Health's own reading of a person; no other
+ *    peer can show or edit them.
+ *  - Email and phone are absent because Health has no columns for them. That costs a little binding
+ *    strength on the very first round — Health matches by name until it has a key — and nothing
+ *    afterwards, since the key is what binds from then on.
+ */
+fun ProfileEntity.toPacket() = PersonPacket(
+    personKey = personKey ?: id,
+    name = name,
+    relationship = relationship,
+    birthDate = birthDate,
+    email = null,
+    phone = null,
+    note = null,
+    archived = archived,
+    updatedAt = updatedAt,
+    deleted = false
 )
 
 fun ReadingEntity.toModel() = Reading(

@@ -5,6 +5,10 @@ import android.content.Context
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.repository.HealthRepository
+import com.health.app.data.repository.HealthSyncService
+import com.people.app.PeopleApp
+import com.people.app.sync.Peers
+import java.io.File
 
 /**
  * Health's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
@@ -18,6 +22,22 @@ class HealthApp private constructor(private val app: Application) {
     val database by lazy { HealthDatabase.getInstance(app) }
     val prefs by lazy { HealthPrefs(app) }
     val repository by lazy { HealthRepository(database.healthDao(), prefs) }
+
+    /**
+     * Health's side of the People sync seam. The folder is People's — `filesDir/people-sync` — so
+     * all three peers reconcile in one place rather than each inventing its own mailbox.
+     */
+    val syncService by lazy {
+        HealthSyncService(
+            repository = repository,
+            syncDir = File(app.filesDir, PeopleApp.SYNC_DIR),
+            readCursor = { peer -> prefs.syncCursor(peer) },
+            writeCursor = { peer, version -> prefs.setSyncCursor(peer, version) }
+        )
+    }
+
+    /** The peers Health reconciles with. It binds to people they hold; it never creates from them. */
+    val peers: List<String> = listOf(Peers.PEOPLE, Peers.LIFEOPS)
 
     companion object {
         @Volatile

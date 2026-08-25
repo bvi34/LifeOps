@@ -36,8 +36,14 @@ class PeopleApp private constructor(private val app: Application) {
         )
     }
 
-    /** The peers People exchanges envelopes with. Health joins this list when it takes the seam. */
-    val peers: List<String> = listOf(Peers.LIFEOPS)
+    /**
+     * The peers People exchanges envelopes with.
+     *
+     * LifeOps holds the household outright and creates freely. Health is on the seam too but is
+     * bind-only — it keeps the people it already tracks in step and never grows a medical profile
+     * for one it doesn't — so People publishes to it just the same and simply hears less back.
+     */
+    val peers: List<String> = listOf(Peers.LIFEOPS, Peers.HEALTH)
 
     companion object {
         const val SYNC_DIR = "people-sync"

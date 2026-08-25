@@ -3,9 +3,10 @@ plugins {
     // *library* module consumed by the Operations Sandbox container app (:app); it owns no launcher
     // or Application of its own.
     //
-    // Unlike Logistics it depends on no other app module: nobody else owns people, temperatures or
-    // doses, so Health owns them outright and shares them the two ways the suite already shares
-    // things — a BackupContributor (:backupkit) and a read-only Advisor knowledge source.
+    // Health owns temperatures, doses and illnesses outright. It does *not* own the people they are
+    // recorded against — People does — so it joins the People sync seam as a bind-only peer and
+    // shares its own data the two ways the suite already shares things: a BackupContributor
+    // (:backupkit) and a read-only Advisor knowledge source.
     //
     // The judgement calls — what counts as a fever at this age and site, whether the next dose is
     // due yet, how an illness is going — live in `logic/` as framework-free Kotlin and are
@@ -46,6 +47,10 @@ ksp {
 dependencies {
     // The Operations Sandbox backup format/engine (pure JVM). Health supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The People directory module — for the *sync contract* (packet, binder, merge, engine), not to
+    // read People's database. Health is a bind-only peer on that seam: it keeps the people it
+    // already tracks in step and never grows a profile for one it doesn't. See docs/PEOPLE.md.
+    implementation(project(":people"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
