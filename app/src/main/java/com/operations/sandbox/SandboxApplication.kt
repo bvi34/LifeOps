@@ -3,6 +3,7 @@ package com.operations.sandbox
 import android.app.Application
 import com.advisor.app.AdvisorApp
 import com.citation.app.CitationApplication
+import com.health.app.HealthApp
 import com.lifeops.app.LifeOpsApp
 import com.logistics.app.LogisticsApp
 
@@ -13,7 +14,8 @@ import com.logistics.app.LogisticsApp
  *
  * Startup order is intentional but not coupled: LifeOps runs its heavy launch work (week rollover,
  * reminder scheduling, the WAL-checkpoint lifecycle callback, the sleep service); Citation builds
- * its repository asynchronously and registers its periodic jobs. Both install exactly once.
+ * its repository asynchronously and registers its periodic jobs. Logistics, Advisor and Health are
+ * lazy containers that cost nothing until their screens are opened. Each installs exactly once.
  */
 class SandboxApplication : Application() {
     override fun onCreate() {
@@ -22,5 +24,6 @@ class SandboxApplication : Application() {
         CitationApplication.install(this)
         LogisticsApp.install(this)
         AdvisorApp.install(this)
+        HealthApp.install(this)
     }
 }

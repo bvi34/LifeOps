@@ -1,7 +1,7 @@
 # Advisor
 
 Advisor is the suite's **private, on-device assistant** — the fourth app hosted in the Operations
-Sandbox (`:advisor`, alongside LifeOps, Citation and Logistics). It answers questions **grounded in
+Sandbox (`:advisor`, alongside LifeOps, Citation, Logistics and Health). It answers questions **grounded in
 your own data** across the whole suite, using a small **RAG** (retrieval-augmented generation)
 pipeline, and it does so under an explicit **per-app permission gate**: it can read an app only after
 you turn that app on.
@@ -267,6 +267,13 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 | **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, projects, milestones — and the **Collection**: books (reading state, logged minutes, category) with their notes, recipes (servings, ingredient names, method, source link), and the someday backlog of future projects with their notes |
 | **Citation** | library books (title, author, reading state) and reading notes |
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
+| **Health** | the household's people, their recent temperatures (each carrying Health's own fever assessment) and other readings, symptoms, medicines with their dose limits, doses given, illnesses and care notes |
+
+Health's source is the one that names its subject in **every** document it emits. The corpus is flat
+text with no per-row scoping, so "38.4 at 21:00" without a name is a document that can be retrieved
+into an answer about the wrong person — an error of a different kind from a stale pantry count. For
+the same reason its readings are summarised rather than enumerated: a year of temperatures would
+otherwise drown every other source. See **[HEALTH.md](HEALTH.md)**.
 
 The Collection is indexed because that's where a whole class of question lives — "what can I make
 with the beef", "didn't I have an idea about X", "how long have I spent on this book" — and until it

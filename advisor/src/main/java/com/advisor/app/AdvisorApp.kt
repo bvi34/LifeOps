@@ -14,6 +14,7 @@ import com.advisor.app.data.prompt.SystemPromptStore
 import com.advisor.app.data.repository.AdvisorRepository
 import com.advisor.app.data.source.CachingKnowledgeSource
 import com.advisor.app.data.source.CitationKnowledgeSource
+import com.advisor.app.data.source.HealthKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
@@ -29,6 +30,7 @@ import com.advisor.app.logic.Qwen3LlmEngine
 import com.advisor.app.logic.TaskWriter
 import com.advisor.app.logic.VectorCache
 import com.citation.app.data.db.CitationDatabase
+import com.health.app.data.db.HealthDatabase
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.logistics.app.data.db.LogisticsDatabase
 import java.io.File
@@ -77,6 +79,11 @@ class AdvisorApp private constructor(private val app: Application) {
             },
             LogisticsKnowledgeSource(app).cachedOn("pantry_items", "grocery_items") {
                 LogisticsDatabase.getInstance(app)
+            },
+            HealthKnowledgeSource(app).cachedOn(
+                "profiles", "readings", "symptoms", "medications", "doses", "episodes", "care_notes"
+            ) {
+                HealthDatabase.getInstance(app)
             }
         )
     }
