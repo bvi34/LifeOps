@@ -97,6 +97,8 @@ private fun describe(app: SourceApp): String = when (app) {
     SourceApp.HEALTH -> "Household health records: who's in them, temperatures and other readings, " +
         "symptoms, medicines and doses, and past illnesses. The most sensitive data in the suite — " +
         "and, like every other source here, read only after you grant it."
+    SourceApp.PEOPLE -> "The household directory: who is in it, how to reach them, the dates that " +
+        "come round, and the notes kept about them."
 }
 
 /**

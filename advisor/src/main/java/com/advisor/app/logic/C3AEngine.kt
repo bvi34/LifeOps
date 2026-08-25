@@ -238,7 +238,8 @@ class C3AEngine(
             SourceApp.LIFEOPS to setOf("task", "tasks", "week", "aspect", "aspects", "project", "projects", "milestone", "milestones", "goal", "goals", "priority", "deadline"),
             SourceApp.CITATION to setOf("book", "books", "read", "reading", "note", "notes", "author", "library", "highlight", "highlights"),
             SourceApp.LOGISTICS to setOf("pantry", "grocery", "groceries", "food", "stock", "ingredient", "ingredients", "recipe", "recipes", "meal", "meals"),
-            SourceApp.HEALTH to setOf("temperature", "temperatures", "fever", "temp", "sick", "ill", "illness", "symptom", "symptoms", "medicine", "medicines", "dose", "doses", "medication", "paracetamol", "ibuprofen", "cough", "poorly", "doctor")
+            SourceApp.HEALTH to setOf("temperature", "temperatures", "fever", "temp", "sick", "ill", "illness", "symptom", "symptoms", "medicine", "medicines", "dose", "doses", "medication", "paracetamol", "ibuprofen", "cough", "poorly", "doctor"),
+            SourceApp.PEOPLE to setOf("who", "person", "people", "birthday", "birthdays", "anniversary", "household", "family", "contact", "email", "phone", "age")
         )
     }
 }

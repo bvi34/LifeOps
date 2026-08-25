@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- People requests no permissions. It notably does *not* read the device's contacts: the
+         household directory is what you typed into it, not a mirror of your phone book, and the
+         moment it could read contacts it would become the app that quietly slurped them. -->
+
+    <!-- People is a library module: no app-level attributes here (name/icon/theme/label live on the
+         :app host). Only People's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.People"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

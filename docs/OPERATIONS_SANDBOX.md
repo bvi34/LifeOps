@@ -5,7 +5,7 @@ Docker-style host crossed with a single sign-on hub. It is the one installed app
 launcher icon. Opening it gives you a home screen that:
 
 - lists the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
-  **Advisor**, and **Health**),
+  **Advisor**, **Health**, and **People**),
 - opens any one of them, and
 - backs the **whole suite up into a single `.zip`** and **restores from that same zip**.
 
@@ -162,7 +162,9 @@ answer grounded questions; see **[ADVISOR.md](ADVISOR.md)**. **Health** (`:healt
 recent example, and the cleanest illustration of how small the plug is: an `AppId.HEALTH`, a
 whole-file `HealthBackupContributor`, one line in `BackupCenter`, one in `SandboxApplication`, one
 branch in `openApp`, and one entry in Advisor's (permission-gated) source list — see
-**[HEALTH.md](HEALTH.md)**.
+**[HEALTH.md](HEALTH.md)**. **People** (`:people`) plugs in the same way and then does something no
+other hosted app does: it **syncs two-way with LifeOps** over a shared folder rather than reading its
+database, because both ends can edit the same person — see **[PEOPLE.md](PEOPLE.md)**.
 
 ---
 

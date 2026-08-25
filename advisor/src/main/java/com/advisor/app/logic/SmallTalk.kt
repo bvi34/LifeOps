@@ -284,7 +284,8 @@ object SmallTalk {
         SourceApp.LIFEOPS to "• \"What should I focus on this week?\" or \"What tasks are due?\"",
         SourceApp.CITATION to "• \"What am I reading?\" or \"Show me my notes on a book.\"",
         SourceApp.LOGISTICS to "• \"What's running low in the pantry?\" or \"What can I cook tonight?\"",
-        SourceApp.HEALTH to "• \"When did she last have paracetamol?\" or \"How long was his fever?\""
+        SourceApp.HEALTH to "• \"When did she last have paracetamol?\" or \"How long was his fever?\"",
+        SourceApp.PEOPLE to "• \"Whose birthday is next?\" or \"What's my sister's email?\""
     )
 
     // Social openers/closers to peel off before meta-matching, so "hey, what can you do?" still lands.

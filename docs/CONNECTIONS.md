@@ -102,7 +102,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `note` | `add`, `delete` | `NoteService` | Task notes. |
 | `aspect` | `create`, `rename`, `archive` | `AspectService` | `create` is find-or-create. |
 | `category` | `create`, `archive` | `AspectService` | `create` needs `aspectId`; find-or-create. |
-| `person` | `create`, `rename`, `archive`, `delete`, `addNote`, `attach`, `detach` | `PersonService` | `attach`/`detach` link a person to a task. |
+| `person` | `create`, `rename`, `archive`, `delete`, `addNote`, `attach`, `detach` | `PersonService` | `attach`/`detach` link a person to a task. Every write here also stamps the row for the **People sync seam**, so a person created through a route reaches People on the next round exactly like one typed into a screen — see [PEOPLE.md](PEOPLE.md). `delete` additionally records a tombstone, since a deleted row has nothing left to publish. |
 | `busyBlock` | `create`, `delete` | `BusyBlockService` | `daysMask` bitmask for weekly recurrence; `specificDate` for one-off. |
 | `timeEntry` | `log` | `TimeEntryService` | Logs minutes against a task. |
 | `book` | `create`, `update`, `setStatus`, `delete`, `addNote`, `logTime` | `BookService` | `setStatus`: `to_read`/`reading`/`done`. |

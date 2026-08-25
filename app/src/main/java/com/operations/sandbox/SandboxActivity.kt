@@ -210,6 +210,7 @@ private fun openApp(context: Context, appId: AppId) {
         AppId.LOGISTICS -> com.logistics.app.MainActivity::class.java
         AppId.ADVISOR -> com.advisor.app.MainActivity::class.java
         AppId.HEALTH -> com.health.app.MainActivity::class.java
+        AppId.PEOPLE -> com.people.app.MainActivity::class.java
     }
     context.startActivity(Intent(context, target))
 }

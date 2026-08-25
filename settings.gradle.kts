@@ -21,12 +21,14 @@ rootProject.name = "LifeOps"
 // modules it hosts; the shared, JVM-tested backup format/engine is `:backupkit`. Advisor is the
 // suite's RAG assistant — it reads the other apps' data (permission-gated) to answer grounded
 // questions. Health is the household health tracker: a profile per person, and the temperatures,
-// symptoms, medicines and illnesses recorded against them.
+// symptoms, medicines and illnesses recorded against them. People is the household directory the
+// suite refers to — it and LifeOps each keep a roster and reconcile over the sync spine.
 include(":app")
 include(":lifeops")
 include(":citation")
 include(":logistics")
 include(":advisor")
 include(":health")
+include(":people")
 include(":core")
 include(":backupkit")

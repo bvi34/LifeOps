@@ -9,7 +9,8 @@ enum class SourceApp(val key: String, val displayName: String) {
     LIFEOPS("lifeops", "LifeOps"),
     CITATION("citation", "Citation"),
     LOGISTICS("logistics", "Logistics"),
-    HEALTH("health", "Health");
+    HEALTH("health", "Health"),
+    PEOPLE("people", "People");
 
     companion object {
         fun fromKey(key: String): SourceApp? = entries.firstOrNull { it.key == key }
