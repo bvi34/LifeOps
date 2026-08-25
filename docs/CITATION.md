@@ -53,7 +53,7 @@ other feature bolts onto this spine.
 
 The walking skeleton is covered by JVM unit tests; together with the Royal Road engine, the note
 resolver, the sync protocol, the PDF/O'Reilly pieces, the structured document model, the OPDS
-catalog engine, the library query layer, and the storage aggregator below, **`:core` has 405 passing
+catalog engine, the library query layer, and the storage aggregator below, **`:core` has 420 passing
 JVM unit tests** (run `gradle :core:test`).
 
 ### `:citation` (Android)
@@ -85,8 +85,10 @@ Built on `:core`, following LifeOps' Screen → ViewModel → Repository shape:
   - **Resume** actually restores: reopening lands on the saved chapter *and* position — a scroll offset
     in scroll mode, or the page's start **character offset** (font-size independent) in paged mode —
     persisted as you read.
-  - **Reading comfort:** a format sheet with a paged/scroll toggle, text size, line spacing, margins,
-    serif/sans, and Paper / Sepia / Night / System themes.
+  - **Reading comfort:** a Display sheet covering type (size, spacing, margins, tracking, face,
+    justification, hyphenation, paragraph style), colour (Paper / Sepia / Night / System, true black,
+    warmth, in-reader brightness) and screen behaviour (keep awake, full screen, orientation, volume
+    keys) — persisted, and per-book when a book is told to keep its own. See *How the book is set*.
 
 > **Build note:** `:citation` is a standard Android module and needs the Android SDK to build
 > (`gradle :citation:assembleDebug`). `:core` is pure JVM and builds/tests with no SDK
@@ -425,6 +427,34 @@ Room v7 adds `bookmarks` (sovereign: it nulls rather than cascades, outliving it
 every chapter, so the reader writes what it measured and the shelf reads it back, which is what keeps
 the library and the page from quoting different numbers for the same book.
 
+## How the book is set, and what the screen does (core built + verified)
+
+Display settings used to live in composition state, so a reader's text size, margins and theme were
+lost on every app restart. `reader/ReaderSettings` gathers all of it into one persisted value
+(Room v8), and a book can be told to keep its own.
+
+Per-book settings are a **complete fork**, not a sparse patch. A patch looks tidier and behaves
+worse: change the global font later and a book that had overridden only its margins silently changes
+face too — the kind of surprise nobody can debug from the outside.
+
+| Area | What it does |
+|---|---|
+| **Typography** | Size, line spacing, margins, letter spacing, and the choice between **indented** and **spaced** paragraphs — both correct, belonging to different traditions. Justification and automatic hyphenation are paired, and the sheet says so: justification on a narrow phone column *without* hyphenation is what opens rivers of whitespace. Justification applies to running prose only — a justified heading or table row stretches a few words across the column and reads as a bug; verse and code are never justified, because their line breaks are the author's. |
+| **Fonts** | Citation ships none of its own. The faces readers ask for here — OpenDyslexic above all — are ones it has no right to redistribute, so instead you point at a file you already have: that covers dyslexia faces, a preferred serif, and a face for your book's script, without Citation curating any of them. Picked fonts are copied into the sovereign store and **content-addressed**, so picking the same file twice does not accumulate copies and a book cannot change face because a downloads folder was cleaned. A missing or unreadable font falls back to sans rather than making a book unopenable. |
+| **Colour** | `reader/ReaderPalette` — the themes, **true black** for OLED (which also *softens* the text rather than maximising contrast: full-strength type on pure black is a harsh edge in a dark room), and **warmth** applied to the colours themselves rather than as a translucent orange sheet. An overlay dims everything it covers, flattening contrast exactly when a reader has turned warm because it is late and their eyes are tired; cutting blue in the colours warms the page while leaving it as legible as it was. |
+| **Screen** | Full-screen reading, orientation lock, and an in-reader brightness that is a **window attribute** — it applies while the reader is up and never touches the device's own setting, which is what makes turning it right down safe. |
+| **Volume keys** | `reader/VolumeKeys` — down is forward by default (down is the direction the text moves), reversible for readers who hold the phone the other way. |
+
+**Android wiring:** `ui/reader/ScreenBehaviour` applies the window-level effects and **undoes each on
+the way out** — an app that leaves the bars hidden, the orientation pinned or the brightness
+overridden after you close a book has broken the rest of itself to serve one screen. They apply to
+whichever reader is open (flowing text, a PDF's pages, a licensed book in its own WebView) rather
+than only the one whose sheet sets them. Both reading modes share **one** text style, because the
+paged mode *measures* with it to decide where pages break: if measuring and drawing disagreed about
+hyphenation, text would appear mysteriously clipped at the bottom of a page. `ui/DisplaySheet` groups
+the settings by the question they answer — how the type is set, how the page is coloured, what the
+screen does — rather than as one long list.
+
 
 ## Storage visibility (milestone 7 — core built + verified)
 
@@ -514,14 +544,15 @@ The reader now renders books rather than only their words: structure as ranges o
 canonical text, the publisher's nested contents, covers and illustrations, and the shelf metadata a
 library needs. It also does the things a reader is judged on — search inside the book, bookmarks that
 survive the text moving, progress in characters with a time estimate learned from your own honest
-reading, a screen that stays on, and word lookup from the selection. The library is a shelf you can search, sort, facet and organise; and **OPDS** connects
+reading, a screen that stays on, and word lookup from the selection — and it is set the way you set
+it, in the face you chose, and stays that way across restarts. The library is a shelf you can search, sort, facet and organise; and **OPDS** connects
 it to catalogs — a Calibre server, Standard Ebooks, Gutenberg, Feedbooks, Kavita/Komga — which is
 what turns Citation from an app you put files into, into an app connected to libraries.
 
 The framework-independent spine — internal model, structured document model, keys, dedup,
 EPUB/RR/PDF/O'Reilly ingestion, OPDS catalogs, the library query layer, notes + degradation +
 retrieval, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
-logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**405 tests**); the
+logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**420 tests**); the
 Android reader (`:citation`) adds Room storage, the Compose readers and shelves, the capture entry
 points, WorkManager jobs, the catalog client, and the sync transport on top (buildable with the
 Android SDK).
