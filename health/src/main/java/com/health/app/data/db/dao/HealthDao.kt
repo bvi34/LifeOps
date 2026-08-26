@@ -4,8 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
+import com.health.app.data.db.entities.ConditionEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
@@ -102,6 +104,10 @@ interface HealthDao {
         // person leaving it is not a reason to forget the family plan or the family dentist.
         deleteInsuranceMembersForProfile(profileId)
         deleteProviderLinksForProfile(profileId)
+        // Their standing record goes too. An allergy is the least shareable fact in the app: it is
+        // about one person and is meaningless — and dangerous — attached to anybody else.
+        deleteAllergiesForProfile(profileId)
+        deleteConditionsForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -512,8 +518,15 @@ interface HealthDao {
     suspend fun deleteProviderCascade(providerId: String) {
         deleteProviderLinksForProvider(providerId)
         deleteNetworkChecksForProvider(providerId)
+        // A condition they managed is a fact about the *patient*, so it stays and simply loses its
+        // clinician — the same reasoning that keeps a dose when its medicine is deleted. Removing a
+        // doctor from the care team must never be a way to delete somebody's asthma.
+        clearProviderOnConditions(providerId)
         deleteProviderRow(providerId)
     }
+
+    @Query("UPDATE conditions SET providerId = NULL WHERE providerId = :providerId")
+    suspend fun clearProviderOnConditions(providerId: String)
 
     @Query("DELETE FROM provider_links WHERE providerId = :providerId")
     suspend fun deleteProviderLinksForProvider(providerId: String)
@@ -553,4 +566,56 @@ interface HealthDao {
      */
     @Query("DELETE FROM network_checks WHERE id = :id")
     suspend fun deleteNetworkCheck(id: String)
+
+    // --- the standing record ----------------------------------------------------------------------
+    //
+    // Allergies and conditions are per-person and are never household-scoped — the one part of this
+    // schema where sharing a row between people would be actively dangerous rather than merely wrong.
+    //
+    // Neither is ordered meaningfully in SQL. Severity and status are stored as their keys, and
+    // ordering by those alphabetically would put "mild" above "severe"; the real order comes from the
+    // enums in `logic/`, applied by the repository, so there is exactly one definition of "worst
+    // first" in the app.
+
+    @Query("SELECT * FROM allergies WHERE profileId = :profileId ORDER BY substance COLLATE NOCASE")
+    fun observeAllergies(profileId: String): Flow<List<AllergyEntity>>
+
+    @Query("SELECT * FROM allergies WHERE profileId = :profileId ORDER BY substance COLLATE NOCASE")
+    suspend fun getAllergies(profileId: String): List<AllergyEntity>
+
+    @Query("SELECT * FROM allergies ORDER BY substance COLLATE NOCASE")
+    suspend fun getAllAllergies(): List<AllergyEntity>
+
+    @Query("SELECT * FROM allergies WHERE id = :id")
+    suspend fun getAllergy(id: String): AllergyEntity?
+
+    @Upsert
+    suspend fun upsertAllergy(allergy: AllergyEntity)
+
+    @Query("DELETE FROM allergies WHERE id = :id")
+    suspend fun deleteAllergy(id: String)
+
+    @Query("DELETE FROM allergies WHERE profileId = :profileId")
+    suspend fun deleteAllergiesForProfile(profileId: String)
+
+    @Query("SELECT * FROM conditions WHERE profileId = :profileId ORDER BY name COLLATE NOCASE")
+    fun observeConditions(profileId: String): Flow<List<ConditionEntity>>
+
+    @Query("SELECT * FROM conditions WHERE profileId = :profileId ORDER BY name COLLATE NOCASE")
+    suspend fun getConditions(profileId: String): List<ConditionEntity>
+
+    @Query("SELECT * FROM conditions ORDER BY name COLLATE NOCASE")
+    suspend fun getAllConditions(): List<ConditionEntity>
+
+    @Query("SELECT * FROM conditions WHERE id = :id")
+    suspend fun getCondition(id: String): ConditionEntity?
+
+    @Upsert
+    suspend fun upsertCondition(condition: ConditionEntity)
+
+    @Query("DELETE FROM conditions WHERE id = :id")
+    suspend fun deleteCondition(id: String)
+
+    @Query("DELETE FROM conditions WHERE profileId = :profileId")
+    suspend fun deleteConditionsForProfile(profileId: String)
 }

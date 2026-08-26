@@ -15,6 +15,7 @@ import com.health.app.data.model.CabinetItem
 import com.health.app.logic.DrugMonograph
 import com.health.app.logic.OpenFdaParser
 import com.health.app.logic.ReminderMode
+import com.health.app.ui.common.AllergyWarningBanner
 import com.health.app.ui.common.ChoiceRow
 import com.health.app.ui.common.DecimalField
 import com.health.app.ui.common.DisclaimerText
@@ -81,6 +82,15 @@ fun AddMedicineDialog(
         }
     }
 
+    // Check what the household has recorded against whatever the form currently names. Keyed on the
+    // name *and* the picked concept: picking a product is what upgrades the check from matching a
+    // name to matching the label's own ingredient list.
+    val allergyWarnings by vm.allergyWarnings.collectAsStateWithLifecycle()
+    LaunchedEffect(name, picked?.rxcui, toPerson) {
+        if (toPerson) vm.checkAllergies(name, picked?.rxcui) else vm.clearAllergyWarnings()
+    }
+    DisposableEffect(Unit) { onDispose { vm.clearAllergyWarnings() } }
+
     fun decimal(text: String) = text.replace(',', '.').toDoubleOrNull()
 
     val canSave = name.isNotBlank() && (toCabinet || toPerson)
@@ -122,6 +132,8 @@ fun AddMedicineDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                AllergyWarningBanner(allergyWarnings, personName)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = strength,

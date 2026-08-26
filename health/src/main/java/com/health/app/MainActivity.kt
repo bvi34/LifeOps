@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MedicalServices
@@ -29,6 +30,8 @@ import com.health.app.ui.episodes.EpisodesViewModel
 import com.health.app.ui.meds.MedsScreen
 import com.health.app.ui.meds.MedsViewModel
 import com.health.app.ui.people.PeopleScreen
+import com.health.app.ui.record.RecordScreen
+import com.health.app.ui.record.RecordViewModel
 import com.health.app.ui.people.PeopleViewModel
 import com.health.app.ui.theme.HealthTheme
 import com.health.app.ui.today.TodayScreen
@@ -41,16 +44,23 @@ private sealed class Dest(val route: String, val label: String, val icon: ImageV
     object Vitals : Dest("vitals", "Vitals", Icons.Default.MonitorHeart)
     object Meds : Dest("meds", "Meds", Icons.Default.MedicalServices)
     object Episodes : Dest("episodes", "Illness", Icons.Default.Sick)
+    object Record : Dest("record", "Record", Icons.Default.Assignment)
     object Coverage : Dest("coverage", "Care", Icons.Default.Badge)
     object People : Dest("people", "People", Icons.Default.Groups)
 }
 
 private val navItems =
-    listOf(Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes, Dest.Coverage, Dest.People)
+    listOf(
+        Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes, Dest.Record, Dest.Coverage, Dest.People
+    )
 
 /**
- * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Illness, Care, People — over the
- * one [HealthApp] runtime.
+ * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Illness, Record, Care, People —
+ * over the one [HealthApp] runtime.
+ *
+ * The tabs divide by the *kind of question* they answer, not by data type. Today, Vitals, Meds and
+ * Illness are all about things that **happened**; Record is what simply **is** true about a person
+ * between illnesses; Care is who pays and who provides; People is the household itself.
  *
  * Every tab except People shows the same profile bar and reads the same selected person, so
  * switching who you're looking at is one tap from anywhere and is never ambiguous. That is the whole
@@ -138,6 +148,10 @@ class MainActivity : ComponentActivity() {
                         composable(Dest.Episodes.route) {
                             val vm: EpisodesViewModel = viewModel(factory = EpisodesViewModel.Factory(app.repository))
                             EpisodesScreen(vm, onAddProfile = { goAddProfile() })
+                        }
+                        composable(Dest.Record.route) {
+                            val vm: RecordViewModel = viewModel(factory = RecordViewModel.Factory(app.repository))
+                            RecordScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.Coverage.route) {
                             val vm: CoverageViewModel = viewModel(

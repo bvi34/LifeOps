@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Profile
+import com.health.app.logic.Allergies
+import com.health.app.logic.AllergyWarning
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
 import java.time.Instant
@@ -278,4 +280,60 @@ fun RecordRow(
         },
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     )
+}
+
+/**
+ * What the household has written down that matches the medicine in front of you.
+ *
+ * Rendered **only when something matched**. An empty check draws nothing at all — no green tick, no
+ * "no allergies found", no reassuring absence of a badge. That is the one rule this component has,
+ * and it is the reason it exists as a component rather than as a line in one dialog: "nothing
+ * recorded matched" and "she isn't allergic to this" are different sentences, and an app that shows
+ * the first as though it were the second is making a medical claim on no evidence. See
+ * `logic/Allergies`.
+ *
+ * Red, and one of only two places in Health that spends it — the other being a care level of
+ * SEEK_CARE_NOW. This is the moment it is for.
+ */
+@Composable
+fun AllergyWarningBanner(warnings: List<AllergyWarning>, personName: String?) {
+    if (warnings.isEmpty()) return
+    val color = MaterialTheme.colorScheme.error
+
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.10f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (personName != null) "$personName has a recorded allergy to this"
+                else "There is a recorded allergy to this",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            warnings.forEach { warning ->
+                Column {
+                    Text(
+                        warning.headline,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    // The evidence, quoted rather than paraphrased. A warning nobody can audit is a
+                    // warning people learn to tap straight past.
+                    Text(
+                        warning.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                Allergies.DISCLAIMER,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

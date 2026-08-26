@@ -7,8 +7,10 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.health.app.data.db.dao.HealthDao
+import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
+import com.health.app.data.db.entities.ConditionEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
@@ -30,11 +32,12 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 6
+const val HEALTH_DB_VERSION = 7
 
 /**
  * Health's own store: people, everything recorded about them, the medicine cabinet those records
- * draw on, and — since v6 — the coverage that pays for it and the care team that provides it.
+ * draw on, the coverage that pays for it, the care team that provides it, and — since v7 — the
+ * standing record of what is true about a person between illnesses.
  * Nothing here is shared with, or
  * sourced from, another app's database — no other module in the suite owns household health data —
  * so unlike Logistics there is no cross-app catalog bridge, only this one file.
@@ -59,7 +62,9 @@ const val HEALTH_DB_VERSION = 6
         InsuranceMemberEntity::class,
         ProviderEntity::class,
         ProviderLinkEntity::class,
-        NetworkCheckEntity::class
+        NetworkCheckEntity::class,
+        AllergyEntity::class,
+        ConditionEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -367,6 +372,66 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v7 takes the two most safety-critical facts in the app out of a free-text note.
+         *
+         * A profile's `notes` column was documented as holding "allergies, conditions, the doctor's
+         * number" — which meant the one thing a household most needs read back to it was stored in
+         * the one shape nothing can read. A note cannot be listed, cannot be ordered by how badly it
+         * went last time, and above all cannot be compared against the bottle somebody is holding at
+         * 3am. `allergies` and `conditions` are that note made legible.
+         *
+         * **Nothing is parsed out of the existing note and nothing is deleted from it.** A migration
+         * that tried to read "penicillin (hives), asthma, Dr Okafor 555-0101" into rows would be
+         * guessing at exactly the data where a wrong guess is worst: a mis-parsed allergy is a
+         * warning that never fires, or one that fires on the doctor's surname. The note stays
+         * untouched and keeps saying what it always said; the household re-enters what it wants
+         * checkable, and the record screen says so rather than pretending the tables are complete.
+         *
+         * `conditions` is also the home for the chronic things `episodes` could never hold — see
+         * `logic/Conditions` for why an episode left open for nine years breaks the illness screen
+         * rather than extending it.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS allergies (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT NOT NULL, " +
+                        "substance TEXT NOT NULL, " +
+                        "kind TEXT NOT NULL, " +
+                        "severity TEXT NOT NULL, " +
+                        "reaction TEXT, " +
+                        "rxcui TEXT, " +
+                        "noticedDate TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_allergies_profileId ON allergies(profileId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_allergies_substance ON allergies(substance)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_allergies_rxcui ON allergies(rxcui)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS conditions (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT NOT NULL, " +
+                        "name TEXT NOT NULL, " +
+                        "status TEXT NOT NULL, " +
+                        "onsetDate TEXT, " +
+                        "resolvedDate TEXT, " +
+                        "providerId TEXT, " +
+                        "monitorReadingType TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_conditions_profileId ON conditions(profileId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_conditions_status ON conditions(status)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_conditions_providerId ON conditions(providerId)")
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -381,7 +446,8 @@ abstract class HealthDatabase : RoomDatabase() {
                     MIGRATION_2_3,
                     MIGRATION_3_4,
                     MIGRATION_4_5,
-                    MIGRATION_5_6
+                    MIGRATION_5_6,
+                    MIGRATION_6_7
                 )
                     .build().also { instance = it }
             }
