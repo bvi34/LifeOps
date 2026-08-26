@@ -17,13 +17,17 @@ the receipts.
 > (pure JVM, unit-tested); the Android reader is `:citation`.
 
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
-> single installed application and the central hub the whole suite opens through. One launcher that
-> opens LifeOps (`:lifeops`, the standard app), Citation (`:citation`), Logistics (`:logistics`),
-> Advisor (`:advisor`), Health (`:health`), or People (`:people`), and one place to back the whole
-> suite up into a single `.zip` and restore from it. LifeOps, Citation, Logistics, Advisor, Health
+> single installed application and the central hub the whole suite opens through. It opens on a
+> **phone-style home screen**: a tile per app in that app's own icon and colour, over a dock holding
+> the gear and the backups. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
+> (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), or People
+> (`:people`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> place that decides what all six of them **look** like — a shared preset and light/dark mode, plus
+> an accent per app, applied by every hosted screen. LifeOps, Citation, Logistics, Advisor, Health
 > and People are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
-> pure-JVM, unit-tested `:backupkit`.
+> pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
+> `:suitekit`, with its Compose theme in `:suiteui`.
 
 > **Advisor** (the private, on-device assistant) is a peer module — see **[docs/ADVISOR.md](docs/ADVISOR.md)**.
 > It's the suite's **RAG** layer: it answers questions grounded in your own data across LifeOps,
@@ -142,7 +146,7 @@ app/src/main/java/com/lifeops/app/
 ├── ui/
 │   ├── screens/       thisweek · resources · reports · growth · settings · projectdetail
 │   ├── components/    Reusable composables (header, dialogs, task rows, …)
-│   └── theme/         Colours, theming, parseColor
+│   └── theme/         LifeOpsTheme — a one-line wrapper over the suite's theme (:suiteui)
 ├── util/              Pure logic: scoring, dates, growth rings/colour/export, CSV, weather
 ├── widget/            Glance app widget
 └── worker/            WorkManager workers (reminders)
@@ -318,6 +322,7 @@ with `sdk.dir=/path/to/Android/Sdk` (the checked-in value is a placeholder), or 
 gradle :app:assembleDebug        # build the Operations Sandbox container APK
 gradle :lifeops:testDebugUnitTest # run LifeOps' JVM unit tests
 gradle :backupkit:test           # run the backup format/engine tests (pure JVM, no SDK needed)
+gradle :suitekit:test            # run the suite appearance tests (pure JVM, no SDK needed)
 ```
 
 > Note: the Gradle wrapper jar/scripts are not committed, so use a locally installed

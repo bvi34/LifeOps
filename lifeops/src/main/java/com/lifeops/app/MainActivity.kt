@@ -119,10 +119,10 @@ class MainActivity : ComponentActivity() {
         deepLinkDestination = intent.getStringExtra(EXTRA_OPEN_DESTINATION)
 
         setContent {
-            val themePreset by app.preferencesRepository.themePresetFlow.collectAsStateWithLifecycle()
-            val isDarkMode by app.preferencesRepository.darkModeFlow.collectAsStateWithLifecycle()
-            val customPalette by app.preferencesRepository.customPaletteFlow.collectAsStateWithLifecycle()
-            LifeOpsTheme(preset = themePreset, darkMode = isDarkMode, customPalette = customPalette) {
+            // The look comes from the suite's appearance store, so a change made in the Operations
+            // Sandbox (or in LifeOps' own Appearance card, which writes the same setting) repaints
+            // this screen without a restart.
+            LifeOpsTheme {
                 LifeOpsNavHost(
                     app,
                     sharedText,

@@ -46,6 +46,8 @@ android {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // The hosted apps (now libraries) and the shared backup engine.
     implementation(project(":lifeops"))
     implementation(project(":citation"))

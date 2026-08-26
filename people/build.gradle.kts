@@ -43,6 +43,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // The suite's sync spine. `Mailbox` — the monotonic-version bookkeeping every peer syncs over —
     // lives in :core alongside Citation's use of it; People rides the same seam rather than growing
     // a second implementation of the same protocol.

@@ -39,6 +39,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // Reuse LifeOps' food/recipe catalog + repositories (same process). Logistics is a peer app but
     // sources its foods and recipes from LifeOps, so it depends on the module directly.
     implementation(project(":lifeops"))

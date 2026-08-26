@@ -37,6 +37,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
     implementation(project(":backupkit"))
     // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps

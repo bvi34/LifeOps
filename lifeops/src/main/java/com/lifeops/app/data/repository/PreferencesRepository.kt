@@ -1,16 +1,12 @@
 package com.lifeops.app.data.repository
 
 import android.content.Context
-import com.google.gson.Gson
 import com.lifeops.app.data.model.CustomPalette
 import com.lifeops.app.data.model.ThemePreset
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import com.operations.suite.ui.SuiteAppearanceStore
 
 class PreferencesRepository(context: Context) {
     private val prefs = context.getSharedPreferences("lifeops_settings", Context.MODE_PRIVATE)
-    private val gson = Gson()
 
     /**
      * The aspect that reading time earns into at week-close (null = reading rewards are off). Both
@@ -136,41 +132,28 @@ class PreferencesRepository(context: Context) {
             prefs.edit().apply { if (value == null) remove("google_calendar_last_synced_at") else putString("google_calendar_last_synced_at", value) }.apply()
         }
 
-    private val _themePresetFlow = MutableStateFlow(
-        ThemePreset.from(prefs.getString("theme_preset", ThemePreset.DEFAULT.name) ?: ThemePreset.DEFAULT.name)
-    )
-    val themePresetFlow: StateFlow<ThemePreset> = _themePresetFlow.asStateFlow()
+    /**
+     * Appearance is the *suite's* now, not LifeOps'. The preset, the light/dark mode and the custom
+     * palette live in the Operations Sandbox's store so one choice paints every hosted app; these
+     * three properties stay here only so LifeOps' own settings screen keeps editing them by their
+     * old names. Writing either side is the same write — the sandbox's gear and LifeOps' Appearance
+     * card are two doors into one setting.
+     *
+     * An existing install's values are carried over on first read (see SuiteAppearanceStore), so
+     * nobody's theme resets; LifeOps' old `theme_preset` / `dark_mode` / `custom_palette` keys are
+     * simply no longer read.
+     */
+    private val appearanceStore = SuiteAppearanceStore.get(context)
 
     var themePreset: ThemePreset
-        get() = _themePresetFlow.value
-        set(value) {
-            prefs.edit().putString("theme_preset", value.name).apply()
-            _themePresetFlow.value = value
-        }
-
-    private val _darkModeFlow = MutableStateFlow(prefs.getBoolean("dark_mode", true))
-    val darkModeFlow: StateFlow<Boolean> = _darkModeFlow.asStateFlow()
+        get() = appearanceStore.preset
+        set(value) { appearanceStore.preset = value }
 
     var isDarkMode: Boolean
-        get() = _darkModeFlow.value
-        set(value) {
-            prefs.edit().putBoolean("dark_mode", value).apply()
-            _darkModeFlow.value = value
-        }
-
-    private val _customPaletteFlow = MutableStateFlow(
-        try {
-            val json = prefs.getString("custom_palette", null)
-            if (json != null) gson.fromJson(json, CustomPalette::class.java) else CustomPalette()
-        } catch (_: Exception) { CustomPalette() }
-    )
-    val customPaletteFlow: StateFlow<CustomPalette> = _customPaletteFlow.asStateFlow()
+        get() = appearanceStore.darkMode
+        set(value) { appearanceStore.darkMode = value }
 
     var customPalette: CustomPalette
-        get() = _customPaletteFlow.value
-        set(value) {
-            prefs.edit().putString("custom_palette", gson.toJson(value)).apply()
-            _customPaletteFlow.value = value
-        }
-
+        get() = appearanceStore.palette
+        set(value) { appearanceStore.palette = value }
 }

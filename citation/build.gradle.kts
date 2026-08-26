@@ -41,6 +41,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     implementation(project(":core"))
     // The Operations Sandbox backup format/engine (pure JVM). Citation supplies a BackupContributor.
     implementation(project(":backupkit"))

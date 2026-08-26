@@ -45,6 +45,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). Health supplies a BackupContributor.
     implementation(project(":backupkit"))
     // The People directory module — for the *sync contract* (packet, binder, merge, engine), not to

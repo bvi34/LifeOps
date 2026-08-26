@@ -1,36 +1,20 @@
 package com.logistics.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import com.operations.backupkit.AppId
+import com.operations.suite.ui.SuiteTheme
 
-// Logistics leans "stockroom green" so it reads as its own app next to LifeOps and Citation.
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF2F855A),
-    secondary = Color(0xFF38A169),
-    tertiary = Color(0xFFDD6B20),
-    background = Color(0xFFF7FAF7),
-    surface = Color(0xFFFFFFFF)
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF68D391),
-    secondary = Color(0xFF9AE6B4),
-    tertiary = Color(0xFFF6AD55),
-    background = Color(0xFF14181A),
-    surface = Color(0xFF1C2124)
-)
-
+/**
+ * This app's theme is the *suite's* theme, wearing this app's colour.
+ *
+ * The palette that used to live here — its own light/dark schemes, its own idea of a background —
+ * moved to the Operations Sandbox, which now owns one look for every hosted app and one accent per
+ * app inside it. Naming [AppId.LOGISTICS] is the whole of this file's job: the sandbox answers with the
+ * shared preset and mode, tinted with whatever colour this app is currently set to (see
+ * `com.operations.suitekit.SuiteThemes`). Change it in the sandbox's gear, and this app repaints
+ * with the rest of the suite.
+ */
 @Composable
-fun LogisticsTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content
-    )
+fun LogisticsTheme(content: @Composable () -> Unit) {
+    SuiteTheme(appId = AppId.LOGISTICS, content = content)
 }

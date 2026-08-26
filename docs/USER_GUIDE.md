@@ -222,7 +222,9 @@ From **Settings → Data**:
   curated, well-separated palette. (Archiving keeps history intact; it just stops new use.)
 - **Notifications** — set the default daily reminder time.
 - **Theme** — light/dark, colour presets (Default, Beacon, Ocean, Sunset), or a fully custom
-  palette.
+  palette. This is **suite-wide**: it is the same setting as the Operations Sandbox's gear, so it
+  paints Citation, Logistics, Advisor, Health and People too. Each app's own accent colour is
+  chosen in that gear.
 - **Data** — Backup JSON, Restore, Export Tasks CSV, and the Rings CSV/SVG exports.
 - **Game Resource Slots** — rename your resource slots.
 - **Cost Resources** — define external resources to track per task (with optional reset

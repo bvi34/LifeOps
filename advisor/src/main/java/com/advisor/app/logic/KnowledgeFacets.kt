@@ -70,19 +70,13 @@ object KnowledgeFacets {
             "grocery" -> ObjectType.GROCERY_ITEM
             else -> ObjectType.UNKNOWN
         }
-        SourceApp.HEALTH -> when (doc.kind) {
-            // A health profile is the same kind of thing as a People directory entry — same facet,
-            // so a "who" question judges both alike (as with a book from either library).
-            "person" -> ObjectType.PROFILE
-            // A dose is a medication taken; both answer "what is she on, and when".
-            "medication", "dose" -> ObjectType.MEDICATION
-            "temperature", "temperature-history", "reading", "symptom", "illness" -> ObjectType.HEALTH_RECORD
-            "care" -> ObjectType.NOTE
-            else -> ObjectType.UNKNOWN
-        }
-        SourceApp.PEOPLE -> when (doc.kind) {
-            "person" -> ObjectType.PROFILE
-            "date" -> ObjectType.DATE
+        // Health and People have no facet vocabulary of their own yet: a temperature, a dose or a
+        // directory entry is not a book, a task or a pantry item, and inventing an object type for
+        // them here would put the *engine* in the business of guessing what a health record is.
+        // UNKNOWN is the honest answer — the relevance engine reads it as "no facet to disagree
+        // about" and falls back to the text, rather than manufacturing a mismatch. A note is the
+        // exception: it is the same kind of thing wherever it was written.
+        SourceApp.HEALTH, SourceApp.PEOPLE -> when (doc.kind) {
             "person-note" -> ObjectType.NOTE
             else -> ObjectType.UNKNOWN
         }

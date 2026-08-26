@@ -1,39 +1,20 @@
 package com.health.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import com.operations.backupkit.AppId
+import com.operations.suite.ui.SuiteTheme
 
-// Health leans a calm clinical teal so it reads as its own app next to LifeOps, Citation and
-// Logistics — and keeps red for one job only: a reading that wants attention.
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF2C7A7B),
-    secondary = Color(0xFF319795),
-    tertiary = Color(0xFFC05621),
-    error = Color(0xFFC53030),
-    background = Color(0xFFF5FAFA),
-    surface = Color(0xFFFFFFFF)
-)
-
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF4FD1C5),
-    secondary = Color(0xFF81E6D9),
-    tertiary = Color(0xFFF6AD55),
-    error = Color(0xFFFC8181),
-    background = Color(0xFF11191A),
-    surface = Color(0xFF1A2325)
-)
-
+/**
+ * This app's theme is the *suite's* theme, wearing this app's colour.
+ *
+ * The palette that used to live here — its own light/dark schemes, its own idea of a background —
+ * moved to the Operations Sandbox, which now owns one look for every hosted app and one accent per
+ * app inside it. Naming [AppId.HEALTH] is the whole of this file's job: the sandbox answers with the
+ * shared preset and mode, tinted with whatever colour this app is currently set to (see
+ * `com.operations.suitekit.SuiteThemes`). Change it in the sandbox's gear, and this app repaints
+ * with the rest of the suite.
+ */
 @Composable
-fun HealthTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit
-) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content
-    )
+fun HealthTheme(content: @Composable () -> Unit) {
+    SuiteTheme(appId = AppId.HEALTH, content = content)
 }
