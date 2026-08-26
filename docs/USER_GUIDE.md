@@ -224,7 +224,8 @@ From **Settings → Data**:
 - **Theme** — light/dark, colour presets (Default, Beacon, Ocean, Sunset), or a fully custom
   palette. This is **suite-wide**: it is the same setting as the Operations Sandbox's gear, so it
   paints Citation, Logistics, Advisor, Health and People too. Each app's own accent colour is
-  chosen in that gear.
+  chosen in that gear, as is the wallpaper behind the sandbox's home screen — a shipped design
+  (Midnight, Aurora, Sunrise, Paper…), your own gradient, or the suite's own colours.
 - **Data** — Backup JSON, Restore, Export Tasks CSV, and the Rings CSV/SVG exports.
 - **Game Resource Slots** — rename your resource slots.
 - **Cost Resources** — define external resources to track per task (with optional reset

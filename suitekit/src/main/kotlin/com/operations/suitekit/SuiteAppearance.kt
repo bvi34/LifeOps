@@ -56,7 +56,9 @@ data class SuiteAppearance(
     val palette: SuitePalette = SuitePalette(),
     /** When false, every app renders the unified scheme with no identity tint at all. */
     val appAccentsEnabled: Boolean = true,
-    val accents: Map<String, String> = emptyMap()
+    val accents: Map<String, String> = emptyMap(),
+    /** The Operations Sandbox home screen's backdrop; nothing inside a hosted app reads this. */
+    val wallpaper: SuiteWallpaper = SuiteWallpaper()
 ) {
     /** The accent hex chosen for [appId], or that app's shipped default. */
     fun accentHex(appId: AppId): String =
@@ -74,6 +76,9 @@ data class SuiteAppearance(
     /** Drop [appId]'s override so it falls back to its shipped identity colour. */
     fun withDefaultAccent(appId: AppId): SuiteAppearance =
         copy(accents = accents - appId.key)
+
+    fun withWallpaper(transform: (SuiteWallpaper) -> SuiteWallpaper): SuiteAppearance =
+        copy(wallpaper = transform(wallpaper))
 }
 
 /**
@@ -97,7 +102,8 @@ object SuiteAppearanceCodec {
             parsed.copy(
                 preset = parsed.preset ?: SuitePreset.DEFAULT,
                 palette = sanitize(parsed.palette),
-                accents = (parsed.accents ?: emptyMap()).filterValues { it != null }
+                accents = (parsed.accents ?: emptyMap()).filterValues { it != null },
+                wallpaper = sanitize(parsed.wallpaper)
             )
         } catch (_: Exception) {
             null
@@ -115,6 +121,26 @@ object SuiteAppearanceCodec {
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * The same guard for the wallpaper: a document written before wallpapers existed has no
+     * `wallpaper` key at all, and one written by a newer build may name a design this one does not
+     * know — both land on the shipped default rather than on a null field or a blank home screen.
+     */
+    @Suppress("SENSELESS_COMPARISON", "USELESS_ELVIS")
+    private fun sanitize(wallpaper: SuiteWallpaper?): SuiteWallpaper {
+        val w = wallpaper ?: return SuiteWallpaper()
+        val d = SuiteWallpaper()
+        return SuiteWallpaper(
+            design = w.design ?: d.design,
+            style = w.style ?: d.style,
+            angle = w.angle ?: d.angle,
+            startColor = w.startColor ?: d.startColor,
+            endColor = w.endColor ?: d.endColor,
+            glowColor = w.glowColor ?: d.glowColor,
+            dim = w.dim.coerceIn(0f, SuiteWallpaper.MAX_DIM)
+        )
     }
 
     /** Replace any field Gson left null with the shipped default for that slot. */

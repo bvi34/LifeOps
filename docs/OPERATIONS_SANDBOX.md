@@ -8,7 +8,9 @@ and colour, over a dock holding the gear and the backups. From there it:
 - opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
   **Advisor**, **Health**, and **People**),
 - **paints all six of them**: one preset, one light/dark mode, and one accent per app, chosen in the
-  gear and obeyed everywhere, and
+  gear and obeyed everywhere,
+- **wears a wallpaper of your choosing** on its own home screen — a shipped design, a gradient you
+  mixed, or (the default) the suite's own colours, and
 - backs the **whole suite up into a single `.zip`** and **restores from that same zip**.
 
 The GUI, the look and the backups are unified: one hub, one theme, one archive.
@@ -158,8 +160,9 @@ is: six apps behind one icon.
   jumps straight to where that app's colour is chosen.
 - A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
   container rather than to any app: **Settings** (the gear) and **Backups**.
-- The wallpaper is mixed from the suite's own colours, so the home screen is already wearing the
-  chosen preset before an app is opened.
+- A **wallpaper** behind the lot — see *The launcher's wallpaper* below. Out of the box it is mixed
+  from the suite's own colours, so the home screen is already wearing the chosen preset before an
+  app is opened; a user who wants something else picks it in the gear.
 
 `SandboxActivity` is a two-route shell (`when` over a route, not a navigation graph). The settings
 screen's state — which tab, which app is being recoloured — is hoisted into it, and so is the
@@ -169,7 +172,8 @@ not cancel it.
 ### The gear: appearance and backups
 
 **Appearance** (see *One look for six apps* below) is the suite's, not LifeOps': one preset, one
-light/dark mode, one custom palette, and an accent per app.
+light/dark mode, one custom palette, an accent per app — and the home screen's own wallpaper, which
+is the container's alone.
 
 **Backups** is what the hub has always done, moved behind the gear:
 
@@ -235,6 +239,49 @@ naming glyphs rather than importing them.
 
 ---
 
+## The launcher's wallpaper
+
+The home screen is the one screen in the suite that belongs to nobody's app, so it is the one screen
+worth decorating. The wallpaper is **the container's alone**: it never reaches a hosted app, whose
+look is still the preset, the mode and its accent.
+
+The decision lives in `:suitekit` (`SuiteWallpaper.kt`) exactly as colour schemes do — `:suiteui`
+only turns the answer into Compose brushes:
+
+| Type | Is |
+|---|---|
+| `SuiteWallpaper` | what the user chose: a design, the custom knobs behind it, and a dim |
+| `WallpaperDesign` | the shipped looks — `THEME`, ten fixed designs, and `CUSTOM` |
+| `WallpaperStyle` | how colours are laid out: `SOLID`, `LINEAR`, `RADIAL` (one glow), `AURORA` (several) |
+| `WallpaperSpec` | the resolved answer: a base colour, gradient layers over it, a veil, and the ink |
+
+**`THEME` is the default and the only design that is not a fixed picture** — it mixes itself from
+whatever preset and mode the suite is wearing, which is exactly what the home screen did before
+wallpapers were selectable, so an install that never opens the picker looks unchanged. The ten fixed
+designs (Midnight, Nebula, Aurora, Tide, Ember, Sunrise, Forest, Graphite, Paper, Daylight) are
+deliberate choices of colour and hold their look when the preset changes — that is the point of
+choosing one. **Custom** hands over the same four styles, a direction for the gradient, and the two
+or three colours it runs between; the custom colours are kept while a shipped design is showing, so
+trying one and coming back does not lose what was typed.
+
+Two things are decided for the user, and both are about being able to read the screen:
+
+- **Ink.** `WallpaperSpec.ink` is resolved from the colours that actually end up on screen — a
+  two-colour gradient reads as the blend of its ends, a glow as its field stained by the light — so
+  the clock, the date and the tile labels are written in whichever of the suite's two inks contrasts
+  the backdrop. A user cannot pick a wallpaper that hides their own clock. The status and navigation
+  bar icons follow the same answer, since the shell draws edge to edge and those bars sit *on* the
+  wallpaper.
+- **Dim.** A veil of black, capped at 70%, applies to *any* design — which keeps "a picture I like"
+  and "a clock I can read" from being the same decision. It is applied before the ink is chosen, so
+  dimming a pale wallpaper far enough flips its text to light on its own.
+
+In settings, each card in the picker paints itself with `Modifier.suiteWallpaper(spec)` — the very
+modifier the home screen uses — so a preview *is* the design at swatch size rather than an artist's
+impression of it.
+
+---
+
 ## Testing
 
 `:backupkit` has full JVM unit tests (`gradle :backupkit:test`, no SDK required): manifest
@@ -245,7 +292,11 @@ the no-manifest case, and the zip-slip guard.
 form the settings field accepts (and the fallback for a half-typed one), the exact luminance
 `lighten`/`darken`/`fitForMode` promise, appearance-document round-trip and graceful decay of a
 partial or unknown document, accents keyed by app key, and — across every preset × mode × app — that
-each slot of the resolved scheme is opaque and that its text contrasts its surface.
+each slot of the resolved scheme is opaque and that its text contrasts its surface. The wallpapers
+are held to the same bar: every shipped design resolves to an opaque field with stops on the
+gradient and one of the two inks, dimming a pale design flips its text before it can be swallowed,
+a fixed design ignores the preset while `THEME` follows it, and a document written before wallpapers
+existed (or one naming a design this build has never heard of) lands on the default backdrop.
 
 The Android glue (contributors, the home screen and settings, the module surgery) is verified by
 building and running the container app.

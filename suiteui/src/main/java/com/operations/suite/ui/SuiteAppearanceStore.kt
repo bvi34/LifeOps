@@ -6,6 +6,8 @@ import com.operations.suitekit.SuiteAppearance
 import com.operations.suitekit.SuiteAppearanceCodec
 import com.operations.suitekit.SuitePalette
 import com.operations.suitekit.SuitePreset
+import com.operations.suitekit.SuiteWallpaper
+import com.operations.suitekit.WallpaperDesign
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -59,6 +61,18 @@ class SuiteAppearanceStore private constructor(context: Context) {
     var appAccentsEnabled: Boolean
         get() = appearance.appAccentsEnabled
         set(value) = update { it.copy(appAccentsEnabled = value) }
+
+    /** The launcher's backdrop. Only the sandbox home screen reads it; no hosted app does. */
+    var wallpaper: SuiteWallpaper
+        get() = appearance.wallpaper
+        set(value) = update { it.copy(wallpaper = value) }
+
+    /** Read-modify-write one field of the wallpaper, leaving the rest of the appearance alone. */
+    fun updateWallpaper(transform: (SuiteWallpaper) -> SuiteWallpaper) =
+        update { it.withWallpaper(transform) }
+
+    /** Back to the wallpaper mixed from the suite's own preset, keeping the custom colours saved. */
+    fun resetWallpaper() = updateWallpaper { it.copy(design = WallpaperDesign.THEME, dim = 0f) }
 
     fun setAccent(appId: AppId, hex: String) = update { it.withAccent(appId, hex) }
 
