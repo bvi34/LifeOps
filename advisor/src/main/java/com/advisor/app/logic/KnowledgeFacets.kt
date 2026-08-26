@@ -20,6 +20,9 @@ enum class ObjectType(val label: String) {
     GROCERY_ITEM("grocery item"),
     MEMORY("memory"),
     PROFILE("profile"),
+    HEALTH_RECORD("health record"),
+    MEDICATION("medication"),
+    DATE("date"),
     UNKNOWN("item")
 }
 
@@ -35,6 +38,8 @@ enum class ObjectType(val label: String) {
  *  - pantry: `low`, `stocked`  ·  grocery: `needed`, `bought`
  *  - recipes and shelved ideas: none — a recipe has no lifecycle, and an idea's active/archived
  *    split is a shelf, not a state a question ever asks to match
+ *  - health records, medications, people and their dates: none — a temperature reading or a birthday
+ *    is a fact with a timestamp, not something that moves through states
  *
  * A record with no meaningful state (an aspect, a note) reports `null`, which the engine treats as "no
  * state to disagree about" — it never manufactures a state mismatch out of thin air.

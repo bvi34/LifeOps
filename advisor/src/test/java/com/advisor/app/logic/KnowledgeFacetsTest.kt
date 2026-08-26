@@ -71,4 +71,29 @@ class KnowledgeFacetsTest {
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "recipe", "Recipe: Stew. Serves 2.")))
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "idea", "Future project idea: X (active)")))
     }
+
+    @Test
+    fun classifies_health_records() {
+        assertEquals(ObjectType.PROFILE, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "person", "")))
+        assertEquals(ObjectType.HEALTH_RECORD, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "temperature", "")))
+        assertEquals(ObjectType.HEALTH_RECORD, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "symptom", "")))
+        assertEquals(ObjectType.HEALTH_RECORD, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "illness", "")))
+        assertEquals(ObjectType.MEDICATION, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "medication", "")))
+        assertEquals(ObjectType.MEDICATION, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "dose", "")))
+        assertEquals(ObjectType.NOTE, KnowledgeFacets.objectTypeOf(doc(SourceApp.HEALTH, "care", "")))
+    }
+
+    @Test
+    fun classifies_the_household_directory() {
+        assertEquals(ObjectType.PROFILE, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "person", "")))
+        assertEquals(ObjectType.DATE, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "date", "")))
+        assertEquals(ObjectType.NOTE, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "person-note", "")))
+    }
+
+    @Test
+    fun a_health_reading_or_a_birthday_has_no_state_to_disagree_about() {
+        // A temperature and a birthday are facts with a timestamp; neither moves through states.
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.HEALTH, "temperature", "Temperature: 38.2C")))
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "date", "Birthday: 3 March")))
+    }
 }
