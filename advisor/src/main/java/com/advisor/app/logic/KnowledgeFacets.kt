@@ -20,6 +20,9 @@ enum class ObjectType(val label: String) {
     GROCERY_ITEM("grocery item"),
     MEMORY("memory"),
     PROFILE("profile"),
+    HEALTH_RECORD("health record"),
+    MEDICATION("medication"),
+    DATE("date"),
     UNKNOWN("item")
 }
 
@@ -35,6 +38,8 @@ enum class ObjectType(val label: String) {
  *  - pantry: `low`, `stocked`  ·  grocery: `needed`, `bought`
  *  - recipes and shelved ideas: none — a recipe has no lifecycle, and an idea's active/archived
  *    split is a shelf, not a state a question ever asks to match
+ *  - health records, medications, people and their dates: none — a temperature reading or a birthday
+ *    is a fact with a timestamp, not something that moves through states
  *
  * A record with no meaningful state (an aspect, a note) reports `null`, which the engine treats as "no
  * state to disagree about" — it never manufactures a state mismatch out of thin air.
@@ -63,6 +68,22 @@ object KnowledgeFacets {
         SourceApp.LOGISTICS -> when (doc.kind) {
             "pantry" -> ObjectType.PANTRY_ITEM
             "grocery" -> ObjectType.GROCERY_ITEM
+            else -> ObjectType.UNKNOWN
+        }
+        SourceApp.HEALTH -> when (doc.kind) {
+            // A health profile is the same kind of thing as a People directory entry — same facet,
+            // so a "who" question judges both alike (as with a book from either library).
+            "person" -> ObjectType.PROFILE
+            // A dose is a medication taken; both answer "what is she on, and when".
+            "medication", "dose" -> ObjectType.MEDICATION
+            "temperature", "temperature-history", "reading", "symptom", "illness" -> ObjectType.HEALTH_RECORD
+            "care" -> ObjectType.NOTE
+            else -> ObjectType.UNKNOWN
+        }
+        SourceApp.PEOPLE -> when (doc.kind) {
+            "person" -> ObjectType.PROFILE
+            "date" -> ObjectType.DATE
+            "person-note" -> ObjectType.NOTE
             else -> ObjectType.UNKNOWN
         }
     }
