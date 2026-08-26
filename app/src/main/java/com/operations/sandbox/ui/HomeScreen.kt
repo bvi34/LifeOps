@@ -1,5 +1,8 @@
 package com.operations.sandbox.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -17,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -28,15 +32,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.operations.backupkit.AppId
 import com.operations.suite.ui.LocalSuiteAppearance
 import com.operations.suite.ui.SuiteIcons
 import com.operations.suite.ui.accentArgb
+import com.operations.suite.ui.inkColor
+import com.operations.suite.ui.rememberSuiteWallpaper
+import com.operations.suite.ui.suiteWallpaper
 import com.operations.suitekit.SuiteAppInfo
 import com.operations.suitekit.SuiteApps
 import com.operations.suitekit.SuiteColors
@@ -55,6 +64,10 @@ import java.util.Locale
  * and the backup that archives all of it at once.
  *
  * Tap a tile to open the app; press and hold to jump to where its colour is chosen.
+ *
+ * The backdrop is the user's: a shipped design, their own gradient, or the suite's own colours (the
+ * default). Whichever it is, the text on top is written in the ink that wallpaper resolved to, so a
+ * bright wallpaper cannot swallow the clock.
  */
 @Composable
 fun SandboxHomeScreen(
@@ -63,26 +76,34 @@ fun SandboxHomeScreen(
     onOpenBackups: () -> Unit,
     onCustomizeApp: (AppId) -> Unit
 ) {
-    val colors = MaterialTheme.colorScheme
     val appearance = LocalSuiteAppearance.current
 
-    // A wallpaper mixed from the suite's own colours: whatever preset is chosen, the home screen is
-    // already wearing it before a single app is opened.
-    val wallpaper = remember(colors.primary, colors.tertiary, colors.background) {
-        Brush.verticalGradient(
-            listOf(
-                colors.primary.copy(alpha = 0.20f),
-                colors.background,
-                colors.tertiary.copy(alpha = 0.12f)
-            )
-        )
+    // Whatever the user chose in the gear. The default still mixes itself from the suite's own
+    // colours, so an install that never opens the wallpaper picker looks exactly as it always did.
+    val wallpaper = rememberSuiteWallpaper(appearance)
+    val ink = wallpaper.inkColor
+
+    // The shell draws edge to edge, so the status and navigation bars sit *on* the wallpaper: their
+    // icons have to follow its ink, not the theme's mode. Otherwise Paper under a dark theme puts
+    // white icons on a near-white backdrop. Leaving the home screen hands them back to the theme.
+    val view = LocalView.current
+    val themeIsDark = appearance.darkMode
+    DisposableEffect(view, wallpaper.isDark, themeIsDark) {
+        val controller = view.context.findActivity()
+            ?.window
+            ?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = !wallpaper.isDark
+        controller?.isAppearanceLightNavigationBars = !wallpaper.isDark
+        onDispose {
+            controller?.isAppearanceLightStatusBars = !themeIsDark
+            controller?.isAppearanceLightNavigationBars = !themeIsDark
+        }
     }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(colors.background)
-            .background(wallpaper)
+            .suiteWallpaper(wallpaper)
     ) {
         Column(
             modifier = Modifier
@@ -90,7 +111,7 @@ fun SandboxHomeScreen(
                 .systemBarsPadding()
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
-            StatusHeader()
+            StatusHeader(ink = ink)
 
             Spacer(Modifier.height(28.dp))
 
@@ -109,6 +130,7 @@ fun SandboxHomeScreen(
                                 accent = appearance.accentArgb(info.appId),
                                 onOpen = { onOpenApp(info.appId) },
                                 onCustomize = { onCustomizeApp(info.appId) },
+                                ink = ink,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -128,7 +150,7 @@ private const val COLUMNS = 3
 
 /** The clock strip, so the shell reads as a home screen rather than a menu. */
 @Composable
-private fun StatusHeader() {
+private fun StatusHeader(ink: Color) {
     val context = LocalContext.current
     // The platform's own time format, so a 24-hour phone shows 21:41 rather than a 9:41 that could
     // mean either.
@@ -147,12 +169,12 @@ private fun StatusHeader() {
             timeFormat.format(now),
             style = MaterialTheme.typography.displayMedium,
             fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onBackground
+            color = ink
         )
         Text(
             dateFormat.format(now),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+            color = ink.copy(alpha = 0.7f)
         )
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -160,13 +182,13 @@ private fun StatusHeader() {
                 Modifier
                     .size(6.dp)
                     .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(ink.copy(alpha = 0.55f))
             )
             Spacer(Modifier.width(6.dp))
             Text(
                 "Operations Sandbox",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                color = ink.copy(alpha = 0.6f)
             )
         }
     }
@@ -180,6 +202,7 @@ private fun AppTile(
     accent: Long,
     onOpen: () -> Unit,
     onCustomize: () -> Unit,
+    ink: Color,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -194,7 +217,7 @@ private fun AppTile(
         Text(
             info.label,
             style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = ink,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -288,6 +311,13 @@ private fun DockTile(
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
     }
+}
+
+/** A composable's context is usually a wrapper around the activity, not the activity itself. */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 /** Compose paints in floats; the suite's colour maths speaks `0xAARRGGBB`. */

@@ -23,7 +23,8 @@ the receipts.
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), or People
 > (`:people`); one place to back the whole suite up into a single `.zip` and restore from it; and one
 > place that decides what all six of them **look** like — a shared preset and light/dark mode, plus
-> an accent per app, applied by every hosted screen. LifeOps, Citation, Logistics, Advisor, Health
+> an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
+> (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health
 > and People are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
