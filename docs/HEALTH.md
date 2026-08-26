@@ -2,8 +2,9 @@
 
 Health is the suite's **who's-ill-and-what-have-we-given-them** app: a profile per person, the
 temperatures and other readings taken for each of them, the symptoms they've got, the medicines
-they're on with the label's own dose rules, the medicine cabinet those come out of, and the illnesses
-all of it hangs off. It is a hosted
+they're on with the label's own dose rules, the medicine cabinet those come out of, the illnesses all
+of it hangs off, and — since the Care tab — the insurance that pays for it and the doctors who
+provide it. It is a hosted
 library module inside the Operations Sandbox container (`:app`), a peer to LifeOps, Citation and
 Logistics — opened from the sandbox home, backed up into the same one-zip archive, and readable by
 Advisor only if you grant it.
@@ -25,6 +26,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
 | **Illness** | Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
+| **Care** | **Who pays for this, and who do we take her to.** *Cards* is the household's insurance as copied off the card — each person's own member number on the household's policy, whether the coverage is current, photographs of the card, and **a PDF of it on demand**. *Doctors* is the care team, which belongs to the household and **not** to the policy: each shown with where they stand against this person's coverage, read out of the whole history of checks rather than a single flag. |
 | **People** | The household. Add, edit and remove profiles; set whose reading you're looking at; choose °C or °F. |
 
 ## Profiles — why they're the spine, not a setting
@@ -198,6 +200,193 @@ nudge that must survive a reboot, not a to-the-second alarm. The notification ne
 take a medicine — it says the dose *you wrote down* is due, and taps through to the screen where the
 live dose window has the final word.
 
+## Coverage — the card, not the policy
+
+The Care tab's first half is insurance, and the single most important thing about it is what it
+refuses to be.
+
+**Health stores a card. It does not store a policy.** There is no field for a deductible, a copay, a
+coinsurance share or an out-of-pocket maximum, and there never will be. Those are the terms of an
+eighty-page legal document that vary by service, by network tier and by how much of the year has
+gone; an app with a box marked "copay: $30" is inviting a household to plan around a number nobody
+checked. What is here is what is *printed on the card* — the insurer, the plan, the member number,
+the group, the payer id, the Rx BIN/PCN/Group, the dates, and the phone numbers on the back. That is
+the part a person actually needs at a desk, and it is a part an app can hold honestly.
+
+The split follows the cabinet's:
+
+- **`insurance_plans` is household-scoped.** A family policy is *one* policy: one carrier, one group
+  number, one set of phone numbers, one directory. Copying it per person would be four rows to keep
+  in step and three of them wrong by renewal.
+- **`insurance_members` is per person.** Their own member number and person code on the household's
+  card, and their own dates where those differ — a baby added to a family plan in March is covered
+  from March, not from the policy's January, so the member's dates win where they were recorded.
+
+The only judgement made is whether the coverage is current, from the dates **as written down**. A
+card with no dates is `UNKNOWN`, never "probably fine": most cards print an effective date and no end
+date at all, and a plan with no printed end is exactly the one Health has no business declaring
+active or lapsed. Ended sorts first, then not-yet-started, then ending soon — a wallet is read
+top-down when something is wrong with it.
+
+Member numbers are **masked in the list** (`••• 4567`) and shown in full on the card and in the
+export. A member id is not a password, but it is the number a plan will read an account out against
+over the phone, and printing it on a screen anybody can read over your shoulder is careless for no
+gain. The card view is the thing you opened on purpose.
+
+### The card as a PDF
+
+The wallet card is the one health record a household is asked to **produce** rather than consult: at
+a reception desk, at a pharmacy, on a form, emailed to a school before a trip. So photographs are
+saved when they are attached — into `filesDir/insurance-cards`, with only the **file name** on the
+row — and from then on the card can be turned into a PDF without asking for the picture again.
+
+`card/InsuranceCardPdf` draws it at card size (ISO/IEC 7810 ID-1, 243 × 153 pt) in up to four pages:
+the typed front, the typed back, then each photograph. **The typed faces come first even when there
+are photographs**, and that is deliberate — a photograph of a card is authoritative and hard to read,
+while typed fields are legible, selectable and searchable, and the person at the desk wants the
+second thing. The photograph is the evidence behind it.
+
+Both faces come from one `Insurance.card` layout, so the screen and the PDF cannot disagree about a
+member number — the place that would show up is a reception desk. Blank fields are dropped rather
+than rendered empty: a line reading "Group —" invites the reader to conclude the plan has no group
+number, when all it means is that nobody typed one in.
+
+Every page carries the same line:
+
+> Copied into Health from your own card. Not issued by the insurer and not proof of coverage — check
+> the real card, or ring member services, before it matters.
+
+A PDF faithful enough to be useful is faithful enough to be mistaken for the card itself. Saying what
+it is, on every page, is the same reflex as the fever disclaimer, and it is the reason the feature
+can exist without pretending to be something it isn't.
+
+Photos are stored as files rather than blobs because `health.db` is WAL-checkpointed and copied whole
+by every backup — eight megabytes of JPEG in there would be copied every time anybody recorded a
+temperature. They are in `filesDir`, not `cacheDir`: a card photo is a record the user chose to keep,
+and the system may reclaim a cache at any time. The backup carries the directory alongside the
+database, restoring the pictures **before** the rows that name them.
+
+## The care team — deliberately not owned by the insurance
+
+The Care tab's second half is doctors, and the design point is the separation.
+
+**A doctor belongs to the household, not to the policy.** The plan changes every January; the
+paediatrician doesn't. If the care team hung off the insurance, changing carriers would mean
+re-entering every clinician in the house — and, worse, would throw away the check history that is the
+only way to notice that the new plan doesn't cover somebody the old one did.
+
+So `providers` is household-scoped and `provider_links` carries the per-person half: which person
+sees them, and **in what capacity**. The role is a relationship rather than a job title, which is why
+one paediatrician can be one child's *Primary care* and their cousin's *Specialist* without either
+being wrong.
+
+The field worth filling in is the **NPI** — the ten-digit national identifier printed on
+prescriptions and after-visit summaries, published in the federal NPPES registry. With it, a
+directory check is exact. Without it, a common surname can only ever come back as "couldn't tell them
+apart". It is validated as it is typed (ten digits, Luhn over the `80840` issuer prefix), because a
+mistyped NPI and a doctor who has left the network both come back as no results, and discovering the
+transposed digit weeks later as a mysterious "not listed" helps nobody.
+
+## Checking the network — what a directory can and can't tell you
+
+Since the CMS Interoperability and Patient Access rule, payers publish their provider directory as a
+**public, unauthenticated FHIR R4 API** — the Da Vinci **PDEX Plan-Net** profile. No key, no sign-in,
+no member number, by design: it is a directory in the telephone-book sense, published so that anybody
+can look a doctor up before booking. That is the only reason this feature can exist.
+
+### No table of guessed endpoints
+
+There is no national registry of these addresses, and **Health ships none of its own**. A wrong
+endpoint quietly answering "not listed" for every doctor in the house is the worst outcome this
+feature could produce — a confident fiction, which is exactly what the rest of this app refuses.
+
+So the user pastes what the plan published (usually on the insurer's developer or interoperability
+page) and Health does the honest thing: takes it at face value, tries the handful of paths a FHIR
+server conventionally lives at underneath it, asks each for its `CapabilityStatement`, and reports
+exactly what came back. Five candidates, not fifteen — enough to find the endpoint when somebody
+pasted the page above it, few enough not to look like a scan.
+
+The answers are told apart rather than collapsed, because they mean different things and one of them
+is fixable by the user:
+
+| | |
+|---|---|
+| **Directory reachable** | A FHIR server answered and publishes practitioners. |
+| **Not a provider directory** | Something answered — usually a marketing page, or a FHIR endpoint for something else entirely. |
+| **Nothing published here** | The server says there is nothing at that path. Ordinary while hunting for a base URL. |
+| **Needs a sign-in** | Plan-Net is meant to be public, so this almost always means the URL is the **member portal**, not the directory. Worth saying, because it is the user's to fix. |
+| **Couldn't reach it** | No network, DNS, timeout, or the payer's server is down. Not a fact about any doctor. |
+
+When every candidate fails, the **most informative** failure is reported rather than the last one: a
+401 on the address somebody actually pasted beats a 404 on a path Health invented.
+
+### From a list of strangers to a verdict
+
+`ProviderDirectory.judge` turns what came back into one outcome, and it is conservative on purpose —
+being wrong in the generous direction is what sends somebody to an appointment they get billed
+out-of-network for:
+
+- **Nothing came back** → not listed. The directory answered; it does not have them.
+- **The NPIs agree** → listed. One identifier, one clinician, no doubt — and **conflicting NPIs are
+  certainty the other way**: an entry with the right name and somebody else's number is a different
+  clinician with the same name, which is common, and calling it a match is precisely how an app tells
+  a household their doctor is in network when he isn't.
+- **Exactly one name matches** → listed. Names are compared as word *sets* with honorifics and
+  credentials stripped, so "Okafor, Jane A" and "Dr. Jane Okafor" are the same person.
+- **More than one matches**, or only a surname-and-initial does → **ambiguous**. Never "probably the
+  first one". The whole reason the NPI field exists is to settle this, and quietly picking a match
+  would hide the fact that it needs settling.
+- **The listing is marked inactive** → not listed, and says so. Plan-Net's `active = false` is how a
+  payer records a clinician who has stopped practising at that listing; reading it as a yes is what
+  sends somebody to a closed office.
+
+**"Listed" is not "covered".** A payer's directory covers every network it sells, so being in it and
+being in *your* plan's network are different sentences. Plan-Net models membership on
+`PractitionerRole.network`, so Health keeps the **network names** it was found under and shows them —
+"Listed in Choice Plus PPO" rather than a bare yes.
+
+### Why every check is kept
+
+`network_checks` is **append-only**. Nothing overwrites a check and nothing prunes the old ones, and
+that is the design rather than an oversight: a single "in network" flag cannot tell the difference
+between a doctor who was never in the network and one who was in it until March, and that difference
+is the most useful thing this feature produces.
+
+`logic/NetworkStatus` derives the verdict from the whole list:
+
+| Verdict | What it took to say it |
+|---|---|
+| **In network** | The current directory lists them — with the networks it listed them under. |
+| **Was listed — not any more** | An earlier check found them; the latest doesn't. Usually means they have left the network, and it is a phone call to make *before* the appointment. |
+| **Never listed** | Checked, and never found in any directory Health has asked. |
+| **Couldn't tell them apart** | Several matched and nothing settled it. Their NPI would. |
+| **Confirmed by phone** / **Told not in network** | Somebody rang and was told something. Kept as somebody's word with a date on it — it never becomes "in network". |
+| **Couldn't check** | No directory, or it couldn't be reached. Not a verdict about anybody. |
+| **Not checked** | Nobody has asked. Health has no opinion and says so. |
+
+Three rules make those hold up:
+
+1. **The most recent *decisive* check wins.** A directory that was down this morning does not
+   overwrite the answer it gave last month — an outage is not evidence about a doctor, and treating
+   it as one would flip a whole care team to "unknown" every time a payer's server hiccuped.
+2. **A "not listed" is read against everything before it**, which is the only way "has left the
+   network" and "never was in it" can be told apart.
+3. **Ambiguity is never rounded up.** Four Dr Patels is not a yes — and a name that has *become*
+   ambiguous unsettles an older yes, because the directory has since grown a second person with that
+   name and the old answer may have been about either of them.
+
+An answer older than 45 days is flagged as worth repeating: payers are required to keep these current
+and are audited on how badly they manage it, so entries go stale in weeks. And a check made under a
+policy the household has since left deliberately **stops counting** for a person no longer on it —
+last year's network is not this year's, and letting an old carrier's yes stand under a new plan would
+be the most convincing wrong answer the feature could give. The rows aren't deleted; they simply stop
+speaking for a plan they were never about, and come back the moment somebody is put on that policy
+again.
+
+Individual checks can be deleted for the mis-taps. There is deliberately **no "clear history"**:
+clearing it means making the app forget that a doctor used to be in network, which is the fact worth
+keeping.
+
 ## Illnesses — the thing the rows hang off
 
 Starting an episode is the difference between a scatter of readings and a story. While one is open,
@@ -281,6 +470,10 @@ seriously enough to ignore them for exactly that reason.
 │   ├── DoseSchedule     interval + rolling-24h dose windows and countdown formatting
 │   ├── DoseReminder     when a reminder next fires, in both modes, against an injected clock
 │   ├── Cabinet          expiry and stock verdicts, doses remaining, same-unit rule
+│   ├── Insurance        coverage-current verdict, and the one card layout both renderers draw
+│   ├── ProviderDirectory  candidate endpoints, NPI validation, name matching, the check verdict
+│   ├── NetworkStatus    a doctor's standing, derived from the whole history of checks
+│   ├── FhirDirectoryParser  Plan-Net JSON → capability, practitioners, roles and networks
 │   ├── DrugFacts        the monograph types — candidates, label sections, attribution
 │   ├── RxNormParser     RxNorm JSON → candidates, ingredients, strengths, schedule
 │   ├── OpenFdaParser    openFDA JSON → the label's own sections, in reading order
@@ -289,12 +482,15 @@ seriously enough to ignore them for exactly that reason.
 │   └── Age              birth date → months/years, and the label people actually use
 ├── data/             Room (HealthDatabase, entities, HealthDao) + repository + prefs
 │   ├── model/        domain types with the string columns resolved into enums
-│   ├── net/          DrugLookupClient — the only class in Health that opens a connection
+│   ├── net/          DrugLookupClient, ProviderDirectoryClient — the only two classes that connect
+│   ├── store/        CardImageStore — card photographs, beside the database rather than in it
 │   ├── repository/   HealthRepository — rows in, models out, every judgement delegated to logic/
 │   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
+├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
-├── ui/               Compose: today · vitals · meds · episodes · people (+ common, theme)
-├── backup/           HealthBackupContributor (whole-file health.db copy + health_* prefs)
+├── ui/               Compose: today · vitals · meds · episodes · coverage · people (+ common, theme)
+├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/)
+├── HealthFileProvider.kt  hands the exported card PDF to a share sheet, and nothing else
 ├── HealthApp.kt      tiny runtime container (install/get), like LogisticsApp
 └── MainActivity.kt   tabbed shell over the one runtime
 ```
@@ -307,7 +503,7 @@ not read People's database; the roster is replicated over a mailbox, not borrowe
 
 ## Storage
 
-One `health.db`, ten tables:
+One `health.db`, fifteen tables:
 
 - **`profile_tombstones`** — profiles removed here, kept only long enough to publish the un-tick so
   the next round doesn't hand the person straight back. See PEOPLE.md.
@@ -333,6 +529,19 @@ One `health.db`, ten tables:
   column; a malformed blob reads back as no sections rather than taking the screen down. *Schema v4.*
 - **`episodes`** — bouts of illness; open while `endedAt` is null.
 - **`care_notes`** — fluids, rest, the call to the doctor and what they said.
+- **`insurance_plans`** — one policy as copied off the card: carrier, plan, group, payer id, Rx
+  BIN/PCN/Group, the phone numbers on the back, the dates, and the provider-directory address with
+  whatever the last probe found at it. *Schema v6, household-scoped — a family policy is one policy.*
+- **`insurance_members`** — one person's place on one policy: their member number, person code,
+  subscriber and their own dates. Card photographs are **file names** under `insurance-cards/`, never
+  blobs; the plan's own photos are the fallback, for the single card that arrives for the family.
+- **`providers`** — a doctor, dentist or practice, with their NPI. *Household-scoped and deliberately
+  **not** owned by a plan: the policy changes every January and the paediatrician doesn't.*
+- **`provider_links`** — who sees whom, in what capacity. Many-to-many in both directions, because
+  both happen: one paediatrician for three children, three clinicians for one child.
+- **`network_checks`** — **append-only**. What a directory said about one provider under one plan at
+  one moment, plus what somebody was told on the phone. Never overwritten, because the earlier
+  answers are the only thing that can tell "has left the network" apart from "never was in it".
 
 *Schema v5 adds `createdAt` to `doses`, `symptoms` and `care_notes` — when the **row** was written, as
 against when the thing happened. Nullable, with no backfill: every row that predates the column was
@@ -345,10 +554,15 @@ Two conventions run through them: **instants are epoch millis, dates are ISO str
 subtracted and windowed; a birth date must not shift across time zones), and **every row about a
 person carries its profile id** — there is no ambient "current person" at the data layer.
 
-The two v4 tables are the deliberate exception, and the exception is the design: `cabinet_items` and
-`drug_facts` are about *things*, not people. A bottle is a household possession and a drug label is a
-fact about a product; scoping either to a profile would mean one row per person, one expiry date per
-person, and three of them wrong within a month.
+The household-scoped tables are the deliberate exception, and the exception is the design.
+`cabinet_items` and `drug_facts` are about *things* — a bottle is a household possession and a drug
+label is a fact about a product. `insurance_plans` and `providers` are the same shape one layer up: a
+family policy is one contract several people are named on, and a doctor is one person several people
+see. Scoping any of them to a profile would mean one row per person, one expiry date or one renewal
+date per person, and most of them wrong within a month.
+
+*Schema v6 adds the five coverage tables, and touches nothing that existed. A household that never
+opens the Care tab has five empty tables and no other change at all.*
 
 Cross-table links are plain nullable ids rather than foreign keys — a reading taken before anyone
 declared an illness is still a real reading, deleting a medicine must not delete the record that a
@@ -363,6 +577,12 @@ and Logistics use. It also carries Health's own `health_*` preferences (selected
 unit) and, like LifeOps' contributor, touches **only** files matching its own prefix: the hosted apps
 share one `shared_prefs/` directory. The manifest's data version is read from
 `HEALTH_DB_VERSION` rather than hand-copied, so it cannot drift from the schema.
+
+**Card photographs go with it.** They are the one thing Health keeps outside the database — a couple
+of megabytes each in `filesDir/insurance-cards`, with only the file name on the row — so the
+directory is copied entry by entry and restored the same way, *before* the database that names them.
+A backup that carried the row and not the picture would restore a card pointing at nothing, which is
+worse than not backing it up at all: the app would look like it had the photo and quietly wouldn't.
 
 Restoring also **re-arms every medication reminder** against the database that has just arrived. The
 work queue survives the restore and still refers to the medicines of the database that was replaced,
@@ -383,19 +603,26 @@ side of:
 | | |
 |---|---|
 | *"What is acetaminophen oral suspension, and what does its label say?"* | A question about a **product**. Anyone could type it into a search engine. It says nothing about who is asking or why. |
-| *"This person takes these medicines"* | A question about a **person**. It never leaves. |
+| *"Does this public directory list Dr Okafor?"* | A question about a **practitioner** — the question the directory was published to answer, for anybody who asks. |
+| *"This person takes these medicines"* / *"Dr Okafor is my daughter's paediatrician"* | Questions about a **person**. They never leave. |
 
-Health asks the first and cannot ask the second. The lookup takes a search term and an RxNorm concept
-id; there is no parameter, and no code path, by which a profile, a reading or a dose could reach it.
-A household that never opens the search never makes a request at all.
+Health asks the first two and cannot ask the third. Two permissions, no sensors, no contacts:
 
-Two permissions, no sensors, no contacts:
+- **`INTERNET`** — two features, and nothing else:
+  - `data/net/DrugLookupClient` takes a search term and an RxNorm concept id. There is no parameter,
+    and no code path, by which a profile, a reading or a dose could reach it. It asks two public,
+    keyless U.S. government references — RxNorm and openFDA — and caches the answer locally so the
+    same question isn't asked twice.
+  - `data/net/ProviderDirectoryClient` takes a base URL, a practitioner's **surname** and a
+    practitioner's **NPI**. That's the complete list of what can cross the wire, and all three are
+    facts about a URL or about a doctor: the NPI is the national identifier printed on prescriptions
+    and published in the federal NPPES registry. **The member id in particular is never sent, and
+    cannot be** — `findPractitioner` holds no reference to a plan, a membership or a profile. The
+    insurance card itself is stored, rendered and exported entirely on-device; the only way one
+    leaves is the PDF the user explicitly shares.
 
-- **`INTERNET`** — the medicine cabinet's drug lookup, and nothing else. `data/net/DrugLookupClient`
-  is the only class in the module that opens a connection, and it is only ever called because
-  somebody pressed Search or Refresh. It asks two public, keyless U.S. government references —
-  RxNorm and openFDA — and caches the answer locally so the same question isn't asked twice. Nothing
-  runs on a timer, at startup, or in the background.
+  Neither runs on a timer, at startup, or in the background. A household that never opens the search
+  and never presses Check makes no request at all.
 - **`POST_NOTIFICATIONS`** — medication reminders the user sets up per medicine. Nothing is scheduled
   until a reminder is turned on, and the notification is composed and delivered entirely on-device.
 
@@ -410,9 +637,15 @@ person. Recent readings are listed individually and older ones characterised, so
 temperatures can't drown the rest of the corpus, and each temperature carries Health's own assessment
 rather than inviting the model to form a second opinion.
 
+**Coverage is deliberately not published to Advisor.** Member numbers, group numbers and card
+photographs are identifiers rather than health history — they answer nothing an assistant is useful
+for, and a retrieval corpus is flat text that ends up quoted back into answers. The care team is left
+out for the same reason: "who is her doctor" is a question with a name in it, and the corpus is not
+the place for one. The Care tab's records stay in the Care tab.
+
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 96 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 159 tests:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -445,6 +678,28 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   later marked as filled in and one written at the time not, a row from before Health tracked it not
   being accused of anything, simultaneous entries reading in the order they happened, and days grouped
   in the reader's own zone rather than UTC.
+- `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
+  itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
+  nobody filled in never reaching the card, the subscriber named only when it is somebody else, the
+  disclaimer on both faces, and a member number masked to its last four in the browsing list.
+- `ProviderDirectoryTest` — a pasted address tried where FHIR servers actually live and an address
+  that already names FHIR tried alone, a `/metadata` URL not asked for twice, only the surname being
+  sent because that is what FHIR name search matches, a credential's stray letter dropped while an
+  honorific's initial is kept, a directory that files a name backwards still matching, and — the one
+  that matters — **conflicting NPIs being certainty the other way**, because an entry with the right
+  name and somebody else's number is a different clinician.
+- `DirectoryVerdictTest` — an empty answer being a real no, two people with the same name never being
+  the first one, a surname-and-initial never concluding anything, a directory full of other people
+  having answered the question, and a listing marked inactive not being a yes.
+- `NetworkStatusTest` — a current listing naming the network it was found in, "listed once, not
+  listed now" reading as a doctor who has left rather than one never in it, a directory that is down
+  not overwriting the answer it gave last month, a name that has become ambiguous unsettling an older
+  yes while never burying a drop, a phone confirmation staying a phone confirmation, checks read in
+  time order however they arrive, and an answer from before the last renewal flagged as stale.
+- `FhirDirectoryParserTest` — a marketing page reading as "no directory here" rather than "your
+  doctor isn't in it", a network reference falling back to its id when the server gave no display
+  name, roles folding only into the practitioner they reference, an `OperationOutcome` read for what
+  the user can act on, and malformed JSON parsing to nothing rather than throwing.
 - `DrugLookupParserTest` — products sorted ahead of bare ingredients, suppressed and non-English
   concepts dropped, the approximate search keeping the best score per concept, a numeric DEA schedule
   written out and an unscheduled one saying nothing, label sections kept in reading order with the

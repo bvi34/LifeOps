@@ -6,7 +6,9 @@ import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.repository.HealthRepository
 import com.health.app.data.net.DrugLookupClient
+import com.health.app.data.net.ProviderDirectoryClient
 import com.health.app.data.repository.HealthSyncService
+import com.health.app.data.store.CardImageStore
 import com.health.app.reminder.MedicationReminderScheduler
 import com.people.app.PeopleApp
 import com.people.app.sync.LocalRosterChange
@@ -42,6 +44,21 @@ class HealthApp private constructor(private val app: Application) {
      */
     val drugLookup by lazy { DrugLookupClient() }
 
+    /**
+     * The Care tab's provider-directory check. Lazy and idle by construction, exactly like
+     * [drugLookup]: it holds no connection and starts no work until somebody presses Check. See
+     * [ProviderDirectoryClient] for the three things that can cross the wire, none of which is about
+     * a member of the household.
+     */
+    val providerDirectory by lazy { ProviderDirectoryClient() }
+
+    /**
+     * Where photographs of insurance cards live — `filesDir/insurance-cards`, beside the database
+     * rather than inside it. A card photo is a couple of megabytes and `health.db` is copied whole by
+     * every backup; see [CardImageStore].
+     */
+    val cardImages by lazy { CardImageStore(app) }
+
     // The seam's publish hook lives on the repository rather than in the People screen's ViewModel:
     // stamping a profile's syncVersion and telling the other peers about it are the same event, and
     // a change nobody publishes until Health next opens is a change the user goes looking for in
@@ -51,7 +68,10 @@ class HealthApp private constructor(private val app: Application) {
             database.healthDao(),
             prefs,
             onProfileEdit = { change -> syncPeople(rescan = change == LocalRosterChange.PERSON_ADDED) },
-            onReminderChange = { medicationId -> rearmReminder(medicationId) }
+            onReminderChange = { medicationId -> rearmReminder(medicationId) },
+            // A card photo outlives the row that pointed at it unless something deletes the file, and
+            // the repository deliberately can't: it stays JVM-testable and knows nothing about disk.
+            onCardImageDiscarded = { fileName -> cardImages.delete(fileName) }
         )
     }
 

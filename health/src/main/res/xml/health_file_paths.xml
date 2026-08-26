@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Where InsuranceCardPdf writes the card before it is shared (cacheDir/exports). Deliberately
+         only the export directory: the card photographs in filesDir/insurance-cards are a record,
+         not something any other app is invited to read. -->
+    <cache-path name="exports" path="exports/" />
+</paths>

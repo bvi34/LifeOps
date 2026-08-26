@@ -5,6 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MonitorHeart
@@ -21,6 +22,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.health.app.ui.coverage.CoverageScreen
+import com.health.app.ui.coverage.CoverageViewModel
 import com.health.app.ui.episodes.EpisodesScreen
 import com.health.app.ui.episodes.EpisodesViewModel
 import com.health.app.ui.meds.MedsScreen
@@ -38,14 +41,16 @@ private sealed class Dest(val route: String, val label: String, val icon: ImageV
     object Vitals : Dest("vitals", "Vitals", Icons.Default.MonitorHeart)
     object Meds : Dest("meds", "Meds", Icons.Default.MedicalServices)
     object Episodes : Dest("episodes", "Illness", Icons.Default.Sick)
+    object Coverage : Dest("coverage", "Care", Icons.Default.Badge)
     object People : Dest("people", "People", Icons.Default.Groups)
 }
 
-private val navItems = listOf(Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes, Dest.People)
+private val navItems =
+    listOf(Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes, Dest.Coverage, Dest.People)
 
 /**
- * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Illness, People — over the one
- * [HealthApp] runtime.
+ * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Illness, Care, People — over the
+ * one [HealthApp] runtime.
  *
  * Every tab except People shows the same profile bar and reads the same selected person, so
  * switching who you're looking at is one tap from anywhere and is never ambiguous. That is the whole
@@ -133,6 +138,16 @@ class MainActivity : ComponentActivity() {
                         composable(Dest.Episodes.route) {
                             val vm: EpisodesViewModel = viewModel(factory = EpisodesViewModel.Factory(app.repository))
                             EpisodesScreen(vm, onAddProfile = { goAddProfile() })
+                        }
+                        composable(Dest.Coverage.route) {
+                            val vm: CoverageViewModel = viewModel(
+                                factory = CoverageViewModel.Factory(
+                                    app.repository,
+                                    app.providerDirectory,
+                                    app.cardImages
+                                )
+                            )
+                            CoverageScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.People.route) {
                             val vm: PeopleViewModel = viewModel(factory = PeopleViewModel.Factory(app.repository))

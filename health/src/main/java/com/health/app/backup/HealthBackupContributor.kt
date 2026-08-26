@@ -6,6 +6,7 @@ import com.health.app.HealthApp
 import com.health.app.data.db.HEALTH_DB_VERSION
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
+import com.health.app.data.store.CardImageStore
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
 import com.operations.backupkit.BackupSink
@@ -26,6 +27,13 @@ import java.io.File
  * more than they look: a restore that reset them to zero would re-take every packet still sitting in
  * the peers' envelopes, resurrecting people who had since been archived here because their old
  * packets would arrive looking newer than nothing at all.
+ *
+ * **Card photographs go with it.** Insurance card images are the one thing Health keeps outside the
+ * database — a couple of megabytes each, in `filesDir/insurance-cards`, with only the file name on
+ * the row (see [CardImageStore]). A backup that carried the row and not the picture would restore a
+ * card that points at nothing, which is a worse outcome than not backing it up at all: the app would
+ * look like it had the photo and quietly wouldn't. So the directory is copied entry by entry, and
+ * restored the same way.
  *
  * Restore is a whole-file swap of `health.db`, so a Health restart is expected afterwards — the
  * sandbox surfaces that.
@@ -55,6 +63,11 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
         healthPrefFiles().forEach { file ->
             sink.entry("$PREFS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
         }
+
+        // The card photographs, which the rows only name. See the note above.
+        CardImageStore(context).allFiles().forEach { file ->
+            sink.entry("$CARDS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
+        }
     }
 
     override fun restore(source: BackupSource) {
@@ -65,6 +78,20 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
             // Defensive: only ever write Health-owned pref files.
             if (name.startsWith(PREFS_NAME_PREFIX)) {
                 source.open(rel)?.use { input -> File(prefsDir, name).outputStream().use { input.copyTo(it) } }
+            }
+        }
+
+        // The card photographs, before the database that names them — so that the moment the rows
+        // arrive, every file they point at is already on disk. The other order leaves a window in
+        // which a card exists and its picture doesn't.
+        val cardsDir = File(context.filesDir, CardImageStore.DIR_NAME).apply { mkdirs() }
+        source.list().filter { it.startsWith(CARDS_PREFIX) }.forEach { rel ->
+            val name = rel.removePrefix(CARDS_PREFIX)
+            // Defensive: an archive entry is not allowed to name a path outside the directory.
+            if (name.isNotBlank() && !name.contains('/') && !name.contains("..")) {
+                source.open(rel)?.use { input ->
+                    File(cardsDir, name).outputStream().use { input.copyTo(it) }
+                }
             }
         }
 
@@ -101,6 +128,9 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
         private const val DB_NAME = HealthDatabase.DB_NAME
         private const val DB_ENTRY = "health.db"
         private const val PREFS_PREFIX = "shared_prefs/"
+
+        /** Where the card photographs sit in the archive, mirroring their directory on disk. */
+        private const val CARDS_PREFIX = "${CardImageStore.DIR_NAME}/"
 
         /** Matches [HealthPrefs.FILE_NAME] and anything Health adds later under the same prefix. */
         private const val PREFS_NAME_PREFIX = "health"
