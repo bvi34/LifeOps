@@ -82,6 +82,13 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     // position, and the time estimate comes from the reader's *own* measured pace — shown only once
     // there is enough honest reading behind it to mean something.
 
+    // The open book and the chapter within it. They are declared here, above every flow that
+    // combines them, because a property initializer that reads a property declared further down the
+    // class reads it before it is assigned — Kotlin rejects it outright, and at runtime it would be
+    // null. Their public `asStateFlow()` faces stay with the reader state they belong to, below.
+    private val _openBook = MutableStateFlow<Book?>(null)
+    private val _chapterOrdinal = MutableStateFlow(0)
+
     private val _position = MutableStateFlow(0 to 0)
 
     /** The pace to estimate the open book with; reloaded whenever a book is opened. */
@@ -694,7 +701,6 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         _activeTag.value = if (_activeTag.value == tag) null else tag
     }
 
-    private val _openBook = MutableStateFlow<Book?>(null)
     val openBook: StateFlow<Book?> = _openBook.asStateFlow()
 
     /**
@@ -708,7 +714,6 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             notes.filter { it.type == NoteType.PASSAGE_ANCHORED && it.source.bookKey?.toString() == key }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _chapterOrdinal = MutableStateFlow(0)
     val chapterOrdinal: StateFlow<Int> = _chapterOrdinal.asStateFlow()
 
     // Scroll position to restore on the first paint of a reopened book: the chapter it belongs to and

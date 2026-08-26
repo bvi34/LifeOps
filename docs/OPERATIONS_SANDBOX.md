@@ -2,14 +2,16 @@
 
 Operations Sandbox is the **container** the whole suite ships inside — think a lightweight
 Docker-style host crossed with a single sign-on hub. It is the one installed app and the one
-launcher icon. Opening it gives you a home screen that:
+launcher icon. Opening it gives you a **phone home screen**: a tile per app, each with its own icon
+and colour, over a dock holding the gear and the backups. From there it:
 
-- lists the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
+- opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
   **Advisor**, **Health**, and **People**),
-- opens any one of them, and
+- **paints all six of them**: one preset, one light/dark mode, and one accent per app, chosen in the
+  gear and obeyed everywhere, and
 - backs the **whole suite up into a single `.zip`** and **restores from that same zip**.
 
-The GUI and the backups are unified: one hub, one archive.
+The GUI, the look and the backups are unified: one hub, one theme, one archive.
 
 ---
 
@@ -147,24 +149,89 @@ reopen it** — reopening just the hosted screen would reuse the now-closed data
 
 ## The GUI (`:app`)
 
-`SandboxActivity` is a single Compose screen (`BackupCenter` does the work):
+The sandbox opens on a **phone-style home screen**, because that is the honest picture of what it
+is: six apps behind one icon.
 
-- A card per app with a **selection checkbox** and an **Open** button (LifeOps is tagged
-  `STANDARD`). Open launches that app's (now non-launcher) `MainActivity` in the same process.
+- A **tile per app**, laid out three to a row, each carrying that app's own glyph and colour — so
+  "the teal one" and "the green one" mean something before you have read a word. Tapping a tile
+  launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
+  jumps straight to where that app's colour is chosen.
+- A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
+  container rather than to any app: **Settings** (the gear) and **Backups**.
+- The wallpaper is mixed from the suite's own colours, so the home screen is already wearing the
+  chosen preset before an app is opened.
+
+`SandboxActivity` is a two-route shell (`when` over a route, not a navigation graph). The settings
+screen's state — which tab, which app is being recoloured — is hoisted into it, and so is the
+`BackupController`: an archive can take a while, and backing out to the home screen mid-backup must
+not cancel it.
+
+### The gear: appearance and backups
+
+**Appearance** (see *One look for six apps* below) is the suite's, not LifeOps': one preset, one
+light/dark mode, one custom palette, and an accent per app.
+
+**Backups** is what the hub has always done, moved behind the gear:
+
+- A row per app with a **selection checkbox** and its backup format version (LifeOps is tagged
+  `STANDARD`).
 - **Full Backup** → the system *create-document* picker → the selected apps stream into one `.zip`.
 - **Restore from zip…** → the system *open-document* picker → the archive's manifest is read, then
   the apps that are both selected and present in the archive are restored.
 
-Adding another hosted app later is authoring, not engineering: add an `AppId`, ship a
-`BackupContributor`, and register it in `BackupCenter` (and add the module as an `:app` dependency).
-**Advisor** (`:advisor`) is a permission-gated RAG assistant that reads the other apps' data to
-answer grounded questions; see **[ADVISOR.md](ADVISOR.md)**. **Health** (`:health`) is the most
-recent example, and the cleanest illustration of how small the plug is: an `AppId.HEALTH`, a
-whole-file `HealthBackupContributor`, one line in `BackupCenter`, one in `SandboxApplication`, one
-branch in `openApp`, and one entry in Advisor's (permission-gated) source list — see
-**[HEALTH.md](HEALTH.md)**. **People** (`:people`) plugs in the same way and then does something no
-other hosted app does: it **syncs two-way with LifeOps** over a shared folder rather than reading its
-database, because both ends can edit the same person — see **[PEOPLE.md](PEOPLE.md)**.
+---
+
+## One look for six apps (`:suitekit` + `:suiteui`)
+
+Every hosted app used to own its palette: Citation's warm paper, Health's clinical teal, LifeOps'
+five presets. That made six apps that happened to be installed together look like six apps that
+happened to be installed together. Appearance now belongs to the **container**, and an app names
+itself rather than choosing colours.
+
+| Module | Kind | Holds |
+|---|---|---|
+| `:suitekit` | pure JVM, unit-tested | the presets, the custom palette, each app's colour identity, and the ARGB maths that resolves them into a full `SuiteScheme` |
+| `:suiteui` | Android library | `SuiteAppearanceStore` (the one preferences document) and `SuiteTheme`, the single Compose theme every app wraps itself in |
+
+The split is the same discipline as `:core` and `:backupkit`: no colour decision is made in Android
+code, so all of it is testable on the JVM without an emulator.
+
+### How an app gets its colour
+
+```kotlin
+@Composable
+fun HealthTheme(content: @Composable () -> Unit) {
+    SuiteTheme(appId = AppId.HEALTH, content = content)
+}
+```
+
+That is the whole of each app's `Theme.kt` now. `SuiteTheme` resolves two things, in order:
+
+1. **The shared look** — the preset (Default, Beacon, Ocean, Sunset or Custom) and light/dark mode
+   chosen once in the sandbox. This is what makes the suite feel like one product. The presets are
+   LifeOps' own, promoted value-for-value rather than replaced, so an existing install's look
+   survives the move.
+2. **The app's accent** — its identity colour, also chosen in the sandbox. It repaints the
+   primary/secondary roles and washes a *tint* (10% dark, 6% light) into the surfaces, while the
+   tertiary stays the preset's: one colour in every app that is the suite's rather than the app's.
+
+An accent that would be illegible in the current mode is lifted or dropped to the nearest readable
+brightness (`SuiteColors.fitForMode`) — never further, so a chosen hue survives exactly when it can.
+Turning **"Tint each app with its colour"** off silences step 2 everywhere; home-screen icons keep
+their colours regardless, because that is how apps are told apart.
+
+### One store, one write
+
+`SuiteAppearanceStore` is a process-wide singleton over one preferences file. The sandbox and the
+hosted apps share a process, so an edit in settings reaches every composed screen through a
+`StateFlow` — no broadcast, no restart. LifeOps' own Appearance card writes the *same* setting
+(`PreferencesRepository` delegates to the store, and `ThemePreset`/`CustomPalette` are now aliases
+of the suite's types), so the two doors cannot disagree. On first read the store adopts LifeOps'
+existing preset, mode and palette, so nobody's theme resets.
+
+Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent) and
+one line in `SuiteIcons` mapping that name to a Material icon — `:suitekit` stays Android-free by
+naming glyphs rather than importing them.
 
 ---
 
@@ -172,8 +239,16 @@ database, because both ends can edit the same person — see **[PEOPLE.md](PEOPL
 
 `:backupkit` has full JVM unit tests (`gradle :backupkit:test`, no SDK required): manifest
 round-trip, backup→restore payload fidelity across apps, selection, skipping unknown/absent apps,
-the no-manifest case, and the zip-slip guard. The Android glue (contributors, GUI, the module
-surgery) is verified by building and running the container app.
+the no-manifest case, and the zip-slip guard.
+
+`:suitekit` is tested the same way (`gradle :suitekit:test`, no SDK required): hex parsing of every
+form the settings field accepts (and the fallback for a half-typed one), the exact luminance
+`lighten`/`darken`/`fitForMode` promise, appearance-document round-trip and graceful decay of a
+partial or unknown document, accents keyed by app key, and — across every preset × mode × app — that
+each slot of the resolved scheme is opaque and that its text contrasts its surface.
+
+The Android glue (contributors, the home screen and settings, the module surgery) is verified by
+building and running the container app.
 
 > Note: code shrinking (`minifyEnabled`) is off in `:app`'s release build for now — the merged
 > LifeOps + Citation code needs a vetted keep-rule set (Room/Gson/Glance/WorkManager reflection)

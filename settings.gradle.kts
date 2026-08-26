@@ -32,3 +32,8 @@ include(":health")
 include(":people")
 include(":core")
 include(":backupkit")
+// The suite's appearance: `:suitekit` is the pure-JVM contract (presets, palettes, each app's colour
+// identity and the maths that resolves them into a scheme); `:suiteui` is the Compose theme and the
+// store behind it that the sandbox settings edit and every hosted app reads.
+include(":suitekit")
+include(":suiteui")

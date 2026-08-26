@@ -65,6 +65,16 @@ object KnowledgeFacets {
             "grocery" -> ObjectType.GROCERY_ITEM
             else -> ObjectType.UNKNOWN
         }
+        // Health and People have no facet vocabulary of their own yet: a temperature, a dose or a
+        // directory entry is not a book, a task or a pantry item, and inventing an object type for
+        // them here would put the *engine* in the business of guessing what a health record is.
+        // UNKNOWN is the honest answer — the relevance engine reads it as "no facet to disagree
+        // about" and falls back to the text, rather than manufacturing a mismatch. A note is the
+        // exception: it is the same kind of thing wherever it was written.
+        SourceApp.HEALTH, SourceApp.PEOPLE -> when (doc.kind) {
+            "person-note" -> ObjectType.NOTE
+            else -> ObjectType.UNKNOWN
+        }
     }
 
     /** The record's normalized lifecycle state, or null when the object type doesn't carry one. */

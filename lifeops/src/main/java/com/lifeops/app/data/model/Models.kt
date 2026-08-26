@@ -348,25 +348,19 @@ enum class TaskSource {
     }
 }
 
-data class CustomPalette(
-    val primary: String = "#BB86FC",
-    val secondary: String = "#03DAC6",
-    val tertiary: String = "#3700B3",
-    val darkBackground: String = "#121212",
-    val lightBackground: String = "#F5F5F5"
-)
+/**
+ * Appearance is suite-wide now: the preset, the custom palette and the light/dark mode are owned by
+ * the Operations Sandbox (`:suitekit`) and obeyed by every hosted app, not by LifeOps alone. These
+ * aliases keep LifeOps' own vocabulary — its settings screen, its view models and its backup JSON
+ * all still say `ThemePreset` and `CustomPalette` — while there is only one type, one set of
+ * presets and one place the choice is stored.
+ *
+ * The alias targets carry the same field names and defaults LifeOps has always written, so an old
+ * backup still restores its palette unchanged.
+ */
+typealias CustomPalette = com.operations.suitekit.SuitePalette
 
-enum class ThemePreset(val displayName: String) {
-    DEFAULT("Default"),
-    BEACON("Beacon"),
-    OCEAN("Ocean"),
-    SUNSET("Sunset"),
-    CUSTOM("Custom");
-
-    companion object {
-        fun from(value: String) = entries.firstOrNull { it.name == value } ?: DEFAULT
-    }
-}
+typealias ThemePreset = com.operations.suitekit.SuitePreset
 
 data class ImportPreview(
     val newTasks: List<Task>,

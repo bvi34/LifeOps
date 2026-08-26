@@ -98,6 +98,8 @@ ksp {
 }
 
 dependencies {
+    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    implementation(project(":suiteui"))
     // The other suite apps: Advisor's knowledge sources read their databases (same process) to build
     // the retrieval corpus. It never writes to them — it is a read-only consumer of their data.
     implementation(project(":lifeops"))

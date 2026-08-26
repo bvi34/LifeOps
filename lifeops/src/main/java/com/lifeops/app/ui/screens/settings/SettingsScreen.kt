@@ -186,6 +186,12 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "Suite-wide: this is the same setting as the Operations Sandbox's gear, so it " +
+                        "paints Citation, Logistics, Advisor, Health and People too.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(Modifier.height(8.dp))
                 ThemeSection(
                     selectedPreset = state.themePreset,
