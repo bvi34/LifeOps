@@ -409,7 +409,7 @@ private fun VaccineList(
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-            items(series, key = { it.name.lowercase() }) { entry ->
+            items(series, key = { it.key }) { entry ->
                 SectionCard(entry.name) {
                     Text(
                         entry.summary,

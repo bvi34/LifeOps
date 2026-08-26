@@ -58,7 +58,7 @@ enum class VaccineSource(val key: String, val label: String) {
  */
 data class VaccineDose(
     val id: String,
-    /** As written down: "MMR", "DTaP", "Influenza". Grouped by this, compared as words. */
+    /** As written down: "MMR", "DTaP", "Influenza". Grouped on this, compared letters-and-digits only. */
     val vaccine: String,
     /** ISO at whatever precision was recorded — a transcribed card is often only a month. */
     val givenDate: String?,
@@ -82,6 +82,11 @@ data class VaccineDose(
  * copied onto a form.
  */
 data class VaccineSeries(
+    /**
+     * The normalised name the doses were grouped on — stable, unique across a person's series, and
+     * the right thing for a list to key on. [name] is for reading and could in principle repeat.
+     */
+    val key: String,
     /** The name as the household wrote it, taken from the most recent dose that named it. */
     val name: String,
     val doses: List<VaccineDose>
@@ -122,10 +127,10 @@ object Immunizations {
     /**
      * Group doses into series, most recently given first.
      *
-     * Grouped on the vaccine name compared as **words** rather than as a raw string, so "MMR" and
-     * "M.M.R." are one series and a stray capital doesn't split a child's record in two. The name
-     * shown is the one from the most recent dose — if a household has started writing it a new way,
-     * that is the way they are writing it now.
+     * Grouped on the vaccine name reduced to **letters and digits only**, so "MMR", "M.M.R." and a
+     * stray capital are one series rather than three halves of a child's record. The name shown is the
+     * one from the most recent dose — if a household has started writing it a new way, that is the way
+     * they are writing it now.
      *
      * Series with no dated dose at all sort last: they are still real records, and they are the ones
      * a person is least able to act on, so they do not belong at the top of the list.
@@ -134,13 +139,14 @@ object Immunizations {
         doses
             .filter { it.vaccine.isNotBlank() }
             .groupBy { normalize(it.vaccine) }
-            .map { (_, group) ->
+            .map { (key, group) ->
                 val ordered = group.sortedWith(
                     // Undated doses go last within a series — a series reads 1, 2, 3, and a dose
                     // nobody dated cannot be slotted into that order without inventing its place.
                     compareBy({ it.date?.date ?: LocalDate.MAX }, { it.doseNumber ?: Int.MAX_VALUE })
                 )
                 VaccineSeries(
+                    key = key,
                     name = ordered.lastOrNull { it.vaccine.isNotBlank() }?.vaccine.orEmpty(),
                     doses = ordered
                 )

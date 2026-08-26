@@ -117,7 +117,7 @@ data class DocumentDraft(
 @OptIn(ExperimentalCoroutinesApi::class)
 class RecordViewModel(
     private val repo: HealthRepository,
-    val documentStore: DocumentStore
+    private val documentStore: DocumentStore
 ) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
