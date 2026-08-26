@@ -74,12 +74,28 @@ the receipts.
 > Its Meds tab is a **medicine cabinet**: the household's actual stock, what is
 > expired or running low, and — looked up from **RxNorm and openFDA** — what each product is made of
 > and what its label says, shown beside the dose rules you typed in rather than instead of them. It
-> also **reminds you**, either at set times or when the next dose is due. The judgements it makes —
-> whether a reading is a fever, given where it was taken and how old the person is; whether the next
-> dose is due yet under both the interval and a rolling 24-hour allowance; whether a bottle is out of
-> date or out of doses — live in `health/logic/` and are JVM-unit-tested. **No record ever leaves the
-> device**: the drug lookup asks what a medicine *is*, never who takes it, and that is the line it
-> holds. It records; it does not give medical advice.
+> also **reminds you**, either at set times or when the next dose is due.
+>
+> Its Care tab covers **who pays for this and who do we take her to**. Insurance is stored as *the
+> card*, not the policy — the insurer, each person's member number on the household's plan, the
+> numbers on the back, and photographs of it saved when you attach them, so Health can produce **a
+> card-sized PDF on demand** for a reception desk or a school form. There is deliberately no field for
+> a copay or a deductible: those are an eighty-page contract, and a box to type one into is an
+> invitation to plan around a number nobody checked. Doctors are kept **separately from the
+> insurance** — the plan changes every January and the paediatrician doesn't — and Health can check
+> each of them against the insurer's own **published provider directory** (the public FHIR endpoints
+> payers publish under the CMS interoperability rule). Every check is kept rather than overwritten,
+> which is what lets it say *"listed in March's directory, not in today's"* — a doctor who has left
+> the network — as against *"never listed"*, and to say *"couldn't tell them apart"* rather than
+> guessing between two people with the same surname.
+>
+> The judgements it makes — whether a reading is a fever, given where it was taken and how old the
+> person is; whether the next dose is due yet under both the interval and a rolling 24-hour allowance;
+> whether a bottle is out of date or out of doses; where a doctor stands against a plan, read out of
+> every check ever made — live in `health/logic/` and are JVM-unit-tested. **No record ever leaves the
+> device**: the drug lookup asks what a medicine *is*, never who takes it, and the directory check
+> asks about a *doctor*, never about anybody in the household — no member number, no profile, ever.
+> That is the line it holds. It records; it does not give medical advice.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

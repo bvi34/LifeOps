@@ -5,9 +5,14 @@ import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.InsuranceMemberEntity
+import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
+import com.health.app.data.db.entities.NetworkCheckEntity
 import com.health.app.data.db.entities.ProfileEntity
 import com.health.app.data.db.entities.ProfileTombstoneEntity
+import com.health.app.data.db.entities.ProviderEntity
+import com.health.app.data.db.entities.ProviderLinkEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 import com.health.app.data.model.CabinetEntry
@@ -15,12 +20,20 @@ import com.health.app.data.model.CabinetItem
 import com.health.app.data.model.CabinetUse
 import com.health.app.data.model.CareKind
 import com.health.app.data.model.CareNote
+import com.health.app.data.model.CareRole
+import com.health.app.data.model.CareTeamMember
+import com.health.app.data.model.CoverageCard
 import com.health.app.data.model.Dose
 import com.health.app.data.model.Episode
+import com.health.app.data.model.InsuranceMembership
+import com.health.app.data.model.InsurancePlan
 import com.health.app.data.model.Medication
 import com.health.app.data.model.MedicationStatus
+import com.health.app.data.model.NetworkCheck
 import com.health.app.data.model.Profile
 import com.health.app.data.model.ProfileSnapshot
+import com.health.app.data.model.Provider
+import com.health.app.data.model.ProviderLink
 import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
 import com.health.app.data.model.Symptom
@@ -28,7 +41,12 @@ import com.health.app.data.prefs.HealthPrefs
 import com.health.app.logic.Age
 import com.health.app.logic.Cabinet
 import com.health.app.logic.CabinetFacts
+import com.health.app.logic.CardFacts
 import com.health.app.logic.CareLevel
+import com.health.app.logic.CheckOutcome
+import com.health.app.logic.CoverageKind
+import com.health.app.logic.DirectoryOutcome
+import com.health.app.logic.DirectoryProbe
 import com.health.app.logic.DosePoint
 import com.health.app.logic.DoseRecord
 import com.health.app.logic.DoseReminder
@@ -38,7 +56,12 @@ import com.health.app.logic.EpisodeFacts
 import com.health.app.logic.EpisodeSummaries
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.Fever
+import com.health.app.logic.Insurance
 import com.health.app.logic.MedicationRule
+import com.health.app.logic.NetworkCheckRecord
+import com.health.app.logic.NetworkStatus
+import com.health.app.logic.PlanType
+import com.health.app.logic.ProviderDirectory
 import com.health.app.logic.ReminderMode
 import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
@@ -101,7 +124,16 @@ class HealthRepository(
      * repository is JVM-testable and stays that way. The Android half lives in
      * `reminder/MedicationReminderScheduler`, wired up once in [com.health.app.HealthApp].
      */
-    private val onReminderChange: (medicationId: String?) -> Unit = {}
+    private val onReminderChange: (medicationId: String?) -> Unit = {},
+    /**
+     * How the card-image store hears that a photo is no longer referenced by anything.
+     *
+     * A hook for the same reason [onReminderChange] is one: the repository stays JVM-testable, and
+     * deleting a file is Android I/O. Called with the file name after the row that pointed at it is
+     * gone — never before, because a file deleted ahead of a write that then fails leaves a card
+     * pointing at nothing.
+     */
+    private val onCardImageDiscarded: (fileName: String) -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -1134,6 +1166,580 @@ class HealthRepository(
     /** One person's current snapshot, read once — used by the Advisor bridge, which is not reactive. */
     suspend fun snapshotOnce(profile: Profile): ProfileSnapshot = observeSnapshot(profile).first()
 
+    // --- coverage: the cards ---------------------------------------------------------------------
+    //
+    // A plan is household-scoped and a membership is not, exactly as a bottle is household-scoped and
+    // a person's dose of it is not. Everything here stores what is *printed on the card*; nothing
+    // here stores, computes or infers what a policy actually covers.
+
+    fun observeInsurancePlans(): Flow<List<InsurancePlan>> =
+        dao.observeInsurancePlans().map { rows -> rows.map { it.toModel() } }
+
+    suspend fun getInsurancePlan(id: String): InsurancePlan? = dao.getInsurancePlan(id)?.toModel()
+
+    /**
+     * One person's cards: each policy they are on, their own membership of it, whether it is current,
+     * and the layout the screen and the PDF both draw from.
+     *
+     * Assembled here rather than at the screen for the reason every other combined flow in this file
+     * exists: two renderers deriving a card independently is two renderers that will eventually
+     * disagree about a member number, and the place that shows up is a reception desk.
+     *
+     * Sorted by the coverage verdict — an ended card first, then one not yet started, then one about
+     * to end — with the primary card ahead of a secondary within each. A wallet is read top-down when
+     * something is wrong with it.
+     */
+    fun observeCoverage(profileId: String): Flow<List<CoverageCard>> =
+        combine(
+            dao.observeInsurancePlans(),
+            dao.observeInsuranceMembers(profileId),
+            dao.observeProfiles()
+        ) { plans, members, profiles ->
+            val plansById = plans.associateBy { it.id }
+            val memberName = profiles.firstOrNull { it.id == profileId }?.name.orEmpty()
+            members.mapNotNull { member ->
+                plansById[member.planId]?.let { plan -> card(plan, member, memberName) }
+            }.sortedWith(
+                compareBy({ it.coverage.status.sortRank }, { !it.membership.primaryCoverage })
+            )
+        }
+
+    /** One card, for the export sheet — the same assembly [observeCoverage] does, for a single row. */
+    suspend fun getCoverageCard(membershipId: String): CoverageCard? {
+        val member = dao.getInsuranceMember(membershipId) ?: return null
+        val plan = dao.getInsurancePlan(member.planId) ?: return null
+        val name = dao.getProfile(member.profileId)?.name.orEmpty()
+        return card(plan, member, name)
+    }
+
+    private fun card(
+        plan: InsurancePlanEntity,
+        member: InsuranceMemberEntity,
+        memberName: String
+    ): CoverageCard {
+        // The member's own dates win where they were recorded, and fall back to the policy's. They
+        // differ for the ordinary reason: a baby added to a family plan in March is covered from
+        // March, not from the policy's January.
+        val effective = member.effectiveDate?.ifBlank { null } ?: plan.effectiveDate
+        val ends = member.endDate?.ifBlank { null } ?: plan.endDate
+        return CoverageCard(
+            plan = plan.toModel(),
+            membership = member.toModel(),
+            memberName = memberName,
+            coverage = Insurance.assessCoverage(effective, ends),
+            facts = CardFacts(
+                carrierName = plan.carrierName,
+                planName = plan.planName,
+                coverageKind = CoverageKind.fromKey(plan.coverageKind),
+                planType = PlanType.fromKey(plan.planType),
+                memberName = memberName,
+                memberId = member.memberId,
+                personCode = member.personCode,
+                groupNumber = plan.groupNumber,
+                subscriberName = member.subscriberName,
+                relationshipToSubscriber = member.relationshipToSubscriber,
+                payerId = plan.payerId,
+                rxBin = plan.rxBin,
+                rxPcn = plan.rxPcn,
+                rxGroup = plan.rxGroup,
+                effectiveDate = effective,
+                endDate = ends,
+                memberServicesPhone = plan.memberServicesPhone,
+                nurseLinePhone = plan.nurseLinePhone,
+                directoryUrl = plan.directoryUrl,
+                note = plan.note
+            )
+        )
+    }
+
+    /**
+     * Add a policy, and optionally put somebody on it in the same gesture — which is what actually
+     * happens when a card comes out of an envelope.
+     *
+     * Only the carrier is required. A card photographed in a hurry with nothing typed in but the
+     * insurer's name is still a card in the app rather than a card in a drawer.
+     */
+    suspend fun addInsurancePlan(
+        carrierName: String,
+        planName: String? = null,
+        coverageKind: CoverageKind = CoverageKind.MEDICAL,
+        planType: PlanType = PlanType.OTHER,
+        groupNumber: String? = null,
+        payerId: String? = null,
+        rxBin: String? = null,
+        rxPcn: String? = null,
+        rxGroup: String? = null,
+        memberServicesPhone: String? = null,
+        nurseLinePhone: String? = null,
+        effectiveDate: String? = null,
+        endDate: String? = null,
+        directoryUrl: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val stamp = now()
+        dao.upsertInsurancePlan(
+            InsurancePlanEntity(
+                id = id,
+                carrierName = carrierName.trim(),
+                planName = planName.clean(),
+                coverageKind = coverageKind.key,
+                planType = planType.key,
+                groupNumber = groupNumber.clean(),
+                payerId = payerId.clean(),
+                rxBin = rxBin.clean(),
+                rxPcn = rxPcn.clean(),
+                rxGroup = rxGroup.clean(),
+                memberServicesPhone = memberServicesPhone.clean(),
+                nurseLinePhone = nurseLinePhone.clean(),
+                effectiveDate = effectiveDate.clean(),
+                endDate = endDate.clean(),
+                directoryUrl = directoryUrl.clean(),
+                directoryBaseUrl = null,
+                directoryStatus = null,
+                directoryCheckedAt = null,
+                directoryDetail = null,
+                frontImagePath = null,
+                backImagePath = null,
+                note = note.clean(),
+                archived = false,
+                createdAt = stamp,
+                updatedAt = stamp
+            )
+        )
+        return id
+    }
+
+    /**
+     * Edit a policy. The directory columns are left alone: they are written by a probe, not by a
+     * form, and an edit to the phone number is no reason to forget that the directory answered last
+     * Tuesday. Changing the published URL *does* clear them — see below — because a new address makes
+     * the old verdict meaningless.
+     */
+    suspend fun updateInsurancePlan(plan: InsurancePlan) {
+        val existing = dao.getInsurancePlan(plan.id) ?: return
+        val newUrl = plan.directoryUrl.clean()
+        val urlChanged = newUrl != existing.directoryUrl
+        dao.upsertInsurancePlan(
+            existing.copy(
+                carrierName = plan.carrierName.trim(),
+                planName = plan.planName.clean(),
+                coverageKind = plan.coverageKind.key,
+                planType = plan.planType.key,
+                groupNumber = plan.groupNumber.clean(),
+                payerId = plan.payerId.clean(),
+                rxBin = plan.rxBin.clean(),
+                rxPcn = plan.rxPcn.clean(),
+                rxGroup = plan.rxGroup.clean(),
+                memberServicesPhone = plan.memberServicesPhone.clean(),
+                nurseLinePhone = plan.nurseLinePhone.clean(),
+                effectiveDate = plan.effectiveDate.clean(),
+                endDate = plan.endDate.clean(),
+                directoryUrl = newUrl,
+                directoryBaseUrl = if (urlChanged) null else existing.directoryBaseUrl,
+                directoryStatus = if (urlChanged) null else existing.directoryStatus,
+                directoryCheckedAt = if (urlChanged) null else existing.directoryCheckedAt,
+                directoryDetail = if (urlChanged) null else existing.directoryDetail,
+                note = plan.note.clean(),
+                archived = plan.archived,
+                updatedAt = now()
+            )
+        )
+    }
+
+    /**
+     * Put a policy away without losing it. Last year's plan is still the plan that covered a visit in
+     * November, and the checks recorded under it are still the evidence that a doctor used to be in
+     * network — which is the one thing that makes this year's "not listed" mean anything.
+     */
+    suspend fun setInsurancePlanArchived(planId: String, archived: Boolean) {
+        val existing = dao.getInsurancePlan(planId) ?: return
+        dao.upsertInsurancePlan(existing.copy(archived = archived, updatedAt = now()))
+    }
+
+    /** Record what a directory probe found, so the next check starts from the endpoint that answered. */
+    suspend fun recordDirectoryProbe(planId: String, probe: DirectoryProbe) {
+        val existing = dao.getInsurancePlan(planId) ?: return
+        dao.upsertInsurancePlan(
+            existing.copy(
+                // Only a probe that actually found a directory rewrites the base URL. A failed one
+                // records what happened without throwing away the endpoint that worked last month.
+                directoryBaseUrl = if (probe.searchable) probe.baseUrl else existing.directoryBaseUrl,
+                directoryStatus = probe.outcome.key,
+                directoryCheckedAt = now(),
+                directoryDetail = probe.detail.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /** Throw a policy away, along with everybody's membership of it and any card photos it held. */
+    suspend fun deleteInsurancePlan(planId: String) {
+        val existing = dao.getInsurancePlan(planId) ?: return
+        val orphaned = dao.getInsuranceMembersForPlan(planId)
+            .flatMap { listOfNotNull(it.frontImagePath, it.backImagePath) } +
+            listOfNotNull(existing.frontImagePath, existing.backImagePath)
+        dao.deleteInsurancePlanCascade(planId)
+        orphaned.forEach(onCardImageDiscarded)
+    }
+
+    // --- coverage: who is on which card ------------------------------------------------------------
+
+    fun observeMemberships(profileId: String): Flow<List<InsuranceMembership>> =
+        dao.observeInsuranceMembers(profileId).map { rows -> rows.map { it.toModel() } }
+
+    suspend fun addMembership(
+        profileId: String,
+        planId: String,
+        memberId: String? = null,
+        personCode: String? = null,
+        subscriberName: String? = null,
+        relationshipToSubscriber: String? = null,
+        effectiveDate: String? = null,
+        endDate: String? = null,
+        primaryCoverage: Boolean = true,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val stamp = now()
+        dao.upsertInsuranceMember(
+            InsuranceMemberEntity(
+                id = id,
+                profileId = profileId,
+                planId = planId,
+                memberId = memberId.clean(),
+                personCode = personCode.clean(),
+                subscriberName = subscriberName.clean(),
+                relationshipToSubscriber = relationshipToSubscriber.clean(),
+                effectiveDate = effectiveDate.clean(),
+                endDate = endDate.clean(),
+                primaryCoverage = primaryCoverage,
+                frontImagePath = null,
+                backImagePath = null,
+                note = note.clean(),
+                createdAt = stamp,
+                updatedAt = stamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateMembership(membership: InsuranceMembership) {
+        val existing = dao.getInsuranceMember(membership.id) ?: return
+        dao.upsertInsuranceMember(
+            existing.copy(
+                planId = membership.planId,
+                memberId = membership.memberId.clean(),
+                personCode = membership.personCode.clean(),
+                subscriberName = membership.subscriberName.clean(),
+                relationshipToSubscriber = membership.relationshipToSubscriber.clean(),
+                effectiveDate = membership.effectiveDate.clean(),
+                endDate = membership.endDate.clean(),
+                primaryCoverage = membership.primaryCoverage,
+                note = membership.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /** Take somebody off a card, keeping the card and the photos that belong to the policy itself. */
+    suspend fun deleteMembership(membershipId: String) {
+        val existing = dao.getInsuranceMember(membershipId) ?: return
+        val orphaned = listOfNotNull(existing.frontImagePath, existing.backImagePath)
+        dao.deleteInsuranceMember(membershipId)
+        orphaned.forEach(onCardImageDiscarded)
+    }
+
+    /**
+     * Attach — or replace — the photographs of a card.
+     *
+     * Saved on upload rather than re-read from the picker each time, which is the whole reason the
+     * PDF can be produced later without asking for the image again. The previous file for that face
+     * is discarded once the row pointing at it is written, never before: a file deleted ahead of a
+     * write that then fails leaves a card pointing at nothing.
+     *
+     * Passing null for a face leaves it alone; [clearFront]/[clearBack] is how a photo is removed,
+     * because "no new file" and "delete the one there" are different intentions and conflating them
+     * makes the second one unreachable.
+     */
+    suspend fun setMembershipCardImages(
+        membershipId: String,
+        frontFileName: String? = null,
+        backFileName: String? = null,
+        clearFront: Boolean = false,
+        clearBack: Boolean = false
+    ) {
+        val existing = dao.getInsuranceMember(membershipId) ?: return
+        val nextFront = when {
+            clearFront -> null
+            frontFileName != null -> frontFileName
+            else -> existing.frontImagePath
+        }
+        val nextBack = when {
+            clearBack -> null
+            backFileName != null -> backFileName
+            else -> existing.backImagePath
+        }
+        dao.upsertInsuranceMember(
+            existing.copy(frontImagePath = nextFront, backImagePath = nextBack, updatedAt = now())
+        )
+        listOfNotNull(
+            existing.frontImagePath.takeIf { it != nextFront },
+            existing.backImagePath.takeIf { it != nextBack }
+        ).forEach(onCardImageDiscarded)
+    }
+
+    /** The same, for the household card that came in one envelope for everybody on the policy. */
+    suspend fun setPlanCardImages(
+        planId: String,
+        frontFileName: String? = null,
+        backFileName: String? = null,
+        clearFront: Boolean = false,
+        clearBack: Boolean = false
+    ) {
+        val existing = dao.getInsurancePlan(planId) ?: return
+        val nextFront = when {
+            clearFront -> null
+            frontFileName != null -> frontFileName
+            else -> existing.frontImagePath
+        }
+        val nextBack = when {
+            clearBack -> null
+            backFileName != null -> backFileName
+            else -> existing.backImagePath
+        }
+        dao.upsertInsurancePlan(
+            existing.copy(frontImagePath = nextFront, backImagePath = nextBack, updatedAt = now())
+        )
+        listOfNotNull(
+            existing.frontImagePath.takeIf { it != nextFront },
+            existing.backImagePath.takeIf { it != nextBack }
+        ).forEach(onCardImageDiscarded)
+    }
+
+    // --- the care team ------------------------------------------------------------------------------
+    //
+    // Doctors are household-scoped and are **not** owned by an insurance plan. The policy changes
+    // every January; the paediatrician does not. Hanging the care team off the plan would mean
+    // re-entering every clinician in the house on a carrier change — and would throw away the check
+    // history that is the only way to notice the new plan doesn't cover somebody the old one did.
+
+    fun observeProviders(): Flow<List<Provider>> =
+        dao.observeProviders().map { rows -> rows.map { it.toModel() } }
+
+    suspend fun getProvider(id: String): Provider? = dao.getProvider(id)?.toModel()
+
+    /**
+     * One person's care team, each member carrying where they stand against *that person's* coverage.
+     *
+     * The verdict is derived from the checks that are actually about this person's cover: the ones
+     * made under a policy they are on, plus the ones made under no policy at all — a phone call to
+     * the office is evidence whoever is asking. A check made under a policy the household has since
+     * left is deliberately **not** counted: last year's network is not this year's, and letting an
+     * old carrier's yes stand under a new plan would be the most convincing wrong answer this feature
+     * could produce. Those checks are not deleted; they simply stop speaking for a plan they were
+     * never about, and reappear the moment somebody is put back on that policy.
+     *
+     * Sorted by verdict — anything that needs a phone call first, then the unanswered, then the
+     * settled — and by role within it, so "who is her GP" stays a glance rather than a search.
+     */
+    fun observeCareTeam(profileId: String): Flow<List<CareTeamMember>> =
+        combine(
+            dao.observeProviders(),
+            dao.observeProviderLinks(profileId),
+            dao.observeNetworkChecks(),
+            dao.observeInsuranceMembers(profileId)
+        ) { providers, links, checks, memberships ->
+            val nowMillis = now()
+            val providersById = providers.associateBy { it.id }
+            val myPlanIds = memberships.map { it.planId }.toSet()
+            val relevant = checks.filter { it.planId == null || it.planId in myPlanIds }
+                .groupBy { it.providerId }
+
+            links.mapNotNull { link ->
+                val provider = providersById[link.providerId] ?: return@mapNotNull null
+                val mine = relevant[link.providerId].orEmpty().map { it.toModel() }
+                CareTeamMember(
+                    provider = provider.toModel(),
+                    link = link.toModel(),
+                    network = NetworkStatus.evaluate(mine.map { it.toRecord() }, nowMillis),
+                    checks = mine.sortedBy { it.checkedAt }
+                )
+            }.sortedWith(
+                compareBy(
+                    { it.network.verdict.sortRank },
+                    { it.link.role.sortRank },
+                    { it.provider.name.lowercase() }
+                )
+            )
+        }
+
+    /**
+     * Add a provider, and optionally put them on somebody's care team in the same gesture — the way
+     * it happens when a receptionist hands over a card at the end of an appointment.
+     *
+     * Only the name is required. Everything else, the NPI included, can be filled in later or never;
+     * a form that demands a national provider identifier before it will save is a form that gets
+     * abandoned, and a doctor with only a name and a phone number in the app is already worth having.
+     */
+    suspend fun addProvider(
+        name: String,
+        npi: String? = null,
+        specialty: String? = null,
+        practiceName: String? = null,
+        phone: String? = null,
+        addressLine: String? = null,
+        website: String? = null,
+        note: String? = null,
+        forProfileId: String? = null,
+        role: CareRole = CareRole.PRIMARY
+    ): String {
+        val id = newId()
+        val stamp = now()
+        dao.upsertProvider(
+            ProviderEntity(
+                id = id,
+                name = name.trim(),
+                npi = ProviderDirectory.digits(npi),
+                specialty = specialty.clean(),
+                practiceName = practiceName.clean(),
+                phone = phone.clean(),
+                addressLine = addressLine.clean(),
+                website = website.clean(),
+                note = note.clean(),
+                createdAt = stamp,
+                updatedAt = stamp
+            )
+        )
+        forProfileId?.let { linkProvider(it, id, role) }
+        return id
+    }
+
+    suspend fun updateProvider(provider: Provider) {
+        val existing = dao.getProvider(provider.id) ?: return
+        dao.upsertProvider(
+            existing.copy(
+                name = provider.name.trim(),
+                npi = ProviderDirectory.digits(provider.npi),
+                specialty = provider.specialty.clean(),
+                practiceName = provider.practiceName.clean(),
+                phone = provider.phone.clean(),
+                addressLine = provider.addressLine.clean(),
+                website = provider.website.clean(),
+                note = provider.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /**
+     * Remove a provider from the household, along with everybody who saw them and every check made
+     * about them.
+     *
+     * The one deletion in this repository that genuinely destroys history, and it is the right call:
+     * a network check is evidence *about a provider*, so with the provider gone it is evidence about
+     * nothing. That is not true of a dose, which happened to a person and stays whatever becomes of
+     * the medicine.
+     */
+    suspend fun deleteProvider(providerId: String) = dao.deleteProviderCascade(providerId)
+
+    /** Put a provider on somebody's care team. Returns the link, so the screen can edit it straight away. */
+    suspend fun linkProvider(
+        profileId: String,
+        providerId: String,
+        role: CareRole = CareRole.PRIMARY,
+        since: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val stamp = now()
+        dao.upsertProviderLink(
+            ProviderLinkEntity(
+                id = id,
+                profileId = profileId,
+                providerId = providerId,
+                role = role.key,
+                since = since.clean(),
+                note = note.clean(),
+                createdAt = stamp,
+                updatedAt = stamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateProviderLink(link: ProviderLink) {
+        val existing = dao.getProviderLink(link.id) ?: return
+        dao.upsertProviderLink(
+            existing.copy(
+                role = link.role.key,
+                since = link.since.clean(),
+                note = link.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /**
+     * Take a provider off one person's care team, keeping the provider — and keeping every check made
+     * about them, which still speaks for everybody else in the house who sees them.
+     */
+    suspend fun unlinkProvider(linkId: String) = dao.deleteProviderLink(linkId)
+
+    // --- network checks -------------------------------------------------------------------------------
+    //
+    // Append-only. Nothing here updates a check or clears the older ones to make room: the earlier
+    // answers are what let `logic/NetworkStatus` tell "has left the network" apart from "was never in
+    // it", and those need different phone calls.
+
+    fun observeNetworkChecks(providerId: String): Flow<List<NetworkCheck>> =
+        dao.observeNetworkChecks(providerId).map { rows -> rows.map { it.toModel() } }
+
+    suspend fun getNetworkChecks(providerId: String): List<NetworkCheck> =
+        dao.getNetworkChecks(providerId).map { it.toModel() }
+
+    /**
+     * Write down what was found. The carrier's name is stored **on the row** rather than looked up
+     * through the plan, for the same reason a dose carries its medicine's name: the household changes
+     * plans, and a check that reads "not listed by ⟨deleted plan⟩" is a check that has stopped being
+     * evidence of anything.
+     */
+    suspend fun recordNetworkCheck(
+        providerId: String,
+        planId: String?,
+        outcome: CheckOutcome,
+        directoryLabel: String? = null,
+        directoryUrl: String? = null,
+        matchedName: String? = null,
+        matchedNpi: String? = null,
+        matchCount: Int = 0,
+        networks: List<String> = emptyList(),
+        detail: String? = null,
+        checkedAt: Long = now()
+    ): String {
+        val id = newId()
+        dao.upsertNetworkCheck(
+            NetworkCheckEntity(
+                id = id,
+                providerId = providerId,
+                planId = planId,
+                checkedAt = checkedAt,
+                outcome = outcome.key,
+                directoryLabel = directoryLabel.clean(),
+                directoryUrl = directoryUrl.clean(),
+                matchedName = matchedName.clean(),
+                matchedNpi = matchedNpi.clean(),
+                matchCount = matchCount,
+                networks = networks.filter { it.isNotBlank() }.joinToString(CSV).ifBlank { null },
+                detail = detail.clean()
+            )
+        )
+        return id
+    }
+
+    /** Undo a mis-tap. Offered one row at a time and never in bulk — see the DAO's note. */
+    suspend fun deleteNetworkCheck(id: String) = dao.deleteNetworkCheck(id)
+
     companion object {
         /** How far back a newly-started episode reaches to adopt records already taken. */
         const val DEFAULT_BACKFILL_MS: Long = 12L * 60 * 60 * 1000
@@ -1404,3 +2010,109 @@ fun CareNoteEntity.toModel() = CareNote(
     text = text,
     at = at
 )
+
+// --- coverage and care-team mapping ---------------------------------------------------------------
+
+fun InsurancePlanEntity.toModel() = InsurancePlan(
+    id = id,
+    carrierName = carrierName,
+    planName = planName,
+    coverageKind = CoverageKind.fromKey(coverageKind),
+    planType = PlanType.fromKey(planType),
+    groupNumber = groupNumber,
+    payerId = payerId,
+    rxBin = rxBin,
+    rxPcn = rxPcn,
+    rxGroup = rxGroup,
+    memberServicesPhone = memberServicesPhone,
+    nurseLinePhone = nurseLinePhone,
+    effectiveDate = effectiveDate,
+    endDate = endDate,
+    directoryUrl = directoryUrl,
+    directoryBaseUrl = directoryBaseUrl,
+    // A plan nobody has probed is NOT_CONFIGURED rather than UNREACHABLE: nothing was asked, so
+    // nothing failed, and the two read very differently to somebody deciding whether to trust it.
+    directoryStatus = directoryStatus?.let { DirectoryOutcome.fromKey(it) }
+        ?: DirectoryOutcome.NOT_CONFIGURED,
+    directoryCheckedAt = directoryCheckedAt,
+    directoryDetail = directoryDetail,
+    frontImagePath = frontImagePath,
+    backImagePath = backImagePath,
+    note = note,
+    archived = archived,
+    updatedAt = updatedAt
+)
+
+fun InsuranceMemberEntity.toModel() = InsuranceMembership(
+    id = id,
+    profileId = profileId,
+    planId = planId,
+    memberId = memberId,
+    personCode = personCode,
+    subscriberName = subscriberName,
+    relationshipToSubscriber = relationshipToSubscriber,
+    effectiveDate = effectiveDate,
+    endDate = endDate,
+    primaryCoverage = primaryCoverage,
+    frontImagePath = frontImagePath,
+    backImagePath = backImagePath,
+    note = note
+)
+
+fun ProviderEntity.toModel() = Provider(
+    id = id,
+    name = name,
+    npi = npi,
+    specialty = specialty,
+    practiceName = practiceName,
+    phone = phone,
+    addressLine = addressLine,
+    website = website,
+    note = note
+)
+
+fun ProviderLinkEntity.toModel() = ProviderLink(
+    id = id,
+    profileId = profileId,
+    providerId = providerId,
+    role = CareRole.fromKey(role),
+    since = since,
+    note = note
+)
+
+fun NetworkCheckEntity.toModel() = NetworkCheck(
+    id = id,
+    providerId = providerId,
+    planId = planId,
+    checkedAt = checkedAt,
+    outcome = CheckOutcome.fromKey(outcome),
+    directoryLabel = directoryLabel,
+    directoryUrl = directoryUrl,
+    matchedName = matchedName,
+    matchedNpi = matchedNpi,
+    matchCount = matchCount,
+    networks = networks?.split(CSV)?.map { it.trim() }?.filter { it.isNotBlank() }.orEmpty(),
+    detail = detail
+)
+
+/** The stored check, in the shape `logic/NetworkStatus` reasons about. */
+fun NetworkCheck.toRecord() = NetworkCheckRecord(
+    checkedAt = checkedAt,
+    outcome = outcome,
+    directoryLabel = directoryLabel,
+    matchedName = matchedName,
+    networks = networks,
+    detail = detail
+)
+
+/**
+ * How the coverage tables store "nothing was typed here".
+ *
+ * Every one of these columns is optional and most of them stay empty, so a blank string arriving
+ * from a text field has to become a null rather than an empty value that then renders as a card line
+ * with nothing after the colon. Written once here because it is applied about sixty times.
+ */
+private fun String?.clean(): String? = this?.trim()?.ifBlank { null }
+
+/** The separator for the short lists that don't earn a table — network names, at present. */
+private const val CSV = ", "

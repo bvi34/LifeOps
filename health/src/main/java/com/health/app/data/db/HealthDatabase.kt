@@ -12,9 +12,14 @@ import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.InsuranceMemberEntity
+import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
+import com.health.app.data.db.entities.NetworkCheckEntity
 import com.health.app.data.db.entities.ProfileEntity
 import com.health.app.data.db.entities.ProfileTombstoneEntity
+import com.health.app.data.db.entities.ProviderEntity
+import com.health.app.data.db.entities.ProviderLinkEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 
@@ -25,11 +30,12 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 5
+const val HEALTH_DB_VERSION = 6
 
 /**
- * Health's own store: people, everything recorded about them, and the medicine cabinet those
- * records draw on. Nothing here is shared with, or
+ * Health's own store: people, everything recorded about them, the medicine cabinet those records
+ * draw on, and — since v6 — the coverage that pays for it and the care team that provides it.
+ * Nothing here is shared with, or
  * sourced from, another app's database — no other module in the suite owns household health data —
  * so unlike Logistics there is no cross-app catalog bridge, only this one file.
  *
@@ -48,7 +54,12 @@ const val HEALTH_DB_VERSION = 5
         EpisodeEntity::class,
         CareNoteEntity::class,
         DrugFactsEntity::class,
-        CabinetItemEntity::class
+        CabinetItemEntity::class,
+        InsurancePlanEntity::class,
+        InsuranceMemberEntity::class,
+        ProviderEntity::class,
+        ProviderLinkEntity::class,
+        NetworkCheckEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -204,6 +215,158 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 answers the two questions the medical half of the app never could: **who pays for
+         * this**, and **who do we take her to**.
+         *
+         * Five tables, and the shape of them is the design. `insurance_plans` and `providers` are
+         * household-scoped, exactly as `cabinet_items` is, because a family policy and a family
+         * doctor are single objects several people share; `insurance_members` and `provider_links`
+         * carry the per-person half — one member number each, one relationship each. Nothing is
+         * scoped to a plan that shouldn't be: a doctor belongs to the household, not to the policy
+         * that happens to cover them this year, which is what lets a carrier change without
+         * re-entering every clinician in the house.
+         *
+         * `network_checks` is append-only and is never rewritten by a later check. That is what
+         * makes "listed in March's directory, not in today's" a thing Health can say at all — with a
+         * single overwritten flag, a doctor who left the network is indistinguishable from one who
+         * was never in it, and those need different phone calls.
+         *
+         * Nothing existing is touched. A household that never opens the Care tab has five empty
+         * tables and no other change at all.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS insurance_plans (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "carrierName TEXT NOT NULL, " +
+                        "planName TEXT, " +
+                        "coverageKind TEXT NOT NULL, " +
+                        "planType TEXT NOT NULL, " +
+                        "groupNumber TEXT, " +
+                        "payerId TEXT, " +
+                        "rxBin TEXT, " +
+                        "rxPcn TEXT, " +
+                        "rxGroup TEXT, " +
+                        "memberServicesPhone TEXT, " +
+                        "nurseLinePhone TEXT, " +
+                        "effectiveDate TEXT, " +
+                        "endDate TEXT, " +
+                        "directoryUrl TEXT, " +
+                        "directoryBaseUrl TEXT, " +
+                        "directoryStatus TEXT, " +
+                        "directoryCheckedAt INTEGER, " +
+                        "directoryDetail TEXT, " +
+                        "frontImagePath TEXT, " +
+                        "backImagePath TEXT, " +
+                        "note TEXT, " +
+                        "archived INTEGER NOT NULL DEFAULT 0, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_insurance_plans_carrierName " +
+                        "ON insurance_plans(carrierName)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_insurance_plans_archived " +
+                        "ON insurance_plans(archived)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS insurance_members (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT NOT NULL, " +
+                        "planId TEXT NOT NULL, " +
+                        "memberId TEXT, " +
+                        "personCode TEXT, " +
+                        "subscriberName TEXT, " +
+                        "relationshipToSubscriber TEXT, " +
+                        "effectiveDate TEXT, " +
+                        "endDate TEXT, " +
+                        "primaryCoverage INTEGER NOT NULL DEFAULT 1, " +
+                        "frontImagePath TEXT, " +
+                        "backImagePath TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_insurance_members_profileId " +
+                        "ON insurance_members(profileId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_insurance_members_planId " +
+                        "ON insurance_members(planId)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS providers (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "name TEXT NOT NULL, " +
+                        "npi TEXT, " +
+                        "specialty TEXT, " +
+                        "practiceName TEXT, " +
+                        "phone TEXT, " +
+                        "addressLine TEXT, " +
+                        "website TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_providers_name ON providers(name)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_providers_npi ON providers(npi)")
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS provider_links (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT NOT NULL, " +
+                        "providerId TEXT NOT NULL, " +
+                        "role TEXT NOT NULL, " +
+                        "since TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_provider_links_profileId " +
+                        "ON provider_links(profileId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_provider_links_providerId " +
+                        "ON provider_links(providerId)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS network_checks (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "providerId TEXT NOT NULL, " +
+                        "planId TEXT, " +
+                        "checkedAt INTEGER NOT NULL, " +
+                        "outcome TEXT NOT NULL, " +
+                        "directoryLabel TEXT, " +
+                        "directoryUrl TEXT, " +
+                        "matchedName TEXT, " +
+                        "matchedNpi TEXT, " +
+                        "matchCount INTEGER NOT NULL DEFAULT 0, " +
+                        "networks TEXT, " +
+                        "detail TEXT)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_network_checks_providerId " +
+                        "ON network_checks(providerId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_network_checks_planId ON network_checks(planId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_network_checks_checkedAt " +
+                        "ON network_checks(checkedAt)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -213,7 +376,13 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                ).addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6
+                )
                     .build().also { instance = it }
             }
 

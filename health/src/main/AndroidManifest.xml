@@ -14,14 +14,37 @@
              "This person takes these medicines"
                  → a question about a PERSON. It never leaves.
 
-         INTERNET — the medicine cabinet's drug lookup asks the first and cannot ask the second.
-         `data/net/DrugLookupClient` is the only class in this module that opens a connection; it is
-         only ever called because somebody pressed Search or Refresh; and its only inputs are a
-         search term and an RxNorm concept id. There is no parameter, and no code path, by which a
-         profile, a reading or a dose could reach it. It asks two public, keyless U.S. government
-         references — RxNorm (National Library of Medicine) and openFDA — and caches the answer
-         locally so the same question isn't asked twice. Nothing runs on a timer or at startup; a
-         household that never opens the search never makes a request at all.
+         INTERNET — two features ask the first kind of question, and neither can ask the second.
+
+           * `data/net/DrugLookupClient` — the medicine cabinet's drug lookup. Only ever called
+             because somebody pressed Search or Refresh; its only inputs are a search term and an
+             RxNorm concept id. There is no parameter, and no code path, by which a profile, a
+             reading or a dose could reach it. It asks two public, keyless U.S. government
+             references — RxNorm (National Library of Medicine) and openFDA — and caches the answer
+             locally so the same question isn't asked twice.
+
+           * `data/net/ProviderDirectoryClient` — the Care tab's network check. It asks an insurer's
+             own published provider directory whether it lists a clinician. Since the CMS
+             Interoperability and Patient Access rule those directories are public, unauthenticated
+             FHIR APIs (Da Vinci Plan-Net) — no key, no sign-in, no member number, by design —
+             published precisely so anybody can look a doctor up before booking.
+
+             Exactly three things can leave: the payer's own directory address, a practitioner's
+             SURNAME, and a practitioner's NPI. The NPI is the national identifier printed on
+             prescriptions and published in the federal NPPES registry. All three are facts about a
+             URL or about a doctor.
+
+                 "Does this public directory list Dr Okafor?"
+                     → a question about a PRACTITIONER, which the directory exists to answer.
+                 "Dr Okafor is my daughter's paediatrician"
+                     → a question about a PERSON. It never leaves.
+
+             The member id in particular is never sent, and cannot be: `findPractitioner` takes a
+             base URL, a name and an NPI, and holds no reference to a plan, a membership or a
+             profile. The insurance card itself is stored, rendered and exported entirely on-device.
+
+         Neither client runs on a timer, at startup, or in the background. A household that never
+         opens the search and never presses Check makes no request at all.
 
          POST_NOTIFICATIONS — medication reminders the user sets up per medicine, delivered by
          WorkManager (see `reminder/`). Composed and delivered entirely on-device. Nothing is
@@ -40,6 +63,22 @@
             android:exported="true"
             android:theme="@style/Theme.Health"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- Hands the exported insurance-card PDF to a share sheet, and nothing else: the paths file
+             exposes cacheDir/exports only. The card PHOTOGRAPHS live in filesDir/insurance-cards and
+             are deliberately not reachable through this provider — they are a record, not an export.
+
+             A distinctly-named subclass because the manifest merger keys providers by class name:
+             Health, Citation and LifeOps each need their own, or the merge collides. -->
+        <provider
+            android:name=".HealthFileProvider"
+            android:authorities="${applicationId}.health.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/health_file_paths" />
+        </provider>
 
     </application>
 

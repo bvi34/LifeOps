@@ -314,3 +314,216 @@ data class CabinetItemEntity(
     val createdAt: Long,
     val updatedAt: Long
 )
+
+// --- coverage and care team -----------------------------------------------------------------------
+//
+// Five tables that between them answer the two questions the medical half of this app never could:
+// **who pays for this**, and **who do we take her to**. They follow the same split the cabinet
+// established — the thing itself is household-scoped, the person's use of it is not — because a
+// family policy and a family doctor are both single objects that several people share.
+
+/**
+ * One insurance policy, as copied off the card.
+ *
+ * Household-scoped like [CabinetItemEntity], and for the same reason: a family plan is *one* policy
+ * with one carrier, one group number and one set of phone numbers on the back, and duplicating it
+ * per person would be four rows to keep in step and three of them out of date by renewal. What
+ * varies per person — the member number, the person code, who the subscriber is — lives on
+ * [InsuranceMemberEntity], which points here.
+ *
+ * **Health stores a card, not a policy.** There is no column for a deductible, a copay, a
+ * coinsurance share or an out-of-pocket maximum, and that is deliberate. Those are the terms of a
+ * legal document that runs to eighty pages and changes by service; an app that let you type "$30
+ * copay" into a box would be inviting somebody to plan around a number nobody checked. What is here
+ * is what is printed on the card and useful at a desk.
+ *
+ * [directoryUrl] is what the plan published; [directoryBaseUrl] is the endpoint that actually
+ * answered when Health probed it, which is usually not the same string — see
+ * `logic/ProviderDirectory`. Both are kept: the first is what the user pasted and can correct, the
+ * second is what the next check should use.
+ *
+ * The card images are file *names*, not blobs. See [InsuranceMemberEntity] for why.
+ */
+@Entity(
+    tableName = "insurance_plans",
+    indices = [Index("carrierName"), Index("archived")]
+)
+data class InsurancePlanEntity(
+    @PrimaryKey val id: String,
+    val carrierName: String,
+    val planName: String?,
+    /** [com.health.app.logic.CoverageKind]'s key — medical, dental, vision, pharmacy. */
+    val coverageKind: String,
+    /** [com.health.app.logic.PlanType]'s key — HMO, PPO, and the rest of what cards print. */
+    val planType: String,
+    val groupNumber: String?,
+    val payerId: String?,
+    val rxBin: String?,
+    val rxPcn: String?,
+    val rxGroup: String?,
+    val memberServicesPhone: String?,
+    val nurseLinePhone: String?,
+    /** ISO `yyyy-MM-dd`. A card with neither date is coverage Health declines to judge. */
+    val effectiveDate: String?,
+    val endDate: String?,
+    /** The provider directory address as published — what the user pasted, kept as they pasted it. */
+    val directoryUrl: String?,
+    /** The FHIR base that actually answered. Written by the probe, not by the form. */
+    val directoryBaseUrl: String?,
+    /** [com.health.app.logic.DirectoryOutcome]'s key, from the last probe. */
+    val directoryStatus: String?,
+    val directoryCheckedAt: Long?,
+    val directoryDetail: String?,
+    /** File names under `insurance-cards/`, not blobs. See [InsuranceMemberEntity]. */
+    val frontImagePath: String?,
+    val backImagePath: String?,
+    val note: String?,
+    /**
+     * Last year's plan, kept rather than deleted. A policy that has ended is still the policy that
+     * covered a visit in November, and the network checks recorded against it are still evidence.
+     */
+    val archived: Boolean = false,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * One person's membership of one plan — their own number on the household's policy.
+ *
+ * This is the row that makes a family plan work: four people, one [InsurancePlanEntity], four member
+ * ids and four person codes. It is also the row that lets a household hold two plans at once
+ * (primary and secondary, or a parent's medical and an employer's dental) without either becoming a
+ * duplicate of the other.
+ *
+ * ### Why the card photos are file names
+ *
+ * [frontImagePath] and [backImagePath] hold a **file name** under Health's `insurance-cards/`
+ * directory, never image bytes. A card photo is a couple of megabytes; a database that carries four
+ * of them is a database that is copied, WAL-checkpointed and backed up in full every time anybody
+ * records a temperature. The files sit beside the database, are carried by the same backup, and are
+ * deleted with the row that names them — see `data/store/CardImageStore`.
+ *
+ * The plan's own images are the fallback: photograph the one card that came in the post, attach it
+ * to the policy, and everybody on it has a card. A member's own images override that for the
+ * households where each person's card really is different.
+ */
+@Entity(
+    tableName = "insurance_members",
+    indices = [Index("profileId"), Index("planId")]
+)
+data class InsuranceMemberEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val planId: String,
+    val memberId: String?,
+    /** The two-digit suffix that tells a family plan's members apart. Printed as "Person code"/"Dep #". */
+    val personCode: String?,
+    val subscriberName: String?,
+    val relationshipToSubscriber: String?,
+    /** When *this person's* cover started, when it differs from the policy's own dates. */
+    val effectiveDate: String?,
+    val endDate: String?,
+    /** Which card gets handed over first when somebody carries two. */
+    val primaryCoverage: Boolean = true,
+    val frontImagePath: String?,
+    val backImagePath: String?,
+    val note: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * A doctor, dentist, therapist or practice the household sees.
+ *
+ * **Household-scoped, and deliberately not owned by an insurance plan.** That separation is the
+ * whole point of the row. A doctor is a person you have a relationship with; a plan is a contract
+ * you renew every January, and it is entirely ordinary for the plan to change while the doctor
+ * doesn't. If the care team hung off the policy, changing carriers would mean re-entering every
+ * clinician in the house — and, worse, would throw away the history of network checks that is the
+ * only way to notice that the new plan doesn't cover the paediatrician the old one did.
+ *
+ * [npi] is the National Provider Identifier, and it is the single most valuable field here: it is
+ * unique to one clinician nationally, so a directory search on it is exact where a name search is a
+ * guess. It is validated (ten digits, Luhn over the `80840` prefix) before it is ever sent, because
+ * a mistyped NPI and a doctor who has left the network both come back as no results.
+ */
+@Entity(tableName = "providers", indices = [Index("name"), Index("npi")])
+data class ProviderEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val npi: String?,
+    val specialty: String?,
+    /** The group or clinic they practise under — what a directory calls the organization. */
+    val practiceName: String?,
+    val phone: String?,
+    val addressLine: String?,
+    val website: String?,
+    val note: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * Which person sees which provider, and in what capacity.
+ *
+ * Its own table rather than a column on either side, because the relationship is many-to-many in
+ * both directions and both directions actually happen: one paediatrician is primary for three
+ * children, and one child has a paediatrician, a dentist and an allergist. [role] is *this person's*
+ * relationship to that provider — the same clinician can be somebody's primary and somebody else's
+ * specialist.
+ */
+@Entity(
+    tableName = "provider_links",
+    indices = [Index("profileId"), Index("providerId")]
+)
+data class ProviderLinkEntity(
+    @PrimaryKey val id: String,
+    val profileId: String,
+    val providerId: String,
+    /** [com.health.app.data.model.CareRole]'s key. */
+    val role: String,
+    /** ISO `yyyy-MM-dd` — since when they've been seeing them, when anybody knows. */
+    val since: String?,
+    val note: String?,
+    val createdAt: Long,
+    val updatedAt: Long
+)
+
+/**
+ * One network check: what a directory said about one provider under one plan, at one moment.
+ *
+ * **Kept as an append-only history, never overwritten**, and that is the design rather than an
+ * accident of it. A single "in network" flag cannot tell the difference between a doctor who was
+ * never in the network and one who was in it until March, and that difference is the most useful
+ * thing this feature produces. `logic/NetworkStatus` derives the verdict from the whole list; delete
+ * the old rows and the verdict quietly degrades to "not listed" for both cases.
+ *
+ * A check with no [planId] is one made against no particular policy — which happens when somebody
+ * rings the office and asks. The outcome column carries those too ([com.health.app.logic.CheckOutcome]),
+ * because "a human was told this on the phone" is evidence, and evidence with a date on it belongs
+ * in the same history as everything else.
+ */
+@Entity(
+    tableName = "network_checks",
+    indices = [Index("providerId"), Index("planId"), Index("checkedAt")]
+)
+data class NetworkCheckEntity(
+    @PrimaryKey val id: String,
+    val providerId: String,
+    /** Null for a check that wasn't about a specific policy — a phone call, usually. */
+    val planId: String?,
+    val checkedAt: Long,
+    /** [com.health.app.logic.CheckOutcome]'s key. */
+    val outcome: String,
+    /** The carrier, as it read at the time. A household changes plans; the old checks stay true. */
+    val directoryLabel: String?,
+    val directoryUrl: String?,
+    /** The name the directory had, when it differs from the one the household wrote down. */
+    val matchedName: String?,
+    val matchedNpi: String?,
+    /** How many entries matched. More than one is the whole basis of the "couldn't tell them apart" verdict. */
+    val matchCount: Int,
+    /** The networks the listing named, comma-separated. Lists this short don't earn a table. */
+    val networks: String?,
+    val detail: String?
+)

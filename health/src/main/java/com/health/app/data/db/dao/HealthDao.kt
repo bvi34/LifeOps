@@ -9,9 +9,14 @@ import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.InsuranceMemberEntity
+import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
+import com.health.app.data.db.entities.NetworkCheckEntity
 import com.health.app.data.db.entities.ProfileEntity
 import com.health.app.data.db.entities.ProfileTombstoneEntity
+import com.health.app.data.db.entities.ProviderEntity
+import com.health.app.data.db.entities.ProviderLinkEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 import kotlinx.coroutines.flow.Flow
@@ -92,6 +97,11 @@ interface HealthDao {
         deleteMedicationsForProfile(profileId)
         deleteCareNotesForProfile(profileId)
         deleteEpisodesForProfile(profileId)
+        // Their membership of the household's policies and their side of the care team go too. The
+        // policy itself and the doctors themselves do not: those belong to the household, and one
+        // person leaving it is not a reason to forget the family plan or the family dentist.
+        deleteInsuranceMembersForProfile(profileId)
+        deleteProviderLinksForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -388,4 +398,159 @@ interface HealthDao {
             "UNION SELECT rxcui FROM cabinet_items WHERE rxcui IS NOT NULL)"
     )
     suspend fun pruneUnreferencedDrugFacts()
+
+    // --- coverage: plans and who is on them -------------------------------------------------------
+    //
+    // The plan is household-scoped and the membership is not, exactly as the cabinet splits a bottle
+    // from a person's dose of it. A family policy is one row; four people on it are four rows here.
+
+    @Query("SELECT * FROM insurance_plans ORDER BY archived, carrierName COLLATE NOCASE")
+    fun observeInsurancePlans(): Flow<List<InsurancePlanEntity>>
+
+    @Query("SELECT * FROM insurance_plans ORDER BY archived, carrierName COLLATE NOCASE")
+    suspend fun getInsurancePlans(): List<InsurancePlanEntity>
+
+    @Query("SELECT * FROM insurance_plans WHERE id = :id")
+    suspend fun getInsurancePlan(id: String): InsurancePlanEntity?
+
+    @Upsert
+    suspend fun upsertInsurancePlan(plan: InsurancePlanEntity)
+
+    @Query("SELECT * FROM insurance_members ORDER BY primaryCoverage DESC")
+    fun observeInsuranceMembers(): Flow<List<InsuranceMemberEntity>>
+
+    @Query("SELECT * FROM insurance_members WHERE profileId = :profileId ORDER BY primaryCoverage DESC")
+    fun observeInsuranceMembers(profileId: String): Flow<List<InsuranceMemberEntity>>
+
+    @Query("SELECT * FROM insurance_members WHERE id = :id")
+    suspend fun getInsuranceMember(id: String): InsuranceMemberEntity?
+
+    @Query("SELECT * FROM insurance_members WHERE planId = :planId")
+    suspend fun getInsuranceMembersForPlan(planId: String): List<InsuranceMemberEntity>
+
+    @Query("SELECT * FROM insurance_members")
+    suspend fun getInsuranceMembers(): List<InsuranceMemberEntity>
+
+    @Upsert
+    suspend fun upsertInsuranceMember(member: InsuranceMemberEntity)
+
+    @Query("DELETE FROM insurance_members WHERE id = :id")
+    suspend fun deleteInsuranceMember(id: String)
+
+    @Query("DELETE FROM insurance_members WHERE profileId = :profileId")
+    suspend fun deleteInsuranceMembersForProfile(profileId: String)
+
+    /**
+     * Remove a policy along with everybody's membership of it.
+     *
+     * The network checks made under it are **kept**. A plan Health no longer holds is still the plan
+     * that listed a doctor last March, and that listing is the only reason the app can later say
+     * somebody was dropped rather than never listed — see [NetworkCheckEntity]. The check rows carry
+     * the carrier's name at the time, so they still read correctly with the plan gone.
+     */
+    @Transaction
+    suspend fun deleteInsurancePlanCascade(planId: String) {
+        deleteInsuranceMembersForPlan(planId)
+        deleteInsurancePlanRow(planId)
+    }
+
+    @Query("DELETE FROM insurance_members WHERE planId = :planId")
+    suspend fun deleteInsuranceMembersForPlan(planId: String)
+
+    @Query("DELETE FROM insurance_plans WHERE id = :id")
+    suspend fun deleteInsurancePlanRow(id: String)
+
+    // --- the care team ----------------------------------------------------------------------------
+    //
+    // A doctor is household-scoped and deliberately not owned by a plan: the policy changes every
+    // January and the paediatrician doesn't.
+
+    @Query("SELECT * FROM providers ORDER BY name COLLATE NOCASE")
+    fun observeProviders(): Flow<List<ProviderEntity>>
+
+    @Query("SELECT * FROM providers ORDER BY name COLLATE NOCASE")
+    suspend fun getProviders(): List<ProviderEntity>
+
+    @Query("SELECT * FROM providers WHERE id = :id")
+    suspend fun getProvider(id: String): ProviderEntity?
+
+    @Upsert
+    suspend fun upsertProvider(provider: ProviderEntity)
+
+    @Query("SELECT * FROM provider_links")
+    fun observeProviderLinks(): Flow<List<ProviderLinkEntity>>
+
+    @Query("SELECT * FROM provider_links WHERE profileId = :profileId")
+    fun observeProviderLinks(profileId: String): Flow<List<ProviderLinkEntity>>
+
+    @Query("SELECT * FROM provider_links WHERE id = :id")
+    suspend fun getProviderLink(id: String): ProviderLinkEntity?
+
+    @Query("SELECT * FROM provider_links WHERE providerId = :providerId")
+    suspend fun getProviderLinksFor(providerId: String): List<ProviderLinkEntity>
+
+    @Query("SELECT * FROM provider_links")
+    suspend fun getProviderLinks(): List<ProviderLinkEntity>
+
+    @Upsert
+    suspend fun upsertProviderLink(link: ProviderLinkEntity)
+
+    @Query("DELETE FROM provider_links WHERE id = :id")
+    suspend fun deleteProviderLink(id: String)
+
+    @Query("DELETE FROM provider_links WHERE profileId = :profileId")
+    suspend fun deleteProviderLinksForProfile(profileId: String)
+
+    /**
+     * Remove a provider, along with everybody who saw them and every check made about them.
+     *
+     * The one place in this file where history is genuinely thrown away, and it is the right call:
+     * a network check is evidence *about a provider*, so with the provider gone it is evidence about
+     * nothing. That is not true of a dose, which happened to a person and stays.
+     */
+    @Transaction
+    suspend fun deleteProviderCascade(providerId: String) {
+        deleteProviderLinksForProvider(providerId)
+        deleteNetworkChecksForProvider(providerId)
+        deleteProviderRow(providerId)
+    }
+
+    @Query("DELETE FROM provider_links WHERE providerId = :providerId")
+    suspend fun deleteProviderLinksForProvider(providerId: String)
+
+    @Query("DELETE FROM providers WHERE id = :id")
+    suspend fun deleteProviderRow(id: String)
+
+    // --- network checks ---------------------------------------------------------------------------
+    //
+    // Append-only. Nothing in this file updates a check or deletes one to make room for a newer
+    // answer: the older answers are what let `logic/NetworkStatus` tell "left the network" apart from
+    // "never in it", which is the most useful thing the feature produces.
+
+    @Query("SELECT * FROM network_checks ORDER BY checkedAt")
+    fun observeNetworkChecks(): Flow<List<NetworkCheckEntity>>
+
+    @Query("SELECT * FROM network_checks WHERE providerId = :providerId ORDER BY checkedAt")
+    fun observeNetworkChecks(providerId: String): Flow<List<NetworkCheckEntity>>
+
+    @Query("SELECT * FROM network_checks WHERE providerId = :providerId ORDER BY checkedAt")
+    suspend fun getNetworkChecks(providerId: String): List<NetworkCheckEntity>
+
+    @Query("SELECT * FROM network_checks ORDER BY checkedAt")
+    suspend fun getAllNetworkChecks(): List<NetworkCheckEntity>
+
+    @Upsert
+    suspend fun upsertNetworkCheck(check: NetworkCheckEntity)
+
+    @Query("DELETE FROM network_checks WHERE providerId = :providerId")
+    suspend fun deleteNetworkChecksForProvider(providerId: String)
+
+    /**
+     * Drop one recorded check — for the mis-taps, and only for those. Offered because a phone
+     * confirmation typed against the wrong doctor is worse than no record at all; not offered in
+     * bulk, because "clear the history" here means "make the app forget that this doctor used to be
+     * in network", which is exactly the fact worth keeping.
+     */
+    @Query("DELETE FROM network_checks WHERE id = :id")
+    suspend fun deleteNetworkCheck(id: String)
 }
