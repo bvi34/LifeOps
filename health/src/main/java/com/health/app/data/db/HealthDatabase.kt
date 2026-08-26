@@ -14,6 +14,7 @@ import com.health.app.data.db.entities.ConditionEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -32,7 +33,7 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 7
+const val HEALTH_DB_VERSION = 8
 
 /**
  * Health's own store: people, everything recorded about them, the medicine cabinet those records
@@ -64,7 +65,8 @@ const val HEALTH_DB_VERSION = 7
         ProviderLinkEntity::class,
         NetworkCheckEntity::class,
         AllergyEntity::class,
-        ConditionEntity::class
+        ConditionEntity::class,
+        ImmunizationEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -432,6 +434,53 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 adds the vaccination record — the one health document a household is repeatedly asked to
+         * **produce** rather than consult, and the one it keeps as a folded card in a drawer.
+         *
+         * One table, and what is *not* in it is the design. There is no "due" column, no schedule and
+         * no next-dose date, because an immunisation schedule varies by country, by birth year, by
+         * risk group and by catch-up rules a clinician applies with judgement — see
+         * `logic/Immunizations`. Health records what was given and declines to have an opinion about
+         * what wasn't.
+         *
+         * `source` is the row's provenance and is stored beside the dose rather than inferred: a dose
+         * somebody watched being given and a dose copied off a card years later are both worth having
+         * and are not equally reliable. That is the same principle as v5's `createdAt`, applied to a
+         * record that is very often transcribed from paper.
+         *
+         * Nothing existing is touched.
+         */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS immunizations (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT NOT NULL, " +
+                        "vaccine TEXT NOT NULL, " +
+                        "cvxCode TEXT, " +
+                        "givenDate TEXT, " +
+                        "doseNumber INTEGER, " +
+                        "source TEXT NOT NULL, " +
+                        "providerId TEXT, " +
+                        "lotNumber TEXT, " +
+                        "site TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_immunizations_profileId ON immunizations(profileId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_immunizations_vaccine ON immunizations(vaccine)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_immunizations_givenDate ON immunizations(givenDate)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -447,7 +496,8 @@ abstract class HealthDatabase : RoomDatabase() {
                     MIGRATION_3_4,
                     MIGRATION_4_5,
                     MIGRATION_5_6,
-                    MIGRATION_6_7
+                    MIGRATION_6_7,
+                    MIGRATION_7_8
                 )
                     .build().also { instance = it }
             }

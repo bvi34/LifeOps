@@ -6,6 +6,8 @@ import com.health.app.logic.AllergyFacts
 import com.health.app.logic.AllergyKind
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.ConditionStatus
+import com.health.app.logic.VaccineDose
+import com.health.app.logic.VaccineSource
 import com.health.app.logic.Conditions
 import com.health.app.logic.CabinetStatus
 import com.health.app.logic.CardFacts
@@ -536,4 +538,34 @@ data class StandingRecord(
     companion object {
         val EMPTY = StandingRecord(emptyList(), emptyList())
     }
+}
+
+/**
+ * One recorded dose, with the enums resolved.
+ *
+ * [dose] is the shape `logic/Immunizations` groups and reads back; the extra fields here — the lot
+ * number, the site, who gave it — are what the detail card shows and play no part in how a record
+ * reads.
+ */
+data class Immunization(
+    val id: String,
+    val profileId: String,
+    val vaccine: String,
+    val cvxCode: String?,
+    val givenDate: String?,
+    val doseNumber: Int?,
+    val source: VaccineSource,
+    val providerId: String?,
+    val lotNumber: String?,
+    val site: String?,
+    val note: String?
+) {
+    val dose: VaccineDose
+        get() = VaccineDose(
+            id = id,
+            vaccine = vaccine,
+            givenDate = givenDate,
+            doseNumber = doseNumber,
+            source = source
+        )
 }

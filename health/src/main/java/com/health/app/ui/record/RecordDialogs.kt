@@ -11,18 +11,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Allergy
 import com.health.app.data.model.Condition
+import com.health.app.data.model.Immunization
 import com.health.app.data.model.Provider
 import com.health.app.data.model.ReadingType
 import com.health.app.logic.AllergyKind
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.Allergies
 import com.health.app.logic.ConditionStatus
+import com.health.app.logic.Immunizations
+import com.health.app.logic.VaccineSource
 import com.health.app.ui.common.ChoiceRow
 
 /**
- * The two forms behind the Record tab.
+ * The three forms behind the Record tab.
  *
- * Both follow the rule the rest of Health's dialogs follow: **one required field, everything else
+ * All of them follow the rule the rest of Health's dialogs follow: **one required field, everything else
  * optional**. A record somebody has to fill in completely is a record that stays empty, and a
  * household that gave up halfway through an allergy form has recorded nothing at all — which is the
  * outcome this whole feature exists to prevent. "Penicillin" on its own is already worth having.
@@ -30,7 +33,8 @@ import com.health.app.ui.common.ChoiceRow
  * The date fields take text rather than a picker, deliberately. [com.health.app.ui.common.WhenField]
  * is right for a temperature, which was taken at a moment somebody can point at on a clock; an onset
  * is a year somebody half-remembers, and a picker would force them to invent a day and a month to
- * get past it. See `Conditions.parseOnset` for the three precisions this accepts.
+ * get past it, and a vaccination card handed over at a new practice very often carries only a month.
+ * See `logic/PartialDate` for the three precisions these accept.
  */
 
 @Composable
@@ -239,6 +243,136 @@ fun ConditionDialog(
                             resolvedDate = if (status == ConditionStatus.RESOLVED) resolved.trim() else "",
                             providerId = providerId,
                             monitorReadingType = monitor,
+                            note = note.trim()
+                        )
+                    )
+                }
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * The vaccination form.
+ *
+ * Two fields here exist because of how this record is actually assembled, and neither is decoration:
+ *
+ *  - **the date takes a year on its own**, because a card handed over at a new practice very often
+ *    carries only a month, and a picker demanding a day would make somebody invent one;
+ *  - **the source is asked for every time**, because a dose somebody watched being given and a dose
+ *    typed off a card years later are both worth recording and are not equally reliable. Health's
+ *    default is "copied from a record", which is how most of a back-filled record genuinely arrives.
+ */
+@Composable
+fun ImmunizationDialog(
+    initial: Immunization? = null,
+    providers: List<Provider>,
+    onDismiss: () -> Unit,
+    onConfirm: (ImmunizationDraft) -> Unit
+) {
+    var vaccine by remember { mutableStateOf(initial?.vaccine.orEmpty()) }
+    var given by remember { mutableStateOf(initial?.givenDate.orEmpty()) }
+    var doseNumber by remember { mutableStateOf(initial?.doseNumber?.toString().orEmpty()) }
+    var source by remember { mutableStateOf(initial?.source ?: VaccineSource.TRANSCRIBED) }
+    var providerId by remember { mutableStateOf(initial?.providerId) }
+    var lot by remember { mutableStateOf(initial?.lotNumber.orEmpty()) }
+    var site by remember { mutableStateOf(initial?.site.orEmpty()) }
+    var note by remember { mutableStateOf(initial?.note.orEmpty()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Vaccine" else "Edit vaccine") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = vaccine,
+                    onValueChange = { vaccine = it },
+                    label = { Text("Which vaccine?") },
+                    supportingText = { Text("As it's written on the record — \"MMR\", \"DTaP\"") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = given,
+                    onValueChange = { given = it },
+                    label = { Text("When (optional)") },
+                    supportingText = { Text("A year or a month is fine — 2019, 2019-03, 2019-03-14") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = doseNumber,
+                    onValueChange = { doseNumber = it.filter(Char::isDigit) },
+                    label = { Text("Which dose in the series? (optional)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Where does this come from?", style = MaterialTheme.typography.labelMedium)
+                ChoiceRow(
+                    options = VaccineSource.entries,
+                    selected = source,
+                    onSelect = { source = it },
+                    label = { it.label }
+                )
+
+                if (providers.isNotEmpty()) {
+                    Text("Who gave it (optional)", style = MaterialTheme.typography.labelMedium)
+                    ChoiceRow(
+                        options = listOf<Provider?>(null) + providers,
+                        selected = providers.firstOrNull { it.id == providerId },
+                        onSelect = { providerId = it?.id },
+                        label = { it?.name ?: "Not recorded" }
+                    )
+                }
+
+                OutlinedTextField(
+                    value = lot,
+                    onValueChange = { lot = it },
+                    label = { Text("Lot number (optional)") },
+                    supportingText = { Text("Only ever wanted if there's a recall") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = site,
+                    onValueChange = { site = it },
+                    label = { Text("Site (optional)") },
+                    supportingText = { Text("\"Left arm\", \"left thigh\"") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    Immunizations.DISCLAIMER,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = vaccine.isNotBlank(),
+                onClick = {
+                    onConfirm(
+                        ImmunizationDraft(
+                            vaccine = vaccine.trim(),
+                            givenDate = given.trim(),
+                            doseNumber = doseNumber.trim(),
+                            source = source,
+                            providerId = providerId,
+                            lotNumber = lot.trim(),
+                            site = site.trim(),
                             note = note.trim()
                         )
                     )

@@ -11,6 +11,7 @@ import com.health.app.data.db.entities.ConditionEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -108,6 +109,7 @@ interface HealthDao {
         // about one person and is meaningless — and dangerous — attached to anybody else.
         deleteAllergiesForProfile(profileId)
         deleteConditionsForProfile(profileId)
+        deleteImmunizationsForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -522,11 +524,16 @@ interface HealthDao {
         // clinician — the same reasoning that keeps a dose when its medicine is deleted. Removing a
         // doctor from the care team must never be a way to delete somebody's asthma.
         clearProviderOnConditions(providerId)
+        // Same reasoning: the dose was still given, whoever gave it and wherever they work now.
+        clearProviderOnImmunizations(providerId)
         deleteProviderRow(providerId)
     }
 
     @Query("UPDATE conditions SET providerId = NULL WHERE providerId = :providerId")
     suspend fun clearProviderOnConditions(providerId: String)
+
+    @Query("UPDATE immunizations SET providerId = NULL WHERE providerId = :providerId")
+    suspend fun clearProviderOnImmunizations(providerId: String)
 
     @Query("DELETE FROM provider_links WHERE providerId = :providerId")
     suspend fun deleteProviderLinksForProvider(providerId: String)
@@ -618,4 +625,31 @@ interface HealthDao {
 
     @Query("DELETE FROM conditions WHERE profileId = :profileId")
     suspend fun deleteConditionsForProfile(profileId: String)
+
+    // --- the vaccination record -------------------------------------------------------------------
+    //
+    // Ordered by date here only so the rows arrive in a sensible order; the grouping into series is
+    // `logic/Immunizations`' job, because a series is a judgement about which names mean the same
+    // vaccine and SQL has no opinion about whether "M.M.R." and "MMR" are one thing.
+
+    @Query("SELECT * FROM immunizations WHERE profileId = :profileId ORDER BY givenDate DESC")
+    fun observeImmunizations(profileId: String): Flow<List<ImmunizationEntity>>
+
+    @Query("SELECT * FROM immunizations WHERE profileId = :profileId ORDER BY givenDate DESC")
+    suspend fun getImmunizations(profileId: String): List<ImmunizationEntity>
+
+    @Query("SELECT * FROM immunizations ORDER BY givenDate DESC")
+    suspend fun getAllImmunizations(): List<ImmunizationEntity>
+
+    @Query("SELECT * FROM immunizations WHERE id = :id")
+    suspend fun getImmunization(id: String): ImmunizationEntity?
+
+    @Upsert
+    suspend fun upsertImmunization(immunization: ImmunizationEntity)
+
+    @Query("DELETE FROM immunizations WHERE id = :id")
+    suspend fun deleteImmunization(id: String)
+
+    @Query("DELETE FROM immunizations WHERE profileId = :profileId")
+    suspend fun deleteImmunizationsForProfile(profileId: String)
 }

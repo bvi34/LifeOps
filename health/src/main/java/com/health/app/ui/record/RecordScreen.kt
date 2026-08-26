@@ -15,11 +15,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.health.app.data.model.Allergy
 import com.health.app.data.model.Condition
+import com.health.app.data.model.Immunization
 import com.health.app.data.model.Profile
 import com.health.app.data.model.Provider
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.Allergies
 import com.health.app.logic.ConditionStatus
+import com.health.app.logic.Immunizations
+import com.health.app.logic.VaccineSeries
 import com.health.app.ui.common.NoProfiles
 import com.health.app.ui.common.ProfileBar
 import com.health.app.ui.common.SectionCard
@@ -29,13 +32,13 @@ import com.health.app.ui.common.SectionCard
  *
  * Every other tab in Health records something that *happened* — a temperature was taken, a dose was
  * given, an illness ran from Tuesday to Sunday. This one holds what simply *is*: what she must not
- * be given, and what she already has. They are the two facts a babysitter, a school form and a
- * triage nurse all ask for first, and until now they lived in a free-text note that nothing could
- * read back.
+ * be given, what she already has, and what she has been vaccinated against. They are the facts a
+ * babysitter, a school form and a triage nurse all ask for first, and until now the first two lived
+ * in a free-text note that nothing could read back and the third lived in a drawer.
  *
- * The screen's one firm rule is that **an empty list is never rendered as an all-clear**. "Nothing
- * recorded" and "no allergies" are different sentences, and only one of them is something this app
- * is in a position to say.
+ * The screen's one firm rule runs through all three tabs: **an empty list is never rendered as an
+ * all-clear**. "Nothing recorded" and "no allergies" are different sentences; so are "three doses
+ * recorded" and "up to date". Only one of each pair is something this app is in a position to say.
  */
 @Composable
 fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
@@ -43,12 +46,16 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val record by vm.record.collectAsStateWithLifecycle()
     val providers by vm.providers.collectAsStateWithLifecycle()
+    val vaccineSeries by vm.vaccineSeries.collectAsStateWithLifecycle()
+    val immunizationsById by vm.immunizationsById.collectAsStateWithLifecycle()
 
     var tab by remember { mutableIntStateOf(0) }
     var addingAllergy by remember { mutableStateOf(false) }
     var addingCondition by remember { mutableStateOf(false) }
     var editingAllergy by remember { mutableStateOf<Allergy?>(null) }
     var editingCondition by remember { mutableStateOf<Condition?>(null) }
+    var addingVaccine by remember { mutableStateOf(false) }
+    var editingVaccine by remember { mutableStateOf<Immunization?>(null) }
 
     if (profiles.isEmpty()) {
         NoProfiles(onAddProfile)
@@ -60,9 +67,23 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
         floatingActionButton = {
             if (person != null) {
                 ExtendedFloatingActionButton(
-                    onClick = { if (tab == 0) addingAllergy = true else addingCondition = true },
+                    onClick = {
+                        when (tab) {
+                            0 -> addingAllergy = true
+                            1 -> addingCondition = true
+                            else -> addingVaccine = true
+                        }
+                    },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text(if (tab == 0) "Allergy" else "Condition") }
+                    text = {
+                        Text(
+                            when (tab) {
+                                0 -> "Allergy"
+                                1 -> "Condition"
+                                else -> "Vaccine"
+                            }
+                        )
+                    }
                 )
             }
         }
@@ -74,6 +95,7 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
             TabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Allergies") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Conditions") })
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Vaccines") })
             }
 
             when (tab) {
@@ -83,12 +105,18 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                     onEdit = { editingAllergy = it },
                     onDelete = { vm.deleteAllergy(it.id) }
                 )
-                else -> ConditionList(
+                1 -> ConditionList(
                     conditions = record.conditions,
                     providers = providers,
                     person = person,
                     onEdit = { editingCondition = it },
                     onDelete = { vm.deleteCondition(it.id) }
+                )
+                else -> VaccineList(
+                    series = vaccineSeries,
+                    person = person,
+                    onEdit = { doseId -> immunizationsById[doseId]?.let { editingVaccine = it } },
+                    onDelete = { doseId -> vm.deleteImmunization(doseId) }
                 )
             }
         }
@@ -153,6 +181,112 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                 editingCondition = null
             }
         )
+    }
+
+    if (addingVaccine && person != null) {
+        ImmunizationDialog(
+            providers = providers,
+            onDismiss = { addingVaccine = false },
+            onConfirm = { draft ->
+                vm.addImmunization(person.id, draft)
+                addingVaccine = false
+            }
+        )
+    }
+    editingVaccine?.let { immunization ->
+        ImmunizationDialog(
+            initial = immunization,
+            providers = providers,
+            onDismiss = { editingVaccine = null },
+            onConfirm = { draft ->
+                vm.updateImmunization(
+                    immunization.copy(
+                        vaccine = draft.vaccine,
+                        givenDate = draft.givenDate.ifBlank { null },
+                        doseNumber = draft.dose,
+                        source = draft.source,
+                        providerId = draft.providerId,
+                        lotNumber = draft.lotNumber.ifBlank { null },
+                        site = draft.site.ifBlank { null },
+                        note = draft.note.ifBlank { null }
+                    )
+                )
+                editingVaccine = null
+            }
+        )
+    }
+}
+
+/**
+ * The vaccination record, grouped into series.
+ *
+ * There is no "due", no "overdue" and no green tick anywhere on this list, and that absence is the
+ * feature — see `logic/Immunizations`. Health reports how many doses are **recorded** and when the
+ * latest was; it ships no schedule and cannot have an opinion about what is missing.
+ */
+@Composable
+private fun VaccineList(
+    series: List<VaccineSeries>,
+    person: Profile?,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (series.isEmpty()) {
+            item {
+                SectionCard("Nothing recorded") {
+                    Text(
+                        "The card in the drawer, typed up — the list a school, a camp or a new " +
+                            "practice asks for. Add what you have; a year on its own is worth " +
+                            "recording, and so is a dose you only remember.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        } else {
+            item {
+                Text(
+                    "${Immunizations.totalRecorded(series)} doses recorded across " +
+                        "${series.size} ${if (series.size == 1) "vaccine" else "vaccines"}" +
+                        (person?.let { " for ${it.name}" } ?: ""),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            items(series, key = { it.name.lowercase() }) { entry ->
+                SectionCard(entry.name) {
+                    Text(
+                        entry.summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    entry.doses.forEach { dose ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(dose.descriptor, style = MaterialTheme.typography.bodyMedium)
+                            Row {
+                                TextButton(onClick = { onEdit(dose.id) }) { Text("Edit") }
+                                TextButton(onClick = { onDelete(dose.id) }) { Text("Delete") }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Text(
+                Immunizations.DISCLAIMER,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

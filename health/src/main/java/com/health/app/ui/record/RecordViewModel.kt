@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.health.app.data.model.Allergy
 import com.health.app.data.model.Condition
+import com.health.app.data.model.Immunization
 import com.health.app.data.model.Profile
 import com.health.app.data.model.Provider
 import com.health.app.data.model.ReadingType
@@ -13,11 +14,14 @@ import com.health.app.data.repository.HealthRepository
 import com.health.app.logic.AllergyKind
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.ConditionStatus
+import com.health.app.logic.VaccineSeries
+import com.health.app.logic.VaccineSource
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -44,6 +48,23 @@ data class ConditionDraft(
     val note: String = ""
 ) {
     val isValid: Boolean get() = name.isNotBlank()
+}
+
+/** What the vaccination form collects. */
+data class ImmunizationDraft(
+    val vaccine: String = "",
+    val givenDate: String = "",
+    val doseNumber: String = "",
+    val source: VaccineSource = VaccineSource.TRANSCRIBED,
+    val providerId: String? = null,
+    val lotNumber: String = "",
+    val site: String = "",
+    val note: String = ""
+) {
+    val isValid: Boolean get() = vaccine.isNotBlank()
+
+    /** A dose number that isn't a number is no dose number. Health does not invent one. */
+    val dose: Int? get() = doseNumber.trim().toIntOrNull()
 }
 
 /**
@@ -73,6 +94,27 @@ class RecordViewModel(private val repo: HealthRepository) : ViewModel() {
             if (profile == null) flowOf(StandingRecord.EMPTY) else repo.observeStandingRecord(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StandingRecord.EMPTY)
+
+    /** Grouped into series, most recently given first — see `logic/Immunizations`. */
+    val vaccineSeries: StateFlow<List<VaccineSeries>> = selected
+        .flatMapLatest { profile ->
+            if (profile == null) flowOf(emptyList()) else repo.observeVaccineSeries(profile.id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * The same rows ungrouped, keyed by id.
+     *
+     * A [VaccineSeries] is what the screen *reads*; this is what it *edits*. Tapping a dose in a
+     * series has to reach the whole row — the lot number, the site, who gave it — and a series
+     * deliberately carries only the fields that decide how a record reads back.
+     */
+    val immunizationsById: StateFlow<Map<String, Immunization>> = selected
+        .flatMapLatest { profile ->
+            if (profile == null) flowOf(emptyList()) else repo.observeImmunizations(profile.id)
+        }
+        .map { list -> list.associateBy { it.id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     fun select(profile: Profile) = repo.selectProfile(profile.id)
 
@@ -108,6 +150,25 @@ class RecordViewModel(private val repo: HealthRepository) : ViewModel() {
     fun updateCondition(condition: Condition) = viewModelScope.launch { repo.updateCondition(condition) }
 
     fun deleteCondition(id: String) = viewModelScope.launch { repo.deleteCondition(id) }
+
+    fun addImmunization(profileId: String, draft: ImmunizationDraft) = viewModelScope.launch {
+        repo.addImmunization(
+            profileId = profileId,
+            vaccine = draft.vaccine,
+            givenDate = draft.givenDate,
+            doseNumber = draft.dose,
+            source = draft.source,
+            providerId = draft.providerId,
+            lotNumber = draft.lotNumber,
+            site = draft.site,
+            note = draft.note
+        )
+    }
+
+    fun updateImmunization(immunization: Immunization) =
+        viewModelScope.launch { repo.updateImmunization(immunization) }
+
+    fun deleteImmunization(id: String) = viewModelScope.launch { repo.deleteImmunization(id) }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

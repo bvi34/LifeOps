@@ -7,6 +7,7 @@ import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -29,6 +30,7 @@ import com.health.app.data.model.Condition
 import com.health.app.data.model.CoverageCard
 import com.health.app.data.model.Dose
 import com.health.app.data.model.Episode
+import com.health.app.data.model.Immunization
 import com.health.app.data.model.InsuranceMembership
 import com.health.app.data.model.InsurancePlan
 import com.health.app.data.model.Medication
@@ -67,6 +69,7 @@ import com.health.app.logic.EpisodeFacts
 import com.health.app.logic.EpisodeSummaries
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.Fever
+import com.health.app.logic.Immunizations
 import com.health.app.logic.Insurance
 import com.health.app.logic.MedicationRule
 import com.health.app.logic.MedicineFacts
@@ -77,6 +80,8 @@ import com.health.app.logic.ProviderDirectory
 import com.health.app.logic.ReminderMode
 import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
+import com.health.app.logic.VaccineSeries
+import com.health.app.logic.VaccineSource
 import com.health.app.logic.Temperature
 import com.health.app.logic.TempSite
 import com.health.app.logic.Timeline
@@ -1353,6 +1358,76 @@ class HealthRepository(
     suspend fun allergyWarnings(medication: Medication): List<AllergyWarning> =
         allergyWarnings(medication.profileId, medication.name, medication.rxcui)
 
+    // --- the vaccination record ------------------------------------------------------------------
+
+    fun observeImmunizations(profileId: String): Flow<List<Immunization>> =
+        dao.observeImmunizations(profileId).map { rows -> rows.map { it.toModel() } }
+
+    /**
+     * The record as it is read: grouped into series, most recently given first.
+     *
+     * The grouping is `logic/Immunizations`' rather than SQL's, because deciding that "M.M.R." and
+     * "MMR" are one vaccine is a judgement about names and the database has no opinion about it.
+     */
+    fun observeVaccineSeries(profileId: String): Flow<List<VaccineSeries>> =
+        dao.observeImmunizations(profileId).map { rows ->
+            Immunizations.group(rows.map { it.toModel().dose })
+        }
+
+    suspend fun addImmunization(
+        profileId: String,
+        vaccine: String,
+        givenDate: String? = null,
+        doseNumber: Int? = null,
+        source: VaccineSource = VaccineSource.UNKNOWN,
+        cvxCode: String? = null,
+        providerId: String? = null,
+        lotNumber: String? = null,
+        site: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertImmunization(
+            ImmunizationEntity(
+                id = id,
+                profileId = profileId,
+                vaccine = vaccine.trim(),
+                cvxCode = cvxCode.clean(),
+                givenDate = givenDate.clean(),
+                doseNumber = doseNumber,
+                source = source.key,
+                providerId = providerId.clean(),
+                lotNumber = lotNumber.clean(),
+                site = site.clean(),
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateImmunization(immunization: Immunization) {
+        val existing = dao.getImmunization(immunization.id) ?: return
+        dao.upsertImmunization(
+            existing.copy(
+                vaccine = immunization.vaccine.trim(),
+                cvxCode = immunization.cvxCode.clean(),
+                givenDate = immunization.givenDate.clean(),
+                doseNumber = immunization.doseNumber,
+                source = immunization.source.key,
+                providerId = immunization.providerId.clean(),
+                lotNumber = immunization.lotNumber.clean(),
+                site = immunization.site.clean(),
+                note = immunization.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    suspend fun deleteImmunization(id: String) = dao.deleteImmunization(id)
+
     // --- coverage: the cards ---------------------------------------------------------------------
     //
     // A plan is household-scoped and a membership is not, exactly as a bottle is household-scoped and
@@ -2328,5 +2403,19 @@ fun ConditionEntity.toModel() = Condition(
     // the right default for a reading that must be *something* and the wrong one for a column whose
     // whole meaning is "one of these matters here, or none does".
     monitorReadingType = monitorReadingType?.let { key -> ReadingType.entries.firstOrNull { it.key == key } },
+    note = note
+)
+
+fun ImmunizationEntity.toModel() = Immunization(
+    id = id,
+    profileId = profileId,
+    vaccine = vaccine,
+    cvxCode = cvxCode,
+    givenDate = givenDate,
+    doseNumber = doseNumber,
+    source = VaccineSource.fromKey(source),
+    providerId = providerId,
+    lotNumber = lotNumber,
+    site = site,
     note = note
 )

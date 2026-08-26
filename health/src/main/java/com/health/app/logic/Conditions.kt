@@ -44,42 +44,15 @@ enum class ConditionStatus(val key: String, val label: String) {
     }
 }
 
-/** How much of an onset date was actually recorded. */
-enum class DatePrecision { DAY, MONTH, YEAR }
-
-/** A parsed onset: the date it resolves to, and how much of it somebody actually knew. */
-data class OnsetDate(val date: LocalDate, val precision: DatePrecision)
-
 object Conditions {
 
     /**
      * Read an onset written at any of the three precisions people actually know.
      *
-     * A partial date resolves to the **first** day of the period, which is the opposite of
-     * [Cabinet.parseExpiry]'s choice and is right for the same reason that one is: an expiry is a
-     * deadline and so runs to the end of its month, while an onset is a beginning and so starts at
-     * the beginning of its year. Both round in the direction that cannot overstate what is known.
-     *
-     * Anything unparseable returns null rather than a guess — the row keeps its text and the screen
-     * says the date isn't known, exactly as an unparseable expiry leaves an item undated rather than
-     * wrongly expired.
+     * Delegates to [PartialDates], which is where that rule lives now that vaccination dates need it
+     * too — see the note there for why a partial date rounds to the start of its period.
      */
-    fun parseOnset(text: String?): OnsetDate? {
-        val value = text?.trim()?.ifBlank { null } ?: return null
-        return runCatching {
-            when {
-                value.matches(Regex("\\d{4}")) ->
-                    OnsetDate(LocalDate.of(value.toInt(), 1, 1), DatePrecision.YEAR)
-
-                value.matches(Regex("\\d{4}-\\d{2}")) -> {
-                    val (y, m) = value.split('-').map { it.toInt() }
-                    OnsetDate(LocalDate.of(y, m, 1), DatePrecision.MONTH)
-                }
-
-                else -> OnsetDate(LocalDate.parse(value), DatePrecision.DAY)
-            }
-        }.getOrNull()
-    }
+    fun parseOnset(text: String?): PartialDate? = PartialDates.parse(text)
 
     /**
      * "Since March 2019 · 7 years". The two halves answer different questions — when it started, and
@@ -92,12 +65,7 @@ object Conditions {
         val onset = parseOnset(onsetText) ?: return null
         if (onset.date.isAfter(today)) return null
 
-        val since = when (onset.precision) {
-            DatePrecision.YEAR -> "Since ${onset.date.year}"
-            DatePrecision.MONTH -> "Since ${monthName(onset.date.monthValue)} ${onset.date.year}"
-            DatePrecision.DAY ->
-                "Since ${onset.date.dayOfMonth} ${monthName(onset.date.monthValue)} ${onset.date.year}"
-        }
+        val since = "Since ${PartialDates.format(onset)}"
         val elapsed = describeElapsed(onset.date, today)
         return if (elapsed == null) since else "$since · $elapsed"
     }
@@ -138,12 +106,5 @@ object Conditions {
         compareBy<T> { status(it).ordinal }
             .thenBy { parseOnset(onset(it))?.date ?: LocalDate.MAX }
             .thenBy { name(it).lowercase() }
-    )
-
-    private fun monthName(month: Int): String = MONTHS.getOrElse(month - 1) { "" }
-
-    private val MONTHS = listOf(
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
     )
 }
