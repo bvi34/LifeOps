@@ -54,18 +54,27 @@ private val navItems = listOf(Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes,
  */
 class MainActivity : ComponentActivity() {
 
+    /**
+     * Reconcile with the household directory every time Health comes to the foreground.
+     *
+     * On `onStart` rather than on first composition because all six suite apps share one process:
+     * walking from Health to People and back does not recreate this activity, so a round tied to
+     * composition would run once and then never again for the rest of the session — missing exactly
+     * the edit the user just made next door. The round is idempotent and best-effort (a missing or
+     * half-written envelope must never block the screen), and it is what brings a person's birth
+     * date over from People, which is what the age-aware fever rules need.
+     */
+    override fun onStart() {
+        super.onStart()
+        HealthApp.get(this).syncPeople()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val app = HealthApp.get(this)
 
         setContent {
             HealthTheme {
-                // Reconcile with the household directory when Health opens. The round is idempotent
-                // and best-effort — a missing or half-written envelope must never block the screen —
-                // and it is what brings a person's birth date over from People, which is exactly
-                // what the age-aware fever rules need.
-                LaunchedEffect(Unit) { runCatching { app.syncService.sync(app.peers) } }
-
                 val nav = rememberNavController()
                 val backStack by nav.currentBackStackEntryAsState()
                 val current = backStack?.destination

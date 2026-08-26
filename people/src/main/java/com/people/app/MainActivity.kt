@@ -9,8 +9,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -26,10 +29,15 @@ import com.people.app.ui.theme.PeopleTheme
 /**
  * People's single entry point: the roster, and one person at a time.
  *
- * Opening the app runs a sync round. That is deliberate rather than lazy — the directory's whole
- * job is to agree with the other apps, and the cheapest moment to reconcile is the moment somebody
- * is about to look at it. The round is idempotent, so doing it on every open costs a file read when
- * there is nothing to do.
+ * Bringing the app to the foreground runs a sync round. That is deliberate rather than lazy — the
+ * directory's whole job is to agree with the other apps, and the cheapest moment to reconcile is the
+ * moment somebody is about to look at it. The round is idempotent, so doing it on every open costs a
+ * file read when there is nothing to do.
+ *
+ * It hangs off the lifecycle rather than off first composition because the six suite apps share one
+ * process: walking from People to Health and back does not recreate this activity, and a round that
+ * only ran when the roster was first composed would miss exactly the edit the user just made
+ * somewhere else.
  */
 class MainActivity : ComponentActivity() {
 
@@ -51,7 +59,7 @@ class MainActivity : ComponentActivity() {
                             val vm: RosterViewModel = viewModel(
                                 factory = RosterViewModel.Factory(app.repository, app.syncService, app.peers)
                             )
-                            LaunchedEffect(Unit) { vm.sync() }
+                            SyncOnStart(vm)
                             RosterScreen(vm, onOpenPerson = { nav.navigate("person/${it.id}") })
                         }
                         composable(
@@ -73,6 +81,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+}
+
+/**
+ * Reconcile whenever the roster becomes visible.
+ *
+ * `ON_START` also fires the moment the observer is registered on an already-started lifecycle, so
+ * this covers the first composition as well as every later return to the foreground — one trigger
+ * rather than a `LaunchedEffect` for the first case and something else for all the others.
+ */
+@Composable
+private fun SyncOnStart(vm: RosterViewModel) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) vm.sync()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 }
 

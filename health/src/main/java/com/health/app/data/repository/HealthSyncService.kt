@@ -9,6 +9,8 @@ import com.people.app.sync.PersonPacket
 import com.people.app.sync.VersionedPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -21,6 +23,15 @@ import java.io.File
  */
 private class HealthRoster(private val repository: HealthRepository) : PeerRoster {
 
+    /**
+     * Snapshot the roster rather than re-reading it per packet, dropped on any write that
+     * invalidates it. Health never creates, but a merge can still move a profile's `personKey`
+     * (identity converges on the lower of the two, see `PersonMerge`) — and with People and LifeOps
+     * both landing in the same round, the second peer's packet would otherwise be bound against the
+     * key the profile held before the first peer's packet moved it. Health binds by *name* until it
+     * has a key, so a stale key here is the difference between keeping a profile in step and
+     * silently ignoring every packet about them.
+     */
     private var cached: List<PersonBinder.Candidate>? = null
 
     override fun candidates(): List<PersonBinder.Candidate> =
@@ -32,6 +43,7 @@ private class HealthRoster(private val repository: HealthRepository) : PeerRoste
 
     override fun update(localId: String, packet: PersonPacket) = runBlocking {
         repository.applyMergedProfile(localId, packet)
+        cached = null
     }
 
     /**
@@ -74,7 +86,18 @@ class HealthSyncService(
         val error: String? = null
     )
 
+    /**
+     * Rounds are serialized: each snapshots the roster once and binds every packet against that
+     * snapshot, so two overlapping rounds would each decide the same arriving person is unknown.
+     * A profile edit publishing while the screen's own round is still running is exactly that race.
+     */
+    private val roundLock = Mutex()
+
     suspend fun sync(peers: List<String>): Summary = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers) }
+    }
+
+    private suspend fun round(peers: List<String>): Summary {
         val store = PeopleEnvelopeStore(syncDir)
         val engine = PeopleSyncEngine(Peers.HEALTH, HealthRoster(repository), createUnknown = false)
 
@@ -108,6 +131,6 @@ class HealthSyncService(
             engine.buildOutbound(changes = changes, acks = peers.associateWith { readCursor(it) })
         )
 
-        Summary(peersSeen = seen, updated = received, published = changes.size, error = failure)
+        return Summary(peersSeen = seen, updated = received, published = changes.size, error = failure)
     }
 }
