@@ -16,6 +16,9 @@ CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 Makefile
+# AGP's native build scratch (Advisor's llama.cpp). Regenerated on every build and
+# hundreds of megabytes of it — the .cxx equivalent of build/, which is already ignored.
+.cxx/
 
 # Gradle
 .gradle/
