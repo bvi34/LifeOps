@@ -73,10 +73,14 @@ data class CatalogSource(
                 url = "https://m.gutenberg.org/ebooks.opds/",
                 position = 1
             ),
+            // Feedbooks retired its public-domain sections (the old
+            // `catalog/public_domain.atom` now 404s) when it became Cantook Market. The
+            // catalog root still speaks OPDS and still answers searches, so the seed points
+            // there: an empty shelf with a working search box rather than a dead address.
             CatalogSource(
                 id = "feedbooks-public",
-                name = "Feedbooks (public domain)",
-                url = "https://catalog.feedbooks.com/catalog/public_domain.atom",
+                name = "Feedbooks",
+                url = "https://catalog.feedbooks.com/catalog/index.atom",
                 position = 2
             )
         )
