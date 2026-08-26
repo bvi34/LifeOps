@@ -53,6 +53,11 @@ object PersonMerge {
             email = pick(newer.email, older.email),
             phone = pick(newer.phone, older.phone),
             note = pick(newer.note, older.note),
+            // The household flag follows the same rule as the text fields rather than `archived`'s,
+            // because unlike `archived` it is not a state every peer holds an answer to: LifeOps has
+            // no column for it and publishes null. Under "the newer record's answer is the answer",
+            // any LifeOps edit would un-flag the person and Health would stop being offered them.
+            household = pickFlag(newer.household, older.household),
             // Archived is a state, not a field to fill in: the newer record's answer is the answer.
             archived = newer.archived,
             updatedAt = maxOf(local.updatedAt, incoming.updatedAt),
@@ -66,4 +71,10 @@ object PersonMerge {
     /** The preferred value if it says anything, else the fallback if *it* does, else null. */
     private fun pick(preferred: String?, fallback: String?): String? =
         preferred?.trim()?.takeIf { it.isNotEmpty() } ?: fallback?.trim()?.takeIf { it.isNotEmpty() }
+
+    /**
+     * The same rule for a flag: the preferred record's answer if it has one, else the fallback's.
+     * `false` is an answer — only `null` ("no opinion") defers.
+     */
+    private fun pickFlag(preferred: Boolean?, fallback: Boolean?): Boolean? = preferred ?: fallback
 }

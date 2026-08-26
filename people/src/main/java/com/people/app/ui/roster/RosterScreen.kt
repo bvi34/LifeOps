@@ -24,6 +24,7 @@ import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
 import com.people.app.logic.ImportantDates
 import com.people.app.logic.UpcomingDate
+import com.people.app.ui.common.HouseholdToggle
 import com.people.app.ui.common.PersonDot
 import com.people.app.ui.common.SectionCard
 import com.people.app.ui.common.formatDayTime
@@ -52,17 +53,25 @@ class RosterViewModel(
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
 
-    fun addPerson(name: String, relationship: String?, birthDate: String?, email: String?, phone: String?) =
-        viewModelScope.launch {
-            val color = PeopleSyncService.PROFILE_COLORS[people.value.size % PeopleSyncService.PROFILE_COLORS.size]
-            repo.addPerson(name, relationship, birthDate, email, phone, note = null, colorArgb = color)
-            // Publish straight away so the other apps see the new person without waiting for a launch.
-            sync()
-        }
+    fun addPerson(
+        name: String,
+        relationship: String?,
+        birthDate: String?,
+        email: String?,
+        phone: String?,
+        household: Boolean
+    ) = viewModelScope.launch {
+        val color = PeopleSyncService.PROFILE_COLORS[people.value.size % PeopleSyncService.PROFILE_COLORS.size]
+        repo.addPerson(name, relationship, birthDate, email, phone, note = null, colorArgb = color, household = household)
+        // Publish straight away so the other apps see the new person without waiting for a launch,
+        // and re-read theirs in full: this may be a second row for somebody the seam already carries
+        // under another key, and the packet that would prove it is behind our cursor.
+        sync(rescan = true)
+    }
 
-    fun sync() = viewModelScope.launch {
+    fun sync(rescan: Boolean = false) = viewModelScope.launch {
         _syncing.value = true
-        _syncStatus.value = runCatching { syncService.sync(peers) }
+        _syncStatus.value = runCatching { syncService.sync(peers, rescan) }
             .getOrElse { SyncStatus(System.currentTimeMillis(), emptyList(), 0, 0, it.message) }
         _syncing.value = false
     }
@@ -156,6 +165,7 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
                                 val details = listOfNotNull(
                                     person.relationship,
                                     person.email,
+                                    if (person.household) "in Health" else null,
                                     if (person.archived) "archived" else null
                                 )
                                 if (details.isNotEmpty()) {
@@ -182,10 +192,17 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
                     }
                 ) {
                     Text(
-                        "People and LifeOps each keep their own roster and reconcile over a shared " +
-                            "mailbox — the same seam Citation rides. Edits flow both ways; whoever " +
-                            "edited most recently wins a field, and a blank never overwrites a value.",
+                        "People, LifeOps and Health each keep their own roster and reconcile over a " +
+                            "shared mailbox — the same seam Citation rides. Edits flow both ways; " +
+                            "whoever edited most recently wins a field, and a blank never " +
+                            "overwrites a value.",
                         style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
+                        "Health only takes the people marked as household members — that switch is " +
+                            "on each person's page.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
                     status?.let { result ->
@@ -212,8 +229,8 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
     if (showAdd) {
         AddPersonDialog(
             onDismiss = { showAdd = false },
-            onConfirm = { name, relationship, birthDate, email, phone ->
-                vm.addPerson(name, relationship, birthDate, email, phone)
+            onConfirm = { name, relationship, birthDate, email, phone, household ->
+                vm.addPerson(name, relationship, birthDate, email, phone, household)
                 showAdd = false
             }
         )
@@ -223,13 +240,21 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
 @Composable
 private fun AddPersonDialog(
     onDismiss: () -> Unit,
-    onConfirm: (name: String, relationship: String?, birthDate: String?, email: String?, phone: String?) -> Unit
+    onConfirm: (
+        name: String,
+        relationship: String?,
+        birthDate: String?,
+        email: String?,
+        phone: String?,
+        household: Boolean
+    ) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var relationship by remember { mutableStateOf("") }
     var birthDate by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
+    var household by remember { mutableStateOf(false) }
 
     val birthDateValid = birthDate.isBlank() || ImportantDates.parseIso(birthDate) != null
 
@@ -280,6 +305,7 @@ private fun AddPersonDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                HouseholdToggle(checked = household, onCheckedChange = { household = it })
             }
         },
         confirmButton = {
@@ -291,7 +317,8 @@ private fun AddPersonDialog(
                         relationship.ifBlank { null },
                         birthDate.ifBlank { null },
                         email.ifBlank { null },
-                        phone.ifBlank { null }
+                        phone.ifBlank { null },
+                        household
                     )
                 }
             ) { Text("Save") }

@@ -89,3 +89,34 @@ fun DetailRow(label: String, value: String?) {
         Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
+
+/**
+ * The one control that decides whether Health tracks somebody.
+ *
+ * It lives in the directory rather than in Health because that is where the question belongs — you
+ * say who is a household member here, and Health grows a profile for them. The copy spells out the
+ * asymmetry, because it is the part people get wrong: ticking creates a profile, un-ticking only
+ * stops offering them, and nothing here ever deletes what Health has already recorded.
+ */
+@Composable
+fun HouseholdToggle(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Household member", style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (checked) {
+                    "Health keeps a profile for them, with their birth date."
+                } else {
+                    "Health won't track them. Turning this on gives them a profile there."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
+}

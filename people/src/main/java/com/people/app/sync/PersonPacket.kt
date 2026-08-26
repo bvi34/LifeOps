@@ -23,6 +23,16 @@ data class PersonPacket(
     val phone: String? = null,
     val note: String? = null,
     val archived: Boolean = false,
+    /**
+     * Whether the directory counts this person as a **household member** — the flag that decides
+     * whether Health grows a profile for them (see [PeopleSyncEngine]'s creation policy).
+     *
+     * Nullable, and that is the whole design: `null` means *this peer has no opinion*, not "no". Only
+     * People has a column for it; LifeOps has none and publishes null, so a LifeOps edit can never
+     * silently un-flag somebody just by being the more recent write. [PersonMerge] treats it exactly
+     * like the nullable text fields — the newer record wins only where it actually says something.
+     */
+    val household: Boolean? = null,
     val updatedAt: Long = 0L,
     /**
      * A withdrawal, not an erasure. A peer sets this when a person is removed on its side; every
@@ -56,6 +66,20 @@ data class PeerEnvelope(
 
 /** A packet stamped with its sending peer's monotonic version — the mailbox's unit of work. */
 data class VersionedPacket(val version: Long, val payload: PersonPacket)
+
+/**
+ * What a peer just did to its own roster — what the thing that triggers a sync round needs to know.
+ *
+ * The distinction is not cosmetic. Publishing is enough for an edit: the row already has a key the
+ * other peers know, so they will bind it. A **new** person is different — this peer may have just
+ * invented a second row for somebody the seam already carries under another key, and the packet that
+ * would prove it is behind this peer's cursor and will never be sent again. So a create asks for a
+ * full re-read (see the `rescan` flag on each app's sync service) and the binder gets another look.
+ */
+enum class LocalRosterChange {
+    PERSON_ADDED,
+    PERSON_EDITED
+}
 
 /** The peer names this seam knows. Free-form strings on the wire; these are the ones we ship. */
 object Peers {

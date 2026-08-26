@@ -91,11 +91,18 @@ class PeopleSyncService(
 
     private val roundLock = Mutex()
 
-    suspend fun sync(peers: List<String>): SyncStatus = withContext(Dispatchers.IO) {
-        roundLock.withLock { round(peers) }
+    /**
+     * @param rescan rewind every cursor first, so the round re-reads the other peers' rosters in
+     *   full. Set when this peer has just gained a person of its own ([com.people.app.sync.LocalRosterChange.PERSON_ADDED]):
+     *   the packet that would bind them to the household record is behind the cursor and would
+     *   otherwise never be seen again. Re-applying settled packets is free — they merge to no change.
+     */
+    suspend fun sync(peers: List<String>, rescan: Boolean = false): SyncStatus = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers, rescan) }
     }
 
-    private suspend fun round(peers: List<String>): SyncStatus {
+    private suspend fun round(peers: List<String>, rescan: Boolean): SyncStatus {
+        if (rescan) peers.forEach { writeCursor(it, 0L) }
         val store = PeopleEnvelopeStore(syncDir)
         val roster = PeopleRoster(repository, paletteFor)
         val engine = PeopleSyncEngine(Peers.PEOPLE, roster)
@@ -118,11 +125,17 @@ class PeopleSyncService(
                 .onFailure { failure = it.message ?: it::class.java.simpleName }
         }
 
-        // Publish everything the other peers haven't acknowledged. The floor is the *lowest* ack
-        // across peers, so a peer that has been away for a week still receives what it missed
-        // instead of being quietly skipped because a livelier peer is already up to date.
-        val floor = peers.minOfOrNull { peerAckOfUs(store, it) } ?: 0L
-        val changes = repository.changesSince(floor).map { (version, packet) ->
+        // Publish the whole roster, not a delta above what the peers have acknowledged.
+        //
+        // A delta is the obvious optimization and it was the wrong one. Pruning to the lowest ack
+        // means a peer can only ever bind a person while that person's packet is still on the wire —
+        // and once every peer has acked it, it is gone for good. So a peer that later changes what
+        // it holds (Health, the moment you start tracking somebody it had been ignoring) had no way
+        // back to that person's record: no birth date, and two keys that never converge. A household
+        // is a handful of rows, so the envelope stays a few kilobytes and any peer can bind at any
+        // moment. The cursors still do their real job — suppressing re-application — so a settled
+        // round is still a no-op.
+        val changes = repository.changesSince(0L).map { (version, packet) ->
             VersionedPacket(version, packet)
         }
         val outbound = engine.buildOutbound(
@@ -140,10 +153,6 @@ class PeopleSyncService(
             error = failure
         )
     }
-
-    /** How much of *our* output a peer says it has taken — read from that peer's own envelope. */
-    private fun peerAckOfUs(store: PeopleEnvelopeStore, peer: String): Long =
-        store.read(peer)?.ackFor(Peers.PEOPLE) ?: 0L
 
     companion object {
         /** The palette a person arriving over the seam is assigned from — distinct at a glance. */

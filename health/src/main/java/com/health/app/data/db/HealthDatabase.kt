@@ -12,6 +12,7 @@ import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
+import com.health.app.data.db.entities.ProfileTombstoneEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 
@@ -22,7 +23,7 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 2
+const val HEALTH_DB_VERSION = 3
 
 /**
  * Health's own store: people, and everything recorded about them. Nothing here is shared with, or
@@ -36,6 +37,7 @@ const val HEALTH_DB_VERSION = 2
 @Database(
     entities = [
         ProfileEntity::class,
+        ProfileTombstoneEntity::class,
         ReadingEntity::class,
         SymptomEntity::class,
         MedicationEntity::class,
@@ -73,6 +75,33 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v3 gives the seam the two things it needs to let the *directory* decide who Health tracks.
+         *
+         * [ProfileEntity.household] is the directory's tick, copied here so Health's own packets
+         * don't flip it back on; existing profiles are seeded **true**, because a profile that
+         * already exists is somebody already being tracked and un-ticking them behind the user's
+         * back would be a strange way to introduce a feature.
+         *
+         * `profile_tombstones` is what makes a removal stick — see [ProfileTombstoneEntity].
+         */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE profiles ADD COLUMN household INTEGER NOT NULL DEFAULT 1")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS profile_tombstones (" +
+                        "personKey TEXT NOT NULL PRIMARY KEY, " +
+                        "name TEXT NOT NULL, " +
+                        "removedAt INTEGER NOT NULL, " +
+                        "syncVersion INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_profile_tombstones_syncVersion " +
+                        "ON profile_tombstones(syncVersion)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -82,7 +111,7 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

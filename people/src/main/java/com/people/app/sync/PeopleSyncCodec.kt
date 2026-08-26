@@ -58,6 +58,7 @@ object PeopleSyncCodec {
         person.email?.let { addProperty("email", it) }
         person.phone?.let { addProperty("phone", it) }
         person.note?.let { addProperty("note", it) }
+        person.household?.let { addProperty("household", it) }
         addProperty("archived", person.archived)
         addProperty("updatedAt", person.updatedAt)
         if (person.deleted) addProperty("deleted", true)
@@ -71,6 +72,7 @@ object PeopleSyncCodec {
         email = obj.optString("email"),
         phone = obj.optString("phone"),
         note = obj.optString("note"),
+        household = obj.optBoolean("household"),
         archived = obj.get("archived")?.asBoolean ?: false,
         updatedAt = obj.get("updatedAt")?.asLong ?: 0L,
         deleted = obj.get("deleted")?.asBoolean ?: false
@@ -78,6 +80,10 @@ object PeopleSyncCodec {
 
     private fun JsonObject.optString(key: String): String? =
         get(key)?.takeIf { !it.isJsonNull }?.asString
+
+    /** Absent stays absent: a missing `household` is "no opinion", which is not the same as false. */
+    private fun JsonObject.optBoolean(key: String): Boolean? =
+        get(key)?.takeIf { !it.isJsonNull }?.asBoolean
 }
 
 /**

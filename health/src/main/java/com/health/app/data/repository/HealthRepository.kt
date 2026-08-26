@@ -6,6 +6,7 @@ import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
+import com.health.app.data.db.entities.ProfileTombstoneEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 import com.health.app.data.model.CareKind
@@ -33,6 +34,7 @@ import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
+import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.PersonBinder
 import com.people.app.sync.PersonPacket
 import kotlinx.coroutines.flow.Flow
@@ -66,10 +68,11 @@ class HealthRepository(
      * version and telling the seam are the same event, so they happen in the same place rather than
      * being remembered separately at each screen.
      *
-     * Fires for local edits only. [applyMergedProfile] is a write that arrived over the seam and
-     * deliberately does not call it — re-publishing it would hand the other peer its own change back.
+     * Fires for local edits only. [applyMergedProfile] and [createFromPacket] are writes that
+     * arrived over the seam and deliberately do not call it — re-publishing them would hand the
+     * other peer its own change straight back.
      */
-    private val onProfileEdit: () -> Unit = {}
+    private val onProfileEdit: (LocalRosterChange) -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -119,6 +122,9 @@ class HealthRepository(
                 colorArgb = colorArgb,
                 baselineTempC = baselineTempC,
                 notes = notes?.trim()?.ifBlank { null },
+                // Adding somebody here *is* saying they're a household member being tracked, so the
+                // directory hears the tick rather than having to be ticked separately.
+                household = true,
                 sortOrder = dao.nextSortOrder(),
                 archived = false,
                 createdAt = timestamp,
@@ -131,7 +137,7 @@ class HealthRepository(
         )
         // First person in an empty app becomes the selection, so the app opens on them.
         if (prefs.selectedProfileId == null) prefs.selectedProfileId = id
-        onProfileEdit()
+        onProfileEdit(LocalRosterChange.PERSON_ADDED)
         return id
     }
 
@@ -150,37 +156,68 @@ class HealthRepository(
                 syncVersion = dao.maxSyncVersion() + 1
             )
         )
-        onProfileEdit()
+        onProfileEdit(LocalRosterChange.PERSON_EDITED)
     }
 
     /**
      * Remove a person and everything recorded about them (see [HealthDao.deleteProfileCascade]).
      *
-     * Nothing is published. Removing somebody from Health means "stop tracking their health", not
-     * "remove them from the household" — the other peers keep them, and because Health never
-     * auto-creates a profile for a person it doesn't track, the next round doesn't hand them back.
+     * What reaches the other peers is **not** a withdrawal. Removing somebody from Health means
+     * "stop tracking their health", not "remove them from the household" — so the directory keeps
+     * them and simply un-ticks them as a household member (see [ProfileTombstoneEntity]).
+     *
+     * That tick has to be published, and the deleted row is the very thing that would otherwise have
+     * carried the news: Health's profile was created *from* the directory's tick, so without a trace
+     * of the removal the next edit to that person in People brings their packet round again and
+     * Health dutifully re-creates the profile that was just deleted.
      */
     suspend fun deleteProfile(profileId: String) {
+        dao.getProfile(profileId)?.let { profile ->
+            dao.upsertProfileTombstone(
+                ProfileTombstoneEntity(
+                    personKey = profile.personKey ?: profile.id,
+                    name = profile.name,
+                    removedAt = now(),
+                    syncVersion = dao.maxSyncVersion() + 1
+                )
+            )
+        }
         dao.deleteProfileCascade(profileId)
         if (prefs.selectedProfileId == profileId) {
             prefs.selectedProfileId = dao.getProfiles().firstOrNull { !it.archived }?.id
         }
+        onProfileEdit(LocalRosterChange.PERSON_EDITED)
     }
 
     // --- the People sync seam ---
     //
-    // Health is a **bind-only** peer: it keeps the people it already tracks in step with the
-    // household directory — names, birth dates (which the fever rules depend on), withdrawals — but
-    // never grows a profile for a household member nobody is tracking the health of. Adding someone
-    // to Health stays a deliberate act, and removing them here means "stop tracking their health",
-    // not "remove them from the household".
+    // Health grows a profile for a **household member** and for nobody else, and which is which is
+    // the directory's answer to give: you tick somebody as household in People and Health picks them
+    // up, birth date and all (the fever rules are age-aware, so that date is the whole point).
+    // Everyone else in the envelope is left alone — a roster that silently grew a medical profile
+    // for every adult in the house would be worse than no sync at all.
+    //
+    // Removing somebody here means "stop tracking their health", not "remove them from the
+    // household": it un-ticks them and leaves the directory's record of them intact.
     //
     // As everywhere on this seam: a local edit stamps a new syncVersion, a write that arrived over
     // the seam does not.
 
     /** Everything edited locally since [sinceVersion], as packets, oldest first. */
-    suspend fun profileChangesSince(sinceVersion: Long): List<Pair<Long, PersonPacket>> =
-        dao.profilesChangedSince(sinceVersion).map { it.syncVersion to it.toPacket() }
+    suspend fun profileChangesSince(sinceVersion: Long): List<Pair<Long, PersonPacket>> {
+        val edits = dao.profilesChangedSince(sinceVersion).map { it.syncVersion to it.toPacket() }
+        val removals = dao.profileTombstonesSince(sinceVersion).map { tombstone ->
+            tombstone.syncVersion to PersonPacket(
+                personKey = tombstone.personKey,
+                name = tombstone.name,
+                // Un-tick, don't withdraw: they are still in the household, Health has just stopped
+                // tracking them. `deleted` would have every peer archive them.
+                household = false,
+                updatedAt = tombstone.removedAt
+            )
+        }
+        return (edits + removals).sortedBy { it.first }
+    }
 
     suspend fun currentSyncVersion(): Long = dao.maxSyncVersion()
 
@@ -198,16 +235,59 @@ class HealthRepository(
      */
     suspend fun applyMergedProfile(localId: String, packet: PersonPacket) {
         val existing = dao.getProfile(localId) ?: return
+        val key = adoptableKey(existing.personKey, packet.personKey)
+        // A profile exists for this key again, so an old removal must stop speaking for it —
+        // otherwise Health would keep publishing "un-tick them" about somebody it is now tracking.
+        dao.deleteProfileTombstone(key)
         dao.upsertProfile(
             existing.copy(
-                personKey = adoptableKey(existing.personKey, packet.personKey),
+                personKey = key,
                 name = packet.name,
                 relationship = packet.relationship,
                 birthDate = packet.birthDate,
+                // A peer with no column for the flag (LifeOps) says nothing about it; only an
+                // explicit answer moves it. Un-ticking never deletes the profile — see the note on
+                // [ProfileTombstoneEntity] for why that asymmetry is deliberate.
+                household = packet.household ?: existing.household,
                 archived = packet.archived,
                 updatedAt = packet.updatedAt
             )
         )
+    }
+
+    /**
+     * Grow a profile for somebody the directory has marked as a household member.
+     *
+     * Only reached for a packet the creation policy accepted, so the decision has already been made
+     * elsewhere; this just records it. What arrives is identity — the name, the relationship and the
+     * **birth date** the age-aware fever rules need. Everything that makes it a *medical* profile —
+     * the baseline temperature, the notes — starts empty, because no other peer has an opinion about
+     * those and this seam is not going to invent one.
+     */
+    suspend fun createFromPacket(packet: PersonPacket): String {
+        val id = newId()
+        dao.deleteProfileTombstone(packet.personKey)
+        dao.upsertProfile(
+            ProfileEntity(
+                id = id,
+                personKey = packet.personKey,
+                // Not a local edit: it does not go back out.
+                syncVersion = 0L,
+                name = packet.name,
+                relationship = packet.relationship,
+                birthDate = packet.birthDate,
+                colorArgb = PROFILE_COLORS[dao.profileCount() % PROFILE_COLORS.size],
+                baselineTempC = null,
+                notes = null,
+                household = true,
+                sortOrder = dao.nextSortOrder(),
+                archived = packet.archived,
+                createdAt = now(),
+                updatedAt = packet.updatedAt
+            )
+        )
+        if (prefs.selectedProfileId == null) prefs.selectedProfileId = id
+        return id
     }
 
     /**
@@ -608,6 +688,17 @@ class HealthRepository(
     companion object {
         /** How far back a newly-started episode reaches to adopt records already taken. */
         const val DEFAULT_BACKFILL_MS: Long = 12L * 60 * 60 * 1000
+
+        /**
+         * The palette a new person is assigned from, in order — distinct at a glance, and
+         * colour-blind safe. It lives here rather than in the People screen because a profile can
+         * now also arrive over the seam, and two palettes would drift apart the first time either
+         * was edited.
+         */
+        val PROFILE_COLORS = listOf(
+            0xFF2C7A7B, 0xFFB7791F, 0xFF6B46C1, 0xFF2B6CB0,
+            0xFFB83280, 0xFF2F855A, 0xFFC05621, 0xFF4A5568
+        )
     }
 }
 
@@ -649,6 +740,7 @@ fun ProfileEntity.toPacket() = PersonPacket(
     email = null,
     phone = null,
     note = null,
+    household = household,
     archived = archived,
     updatedAt = updatedAt,
     deleted = false

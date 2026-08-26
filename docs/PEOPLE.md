@@ -91,13 +91,28 @@ people, so there is **one** envelope type and each peer writes its own copy of i
 keyed by peer name rather than a single number, which is what let Health join the folder later
 without a format change or a cursor migration.
 
-### The outbox is derived, not stored
+### The outbox is derived, not stored — and it is the whole roster
 
-Every local edit bumps that row's `syncVersion` from a counter, and the outbound envelope is simply
-*"every row above what the peer acknowledged"*. There is no separate durable queue to fall out of
-step with the rows after a crash. LifeOps draws its counter across both `persons` and
-`person_tombstones` so an edit and a withdrawal can never share a version — the peer orders by
-version, and a tie would leave the order of a delete and an edit to luck.
+Every local edit bumps that row's `syncVersion` from a counter, and the outbound envelope is derived
+from the rows rather than kept as a separate durable queue that could fall out of step with them
+after a crash. LifeOps and Health each draw their counter across both the rows and their tombstone
+table so an edit and a removal can never share a version — the peer orders by version, and a tie
+would leave the order of the two to luck.
+
+The envelope carries **every** row, not a delta above what the peers have acknowledged. The delta was
+the obvious optimization and it was the wrong one: pruning to the lowest ack means a peer can only
+bind a person while that person's packet is still on the wire, and once every peer has acked it, it
+is gone for good. So a peer that later changed *what it holds* had no way back to that person's
+record. Health was the case that made it visible — start tracking somebody it had been ignoring and
+it got no birth date, no relationship, and two keys that never converged, permanently. A household is
+a handful of rows, so the envelope stays a few kilobytes; the cursors still do their real job of
+suppressing re-application, so a settled round is still a no-op.
+
+The corollary is that a peer which changes what it holds must be able to *ask* for that roster again.
+A local create (`LocalRosterChange.PERSON_ADDED`) rewinds the peer's cursors, so the very next round
+re-reads the others in full and the binder gets another look — which is how a person typed straight
+into Health binds to the directory's record of them instead of becoming a second, empty copy.
+Re-applying settled packets is free: they merge to no change.
 
 The rule that keeps a round from echoing for ever: **a local edit stamps a new version and
 `updatedAt`; a write that arrived over the seam stamps neither.** A merged row that got re-stamped
@@ -110,20 +125,39 @@ Not every peer should hold the household outright.
 
 | Peer | Creates people from the seam? | Why |
 |---|---|---|
-| **People** | yes | It *is* the directory. |
-| **LifeOps** | yes | It already mints people on its own from calendar attendees; a person it learns about is one the household has. |
-| **Health** | **no** | It annotates people rather than holding them. It tracks temperatures and doses for whoever is actually ill, and a roster that silently grew a medical profile for every adult in the house would be worse than no sync at all. |
+| **People** | always | It *is* the directory. |
+| **LifeOps** | always | It already mints people on its own from calendar attendees; a person it learns about is one the household has. |
+| **Health** | **household members only** | It annotates people rather than holding them. A roster that silently grew a medical profile for every adult in the house would be worse than no sync at all — but so is a seam that can never hand Health anybody. |
 
-A **bind-only** peer (`PeopleSyncEngine(createUnknown = false)`) still keeps every person it *has*
-chosen in step — names, birth dates, withdrawals — and adding someone stays an explicit act in that
-app. It also removes an awkward corollary: a peer that never auto-creates can delete its own row
-without the next round handing the person straight back, which is why Health needs no tombstone table
-while LifeOps does. Removing somebody from Health means *stop tracking their health*, not *remove
-them from the household*.
+That middle answer is `CreationPolicy`, a predicate on the packet rather than a flat yes/no, and the
+predicate reads one field: **`household`**.
 
-What Health gets out of the seam is worth having on its own: a person added in People arrives with
-their **birth date**, which is exactly what the age-aware fever thresholds need — and which nobody
-wants to type twice.
+#### The household flag
+
+A person in the directory is either a household member or not, and that single tick is what decides
+whether Health keeps a profile for them. You set it in People — on the person's page, or when adding
+them — and Health picks them up on the next round, birth date and all, which is exactly what the
+age-aware fever thresholds need and what nobody wants to type twice.
+
+The decision belongs in the directory because that is the app that knows the answer. The alternative
+— "Health keeps up with whoever it already tracks" — sounds like the same thing and is not: it gives
+Health no way to ever *start* tracking somebody from the seam, so the birth date the whole
+arrangement exists to carry never arrives.
+
+Three rules make it behave:
+
+- **`household` is nullable on the wire, and `null` means "no opinion", not "no".** Only People has a
+  column for it. LifeOps has none and publishes null, so `PersonMerge` treats it like the nullable
+  text fields — the newer record wins only where it actually says something. Under whole-record
+  "newer wins", any LifeOps edit would have silently un-ticked people.
+- **Ticking creates; un-ticking never deletes.** Health stops being *offered* someone, and everything
+  it already recorded about them stays. Deleting a person's medical history is not a decision this
+  seam is confident enough to make from a switch in another app.
+- **Removing a profile in Health un-ticks them.** Health's profile was created *from* the tick, so
+  without a trace of the removal the next edit to that person in People brings their packet round
+  again and Health dutifully re-creates what was just deleted. `profile_tombstones` is that trace —
+  and unlike LifeOps' it publishes `household = false` rather than a withdrawal, because removing
+  somebody from Health means *stop tracking their health*, not *remove them from the household*.
 
 ### Binding: is this arriving packet somebody we already have?
 
@@ -156,13 +190,15 @@ Taking the lower of the two is deterministic, so both peers reach the same key f
 and stay there. A peer only adopts a key no *other* local row already holds; when it's taken the row
 keeps its own and the peers go on binding by name — weaker, but never two people sharing one identity.
 
-Two deliberate asymmetries:
+Three deliberate asymmetries:
 
 - **`archived` is a state, not a gap**, so the newer record's answer stands outright.
+- **`household` is a gap, not a state**, so it follows the text-field rule instead — only a peer that
+  actually has a column for it gets to move it. See **The household flag** below.
 - **A delete archives; it never erases.** A peer can withdraw somebody from its own list without
   deciding the household's whole record of them should stop existing.
 
-### Deletes, and why LifeOps needs tombstones
+### Deletes, and why two peers need tombstones
 
 Removing a person in People *archives* the row, so there is still something to publish. LifeOps
 genuinely deletes — `task_people`, `busy_block_people`, `busy_blocks` and `milestones` all cascade
@@ -170,6 +206,20 @@ off it, and that behaviour is older than the seam. But a deleted row is precisel
 would have carried the news, so without a trace of it People would hand the person straight back on
 the next round. `person_tombstones` is that trace, and nothing more: the key, the name, and a version
 so the withdrawal takes its turn in the envelope like any other change.
+
+Health's `profile_tombstones` is the same shape for a different sentence. Removing a profile there
+means *stop tracking their health*, not *remove them from the household*, so what it publishes is
+`household = false` rather than a withdrawal: the directory keeps its record of them and simply stops
+offering them back.
+
+### A packet the round cannot resolve
+
+One case is neither a merge nor a create: the binder matches a candidate, and by the time the row is
+read it has gone — a delete racing a sync. Recreating it resurrects what somebody just deleted;
+dropping it loses a packet the cursor is about to move past for ever. So the round does neither. It
+stops there, acks only what it resolved, and leaves the rest on the wire. Next round the roster no
+longer holds that row, the binder reaches `Decision.Create`, and the creation policy answers a
+question that is now unambiguous.
 
 ### What is *not* on the wire
 
@@ -200,7 +250,7 @@ the person would silently drop out of the relationship-balance analytics that co
 │   ├── PersonPacket      a person on the wire + the symmetric PeerEnvelope
 │   ├── PersonBinder      key → email → normalized name
 │   ├── PersonMerge       newer wins per field; a blank never beats a value; delete = archive
-│   ├── PeopleSyncEngine  one round, over :core's Mailbox; createUnknown picks the peer's policy
+│   ├── PeopleSyncEngine  one round, over :core's Mailbox; CreationPolicy picks who a peer creates
 │   └── PeopleSyncCodec   JSON codec + the per-peer file transport
 ├── logic/            pure JVM, unit-tested
 │   └── ImportantDates    recurring dates, incl. the 29 February case
@@ -275,9 +325,17 @@ Pure-JVM suites under `people/src/test` (run with `gradle :people:testDebugUnitT
   direction, and stably once reached.
 - `PeopleSyncEngineTest` — creation, idempotent re-application, the cursor skipping consumed packets
   *and* advancing past ones that merged to nothing, binding by email mid-round, a tombstone for
-  somebody we never had creating nobody, a **bind-only peer** keeping up with its own people while
-  ignoring the rest (and still accepting a withdrawal), name-binding surviving a later **rename**
-  because the key converged, and a **full two-peer round** ending with both rosters agreeing.
+  somebody we never had creating nobody, the **household tick** giving a profile to the person it
+  names and to nobody else (silence is not consent), un-ticking not removing a profile that already
+  exists, a peer keeping up with its own people while ignoring the rest (and still accepting a
+  withdrawal), a packet whose row **vanished mid-round** being left unacked rather than guessed at,
+  name-binding surviving a later **rename** because the key converged, and a **full two-peer round**
+  ending with both rosters agreeing.
+- `ThreePeerRoundTest` — full rounds over the real file transport with People, LifeOps and Health all
+  in one folder: ticking somebody as a household member being what gives them a profile in Health,
+  LifeOps (which has no column for the flag) never un-ticking anybody, a removal in Health un-ticking
+  rather than bouncing back, three invented keys converging on one, a withdrawal archiving
+  everywhere, and a peer that has been away still receiving what it missed.
 - `PeopleSyncCodecTest` — envelope round-trip, unknown fields ignored, garbage decoding to null
   rather than throwing, and the file-per-peer store (including that no temp file is left behind).
 - `ImportantDatesTest` — next-occurrence rollover, today counting as next, the **29 February** case

@@ -110,12 +110,54 @@ class PeopleSyncEngineTest {
     }
 
     @Test
+    fun `a household-flagged person gets a profile on the bind-only peer`() {
+        // The directory's answer, not Health's: you tick somebody as household in People and Health
+        // picks them up. Everyone else in the same envelope is left alone.
+        val health = FakeRoster("health")
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, CreationPolicy.HOUSEHOLD_ONLY)
+
+        val applied = engine.applyInbound(
+            envelope(
+                Peers.PEOPLE,
+                1L to PersonPacket("key-ellie", "Ellie", birthDate = "2019-04-02", household = true, updatedAt = 1_000L),
+                2L to PersonPacket("key-rob", "Rob", household = false, updatedAt = 1_000L),
+                // No opinion at all — every packet LifeOps writes looks like this, because it has no
+                // column for the flag. Silence is not consent.
+                3L to PersonPacket("key-marta", "Marta", updatedAt = 1_000L)
+            ),
+            sinceVersion = 0L
+        )
+
+        assertEquals(1, applied.created)
+        assertEquals(listOf("Ellie"), health.rows.values.map { it.name })
+        assertEquals("2019-04-02", health.byName("Ellie")!!.birthDate)
+        assertEquals(3L, applied.ackedThrough)
+    }
+
+    @Test
+    fun `un-flagging does not remove a profile the bind-only peer already has`() {
+        // Removing somebody from the household flag means "stop offering them", never "delete their
+        // medical history" — that is not a decision this seam is confident enough to make.
+        val health = FakeRoster("health")
+        health.put(PersonPacket("key-ellie", "Ellie", household = true, updatedAt = 1_000L))
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, CreationPolicy.HOUSEHOLD_ONLY)
+
+        engine.applyInbound(
+            envelope(Peers.PEOPLE, 1L to PersonPacket("key-ellie", "Ellie", household = false, updatedAt = 2_000L)),
+            sinceVersion = 0L
+        )
+
+        assertEquals(1, health.rows.size)
+        assertEquals(false, health.rows.values.single().household)
+    }
+
+    @Test
     fun `a bind-only peer keeps up with its own people and ignores the rest`() {
         // Health tracks one child. The household has four people; three of them are nobody Health
         // has any business growing a medical profile for.
         val health = FakeRoster("health")
         health.put(PersonPacket("key-ellie", "Ellie", updatedAt = 1_000L))
-        val engine = PeopleSyncEngine(Peers.HEALTH, health, createUnknown = false)
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, CreationPolicy.HOUSEHOLD_ONLY)
 
         val applied = engine.applyInbound(
             envelope(
@@ -141,7 +183,7 @@ class PeopleSyncEngineTest {
     fun `a bind-only peer still accepts a withdrawal for somebody it tracks`() {
         val health = FakeRoster("health")
         health.put(PersonPacket("key-ellie", "Ellie", updatedAt = 1_000L))
-        val engine = PeopleSyncEngine(Peers.HEALTH, health, createUnknown = false)
+        val engine = PeopleSyncEngine(Peers.HEALTH, health, CreationPolicy.HOUSEHOLD_ONLY)
 
         engine.applyInbound(
             envelope(Peers.PEOPLE, 1L to PersonPacket("key-ellie", "Ellie", deleted = true, updatedAt = 2_000L)),
@@ -150,6 +192,46 @@ class PeopleSyncEngineTest {
 
         // Archived, not erased: the readings recorded against her are still there.
         assertTrue(health.rows.values.single().archived)
+    }
+
+    @Test
+    fun `a packet whose row vanished mid-round is left unacked rather than guessed at`() {
+        // A delete racing a sync. Recreating resurrects the row somebody just deleted; dropping it
+        // loses a packet the cursor is about to move past for ever. So the round does neither, and
+        // the cursor stops short so the next round can decide it against a settled roster.
+        val roster = FakeRoster("p")
+        val ellie = roster.put(PersonPacket("key-ellie", "Ellie", updatedAt = 1_000L))
+        roster.vanish(ellie)
+
+        val engine = engine(roster)
+        val applied = engine.applyInbound(
+            envelope(
+                Peers.LIFEOPS,
+                1L to PersonPacket("key-rob", "Rob", updatedAt = 2_000L),
+                2L to PersonPacket("key-ellie", "Ellie", updatedAt = 2_000L),
+                3L to PersonPacket("key-marta", "Marta", updatedAt = 2_000L)
+            ),
+            sinceVersion = 0L
+        )
+
+        // Rob was taken; Ellie's packet and everything behind it stays on the wire, and Marta is
+        // not applied either — the round stops rather than doing work it is about to redo.
+        assertEquals(1L, applied.ackedThrough)
+        assertEquals(1, roster.created)
+
+        // Next round the row really is gone, so the binder reaches Decision.Create and the two
+        // remaining packets land properly.
+        val second = engine.applyInbound(
+            envelope(
+                Peers.LIFEOPS,
+                2L to PersonPacket("key-ellie", "Ellie", updatedAt = 2_000L),
+                3L to PersonPacket("key-marta", "Marta", updatedAt = 2_000L)
+            ),
+            sinceVersion = applied.ackedThrough
+        )
+
+        assertEquals(3L, second.ackedThrough)
+        assertEquals(3, roster.created)
     }
 
     @Test

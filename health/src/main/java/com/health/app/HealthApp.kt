@@ -7,6 +7,7 @@ import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.repository.HealthRepository
 import com.health.app.data.repository.HealthSyncService
 import com.people.app.PeopleApp
+import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.Peers
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +35,11 @@ class HealthApp private constructor(private val app: Application) {
     // a change nobody publishes until Health next opens is a change the user goes looking for in
     // People and doesn't find.
     val repository by lazy {
-        HealthRepository(database.healthDao(), prefs, onProfileEdit = { syncPeople() })
+        HealthRepository(
+            database.healthDao(),
+            prefs,
+            onProfileEdit = { change -> syncPeople(rescan = change == LocalRosterChange.PERSON_ADDED) }
+        )
     }
 
     /**
@@ -63,9 +68,14 @@ class HealthApp private constructor(private val app: Application) {
      *
      * Cheap to call often — a round with nothing to do is a couple of file reads, and
      * [HealthSyncService] serializes rounds so overlapping calls queue rather than race.
+     *
+     * [rescan] rewinds the cursors first, and a profile added here sets it: the packet that binds
+     * that profile to the directory's record of the same person — and carries their birth date over
+     * — is behind the cursor, and without a rewind Health would keep a second, empty copy of them
+     * for ever.
      */
-    fun syncPeople() {
-        scope.launch { runCatching { syncService.sync(peers) } }
+    fun syncPeople(rescan: Boolean = false) {
+        scope.launch { runCatching { syncService.sync(peers, rescan) } }
     }
 
     companion object {

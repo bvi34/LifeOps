@@ -1,5 +1,6 @@
 package com.health.app.data.repository
 
+import com.people.app.sync.CreationPolicy
 import com.people.app.sync.PeerRoster
 import com.people.app.sync.Peers
 import com.people.app.sync.PeopleEnvelopeStore
@@ -47,26 +48,29 @@ private class HealthRoster(private val repository: HealthRepository) : PeerRoste
     }
 
     /**
-     * Never called: Health runs the engine with `createUnknown = false`. It is here because the
-     * interface requires it, and it throws rather than quietly inventing a medical profile if that
-     * policy is ever changed by accident.
+     * Only ever reached for a packet [CreationPolicy.HOUSEHOLD_ONLY] accepted — somebody the
+     * directory has ticked as a household member. Everyone else never gets this far.
      */
-    override fun create(packet: PersonPacket): String =
-        error("Health is a bind-only peer and does not create profiles from the seam")
+    override fun create(packet: PersonPacket): String = runBlocking {
+        repository.createFromPacket(packet).also { cached = null }
+    }
 }
 
 /**
  * Health's side of the People sync seam — the third peer, and the one that participates differently.
  *
  * People and LifeOps each hold the household outright: a person either learns about is a person the
- * other should know, so both create freely. Health **annotates** people rather than holding them. It
- * tracks temperatures and doses for whoever is actually ill, and a medical profile that silently
- * appeared for every adult in the house would be worse than no sync at all — so it runs the engine
- * with `createUnknown = false` and only keeps in step with the people it has been told to track.
+ * other should know, so both create freely. Health **annotates** people rather than holding them, so
+ * it runs the engine with [CreationPolicy.HOUSEHOLD_ONLY]: it grows a profile for somebody the
+ * directory has ticked as a household member, and for nobody else. A medical profile that silently
+ * appeared for every adult in the house would be worse than no sync at all — but so is a seam that
+ * can never hand Health anybody, which is what "Health only keeps up with people it already tracks"
+ * amounted to in practice. Putting the decision on the packet moves it to the app that should be
+ * making it.
  *
- * What it gains from the seam is worth having anyway: a person added in People arrives with their
- * **birth date**, which is exactly what Health's fever rules need to know they are looking at a
- * six-week-old rather than an adult — and which nobody wants to type twice.
+ * What Health gains is worth having: a household member arrives with their **birth date**, which is
+ * exactly what the fever rules need to know they are looking at a six-week-old rather than an adult,
+ * and which nobody wants to type twice.
  *
  * What it never publishes is [com.health.app.data.db.entities.ProfileEntity.notes]; see
  * `HealthRepository.toPacket`.
@@ -93,13 +97,20 @@ class HealthSyncService(
      */
     private val roundLock = Mutex()
 
-    suspend fun sync(peers: List<String>): Summary = withContext(Dispatchers.IO) {
-        roundLock.withLock { round(peers) }
+    /**
+     * @param rescan rewind every cursor first, so the round re-reads the household in full. Set when
+     *   Health has just gained a profile of its own: the packet that would bind that profile to the
+     *   directory's record of the same person — and carry their birth date over — is behind the
+     *   cursor and would otherwise never be seen again.
+     */
+    suspend fun sync(peers: List<String>, rescan: Boolean = false): Summary = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers, rescan) }
     }
 
-    private suspend fun round(peers: List<String>): Summary {
+    private suspend fun round(peers: List<String>, rescan: Boolean): Summary {
+        if (rescan) peers.forEach { writeCursor(it, 0L) }
         val store = PeopleEnvelopeStore(syncDir)
-        val engine = PeopleSyncEngine(Peers.HEALTH, HealthRoster(repository), createUnknown = false)
+        val engine = PeopleSyncEngine(Peers.HEALTH, HealthRoster(repository), CreationPolicy.HOUSEHOLD_ONLY)
 
         var received = 0
         val seen = ArrayList<String>()
@@ -119,12 +130,12 @@ class HealthSyncService(
                 .onFailure { failure = it.message ?: it::class.java.simpleName }
         }
 
-        // Publish above the *lowest* ack across peers, so a peer that has been away still receives
-        // what it missed instead of being skipped because a livelier one is already up to date.
-        val floor = peers.minOfOrNull { peer ->
-            store.read(peer)?.ackFor(Peers.HEALTH) ?: 0L
-        } ?: 0L
-        val changes = repository.profileChangesSince(floor).map { (version, packet) ->
+        // Publish the whole roster, not a delta above what the peers have acknowledged. Pruning to
+        // the lowest ack meant a peer could only bind a person while that person's packet was still
+        // on the wire, and once every peer had acked it, it was gone for good — so a peer that later
+        // changed what it holds had no way back to that person's record. A household is a handful of
+        // rows; the cursors still suppress re-application, so a settled round is still a no-op.
+        val changes = repository.profileChangesSince(0L).map { (version, packet) ->
             VersionedPacket(version, packet)
         }
         store.write(
