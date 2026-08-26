@@ -6,6 +6,8 @@ import com.advisor.app.logic.SourceApp
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.model.ReadingType
 import com.health.app.logic.Age
+import com.health.app.logic.Cabinet
+import com.health.app.logic.CabinetFacts
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
@@ -183,6 +185,43 @@ class HealthKnowledgeSource(context: Context) : KnowledgeSource {
                     if (!medication.active) append(" Currently paused.")
                 },
                 timestamp = medication.createdAt
+            )
+        }
+
+        // --- the medicine cabinet ---
+        //
+        // Household-scoped, so unlike everything above these documents name no person. That is the
+        // point of them: "do we have any ibuprofen, and is it still in date" is a question about the
+        // house, and answering it from four per-person documents would be four chances to answer it
+        // about the wrong bottle.
+        val today = java.time.LocalDate.now()
+        for (item in dao.getCabinetItems()) {
+            val status = Cabinet.assess(
+                CabinetFacts(
+                    quantity = item.quantity,
+                    quantityUnit = item.quantityUnit,
+                    expiryDate = item.expiryDate,
+                    lowStockThreshold = item.lowStockThreshold
+                ),
+                today
+            )
+            docs += KnowledgeDocument(
+                id = "health:cabinet:${'$'}{item.id}",
+                source = source,
+                kind = "medicine_cabinet",
+                title = "Medicine cabinet: ${'$'}{item.name}",
+                body = buildString {
+                    append("The household medicine cabinet holds ").append(item.name)
+                    item.strength?.takeIf { it.isNotBlank() }?.let { append(" (").append(it).append(')') }
+                    item.form?.takeIf { it.isNotBlank() }?.let { append(", ").append(it) }
+                    item.location?.takeIf { it.isNotBlank() }?.let { append(", kept in the ").append(it) }
+                    append(". ").append(status.summary).append('.')
+                    Cabinet.describeExpiry(item.expiryDate)?.let {
+                        append(" Expiry date on the pack: ").append(it).append('.')
+                    }
+                    item.note?.takeIf { it.isNotBlank() }?.let { append(" Note: ").append(it) }
+                },
+                timestamp = item.updatedAt
             )
         }
 

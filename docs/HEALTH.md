@@ -2,7 +2,8 @@
 
 Health is the suite's **who's-ill-and-what-have-we-given-them** app: a profile per person, the
 temperatures and other readings taken for each of them, the symptoms they've got, the medicines
-they're on with the label's own dose rules, and the illnesses all of it hangs off. It is a hosted
+they're on with the label's own dose rules, the medicine cabinet those come out of, and the illnesses
+all of it hangs off. It is a hosted
 library module inside the Operations Sandbox container (`:app`), a peer to LifeOps, Citation and
 Logistics — opened from the sandbox home, backed up into the same one-zip archive, and readable by
 Advisor only if you grant it.
@@ -22,7 +23,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 |---|---|
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
-| **Meds** | Each person's medicines with the spacing and daily limits **from their own labels**, each showing its live dose window — due now, wait *this* long, or the day's allowance is spent — and the full history of doses given. |
+| **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
 | **Illness** | Episodes past and present, each readable back as a summary: how long, how high it peaked, which way it's going, what was given, what's still going. Plus the care log. |
 | **People** | The household. Add, edit and remove profiles; set whose reading you're looking at; choose °C or °F. |
 
@@ -93,6 +94,110 @@ The window rolls; it is not "since midnight". A day boundary is exactly where a 
 fifth dose through. A rule with no limits never blocks — Health enforces what the label says, never a
 restriction nobody typed in.
 
+## The medicine cabinet
+
+The Meds tab answers two different questions, and it is split in two because conflating them is what
+makes a household medicine list quietly wrong.
+
+**"What do we have?"** is a question about *things*. A bottle of ibuprofen is a household possession:
+one bottle, one amount left, one expiry date, however many people take from it. So `cabinet_items` is
+**not** scoped to a profile. A copy per person would be four dates to keep in step and three of them
+wrong within a month.
+
+**"What does she take, and can she have some yet?"** is a question about a *person*, and that is
+`medications`, unchanged in substance: her dose, her spacing, her daily limit, her dose window.
+
+A medication points at the bottle it comes out of, and the cabinet card shows every person pointing
+at it — so standing in front of a bottle you get the answer you actually came for, which is almost
+never "what is this" and almost always "how much does *she* get, and can she have some yet".
+
+### What the cabinet works out
+
+`Cabinet.assess` is framework-free and unit-tested like the rest of `logic/`, and it computes only
+from what was written down:
+
+- **Expiry.** `EXPIRED`, `EXPIRING_SOON` (within 60 days), `IN_DATE`, or — with no date recorded —
+  `UNKNOWN`, never "probably fine". A month-only date, which is what boxes actually print, is read the
+  way a pharmacist reads it: good **through the end of that month**. An unparseable date leaves the
+  item undated rather than wrongly expired.
+- **Stock.** `OUT`, `LOW`, `IN_STOCK`, or `UNKNOWN`. Low means the threshold you set, or — if you set
+  none — that there isn't enough left for one more dose. Health won't decide for you that three
+  tablets is "low"; it will tell you when three tablets can't cover the next dose.
+- **Doses remaining**, but **only when the stock and the dose share a unit.** 120 mL dosed in 15 mL is
+  eight doses. 120 mL dosed in 160 mg is a conversion that depends on the concentration, and getting
+  that wrong is the exact failure this app exists to prevent — so Health returns nothing and says
+  nothing.
+
+Recording a dose draws it out of the linked bottle under that same same-unit rule, and deleting a
+dose puts it back. The inverse has to exist: without it, one fat-fingered dose leaves a household
+with a bottle Health believes is emptier than it is.
+
+Items sort worst-news-first — expired, then out, then expiring soon, then low, then everything fine.
+A cabinet is read top-down when something is wrong and searched by name when nothing is.
+
+## Looking a medicine up — RxNorm and openFDA
+
+Typing a medicine in by hand still works and still does everything it did. In front of it there is now
+a search, because the *identity* of a medicine is the part a phone can fetch and a person shouldn't
+have to spell.
+
+Two public, keyless U.S. government references:
+
+- **RxNorm** (`rxnav.nlm.nih.gov`, National Library of Medicine) — the drug vocabulary. It knows that
+  "Children's Tylenol" and "acetaminophen 160 mg/5 mL oral suspension" are the same product, which is
+  exactly the lookup a person standing at a cupboard cannot do. Health takes the ingredients, the
+  brand, the dose form, the available strengths and the controlled-substance schedule.
+- **openFDA** (`api.fda.gov`) — the Structured Product Label, the text printed on the box. Health keeps
+  a fixed, ordered set of sections: what it's for, the directions, then everything that starts with
+  "don't".
+
+The answer is cached in `drug_facts`, keyed by RxNorm's concept id and **not** scoped to a profile —
+what a product is made of doesn't vary by who is taking it, so one lookup serves the whole house and
+one refresh updates everybody.
+
+### The line this feature does not cross
+
+**Health never computes a dose from a label.** Not the amount, not the spacing, not the daily maximum.
+
+A label's dosing text covers several ages, several weights and often several products at once; picking
+the line that applies to the person in front of you is a judgement, and Health does not make
+judgements it wasn't given. So the label's own directions are shown *beside* the dose fields as the
+reference they are — the manufacturer's words, attributed and dated — and the fields stay empty until
+somebody types in them.
+
+An app that reads a label to you is a reference. An app that does arithmetic on a label is giving
+medical advice, and this one is not qualified to. Sections are stored and shown verbatim: joined,
+whitespace-collapsed, and otherwise untouched. Nothing is summarised, ranked or filtered for
+relevance.
+
+Both dates are shown on the label sheet — when Health looked it up, and when the manufacturer last
+revised the label — because a stale cache and a stale label are different problems.
+
+## Reminders
+
+Two modes, because households take medicines in two ways:
+
+- **At set times** — the regular ones. The 8am and 8pm tablet, taken at breakfast whether or not the
+  last one was three hours late. These want a clock.
+- **When the next dose is due** — the as-needed ones. Calpol at 2am. Nobody wants a fixed-hour
+  reminder for those; they want to be told the moment the four hours are up, which is a fact
+  `DoseSchedule` already computes.
+
+Off is the default, and everything that predates the feature stays off. Pausing a medicine pauses its
+reminder, because pausing is how somebody says "not at the moment" and a notification that ignores
+that is the fastest way to get notifications turned off wholesale.
+
+`DoseReminder` computes the next instant against an injected clock and is unit-tested, so the awkward
+cases are provable rather than folklore: a time that has already passed today rolls to tomorrow; a
+when-due reminder for a medicine nobody has taken in a day **lapses** rather than nagging into the
+silence; and a reminder that wakes up late re-checks the live dose window before it says anything —
+if somebody else in the house already gave a dose from their own phone, it stays quiet.
+
+Delivery is WorkManager (`reminder/`), not exact alarms: a dose reminder is a "some time around eight"
+nudge that must survive a reboot, not a to-the-second alarm. The notification never tells anybody to
+take a medicine — it says the dose *you wrote down* is due, and taps through to the screen where the
+live dose window has the final word.
+
 ## Illnesses — the thing the rows hang off
 
 Starting an episode is the difference between a scatter of readings and a story. While one is open,
@@ -115,12 +220,19 @@ make, like a fever heading into its fourth day, which escalates the episode's ca
 │   ├── Temperature      °C/°F conversion, tolerant parsing, plausibility bounds, formatting
 │   ├── Fever            sites, bands, age-aware red flags, the standing disclaimer
 │   ├── DoseSchedule     interval + rolling-24h dose windows and countdown formatting
+│   ├── DoseReminder     when a reminder next fires, in both modes, against an injected clock
+│   ├── Cabinet          expiry and stock verdicts, doses remaining, same-unit rule
+│   ├── DrugFacts        the monograph types — candidates, label sections, attribution
+│   ├── RxNormParser     RxNorm JSON → candidates, ingredients, strengths, schedule
+│   ├── OpenFdaParser    openFDA JSON → the label's own sections, in reading order
 │   ├── EpisodeSummary   an illness read back: peak, trend, fever run, advice
 │   └── Age              birth date → months/years, and the label people actually use
 ├── data/             Room (HealthDatabase, entities, HealthDao) + repository + prefs
 │   ├── model/        domain types with the string columns resolved into enums
+│   ├── net/          DrugLookupClient — the only class in Health that opens a connection
 │   ├── repository/   HealthRepository — rows in, models out, every judgement delegated to logic/
 │   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
+├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
 ├── ui/               Compose: today · vitals · meds · episodes · people (+ common, theme)
 ├── backup/           HealthBackupContributor (whole-file health.db copy + health_* prefs)
 ├── HealthApp.kt      tiny runtime container (install/get), like LogisticsApp
@@ -135,7 +247,7 @@ not read People's database; the roster is replicated over a mailbox, not borrowe
 
 ## Storage
 
-One `health.db`, eight tables:
+One `health.db`, ten tables:
 
 - **`profile_tombstones`** — profiles removed here, kept only long enough to publish the un-tick so
   the next round doesn't hand the person straight back. See PEOPLE.md.
@@ -147,17 +259,34 @@ One `health.db`, eight tables:
 - **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C),
   with the site for temperatures and a nullable episode link.
 - **`symptoms`** — name, severity 1–5, started, ended (null while it's still going).
-- **`medications`** — a medicine as kept for one person, with every label limit nullable.
+- **`medications`** — **one person's use of a product**: their dose, the label's limits (every one
+  nullable), their reminder setting, and the two links that keep it from duplicating anything —
+  `rxcui` to the cached product facts, `cabinetItemId` to the bottle it's given from.
 - **`doses`** — what was actually given. The medicine's name is **denormalised onto the row** so the
   history survives the medicine being renamed or deleted.
+- **`cabinet_items`** — the physical stock: a bottle, a box, a blister pack. Amount left, expiry date,
+  where it lives, when to call it low. *Schema v4, and deliberately **not** scoped to a profile — a
+  bottle is a household possession, and a copy per person would be four expiry dates to get wrong.*
+- **`drug_facts`** — one looked-up product's monograph, cached whole and keyed by RxNorm concept id.
+  Also household-scoped: what acetaminophen suspension is made of doesn't vary by who takes it, so one
+  lookup serves everybody and one refresh updates them all. The label's sections are JSON in a single
+  column; a malformed blob reads back as no sections rather than taking the screen down. *Schema v4.*
 - **`episodes`** — bouts of illness; open while `endedAt` is null.
 - **`care_notes`** — fluids, rest, the call to the doctor and what they said.
 
-Two conventions run through all of them: **instants are epoch millis, dates are ISO strings** (a
-moment gets subtracted and windowed; a birth date must not shift across time zones), and **every row
-carries its profile id**. Cross-table links are plain nullable ids rather than foreign keys — a
-reading taken before anyone declared an illness is still a real reading, and deleting a medicine must
-not delete the record that a dose of it was given.
+Two conventions run through them: **instants are epoch millis, dates are ISO strings** (a moment gets
+subtracted and windowed; a birth date must not shift across time zones), and **every row about a
+person carries its profile id** — there is no ambient "current person" at the data layer.
+
+The two v4 tables are the deliberate exception, and the exception is the design: `cabinet_items` and
+`drug_facts` are about *things*, not people. A bottle is a household possession and a drug label is a
+fact about a product; scoping either to a profile would mean one row per person, one expiry date per
+person, and three of them wrong within a month.
+
+Cross-table links are plain nullable ids rather than foreign keys — a reading taken before anyone
+declared an illness is still a real reading, deleting a medicine must not delete the record that a
+dose of it was given, and throwing a bottle away must not delete either the regimens given from it or
+the doses recorded against it.
 
 ## Backup
 
@@ -168,11 +297,29 @@ unit) and, like LifeOps' contributor, touches **only** files matching its own pr
 share one `shared_prefs/` directory. The manifest's data version is read from
 `HEALTH_DB_VERSION` rather than hand-copied, so it cannot drift from the schema.
 
+Restoring also **re-arms every medication reminder** against the database that has just arrived. The
+work queue survives the restore and still refers to the medicines of the database that was replaced,
+so it is cancelled wholesale and rebuilt from the restored rows — the only version of this that can't
+leave somebody nudged about a medicine they don't have, or not nudged about one they do.
+
 ## Privacy
 
-Health declares **no permissions at all** — no `INTERNET`, no sensors, no contacts. Household medical
-records are the last data in this suite that should be able to leave the device, so the module has no
-means to send them.
+Health declares exactly two permissions, no sensors and no contacts. **Household medical records still
+cannot leave the device** — nothing in the module reads a profile, a reading, a symptom, a dose or an
+illness and sends it anywhere, and there is no code path that could.
+
+- **`INTERNET`** — the medicine cabinet's drug lookup, and nothing else. `data/net/DrugLookupClient`
+  is the only class in the module that opens a connection; it is only ever called because somebody
+  pressed Search or Refresh; and the only things it can send are **the search term typed into the box
+  and an RxNorm concept id**. It asks two public, keyless U.S. government references a question about
+  a *product*, of the kind anyone could type into a search engine, and caches the answer locally so it
+  isn't asked twice. Nothing runs on a timer, at startup, or in the background.
+- **`POST_NOTIFICATIONS`** — medication reminders the user sets up per medicine. Nothing is scheduled
+  until a reminder is turned on.
+
+The module used to declare no permissions at all, and the promise behind that has not changed — what
+crosses the wire is a question about a bottle, never a fact about a person. The manifest says so at
+the point of declaration, which is where anyone reading the module will look first.
 
 Advisor can read Health, but only behind the same explicit per-app gate as every other source, denied
 by default. `HealthKnowledgeSource` is read-only and **names the person in every document it
@@ -184,7 +331,7 @@ rather than inviting the model to form a second opinion.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 36 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 84 tests:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -204,3 +351,16 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   reading, and an ended episode reported in the past tense.
 - `AgeTest` — whole months/years, a future or malformed birth date returning null rather than zero
   (0 months old is a dangerous reading of a typo), and the label using the unit people use at that age.
+- `CabinetTest` — the printed expiry day itself still counting as in date, a month-only date running to
+  the end of that month, an unparseable date leaving the item undated rather than wrongly expired, a
+  dose in a different unit never being converted, "low" meaning the threshold you set or else "not
+  enough for one more dose", and the worst-news-first ordering.
+- `DoseReminderTest` — the next set time today, the roll to tomorrow once today's are past, a when-due
+  reminder that lapses rather than nagging about a medicine nobody is taking, a late wake-up that still
+  notifies and a hopelessly late one that doesn't, a window re-armed by somebody else's dose staying
+  quiet, and an unparseable time being dropped rather than defaulted.
+- `DrugLookupParserTest` — products sorted ahead of bare ingredients, suppressed and non-English
+  concepts dropped, the approximate search keeping the best score per concept, a numeric DEA schedule
+  written out and an unscheduled one saying nothing, label sections kept in reading order with the
+  label's own words untouched, RxNorm keeping identity while openFDA fills in what it has no opinion
+  about, and malformed JSON parsing to nothing rather than throwing.

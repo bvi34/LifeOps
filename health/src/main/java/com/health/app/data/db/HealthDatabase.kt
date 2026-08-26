@@ -7,8 +7,10 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.health.app.data.db.dao.HealthDao
+import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
+import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
@@ -23,10 +25,11 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 3
+const val HEALTH_DB_VERSION = 4
 
 /**
- * Health's own store: people, and everything recorded about them. Nothing here is shared with, or
+ * Health's own store: people, everything recorded about them, and the medicine cabinet those
+ * records draw on. Nothing here is shared with, or
  * sourced from, another app's database — no other module in the suite owns household health data —
  * so unlike Logistics there is no cross-app catalog bridge, only this one file.
  *
@@ -43,7 +46,9 @@ const val HEALTH_DB_VERSION = 3
         MedicationEntity::class,
         DoseEntity::class,
         EpisodeEntity::class,
-        CareNoteEntity::class
+        CareNoteEntity::class,
+        DrugFactsEntity::class,
+        CabinetItemEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -102,6 +107,80 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 turns the Meds tab into a medicine cabinet.
+         *
+         * Two new tables, and neither is scoped to a profile — which is the point. `drug_facts`
+         * caches one looked-up product's monograph for the whole household, so the same bottle on
+         * two people's lists stores the label once and refreshes for both; `cabinet_items` is the
+         * physical stock, because a bottle is a household possession and duplicating it per person
+         * would mean four expiry dates to get wrong.
+         *
+         * `medications` gains the two links to them plus its reminder setting. Every existing row
+         * keeps working untouched: the links default to null (a medicine typed in by hand is still a
+         * medicine), and `reminderMode` defaults to `"off"`, so nobody's phone starts buzzing about
+         * a medicine they set up last year because they upgraded.
+         */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS drug_facts (" +
+                        "rxcui TEXT NOT NULL PRIMARY KEY, " +
+                        "name TEXT NOT NULL, " +
+                        "genericName TEXT, " +
+                        "brandName TEXT, " +
+                        "doseForm TEXT, " +
+                        "routes TEXT, " +
+                        "ingredients TEXT, " +
+                        "availableStrengths TEXT, " +
+                        "schedule TEXT, " +
+                        "productType TEXT, " +
+                        "manufacturer TEXT, " +
+                        "labelSetId TEXT, " +
+                        "labelEffectiveTime TEXT, " +
+                        "sectionsJson TEXT, " +
+                        "sources TEXT, " +
+                        "fetchedAt INTEGER NOT NULL)"
+                )
+
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cabinet_items (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "rxcui TEXT, " +
+                        "name TEXT NOT NULL, " +
+                        "brandName TEXT, " +
+                        "strength TEXT, " +
+                        "form TEXT, " +
+                        "quantity REAL, " +
+                        "quantityUnit TEXT NOT NULL, " +
+                        "expiryDate TEXT, " +
+                        "location TEXT, " +
+                        "lowStockThreshold REAL, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cabinet_items_name ON cabinet_items(name)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_cabinet_items_rxcui ON cabinet_items(rxcui)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_cabinet_items_expiryDate " +
+                        "ON cabinet_items(expiryDate)"
+                )
+
+                db.execSQL("ALTER TABLE medications ADD COLUMN rxcui TEXT")
+                db.execSQL("ALTER TABLE medications ADD COLUMN cabinetItemId TEXT")
+                db.execSQL(
+                    "ALTER TABLE medications ADD COLUMN reminderMode TEXT NOT NULL DEFAULT 'off'"
+                )
+                db.execSQL("ALTER TABLE medications ADD COLUMN reminderTimes TEXT")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_medications_rxcui ON medications(rxcui)")
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_medications_cabinetItemId " +
+                        "ON medications(cabinetItemId)"
+                )
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -111,7 +190,7 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

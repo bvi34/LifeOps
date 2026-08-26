@@ -268,7 +268,7 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 | **Citation** | library books (title, author, reading state) and reading notes |
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
 | **People** | the household directory: who is in it, how to reach them, the dates that come round (a birth date doubles as a birthday), and the notes kept about them |
-| **Health** | the household's people, their recent temperatures (each carrying Health's own fever assessment) and other readings, symptoms, medicines with their dose limits, doses given, illnesses and care notes |
+| **Health** | the household's people, their recent temperatures (each carrying Health's own fever assessment) and other readings, symptoms, medicines with their dose limits, doses given, illnesses, care notes, and the **medicine cabinet** — what the house actually has, whether it's in date and whether it's running low |
 
 People is the one source whose rows are *replicated* rather than owned outright — LifeOps holds its
 own copy of the same humans and the two reconcile over the sync seam. Advisor indexes **People's**
@@ -277,11 +277,15 @@ same person into a corpus that has no idea they are the same person, and the ret
 cite whichever is staler. LifeOps' source keeps to what only LifeOps knows — the tasks and time that
 involve a person, not the person.
 
-Health's source is the one that names its subject in **every** document it emits. The corpus is flat
-text with no per-row scoping, so "38.4 at 21:00" without a name is a document that can be retrieved
-into an answer about the wrong person — an error of a different kind from a stale pantry count. For
-the same reason its readings are summarised rather than enumerated: a year of temperatures would
-otherwise drown every other source. See **[HEALTH.md](HEALTH.md)**.
+Health's source is the one that names its subject in **every** document it emits — with one
+deliberate exception. Its **medicine cabinet** documents name no person, because they aren't about
+one: "do we have any ibuprofen, and is it still in date" is a question about the house, and answering
+it from four per-person documents would be four chances to answer it about the wrong bottle.
+
+Everything else it emits carries a name, because the corpus is flat text with no per-row scoping: an
+unnamed "38.4 at 21:00" is a document that can be retrieved into an answer about the wrong person — an
+error of a different kind from a stale pantry count. For the same reason its readings are summarised
+rather than enumerated: a year of temperatures would otherwise drown every other source. See **[HEALTH.md](HEALTH.md)**.
 
 The Collection is indexed because that's where a whole class of question lives — "what can I make
 with the beef", "didn't I have an idea about X", "how long have I spent on this book" — and until it

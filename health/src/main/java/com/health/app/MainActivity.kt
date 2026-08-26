@@ -125,7 +125,9 @@ class MainActivity : ComponentActivity() {
                             VitalsScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.Meds.route) {
-                            val vm: MedsViewModel = viewModel(factory = MedsViewModel.Factory(app.repository))
+                            val vm: MedsViewModel = viewModel(
+                                factory = MedsViewModel.Factory(app.repository, app.drugLookup)
+                            )
                             MedsScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.Episodes.route) {

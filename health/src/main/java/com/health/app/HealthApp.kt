@@ -5,7 +5,9 @@ import android.content.Context
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.repository.HealthRepository
+import com.health.app.data.net.DrugLookupClient
 import com.health.app.data.repository.HealthSyncService
+import com.health.app.reminder.MedicationReminderScheduler
 import com.people.app.PeopleApp
 import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.Peers
@@ -19,8 +21,11 @@ import java.io.File
  * Health's tiny runtime container, mirroring LifeOps/Citation/Logistics: the hosting Operations
  * Sandbox [Application] calls [install] once, and the (single) activity resolves it with [get]. It
  * owns the Health database, its two preferences, and the repository. Everything is lazy, so bringing
- * Health up is essentially free until its screen is opened — nothing here schedules work, watches
- * sensors, or wakes the device.
+ * Health up is essentially free until its screen is opened.
+ *
+ * The one thing it does schedule is medication reminders, and only ones the user set: the repository
+ * calls [rearmReminder] after an edit that moves one, and nothing is queued for a household that has
+ * never turned a reminder on. Health still watches no sensors and wakes the device for nothing else.
  */
 class HealthApp private constructor(private val app: Application) {
 
@@ -30,6 +35,13 @@ class HealthApp private constructor(private val app: Application) {
     val database by lazy { HealthDatabase.getInstance(app) }
     val prefs by lazy { HealthPrefs(app) }
 
+    /**
+     * The medicine cabinet's drug lookup. Lazy like everything else here, and idle by construction:
+     * it holds no connection and starts no work until a screen calls it because somebody pressed
+     * Search. See [DrugLookupClient] for what does and does not cross the wire.
+     */
+    val drugLookup by lazy { DrugLookupClient() }
+
     // The seam's publish hook lives on the repository rather than in the People screen's ViewModel:
     // stamping a profile's syncVersion and telling the other peers about it are the same event, and
     // a change nobody publishes until Health next opens is a change the user goes looking for in
@@ -38,9 +50,38 @@ class HealthApp private constructor(private val app: Application) {
         HealthRepository(
             database.healthDao(),
             prefs,
-            onProfileEdit = { change -> syncPeople(rescan = change == LocalRosterChange.PERSON_ADDED) }
+            onProfileEdit = { change -> syncPeople(rescan = change == LocalRosterChange.PERSON_ADDED) },
+            onReminderChange = { medicationId -> rearmReminder(medicationId) }
         )
     }
+
+    /**
+     * Re-arm a medicine's reminder after the repository changed something that moves it — the
+     * reminder being set, the medicine being paused or deleted, or a dose being recorded, which is
+     * what a "when the next dose is due" reminder is measured from.
+     *
+     * Best-effort and off the main thread. A reminder that fails to re-queue is a missed nudge; a
+     * reminder that throws while somebody is recording a 3am dose would lose the dose, and the dose
+     * is the part that matters. Null means "re-arm everything", which is what a restore needs.
+     */
+    private fun rearmReminder(medicationId: String?) {
+        scope.launch {
+            runCatching {
+                if (medicationId == null) {
+                    MedicationReminderScheduler.rescheduleAll(app)
+                } else {
+                    MedicationReminderScheduler.reschedule(app, medicationId)
+                }
+            }
+        }
+    }
+
+    /**
+     * Put every reminder back on the queue. Called by the host after a restore, where the database
+     * has been swapped underneath a work queue that still refers to the medicines of the database
+     * that was replaced.
+     */
+    fun rescheduleReminders() = rearmReminder(null)
 
     /**
      * Health's side of the People sync seam. The folder is People's — `filesDir/people-sync` — so

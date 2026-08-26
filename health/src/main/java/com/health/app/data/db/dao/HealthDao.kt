@@ -4,8 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
+import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
@@ -153,6 +155,14 @@ interface HealthDao {
     @Query("SELECT * FROM medications ORDER BY name COLLATE NOCASE")
     suspend fun getAllMedications(): List<MedicationEntity>
 
+    /**
+     * Every person's medicines at once — what the cabinet reads to answer "who takes this bottle,
+     * and how much do they get?". The one query in this file that is deliberately not profile-scoped,
+     * because the cabinet is a household view and scoping it would mean running it once per person.
+     */
+    @Query("SELECT * FROM medications ORDER BY name COLLATE NOCASE")
+    fun observeAllMedications(): Flow<List<MedicationEntity>>
+
     @Upsert
     suspend fun upsertMedication(medication: MedicationEntity)
 
@@ -162,6 +172,25 @@ interface HealthDao {
     @Query("DELETE FROM medications WHERE profileId = :profileId")
     suspend fun deleteMedicationsForProfile(profileId: String)
 
+    /** Everyone's medicines drawn from one cabinet item — "who is this bottle for?". */
+    @Query("SELECT * FROM medications WHERE cabinetItemId = :cabinetItemId")
+    suspend fun getMedicationsForCabinetItem(cabinetItemId: String): List<MedicationEntity>
+
+    @Query("SELECT * FROM medications WHERE cabinetItemId = :cabinetItemId")
+    fun observeMedicationsForCabinetItem(cabinetItemId: String): Flow<List<MedicationEntity>>
+
+    /**
+     * Every medicine with a reminder set, across all profiles — what the scheduler re-arms from
+     * after a restore or a device reboot. Deliberately not profile-scoped: a reminder belongs to the
+     * device, and the person whose phone it is may not be the person the dose is for.
+     */
+    @Query("SELECT * FROM medications WHERE reminderMode != 'off' AND active = 1")
+    suspend fun getMedicationsWithReminders(): List<MedicationEntity>
+
+    /** Detach a cabinet item's medicines before it is deleted, so the regimens survive it. */
+    @Query("UPDATE medications SET cabinetItemId = NULL WHERE cabinetItemId = :cabinetItemId")
+    suspend fun clearCabinetItemOnMedications(cabinetItemId: String)
+
     // --- doses ---
     @Query("SELECT * FROM doses WHERE profileId = :profileId ORDER BY takenAt DESC")
     fun observeDoses(profileId: String): Flow<List<DoseEntity>>
@@ -169,6 +198,13 @@ interface HealthDao {
     /** The trailing window every dose limit is judged against — see `logic/DoseSchedule`. */
     @Query("SELECT * FROM doses WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
     fun observeDosesSince(profileId: String, since: Long): Flow<List<DoseEntity>>
+
+    /** The same trailing window across everyone, for the household-wide cabinet view. */
+    @Query("SELECT * FROM doses WHERE takenAt >= :since ORDER BY takenAt")
+    fun observeAllDosesSince(since: Long): Flow<List<DoseEntity>>
+
+    @Query("SELECT * FROM doses WHERE id = :id")
+    suspend fun getDose(id: String): DoseEntity?
 
     @Query("SELECT * FROM doses WHERE episodeId = :episodeId ORDER BY takenAt")
     suspend fun getDosesForEpisode(episodeId: String): List<DoseEntity>
@@ -250,4 +286,65 @@ interface HealthDao {
 
     @Query("DELETE FROM care_notes WHERE profileId = :profileId")
     suspend fun deleteCareNotesForProfile(profileId: String)
+
+    // --- the medicine cabinet -------------------------------------------------------------------
+    //
+    // Neither table takes a profile id, and that is the point: a bottle and a drug label are
+    // household facts, not facts about a person. Everything per-person still hangs off `medications`.
+
+    @Query("SELECT * FROM cabinet_items ORDER BY name COLLATE NOCASE")
+    fun observeCabinetItems(): Flow<List<CabinetItemEntity>>
+
+    @Query("SELECT * FROM cabinet_items ORDER BY name COLLATE NOCASE")
+    suspend fun getCabinetItems(): List<CabinetItemEntity>
+
+    @Query("SELECT * FROM cabinet_items WHERE id = :id")
+    suspend fun getCabinetItem(id: String): CabinetItemEntity?
+
+    @Query("SELECT * FROM cabinet_items WHERE rxcui = :rxcui LIMIT 1")
+    suspend fun getCabinetItemByRxcui(rxcui: String): CabinetItemEntity?
+
+    @Upsert
+    suspend fun upsertCabinetItem(item: CabinetItemEntity)
+
+    /**
+     * Remove a bottle, keeping every medicine that was given from it. Throwing away the box does not
+     * mean the child stopped taking the medicine, and it certainly does not mean the doses recorded
+     * against it never happened.
+     */
+    @Transaction
+    suspend fun deleteCabinetItemKeepingMedications(id: String) {
+        clearCabinetItemOnMedications(id)
+        deleteCabinetItemRow(id)
+    }
+
+    @Query("DELETE FROM cabinet_items WHERE id = :id")
+    suspend fun deleteCabinetItemRow(id: String)
+
+    @Query("SELECT * FROM drug_facts WHERE rxcui = :rxcui")
+    suspend fun getDrugFacts(rxcui: String): DrugFactsEntity?
+
+    @Query("SELECT * FROM drug_facts WHERE rxcui = :rxcui")
+    fun observeDrugFacts(rxcui: String): Flow<DrugFactsEntity?>
+
+    @Query("SELECT * FROM drug_facts")
+    fun observeAllDrugFacts(): Flow<List<DrugFactsEntity>>
+
+    @Query("SELECT * FROM drug_facts")
+    suspend fun getAllDrugFacts(): List<DrugFactsEntity>
+
+    @Upsert
+    suspend fun upsertDrugFacts(facts: DrugFactsEntity)
+
+    /**
+     * Drop cached monographs nothing points at any more. A label is a convenience, not a record —
+     * unlike a dose, nobody needs to know that Health once knew what was in a bottle they no longer
+     * own — so the cache is allowed to be tidied where the history never is.
+     */
+    @Query(
+        "DELETE FROM drug_facts WHERE rxcui NOT IN " +
+            "(SELECT rxcui FROM medications WHERE rxcui IS NOT NULL " +
+            "UNION SELECT rxcui FROM cabinet_items WHERE rxcui IS NOT NULL)"
+    )
+    suspend fun pruneUnreferencedDrugFacts()
 }

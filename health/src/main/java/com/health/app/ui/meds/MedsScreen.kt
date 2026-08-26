@@ -3,104 +3,48 @@ package com.health.app.ui.meds
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
-import com.health.app.data.model.Dose
+import com.health.app.data.model.CabinetEntry
+import com.health.app.data.model.CabinetItem
 import com.health.app.data.model.Medication
 import com.health.app.data.model.MedicationStatus
 import com.health.app.data.model.Profile
-import com.health.app.data.repository.HealthRepository
+import com.health.app.logic.Cabinet
 import com.health.app.logic.DoseSchedule
 import com.health.app.logic.DoseStatus
+import com.health.app.logic.ExpiryStatus
+import com.health.app.logic.ReminderMode
+import com.health.app.logic.StockStatus
 import com.health.app.ui.common.*
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-
-@OptIn(ExperimentalCoroutinesApi::class)
-class MedsViewModel(private val repo: HealthRepository) : ViewModel() {
-
-    val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val statuses: StateFlow<List<MedicationStatus>> = selected
-        .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeMedicationStatuses(profile.id)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val doses: StateFlow<List<Dose>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeDoses(profile.id) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
-
-    fun addMedication(
-        name: String,
-        strength: String?,
-        doseAmount: Double?,
-        doseUnit: String,
-        minIntervalHours: Double?,
-        maxDosesPer24h: Int?,
-        maxAmountPer24h: Double?
-    ) = viewModelScope.launch {
-        val profile = selected.value ?: return@launch
-        repo.addMedication(
-            profileId = profile.id,
-            name = name,
-            strength = strength,
-            form = null,
-            doseAmount = doseAmount,
-            doseUnit = doseUnit,
-            minIntervalHours = minIntervalHours,
-            maxDosesPer24h = maxDosesPer24h,
-            maxAmountPer24h = maxAmountPer24h
-        )
-    }
-
-    fun give(medication: Medication) = viewModelScope.launch { repo.logDoseOf(medication) }
-
-    fun logDose(medication: Medication?, name: String, amount: Double, unit: String, note: String?) =
-        viewModelScope.launch {
-            val profile = selected.value ?: return@launch
-            repo.logDose(profile.id, medication?.id, name, amount, unit, note = note)
-        }
-
-    fun setActive(medication: Medication, active: Boolean) = viewModelScope.launch {
-        repo.updateMedication(medication.copy(active = active))
-    }
-
-    fun deleteMedication(medication: Medication) = viewModelScope.launch { repo.deleteMedication(medication.id) }
-
-    fun deleteDose(dose: Dose) = viewModelScope.launch { repo.deleteDose(dose.id) }
-
-    class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = MedsViewModel(repo) as T
-    }
-}
 
 /**
- * Medicines and the doses actually given. Each medicine shows its own dose window — due now, wait
- * this long, or the daily allowance is spent — computed by `logic/DoseSchedule` from the label's own
- * rules, which is why those rules are worth typing in once.
+ * The medicine cabinet.
+ *
+ * The tab answers two different questions and is split accordingly, because conflating them is what
+ * made the old single list quietly wrong in a household:
+ *
+ *  - **Cabinet** — *what do we have?* The physical stock: every bottle and box, whether it is still
+ *    in date, whether there is enough left, where it is, and — the part that makes it more than a
+ *    shopping list — everyone who takes it, each with their own dose and their own live dose window.
+ *    Household-scoped, because a bottle belongs to the house, not to a person.
+ *  - **[Name]'s medicines** — *what does she take, and can she have some yet?* The per-person
+ *    regimen, unchanged in substance from before: the label's own spacing and daily limits, and
+ *    `logic/DoseSchedule`'s answer to the only question anyone asks at 3am.
+ *
+ * A medicine added by lookup carries its product's facts — ingredients, form, and the label's own
+ * text from openFDA — and those are shown as the reference they are: the manufacturer's words,
+ * attributed and dated, next to the dose rules *you* typed in. Health never computes a dose from a
+ * label, and the disclaimer at the bottom of the screen means what it says.
  */
 @Composable
 fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
@@ -108,9 +52,16 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val statuses by vm.statuses.collectAsStateWithLifecycle()
     val doses by vm.doses.collectAsStateWithLifecycle()
+    val cabinet by vm.cabinet.collectAsStateWithLifecycle()
+    val search by vm.search.collectAsStateWithLifecycle()
 
+    var tab by remember { mutableIntStateOf(0) }
     var showAdd by remember { mutableStateOf(false) }
     var showDose by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<CabinetItem?>(null) }
+    var restocking by remember { mutableStateOf<CabinetItem?>(null) }
+    var reminderFor by remember { mutableStateOf<Medication?>(null) }
+    var reading by remember { mutableStateOf<CabinetEntry?>(null) }
 
     if (profiles.isEmpty()) {
         NoProfiles(onAddProfile)
@@ -130,71 +81,52 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
             ProfileBar(profiles, selected?.id, vm::select, onAddProfile)
             HorizontalDivider()
 
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (statuses.isEmpty()) {
-                    item(key = "empty") {
-                        SectionCard(title = "No medicines yet") {
-                            Text(
-                                "Add one with the spacing and daily limit printed on its label. Health " +
-                                    "then answers the only question that matters at 3am — whether the " +
-                                    "next dose is due — instead of leaving you to do the arithmetic.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                        }
-                    }
-                } else {
-                    items(statuses, key = { it.medication.id }) { status ->
-                        MedicationCard(
-                            status = status,
-                            onGive = { vm.give(status.medication) },
-                            onToggleActive = { vm.setActive(status.medication, !status.medication.active) },
-                            onDelete = { vm.deleteMedication(status.medication) }
-                        )
-                    }
-                }
+            TabRow(selectedTabIndex = tab) {
+                Tab(
+                    selected = tab == 0,
+                    onClick = { tab = 0 },
+                    text = { Text("Cabinet") }
+                )
+                Tab(
+                    selected = tab == 1,
+                    onClick = { tab = 1 },
+                    text = { Text(selected?.name?.let { "$it's meds" } ?: "Medicines") }
+                )
+            }
 
-                item(key = "log-dose") {
-                    OutlinedButton(onClick = { showDose = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text("Record a dose given")
-                    }
-                }
-
-                item(key = "history-header") {
-                    Text("Doses given", style = MaterialTheme.typography.titleSmall)
-                }
-                if (doses.isEmpty()) {
-                    item(key = "no-doses") {
-                        Text("Nothing given yet.", style = MaterialTheme.typography.bodySmall)
-                    }
-                } else {
-                    items(doses, key = { it.id }) { dose ->
-                        RecordRow(
-                            headline = dose.medicationName,
-                            support = listOfNotNull(
-                                "${trimAmount(dose.amount)} ${dose.unit}".trim(),
-                                formatStamp(dose.takenAt),
-                                dose.note
-                            ).joinToString(" · "),
-                            onDelete = { vm.deleteDose(dose) }
-                        )
-                    }
-                }
-
-                item(key = "disclaimer") { DisclaimerText() }
+            when (tab) {
+                0 -> CabinetList(
+                    entries = cabinet,
+                    onGive = vm::give,
+                    onRestock = { restocking = it },
+                    onEdit = { editing = it },
+                    onRead = { reading = it },
+                    onDelete = { vm.deleteCabinetItem(it.id) },
+                    onAdd = { showAdd = true }
+                )
+                else -> PersonMedicines(
+                    profile = selected,
+                    statuses = statuses,
+                    doses = doses,
+                    onGive = vm::give,
+                    onToggleActive = { vm.setActive(it, !it.active) },
+                    onReminder = { reminderFor = it },
+                    onDelete = vm::deleteMedication,
+                    onDeleteDose = vm::deleteDose,
+                    onLogDose = { showDose = true }
+                )
             }
         }
     }
 
     if (showAdd) {
-        AddMedicationDialog(
-            onDismiss = { showAdd = false },
-            onConfirm = { name, strength, amount, unit, interval, maxDoses, maxAmount ->
-                vm.addMedication(name, strength, amount, unit, interval, maxDoses, maxAmount)
+        AddMedicineDialog(
+            vm = vm,
+            personName = selected?.name,
+            cabinet = cabinet.map { it.item },
+            onDismiss = {
                 showAdd = false
+                vm.clearSearch()
             }
         )
     }
@@ -208,6 +140,319 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
             }
         )
     }
+    editing?.let { item ->
+        CabinetItemDialog(
+            item = item,
+            onDismiss = { editing = null },
+            onConfirm = {
+                vm.updateCabinetItem(it)
+                editing = null
+            }
+        )
+    }
+    restocking?.let { item ->
+        RestockDialog(
+            item = item,
+            onDismiss = { restocking = null },
+            onConfirm = { quantity, expiry ->
+                vm.restock(item.id, quantity, expiry)
+                restocking = null
+            }
+        )
+    }
+    reminderFor?.let { medication ->
+        ReminderDialog(
+            medication = medication,
+            onDismiss = { reminderFor = null },
+            onConfirm = { mode, times ->
+                vm.setReminder(medication, mode, times)
+                reminderFor = null
+            }
+        )
+    }
+    reading?.let { entry ->
+        // Re-read the entry from the live flow, so a "look it up again" that succeeds updates the
+        // sheet in place rather than leaving the reader looking at the answer they just replaced.
+        val current = cabinet.firstOrNull { it.item.id == entry.item.id } ?: entry
+        MonographSheet(
+            entry = current,
+            refreshing = search.fetchingRxcui != null && search.fetchingRxcui == current.item.rxcui,
+            onRefresh = { current.item.rxcui?.let(vm::refreshMonograph) },
+            onDismiss = { reading = null }
+        )
+    }
+}
+
+/** The household's stock, worst news first — see `logic/Cabinet` for what "worst" means. */
+@Composable
+private fun CabinetList(
+    entries: List<CabinetEntry>,
+    onGive: (Medication) -> Unit,
+    onRestock: (CabinetItem) -> Unit,
+    onEdit: (CabinetItem) -> Unit,
+    onRead: (CabinetEntry) -> Unit,
+    onDelete: (CabinetItem) -> Unit,
+    onAdd: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (entries.isEmpty()) {
+            item(key = "empty") {
+                SectionCard(title = "The cabinet is empty") {
+                    Text(
+                        "Add what's actually in the house — the bottle of Calpol, the box of " +
+                            "ibuprofen, the antihistamines nobody can find. Search for a medicine " +
+                            "by name and Health fills in what it is and what its label says; the " +
+                            "amount left, the expiry date and where it lives are yours to type.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(onClick = onAdd) { Text("Add the first one") }
+                }
+            }
+        } else {
+            val flagged = entries.count { it.status.needsAttention }
+            if (flagged > 0) {
+                item(key = "attention") {
+                    Text(
+                        if (flagged == 1) {
+                            "1 item needs attention — expired, out, or running low."
+                        } else {
+                            "$flagged items need attention — expired, out, or running low."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+            items(entries, key = { it.item.id }) { entry ->
+                CabinetCard(
+                    entry = entry,
+                    onGive = onGive,
+                    onRestock = { onRestock(entry.item) },
+                    onEdit = { onEdit(entry.item) },
+                    onRead = { onRead(entry) },
+                    onDelete = { onDelete(entry.item) }
+                )
+            }
+        }
+
+        item(key = "disclaimer") { DisclaimerText() }
+    }
+}
+
+@Composable
+private fun CabinetCard(
+    entry: CabinetEntry,
+    onGive: (Medication) -> Unit,
+    onRestock: () -> Unit,
+    onEdit: () -> Unit,
+    onRead: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val item = entry.item
+    val status = entry.status
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text(item.displayName, style = MaterialTheme.typography.titleMedium)
+                    listOfNotNull(
+                        item.descriptor,
+                        Cabinet.describeExpiry(item.expiryDate)?.let { "exp. $it" }
+                    ).takeIf { it.isNotEmpty() }?.let {
+                        Text(it.joinToString(" · "), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                CabinetBadge(status.expiry, status.stock)
+            }
+
+            Text(
+                status.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status.needsAttention) {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+
+            entry.monograph?.let { monograph ->
+                monograph.ingredients.takeIf { it.isNotEmpty() }?.let { ingredients ->
+                    Text(
+                        ingredients.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (entry.takenBy.isEmpty()) {
+                Text(
+                    "Nobody's medicines point at this yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                HorizontalDivider()
+                // The part that makes this a cabinet rather than a shopping list: standing in front
+                // of the bottle, the question is whose dose is what, and who can have some yet.
+                entry.takenBy.forEach { use ->
+                    CabinetUseRow(
+                        profile = use.profile,
+                        medication = use.medication,
+                        readyNow = use.window.isReady && use.medication.active,
+                        statusText = doseStatusText(use.window.status, use.window),
+                        onGive = { onGive(use.medication) }
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onRestock) { Text("Restock") }
+                TextButton(onClick = onEdit) { Text("Edit") }
+                if (entry.monograph?.hasLabel == true || item.rxcui != null) {
+                    TextButton(onClick = onRead) { Text("Label") }
+                }
+                TextButton(onClick = { confirmDelete = true }) { Text("Remove") }
+            }
+        }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Remove ${item.name}?") },
+            text = {
+                Text(
+                    "It comes out of the cabinet. Everyone's medicines and every dose already " +
+                        "recorded stay exactly as they are — throwing the box away doesn't " +
+                        "un-happen the doses."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmDelete = false
+                        onDelete()
+                    }
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Keep") } }
+        )
+    }
+}
+
+/** One person's dose of one cabinet item, with the answer to "can they have some yet?". */
+@Composable
+private fun CabinetUseRow(
+    profile: Profile,
+    medication: Medication,
+    readyNow: Boolean,
+    statusText: String,
+    onGive: () -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ProfileDot(profile, size = 28, selected = true)
+        Column(Modifier.weight(1f)) {
+            Text(profile.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                listOfNotNull(
+                    medication.doseAmount?.let { "${trimAmount(it)} ${medication.doseUnit}".trim() },
+                    medication.minIntervalHours?.let { "every ${trimAmount(it)}h" },
+                    statusText
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        if (readyNow) {
+            Button(onClick = onGive, contentPadding = PaddingValues(horizontal = 12.dp)) { Text("Give") }
+        }
+    }
+}
+
+/** The selected person's own list — their doses, their limits, their reminders. */
+@Composable
+private fun PersonMedicines(
+    profile: Profile?,
+    statuses: List<MedicationStatus>,
+    doses: List<com.health.app.data.model.Dose>,
+    onGive: (Medication) -> Unit,
+    onToggleActive: (Medication) -> Unit,
+    onReminder: (Medication) -> Unit,
+    onDelete: (Medication) -> Unit,
+    onDeleteDose: (com.health.app.data.model.Dose) -> Unit,
+    onLogDose: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(12.dp, 12.dp, 12.dp, 88.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (statuses.isEmpty()) {
+            item(key = "empty") {
+                SectionCard(title = "No medicines yet") {
+                    Text(
+                        "Add one with the spacing and daily limit printed on its label. Health " +
+                            "then answers the only question that matters at 3am — whether the " +
+                            "next dose is due — instead of leaving you to do the arithmetic. " +
+                            "Search for it by name and its ingredients, form and label come with it.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        } else {
+            items(statuses, key = { it.medication.id }) { status ->
+                MedicationCard(
+                    status = status,
+                    onGive = { onGive(status.medication) },
+                    onToggleActive = { onToggleActive(status.medication) },
+                    onReminder = { onReminder(status.medication) },
+                    onDelete = { onDelete(status.medication) }
+                )
+            }
+        }
+
+        item(key = "log-dose") {
+            OutlinedButton(onClick = onLogDose, modifier = Modifier.fillMaxWidth()) {
+                Text("Record a dose given")
+            }
+        }
+
+        item(key = "history-header") {
+            Text(
+                profile?.let { "Doses given to ${it.name}" } ?: "Doses given",
+                style = MaterialTheme.typography.titleSmall
+            )
+        }
+        if (doses.isEmpty()) {
+            item(key = "no-doses") {
+                Text("Nothing given yet.", style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
+            items(doses, key = { it.id }) { dose ->
+                RecordRow(
+                    headline = dose.medicationName,
+                    support = listOfNotNull(
+                        "${trimAmount(dose.amount)} ${dose.unit}".trim(),
+                        formatStamp(dose.takenAt),
+                        dose.note
+                    ).joinToString(" · "),
+                    onDelete = { onDeleteDose(dose) }
+                )
+            }
+        }
+
+        item(key = "disclaimer") { DisclaimerText() }
+    }
 }
 
 @Composable
@@ -215,6 +460,7 @@ private fun MedicationCard(
     status: MedicationStatus,
     onGive: () -> Unit,
     onToggleActive: () -> Unit,
+    onReminder: () -> Unit,
     onDelete: () -> Unit
 ) {
     val medication = status.medication
@@ -257,6 +503,16 @@ private fun MedicationCard(
             }
 
             Text(window.reason, style = MaterialTheme.typography.bodySmall, color = statusColor)
+
+            // What it is actually made of, when the product was looked up. This is the line that
+            // catches the mistake households genuinely make: two brands, one ingredient, two doses.
+            status.monograph?.ingredients?.takeIf { it.isNotEmpty() }?.let { ingredients ->
+                Text(
+                    "Contains ${ingredients.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
             window.lastDoseAtMillis?.let {
                 Text(
                     "Last given ${formatStamp(it)} (${DoseSchedule.formatAgo(now - it)})",
@@ -264,108 +520,79 @@ private fun MedicationCard(
                 )
             }
 
+            // The cabinet's answer, on the person's own card: whether the bottle this comes out of
+            // can still cover the dose the card just quoted.
+            status.cabinetItem?.let { item ->
+                val cabinetStatus = status.cabinetStatus
+                Text(
+                    listOfNotNull("From ${item.name}", cabinetStatus?.summary).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (cabinetStatus?.needsAttention == true) {
+                        MaterialTheme.colorScheme.error
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
+            if (medication.reminderMode != ReminderMode.OFF) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        if (medication.reminderArmed) Icons.Default.Notifications else Icons.Default.NotificationsOff,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        medication.reminderSummary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onToggleActive) {
                     Text(if (medication.active) "Pause" else "Resume")
                 }
+                TextButton(onClick = onReminder) { Text("Remind me") }
                 TextButton(onClick = onDelete) { Text("Delete") }
             }
         }
     }
 }
 
-/**
- * Adding a medicine is mostly copying the label. Every limit is optional, because a rule Health
- * invented is a rule that will eventually be wrong in a way nobody typed in.
- */
+/** The one-word verdict on an item: what's wrong with it, or that nothing is. */
 @Composable
-private fun AddMedicationDialog(
-    onDismiss: () -> Unit,
-    onConfirm: (
-        name: String,
-        strength: String?,
-        doseAmount: Double?,
-        doseUnit: String,
-        minIntervalHours: Double?,
-        maxDosesPer24h: Int?,
-        maxAmountPer24h: Double?
-    ) -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var strength by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var unit by remember { mutableStateOf("mL") }
-    var interval by remember { mutableStateOf("") }
-    var maxDoses by remember { mutableStateOf("") }
-    var maxAmount by remember { mutableStateOf("") }
+private fun CabinetBadge(expiry: ExpiryStatus, stock: StockStatus) {
+    val (label, color) = when {
+        expiry == ExpiryStatus.EXPIRED -> "Expired" to MaterialTheme.colorScheme.error
+        stock == StockStatus.OUT -> "Out" to MaterialTheme.colorScheme.error
+        expiry == ExpiryStatus.EXPIRING_SOON -> "Expiring" to MaterialTheme.colorScheme.tertiary
+        stock == StockStatus.LOW -> "Low" to MaterialTheme.colorScheme.tertiary
+        else -> return
+    }
+    Surface(shape = MaterialTheme.shapes.small, color = color.copy(alpha = 0.12f)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            color = color,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+        )
+    }
+}
 
-    fun decimal(text: String) = text.replace(',', '.').toDoubleOrNull()
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add a medicine") },
-        text = {
-            Column(
-                Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = strength,
-                    onValueChange = { strength = it },
-                    label = { Text("Strength, as printed (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecimalField(amount, { amount = it }, "Usual dose", Modifier.weight(1f))
-                    OutlinedTextField(
-                        value = unit,
-                        onValueChange = { unit = it },
-                        label = { Text("Unit") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                DecimalField(
-                    value = interval,
-                    onValueChange = { interval = it },
-                    label = "Minimum hours between doses",
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecimalField(maxDoses, { maxDoses = it }, "Max doses / 24h", Modifier.weight(1f))
-                    DecimalField(maxAmount, { maxAmount = it }, "Max amount / 24h", Modifier.weight(1f))
-                }
-                Text(
-                    "Leave a limit blank and Health won't enforce it — it tracks what the label says, " +
-                        "not what it guesses.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = name.isNotBlank(),
-                onClick = {
-                    onConfirm(
-                        name.trim(),
-                        strength.ifBlank { null },
-                        decimal(amount),
-                        unit.trim(),
-                        decimal(interval),
-                        decimal(maxDoses)?.toInt(),
-                        decimal(maxAmount)
-                    )
-                }
-            ) { Text("Save") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
+/** How a dose window reads in one phrase inside a cabinet row. */
+private fun doseStatusText(
+    status: DoseStatus,
+    window: com.health.app.logic.DoseWindow,
+    now: Long = System.currentTimeMillis()
+): String = when (status) {
+    DoseStatus.READY -> "due now"
+    DoseStatus.WAIT -> "in ${DoseSchedule.formatDuration(window.waitMillis(now))}"
+    DoseStatus.LIMIT_REACHED -> "daily limit reached"
 }

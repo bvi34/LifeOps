@@ -1,10 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Health requests no permissions at all — no INTERNET, no sensors, no contacts. Everything it
-         holds is typed in by hand and stays in the app's own database. Household medical notes are
-         the last data in this suite that should be able to leave the device, so the module simply
-         has no means to send them. -->
+    <!-- Health holds the household's medical records, and those still cannot leave this device.
+         Nothing in this module reads a profile, a reading, a symptom, a dose or an illness and sends
+         it anywhere; there is no code path that could.
+
+         The two permissions below are the whole of Health's contact with the outside world, and both
+         are narrow enough to state exactly:
+
+         INTERNET — the medicine cabinet's drug lookup, and nothing else. `data/net/DrugLookupClient`
+         is the only class in the module that opens a connection, it is only ever called because
+         somebody pressed Search or Refresh, and the only things it can send are the search term
+         typed into the box and an RxNorm concept id. It asks two public, keyless U.S. government
+         references — RxNorm (National Library of Medicine) and openFDA — a question about a
+         *product*, of the kind anyone could type into a search engine, and caches the answer locally
+         so it isn't asked twice. No profile, no name, no age, no reading, no dose.
+
+         POST_NOTIFICATIONS — medication reminders the user sets up per medicine, delivered by
+         WorkManager (see `reminder/`). Nothing is scheduled until a reminder is turned on. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Health is a library module: no app-level attributes here (name/icon/theme/label live on the
          :app host). Only Health's own components are declared for the manifest merger. -->

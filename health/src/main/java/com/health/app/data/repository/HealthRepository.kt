@@ -1,6 +1,7 @@
 package com.health.app.data.repository
 
 import com.health.app.data.db.dao.HealthDao
+import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
@@ -9,6 +10,9 @@ import com.health.app.data.db.entities.ProfileEntity
 import com.health.app.data.db.entities.ProfileTombstoneEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
+import com.health.app.data.model.CabinetEntry
+import com.health.app.data.model.CabinetItem
+import com.health.app.data.model.CabinetUse
 import com.health.app.data.model.CareKind
 import com.health.app.data.model.CareNote
 import com.health.app.data.model.Dose
@@ -21,15 +25,20 @@ import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
 import com.health.app.data.model.Symptom
 import com.health.app.data.prefs.HealthPrefs
+import com.health.app.logic.Cabinet
+import com.health.app.logic.CabinetFacts
 import com.health.app.logic.CareLevel
 import com.health.app.logic.DosePoint
 import com.health.app.logic.DoseRecord
+import com.health.app.logic.DoseReminder
 import com.health.app.logic.DoseSchedule
+import com.health.app.logic.DrugMonograph
 import com.health.app.logic.EpisodeFacts
 import com.health.app.logic.EpisodeSummaries
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.Fever
 import com.health.app.logic.MedicationRule
+import com.health.app.logic.ReminderMode
 import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
 import com.health.app.logic.TempSite
@@ -72,7 +81,20 @@ class HealthRepository(
      * arrived over the seam and deliberately do not call it — re-publishing them would hand the
      * other peer its own change straight back.
      */
-    private val onProfileEdit: (LocalRosterChange) -> Unit = {}
+    private val onProfileEdit: (LocalRosterChange) -> Unit = {},
+    /**
+     * How the reminder scheduler hears that a medicine's reminder needs re-arming.
+     *
+     * Called with the medicine's id after anything that can change when it should next nudge: the
+     * reminder itself being set or cleared, the medicine being paused, resumed or deleted, and a
+     * dose being recorded (which is what moves a "when the next dose is due" reminder). Called with
+     * null to mean "re-arm everything", after a restore or when the app starts.
+     *
+     * A hook rather than a call into WorkManager, for the reason `logic/` exists at all: the
+     * repository is JVM-testable and stays that way. The Android half lives in
+     * `reminder/MedicationReminderScheduler`, wired up once in [com.health.app.HealthApp].
+     */
+    private val onReminderChange: (medicationId: String?) -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -411,16 +433,26 @@ class HealthRepository(
     fun observeMedicationStatuses(profileId: String): Flow<List<MedicationStatus>> =
         combine(
             dao.observeMedications(profileId),
-            dao.observeDosesSince(profileId, now() - DoseSchedule.WINDOW_MS)
-        ) { medications, doses ->
+            dao.observeDosesSince(profileId, now() - DoseSchedule.WINDOW_MS),
+            dao.observeCabinetItems(),
+            dao.observeAllDrugFacts()
+        ) { medications, doses, cabinet, facts ->
             val nowMillis = now()
+            val byId = cabinet.associateBy { it.id }
+            val monographs = facts.associate { it.rxcui to DrugFactsMapper.toMonograph(it) }
             medications.map { medication ->
                 val history = doses
                     .filter { it.medicationId == medication.id }
                     .map { DoseRecord(it.takenAt, it.amount) }
+                val item = medication.cabinetItemId?.let { byId[it] }
                 MedicationStatus(
                     medication = medication.toModel(),
-                    window = DoseSchedule.evaluate(medication.toRule(), history, nowMillis)
+                    window = DoseSchedule.evaluate(medication.toRule(), history, nowMillis),
+                    cabinetItem = item?.toModel(),
+                    cabinetStatus = item?.let {
+                        Cabinet.assess(it.toFacts(medication.doseAmount, medication.doseUnit))
+                    },
+                    monograph = medication.rxcui?.let { monographs[it] }
                 )
             }
         }
@@ -435,7 +467,11 @@ class HealthRepository(
         minIntervalHours: Double?,
         maxDosesPer24h: Int?,
         maxAmountPer24h: Double?,
-        note: String? = null
+        note: String? = null,
+        rxcui: String? = null,
+        cabinetItemId: String? = null,
+        reminderMode: ReminderMode = ReminderMode.OFF,
+        reminderTimes: List<java.time.LocalTime> = emptyList()
     ): String {
         val id = newId()
         dao.upsertMedication(
@@ -452,9 +488,14 @@ class HealthRepository(
                 maxAmountPer24h = maxAmountPer24h,
                 note = note?.trim()?.ifBlank { null },
                 active = true,
-                createdAt = now()
+                createdAt = now(),
+                rxcui = rxcui?.trim()?.ifBlank { null },
+                cabinetItemId = cabinetItemId,
+                reminderMode = reminderMode.key,
+                reminderTimes = DoseReminder.formatTimes(reminderTimes).ifBlank { null }
             )
         )
+        onReminderChange(id)
         return id
     }
 
@@ -471,12 +512,47 @@ class HealthRepository(
                 maxDosesPer24h = medication.maxDosesPer24h,
                 maxAmountPer24h = medication.maxAmountPer24h,
                 note = medication.note?.trim()?.ifBlank { null },
-                active = medication.active
+                active = medication.active,
+                rxcui = medication.rxcui?.trim()?.ifBlank { null },
+                cabinetItemId = medication.cabinetItemId,
+                reminderMode = medication.reminderMode.key,
+                reminderTimes = DoseReminder.formatTimes(medication.reminderTimes).ifBlank { null }
             )
         )
+        onReminderChange(medication.id)
     }
 
-    suspend fun deleteMedication(id: String) = dao.deleteMedication(id)
+    /**
+     * Set (or clear) a medicine's reminder without touching anything else about it.
+     *
+     * Its own method rather than a field on [updateMedication] because it is reached from a
+     * different place — a switch on the card, not the edit form — and because clearing the times
+     * along with the mode is the only correct way to turn a set-times reminder off. Leaving them
+     * behind would quietly re-arm the old schedule the next time somebody switched it back on.
+     */
+    suspend fun setMedicationReminder(
+        medicationId: String,
+        mode: ReminderMode,
+        times: List<java.time.LocalTime> = emptyList()
+    ) {
+        val existing = dao.getMedication(medicationId) ?: return
+        dao.upsertMedication(
+            existing.copy(
+                reminderMode = mode.key,
+                reminderTimes = if (mode == ReminderMode.FIXED_TIMES) {
+                    DoseReminder.formatTimes(times).ifBlank { null }
+                } else {
+                    null
+                }
+            )
+        )
+        onReminderChange(medicationId)
+    }
+
+    suspend fun deleteMedication(id: String) {
+        dao.deleteMedication(id)
+        onReminderChange(id)
+    }
 
     fun observeDoses(profileId: String): Flow<List<Dose>> =
         dao.observeDoses(profileId).map { rows -> rows.map { it.toModel() } }
@@ -508,7 +584,40 @@ class HealthRepository(
                 episodeId = dao.getOpenEpisode(profileId)?.id
             )
         )
+        medicationId?.let { medication ->
+            drawFromCabinet(medication, amount, unit)
+            // A "when the next dose is due" reminder is measured from the last dose, so the dose
+            // that was just given is exactly the event that moves it.
+            onReminderChange(medication)
+        }
         return id
+    }
+
+    /**
+     * Take a dose out of the bottle it came from, when the household is tracking that bottle.
+     *
+     * Only when the dose and the stock are written in the same unit — 15 mL out of 120 mL is
+     * arithmetic, 15 mL out of "1 bottle" is a guess, and a stock count that quietly invents its own
+     * conversions is worse than no stock count at all. Where the units differ the dose is still
+     * recorded in full; only the deduction is skipped.
+     *
+     * The stock floors at zero rather than going negative: a bottle that has run out has run out,
+     * and a negative quantity on screen reads as a bug rather than as "you've used more than you
+     * told me you had".
+     */
+    private suspend fun drawFromCabinet(medicationId: String, amount: Double, unit: String) {
+        if (amount <= 0.0) return
+        val medication = dao.getMedication(medicationId) ?: return
+        val itemId = medication.cabinetItemId ?: return
+        val item = dao.getCabinetItem(itemId) ?: return
+        val quantity = item.quantity ?: return
+        if (!Cabinet.sameUnit(item.quantityUnit, unit)) return
+        dao.upsertCabinetItem(
+            item.copy(
+                quantity = (quantity - amount).coerceAtLeast(0.0),
+                updatedAt = now()
+            )
+        )
     }
 
     /** Give the medicine its own default dose — the one-tap path from the Today screen. */
@@ -523,7 +632,218 @@ class HealthRepository(
             note = note
         )
 
-    suspend fun deleteDose(id: String) = dao.deleteDose(id)
+    /**
+     * Remove a dose that was never given — a mis-tap, or a dose recorded twice because two people
+     * both reached for the phone.
+     *
+     * Deleting it puts the stock back, on the same same-unit rule [drawFromCabinet] deducts under.
+     * The inverse has to exist: without it, a household that fat-fingers one dose is left with a
+     * bottle that Health believes is emptier than it is, and no way to say otherwise except by
+     * re-typing the quantity.
+     */
+    suspend fun deleteDose(id: String) {
+        val dose = dao.getDose(id)
+        dao.deleteDose(id)
+        val medicationId = dose?.medicationId ?: return
+        returnToCabinet(medicationId, dose.amount, dose.unit)
+        onReminderChange(medicationId)
+    }
+
+    /** The inverse of [drawFromCabinet], under exactly the same same-unit rule. */
+    private suspend fun returnToCabinet(medicationId: String, amount: Double, unit: String) {
+        if (amount <= 0.0) return
+        val medication = dao.getMedication(medicationId) ?: return
+        val itemId = medication.cabinetItemId ?: return
+        val item = dao.getCabinetItem(itemId) ?: return
+        val quantity = item.quantity ?: return
+        if (!Cabinet.sameUnit(item.quantityUnit, unit)) return
+        dao.upsertCabinetItem(item.copy(quantity = quantity + amount, updatedAt = now()))
+    }
+
+    // --- the medicine cabinet -------------------------------------------------------------------
+    //
+    // Household-scoped, deliberately. A bottle is a possession and a drug label is a fact about a
+    // product; neither varies by who is taking it. Everything per-person stays on `medications`,
+    // which points here.
+
+    fun observeCabinetItems(): Flow<List<CabinetItem>> =
+        dao.observeCabinetItems().map { rows -> rows.map { it.toModel() } }
+
+    /**
+     * The cabinet as it is actually read: every item with its expiry and stock verdicts, the label
+     * Health cached for it, and each person who takes it with their own dose and their own live dose
+     * window.
+     *
+     * The last part is the whole point of the tab. Standing in front of a bottle, the question is
+     * almost never "what is this" — it is "how much of this does *she* get, and can she have some
+     * yet". Assembling that here means one flow answers it for every person at once, rather than
+     * five screens each re-deriving it and disagreeing at the edges.
+     *
+     * Items sort by [com.health.app.logic.CabinetStatus.sortRank]: expired first, then out of stock,
+     * then expiring soon, then running low, then everything that is simply fine. A cabinet is read
+     * top-down when something is wrong and searched by name when nothing is, so the ordering serves
+     * the first case and the name sort inside each rank serves the second.
+     */
+    fun observeCabinet(): Flow<List<CabinetEntry>> =
+        combine(
+            dao.observeCabinetItems(),
+            dao.observeProfiles(),
+            dao.observeAllDrugFacts(),
+            dao.observeAllMedications(),
+            dao.observeAllDosesSince(now() - DoseSchedule.WINDOW_MS)
+        ) { items, profiles, facts, medications, doses ->
+            val nowMillis = now()
+            val profilesById = profiles.associateBy { it.id }
+            val monographs = facts.associate { it.rxcui to DrugFactsMapper.toMonograph(it) }
+
+            items.map { item ->
+                val uses = medications
+                    .filter { it.cabinetItemId == item.id }
+                    .mapNotNull { medication ->
+                        val profile = profilesById[medication.profileId] ?: return@mapNotNull null
+                        val history = doses
+                            .filter { it.medicationId == medication.id }
+                            .map { DoseRecord(it.takenAt, it.amount) }
+                        CabinetUse(
+                            profile = profile.toModel(),
+                            medication = medication.toModel(),
+                            window = DoseSchedule.evaluate(medication.toRule(), history, nowMillis)
+                        )
+                    }
+                    .sortedBy { it.profile.sortOrder }
+
+                // Stock is measured against a dose, and different people take different doses. The
+                // item's own verdict uses the largest of them — the one that runs the bottle down
+                // first — so "enough for one more dose" is never a promise made about the wrong
+                // person. With nobody assigned there is no dose to measure against, and the stock
+                // is simply reported as it stands.
+                val reference = uses.maxByOrNull { it.medication.doseAmount ?: 0.0 }?.medication
+                val status = Cabinet.assess(
+                    item.toFacts(reference?.doseAmount, reference?.doseUnit.orEmpty())
+                )
+
+                CabinetEntry(
+                    item = item.toModel(),
+                    status = status,
+                    monograph = item.rxcui?.let { monographs[it] },
+                    takenBy = uses
+                )
+            }.sortedWith(compareBy({ it.status.sortRank }, { it.item.name.lowercase() }))
+        }
+
+    suspend fun getCabinetItem(id: String): CabinetItem? = dao.getCabinetItem(id)?.toModel()
+
+    /**
+     * Put something in the cabinet. Only the name is required — a cabinet that has to be filled in
+     * completely is a cabinet that stays empty, and "there's Calpol in the bathroom" is already
+     * worth more than nothing.
+     */
+    suspend fun addCabinetItem(
+        name: String,
+        rxcui: String? = null,
+        brandName: String? = null,
+        strength: String? = null,
+        form: String? = null,
+        quantity: Double? = null,
+        quantityUnit: String = "",
+        expiryDate: String? = null,
+        location: String? = null,
+        lowStockThreshold: Double? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val stamp = now()
+        dao.upsertCabinetItem(
+            CabinetItemEntity(
+                id = id,
+                rxcui = rxcui?.trim()?.ifBlank { null },
+                name = name.trim(),
+                brandName = brandName?.trim()?.ifBlank { null },
+                strength = strength?.trim()?.ifBlank { null },
+                form = form?.trim()?.ifBlank { null },
+                quantity = quantity,
+                quantityUnit = quantityUnit.trim(),
+                expiryDate = expiryDate?.trim()?.ifBlank { null },
+                location = location?.trim()?.ifBlank { null },
+                lowStockThreshold = lowStockThreshold,
+                note = note?.trim()?.ifBlank { null },
+                createdAt = stamp,
+                updatedAt = stamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateCabinetItem(item: CabinetItem) {
+        val existing = dao.getCabinetItem(item.id) ?: return
+        dao.upsertCabinetItem(
+            existing.copy(
+                rxcui = item.rxcui?.trim()?.ifBlank { null },
+                name = item.name.trim(),
+                brandName = item.brandName?.trim()?.ifBlank { null },
+                strength = item.strength?.trim()?.ifBlank { null },
+                form = item.form?.trim()?.ifBlank { null },
+                quantity = item.quantity,
+                quantityUnit = item.quantityUnit.trim(),
+                expiryDate = item.expiryDate?.trim()?.ifBlank { null },
+                location = item.location?.trim()?.ifBlank { null },
+                lowStockThreshold = item.lowStockThreshold,
+                note = item.note?.trim()?.ifBlank { null },
+                updatedAt = now()
+            )
+        )
+    }
+
+    /**
+     * Restock — a new bottle of the same thing. Sets the quantity outright rather than adding to it
+     * and takes the new box's expiry date, because that is what actually happened: the old bottle is
+     * gone and this is a different one. Adding would carry the old bottle's remaining 20 mL into a
+     * new bottle it is not in.
+     */
+    suspend fun restockCabinetItem(id: String, quantity: Double?, expiryDate: String?) {
+        val existing = dao.getCabinetItem(id) ?: return
+        dao.upsertCabinetItem(
+            existing.copy(
+                quantity = quantity,
+                expiryDate = expiryDate?.trim()?.ifBlank { null },
+                updatedAt = now()
+            )
+        )
+    }
+
+    /**
+     * Throw a bottle away, keeping every medicine given from it and every dose recorded against it.
+     * Binning the box does not mean the child stopped taking the medicine, and it certainly does not
+     * un-happen the doses.
+     */
+    suspend fun deleteCabinetItem(id: String) {
+        dao.deleteCabinetItemKeepingMedications(id)
+        dao.pruneUnreferencedDrugFacts()
+    }
+
+    /** Point a person's medicine at a bottle — or, with null, stop tracking its stock. */
+    suspend fun linkMedicationToCabinet(medicationId: String, cabinetItemId: String?) {
+        val existing = dao.getMedication(medicationId) ?: return
+        dao.upsertMedication(existing.copy(cabinetItemId = cabinetItemId))
+    }
+
+    // --- looked-up drug facts ---------------------------------------------------------------------
+
+    /** The cached monograph for a product, if Health has ever looked it up. */
+    suspend fun getMonograph(rxcui: String): DrugMonograph? =
+        dao.getDrugFacts(rxcui)?.let { DrugFactsMapper.toMonograph(it) }
+
+    fun observeMonograph(rxcui: String): Flow<DrugMonograph?> =
+        dao.observeDrugFacts(rxcui).map { row -> row?.let { DrugFactsMapper.toMonograph(it) } }
+
+    /**
+     * Cache what a lookup found. Upserts by RxNorm concept id, so a refresh replaces the previous
+     * answer for everybody who has that product rather than accumulating copies of it.
+     */
+    suspend fun saveMonograph(monograph: DrugMonograph) {
+        val rxcui = monograph.rxcui?.trim()?.ifBlank { null } ?: return
+        dao.upsertDrugFacts(DrugFactsMapper.toEntity(monograph, rxcui))
+    }
 
     // --- episodes -----------------------------------------------------------------------------
 
@@ -781,7 +1101,37 @@ fun MedicationEntity.toModel() = Medication(
     maxDosesPer24h = maxDosesPer24h,
     maxAmountPer24h = maxAmountPer24h,
     note = note,
-    active = active
+    active = active,
+    rxcui = rxcui,
+    cabinetItemId = cabinetItemId,
+    reminderMode = ReminderMode.fromKey(reminderMode),
+    reminderTimes = DoseReminder.parseTimes(reminderTimes)
+)
+
+fun CabinetItemEntity.toModel() = CabinetItem(
+    id = id,
+    rxcui = rxcui,
+    name = name,
+    brandName = brandName,
+    strength = strength,
+    form = form,
+    quantity = quantity,
+    quantityUnit = quantityUnit,
+    expiryDate = expiryDate,
+    location = location,
+    lowStockThreshold = lowStockThreshold,
+    note = note,
+    updatedAt = updatedAt
+)
+
+/** The stock facts `logic/Cabinet` reasons about, paired with one person's dose of the item. */
+fun CabinetItemEntity.toFacts(doseAmount: Double? = null, doseUnit: String = "") = CabinetFacts(
+    quantity = quantity,
+    quantityUnit = quantityUnit,
+    expiryDate = expiryDate,
+    lowStockThreshold = lowStockThreshold,
+    doseAmount = doseAmount,
+    doseUnit = doseUnit
 )
 
 /** The label's rules, in the shape `logic/DoseSchedule` reasons about. */
