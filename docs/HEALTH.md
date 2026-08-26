@@ -3,8 +3,9 @@
 Health is the suite's **who's-ill-and-what-have-we-given-them** app: a profile per person, the
 temperatures and other readings taken for each of them, the symptoms they've got, the medicines
 they're on with the label's own dose rules, the medicine cabinet those come out of, the illnesses all
-of it hangs off, and — since the Care tab — the insurance that pays for it and the doctors who
-provide it. It is a hosted
+of it hangs off, the insurance that pays for it, the doctors who provide it, and — since the Record
+tab — the standing facts that are true between illnesses: what they must not be given, what they
+already have, what they've been vaccinated against, and the paperwork behind all of it. It is a hosted
 library module inside the Operations Sandbox container (`:app`), a peer to LifeOps, Citation and
 Logistics — opened from the sandbox home, backed up into the same one-zip archive, and readable by
 Advisor only if you grant it.
@@ -26,6 +27,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
 | **Illness** | Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
+| **Record** | **What is true about a person between illnesses.** *Allergies* — structured, ordered worst-first, and checked against any medicine being added. *Conditions* — the long-running things an illness episode could never hold. *Vaccines* — the card in the drawer, typed up, reported as what is **recorded** and never as "up to date". *Documents* — the paperwork, stored exactly as it arrived and never read. |
 | **Care** | **Who pays for this, and who do we take her to.** *Cards* is the household's insurance as copied off the card — each person's own member number on the household's policy, whether the coverage is current, photographs of the card, and **a PDF of it on demand**. *Doctors* is the care team, which belongs to the household and **not** to the policy: each shown with where they stand against this person's coverage, read out of the whole history of checks rather than a single flag. |
 | **People** | The household. Add, edit and remove profiles; set whose reading you're looking at; choose °C or °F. |
 
@@ -63,11 +65,12 @@ over the seam rather than being typed here.
 Removing a person removes their readings, symptoms, medicines, doses, illnesses and care notes in one
 transaction. "Remove this person" has to mean it.
 
-## The two judgements Health makes
+## The judgements Health makes
 
-Both live in `health/logic/` as framework-free Kotlin, unit-tested on the JVM, so they are provable
-without a device — and so every surface (screens, episode summaries, Advisor answers) gives the same
-answer to the same question.
+The two below are the oldest and the most load-bearing; the allergy check added with the Record tab
+is the third, and is described with it. All of them live in `health/logic/` as framework-free Kotlin, unit-tested on the JVM, so they are
+provable without a device — and so every surface (screens, episode summaries, Advisor answers) gives
+the same answer to the same question.
 
 ### Is this a fever?
 
@@ -387,6 +390,161 @@ Individual checks can be deleted for the mis-taps. There is deliberately **no "c
 clearing it means making the app forget that a doctor used to be in network, which is the fact worth
 keeping.
 
+## The standing record — what is true between illnesses
+
+Every other tab records something that **happened**. This one holds what simply **is**, and it exists
+because the app's most safety-critical data used to live in a free-text note.
+
+A profile's `notes` column was documented as holding "allergies, conditions, the doctor's number".
+That is the one shape nothing can read back: a note cannot be listed, cannot be ordered by how badly
+it went last time, and above all cannot be compared against the bottle somebody is holding at 3am.
+
+### Allergies, and the one check Health is qualified to make
+
+`allergies` carries the substance, the kind, the severity, what the reaction actually was, when it was
+first noticed, and the RxNorm concept when it was recorded by lookup rather than typed. It is
+per-person and never household-scoped — the least shareable fact in the app.
+
+`logic/Allergies.check` compares what was written down against what the label says, and its limits are
+the design:
+
+- **No class inference, ever.** Health does not know that penicillin and amoxicillin are relatives,
+  that a sulfa allergy has anything to do with a thiazide, or that one NSAID predicts the next. Those
+  are real and they are *pharmacology* — a judgement this app is no more qualified to make than it is
+  to read a dose off a label. A pharmacist is.
+- **Whole words, not substrings.** "Codeine" does not fire on "hydrocodone", which is a different drug
+  and exactly the false alarm that teaches a household to tap past the dialog. A recorded
+  "amoxicillin" does match an ingredient printed as "amoxicillin trihydrate".
+- **A product that says it is free of something is not read as containing it.** "Aspirin-Free" is
+  printed on the box precisely for the person being warned; firing on it would be the most
+  embarrassing failure available to the feature.
+- **An identifier beats a string.** Matching RxNorm concept ids is certainty; matching an ingredient
+  list is strong; matching a brand name is weak, and each warning says which it was and quotes the
+  text it matched. A warning nobody can audit is one people learn to dismiss.
+- **Only drug allergies take part.** Health holds a label's active ingredients, not its excipients, so
+  it genuinely cannot tell whether a grape-flavoured suspension is a problem for a grape allergy. The
+  allergy stays on the record for a human to read and is not pretended to have been checked. The form
+  says so at the moment you pick a non-drug kind.
+
+**An empty result is never an all-clear.** It means nothing recorded matched, and every surface that
+renders it says that rather than showing a reassuring tick. That distinction is the whole feature:
+"nothing recorded" and "she isn't allergic to this" are different sentences, and only one of them is
+something this app is in a position to say.
+
+The medicine form runs the check against whatever it currently names, as it is typed — so picking a
+product from the drug lookup upgrades the check from matching a name to matching the label's own
+ingredient list.
+
+### Conditions — deliberately not episodes
+
+Asthma, eczema, coeliac, a murmur somebody is watching. Health already had a container for illness and
+it is precisely the wrong shape for these.
+
+An episode is built around a bout with an end: it counts days from Day 1, escalates a fever into its
+fourth day, and is held to one open row per person so "how long has this been going on" has a single
+answer. Left open for nine years, an episode would report a four-thousandth day, block every future
+illness that person has, and corrupt the one number the illness screen exists to give. So a condition
+has an **onset** rather than a start and a [status] rather than an end, and it outlives every episode
+filed alongside it.
+
+Three statuses, because two would lose the useful middle: **active**, **in remission**, **resolved**. A
+resolved condition stays on the record and stays visible — "she had this as a toddler" is the answer to
+a question a doctor asks, and deleting it to tidy the list is how a record stops being one.
+
+`monitorReadingType` is the chronic-care hook: the one measurement that matters for this condition —
+oxygen for asthma, blood pressure for hypertension. Nullable, and null for most, because Health has no
+table of which vital belongs to which diagnosis and will not invent one.
+
+### Onset dates are recorded at the precision they're known
+
+Nobody remembers the day their child's eczema started; plenty remember the year. So `logic/PartialDate`
+accepts `2019`, `2019-03` and `2019-03-14`, and reads each back saying only as much as it knows —
+"Since 2019", never "Since 1 January 2019". Padding a bare year invents a fact, and it is the kind that
+later reads as a real anniversary.
+
+A partial date rounds to the **start** of its period, which is the opposite of `Cabinet.parseExpiry`
+and right for the same reason: an expiry is a deadline and runs to the end of its month, while an onset
+is a beginning. Both round in the direction that cannot overstate what was written down.
+
+### Nothing is parsed out of the old note
+
+The v7 migration reads nothing out of `profiles.notes` and deletes nothing from it. Turning
+"penicillin (hives), asthma, Dr Okafor 555-0101" into rows means guessing at exactly the data where a
+wrong guess is worst — a mis-parsed allergy is a warning that never fires, or one that fires on the
+doctor's surname. The note keeps saying what it always said, and the Record tab shows it under "Also on
+this person's profile" so somebody can see what is in there and re-enter what should be checkable.
+
+## The vaccination record — and the sentence it refuses to write
+
+The card in the drawer, typed up. It is the one health document a household is repeatedly asked to
+**produce** rather than consult: school, daycare, camp, a new practice, a visa, an employer.
+
+`immunizations` holds the vaccine, when it was given, which dose in the series, the lot number for the
+day there's a recall, the site, and who gave it.
+
+**There is no "due", no "overdue" and no "up to date" anywhere in the feature, and no schedule behind
+it.** That absence is the design, and it is the same line `DrugFacts` draws about dosing. An
+immunisation schedule is not one list: it varies by country, by birth year, by risk group, by whether a
+dose was given early, by which combination product was used, and by catch-up rules a clinician applies
+with judgement. An app holding one hard-coded list would be confidently wrong for a family that moved
+countries, for a premature baby, for anybody on an accelerated schedule — and "she's up to date" is
+precisely the sentence somebody would act on without checking.
+
+So Health says "3 doses recorded · latest March 2019". That is a fact about this household's paperwork.
+"She has had all her jabs" is a claim about the world, and this app cannot see the world.
+
+**Provenance is part of the record**, not metadata about it. `VaccineSource` distinguishes a dose
+somebody watched being given from one copied off a card years later from one nobody has paperwork for —
+the same principle that puts `createdAt` beside every event time elsewhere in Health. All three are
+worth recording; they are not equally reliable, and the record says which is which rather than
+presenting a transcription as an observation.
+
+Series are grouped on the name compared as **letters and digits only**, so "M.M.R.", "MMR" and
+"Hepatitis-B" don't split a child's record into halves on a form. That is more aggressive than the
+allergy matcher, deliberately: there a false match is a warning that fires on the wrong drug, here a
+false *split* is a school form with a gap in it. The two guard against opposite mistakes.
+
+A transcribed card very often carries only a month, so vaccination dates take the same partial-date
+rule as onsets.
+
+## Documents — stored, never read
+
+Health could already keep one kind of document: a photograph of an insurance card. That mechanism
+turned out to be the right one — bytes beside the database rather than inside it, only a file name on
+the row, the directory carried by the backup and restored *before* the rows that name it. `documents`
+generalises it to everything else a household is handed: after-visit summaries, lab results, referral
+letters, imaging reports, school forms, the bill that arrived three weeks later.
+
+**Health stores documents and reads none of them.** No OCR, no text extraction, no interpretation.
+Every fact Health holds about a document — what kind it is, what date it carries, who it is about — is
+something a person typed. An app that parsed a lab report would be interpreting a medical document, and
+this one is not qualified to.
+
+That is also what keeps the seam honest for later. Reading an EOB into claim rows is a real and useful
+feature, but it is *parsing*, and parsing belongs to the change that owns it rather than being smuggled
+in underneath a file picker. `DocumentKind.BILL` exists so a household can file the PDF; nothing reads
+it.
+
+Three decisions worth knowing:
+
+- **`profileId` is nullable**, unlike every other per-person table in the schema. A lab result is about
+  one person; an insurance statement or a registration pack is about the house. Forcing every document
+  onto somebody would file the family's paperwork under whoever happened to be selected when it was
+  scanned. The two lists are shown separately for the same reason.
+- **Pictures are re-encoded; everything else is copied byte for byte.** A photograph of a document is a
+  photograph — twelve megapixels of a sheet of A4, most of it noise — so it is downsampled. A PDF *is*
+  the document, very often the practice's own file with the letterhead on it, and re-encoding it would
+  produce something different from what the household was given. "Different from what the practice
+  sent" is the one property a record must not have.
+- **The bytes are secured before any question is asked.** A picker's URI permission can lapse the
+  moment it closes, so the file is copied into the store first and the form is filled in over the top
+  of an attachment that is already safe. Cancelling deletes the copy rather than leaving it behind.
+
+Opening a document copies it into `cacheDir/exports` and hands *that* to the share sheet.
+`HealthFileProvider` exposes only the export directory — widening it to the store would make every lab
+result in the house readable by anything that could guess a URI. A document leaves only when somebody
+asks it to, exactly as the insurance card PDF does.
+
 ## Illnesses — the thing the rows hang off
 
 Starting an episode is the difference between a scatter of readings and a story. While one is open,
@@ -470,6 +628,11 @@ seriously enough to ignore them for exactly that reason.
 │   ├── DoseSchedule     interval + rolling-24h dose windows and countdown formatting
 │   ├── DoseReminder     when a reminder next fires, in both modes, against an injected clock
 │   ├── Cabinet          expiry and stock verdicts, doses remaining, same-unit rule
+│   ├── Allergies        the medicine check: whole-word matching, no class inference, never an all-clear
+│   ├── Conditions       long-running conditions: status order, how long they've been going
+│   ├── Immunizations    doses grouped into series — what is *recorded*, never what is due
+│   ├── Documents        document kinds, file naming, sizes, newest-first ordering
+│   ├── PartialDate      a date at the precision somebody actually knew — 2019, 2019-03, 2019-03-14
 │   ├── Insurance        coverage-current verdict, and the one card layout both renderers draw
 │   ├── ProviderDirectory  candidate endpoints, NPI validation, name matching, the check verdict
 │   ├── NetworkStatus    a doctor's standing, derived from the whole history of checks
@@ -483,14 +646,17 @@ seriously enough to ignore them for exactly that reason.
 ├── data/             Room (HealthDatabase, entities, HealthDao) + repository + prefs
 │   ├── model/        domain types with the string columns resolved into enums
 │   ├── net/          DrugLookupClient, ProviderDirectoryClient — the only two classes that connect
-│   ├── store/        CardImageStore — card photographs, beside the database rather than in it
+│   ├── store/        CardImageStore, DocumentStore — files beside the database rather than in it
+│   │                 (+ ImageDownsampler, the two-pass decode both of them share)
 │   ├── repository/   HealthRepository — rows in, models out, every judgement delegated to logic/
 │   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
 ├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
-├── ui/               Compose: today · vitals · meds · episodes · coverage · people (+ common, theme)
-├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/)
-├── HealthFileProvider.kt  hands the exported card PDF to a share sheet, and nothing else
+├── ui/               Compose: today · vitals · meds · episodes · record · coverage · people
+│                     (+ common, theme)
+├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/ + documents/)
+├── HealthFileProvider.kt  exposes cacheDir/exports only — the card PDF, and on-request copies of
+│                          stored documents. Never the record directories themselves.
 ├── HealthApp.kt      tiny runtime container (install/get), like LogisticsApp
 └── MainActivity.kt   tabbed shell over the one runtime
 ```
@@ -503,7 +669,7 @@ not read People's database; the roster is replicated over a mailbox, not borrowe
 
 ## Storage
 
-One `health.db`, fifteen tables:
+One `health.db`, nineteen tables:
 
 - **`profile_tombstones`** — profiles removed here, kept only long enough to publish the un-tick so
   the next round doesn't hand the person straight back. See PEOPLE.md.
@@ -542,6 +708,17 @@ One `health.db`, fifteen tables:
 - **`network_checks`** — **append-only**. What a directory said about one provider under one plan at
   one moment, plus what somebody was told on the phone. Never overwritten, because the earlier
   answers are the only thing that can tell "has left the network" apart from "never was in it".
+- **`allergies`** — substance, kind, severity, the reaction, when it was first noticed, and the RxNorm
+  concept when it was recorded by lookup. Per-person and never household-scoped: the least shareable
+  fact in the app. *Schema v7.*
+- **`conditions`** — the long-running things, with an onset rather than a start and a status rather
+  than an end. Points optionally at the clinician who manages it and at the one reading that matters
+  for it. *Schema v7.*
+- **`immunizations`** — one recorded dose: the vaccine, when, which dose in the series, the lot number,
+  and **where the record came from**. No "due" column, and there will not be one. *Schema v8.*
+- **`documents`** — the paperwork. Only a **file name** under `documents/`, never bytes. `profileId` is
+  **nullable** — the one per-person table where it is — because a statement belongs to the house and a
+  lab result belongs to a person. *Schema v9.*
 
 *Schema v5 adds `createdAt` to `doses`, `symptoms` and `care_notes` — when the **row** was written, as
 against when the thing happened. Nullable, with no backfill: every row that predates the column was
@@ -564,6 +741,12 @@ date per person, and most of them wrong within a month.
 *Schema v6 adds the five coverage tables, and touches nothing that existed. A household that never
 opens the Care tab has five empty tables and no other change at all.*
 
+*Schema v7 adds `allergies` and `conditions`, v8 adds `immunizations`, v9 adds `documents` — and none
+of them touches a column that existed. In particular v7 **parses nothing out of `profiles.notes` and
+deletes nothing from it**: reading a free-text note into structured allergy rows means guessing at
+exactly the data where a wrong guess is worst. The note is surfaced on the Record tab instead, so a
+household can see what is in there and re-enter what should be checkable.*
+
 Cross-table links are plain nullable ids rather than foreign keys — a reading taken before anyone
 declared an illness is still a real reading, deleting a medicine must not delete the record that a
 dose of it was given, and throwing a bottle away must not delete either the regimens given from it or
@@ -578,11 +761,12 @@ unit) and, like LifeOps' contributor, touches **only** files matching its own pr
 share one `shared_prefs/` directory. The manifest's data version is read from
 `HEALTH_DB_VERSION` rather than hand-copied, so it cannot drift from the schema.
 
-**Card photographs go with it.** They are the one thing Health keeps outside the database — a couple
-of megabytes each in `filesDir/insurance-cards`, with only the file name on the row — so the
-directory is copied entry by entry and restored the same way, *before* the database that names them.
-A backup that carried the row and not the picture would restore a card pointing at nothing, which is
-worse than not backing it up at all: the app would look like it had the photo and quietly wouldn't.
+**The two file directories go with it.** Insurance card photographs in `filesDir/insurance-cards` and
+the household's paperwork in `filesDir/documents` are what Health keeps outside the database — a
+couple of megabytes each, with only the file name on the row — so each directory is copied entry by
+entry and restored the same way, *before* the database that names them. A backup that carried the row
+and not the file would restore a card, or an after-visit summary, pointing at nothing: worse than not
+backing it up at all, because the app would look like it had the document and quietly wouldn't.
 
 Restoring also **re-arms every medication reminder** against the database that has just arrived. The
 work queue survives the restore and still refers to the medicines of the database that was replaced,
@@ -606,7 +790,12 @@ side of:
 | *"Does this public directory list Dr Okafor?"* | A question about a **practitioner** — the question the directory was published to answer, for anybody who asks. |
 | *"This person takes these medicines"* / *"Dr Okafor is my daughter's paediatrician"* | Questions about a **person**. They never leave. |
 
-Health asks the first two and cannot ask the third. Two permissions, no sensors, no contacts:
+Health asks the first two and cannot ask the third. **The Record tab adds nothing to this list.**
+Allergies, conditions, vaccination records and documents are the most identifying data in the app and
+there is no code path from any of them to the network — no lookup, no upload, no sync. The tab holds
+no client and makes no request, ever.
+
+Two permissions, no sensors, no contacts:
 
 - **`INTERNET`** — two features, and nothing else:
   - `data/net/DrugLookupClient` takes a search term and an RxNorm concept id. There is no parameter,
@@ -637,6 +826,12 @@ person. Recent readings are listed individually and older ones characterised, so
 temperatures can't drown the rest of the corpus, and each temperature carries Health's own assessment
 rather than inviting the model to form a second opinion.
 
+**Documents never leave the device except when you send one.** They live in `filesDir/documents`, and
+`HealthFileProvider` exposes only `cacheDir/exports` — a copy written at the moment somebody asks to
+open or share a particular document. Widening the provider to the store would make every lab result in
+the house readable by anything that could guess a URI. Nothing reads the contents of a stored file
+either: no OCR, no extraction, no indexing.
+
 **Coverage is deliberately not published to Advisor.** Member numbers, group numbers and card
 photographs are identifiers rather than health history — they answer nothing an assistant is useful
 for, and a retrieval corpus is flat text that ends up quoted back into answers. The care team is left
@@ -645,7 +840,7 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 159 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 207 tests:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -700,6 +895,28 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   doctor isn't in it", a network reference falling back to its id when the server gave no display
   name, roles folding only into the practitioner they reference, an `OperationOutcome` read for what
   the user can act on, and malformed JSON parsing to nothing rather than throwing.
+- `AllergiesTest` — an ingredient spelled out in full matching the name that was written down, and —
+  the ones that matter — everything Health refuses to say: penicillin never warning about amoxicillin
+  because relatedness is pharmacology, "codeine" never firing on "hydrocodone", an aspirin-free product
+  never being read as containing aspirin, a food allergy not being pretended to have been checked
+  against a medicine, a concept id beating every amount of string comparison, an ingredient preferred
+  over a name when both match, worst-first ordering, and a severity nobody recorded never being
+  promoted to a severe one.
+- `ConditionsTest` — a bare year read as a year and said as one, an onset rounding to the start of its
+  period where an expiry rounds to the end of one, an unparseable onset being no date rather than a
+  guessed one, a future onset described as nothing rather than as negative time, elapsed time in the
+  unit a person says out loud, what is still going read before what is over, and remission being a
+  status of its own rather than a kind of resolved.
+- `ImmunizationsTest` — doses grouping into a series oldest-first, punctuation never splitting a
+  child's record in two, the summary reporting what is **recorded** and asserting in as many words
+  that it never says "up to date" or "due", an undated dose kept and sorted last rather than first,
+  a dose from memory marked as one while a witnessed dose is not accused of anything, and a source
+  nobody recorded saying nothing rather than guessing which it was.
+- `DocumentsTest` — an extension taken from the file's own name before its claimed type (resolvers
+  report octet-stream for ordinary PDFs), a word after a dot not mistaken for a file type, a size
+  nobody recorded saying nothing rather than zero bytes, documents read newest-first by the date on
+  the document with undated last, a household document belonging to nobody rather than to whoever was
+  selected, and a row never being allowed to name a path outside its directory.
 - `DrugLookupParserTest` — products sorted ahead of bare ingredients, suppressed and non-English
   concepts dropped, the approximate search keeping the best score per concept, a numeric DEA schedule
   written out and an unscheduled one saying nothing, label sections kept in reading order with the

@@ -8,6 +8,7 @@ import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
@@ -110,6 +111,9 @@ interface HealthDao {
         deleteAllergiesForProfile(profileId)
         deleteConditionsForProfile(profileId)
         deleteImmunizationsForProfile(profileId)
+        // Their documents go too. A household document (profileId null) is nobody's to delete here,
+        // and stays: an insurance statement is not about the person who has left.
+        deleteDocumentsForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -652,4 +656,42 @@ interface HealthDao {
 
     @Query("DELETE FROM immunizations WHERE profileId = :profileId")
     suspend fun deleteImmunizationsForProfile(profileId: String)
+
+    // --- documents --------------------------------------------------------------------------------
+    //
+    // A document belongs to a person or to the household, so there are two observers rather than one
+    // filtered query — "her lab results" and "the paperwork" are different lists that are read in
+    // different places, and folding them together would put the family's insurance statement into a
+    // child's medical record.
+    //
+    // Deleting a row never deletes its file: the repository does that afterwards, through the store,
+    // because a file removed ahead of a write that then fails leaves a document pointing at nothing.
+
+    @Query("SELECT * FROM documents WHERE profileId = :profileId ORDER BY documentDate DESC")
+    fun observeDocuments(profileId: String): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents WHERE profileId IS NULL ORDER BY documentDate DESC")
+    fun observeHouseholdDocuments(): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents ORDER BY documentDate DESC")
+    suspend fun getAllDocuments(): List<DocumentEntity>
+
+    @Query("SELECT * FROM documents WHERE id = :id")
+    suspend fun getDocument(id: String): DocumentEntity?
+
+    @Query("SELECT * FROM documents WHERE episodeId = :episodeId ORDER BY documentDate")
+    suspend fun getDocumentsForEpisode(episodeId: String): List<DocumentEntity>
+
+    @Upsert
+    suspend fun upsertDocument(document: DocumentEntity)
+
+    @Query("DELETE FROM documents WHERE id = :id")
+    suspend fun deleteDocumentRow(id: String)
+
+    @Query("DELETE FROM documents WHERE profileId = :profileId")
+    suspend fun deleteDocumentsForProfile(profileId: String)
+
+    /** The file names a profile's documents point at, read before the cascade drops the rows. */
+    @Query("SELECT fileName FROM documents WHERE profileId = :profileId")
+    suspend fun documentFileNamesForProfile(profileId: String): List<String>
 }

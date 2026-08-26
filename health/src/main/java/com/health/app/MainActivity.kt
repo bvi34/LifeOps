@@ -60,8 +60,8 @@ private val navItems =
  *
  * The tabs divide by the *kind of question* they answer, not by data type. Today, Vitals, Meds and
  * Illness are all about things that **happened**; Record is what simply **is** true about a person
- * between illnesses — allergies, conditions, vaccinations; Care is who pays and who provides; People
- * is the household itself.
+ * between illnesses — allergies, conditions, vaccinations and the paperwork; Care is who pays and who
+ * provides; People is the household itself.
  *
  * Every tab except People shows the same profile bar and reads the same selected person, so
  * switching who you're looking at is one tap from anywhere and is never ambiguous. That is the whole
@@ -151,7 +151,9 @@ class MainActivity : ComponentActivity() {
                             EpisodesScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.Record.route) {
-                            val vm: RecordViewModel = viewModel(factory = RecordViewModel.Factory(app.repository))
+                            val vm: RecordViewModel = viewModel(
+                                factory = RecordViewModel.Factory(app.repository, app.documents)
+                            )
                             RecordScreen(vm, onAddProfile = { goAddProfile() })
                         }
                         composable(Dest.Coverage.route) {

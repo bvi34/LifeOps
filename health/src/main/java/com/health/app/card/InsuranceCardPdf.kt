@@ -9,6 +9,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
+import com.health.app.HealthFileProvider
 import com.health.app.data.model.CoverageCard
 import com.health.app.data.store.CardImageStore
 import com.health.app.logic.CardFace
@@ -107,7 +108,7 @@ object InsuranceCardPdf {
      * tap that did nothing.
      */
     fun shareFile(context: Context, file: File, subject: String): Boolean = runCatching {
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}$AUTHORITY_SUFFIX", file)
+        val uri = FileProvider.getUriForFile(context, HealthFileProvider.authority(context.packageName), file)
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
             putExtra(Intent.EXTRA_SUBJECT, subject)
@@ -268,7 +269,6 @@ object InsuranceCardPdf {
     private const val EXPORT_DIR = "exports"
 
     /** Matches the `<provider>` authority in Health's manifest. */
-    private const val AUTHORITY_SUFFIX = ".health.fileprovider"
 
     /** Three lines of 4pt type is as much small print as a card-sized page can carry legibly. */
     private const val MAX_FOOTNOTE_LINES = 3

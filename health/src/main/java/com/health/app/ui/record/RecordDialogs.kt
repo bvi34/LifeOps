@@ -12,18 +12,21 @@ import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Allergy
 import com.health.app.data.model.Condition
 import com.health.app.data.model.Immunization
+import com.health.app.data.model.Profile
 import com.health.app.data.model.Provider
 import com.health.app.data.model.ReadingType
 import com.health.app.logic.AllergyKind
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.Allergies
 import com.health.app.logic.ConditionStatus
+import com.health.app.logic.DocumentKind
+import com.health.app.logic.Documents
 import com.health.app.logic.Immunizations
 import com.health.app.logic.VaccineSource
 import com.health.app.ui.common.ChoiceRow
 
 /**
- * The three forms behind the Record tab.
+ * The four forms behind the Record tab.
  *
  * All of them follow the rule the rest of Health's dialogs follow: **one required field, everything else
  * optional**. A record somebody has to fill in completely is a record that stays empty, and a
@@ -380,5 +383,113 @@ fun ImmunizationDialog(
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * What to say about a file that has already been copied into the store.
+ *
+ * The attachment happens *before* this dialog opens — a picker's URI permission can lapse the moment
+ * it closes, so the bytes are secured first and the questions asked over the top of something that is
+ * already safe. Cancelling deletes the copied file rather than leaving it behind.
+ *
+ * The one question worth its own control is **who it is about**. A lab result belongs to a person; a
+ * statement or a registration pack belongs to the house, and filing that under whoever happened to be
+ * selected is how a household's paperwork ends up inside a child's medical record.
+ */
+@Composable
+fun DocumentDialog(
+    pending: PendingDocument,
+    people: List<Profile>,
+    defaultProfileId: String?,
+    onDismiss: () -> Unit,
+    onConfirm: (DocumentDraft) -> Unit
+) {
+    var title by remember { mutableStateOf(pending.suggestedTitle.orEmpty()) }
+    var kind by remember { mutableStateOf(DocumentKind.OTHER) }
+    var date by remember { mutableStateOf("") }
+    var profileId by remember { mutableStateOf(defaultProfileId) }
+    var note by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("File this document") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    Documents.formatSize(pending.stored.sizeBytes)
+                        ?.let { "Attached · $it" } ?: "Attached",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Title") },
+                    supportingText = { Text("What you'd search for it by") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("What is it?", style = MaterialTheme.typography.labelMedium)
+                ChoiceRow(
+                    options = DocumentKind.entries,
+                    selected = kind,
+                    onSelect = { kind = it },
+                    label = { it.label }
+                )
+
+                OutlinedTextField(
+                    value = date,
+                    onValueChange = { date = it },
+                    label = { Text("Date on the document (optional)") },
+                    supportingText = { Text("A year or a month is fine — 2026, 2026-03, 2026-03-14") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text("Who is it about?", style = MaterialTheme.typography.labelMedium)
+                ChoiceRow(
+                    options = listOf<Profile?>(null) + people,
+                    selected = people.firstOrNull { it.id == profileId },
+                    onSelect = { profileId = it?.id },
+                    label = { it?.name ?: "The household" }
+                )
+
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Text(
+                    "Health keeps the file exactly as it arrived and does not read it. Nothing in it " +
+                        "is searched, extracted or interpreted.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onConfirm(
+                        DocumentDraft(
+                            title = title.trim(),
+                            kind = kind,
+                            documentDate = date.trim(),
+                            profileId = profileId,
+                            note = note.trim()
+                        )
+                    )
+                }
+            ) { Text("File it") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Discard") } }
     )
 }

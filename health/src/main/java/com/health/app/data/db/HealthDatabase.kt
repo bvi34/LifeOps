@@ -11,6 +11,7 @@ import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
@@ -33,7 +34,7 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 8
+const val HEALTH_DB_VERSION = 9
 
 /**
  * Health's own store: people, everything recorded about them, the medicine cabinet those records
@@ -66,7 +67,8 @@ const val HEALTH_DB_VERSION = 8
         NetworkCheckEntity::class,
         AllergyEntity::class,
         ConditionEntity::class,
-        ImmunizationEntity::class
+        ImmunizationEntity::class,
+        DocumentEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -481,6 +483,56 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 gives the household somewhere to put the paperwork.
+         *
+         * Health could already keep one kind of document — a photograph of an insurance card — and
+         * the mechanism turned out to be the right one: bytes beside the database rather than inside
+         * it, only a file name on the row, the directory carried by the backup and restored *before*
+         * the rows that name it. This generalises that to everything else a household is handed: the
+         * after-visit summary, the lab result, the referral letter, the school form.
+         *
+         * `profileId` is **nullable** here, unlike every other per-person table in this schema. A lab
+         * result is about one person; an insurance statement or a registration pack is about the
+         * house, and forcing it onto somebody would file the family's paperwork under whoever
+         * happened to be selected when it was scanned.
+         *
+         * Nothing reads what is stored — no OCR, no extraction, no interpretation. Every fact on the
+         * row was typed by a person. Reading a document is a real feature and belongs to the change
+         * that owns it, not smuggled in underneath a file picker; see `logic/Documents`.
+         *
+         * Nothing existing is touched.
+         */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS documents (" +
+                        "id TEXT NOT NULL PRIMARY KEY, " +
+                        "profileId TEXT, " +
+                        "title TEXT NOT NULL, " +
+                        "kind TEXT NOT NULL, " +
+                        "documentDate TEXT, " +
+                        "fileName TEXT NOT NULL, " +
+                        "mimeType TEXT, " +
+                        "sizeBytes INTEGER, " +
+                        "episodeId TEXT, " +
+                        "conditionId TEXT, " +
+                        "immunizationId TEXT, " +
+                        "providerId TEXT, " +
+                        "note TEXT, " +
+                        "createdAt INTEGER NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL)"
+                )
+                listOf(
+                    "profileId", "kind", "documentDate", "episodeId", "conditionId", "immunizationId"
+                ).forEach { column ->
+                    db.execSQL(
+                        "CREATE INDEX IF NOT EXISTS index_documents_$column ON documents($column)"
+                    )
+                }
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -497,7 +549,8 @@ abstract class HealthDatabase : RoomDatabase() {
                     MIGRATION_4_5,
                     MIGRATION_5_6,
                     MIGRATION_6_7,
-                    MIGRATION_7_8
+                    MIGRATION_7_8,
+                    MIGRATION_8_9
                 )
                     .build().also { instance = it }
             }

@@ -9,6 +9,7 @@ import com.health.app.data.net.DrugLookupClient
 import com.health.app.data.net.ProviderDirectoryClient
 import com.health.app.data.repository.HealthSyncService
 import com.health.app.data.store.CardImageStore
+import com.health.app.data.store.DocumentStore
 import com.health.app.reminder.MedicationReminderScheduler
 import com.people.app.PeopleApp
 import com.people.app.sync.LocalRosterChange
@@ -59,6 +60,13 @@ class HealthApp private constructor(private val app: Application) {
      */
     val cardImages by lazy { CardImageStore(app) }
 
+    /**
+     * Where the household's paperwork lives — `filesDir/documents`, beside the database rather than
+     * inside it, for the same reason as [cardImages]. See [DocumentStore], including why a
+     * photograph is re-encoded and a PDF never is.
+     */
+    val documents by lazy { DocumentStore(app) }
+
     // The seam's publish hook lives on the repository rather than in the People screen's ViewModel:
     // stamping a profile's syncVersion and telling the other peers about it are the same event, and
     // a change nobody publishes until Health next opens is a change the user goes looking for in
@@ -71,7 +79,9 @@ class HealthApp private constructor(private val app: Application) {
             onReminderChange = { medicationId -> rearmReminder(medicationId) },
             // A card photo outlives the row that pointed at it unless something deletes the file, and
             // the repository deliberately can't: it stays JVM-testable and knows nothing about disk.
-            onCardImageDiscarded = { fileName -> cardImages.delete(fileName) }
+            onCardImageDiscarded = { fileName -> cardImages.delete(fileName) },
+            // Same hook, same reason: the repository stays JVM-testable and never touches disk.
+            onDocumentDiscarded = { fileName -> documents.delete(fileName) }
         )
     }
 

@@ -1,20 +1,25 @@
 package com.health.app.ui.record
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.health.app.data.model.Allergy
 import com.health.app.data.model.Condition
+import com.health.app.data.model.Document
 import com.health.app.data.model.Immunization
 import com.health.app.data.model.Profile
 import com.health.app.data.model.Provider
@@ -32,11 +37,12 @@ import com.health.app.ui.common.SectionCard
  *
  * Every other tab in Health records something that *happened* — a temperature was taken, a dose was
  * given, an illness ran from Tuesday to Sunday. This one holds what simply *is*: what she must not
- * be given, what she already has, and what she has been vaccinated against. They are the facts a
- * babysitter, a school form and a triage nurse all ask for first, and until now the first two lived
- * in a free-text note that nothing could read back and the third lived in a drawer.
+ * be given, what she already has, what she has been vaccinated against, and the paperwork behind all
+ * of it. They are the facts a babysitter, a school form and a triage nurse all ask for first, and
+ * until now the first two lived in a free-text note that nothing could read back while the rest lived
+ * in a drawer.
  *
- * The screen's one firm rule runs through all three tabs: **an empty list is never rendered as an
+ * The screen's one firm rule runs through every tab: **an empty list is never rendered as an
  * all-clear**. "Nothing recorded" and "no allergies" are different sentences; so are "three doses
  * recorded" and "up to date". Only one of each pair is something this app is in a position to say.
  */
@@ -48,6 +54,17 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
     val providers by vm.providers.collectAsStateWithLifecycle()
     val vaccineSeries by vm.vaccineSeries.collectAsStateWithLifecycle()
     val immunizationsById by vm.immunizationsById.collectAsStateWithLifecycle()
+    val documents by vm.documents.collectAsStateWithLifecycle()
+    val householdDocuments by vm.householdDocuments.collectAsStateWithLifecycle()
+    val pendingDocument by vm.pendingDocument.collectAsStateWithLifecycle()
+    val documentMessage by vm.documentMessage.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+
+    // Any type: a household is handed PDFs, photographs, scans and the occasional Word file, and a
+    // picker that refused one of them would just send somebody to a different app to convert it.
+    val pickDocument = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> uri?.let { vm.attach(it) } }
 
     var tab by remember { mutableIntStateOf(0) }
     var addingAllergy by remember { mutableStateOf(false) }
@@ -71,16 +88,23 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                         when (tab) {
                             0 -> addingAllergy = true
                             1 -> addingCondition = true
-                            else -> addingVaccine = true
+                            2 -> addingVaccine = true
+                            else -> pickDocument.launch(arrayOf("*/*"))
                         }
                     },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    icon = {
+                        Icon(
+                            if (tab == 3) Icons.Default.AttachFile else Icons.Default.Add,
+                            contentDescription = null
+                        )
+                    },
                     text = {
                         Text(
                             when (tab) {
                                 0 -> "Allergy"
                                 1 -> "Condition"
-                                else -> "Vaccine"
+                                2 -> "Vaccine"
+                                else -> "Attach"
                             }
                         )
                     }
@@ -96,6 +120,20 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Allergies") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Conditions") })
                 Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Vaccines") })
+                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Documents") })
+            }
+
+            documentMessage?.let { message ->
+                Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(message, style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = vm::dismissDocumentMessage) { Text("Dismiss") }
+                    }
+                }
             }
 
             when (tab) {
@@ -112,11 +150,18 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                     onEdit = { editingCondition = it },
                     onDelete = { vm.deleteCondition(it.id) }
                 )
-                else -> VaccineList(
+                2 -> VaccineList(
                     series = vaccineSeries,
                     person = person,
                     onEdit = { doseId -> immunizationsById[doseId]?.let { editingVaccine = it } },
                     onDelete = { doseId -> vm.deleteImmunization(doseId) }
+                )
+                else -> DocumentList(
+                    documents = documents,
+                    householdDocuments = householdDocuments,
+                    person = person,
+                    onOpen = { vm.openDocument(context, it) },
+                    onDelete = { vm.deleteDocument(it.id) }
                 )
             }
         }
@@ -214,6 +259,114 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
                 editingVaccine = null
             }
         )
+    }
+
+    pendingDocument?.let { pending ->
+        DocumentDialog(
+            pending = pending,
+            people = profiles,
+            defaultProfileId = person?.id,
+            onDismiss = vm::cancelPendingDocument,
+            onConfirm = { draft -> vm.filePendingDocument(draft) }
+        )
+    }
+}
+
+/**
+ * The household's paperwork, in two lists that are deliberately not one.
+ *
+ * A lab result is about a person and a statement is about the house, and folding them together would
+ * put the family's insurance paperwork inside a child's medical record. So the selected person's
+ * documents come first and the household's follow, under their own heading, visible whoever is
+ * selected — because that is what "the household's" means.
+ *
+ * Nothing here reads a document. Opening one hands it to whatever app the device has; Health copies
+ * it out to `cacheDir/exports` for exactly that moment and never exposes the store itself.
+ */
+@Composable
+private fun DocumentList(
+    documents: List<Document>,
+    householdDocuments: List<Document>,
+    person: Profile?,
+    onOpen: (Document) -> Unit,
+    onDelete: (Document) -> Unit
+) {
+    LazyColumn(
+        contentPadding = PaddingValues(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        if (documents.isEmpty() && householdDocuments.isEmpty()) {
+            item {
+                SectionCard("Nothing filed") {
+                    Text(
+                        "After-visit summaries, lab results, referral letters, school forms — the " +
+                            "paper that arrives and then can't be found. Attach a PDF or a photo of " +
+                            "one and it is carried by the backup with everything else.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+
+        if (documents.isNotEmpty()) {
+            item {
+                Text(
+                    person?.let { "${it.name}'s documents" } ?: "Documents",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            items(documents, key = { it.id }) { document ->
+                DocumentCard(document, onOpen = { onOpen(document) }, onDelete = { onDelete(document) })
+            }
+        }
+
+        if (householdDocuments.isNotEmpty()) {
+            item {
+                Text(
+                    "The household's",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            items(householdDocuments, key = { it.id }) { document ->
+                DocumentCard(document, onOpen = { onOpen(document) }, onDelete = { onDelete(document) })
+            }
+        }
+
+        item {
+            Text(
+                "Health stores these files and does not read them — nothing in a document is " +
+                    "searched, extracted or interpreted.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DocumentCard(document: Document, onOpen: () -> Unit, onDelete: () -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                document.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                document.descriptor,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            document.note?.takeIf { it.isNotBlank() }?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onOpen) { Text("Open") }
+                TextButton(onClick = onDelete) { Text("Delete") }
+            }
+        }
     }
 }
 

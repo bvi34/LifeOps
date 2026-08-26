@@ -5,6 +5,7 @@ import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.ImmunizationEntity
@@ -28,6 +29,7 @@ import com.health.app.data.model.CareRole
 import com.health.app.data.model.CareTeamMember
 import com.health.app.data.model.Condition
 import com.health.app.data.model.CoverageCard
+import com.health.app.data.model.Document
 import com.health.app.data.model.Dose
 import com.health.app.data.model.Episode
 import com.health.app.data.model.Immunization
@@ -63,6 +65,8 @@ import com.health.app.logic.DirectoryProbe
 import com.health.app.logic.DosePoint
 import com.health.app.logic.DoseRecord
 import com.health.app.logic.DoseReminder
+import com.health.app.logic.DocumentKind
+import com.health.app.logic.Documents
 import com.health.app.logic.DoseSchedule
 import com.health.app.logic.DrugMonograph
 import com.health.app.logic.EpisodeFacts
@@ -150,7 +154,14 @@ class HealthRepository(
      * gone — never before, because a file deleted ahead of a write that then fails leaves a card
      * pointing at nothing.
      */
-    private val onCardImageDiscarded: (fileName: String) -> Unit = {}
+    private val onCardImageDiscarded: (fileName: String) -> Unit = {},
+    /**
+     * How the document store hears that a stored file is no longer referenced by any row.
+     *
+     * A hook for the same reason [onCardImageDiscarded] is one: the repository stays JVM-testable
+     * and knows nothing about disk. Called with the file name *after* the row naming it is gone.
+     */
+    private val onDocumentDiscarded: (fileName: String) -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -260,7 +271,13 @@ class HealthRepository(
                 )
             )
         }
+        // Read the file names before the cascade drops the rows that name them — afterwards there is
+        // nothing left to ask, and the files would sit in `documents/` for ever with no row pointing
+        // at them. Household documents (profileId null) are untouched: an insurance statement is not
+        // about the person who has left.
+        val orphanedFiles = dao.documentFileNamesForProfile(profileId)
         dao.deleteProfileCascade(profileId)
+        orphanedFiles.forEach(onDocumentDiscarded)
         if (prefs.selectedProfileId == profileId) {
             prefs.selectedProfileId = dao.getProfiles().firstOrNull { !it.archived }?.id
         }
@@ -1428,6 +1445,97 @@ class HealthRepository(
 
     suspend fun deleteImmunization(id: String) = dao.deleteImmunization(id)
 
+    // --- documents --------------------------------------------------------------------------------
+    //
+    // Health stores the household's paperwork and reads none of it. Every fact on a document row was
+    // typed by a person; nothing here inspects a file's contents. See `logic/Documents`.
+
+    fun observeDocuments(profileId: String): Flow<List<Document>> =
+        dao.observeDocuments(profileId).map { rows -> sortDocuments(rows.map { it.toModel() }) }
+
+    /** The paperwork that belongs to the house rather than to anybody in it. */
+    fun observeHouseholdDocuments(): Flow<List<Document>> =
+        dao.observeHouseholdDocuments().map { rows -> sortDocuments(rows.map { it.toModel() }) }
+
+    suspend fun getDocument(id: String): Document? = dao.getDocument(id)?.toModel()
+
+    private fun sortDocuments(documents: List<Document>): List<Document> =
+        Documents.sort(documents, date = { it.documentDate }, title = { it.title })
+
+    /**
+     * File a document that has already been copied into the store.
+     *
+     * The bytes are moved first and the row is written second, deliberately. The other order leaves
+     * a window in which a row names a file that does not exist yet — and the screen that renders it
+     * in that window shows a document the household does not actually have.
+     */
+    suspend fun addDocument(
+        title: String,
+        kind: DocumentKind,
+        fileName: String,
+        profileId: String? = null,
+        documentDate: String? = null,
+        mimeType: String? = null,
+        sizeBytes: Long? = null,
+        episodeId: String? = null,
+        conditionId: String? = null,
+        immunizationId: String? = null,
+        providerId: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertDocument(
+            DocumentEntity(
+                id = id,
+                profileId = profileId.clean(),
+                title = title.trim().ifBlank { kind.label },
+                kind = kind.key,
+                documentDate = documentDate.clean(),
+                fileName = fileName,
+                mimeType = mimeType.clean(),
+                sizeBytes = sizeBytes,
+                episodeId = episodeId.clean(),
+                conditionId = conditionId.clean(),
+                immunizationId = immunizationId.clean(),
+                providerId = providerId.clean(),
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    /**
+     * Edit what was typed about a document. The file itself is never touched here — re-filing an
+     * after-visit summary under the right child does not change the PDF.
+     */
+    suspend fun updateDocument(document: Document) {
+        val existing = dao.getDocument(document.id) ?: return
+        dao.upsertDocument(
+            existing.copy(
+                profileId = document.profileId.clean(),
+                title = document.title.trim().ifBlank { document.kind.label },
+                kind = document.kind.key,
+                documentDate = document.documentDate.clean(),
+                episodeId = document.episodeId.clean(),
+                conditionId = document.conditionId.clean(),
+                immunizationId = document.immunizationId.clean(),
+                providerId = document.providerId.clean(),
+                note = document.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /** Drop a document, and then the file behind it — in that order, never the other way round. */
+    suspend fun deleteDocument(id: String) {
+        val existing = dao.getDocument(id) ?: return
+        dao.deleteDocumentRow(id)
+        onDocumentDiscarded(existing.fileName)
+    }
+
     // --- coverage: the cards ---------------------------------------------------------------------
     //
     // A plan is household-scoped and a membership is not, exactly as a bottle is household-scoped and
@@ -2418,4 +2526,21 @@ fun ImmunizationEntity.toModel() = Immunization(
     lotNumber = lotNumber,
     site = site,
     note = note
+)
+
+fun DocumentEntity.toModel() = Document(
+    id = id,
+    profileId = profileId,
+    title = title,
+    kind = DocumentKind.fromKey(kind),
+    documentDate = documentDate,
+    fileName = fileName,
+    mimeType = mimeType,
+    sizeBytes = sizeBytes,
+    episodeId = episodeId,
+    conditionId = conditionId,
+    immunizationId = immunizationId,
+    providerId = providerId,
+    note = note,
+    createdAt = createdAt
 )
