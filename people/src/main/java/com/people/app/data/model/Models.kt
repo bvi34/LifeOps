@@ -13,6 +13,8 @@ data class Person(
     val email: String?,
     val phone: String?,
     val note: String?,
+    /** Ticked = Health grows a profile for them. See `PersonEntity.household`. */
+    val household: Boolean,
     val colorArgb: Long,
     val archived: Boolean,
     val sortOrder: Int,

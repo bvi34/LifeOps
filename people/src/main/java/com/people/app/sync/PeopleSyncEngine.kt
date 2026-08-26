@@ -26,6 +26,39 @@ interface PeerRoster {
 }
 
 /**
+ * Whether an arriving person this peer has never seen becomes a row here.
+ *
+ * A predicate on the packet rather than a flat yes/no, because the interesting peer is neither:
+ * Health grows a profile for a **household member** and for nobody else, and which is which is the
+ * directory's answer to give, not Health's. Putting the question on the packet is what lets People
+ * own that decision — you tick somebody as household in the directory and Health picks them up —
+ * without Health having to reach into another app's database to ask.
+ */
+fun interface CreationPolicy {
+
+    fun createsRowFor(packet: PersonPacket): Boolean
+
+    companion object {
+        /**
+         * For a peer that holds the household outright — People and LifeOps both do; a person either
+         * app learns about is a person the other should know.
+         */
+        val ALWAYS = CreationPolicy { true }
+
+        /**
+         * For a peer that only *annotates* people. Health is the case this exists for: it tracks
+         * temperatures and doses, and a roster that silently grew a medical profile for every adult
+         * in the house — including the ones nobody is tracking — would be worse than no sync at all.
+         * So it takes the people the directory has marked as household members, and leaves the rest.
+         *
+         * A packet with **no opinion** (`household == null`, which is every packet LifeOps writes,
+         * since it has no column for the flag) does not create. Silence is not consent here.
+         */
+        val HOUSEHOLD_ONLY = CreationPolicy { it.household == true }
+    }
+}
+
+/**
  * One round of People ↔ peer sync, over the same mailbox spine Citation rides.
  *
  * Two pure steps, transport outside:
@@ -43,21 +76,8 @@ interface PeerRoster {
 class PeopleSyncEngine(
     private val peer: String,
     private val roster: PeerRoster,
-    /**
-     * Whether an arriving person this peer has never seen becomes a row here.
-     *
-     * True for a peer that holds the household outright — People and LifeOps both do; a person
-     * either app learns about is a person the other should know.
-     *
-     * False for a peer that only *annotates* people. Health is the case this exists for: it tracks
-     * temperatures and doses for the one or two people who are actually ill, and a household roster
-     * that silently grew a medical profile for everyone — including the adults nobody is tracking —
-     * would be worse than no sync at all. A bind-only peer still keeps every person it *has* chosen
-     * in step (names, birth dates, withdrawals), and adding someone stays an explicit act in that
-     * app. It also removes the awkward corollary: a peer that never auto-creates can delete its own
-     * row without the next round handing the person straight back.
-     */
-    private val createUnknown: Boolean = true
+    /** Which arriving strangers become rows here — see [CreationPolicy]. */
+    private val creationPolicy: CreationPolicy = CreationPolicy.ALWAYS
 ) {
 
     /** What one round did, for status and logging. */
@@ -87,9 +107,11 @@ class PeopleSyncEngine(
      * anything at or below it has already been taken and is ignored, so a peer that keeps resending
      * unacked packets (as it should) costs nothing.
      *
-     * Returns how far to advance the cursor — the highest version *seen*, not merely the highest
-     * that changed something. A packet that merged to no change is still a packet we have taken,
-     * and leaving the cursor behind it would make the round repeat forever.
+     * Returns how far to advance the cursor — the highest version *resolved*, not merely the highest
+     * that changed something. A packet that merged to no change, or that this peer's creation policy
+     * declined, is still a packet we have taken: leaving the cursor behind it would make the round
+     * repeat for ever. The one exception is a packet we could not resolve at all — see [unresolved]
+     * in the body — which is left unacked so the next round gets to decide it properly.
      */
     fun applyInbound(incoming: PeerEnvelope, sinceVersion: Long): Applied {
         val mailbox = Mailbox<PersonPacket, PersonPacket>()
@@ -101,23 +123,24 @@ class PeopleSyncEngine(
         var updated = 0
         var unchanged = 0
 
+        // The packet this round stopped at, if any. Nothing past it is acked, so there is no point
+        // applying it either — it would simply be redone next round. See the cursor calculation.
+        var unresolved: Long? = null
+
         for (item in pending) {
             val packet = item.payload
             when (val decision = PersonBinder.bind(packet, roster.candidates())) {
                 is PersonBinder.Decision.Bind -> {
                     val local = roster.read(decision.localId)
                     if (local == null) {
-                        // The row went away between binding and reading (a delete racing a sync).
-                        // Treat it as new rather than dropping the packet on the floor — unless this
-                        // peer is bind-only, where re-creating the row would resurrect exactly the
-                        // profile the user has just deleted (and, for a peer whose `create` refuses
-                        // outright, would abort the whole round for every packet behind this one).
-                        if (createUnknown && !packet.deleted) {
-                            roster.create(packet)
-                            created++
-                        } else {
-                            unchanged++
-                        }
+                        // The row went away between binding and reading — a delete racing a sync.
+                        // Neither answer to "so create it?" is right: recreating resurrects the row
+                        // somebody just deleted, and dropping it loses a packet the cursor is about
+                        // to move past for ever. So do neither and don't ack it. Next round the
+                        // binder sees a roster without that row, reaches Decision.Create, and the
+                        // creation policy gets its say on a question that is now unambiguous.
+                        unresolved = item.version
+                        break
                     } else {
                         val result = PersonMerge.merge(local, packet)
                         if (result.changed) {
@@ -130,11 +153,12 @@ class PeopleSyncEngine(
                 }
 
                 PersonBinder.Decision.Create -> {
-                    // A tombstone for somebody we never had is not a person to create — and a
-                    // bind-only peer does not create at all, it only keeps up with what it already
-                    // tracks. Either way the cursor still advances: the packet *was* taken, and a
-                    // cursor left behind it would replay the round for ever.
-                    if (packet.deleted || !createUnknown) {
+                    // A tombstone for somebody we never had is not a person to create — and a peer
+                    // whose policy declines this packet (Health, for anyone the directory has not
+                    // marked as a household member) only keeps up with what it already tracks.
+                    // Either way the cursor still advances: the packet *was* taken, and a cursor
+                    // left behind it would replay the round for ever.
+                    if (packet.deleted || !creationPolicy.createsRowFor(packet)) {
                         unchanged++
                     } else {
                         roster.create(packet)
@@ -144,7 +168,10 @@ class PeopleSyncEngine(
             }
         }
 
-        val ackedThrough = pending.maxOfOrNull { it.version } ?: sinceVersion
+        val ackedThrough = unresolved
+            ?.let { maxOf(sinceVersion, it - 1) }
+            ?: pending.maxOfOrNull { it.version }
+            ?: sinceVersion
         mailbox.consumeThrough(ackedThrough)
         return Applied(created, updated, unchanged, ackedThrough)
     }

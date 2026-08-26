@@ -35,9 +35,6 @@ data class ProfileEntity(
     /**
      * The identity this person keeps across the People sync seam, as distinct from [id], which is
      * only this database's row id. Null until the seam stamps one.
-     *
-     * Health is a **bind-only** peer: it keeps the people it already tracks in step, but never grows
-     * a profile for a household member nobody is tracking the health of. See `HealthSyncService`.
      */
     val personKey: String? = null,
     /** Bumped by every local edit, left alone by every write that arrived over the seam. */
@@ -59,10 +56,40 @@ data class ProfileEntity(
      * wire makes easy and nobody asked for. See `HealthRepository.toPacket`.
      */
     val notes: String?,
+    /**
+     * Whether the directory counts this person as a **household member** — which is what decides
+     * whether Health grows a profile for them at all (see `HealthSyncService`).
+     *
+     * Health holds a copy rather than deriving it from "do I have a profile?", because the two can
+     * legitimately disagree: un-ticking somebody in People stops them being *offered* to Health and
+     * never deletes what Health already recorded, so a profile can outlive the flag. Storing the
+     * answer is also what stops Health's own next packet flipping the directory's tick back on.
+     */
+    val household: Boolean = true,
     val sortOrder: Int,
     val archived: Boolean,
     val createdAt: Long,
     val updatedAt: Long
+)
+
+/**
+ * A profile Health has removed, kept only long enough to say so across the People sync seam.
+ *
+ * Removing somebody in Health means "stop tracking their health", not "remove them from the
+ * household" — so unlike LifeOps' tombstone this one does **not** publish a withdrawal. It publishes
+ * `household = false`: the directory un-ticks them, and the next round stops offering them back.
+ *
+ * Without it the removal simply doesn't stick. Health's profile is created *from* the directory's
+ * tick, so the first time that person is edited in People their packet comes round again above the
+ * cursor and Health dutifully re-creates the profile that was just deleted. A tombstone is the only
+ * thing left to speak for a row that has gone.
+ */
+@Entity(tableName = "profile_tombstones", indices = [Index("syncVersion")])
+data class ProfileTombstoneEntity(
+    @PrimaryKey val personKey: String,
+    val name: String,
+    val removedAt: Long,
+    val syncVersion: Long
 )
 
 /**

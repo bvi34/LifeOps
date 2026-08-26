@@ -20,6 +20,7 @@ import com.people.app.data.repository.PeopleSyncService
 import com.people.app.logic.DateKind
 import com.people.app.logic.ImportantDates
 import com.people.app.ui.common.DetailRow
+import com.people.app.ui.common.HouseholdToggle
 import com.people.app.ui.common.PersonDot
 import com.people.app.ui.common.SectionCard
 import com.people.app.ui.common.formatDay
@@ -47,6 +48,16 @@ class PersonDetailViewModel(
     fun update(person: Person) = viewModelScope.launch {
         repo.updatePerson(person)
         // An edit here is an edit the other apps should see; publish it rather than waiting.
+        runCatching { syncService.sync(peers) }
+    }
+
+    /**
+     * Tick or un-tick them as a household member — the switch that decides whether Health keeps a
+     * profile for them. Published immediately, because the whole point is that another app acts on
+     * it; waiting for the next launch is how this ended up looking broken in the first place.
+     */
+    fun setHousehold(household: Boolean) = viewModelScope.launch {
+        person.value?.let { repo.updatePerson(it.copy(household = household)) }
         runCatching { syncService.sync(peers) }
     }
 
@@ -127,6 +138,11 @@ fun PersonDetailScreen(vm: PersonDetailViewModel, onBack: () -> Unit) {
                     "Health's readings — stay with them.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            HorizontalDivider()
+            HouseholdToggle(
+                checked = current.household,
+                onCheckedChange = { vm.setHousehold(it) }
             )
         }
 

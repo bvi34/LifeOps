@@ -27,11 +27,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** The palette a new person is assigned from, in order — distinct at a glance, and colour-blind safe. */
-private val PROFILE_COLORS = listOf(
-    0xFF2C7A7B, 0xFFB7791F, 0xFF6B46C1, 0xFF2B6CB0, 0xFFB83280, 0xFF2F855A, 0xFFC05621, 0xFF4A5568
-)
-
 class PeopleViewModel(private val repo: HealthRepository) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
@@ -49,7 +44,7 @@ class PeopleViewModel(private val repo: HealthRepository) : ViewModel() {
 
     fun addProfile(name: String, relationship: String?, birthDate: String?, baselineC: Double?, notes: String?) =
         viewModelScope.launch {
-            val color = PROFILE_COLORS[profiles.value.size % PROFILE_COLORS.size]
+            val color = HealthRepository.PROFILE_COLORS[profiles.value.size % HealthRepository.PROFILE_COLORS.size]
             repo.addProfile(name, relationship, birthDate, color, baselineC, notes)
         }
 
@@ -132,9 +127,17 @@ fun PeopleScreen(vm: PeopleViewModel, showAddInitially: Boolean = false, onAddHa
                         style = MaterialTheme.typography.bodySmall
                     )
                     Text(
+                        "Anyone marked a household member in People turns up here automatically, " +
+                            "with their birth date — which is what the fever rules need. Nobody " +
+                            "else does: a medical profile for everyone in the house would be " +
+                            "noise, so it stays something you ask for.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Text(
                         "What stays in Health: the notes below, their usual temperature, and " +
-                            "everything recorded about their health. Adding someone here adds them " +
-                            "to the household; removing them only stops Health tracking them.",
+                            "everything recorded about their health. Adding someone here marks " +
+                            "them a household member; removing them un-marks them and stops Health " +
+                            "tracking them — the directory keeps their record either way.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -201,8 +204,8 @@ fun PeopleScreen(vm: PeopleViewModel, showAddInitially: Boolean = false, onAddHa
                 Text(
                     "This deletes their readings, symptoms, medicines, doses, illnesses and care " +
                         "notes as well. It can't be undone from inside Health — only from a backup.\n\n" +
-                        "${target.name} stays in the household directory: this only stops Health " +
-                        "tracking them."
+                        "${target.name} stays in the household directory: this un-marks them as a " +
+                        "household member, so Health stops tracking them and won't add them back."
                 )
             },
             confirmButton = {

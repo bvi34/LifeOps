@@ -99,11 +99,20 @@ class PeopleSyncRepository(
      * them. So rounds are serialized rather than merely idempotent — with a foreground round and an
      * edit round now able to land together, that overlap is ordinary rather than exotic.
      */
-    suspend fun sync(peers: List<String> = DEFAULT_PEERS): Summary = withContext(Dispatchers.IO) {
-        roundLock.withLock { round(peers) }
+    suspend fun sync(
+        peers: List<String> = DEFAULT_PEERS,
+        /**
+         * Rewind every cursor first, so the round re-reads the other peers' rosters in full. Set
+         * when LifeOps has just gained a person of its own — the packet that would bind them to the
+         * household record is behind the cursor and would otherwise never be seen again.
+         */
+        rescan: Boolean = false
+    ): Summary = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers, rescan) }
     }
 
-    private suspend fun round(peers: List<String>): Summary {
+    private suspend fun round(peers: List<String>, rescan: Boolean): Summary {
+        if (rescan) peers.forEach { writeCursor(it, 0L) }
         val store = PeopleEnvelopeStore(syncDir)
         val engine = PeopleSyncEngine(Peers.LIFEOPS, LifeOpsRoster())
 
@@ -123,14 +132,16 @@ class PeopleSyncRepository(
             if (applied.ackedThrough > cursor) writeCursor(peer, applied.ackedThrough)
         }
 
-        // Publish above the *lowest* ack across peers, so one that has been away still receives what
-        // it missed rather than being skipped because a livelier peer is already up to date. On a
-        // first run that floor is zero, which is how the household LifeOps already knows about
-        // reaches a freshly-installed People without an import step.
-        val floor = peers.minOfOrNull { peer ->
-            store.read(peer)?.ackFor(Peers.LIFEOPS) ?: 0L
-        } ?: 0L
-        val changes = personRepository.changesSince(floor).map { (version, packet) ->
+        // Publish the whole roster, not a delta above what the peers have acknowledged. Pruning to
+        // the lowest ack meant a peer could only bind a person while that person's packet was still
+        // on the wire, and once every peer had acked it, it was gone for good — so a peer that later
+        // changed what it holds had no way back to that person's record. A household is a handful of
+        // rows; the cursors still suppress re-application, so a settled round is still a no-op.
+        //
+        // It is also how the household LifeOps already knows about reaches a freshly-installed
+        // People without an import step, which the old floor-of-zero special case only managed on a
+        // first run.
+        val changes = personRepository.changesSince(0L).map { (version, packet) ->
             VersionedPacket(version, packet)
         }
         store.write(

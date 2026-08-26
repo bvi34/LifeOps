@@ -34,14 +34,19 @@ a menu. A temperature filed against the wrong child is worse than one never reco
 looking at is always on screen and always one tap to change.
 
 **Health does not own who these people are.** People does — see **[PEOPLE.md](PEOPLE.md)** — and
-Health is a **bind-only peer** on that sync seam: names, relationships and birth dates stay in step
-with the household directory and LifeOps, while everything medical stays here. Health never grows a
-profile for a household member nobody is tracking the health of, so adding someone stays a deliberate
-act; and removing someone means *stop tracking their health*, not *remove them from the household*.
+Health joins that sync seam as the peer that takes only the people the directory has ticked as
+**household members**. Names, relationships and birth dates stay in step with People and LifeOps,
+while everything medical stays here.
+
+The tick is the whole interface. Mark somebody a household member in People and Health grows a
+profile for them; leave them unticked and Health never hears about them, because a medical profile
+for every adult in the house would be noise. Un-ticking stops them being offered and deletes nothing
+Health has recorded. Removing a profile here means *stop tracking their health*, not *remove them
+from the household* — it un-ticks them and leaves the directory's record intact.
 
 Two consequences worth knowing:
 
-- A person added in People arrives with their **birth date**, which is exactly what the age-aware
+- Somebody ticked in People arrives with their **birth date**, which is exactly what the age-aware
   fever thresholds below need — and which nobody wants to type twice.
 - A profile's **notes are never published**. They hold allergies, conditions and the doctor's number;
   People has a field called `note` too, but it means "likes hiking, hates crowds". The mapper refuses
@@ -125,15 +130,18 @@ make, like a fever heading into its fourth day, which escalates the episode's ca
 Health owns temperatures, doses and illnesses outright and shares them the two ways the suite already
 shares things: a backup contributor and a read-only Advisor source. It does **not** own the people
 they are recorded against, so it depends on `:people` for the sync contract — the packet, binder and
-merge rule — and joins that seam as a bind-only peer. It does not read People's database; the roster
-is replicated over a mailbox, not borrowed live.
+merge rule — and joins that seam as the peer that creates only for ticked household members. It does
+not read People's database; the roster is replicated over a mailbox, not borrowed live.
 
 ## Storage
 
-One `health.db`, seven tables:
+One `health.db`, eight tables:
 
+- **`profile_tombstones`** — profiles removed here, kept only long enough to publish the un-tick so
+  the next round doesn't hand the person straight back. See PEOPLE.md.
 - **`profiles`** — the people. Name, relationship, birth date (ISO `yyyy-MM-dd`), colour, their own
-  baseline temperature, notes (allergies, conditions, the doctor's number), plus the `personKey` and
+  baseline temperature, notes (allergies, conditions, the doctor's number), the `household` tick,
+  plus the `personKey` and
   `syncVersion` that make a profile a peer's view of a household member. *Schema v2 adds those two
   via `MIGRATION_1_2`; the colour, baseline and notes are Health's own and never leave it.*
 - **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C),

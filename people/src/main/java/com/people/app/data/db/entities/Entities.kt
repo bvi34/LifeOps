@@ -41,6 +41,16 @@ data class PersonEntity(
     val phone: String?,
     /** The freeform "likes hiking, hates crowds" note that rides the sync seam. */
     val note: String?,
+    /**
+     * Whether this person counts as a **household member**.
+     *
+     * The directory is the right place for this answer and the only place it is editable, which is
+     * the point: Health grows a profile for a household member and for nobody else, so ticking
+     * somebody here is how they start being tracked, rather than Health having to reach into another
+     * app's database to guess who matters. It rides the seam (see `sync/PersonPacket.household`);
+     * un-ticking stops Health being offered them and never deletes what Health already recorded.
+     */
+    val household: Boolean,
     val colorArgb: Long,
     val archived: Boolean,
     val sortOrder: Int,

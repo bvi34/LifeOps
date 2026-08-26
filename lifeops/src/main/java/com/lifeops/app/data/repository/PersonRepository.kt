@@ -13,6 +13,7 @@ import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import com.lifeops.app.util.toPacket
 import com.lifeops.app.data.model.Relationship
+import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.PersonBinder
 import com.people.app.sync.PersonPacket
 import kotlinx.coroutines.flow.Flow
@@ -38,7 +39,7 @@ import java.util.UUID
  */
 class PersonRepository(
     private val personDao: PersonDao,
-    private val onLocalEdit: () -> Unit = {}
+    private val onLocalEdit: (LocalRosterChange) -> Unit = {}
 ) {
 
     // --- People ---
@@ -57,7 +58,7 @@ class PersonRepository(
     suspend fun createPerson(name: String): Person {
         val person = Person(id = UUID.randomUUID().toString(), name = name.trim(), createdAt = DateUtil.now())
         personDao.upsertPerson(person.toEntity().stamped(personKey = person.id))
-        onLocalEdit()
+        onLocalEdit(LocalRosterChange.PERSON_ADDED)
         return person
     }
 
@@ -83,7 +84,7 @@ class PersonRepository(
             createdAt = DateUtil.now()
         )
         personDao.upsertPerson(person.toEntity().stamped(personKey = person.id))
-        onLocalEdit()
+        onLocalEdit(LocalRosterChange.PERSON_ADDED)
         return person
     }
 
@@ -97,7 +98,7 @@ class PersonRepository(
     suspend fun update(person: Person) {
         val existing = personDao.getById(person.id)
         personDao.upsertPerson(person.toEntity().stamped(personKey = existing?.personKey ?: person.id))
-        onLocalEdit()
+        onLocalEdit(LocalRosterChange.PERSON_EDITED)
     }
 
     suspend fun setArchived(person: Person, archived: Boolean) = update(person.copy(isArchived = archived))
@@ -122,7 +123,7 @@ class PersonRepository(
             )
         )
         personDao.deletePerson(person.toEntity())
-        onLocalEdit()
+        onLocalEdit(LocalRosterChange.PERSON_EDITED)
     }
 
     /** Stamp a locally-authored row: its key, the next version, and the merge clock. */

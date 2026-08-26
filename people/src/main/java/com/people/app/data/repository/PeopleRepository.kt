@@ -97,7 +97,8 @@ class PeopleRepository(private val dao: PeopleDao) {
         email: String?,
         phone: String?,
         note: String?,
-        colorArgb: Long
+        colorArgb: Long,
+        household: Boolean = false
     ): String {
         val id = newId()
         val timestamp = now()
@@ -113,6 +114,7 @@ class PeopleRepository(private val dao: PeopleDao) {
                 email = email.clean(),
                 phone = phone.clean(),
                 note = note.clean(),
+                household = household,
                 colorArgb = colorArgb,
                 archived = false,
                 sortOrder = dao.nextSortOrder(),
@@ -134,6 +136,7 @@ class PeopleRepository(private val dao: PeopleDao) {
                 email = person.email.clean(),
                 phone = person.phone.clean(),
                 note = person.note.clean(),
+                household = person.household,
                 colorArgb = person.colorArgb,
                 archived = person.archived,
                 updatedAt = now(),
@@ -218,6 +221,9 @@ class PeopleRepository(private val dao: PeopleDao) {
                 email = packet.email,
                 phone = packet.phone,
                 note = packet.note,
+                // A peer with no column for the flag (LifeOps) says nothing about it; only an
+                // explicit answer moves it.
+                household = packet.household ?: existing.household,
                 archived = packet.archived,
                 updatedAt = packet.updatedAt
             )
@@ -237,6 +243,7 @@ class PeopleRepository(private val dao: PeopleDao) {
                 email = packet.email,
                 phone = packet.phone,
                 note = packet.note,
+                household = packet.household ?: false,
                 colorArgb = colorArgb,
                 archived = packet.archived,
                 sortOrder = dao.nextSortOrder(),
@@ -280,6 +287,7 @@ fun PersonEntity.toModel() = Person(
     email = email,
     phone = phone,
     note = note,
+    household = household,
     colorArgb = colorArgb,
     archived = archived,
     sortOrder = sortOrder,
@@ -295,6 +303,7 @@ fun PersonEntity.toPacket() = PersonPacket(
     email = email,
     phone = phone,
     note = note,
+    household = household,
     archived = archived,
     updatedAt = updatedAt,
     deleted = false

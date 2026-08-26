@@ -9,6 +9,7 @@ import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
+import com.health.app.data.db.entities.ProfileTombstoneEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
 import kotlinx.coroutines.flow.Flow
@@ -46,8 +47,29 @@ interface HealthDao {
     @Query("SELECT * FROM profiles WHERE syncVersion > :sinceVersion ORDER BY syncVersion")
     suspend fun profilesChangedSince(sinceVersion: Long): List<ProfileEntity>
 
-    @Query("SELECT COALESCE(MAX(syncVersion), 0) FROM profiles")
+    /** Removals waiting to be published — a deleted profile has no row left to speak for it. */
+    @Query("SELECT * FROM profile_tombstones WHERE syncVersion > :sinceVersion ORDER BY syncVersion")
+    suspend fun profileTombstonesSince(sinceVersion: Long): List<ProfileTombstoneEntity>
+
+    /**
+     * The next version to stamp, drawn across both tables so a profile and a removal can never be
+     * handed the same number — the peer orders by version, and a tie would leave the order of an
+     * edit and a removal to luck.
+     */
+    @Query(
+        "SELECT MAX(v) FROM (" +
+            "SELECT COALESCE(MAX(syncVersion), 0) AS v FROM profiles " +
+            "UNION ALL " +
+            "SELECT COALESCE(MAX(syncVersion), 0) AS v FROM profile_tombstones)"
+    )
     suspend fun maxSyncVersion(): Long
+
+    @Upsert
+    suspend fun upsertProfileTombstone(tombstone: ProfileTombstoneEntity)
+
+    /** Clear a removal once the person is being tracked again, so it stops un-ticking them. */
+    @Query("DELETE FROM profile_tombstones WHERE personKey = :personKey")
+    suspend fun deleteProfileTombstone(personKey: String)
 
     @Query("SELECT * FROM profiles WHERE personKey = :personKey LIMIT 1")
     suspend fun getProfileByKey(personKey: String): ProfileEntity?

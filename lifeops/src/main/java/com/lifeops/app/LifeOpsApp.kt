@@ -155,7 +155,9 @@ class LifeOpsApp private constructor(private val app: Application) {
     // editor), and every local edit has to reach the other peers, not just the ones somebody
     // remembered to add a call to.
     val personRepository by lazy {
-        PersonRepository(database.personDao(), onLocalEdit = { syncPeople() })
+        PersonRepository(database.personDao()) { change ->
+            syncPeople(rescan = change == com.people.app.sync.LocalRosterChange.PERSON_ADDED)
+        }
     }
     val milestoneRepository by lazy {
         MilestoneRepository(
@@ -270,9 +272,14 @@ class LifeOpsApp private constructor(private val app: Application) {
      *
      * Calling it often is cheap and safe: a round with nothing to do is a couple of file reads, and
      * [PeopleSyncRepository] serializes rounds so overlapping calls queue rather than race.
+     *
+     * [rescan] rewinds the cursors first, and a person created here sets it — LifeOps may have just
+     * invented a second row for somebody the seam already carries under another key (a calendar
+     * attendee who is already in the directory is the everyday case), and the packet that would
+     * prove it is behind the cursor.
      */
-    fun syncPeople() {
-        applicationScope.launch { runCatching { peopleSyncRepository.sync() } }
+    fun syncPeople(rescan: Boolean = false) {
+        applicationScope.launch { runCatching { peopleSyncRepository.sync(rescan = rescan) } }
     }
 
     /**
