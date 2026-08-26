@@ -11,6 +11,8 @@ import com.people.app.sync.PersonPacket
 import com.people.app.sync.VersionedPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -28,7 +30,14 @@ private class PeopleRoster(
     private val paletteFor: (Int) -> Long
 ) : PeerRoster {
 
-    /** Snapshot the roster once per round rather than per packet — it can't change mid-round. */
+    /**
+     * Snapshot the roster rather than re-reading it for every packet, and drop the snapshot whenever
+     * a write invalidates it. Both writes invalidate: a create adds a row to bind against, and a
+     * merge can change a row's `personKey` (identity converges on the lower of the two — see
+     * `PersonMerge`). That second case is easy to miss and matters now that three peers land in one
+     * round: the packet from the second peer would be bound against the key the row held before the
+     * first peer's packet moved it.
+     */
     private var cached: List<PersonBinder.Candidate>? = null
 
     override fun candidates(): List<PersonBinder.Candidate> = cached ?: runBlocking {
@@ -43,6 +52,7 @@ private class PeopleRoster(
 
     override fun update(localId: String, packet: PersonPacket) = runBlocking {
         repository.applyMerged(localId, packet)
+        cached = null
     }
 
     override fun create(packet: PersonPacket): String = runBlocking {
@@ -63,6 +73,12 @@ private class PeopleRoster(
  * A round is: read every other peer's envelope, fold the packets above our cursor for that peer into
  * our roster, persist the advanced cursors, then publish our own changes with the acks that let the
  * other side prune. Re-running it changes nothing, so it is safe on every app open.
+ *
+ * Rounds are serialized by a mutex. Idempotence makes a *repeated* round free, but it says nothing
+ * about two *overlapping* ones: each snapshots the roster once and then binds every packet against
+ * that snapshot, so two rounds racing over the same envelope would both decide the same arriving
+ * person is unknown and both create a row for them. Opening the app while an edit is publishing is
+ * exactly that race, and it is common rather than exotic.
  */
 class PeopleSyncService(
     private val repository: PeopleRepository,
@@ -73,7 +89,13 @@ class PeopleSyncService(
     private val paletteFor: (Int) -> Long = { index -> PROFILE_COLORS[index % PROFILE_COLORS.size] }
 ) {
 
+    private val roundLock = Mutex()
+
     suspend fun sync(peers: List<String>): SyncStatus = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers) }
+    }
+
+    private suspend fun round(peers: List<String>): SyncStatus {
         val store = PeopleEnvelopeStore(syncDir)
         val roster = PeopleRoster(repository, paletteFor)
         val engine = PeopleSyncEngine(Peers.PEOPLE, roster)
@@ -110,7 +132,7 @@ class PeopleSyncService(
         store.write(outbound)
         writeLastPublishedVersion(repository.currentSyncVersion())
 
-        SyncStatus(
+        return SyncStatus(
             lastRunAt = System.currentTimeMillis(),
             peersSeen = seen,
             received = received,

@@ -150,7 +150,13 @@ class LifeOpsApp private constructor(private val app: Application) {
     }
     val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
-    val personRepository by lazy { PersonRepository(database.personDao()) }
+    // The People-seam publish hook is wired here rather than at each ViewModel: a person is minted
+    // in more places than the People screen (the calendar worker, the connection layer, the detail
+    // editor), and every local edit has to reach the other peers, not just the ones somebody
+    // remembered to add a call to.
+    val personRepository by lazy {
+        PersonRepository(database.personDao(), onLocalEdit = { syncPeople() })
+    }
     val milestoneRepository by lazy {
         MilestoneRepository(
             database.milestoneDao(),
@@ -254,6 +260,22 @@ class LifeOpsApp private constructor(private val app: Application) {
     }
 
     /**
+     * Reconcile the household roster with People and Health, in the background, best-effort.
+     *
+     * This is deliberately *not* startup-only. All six suite apps share one process, so LifeOps'
+     * startup runs once and then never again however many times the user walks between LifeOps,
+     * People and Health — which is precisely the case where the roster falls out of step. So the
+     * round runs on every LifeOps foreground (see `MainActivity.onStart`) as well as after every
+     * local person edit ([PersonRepository]'s `onLocalEdit`).
+     *
+     * Calling it often is cheap and safe: a round with nothing to do is a couple of file reads, and
+     * [PeopleSyncRepository] serializes rounds so overlapping calls queue rather than race.
+     */
+    fun syncPeople() {
+        applicationScope.launch { runCatching { peopleSyncRepository.sync() } }
+    }
+
+    /**
      * Run LifeOps' once-per-process startup. Called by the sandbox after [install]. Idempotent at
      * the [install] level (constructed + started once); safe to treat as the old `onCreate`.
      */
@@ -303,10 +325,11 @@ class LifeOpsApp private constructor(private val app: Application) {
             // last launch, so time entries + book notes are current before Reports/Books render.
             // Best-effort: a missing or half-written envelope must never block startup.
             runCatching { citationSyncRepository.sync() }
-            // Reconcile the household roster with People the same way, and for the same reason: the
-            // People screen and LifeOps' own person pickers should agree before either is rendered.
-            // On a first run this is also how the household LifeOps already knows about reaches a
-            // freshly-installed People — the seam does the work an import step would have.
+            // Reconcile the household roster with People and Health the same way, and for the same
+            // reason: the People screen and LifeOps' own person pickers should agree before either is
+            // rendered. On a first run this is also how the household LifeOps already knows about
+            // reaches a freshly-installed People — the seam does the work an import step would have.
+            // This is the *first* round, not the only one; see [syncPeople].
             runCatching { peopleSyncRepository.sync() }
         }
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).

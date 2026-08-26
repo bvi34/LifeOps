@@ -108,9 +108,16 @@ class PeopleSyncEngine(
                     val local = roster.read(decision.localId)
                     if (local == null) {
                         // The row went away between binding and reading (a delete racing a sync).
-                        // Treat it as new rather than dropping the packet on the floor.
-                        roster.create(packet)
-                        created++
+                        // Treat it as new rather than dropping the packet on the floor — unless this
+                        // peer is bind-only, where re-creating the row would resurrect exactly the
+                        // profile the user has just deleted (and, for a peer whose `create` refuses
+                        // outright, would abort the whole round for every packet behind this one).
+                        if (createUnknown && !packet.deleted) {
+                            roster.create(packet)
+                            created++
+                        } else {
+                            unchanged++
+                        }
                     } else {
                         val result = PersonMerge.merge(local, packet)
                         if (result.changed) {

@@ -8,6 +8,10 @@ import com.health.app.data.repository.HealthRepository
 import com.health.app.data.repository.HealthSyncService
 import com.people.app.PeopleApp
 import com.people.app.sync.Peers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.io.File
 
 /**
@@ -19,9 +23,19 @@ import java.io.File
  */
 class HealthApp private constructor(private val app: Application) {
 
+    /** Tied to the process lifetime — not leaked. Carries the background sync rounds. */
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     val database by lazy { HealthDatabase.getInstance(app) }
     val prefs by lazy { HealthPrefs(app) }
-    val repository by lazy { HealthRepository(database.healthDao(), prefs) }
+
+    // The seam's publish hook lives on the repository rather than in the People screen's ViewModel:
+    // stamping a profile's syncVersion and telling the other peers about it are the same event, and
+    // a change nobody publishes until Health next opens is a change the user goes looking for in
+    // People and doesn't find.
+    val repository by lazy {
+        HealthRepository(database.healthDao(), prefs, onProfileEdit = { syncPeople() })
+    }
 
     /**
      * Health's side of the People sync seam. The folder is People's — `filesDir/people-sync` — so
@@ -38,6 +52,21 @@ class HealthApp private constructor(private val app: Application) {
 
     /** The peers Health reconciles with. It binds to people they hold; it never creates from them. */
     val peers: List<String> = listOf(Peers.PEOPLE, Peers.LIFEOPS)
+
+    /**
+     * Run a People-seam round in the background, best-effort.
+     *
+     * Called when Health comes to the foreground (see `MainActivity.onStart`) and after every local
+     * profile edit. Both matter and neither is enough alone: the foreground round is what brings a
+     * birth date over from People, and the edit round is what stops a profile added here from
+     * sitting unpublished until the next time somebody happens to open Health.
+     *
+     * Cheap to call often — a round with nothing to do is a couple of file reads, and
+     * [HealthSyncService] serializes rounds so overlapping calls queue rather than race.
+     */
+    fun syncPeople() {
+        scope.launch { runCatching { syncService.sync(peers) } }
+    }
 
     companion object {
         @Volatile

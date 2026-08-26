@@ -51,6 +51,38 @@ Both peers are in one process and share a `filesDir`, so the transport is a fold
 `filesDir/people-sync`, a sibling of the `sovereign/sync` folder Citation uses. The point of a folder
 rather than a direct call is that either side can be restarted, replaced or tested on its own.
 
+### When a round runs
+
+A convergent merge rule is only half of a working sync; the other half is running it at the moments
+that matter. Every peer reconciles at **both** ends of an edit:
+
+| Peer | Pulls (a round on) | Publishes (a round after) |
+|---|---|---|
+| **People** | every foreground of the roster (`ON_START`), plus **Sync now** | every person added, edited or archived |
+| **LifeOps** | LifeOps startup **and** every LifeOps foreground (`MainActivity.onStart`) | every local person edit — `PersonRepository`'s `onLocalEdit` |
+| **Health** | every Health foreground (`MainActivity.onStart`) | every profile added or edited — `HealthRepository`'s `onProfileEdit` |
+
+Both halves are load-bearing, and the reason is that the whole suite runs in **one process**. A round
+tied to process startup runs once and then never again however many times you walk between LifeOps,
+People and Health — so LifeOps used to show the roster as it was when the sandbox launched, and the
+only way to see a person added next door was to kill the app. Equally, a peer that stamps a
+`syncVersion` but publishes nothing until it is next opened is a peer whose edit you go looking for
+in another app and don't find.
+
+The publish hooks hang off the **repository**, not the ViewModel, because a person is minted in more
+places than the People screen: the Google Calendar sync worker creates one from an attendee, the
+connection layer renames one, the detail editor saves a profile. Stamping the version and telling the
+seam are the same event, so they happen in the same place rather than being remembered separately at
+each call site. They fire for *local* edits only — `applyMerged`/`createFromPacket` are writes that
+arrived over the seam, and re-publishing those would hand the other peer its own change straight back.
+
+Rounds are cheap (a round with nothing to do is a couple of file reads) and **serialized** per peer.
+Idempotence makes a *repeated* round free but says nothing about two *overlapping* ones: each round
+snapshots the roster and binds every packet against that snapshot, so two racing rounds would both
+decide the same arriving person is unknown and both create a row. With a foreground round and an edit
+round now able to land together, that overlap is ordinary rather than exotic, so each peer's sync
+service holds a mutex.
+
 ### Symmetric, unlike the Citation seam
 
 The Citation seam has two envelope types because it is asymmetric: Citation sends telemetry *up* and
@@ -176,7 +208,7 @@ the person would silently drop out of the relationship-balance analytics that co
 ├── ui/               Compose: roster · person detail (+ common, theme)
 ├── backup/           PeopleBackupContributor (whole-file people.db + people_* prefs)
 ├── PeopleApp.kt      tiny runtime container (install/get)
-└── MainActivity.kt   roster → person, and a sync round on open
+└── MainActivity.kt   roster → person, and a sync round on every foreground
 ```
 
 `:people` depends on `:core` for `Mailbox` — the monotonic-version bookkeeping every peer syncs over
@@ -191,7 +223,9 @@ cursor accessors are plain lambdas so a round can be driven in a test against a 
 `LifeOpsApp` runs a round at startup, right after the Citation ingest, so the People screen and
 LifeOps' own person pickers agree before either is rendered. On a first run that same round is how
 the household LifeOps already knows about reaches a freshly-installed People — the seam does the work
-an import step would have.
+an import step would have. It is the *first* round, not the only one: `LifeOpsApp.syncPeople()` is
+also called on every LifeOps foreground and after every local person edit (see **When a round runs**),
+because startup happens once per process and the process is shared with the other five apps.
 
 **MIGRATION_51_52** is additive only:
 

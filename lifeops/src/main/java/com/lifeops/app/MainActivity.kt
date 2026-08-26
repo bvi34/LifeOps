@@ -88,6 +88,21 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (!granted) showNotificationDeniedDialog = true }
 
+    /**
+     * Reconcile the household roster with People and Health every time LifeOps comes to the
+     * foreground.
+     *
+     * [LifeOpsApp]'s startup already runs a round, but startup happens once per *process* and all
+     * six suite apps share one — so without this, walking from People (where you just added
+     * somebody) to LifeOps showed the roster as it was when the process started, and the only way
+     * to see the new person was to kill the app. The round is idempotent, serialized and
+     * best-effort, so running it on every open costs a couple of file reads when there is nothing
+     * to do.
+     */
+    override fun onStart() {
+        super.onStart()
+        LifeOpsApp.getOrNull()?.syncPeople()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

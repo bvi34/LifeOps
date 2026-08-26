@@ -10,6 +10,8 @@ import com.people.app.sync.PersonPacket
 import com.people.app.sync.VersionedPacket
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -54,7 +56,13 @@ class PeopleSyncRepository(
      */
     private inner class LifeOpsRoster : PeerRoster {
 
-        /** Snapshot once per round rather than per packet; it cannot change mid-round. */
+        /**
+         * Snapshot the roster rather than re-reading it per packet, and drop the snapshot on any
+         * write that invalidates it — a create adds a row to bind against, and a merge can move a
+         * row's `personKey` (identity converges on the lower of the two, see `PersonMerge`). The
+         * second case matters now that both other peers land in the same round: without it, the
+         * packet from the second peer binds against the key the row held before the first moved it.
+         */
         private var cached: List<PersonBinder.Candidate>? = null
 
         override fun candidates(): List<PersonBinder.Candidate> =
@@ -66,6 +74,7 @@ class PeopleSyncRepository(
 
         override fun update(localId: String, packet: PersonPacket) = runBlocking {
             personRepository.applyMerged(localId, packet)
+            cached = null
         }
 
         override fun create(packet: PersonPacket): String = runBlocking {
@@ -73,14 +82,28 @@ class PeopleSyncRepository(
         }
     }
 
+    /** Serializes rounds — see the note on [sync]. */
+    private val roundLock = Mutex()
+
     /**
      * Run one round: take each peer's envelope from the shared folder, fold in everything above our
      * cursor for that peer, then publish our own changes with the acks that let them prune.
      *
-     * Idempotent — re-running it changes nothing — so it is safe on every app launch, which is where
-     * [com.lifeops.app.LifeOpsApp] calls it from.
+     * Idempotent — re-running it changes nothing — so it is safe to call as often as
+     * [com.lifeops.app.LifeOpsApp.syncPeople] does: on launch, on every LifeOps foreground, and
+     * after every local person edit.
+     *
+     * Idempotence makes a *repeated* round free, but it says nothing about two *overlapping* ones:
+     * each snapshots the roster once and then binds every packet against that snapshot, so two
+     * racing rounds would both decide the same arriving person is unknown and both create a row for
+     * them. So rounds are serialized rather than merely idempotent — with a foreground round and an
+     * edit round now able to land together, that overlap is ordinary rather than exotic.
      */
     suspend fun sync(peers: List<String> = DEFAULT_PEERS): Summary = withContext(Dispatchers.IO) {
+        roundLock.withLock { round(peers) }
+    }
+
+    private suspend fun round(peers: List<String>): Summary {
         val store = PeopleEnvelopeStore(syncDir)
         val engine = PeopleSyncEngine(Peers.LIFEOPS, LifeOpsRoster())
 
@@ -114,7 +137,7 @@ class PeopleSyncRepository(
             engine.buildOutbound(changes = changes, acks = peers.associateWith { readCursor(it) })
         )
 
-        Summary(peersSeen = seen, created = created, updated = updated, published = changes.size)
+        return Summary(peersSeen = seen, created = created, updated = updated, published = changes.size)
     }
 
     companion object {

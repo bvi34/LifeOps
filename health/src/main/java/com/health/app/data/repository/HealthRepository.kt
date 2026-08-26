@@ -56,7 +56,20 @@ import java.util.UUID
  */
 class HealthRepository(
     private val dao: HealthDao,
-    private val prefs: HealthPrefs
+    private val prefs: HealthPrefs,
+    /**
+     * How the People sync seam hears that a profile changed here.
+     *
+     * A local profile edit stamps a new `syncVersion`, but a stamp nobody publishes is a change that
+     * sits in the database until the next time Health happens to be opened — by which point the user
+     * has usually gone looking for it in People or LifeOps and found the old name. Stamping the
+     * version and telling the seam are the same event, so they happen in the same place rather than
+     * being remembered separately at each screen.
+     *
+     * Fires for local edits only. [applyMergedProfile] is a write that arrived over the seam and
+     * deliberately does not call it — re-publishing it would hand the other peer its own change back.
+     */
+    private val onProfileEdit: () -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -118,6 +131,7 @@ class HealthRepository(
         )
         // First person in an empty app becomes the selection, so the app opens on them.
         if (prefs.selectedProfileId == null) prefs.selectedProfileId = id
+        onProfileEdit()
         return id
     }
 
@@ -136,6 +150,7 @@ class HealthRepository(
                 syncVersion = dao.maxSyncVersion() + 1
             )
         )
+        onProfileEdit()
     }
 
     /**

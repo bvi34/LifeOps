@@ -24,8 +24,22 @@ import java.util.UUID
  * them. Mirrors CounterRepository / FutureProjectRepository in shape: plain models out, entity
  * plumbing hidden. Task involvement is a many-to-many join surfaced both ways (tasks-for-person
  * and person-ids-for-task).
+ *
+ * [onLocalEdit] is how the People sync seam hears about a change here. It is a callback on the
+ * repository rather than a call in each ViewModel because a person is minted in more places than the
+ * People screen — the Google Calendar sync worker creates one from an attendee, the connection layer
+ * renames one, the detail editor saves a profile — and a publish hook that has to be remembered at
+ * every one of those call sites is a hook that will be missed at the next one. Stamping a new
+ * `syncVersion` and telling the seam about it are the same event, so they happen in the same place.
+ *
+ * It fires only for **local** edits. [applyMerged] and [createFromPacket] are writes that arrived
+ * over the seam and deliberately do not call it: re-publishing them would hand the other peer its
+ * own change straight back.
  */
-class PersonRepository(private val personDao: PersonDao) {
+class PersonRepository(
+    private val personDao: PersonDao,
+    private val onLocalEdit: () -> Unit = {}
+) {
 
     // --- People ---
 
@@ -43,6 +57,7 @@ class PersonRepository(private val personDao: PersonDao) {
     suspend fun createPerson(name: String): Person {
         val person = Person(id = UUID.randomUUID().toString(), name = name.trim(), createdAt = DateUtil.now())
         personDao.upsertPerson(person.toEntity().stamped(personKey = person.id))
+        onLocalEdit()
         return person
     }
 
@@ -68,6 +83,7 @@ class PersonRepository(private val personDao: PersonDao) {
             createdAt = DateUtil.now()
         )
         personDao.upsertPerson(person.toEntity().stamped(personKey = person.id))
+        onLocalEdit()
         return person
     }
 
@@ -81,6 +97,7 @@ class PersonRepository(private val personDao: PersonDao) {
     suspend fun update(person: Person) {
         val existing = personDao.getById(person.id)
         personDao.upsertPerson(person.toEntity().stamped(personKey = existing?.personKey ?: person.id))
+        onLocalEdit()
     }
 
     suspend fun setArchived(person: Person, archived: Boolean) = update(person.copy(isArchived = archived))
@@ -105,6 +122,7 @@ class PersonRepository(private val personDao: PersonDao) {
             )
         )
         personDao.deletePerson(person.toEntity())
+        onLocalEdit()
     }
 
     /** Stamp a locally-authored row: its key, the next version, and the merge clock. */
