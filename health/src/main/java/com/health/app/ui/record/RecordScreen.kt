@@ -47,7 +47,7 @@ import com.health.app.ui.common.SectionCard
  * recorded" and "up to date". Only one of each pair is something this app is in a position to say.
  */
 @Composable
-fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
+fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val record by vm.record.collectAsStateWithLifecycle()
@@ -75,7 +75,7 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
     var editingVaccine by remember { mutableStateOf<Immunization?>(null) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
     val person = selected
@@ -113,7 +113,7 @@ fun RecordScreen(vm: RecordViewModel, onAddProfile: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            ProfileBar(profiles, selected?.id, vm::select, onAddProfile)
+            ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
             HorizontalDivider()
 
             TabRow(selectedTabIndex = tab) {

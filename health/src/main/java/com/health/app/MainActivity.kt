@@ -1,5 +1,6 @@
 package com.health.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -7,14 +8,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.Badge
-import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material.icons.filled.Sick
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -29,10 +30,8 @@ import com.health.app.ui.episodes.EpisodesScreen
 import com.health.app.ui.episodes.EpisodesViewModel
 import com.health.app.ui.meds.MedsScreen
 import com.health.app.ui.meds.MedsViewModel
-import com.health.app.ui.people.PeopleScreen
 import com.health.app.ui.record.RecordScreen
 import com.health.app.ui.record.RecordViewModel
-import com.health.app.ui.people.PeopleViewModel
 import com.health.app.ui.theme.HealthTheme
 import com.health.app.ui.today.TodayScreen
 import com.health.app.ui.today.TodayViewModel
@@ -43,27 +42,30 @@ private sealed class Dest(val route: String, val label: String, val icon: ImageV
     object Today : Dest("today", "Today", Icons.Default.Today)
     object Vitals : Dest("vitals", "Vitals", Icons.Default.MonitorHeart)
     object Meds : Dest("meds", "Meds", Icons.Default.MedicalServices)
-    object Episodes : Dest("episodes", "Illness", Icons.Default.Sick)
+    object Information : Dest("information", "Information", Icons.Default.Info)
     object Record : Dest("record", "Record", Icons.Default.Assignment)
     object Coverage : Dest("coverage", "Care", Icons.Default.Badge)
-    object People : Dest("people", "People", Icons.Default.Groups)
 }
 
 private val navItems =
-    listOf(
-        Dest.Today, Dest.Vitals, Dest.Meds, Dest.Episodes, Dest.Record, Dest.Coverage, Dest.People
-    )
+    listOf(Dest.Today, Dest.Vitals, Dest.Meds, Dest.Information, Dest.Record, Dest.Coverage)
 
 /**
- * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Illness, Record, Care, People —
- * over the one [HealthApp] runtime.
+ * Health's single entry point. A tabbed shell — Today, Vitals, Meds, Information, Record, Care — over
+ * the one [HealthApp] runtime.
  *
- * The tabs divide by the *kind of question* they answer, not by data type. Today, Vitals, Meds and
- * Illness are all about things that **happened**; Record is what simply **is** true about a person
- * between illnesses — allergies, conditions, vaccinations and the paperwork; Care is who pays and who
- * provides; People is the household itself.
+ * The tabs divide by the *kind of question* they answer, not by data type. Today, Vitals and Meds are
+ * about things that **happened**; Information is who a person is and what is normal for them, with
+ * their illnesses under it; Record is what is standing-true about them — allergies, conditions,
+ * vaccinations and the paperwork; Care is who pays and who provides.
  *
- * Every tab except People shows the same profile bar and reads the same selected person, so
+ * **There is no People tab, deliberately.** Health does not own the household — the People app does,
+ * and Health is a peer on its sync seam (see `HealthSyncService`). A second place to add, rename or
+ * remove somebody would be a second answer to "who lives here", and the whole point of the seam is
+ * that there is one. Switching between people is the profile bar's job on every tab, and the bar's
+ * last chip opens People for everything else.
+ *
+ * Every tab shows the same profile bar and reads the same selected person, so
  * switching who you're looking at is one tap from anywhere and is never ambiguous. That is the whole
  * design constraint of a household health app: the readings are worthless, and worse than worthless,
  * if they end up under the wrong name.
@@ -94,15 +96,19 @@ class MainActivity : ComponentActivity() {
                 val nav = rememberNavController()
                 val backStack by nav.currentBackStackEntryAsState()
                 val current = backStack?.destination
-                // Set when another tab's "Add person" chip is used, so People opens with the form up.
-                var openAddProfile by remember { mutableStateOf(false) }
+                val context = LocalContext.current
 
-                fun goAddProfile() {
-                    openAddProfile = true
-                    nav.navigate(Dest.People.route) {
-                        popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
+                /**
+                 * Open the People app — the household's own screen, in the same process.
+                 *
+                 * The sandbox launches its hosted apps exactly this way (see `SandboxActivity`), and
+                 * `:health` already depends on `:people` for the sync contract, so this adds no
+                 * dependency edge. It is what the profile bar's chip and every empty state point at
+                 * now that Health has no household screen of its own.
+                 */
+                fun openPeople() {
+                    runCatching {
+                        context.startActivity(Intent(context, com.people.app.MainActivity::class.java))
                     }
                 }
 
@@ -134,27 +140,27 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable(Dest.Today.route) {
                             val vm: TodayViewModel = viewModel(factory = TodayViewModel.Factory(app.repository))
-                            TodayScreen(vm, onAddProfile = { goAddProfile() })
+                            TodayScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Vitals.route) {
                             val vm: VitalsViewModel = viewModel(factory = VitalsViewModel.Factory(app.repository))
-                            VitalsScreen(vm, onAddProfile = { goAddProfile() })
+                            VitalsScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Meds.route) {
                             val vm: MedsViewModel = viewModel(
                                 factory = MedsViewModel.Factory(app.repository, app.drugLookup)
                             )
-                            MedsScreen(vm, onAddProfile = { goAddProfile() })
+                            MedsScreen(vm, onOpenPeople = { openPeople() })
                         }
-                        composable(Dest.Episodes.route) {
+                        composable(Dest.Information.route) {
                             val vm: EpisodesViewModel = viewModel(factory = EpisodesViewModel.Factory(app.repository))
-                            EpisodesScreen(vm, onAddProfile = { goAddProfile() })
+                            EpisodesScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Record.route) {
                             val vm: RecordViewModel = viewModel(
                                 factory = RecordViewModel.Factory(app.repository, app.documents)
                             )
-                            RecordScreen(vm, onAddProfile = { goAddProfile() })
+                            RecordScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Coverage.route) {
                             val vm: CoverageViewModel = viewModel(
@@ -164,15 +170,7 @@ class MainActivity : ComponentActivity() {
                                     app.cardImages
                                 )
                             )
-                            CoverageScreen(vm, onAddProfile = { goAddProfile() })
-                        }
-                        composable(Dest.People.route) {
-                            val vm: PeopleViewModel = viewModel(factory = PeopleViewModel.Factory(app.repository))
-                            PeopleScreen(
-                                vm = vm,
-                                showAddInitially = openAddProfile,
-                                onAddHandled = { openAddProfile = false }
-                            )
+                            CoverageScreen(vm, onOpenPeople = { openPeople() })
                         }
                     }
                 }

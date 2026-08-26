@@ -90,6 +90,17 @@ the receipts.
 > guessing between two people with the same surname.
 >
 >
+> Health has **no household screen of its own**: no People tab, no add-a-person form, no
+> remove-a-person button. The household belongs to the People app and Health is a peer on its sync
+> seam — a second place to add or rename somebody would be a second answer to "who lives here". The
+> profile bar switches between people on every tab, and its last chip opens People for anything else.
+> What Health *does* own about a person — their usual temperature and their medical note, neither of
+> which is ever published — lives on its **Information** tab, renamed from Illness because the
+> question asked far more often than "is anyone ill right now" is **what does normal look like for
+> this person**: a 37.6 means one thing for somebody who runs at 36.4 and another for somebody who
+> runs at 37.1. That tab now reads as who they are, what their normal is, how temperatures are shown,
+> and then the illnesses.
+>
 > Its Record tab holds **what is true about a person between illnesses**. Allergies and conditions are
 > now rows rather than a sentence in a free-text note — which means an allergy can be listed, ordered
 > by how badly it went last time, and **checked against a medicine as you add it**. That check matches

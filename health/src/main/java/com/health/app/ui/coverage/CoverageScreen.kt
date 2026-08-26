@@ -65,7 +65,7 @@ import kotlinx.coroutines.withContext
  * current as the payer keeps it, and the only sentence Health will write is the one it can support.
  */
 @Composable
-fun CoverageScreen(vm: CoverageViewModel, onAddProfile: () -> Unit) {
+fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val plans by vm.plans.collectAsStateWithLifecycle()
@@ -87,7 +87,7 @@ fun CoverageScreen(vm: CoverageViewModel, onAddProfile: () -> Unit) {
     var checkingFor by remember { mutableStateOf<CareTeamMember?>(null) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
 
@@ -104,7 +104,7 @@ fun CoverageScreen(vm: CoverageViewModel, onAddProfile: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            ProfileBar(profiles, selected?.id, vm::select, onAddProfile)
+            ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
             HorizontalDivider()
 
             TabRow(selectedTabIndex = tab) {

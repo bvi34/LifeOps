@@ -110,7 +110,7 @@ class TodayViewModel(private val repo: HealthRepository) : ViewModel() {
  * things you're actually holding a phone to record.
  */
 @Composable
-fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
+fun TodayScreen(vm: TodayViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -124,7 +124,7 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
     var showStartEpisode by remember { mutableStateOf(false) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
 
@@ -133,7 +133,7 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
             profiles = profiles,
             selectedId = selected?.id,
             onSelect = vm::select,
-            onAddProfile = onAddProfile
+            onOpenPeople = onOpenPeople
         )
         HorizontalDivider()
 

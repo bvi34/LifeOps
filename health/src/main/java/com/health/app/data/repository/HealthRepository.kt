@@ -192,6 +192,16 @@ class HealthRepository(
         prefs.selectedProfileId = profileId
     }
 
+    /**
+     * Create a profile here and publish it as a new household member.
+     *
+     * **No longer reachable from Health's UI**, since Health has no household screen: profiles now
+     * arrive over the seam, from somebody being ticked as a household member in People (see
+     * [createFromPacket]). It is kept because it is the other half of a symmetric seam — a peer that
+     * can only ever receive is a peer that cannot be tested against one that sends — and because
+     * "Health may never create a person" is a product decision that could reasonably be revisited,
+     * where deleting the code would be a one-way door.
+     */
     suspend fun addProfile(
         name: String,
         relationship: String?,
@@ -259,6 +269,22 @@ class HealthRepository(
      * carried the news: Health's profile was created *from* the directory's tick, so without a trace
      * of the removal the next edit to that person in People brings their packet round again and
      * Health dutifully re-creates the profile that was just deleted.
+     */
+    /**
+     * **No longer reachable from Health's UI either**, and the reason is worth writing down because
+     * it is not the same reason as [addProfile]'s.
+     *
+     * Removing somebody is the household directory's act now. What reaches Health when People
+     * deletes a person is a `deleted` packet, and `PersonMerge` turns that into an **archive** rather
+     * than a cascade — deliberately, and across all three peers: losing a household member's entire
+     * medical history because another app dropped a row is not a recoverable mistake, and the seam
+     * says so at the point of declaration (see [com.people.app.sync.PersonPacket.deleted]). An
+     * archived profile disappears from every screen here, because `observeProfiles` filters them out.
+     *
+     * So this cascade is the only code in the app that can actually destroy a person's medical
+     * records, and nothing calls it. That is the correct number of callers until somebody decides
+     * what should: a purge is a different feature from a removal, and it needs a confirmation in the
+     * app that holds the data rather than a side effect in the app that doesn't.
      */
     suspend fun deleteProfile(profileId: String) {
         dao.getProfile(profileId)?.let { profile ->

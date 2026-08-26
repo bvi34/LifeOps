@@ -73,7 +73,7 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
  * come here to read, then every reading of every kind in one list.
  */
 @Composable
-fun VitalsScreen(vm: VitalsViewModel, onAddProfile: () -> Unit) {
+fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val readings by vm.readings.collectAsStateWithLifecycle()
@@ -83,7 +83,7 @@ fun VitalsScreen(vm: VitalsViewModel, onAddProfile: () -> Unit) {
     var showOther by remember { mutableStateOf(false) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
 
@@ -99,7 +99,7 @@ fun VitalsScreen(vm: VitalsViewModel, onAddProfile: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            ProfileBar(profiles, selected?.id, vm::select, onAddProfile)
+            ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
             HorizontalDivider()
 
             LazyColumn(

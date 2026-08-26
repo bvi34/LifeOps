@@ -9,7 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -122,7 +122,7 @@ fun ProfileBar(
     profiles: List<Profile>,
     selectedId: String?,
     onSelect: (Profile) -> Unit,
-    onAddProfile: (() -> Unit)? = null,
+    onOpenPeople: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -142,19 +142,28 @@ fun ProfileBar(
                 leadingIcon = { ProfileDot(profile, size = 24, selected = isSelected) }
             )
         }
-        onAddProfile?.let {
+        // "People", not "Add person": Health does not own who these people are and has no screen for
+        // adding one. The chip opens the household directory, which is the app that does.
+        onOpenPeople?.let {
             AssistChip(
                 onClick = it,
-                label = { Text("Add person") },
-                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
+                label = { Text("People") },
+                leadingIcon = { Icon(Icons.Default.Groups, contentDescription = null) }
             )
         }
     }
 }
 
-/** The empty state shown before anyone has been added — every screen bottoms out here. */
+/**
+ * The empty state shown before anyone has been added — every screen bottoms out here.
+ *
+ * It points at **People** rather than offering a form. Health takes the people the household
+ * directory has ticked as members and grows a profile for each of them; a second place to add one
+ * would be a second answer to "who lives here", and the sync seam exists precisely so there is only
+ * one. See `HealthSyncService`.
+ */
 @Composable
-fun NoProfiles(onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
+fun NoProfiles(onOpenPeople: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -163,12 +172,13 @@ fun NoProfiles(onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
         Text("Nobody here yet", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Health tracks one person at a time, and as many people as your household has. " +
-                "Add the first one to start recording temperatures, symptoms and doses.",
+            "Health keeps a separate record for everyone in the household — but it takes the " +
+                "household from People. Tick somebody as a household member there and they turn up " +
+                "here, birth date and all, ready to record against.",
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onAddProfile) { Text("Add a person") }
+        Button(onClick = onOpenPeople) { Text("Open People") }
     }
 }
 

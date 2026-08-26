@@ -26,10 +26,9 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
-| **Illness** | Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
+| **Information** | **Who this person is, what is normal for them, and what has gone wrong.** Their name, relationship and age as the directory has them; **their own usual temperature** and the medical note that goes with it — the two things Health owns outright and never publishes; whether temperatures read in °C or °F; and then the illnesses. Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
 | **Record** | **What is true about a person between illnesses.** *Allergies* — structured, ordered worst-first, and checked against any medicine being added. *Conditions* — the long-running things an illness episode could never hold. *Vaccines* — the card in the drawer, typed up, reported as what is **recorded** and never as "up to date". *Documents* — the paperwork, stored exactly as it arrived and never read. |
 | **Care** | **Who pays for this, and who do we take her to.** *Cards* is the household's insurance as copied off the card — each person's own member number on the household's policy, whether the coverage is current, photographs of the card, and **a PDF of it on demand**. *Doctors* is the care team, which belongs to the household and **not** to the policy: each shown with where they stand against this person's coverage, read out of the whole history of checks rather than a single flag. |
-| **People** | The household. Add, edit and remove profiles; set whose reading you're looking at; choose °C or °F. |
 
 ## Profiles — why they're the spine, not a setting
 
@@ -42,6 +41,19 @@ looking at is always on screen and always one tap to change.
 Health joins that sync seam as the peer that takes only the people the directory has ticked as
 **household members**. Names, relationships and birth dates stay in step with People and LifeOps,
 while everything medical stays here.
+
+**So Health has no household screen at all.** There is no People tab, no add-a-person form and no
+remove-a-person button: a second place to add, rename or remove somebody would be a second answer to
+"who lives here", which is exactly what the seam exists to prevent. Switching between people is the
+profile bar's job on every tab, and the bar's last chip opens the People app for everything else.
+
+What Health *does* own about a person — their usual temperature and their medical note — lives on the
+**Information** tab, because neither is ever published and no other app has a column for either.
+Removing somebody is the directory's act: People deletes them, the seam carries a `deleted` packet,
+and `PersonMerge` **archives** the profile here rather than cascading. An archived profile vanishes
+from every screen, and the medical history survives on disk — losing a household member's entire
+record because another app dropped a row is not a recoverable mistake, and the seam says so at the
+point of declaration.
 
 The tick is the whole interface. Mark somebody a household member in People and Health grows a
 profile for them; leave them unticked and Health never hears about them, because a medical profile
@@ -62,8 +74,10 @@ thresholds for a six-week-old are not the thresholds for an adult, and a profile
 is told, on its card, that it will get the adult ones. It is also the field most likely to arrive
 over the seam rather than being typed here.
 
-Removing a person removes their readings, symptoms, medicines, doses, illnesses and care notes in one
-transaction. "Remove this person" has to mean it.
+The cascade that removes a person's readings, symptoms, medicines, doses, illnesses, care notes and
+standing record in one transaction still exists in the repository and **nothing calls it**. That is
+the right number of callers for now: a purge is a different feature from a removal, and it needs a
+confirmation in the app that holds the data rather than a side effect in the app that doesn't.
 
 ## The judgements Health makes
 
@@ -98,6 +112,34 @@ the wait ends. Two independent gates, and the later one wins:
 The window rolls; it is not "since midnight". A day boundary is exactly where a naive counter lets a
 fifth dose through. A rule with no limits never blocks — Health enforces what the label says, never a
 restriction nobody typed in.
+
+## Information — the person before the illness
+
+The tab that used to be **Illness** is now **Information**, and the rename is a change of emphasis
+rather than of contents.
+
+"Is anyone ill right now" is the rarer question. The one asked far more often — and that every reading
+in the app is implicitly measured against — is **what does normal look like for this person**. A 37.6
+means one thing for somebody who runs at 36.4 and another for somebody who runs at 37.1, and the
+number that settles it used to be buried in a profile editor on a tab about the household.
+
+So the tab reads top-down as the answer to "tell me about her":
+
+1. **Who they are** — relationship and age, as the directory has them, and read-only here. Offering an
+   editable name in Health would invite somebody to change it and find it changed back on the next
+   sync round. A missing birth date says so in as many words, because it is the one field here that is
+   load-bearing rather than decorative: it is what makes the fever thresholds age-aware.
+2. **What's normal for them** — their own usual temperature, and the medical note. Neither is ever
+   published over the seam, neither has a column anywhere else in the suite, and this is the only
+   screen in the household that can change them.
+3. **Display** — °C or °F. It lives here rather than in a settings screen Health otherwise doesn't
+   have, because choosing the unit and recording that somebody runs at 36.4 are the same act: saying
+   how temperatures should read for this household. Readings are always stored in Celsius, so changing
+   it never rewrites anything.
+4. **The illnesses**, exactly as before, with the care log underneath.
+
+The baseline is typed in whatever unit the household is using and converted on the way in — somebody
+who reads temperatures in Fahrenheit does not know their child's normal in Celsius.
 
 ## The medicine cabinet
 
@@ -652,8 +694,8 @@ seriously enough to ignore them for exactly that reason.
 │   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
 ├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
-├── ui/               Compose: today · vitals · meds · episodes · record · coverage · people
-│                     (+ common, theme)
+├── ui/               Compose: today · vitals · meds · episodes (the Information tab) · record ·
+│                     coverage (+ common, theme). No `people/` — Health has no household screen.
 ├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/ + documents/)
 ├── HealthFileProvider.kt  exposes cacheDir/exports only — the card PDF, and on-request copies of
 │                          stored documents. Never the record directories themselves.
