@@ -70,6 +70,13 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
+    // Parsing the two drug references (RxNorm, openFDA). Already a suite dependency — LifeOps
+    // parses the weather API with it — so this adds a module edge, not a library.
+    implementation(libs.gson)
+    // Medication reminders. WorkManager, not AlarmManager: a dose reminder is a "some time around
+    // eight" nudge that must survive a reboot, not a to-the-second alarm, and the sandbox host
+    // already carries the dependency for LifeOps' own reminders.
+    implementation(libs.androidx.work.runtime.ktx)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

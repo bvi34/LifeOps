@@ -4,8 +4,10 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.DoseEntity
+import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
 import com.health.app.data.db.entities.MedicationEntity
 import com.health.app.data.db.entities.ProfileEntity
@@ -112,6 +114,15 @@ interface HealthDao {
     @Query("SELECT * FROM readings ORDER BY takenAt DESC")
     suspend fun getAllReadings(): List<ReadingEntity>
 
+    // --- the history window --------------------------------------------------------------------
+    //
+    // Four `…Since` queries, one per kind of record, so a person's history can be read over a span
+    // rather than only inside a declared illness. Not everything worth reconstructing happened
+    // during one.
+
+    @Query("SELECT * FROM readings WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
+    suspend fun getReadingsSince(profileId: String, since: Long): List<ReadingEntity>
+
     @Upsert
     suspend fun upsertReading(reading: ReadingEntity)
 
@@ -134,6 +145,13 @@ interface HealthDao {
     @Query("SELECT * FROM symptoms ORDER BY startedAt DESC")
     suspend fun getAllSymptoms(): List<SymptomEntity>
 
+    /** A symptom that started before the window but ended inside it belongs in it — hence the OR. */
+    @Query(
+        "SELECT * FROM symptoms WHERE profileId = :profileId " +
+            "AND (startedAt >= :since OR endedAt >= :since) ORDER BY startedAt"
+    )
+    suspend fun getSymptomsSince(profileId: String, since: Long): List<SymptomEntity>
+
     @Upsert
     suspend fun upsertSymptom(symptom: SymptomEntity)
 
@@ -153,6 +171,14 @@ interface HealthDao {
     @Query("SELECT * FROM medications ORDER BY name COLLATE NOCASE")
     suspend fun getAllMedications(): List<MedicationEntity>
 
+    /**
+     * Every person's medicines at once — what the cabinet reads to answer "who takes this bottle,
+     * and how much do they get?". The one query in this file that is deliberately not profile-scoped,
+     * because the cabinet is a household view and scoping it would mean running it once per person.
+     */
+    @Query("SELECT * FROM medications ORDER BY name COLLATE NOCASE")
+    fun observeAllMedications(): Flow<List<MedicationEntity>>
+
     @Upsert
     suspend fun upsertMedication(medication: MedicationEntity)
 
@@ -162,6 +188,25 @@ interface HealthDao {
     @Query("DELETE FROM medications WHERE profileId = :profileId")
     suspend fun deleteMedicationsForProfile(profileId: String)
 
+    /** Everyone's medicines drawn from one cabinet item — "who is this bottle for?". */
+    @Query("SELECT * FROM medications WHERE cabinetItemId = :cabinetItemId")
+    suspend fun getMedicationsForCabinetItem(cabinetItemId: String): List<MedicationEntity>
+
+    @Query("SELECT * FROM medications WHERE cabinetItemId = :cabinetItemId")
+    fun observeMedicationsForCabinetItem(cabinetItemId: String): Flow<List<MedicationEntity>>
+
+    /**
+     * Every medicine with a reminder set, across all profiles — what the scheduler re-arms from
+     * after a restore or a device reboot. Deliberately not profile-scoped: a reminder belongs to the
+     * device, and the person whose phone it is may not be the person the dose is for.
+     */
+    @Query("SELECT * FROM medications WHERE reminderMode != 'off' AND active = 1")
+    suspend fun getMedicationsWithReminders(): List<MedicationEntity>
+
+    /** Detach a cabinet item's medicines before it is deleted, so the regimens survive it. */
+    @Query("UPDATE medications SET cabinetItemId = NULL WHERE cabinetItemId = :cabinetItemId")
+    suspend fun clearCabinetItemOnMedications(cabinetItemId: String)
+
     // --- doses ---
     @Query("SELECT * FROM doses WHERE profileId = :profileId ORDER BY takenAt DESC")
     fun observeDoses(profileId: String): Flow<List<DoseEntity>>
@@ -170,11 +215,21 @@ interface HealthDao {
     @Query("SELECT * FROM doses WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
     fun observeDosesSince(profileId: String, since: Long): Flow<List<DoseEntity>>
 
+    /** The same trailing window across everyone, for the household-wide cabinet view. */
+    @Query("SELECT * FROM doses WHERE takenAt >= :since ORDER BY takenAt")
+    fun observeAllDosesSince(since: Long): Flow<List<DoseEntity>>
+
+    @Query("SELECT * FROM doses WHERE id = :id")
+    suspend fun getDose(id: String): DoseEntity?
+
     @Query("SELECT * FROM doses WHERE episodeId = :episodeId ORDER BY takenAt")
     suspend fun getDosesForEpisode(episodeId: String): List<DoseEntity>
 
     @Query("SELECT * FROM doses ORDER BY takenAt DESC")
     suspend fun getAllDoses(): List<DoseEntity>
+
+    @Query("SELECT * FROM doses WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
+    suspend fun getDosesSince(profileId: String, since: Long): List<DoseEntity>
 
     @Upsert
     suspend fun upsertDose(dose: DoseEntity)
@@ -197,6 +252,25 @@ interface HealthDao {
 
     @Query("SELECT * FROM episodes WHERE id = :id")
     suspend fun getEpisode(id: String): EpisodeEntity?
+
+    /**
+     * The episode this person was in the middle of **at a given instant** — the one whose span
+     * contains it, open episodes included.
+     *
+     * This is what a record gets filed against, rather than "whichever episode happens to be open
+     * right now". The two are the same thing only when everything is recorded as it happens; the
+     * moment somebody types up last night's dose, or fills in a week of last month's flu, they stop
+     * being the same thing and the second answer is the wrong one.
+     *
+     * Latest start wins if spans somehow overlap — the repository allows only one open episode per
+     * person, but a reopened one can be edited into overlapping a closed one, and the more recent
+     * illness is the better guess for a record inside both.
+     */
+    @Query(
+        "SELECT * FROM episodes WHERE profileId = :profileId AND startedAt <= :atMillis " +
+            "AND (endedAt IS NULL OR endedAt >= :atMillis) ORDER BY startedAt DESC LIMIT 1"
+    )
+    suspend fun getEpisodeAt(profileId: String, atMillis: Long): EpisodeEntity?
 
     @Query("SELECT * FROM episodes ORDER BY startedAt DESC")
     suspend fun getAllEpisodes(): List<EpisodeEntity>
@@ -242,6 +316,9 @@ interface HealthDao {
     @Query("SELECT * FROM care_notes ORDER BY at DESC")
     suspend fun getAllCareNotes(): List<CareNoteEntity>
 
+    @Query("SELECT * FROM care_notes WHERE profileId = :profileId AND at >= :since ORDER BY at")
+    suspend fun getCareNotesSince(profileId: String, since: Long): List<CareNoteEntity>
+
     @Upsert
     suspend fun upsertCareNote(note: CareNoteEntity)
 
@@ -250,4 +327,65 @@ interface HealthDao {
 
     @Query("DELETE FROM care_notes WHERE profileId = :profileId")
     suspend fun deleteCareNotesForProfile(profileId: String)
+
+    // --- the medicine cabinet -------------------------------------------------------------------
+    //
+    // Neither table takes a profile id, and that is the point: a bottle and a drug label are
+    // household facts, not facts about a person. Everything per-person still hangs off `medications`.
+
+    @Query("SELECT * FROM cabinet_items ORDER BY name COLLATE NOCASE")
+    fun observeCabinetItems(): Flow<List<CabinetItemEntity>>
+
+    @Query("SELECT * FROM cabinet_items ORDER BY name COLLATE NOCASE")
+    suspend fun getCabinetItems(): List<CabinetItemEntity>
+
+    @Query("SELECT * FROM cabinet_items WHERE id = :id")
+    suspend fun getCabinetItem(id: String): CabinetItemEntity?
+
+    @Query("SELECT * FROM cabinet_items WHERE rxcui = :rxcui LIMIT 1")
+    suspend fun getCabinetItemByRxcui(rxcui: String): CabinetItemEntity?
+
+    @Upsert
+    suspend fun upsertCabinetItem(item: CabinetItemEntity)
+
+    /**
+     * Remove a bottle, keeping every medicine that was given from it. Throwing away the box does not
+     * mean the child stopped taking the medicine, and it certainly does not mean the doses recorded
+     * against it never happened.
+     */
+    @Transaction
+    suspend fun deleteCabinetItemKeepingMedications(id: String) {
+        clearCabinetItemOnMedications(id)
+        deleteCabinetItemRow(id)
+    }
+
+    @Query("DELETE FROM cabinet_items WHERE id = :id")
+    suspend fun deleteCabinetItemRow(id: String)
+
+    @Query("SELECT * FROM drug_facts WHERE rxcui = :rxcui")
+    suspend fun getDrugFacts(rxcui: String): DrugFactsEntity?
+
+    @Query("SELECT * FROM drug_facts WHERE rxcui = :rxcui")
+    fun observeDrugFacts(rxcui: String): Flow<DrugFactsEntity?>
+
+    @Query("SELECT * FROM drug_facts")
+    fun observeAllDrugFacts(): Flow<List<DrugFactsEntity>>
+
+    @Query("SELECT * FROM drug_facts")
+    suspend fun getAllDrugFacts(): List<DrugFactsEntity>
+
+    @Upsert
+    suspend fun upsertDrugFacts(facts: DrugFactsEntity)
+
+    /**
+     * Drop cached monographs nothing points at any more. A label is a convenience, not a record —
+     * unlike a dose, nobody needs to know that Health once knew what was in a bottle they no longer
+     * own — so the cache is allowed to be tidied where the history never is.
+     */
+    @Query(
+        "DELETE FROM drug_facts WHERE rxcui NOT IN " +
+            "(SELECT rxcui FROM medications WHERE rxcui IS NOT NULL " +
+            "UNION SELECT rxcui FROM cabinet_items WHERE rxcui IS NOT NULL)"
+    )
+    suspend fun pruneUnreferencedDrugFacts()
 }

@@ -18,6 +18,13 @@ import com.health.app.logic.Temperature
  * The four things Health is asked to record in a hurry: a temperature, a dose, a symptom, and what
  * you did about it. Each is one dialog, reachable in one tap from the Today screen, because a form
  * that takes three taps to reach is a record that doesn't get made.
+ *
+ * All four also ask **when**. The answer is usually "now" and costs nobody a tap, but it does not
+ * have to be: the same dialogs are how the history gets filled in afterwards — last night's dose
+ * typed up over breakfast, a week of last month's flu reconstructed from memory — and a record you
+ * can only make at the moment it happens is a record that mostly doesn't get made at all. The
+ * repository files each one against the illness that was going on **at that instant** rather than
+ * whichever one happens to be open now, so a backfilled row lands in the right story.
  */
 
 /**
@@ -30,11 +37,13 @@ fun LogTemperatureDialog(
     unit: TempUnit,
     ageMonths: Int?,
     onDismiss: () -> Unit,
-    onConfirm: (celsius: Double, site: TempSite, note: String?) -> Unit
+    initialAt: Long = System.currentTimeMillis(),
+    onConfirm: (celsius: Double, site: TempSite, note: String?, at: Long) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
     var site by remember { mutableStateOf(TempSite.ORAL) }
     var note by remember { mutableStateOf("") }
+    var at by remember { mutableLongStateOf(initialAt) }
 
     val celsius = Temperature.parseToCelsius(text, unit)
     val assessment = celsius?.let { Fever.assess(it, site, ageMonths) }
@@ -80,13 +89,14 @@ fun LogTemperatureDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                WhenField(value = at, onValueChange = { at = it }, label = "Taken")
                 DisclaimerText()
             }
         },
         confirmButton = {
             TextButton(
                 enabled = celsius != null,
-                onClick = { celsius?.let { onConfirm(it, site, note.ifBlank { null }) } }
+                onClick = { celsius?.let { onConfirm(it, site, note.ifBlank { null }, at) } }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -103,7 +113,15 @@ fun LogDoseDialog(
     medications: List<Medication>,
     preselected: Medication? = null,
     onDismiss: () -> Unit,
-    onConfirm: (medication: Medication?, name: String, amount: Double, unit: String, note: String?) -> Unit
+    initialAt: Long = System.currentTimeMillis(),
+    onConfirm: (
+        medication: Medication?,
+        name: String,
+        amount: Double,
+        unit: String,
+        note: String?,
+        at: Long
+    ) -> Unit
 ) {
     var selected by remember { mutableStateOf(preselected ?: medications.firstOrNull()) }
     var freeName by remember { mutableStateOf("") }
@@ -112,6 +130,7 @@ fun LogDoseDialog(
     }
     var unitText by remember { mutableStateOf(selected?.doseUnit ?: "") }
     var note by remember { mutableStateOf("") }
+    var at by remember { mutableLongStateOf(initialAt) }
 
     val amount = amountText.replace(',', '.').toDoubleOrNull()
     val name = selected?.name ?: freeName.trim()
@@ -168,13 +187,14 @@ fun LogDoseDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                WhenField(value = at, onValueChange = { at = it }, label = "Given")
             }
         },
         confirmButton = {
             TextButton(
                 enabled = canSave,
                 onClick = {
-                    onConfirm(selected, name, amount ?: 0.0, unitText.trim(), note.ifBlank { null })
+                    onConfirm(selected, name, amount ?: 0.0, unitText.trim(), note.ifBlank { null }, at)
                 }
             ) { Text("Save") }
         },
@@ -186,17 +206,22 @@ fun LogDoseDialog(
 @Composable
 fun AddSymptomDialog(
     onDismiss: () -> Unit,
-    onConfirm: (name: String, severity: Int, note: String?) -> Unit
+    initialAt: Long = System.currentTimeMillis(),
+    onConfirm: (name: String, severity: Int, note: String?, startedAt: Long) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var severity by remember { mutableIntStateOf(3) }
     var note by remember { mutableStateOf("") }
+    var at by remember { mutableLongStateOf(initialAt) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Symptom") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -217,12 +242,13 @@ fun AddSymptomDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                WhenField(value = at, onValueChange = { at = it }, label = "Started")
             }
         },
         confirmButton = {
             TextButton(
                 enabled = name.isNotBlank(),
-                onClick = { onConfirm(name.trim(), severity, note.ifBlank { null }) }
+                onClick = { onConfirm(name.trim(), severity, note.ifBlank { null }, at) }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -233,16 +259,21 @@ fun AddSymptomDialog(
 @Composable
 fun CareNoteDialog(
     onDismiss: () -> Unit,
-    onConfirm: (kind: CareKind, text: String) -> Unit
+    initialAt: Long = System.currentTimeMillis(),
+    onConfirm: (kind: CareKind, text: String, at: Long) -> Unit
 ) {
     var kind by remember { mutableStateOf(CareKind.NOTE) }
     var text by remember { mutableStateOf("") }
+    var at by remember { mutableLongStateOf(initialAt) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Care note") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 ChoiceRow(
                     options = CareKind.entries,
                     selected = kind,
@@ -255,12 +286,13 @@ fun CareNoteDialog(
                     label = { Text("What happened?") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                WhenField(value = at, onValueChange = { at = it })
             }
         },
         confirmButton = {
             TextButton(
                 enabled = text.isNotBlank(),
-                onClick = { onConfirm(kind, text.trim()) }
+                onClick = { onConfirm(kind, text.trim(), at) }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

@@ -2,6 +2,7 @@ package com.health.app.backup
 
 import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.health.app.HealthApp
 import com.health.app.data.db.HEALTH_DB_VERSION
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
@@ -13,8 +14,9 @@ import java.io.File
 
 /**
  * Health's hook into the Operations Sandbox backup, modeled on LifeOps' and Logistics': it copies
- * the whole `health.db` — every profile, reading, symptom, medicine, dose, illness and care note —
- * so a "full backup" is complete by construction and stays complete as the schema grows.
+ * the whole `health.db` — every profile, reading, symptom, medicine, dose, illness, care note, and
+ * the medicine cabinet with the drug facts cached for it — so a "full backup" is complete by
+ * construction and stays complete as the schema grows.
  *
  * Health's preferences go with it, but only Health's: the hosted apps share one process and
  * therefore one `shared_prefs/` directory, so this contributor touches only files named `health_*`,
@@ -76,6 +78,15 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
             File("${dbFile.path}-shm").delete()
             dbFile.outputStream().use { input.copyTo(it) }
         }
+
+        // Re-arm every medication reminder against the database that has just arrived.
+        //
+        // The work queue survived the restore and still refers to the medicines of the database that
+        // was replaced — ids that may not exist any more, reminders that were never set on this
+        // device, and nothing at all for the reminders that were. Cancelling the lot and rebuilding
+        // from the restored rows is the only version of this that can't leave somebody being nudged
+        // about a medicine they don't have, or not nudged about one they do.
+        runCatching { HealthApp.get(context).rescheduleReminders() }
     }
 
     private fun sharedPrefsDir() = File(context.applicationInfo.dataDir, "shared_prefs")

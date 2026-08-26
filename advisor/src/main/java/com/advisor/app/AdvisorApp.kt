@@ -83,7 +83,8 @@ class AdvisorApp private constructor(private val app: Application) {
                 LogisticsDatabase.getInstance(app)
             },
             HealthKnowledgeSource(app).cachedOn(
-                "profiles", "readings", "symptoms", "medications", "doses", "episodes", "care_notes"
+                "profiles", "readings", "symptoms", "medications", "doses", "episodes",
+                "care_notes", "cabinet_items"
             ) {
                 HealthDatabase.getInstance(app)
             },
