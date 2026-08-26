@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,16 +22,40 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.logistics.app.data.model.PantryItem
+import com.logistics.app.data.prefs.LogisticsPrefs
 import com.logistics.app.data.repository.PantryRepository
+import com.logistics.app.logic.PantryFilters
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class PantryViewModel(private val repo: PantryRepository) : ViewModel() {
+class PantryViewModel(
+    private val repo: PantryRepository,
+    private val prefs: LogisticsPrefs
+) : ViewModel() {
 
+    /** Every stock line, used-up ones included — what the "show empty" toggle reveals. */
     val items: StateFlow<List<PantryItem>> =
         repo.observeItems().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val hideEmpty: StateFlow<Boolean> =
+        prefs.observeHideEmptyItems()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), prefs.hideEmptyItems)
+
+    /** The shelf as shown: used-up lines dropped unless the user asked to see them. */
+    val visibleItems: StateFlow<List<PantryItem>> =
+        combine(items, hideEmpty) { all, hide -> PantryFilters.hideEmpty(all, hide) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** How many lines the toggle is hiding (or would hide) — the count on its label. */
+    val emptyCount: StateFlow<Int> =
+        items.map { PantryFilters.emptyCount(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun setHideEmpty(hide: Boolean) { prefs.hideEmptyItems = hide }
 
     fun adjust(item: PantryItem, delta: Double) = viewModelScope.launch {
         repo.setQuantity(item.id, (item.quantity + delta), note = "Quick adjust")
@@ -57,16 +82,22 @@ class PantryViewModel(private val repo: PantryRepository) : ViewModel() {
         repo.splitItem(item.id, pieces, unit)
     }
 
-    class Factory(private val repo: PantryRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repo: PantryRepository,
+        private val prefs: LogisticsPrefs
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = PantryViewModel(repo) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = PantryViewModel(repo, prefs) as T
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PantryScreen(vm: PantryViewModel) {
-    val pantryItems by vm.items.collectAsStateWithLifecycle()
+    val allItems by vm.items.collectAsStateWithLifecycle()
+    val pantryItems by vm.visibleItems.collectAsStateWithLifecycle()
+    val hideEmpty by vm.hideEmpty.collectAsStateWithLifecycle()
+    val emptyCount by vm.emptyCount.collectAsStateWithLifecycle()
     var showAdd by remember { mutableStateOf(false) }
     var splitTarget by remember { mutableStateOf<PantryItem?>(null) }
     var editTarget by remember { mutableStateOf<PantryItem?>(null) }
@@ -80,33 +111,56 @@ fun PantryScreen(vm: PantryViewModel) {
             )
         }
     ) { padding ->
-        if (pantryItems.isEmpty()) {
+        if (allItems.isEmpty()) {
             EmptyPantry(Modifier.padding(padding))
         } else {
-            val grouped = pantryItems.groupBy { it.category ?: "Other" }.toSortedMap()
-            LazyColumn(
-                modifier = Modifier.padding(padding).fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                grouped.forEach { (category, rows) ->
-                    item(key = "hdr_$category") {
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                // Only worth offering when there's something to hide; a shelf with no zeroes gets a
+                // clean screen instead of a control that does nothing.
+                if (emptyCount > 0) {
+                    HideEmptyChip(
+                        hideEmpty = hideEmpty,
+                        emptyCount = emptyCount,
+                        onToggle = { vm.setHideEmpty(!hideEmpty) },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
+                if (pantryItems.isEmpty()) {
+                    // Everything on the shelf is used up, and hidden — say so rather than looking empty.
+                    Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text(
-                            category,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                            "Everything on your shelf is used up.\n\nShow the $emptyCount empty " +
+                                "${if (emptyCount == 1) "item" else "items"} to restock or clear them.",
+                            style = MaterialTheme.typography.bodyLarge
                         )
                     }
-                    items(rows, key = { it.id }) { row ->
-                        PantryRow(
-                            item = row,
-                            onIncrement = { vm.adjust(row, 1.0) },
-                            onDecrement = { vm.adjust(row, -1.0) },
-                            onDelete = { vm.delete(row) },
-                            onSplit = { splitTarget = row },
-                            onEdit = { editTarget = row }
-                        )
+                } else {
+                    val grouped = pantryItems.groupBy { it.category ?: "Other" }.toSortedMap()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        grouped.forEach { (category, rows) ->
+                            item(key = "hdr_$category") {
+                                Text(
+                                    category,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(rows, key = { it.id }) { row ->
+                                PantryRow(
+                                    item = row,
+                                    onIncrement = { vm.adjust(row, 1.0) },
+                                    onDecrement = { vm.adjust(row, -1.0) },
+                                    onDelete = { vm.delete(row) },
+                                    onSplit = { splitTarget = row },
+                                    onEdit = { editTarget = row }
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -145,6 +199,26 @@ fun PantryScreen(vm: PantryViewModel) {
             }
         )
     }
+}
+
+/**
+ * The "Hide empty" switch shared by Pantry and Log meal. Selected means empties are hidden — the
+ * default — and the count says how many rows that is, so the shelf never silently loses a line.
+ */
+@Composable
+internal fun HideEmptyChip(
+    hideEmpty: Boolean,
+    emptyCount: Int,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FilterChip(
+        selected = hideEmpty,
+        onClick = onToggle,
+        label = { Text(if (hideEmpty) "Hiding $emptyCount empty" else "Showing $emptyCount empty") },
+        leadingIcon = { Icon(Icons.Default.VisibilityOff, contentDescription = null, modifier = Modifier.size(18.dp)) },
+        modifier = modifier
+    )
 }
 
 @Composable

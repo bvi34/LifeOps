@@ -114,7 +114,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.padding(padding)
                     ) {
                         composable(Dest.Pantry.route) {
-                            val vm: PantryViewModel = viewModel(factory = PantryViewModel.Factory(app.pantryRepository))
+                            val vm: PantryViewModel = viewModel(factory = PantryViewModel.Factory(app.pantryRepository, app.prefs))
                             PantryScreen(vm)
                         }
                         composable(Dest.Grocery.route) {
@@ -126,7 +126,7 @@ class MainActivity : ComponentActivity() {
                             ImportScreen(vm, initialPdf = importPdfUri, initialText = orderText)
                         }
                         composable(Dest.Meal.route) {
-                            val vm: LogMealViewModel = viewModel(factory = LogMealViewModel.Factory(app.pantryRepository, app.catalog))
+                            val vm: LogMealViewModel = viewModel(factory = LogMealViewModel.Factory(app.pantryRepository, app.catalog, app.prefs))
                             LogMealScreen(vm)
                         }
                         composable(Dest.History.route) {
