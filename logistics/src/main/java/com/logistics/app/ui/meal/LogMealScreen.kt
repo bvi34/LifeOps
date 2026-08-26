@@ -21,8 +21,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Recipe
 import com.logistics.app.data.model.PantryItem
+import com.logistics.app.data.prefs.LogisticsPrefs
 import com.logistics.app.data.repository.LifeOpsCatalog
 import com.logistics.app.data.repository.PantryRepository
+import com.logistics.app.logic.PantryFilters
+import com.logistics.app.ui.pantry.HideEmptyChip
 import com.logistics.app.ui.pantry.formatQty
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,11 +35,20 @@ import kotlinx.coroutines.launch
 
 class LogMealViewModel(
     private val repo: PantryRepository,
-    private val catalog: LifeOpsCatalog
+    private val catalog: LifeOpsCatalog,
+    private val prefs: LogisticsPrefs
 ) : ViewModel() {
 
     val items: StateFlow<List<PantryItem>> =
         repo.observeItems().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Shared with the Pantry screen: you can't cook with what you've run out of, so used-up lines
+     *  stay off the list unless you ask for them. */
+    val hideEmpty: StateFlow<Boolean> =
+        prefs.observeHideEmptyItems()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), prefs.hideEmptyItems)
+
+    fun setHideEmpty(hide: Boolean) { prefs.hideEmptyItems = hide }
 
     val recipes: StateFlow<List<Recipe>> =
         catalog.observeRecipes().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -63,10 +75,11 @@ class LogMealViewModel(
 
     class Factory(
         private val repo: PantryRepository,
-        private val catalog: LifeOpsCatalog
+        private val catalog: LifeOpsCatalog,
+        private val prefs: LogisticsPrefs
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = LogMealViewModel(repo, catalog) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T = LogMealViewModel(repo, catalog, prefs) as T
     }
 }
 
@@ -75,6 +88,7 @@ class LogMealViewModel(
 fun LogMealScreen(vm: LogMealViewModel) {
     val pantryItems by vm.items.collectAsStateWithLifecycle()
     val recipes by vm.recipes.collectAsStateWithLifecycle()
+    val hideEmpty by vm.hideEmpty.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var mealName by remember { mutableStateOf("") }
@@ -94,12 +108,19 @@ fun LogMealScreen(vm: LogMealViewModel) {
         }
     }
 
+    // Used-up lines are off the shelf by default — you can't cook with what you've run out of — and
+    // the chip below the search box brings them back.
+    val stockedItems = remember(pantryItems, hideEmpty, included.toList()) {
+        PantryFilters.hideEmpty(pantryItems, hideEmpty, included.toSet())
+    }
+    val emptyCount = remember(pantryItems) { PantryFilters.emptyCount(pantryItems) }
+
     // Filter the shelf as you type. Anything already marked stays visible so it's never lost behind
     // the filter — you can search, add several specific items, then clear and see them all checked.
-    val visibleItems = remember(pantryItems, search, included.toList()) {
+    val visibleItems = remember(stockedItems, search, included.toList()) {
         val q = search.trim()
-        if (q.isBlank()) pantryItems
-        else pantryItems.filter { it.name.contains(q, ignoreCase = true) || it.id in included }
+        if (q.isBlank()) stockedItems
+        else stockedItems.filter { it.name.contains(q, ignoreCase = true) || it.id in included }
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
@@ -152,9 +173,26 @@ fun LogMealScreen(vm: LogMealViewModel) {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
                 )
+                if (emptyCount > 0) {
+                    HideEmptyChip(
+                        hideEmpty = hideEmpty,
+                        emptyCount = emptyCount,
+                        onToggle = { vm.setHideEmpty(!hideEmpty) },
+                        modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)
+                    )
+                }
                 if (visibleItems.isEmpty()) {
                     Box(Modifier.weight(1f).fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text("No pantry items match \"${search.trim()}\".", style = MaterialTheme.typography.bodyMedium)
+                        val query = search.trim()
+                        Text(
+                            when {
+                                query.isNotBlank() && hideEmpty && emptyCount > 0 ->
+                                    "No items with stock left match \"$query\" — show empty items to include one anyway."
+                                query.isNotBlank() -> "No pantry items match \"$query\"."
+                                else -> "Everything on your shelf is used up — show empty items to log one anyway."
+                            },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 } else {
                 LazyColumn(

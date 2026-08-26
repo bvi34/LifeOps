@@ -16,9 +16,11 @@ import java.io.File
  * by construction and stays complete as the schema grows.
  *
  * Logistics reads its foods and recipes from LifeOps' database and does not own that data, so there
- * is nothing else to include — LifeOps' own contributor backs the catalog up. Logistics has no
- * SharedPreferences of its own yet; if it gains any (named `logistics_*`) they'd be added here the
- * same isolated way LifeOps handles its prefs.
+ * is nothing else to include — LifeOps' own contributor backs the catalog up. `logistics_prefs`
+ * (see [com.logistics.app.data.prefs.LogisticsPrefs]) is deliberately left out too: it holds display
+ * settings — how the shelf is shown, not what's on it — and restoring a backup shouldn't drag the
+ * reader's screen state along with the stock. Anything in there that becomes real data would be
+ * added here the same isolated way LifeOps handles its prefs.
  *
  * Restore is a whole-file swap of `logistics.db`, so a Logistics restart is expected afterwards —
  * the sandbox surfaces that.
