@@ -114,6 +114,15 @@ interface HealthDao {
     @Query("SELECT * FROM readings ORDER BY takenAt DESC")
     suspend fun getAllReadings(): List<ReadingEntity>
 
+    // --- the history window --------------------------------------------------------------------
+    //
+    // Four `…Since` queries, one per kind of record, so a person's history can be read over a span
+    // rather than only inside a declared illness. Not everything worth reconstructing happened
+    // during one.
+
+    @Query("SELECT * FROM readings WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
+    suspend fun getReadingsSince(profileId: String, since: Long): List<ReadingEntity>
+
     @Upsert
     suspend fun upsertReading(reading: ReadingEntity)
 
@@ -135,6 +144,13 @@ interface HealthDao {
 
     @Query("SELECT * FROM symptoms ORDER BY startedAt DESC")
     suspend fun getAllSymptoms(): List<SymptomEntity>
+
+    /** A symptom that started before the window but ended inside it belongs in it — hence the OR. */
+    @Query(
+        "SELECT * FROM symptoms WHERE profileId = :profileId " +
+            "AND (startedAt >= :since OR endedAt >= :since) ORDER BY startedAt"
+    )
+    suspend fun getSymptomsSince(profileId: String, since: Long): List<SymptomEntity>
 
     @Upsert
     suspend fun upsertSymptom(symptom: SymptomEntity)
@@ -212,6 +228,9 @@ interface HealthDao {
     @Query("SELECT * FROM doses ORDER BY takenAt DESC")
     suspend fun getAllDoses(): List<DoseEntity>
 
+    @Query("SELECT * FROM doses WHERE profileId = :profileId AND takenAt >= :since ORDER BY takenAt")
+    suspend fun getDosesSince(profileId: String, since: Long): List<DoseEntity>
+
     @Upsert
     suspend fun upsertDose(dose: DoseEntity)
 
@@ -233,6 +252,25 @@ interface HealthDao {
 
     @Query("SELECT * FROM episodes WHERE id = :id")
     suspend fun getEpisode(id: String): EpisodeEntity?
+
+    /**
+     * The episode this person was in the middle of **at a given instant** — the one whose span
+     * contains it, open episodes included.
+     *
+     * This is what a record gets filed against, rather than "whichever episode happens to be open
+     * right now". The two are the same thing only when everything is recorded as it happens; the
+     * moment somebody types up last night's dose, or fills in a week of last month's flu, they stop
+     * being the same thing and the second answer is the wrong one.
+     *
+     * Latest start wins if spans somehow overlap — the repository allows only one open episode per
+     * person, but a reopened one can be edited into overlapping a closed one, and the more recent
+     * illness is the better guess for a record inside both.
+     */
+    @Query(
+        "SELECT * FROM episodes WHERE profileId = :profileId AND startedAt <= :atMillis " +
+            "AND (endedAt IS NULL OR endedAt >= :atMillis) ORDER BY startedAt DESC LIMIT 1"
+    )
+    suspend fun getEpisodeAt(profileId: String, atMillis: Long): EpisodeEntity?
 
     @Query("SELECT * FROM episodes ORDER BY startedAt DESC")
     suspend fun getAllEpisodes(): List<EpisodeEntity>
@@ -277,6 +315,9 @@ interface HealthDao {
 
     @Query("SELECT * FROM care_notes ORDER BY at DESC")
     suspend fun getAllCareNotes(): List<CareNoteEntity>
+
+    @Query("SELECT * FROM care_notes WHERE profileId = :profileId AND at >= :since ORDER BY at")
+    suspend fun getCareNotesSince(profileId: String, since: Long): List<CareNoteEntity>
 
     @Upsert
     suspend fun upsertCareNote(note: CareNoteEntity)

@@ -1,23 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Health holds the household's medical records, and those still cannot leave this device.
-         Nothing in this module reads a profile, a reading, a symptom, a dose or an illness and sends
-         it anywhere; there is no code path that could.
+    <!-- THE PROMISE: nothing about a person leaves this device. Not a name, not a temperature, not a
+         symptom, not a dose, not an illness. Health used to keep that by declaring no permissions at
+         all — but the permission count was the means, never the promise, and the promise is the part
+         that must not move.
 
-         The two permissions below are the whole of Health's contact with the outside world, and both
-         are narrow enough to state exactly:
+         So the test for anything added here is not "does it touch the network". It is: COULD THIS
+         REQUEST TELL ANYONE SOMETHING ABOUT A MEMBER OF THIS HOUSEHOLD?
 
-         INTERNET — the medicine cabinet's drug lookup, and nothing else. `data/net/DrugLookupClient`
-         is the only class in the module that opens a connection, it is only ever called because
-         somebody pressed Search or Refresh, and the only things it can send are the search term
-         typed into the box and an RxNorm concept id. It asks two public, keyless U.S. government
-         references — RxNorm (National Library of Medicine) and openFDA — a question about a
-         *product*, of the kind anyone could type into a search engine, and caches the answer locally
-         so it isn't asked twice. No profile, no name, no age, no reading, no dose.
+             "What is acetaminophen oral suspension, and what does its label say?"
+                 → a question about a PRODUCT. Anyone could type it into a search engine.
+             "This person takes these medicines"
+                 → a question about a PERSON. It never leaves.
+
+         INTERNET — the medicine cabinet's drug lookup asks the first and cannot ask the second.
+         `data/net/DrugLookupClient` is the only class in this module that opens a connection; it is
+         only ever called because somebody pressed Search or Refresh; and its only inputs are a
+         search term and an RxNorm concept id. There is no parameter, and no code path, by which a
+         profile, a reading or a dose could reach it. It asks two public, keyless U.S. government
+         references — RxNorm (National Library of Medicine) and openFDA — and caches the answer
+         locally so the same question isn't asked twice. Nothing runs on a timer or at startup; a
+         household that never opens the search never makes a request at all.
 
          POST_NOTIFICATIONS — medication reminders the user sets up per medicine, delivered by
-         WorkManager (see `reminder/`). Nothing is scheduled until a reminder is turned on. -->
+         WorkManager (see `reminder/`). Composed and delivered entirely on-device. Nothing is
+         scheduled until a reminder is turned on. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

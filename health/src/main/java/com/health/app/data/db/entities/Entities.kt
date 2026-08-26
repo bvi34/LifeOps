@@ -129,7 +129,9 @@ data class SymptomEntity(
     val severity: Int,
     val startedAt: Long,
     val endedAt: Long?,
-    val note: String?
+    val note: String?,
+    /** When the row was written, as against when the symptom started. See the note in [DoseEntity]. */
+    val createdAt: Long? = null
 )
 
 /**
@@ -188,7 +190,20 @@ data class DoseEntity(
     val unit: String,
     val takenAt: Long,
     val note: String?,
-    val episodeId: String?
+    val episodeId: String?,
+    /**
+     * When this row was *written*, as distinct from [takenAt], when the dose was given.
+     *
+     * They differ whenever somebody fills the history in afterwards — the 2am dose typed up over
+     * breakfast — and the difference is worth keeping. A record made at the time and a record made
+     * from memory are both worth having and are not equally reliable, and the history says which is
+     * which rather than presenting a reconstruction as an observation.
+     *
+     * Null on every row written before the column existed: Health does not know when those were
+     * entered, and says so rather than assuming. Readings have carried this since v1 under the same
+     * name.
+     */
+    val createdAt: Long? = null
 )
 
 /**
@@ -222,7 +237,9 @@ data class CareNoteEntity(
     val episodeId: String?,
     val kind: String,
     val text: String,
-    val at: Long
+    val at: Long,
+    /** When the row was written, as against when it happened. See the note in [DoseEntity]. */
+    val createdAt: Long? = null
 )
 
 /**

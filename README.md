@@ -65,15 +65,20 @@ the receipts.
 > taken, the symptoms they've got, the medicines they're on with the spacing and daily limits from
 > the label, and the **illnesses** all of it hangs off — so "when was the last dose", "is this higher
 > than the last one" and "which day did the fever start" are already answered rather than
-> reconstructed at 3am. Its Meds tab is a **medicine cabinet**: the household's actual stock, what is
+> reconstructed at 3am — and an illness reads back two ways: a summary of how it went, and a
+> **history** of everything that was done, hour by hour. Anything that wasn't recorded at the time can
+> be added later, including a whole illness that has already been and gone; records are filed by *when
+> they happened*, and the ones written up from memory say so.
+>
+> Its Meds tab is a **medicine cabinet**: the household's actual stock, what is
 > expired or running low, and — looked up from **RxNorm and openFDA** — what each product is made of
 > and what its label says, shown beside the dose rules you typed in rather than instead of them. It
 > also **reminds you**, either at set times or when the next dose is due. The judgements it makes —
 > whether a reading is a fever, given where it was taken and how old the person is; whether the next
 > dose is due yet under both the interval and a rolling 24-hour allowance; whether a bottle is out of
-> date or out of doses — live in `health/logic/` and are JVM-unit-tested. Its only outbound traffic is
-> the drug lookup, which sends a search term and nothing else: no record ever leaves the device. It
-> records; it does not give medical advice.
+> date or out of doses — live in `health/logic/` and are JVM-unit-tested. **No record ever leaves the
+> device**: the drug lookup asks what a medicine *is*, never who takes it, and that is the line it
+> holds. It records; it does not give medical advice.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

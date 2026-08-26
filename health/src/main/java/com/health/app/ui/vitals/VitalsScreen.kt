@@ -52,8 +52,8 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
 
     fun select(profile: Profile) = repo.selectProfile(profile.id)
 
-    fun logTemperature(celsius: Double, site: TempSite, note: String?) = viewModelScope.launch {
-        selected.value?.let { repo.logTemperature(it.id, celsius, site, note = note) }
+    fun logTemperature(celsius: Double, site: TempSite, note: String?, at: Long) = viewModelScope.launch {
+        selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
     fun logOther(type: ReadingType, value: Double, secondary: Double?, note: String?) = viewModelScope.launch {
@@ -168,8 +168,8 @@ fun VitalsScreen(vm: VitalsViewModel, onAddProfile: () -> Unit) {
             unit = unit,
             ageMonths = profile.ageMonthsAt(System.currentTimeMillis()),
             onDismiss = { showTemp = false },
-            onConfirm = { celsius, site, note ->
-                vm.logTemperature(celsius, site, note)
+            onConfirm = { celsius, site, note, at ->
+                vm.logTemperature(celsius, site, note, at)
                 showTemp = false
             }
         )

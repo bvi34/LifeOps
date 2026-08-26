@@ -66,28 +66,35 @@ class TodayViewModel(private val repo: HealthRepository) : ViewModel() {
 
     fun select(profile: Profile) = repo.selectProfile(profile.id)
 
-    fun logTemperature(celsius: Double, site: TempSite, note: String?) = viewModelScope.launch {
-        selected.value?.let { repo.logTemperature(it.id, celsius, site, note = note) }
+    fun logTemperature(celsius: Double, site: TempSite, note: String?, at: Long) = viewModelScope.launch {
+        selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
-    fun logDose(medication: Medication?, name: String, amount: Double, unit: String, note: String?) =
+    fun logDose(
+        medication: Medication?,
+        name: String,
+        amount: Double,
+        unit: String,
+        note: String?,
+        at: Long
+    ) =
         viewModelScope.launch {
             val profile = selected.value ?: return@launch
-            repo.logDose(profile.id, medication?.id, name, amount, unit, note = note)
+            repo.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
         }
 
-    fun addSymptom(name: String, severity: Int, note: String?) = viewModelScope.launch {
-        selected.value?.let { repo.addSymptom(it.id, name, severity, note = note) }
+    fun addSymptom(name: String, severity: Int, note: String?, startedAt: Long) = viewModelScope.launch {
+        selected.value?.let { repo.addSymptom(it.id, name, severity, startedAt = startedAt, note = note) }
     }
 
     fun resolveSymptom(symptomId: String) = viewModelScope.launch { repo.setSymptomEnded(symptomId) }
 
-    fun addCareNote(kind: CareKind, text: String) = viewModelScope.launch {
-        selected.value?.let { repo.addCareNote(it.id, kind, text) }
+    fun addCareNote(kind: CareKind, text: String, at: Long) = viewModelScope.launch {
+        selected.value?.let { repo.addCareNote(it.id, kind, text, at = at) }
     }
 
-    fun startEpisode(title: String) = viewModelScope.launch {
-        selected.value?.let { repo.startEpisode(it.id, title) }
+    fun startEpisode(title: String, startedAt: Long = System.currentTimeMillis()) = viewModelScope.launch {
+        selected.value?.let { repo.startEpisode(it.id, title, startedAt = startedAt) }
     }
 
     fun endEpisode(episodeId: String) = viewModelScope.launch { repo.endEpisode(episodeId) }
@@ -185,7 +192,14 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
                     )
                 } else {
                     current.medications.forEach { status ->
-                        MedicationDueRow(status) { vm.logDose(it, it.name, it.doseAmount ?: 0.0, it.doseUnit, null) }
+                        // The one-tap "Give" is by definition happening now — that is what the
+                        // button means, and asking when would defeat the point of it being one tap.
+                        MedicationDueRow(status) {
+                            vm.logDose(
+                                it, it.name, it.doseAmount ?: 0.0, it.doseUnit, null,
+                                System.currentTimeMillis()
+                            )
+                        }
                     }
                 }
             }
@@ -226,8 +240,8 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
             unit = unit,
             ageMonths = profile.ageMonthsAt(System.currentTimeMillis()),
             onDismiss = { showTemp = false },
-            onConfirm = { celsius, site, note ->
-                vm.logTemperature(celsius, site, note)
+            onConfirm = { celsius, site, note, at ->
+                vm.logTemperature(celsius, site, note, at)
                 showTemp = false
             }
         )
@@ -236,8 +250,8 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
         LogDoseDialog(
             medications = medications.filter { it.active },
             onDismiss = { showDose = false },
-            onConfirm = { medication, name, amount, doseUnit, note ->
-                vm.logDose(medication, name, amount, doseUnit, note)
+            onConfirm = { medication, name, amount, doseUnit, note, at ->
+                vm.logDose(medication, name, amount, doseUnit, note, at)
                 showDose = false
             }
         )
@@ -245,8 +259,8 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
     if (showSymptom) {
         AddSymptomDialog(
             onDismiss = { showSymptom = false },
-            onConfirm = { name, severity, note ->
-                vm.addSymptom(name, severity, note)
+            onConfirm = { name, severity, note, startedAt ->
+                vm.addSymptom(name, severity, note, startedAt)
                 showSymptom = false
             }
         )
@@ -254,8 +268,8 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
     if (showCareNote) {
         CareNoteDialog(
             onDismiss = { showCareNote = false },
-            onConfirm = { kind, text ->
-                vm.addCareNote(kind, text)
+            onConfirm = { kind, text, at ->
+                vm.addCareNote(kind, text, at)
                 showCareNote = false
             }
         )
@@ -263,8 +277,8 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
     if (showStartEpisode) {
         StartEpisodeDialog(
             onDismiss = { showStartEpisode = false },
-            onConfirm = { title ->
-                vm.startEpisode(title)
+            onConfirm = { title, startedAt ->
+                vm.startEpisode(title, startedAt)
                 showStartEpisode = false
             }
         )
@@ -360,13 +374,17 @@ private fun QuickAction(
 }
 
 @Composable
-private fun StartEpisodeDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+private fun StartEpisodeDialog(onDismiss: () -> Unit, onConfirm: (String, Long) -> Unit) {
     var title by remember { mutableStateOf("") }
+    var startedAt by remember { mutableLongStateOf(System.currentTimeMillis()) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Start an illness") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 OutlinedTextField(
                     value = title,
                     onValueChange = { title = it },
@@ -374,14 +392,22 @@ private fun StartEpisodeDialog(onDismiss: () -> Unit, onConfirm: (String) -> Uni
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                // Backdating this is how an illness nobody recorded at the time gets entered at all
+                // — and it is also what decides which records get adopted into it.
+                WhenField(value = startedAt, onValueChange = { startedAt = it }, label = "Started")
                 Text(
-                    "Readings, doses and notes from the last 12 hours will be filed against it too.",
+                    "Readings, doses and notes from the 12 hours before it started will be filed " +
+                        "against it too — an illness is nearly always noticed after the first " +
+                        "temperature was taken.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
         },
         confirmButton = {
-            TextButton(enabled = title.isNotBlank(), onClick = { onConfirm(title.trim()) }) { Text("Start") }
+            TextButton(
+                enabled = title.isNotBlank(),
+                onClick = { onConfirm(title.trim(), startedAt) }
+            ) { Text("Start") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

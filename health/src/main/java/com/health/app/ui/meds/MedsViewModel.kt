@@ -264,11 +264,17 @@ class MedsViewModel(
 
     fun give(medication: Medication) = viewModelScope.launch { repo.logDoseOf(medication) }
 
-    fun logDose(medication: Medication?, name: String, amount: Double, unit: String, note: String?) =
-        viewModelScope.launch {
-            val profile = selected.value ?: return@launch
-            repo.logDose(profile.id, medication?.id, name, amount, unit, note = note)
-        }
+    fun logDose(
+        medication: Medication?,
+        name: String,
+        amount: Double,
+        unit: String,
+        note: String?,
+        at: Long
+    ) = viewModelScope.launch {
+        val profile = selected.value ?: return@launch
+        repo.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
+    }
 
     fun setActive(medication: Medication, active: Boolean) = viewModelScope.launch {
         repo.updateMedication(medication.copy(active = active))

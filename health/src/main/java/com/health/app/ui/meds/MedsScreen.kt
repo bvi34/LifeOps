@@ -134,8 +134,8 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
         LogDoseDialog(
             medications = statuses.map { it.medication }.filter { it.active },
             onDismiss = { showDose = false },
-            onConfirm = { medication, name, amount, unit, note ->
-                vm.logDose(medication, name, amount, unit, note)
+            onConfirm = { medication, name, amount, unit, note, at ->
+                vm.logDose(medication, name, amount, unit, note, at)
                 showDose = false
             }
         )

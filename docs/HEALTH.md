@@ -24,7 +24,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
-| **Illness** | Episodes past and present, each readable back as a summary: how long, how high it peaked, which way it's going, what was given, what's still going. Plus the care log. |
+| **Illness** | Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
 | **People** | The household. Add, edit and remove profiles; set whose reading you're looking at; choose °C or °F. |
 
 ## Profiles — why they're the spine, not a setting
@@ -201,7 +201,9 @@ live dose window has the final word.
 ## Illnesses — the thing the rows hang off
 
 Starting an episode is the difference between a scatter of readings and a story. While one is open,
-**everything recorded is filed against it automatically**, and starting it also adopts the
+**everything recorded is filed against it automatically** — by the time the record *happened*, not by
+which episode is open when it is typed in, which is what lets the history be filled in afterwards
+without landing last month's flu inside today's cold. Starting one also adopts the
 unattached readings, doses and symptoms from the previous 12 hours — an illness is nearly always
 noticed after the first temperature was taken, and a record you have to assemble by hand afterwards is
 one nobody assembles. One open episode per person, so "how long has this been going on" has exactly
@@ -211,6 +213,63 @@ one answer.
 *current* fever run has lasted (a fever that settles and returns is reported as the new run it is),
 active vs. resolved symptoms, doses given — and the standing-back observations no single reading can
 make, like a fever heading into its fourth day, which escalates the episode's care level on its own.
+
+## The history — everything that was done, and when
+
+An episode can be read back two ways, because people ask two different questions about an illness.
+
+`EpisodeSummaries.summarize` answers **how did it go** — the peak, the trend, how long the fever has
+run. `Timeline.build` answers the other one: **what actually happened, and when?** That is the version
+a doctor asks for in a waiting room, the version a second parent taking over needs, and precisely the
+version the person who was up all three nights cannot produce from memory.
+
+It merges all four kinds of record — readings, symptoms, doses, care notes — into one list, grouped
+by day of the illness. The day it started is **Day 1**, because that is how everybody counts it out
+loud and it is the number the question "how long has this been going on?" is really asking for. Days
+read newest first; each day reads forwards, the way it was lived. The episode's own start and end are
+entries too, so the bookends are visible. Nothing is summarised or dropped — the whole value of it is
+that it is complete.
+
+### Filling it in afterwards
+
+A history you can only write at the moment things happen is a history that mostly doesn't get
+written. So every record dialog now asks **when**, and every one of them defaults to "now" at no cost
+in taps. Nothing about recording a temperature as it is taken got slower.
+
+What that buys is the case this exists for: the 2am dose typed up over breakfast, the doctor's call
+on day three, an entire illness that was never recorded at all. Set an episode's dates to when it
+actually ran and fill the rest in from memory.
+
+Two things make this safe rather than merely possible:
+
+- **Records are filed by when they happened, not by what's open now.** `episodeIdAt` finds the
+  episode whose span contains the instant. The two answers agree for anything recorded live and
+  diverge the moment anything is backdated — file by "what's open now" and last month's flu ends up
+  inside today's cold, which makes every summary built on top of it wrong.
+- **Moving an episode's dates re-files its records, both ways.** Widening a span adopts unattached
+  records that now fall inside; narrowing it releases records that now fall outside. Records filed
+  under a *different* illness are never touched, and nothing is ever deleted. The span always means
+  what it says.
+
+### Saying which is which
+
+A record made at the time and a record made from memory are both worth having and are **not** equally
+reliable. Presenting a reconstruction as an observation would be a quiet lie about the evidence — the
+one thing an app whose whole pitch is "keep the receipts" cannot do.
+
+So doses, symptoms and care notes now carry `createdAt` alongside their event time (readings always
+have), and an entry more than **half an hour** apart reads "written 7h later". Half an hour because
+finishing with the thermometer, settling a child and *then* opening the app is still recording at the
+time — flagging that would attach the note to nearly everything and make it mean nothing.
+
+It is shown as a note, not a warning: filling the history in is the encouraged thing to do, and the
+header says how much of it was added afterwards so a reader knows what they are relying on. Rows
+written before Health tracked this say **nothing** — the honest answer there is that it doesn't know,
+and a badge either way would be inventing a fact about how the row was entered.
+
+Nothing in the future can be entered. The date picker won't offer it and the time step refuses it: a
+temperature that hasn't been taken yet is a typo, and `DoseSchedule` takes future-dated doses
+seriously enough to ignore them for exactly that reason.
 
 ## Module layout
 
@@ -226,6 +285,7 @@ make, like a fever heading into its fourth day, which escalates the episode's ca
 │   ├── RxNormParser     RxNorm JSON → candidates, ingredients, strengths, schedule
 │   ├── OpenFdaParser    openFDA JSON → the label's own sections, in reading order
 │   ├── EpisodeSummary   an illness read back: peak, trend, fever run, advice
+│   ├── Timeline         everything that happened, in order, by day — and what was filled in later
 │   └── Age              birth date → months/years, and the label people actually use
 ├── data/             Room (HealthDatabase, entities, HealthDao) + repository + prefs
 │   ├── model/        domain types with the string columns resolved into enums
@@ -274,6 +334,13 @@ One `health.db`, ten tables:
 - **`episodes`** — bouts of illness; open while `endedAt` is null.
 - **`care_notes`** — fluids, rest, the call to the doctor and what they said.
 
+*Schema v5 adds `createdAt` to `doses`, `symptoms` and `care_notes` — when the **row** was written, as
+against when the thing happened. Nullable, with no backfill: every row that predates the column was
+written by an app that could only record the present, but "almost certainly recorded live" is an
+assumption, and inventing one for thousands of existing rows to make a badge tidy is the kind of quiet
+fiction this app refuses. Null means "Health doesn't know when this was entered", and the history says
+so by saying nothing. Readings have carried a non-null `createdAt` since v1.*
+
 Two conventions run through them: **instants are epoch millis, dates are ISO strings** (a moment gets
 subtracted and windowed; a birth date must not shift across time zones), and **every row about a
 person carries its profile id** — there is no ambient "current person" at the data layer.
@@ -304,22 +371,36 @@ leave somebody nudged about a medicine they don't have, or not nudged about one 
 
 ## Privacy
 
-Health declares exactly two permissions, no sensors and no contacts. **Household medical records still
-cannot leave the device** — nothing in the module reads a profile, a reading, a symptom, a dose or an
-illness and sends it anywhere, and there is no code path that could.
+**The promise is that nothing about a person leaves this device.** Not a name, not a temperature, not
+a symptom, not a dose, not an illness. Health held that by declaring no permissions at all, which was
+the simplest possible way to keep it — but the permission count was the *means*, never the promise
+itself, and it is worth writing the real one down before reading further.
+
+The test is therefore not "does this touch the network" but **"could this request tell anyone
+something about a member of this household?"** And that is the line the drug lookup sits on the right
+side of:
+
+| | |
+|---|---|
+| *"What is acetaminophen oral suspension, and what does its label say?"* | A question about a **product**. Anyone could type it into a search engine. It says nothing about who is asking or why. |
+| *"This person takes these medicines"* | A question about a **person**. It never leaves. |
+
+Health asks the first and cannot ask the second. The lookup takes a search term and an RxNorm concept
+id; there is no parameter, and no code path, by which a profile, a reading or a dose could reach it.
+A household that never opens the search never makes a request at all.
+
+Two permissions, no sensors, no contacts:
 
 - **`INTERNET`** — the medicine cabinet's drug lookup, and nothing else. `data/net/DrugLookupClient`
-  is the only class in the module that opens a connection; it is only ever called because somebody
-  pressed Search or Refresh; and the only things it can send are **the search term typed into the box
-  and an RxNorm concept id**. It asks two public, keyless U.S. government references a question about
-  a *product*, of the kind anyone could type into a search engine, and caches the answer locally so it
-  isn't asked twice. Nothing runs on a timer, at startup, or in the background.
+  is the only class in the module that opens a connection, and it is only ever called because
+  somebody pressed Search or Refresh. It asks two public, keyless U.S. government references —
+  RxNorm and openFDA — and caches the answer locally so the same question isn't asked twice. Nothing
+  runs on a timer, at startup, or in the background.
 - **`POST_NOTIFICATIONS`** — medication reminders the user sets up per medicine. Nothing is scheduled
-  until a reminder is turned on.
+  until a reminder is turned on, and the notification is composed and delivered entirely on-device.
 
-The module used to declare no permissions at all, and the promise behind that has not changed — what
-crosses the wire is a question about a bottle, never a fact about a person. The manifest says so at
-the point of declaration, which is where anyone reading the module will look first.
+The manifest states all of this at the point of declaration, which is where anyone auditing the
+module will look first.
 
 Advisor can read Health, but only behind the same explicit per-app gate as every other source, denied
 by default. `HealthKnowledgeSource` is read-only and **names the person in every document it
@@ -331,7 +412,7 @@ rather than inviting the model to form a second opinion.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 84 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 96 tests:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -359,6 +440,11 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   reminder that lapses rather than nagging about a medicine nobody is taking, a late wake-up that still
   notifies and a hopelessly late one that doesn't, a window re-armed by somebody else's dose staying
   quiet, and an unparseable time being dropped rather than defaulted.
+- `TimelineTest` — days newest-first with each day reading forwards, the day an illness started being
+  Day 1, no day number invented when there is no episode to count from, a record written up hours
+  later marked as filled in and one written at the time not, a row from before Health tracked it not
+  being accused of anything, simultaneous entries reading in the order they happened, and days grouped
+  in the reader's own zone rather than UTC.
 - `DrugLookupParserTest` — products sorted ahead of bare ingredients, suppressed and non-English
   concepts dropped, the approximate search keeping the best score per concept, a numeric DEA schedule
   written out and an unscheduled one saying nothing, label sections kept in reading order with the

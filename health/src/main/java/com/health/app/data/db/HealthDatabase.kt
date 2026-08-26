@@ -25,7 +25,7 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 4
+const val HEALTH_DB_VERSION = 5
 
 /**
  * Health's own store: people, everything recorded about them, and the medicine cabinet those
@@ -181,6 +181,29 @@ abstract class HealthDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 lets the history be filled in afterwards, and stay honest about it.
+         *
+         * Doses, symptoms and care notes gain `createdAt` — when the *row* was written, as against
+         * when the thing happened. They differ whenever somebody types up the 2am dose over
+         * breakfast, and the difference is worth keeping: a record made at the time and a record
+         * made from memory are both worth having and are not equally reliable.
+         *
+         * Nullable, with no backfill. Every row that predates the column was written by an app that
+         * could only record the present, so its event time is almost certainly also its entry time —
+         * but "almost certainly" is an assumption, and inventing one for thousands of existing rows
+         * to make a badge tidy is exactly the kind of quiet fiction this app is supposed to refuse.
+         * Null means "Health doesn't know when this was entered", and the history says so by saying
+         * nothing. Readings have carried a non-null `createdAt` since v1.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE doses ADD COLUMN createdAt INTEGER")
+                db.execSQL("ALTER TABLE symptoms ADD COLUMN createdAt INTEGER")
+                db.execSQL("ALTER TABLE care_notes ADD COLUMN createdAt INTEGER")
+            }
+        }
+
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -190,7 +213,8 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

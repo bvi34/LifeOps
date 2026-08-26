@@ -25,6 +25,7 @@ import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
 import com.health.app.data.model.Symptom
 import com.health.app.data.prefs.HealthPrefs
+import com.health.app.logic.Age
 import com.health.app.logic.Cabinet
 import com.health.app.logic.CabinetFacts
 import com.health.app.logic.CareLevel
@@ -41,7 +42,13 @@ import com.health.app.logic.MedicationRule
 import com.health.app.logic.ReminderMode
 import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
+import com.health.app.logic.Temperature
 import com.health.app.logic.TempSite
+import com.health.app.logic.Timeline
+import com.health.app.logic.TimelineDay
+import com.health.app.logic.TimelineEntry
+import com.health.app.logic.TimelineFacts
+import com.health.app.logic.TimelineKind
 import com.health.app.logic.TempUnit
 import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.PersonBinder
@@ -366,7 +373,7 @@ class HealthRepository(
             ReadingEntity(
                 id = id,
                 profileId = profileId,
-                episodeId = dao.getOpenEpisode(profileId)?.id,
+                episodeId = episodeIdAt(profileId, takenAt),
                 type = type.key,
                 value = value,
                 secondaryValue = secondaryValue,
@@ -378,6 +385,20 @@ class HealthRepository(
         )
         return id
     }
+
+    /**
+     * The episode a record belongs to, decided by **when the record happened** rather than by what
+     * happens to be open when it is typed in.
+     *
+     * The two answers agree for anything recorded as it happens, and disagree the moment the history
+     * is filled in afterwards — which it now can be. Last night's dose, typed up over breakfast,
+     * belongs to last night's illness; a week of last month's flu, reconstructed from memory,
+     * belongs to last month's episode and not to today's cold. Filing by "what's open now" would put
+     * all of it in the wrong story, and an episode summary is only worth reading if the rows under it
+     * actually happened during it.
+     */
+    private suspend fun episodeIdAt(profileId: String, atMillis: Long): String? =
+        dao.getEpisodeAt(profileId, atMillis)?.id
 
     suspend fun deleteReading(id: String) = dao.deleteReading(id)
 
@@ -398,12 +419,13 @@ class HealthRepository(
             SymptomEntity(
                 id = id,
                 profileId = profileId,
-                episodeId = dao.getOpenEpisode(profileId)?.id,
+                episodeId = episodeIdAt(profileId, startedAt),
                 name = name.trim(),
                 severity = severity.coerceIn(1, 5),
                 startedAt = startedAt,
                 endedAt = null,
-                note = note?.trim()?.ifBlank { null }
+                note = note?.trim()?.ifBlank { null },
+                createdAt = now()
             )
         )
         return id
@@ -581,7 +603,8 @@ class HealthRepository(
                 unit = unit.trim(),
                 takenAt = takenAt,
                 note = note?.trim()?.ifBlank { null },
-                episodeId = dao.getOpenEpisode(profileId)?.id
+                episodeId = episodeIdAt(profileId, takenAt),
+                createdAt = now()
             )
         )
         medicationId?.let { medication ->
@@ -889,17 +912,70 @@ class HealthRepository(
         return id
     }
 
-    /** File this person's recent unattached records against a freshly started episode. */
-    private suspend fun adoptRecentRecords(profileId: String, episodeId: String, since: Long) {
+    /**
+     * File this person's unattached records in a span against an episode.
+     *
+     * Only records with no episode of their own — anything already filed under another illness stays
+     * where it is. That is what keeps this safe to run when an episode's dates change: widening a
+     * span cannot steal last month's flu's records into this month's cold.
+     *
+     * [until] matters once episodes can be backdated. Adopting everything after a start date would,
+     * for an illness entered a fortnight late, sweep up two weeks of unrelated records that happened
+     * after it was over.
+     */
+    private suspend fun adoptRecentRecords(
+        profileId: String,
+        episodeId: String,
+        since: Long,
+        until: Long = Long.MAX_VALUE
+    ) {
         dao.getAllReadings()
-            .filter { it.profileId == profileId && it.episodeId == null && it.takenAt >= since }
+            .filter { it.profileId == profileId && it.episodeId == null && it.takenAt in since..until }
             .forEach { dao.upsertReading(it.copy(episodeId = episodeId)) }
         dao.getAllSymptoms()
-            .filter { it.profileId == profileId && it.episodeId == null && it.startedAt >= since }
+            .filter { it.profileId == profileId && it.episodeId == null && it.startedAt in since..until }
             .forEach { dao.upsertSymptom(it.copy(episodeId = episodeId)) }
         dao.getAllDoses()
-            .filter { it.profileId == profileId && it.episodeId == null && it.takenAt >= since }
+            .filter { it.profileId == profileId && it.episodeId == null && it.takenAt in since..until }
             .forEach { dao.upsertDose(it.copy(episodeId = episodeId)) }
+        dao.getAllCareNotes()
+            .filter { it.profileId == profileId && it.episodeId == null && it.at in since..until }
+            .forEach { dao.upsertCareNote(it.copy(episodeId = episodeId)) }
+    }
+
+    /**
+     * Move an illness's dates — which is how one that was never recorded at the time gets entered at
+     * all. "We had the flu the first week of March" is an episode with both ends in the past, and
+     * without this there is no way to say so.
+     *
+     * Re-files as it goes, in both directions, because the span *is* what decides membership:
+     * unattached records that now fall inside are adopted, and records filed under this episode that
+     * now fall outside are released rather than left claiming to have happened during an illness
+     * they no longer overlap. Records belonging to another illness are never touched.
+     */
+    suspend fun setEpisodeDates(episodeId: String, startedAt: Long, endedAt: Long?) {
+        val episode = dao.getEpisode(episodeId) ?: return
+        dao.upsertEpisode(episode.copy(startedAt = startedAt, endedAt = endedAt, updatedAt = now()))
+
+        val until = endedAt ?: Long.MAX_VALUE
+        releaseRecordsOutside(episodeId, startedAt, until)
+        adoptRecentRecords(episode.profileId, episodeId, since = startedAt, until = until)
+    }
+
+    /** Detach this episode's records that no longer fall inside its span. */
+    private suspend fun releaseRecordsOutside(episodeId: String, from: Long, until: Long) {
+        dao.getReadingsForEpisode(episodeId)
+            .filterNot { it.takenAt in from..until }
+            .forEach { dao.upsertReading(it.copy(episodeId = null)) }
+        dao.getSymptomsForEpisode(episodeId)
+            .filterNot { it.startedAt in from..until }
+            .forEach { dao.upsertSymptom(it.copy(episodeId = null)) }
+        dao.getDosesForEpisode(episodeId)
+            .filterNot { it.takenAt in from..until }
+            .forEach { dao.upsertDose(it.copy(episodeId = null)) }
+        dao.getCareNotesForEpisode(episodeId)
+            .filterNot { it.at in from..until }
+            .forEach { dao.upsertCareNote(it.copy(episodeId = null)) }
     }
 
     /** Close an episode, and resolve anything still marked active inside it. */
@@ -960,16 +1036,69 @@ class HealthRepository(
             CareNoteEntity(
                 id = id,
                 profileId = profileId,
-                episodeId = dao.getOpenEpisode(profileId)?.id,
+                episodeId = episodeIdAt(profileId, at),
                 kind = kind.key,
                 text = text.trim(),
-                at = at
+                at = at,
+                createdAt = now()
             )
         )
         return id
     }
 
     suspend fun deleteCareNote(id: String) = dao.deleteCareNote(id)
+
+    // --- the history --------------------------------------------------------------------------
+
+    /**
+     * Everything that was done for one illness, in the order it was done.
+     *
+     * The other half of reading an episode back. `summarizeEpisode` answers *how did it go*; this
+     * answers *what actually happened, and when* — which is the question a doctor asks, and the one
+     * the person who was up all three nights cannot answer from memory.
+     *
+     * Read once on demand rather than observed, like the summary: it folds four tables, which is
+     * worth doing when somebody opens the history and not worth redoing on every unrelated write.
+     */
+    suspend fun episodeHistory(episodeId: String): List<TimelineDay> {
+        val episode = dao.getEpisode(episodeId) ?: return emptyList()
+        val profile = dao.getProfile(episode.profileId)
+        val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
+
+        return Timeline.build(
+            TimelineFacts(
+                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths) },
+                symptoms = dao.getSymptomsForEpisode(episodeId).flatMap { it.toTimelineEntries() },
+                doses = dao.getDosesForEpisode(episodeId).map { it.toTimelineEntry() },
+                careNotes = dao.getCareNotesForEpisode(episodeId).map { it.toTimelineEntry() },
+                episodeStartedAtMillis = episode.startedAt,
+                episodeEndedAtMillis = episode.endedAt,
+                episodeTitle = episode.title
+            )
+        )
+    }
+
+    /**
+     * The same history for a person over a window, illness or no illness.
+     *
+     * Not everything worth reconstructing happened during a declared episode — the week of bad
+     * headaches nobody called an illness, the doses given before anyone thought to start one — and a
+     * history that could only be read inside an episode would quietly lose all of it. Days are not
+     * numbered here, because there is no day one to count from.
+     */
+    suspend fun profileHistory(profileId: String, sinceMillis: Long): List<TimelineDay> {
+        val profile = dao.getProfile(profileId)
+        val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
+
+        return Timeline.build(
+            TimelineFacts(
+                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths) },
+                symptoms = dao.getSymptomsSince(profileId, sinceMillis).flatMap { it.toTimelineEntries() },
+                doses = dao.getDosesSince(profileId, sinceMillis).map { it.toTimelineEntry() },
+                careNotes = dao.getCareNotesSince(profileId, sinceMillis).map { it.toTimelineEntry() }
+            )
+        )
+    }
 
     // --- the headline -------------------------------------------------------------------------
 
@@ -1155,6 +1284,108 @@ fun DoseEntity.toModel() = Dose(
     note = note,
     episodeId = episodeId
 )
+
+/**
+ * The row → history-entry mappers.
+ *
+ * Each one decides how its record reads in a list somebody may be holding out to a doctor, which is
+ * why the wording is plain and complete rather than terse: "38.4 °C (ear)" tells you what an
+ * abbreviation would not, and the site is the difference between a fever and a normal reading.
+ *
+ * Readings carry the fever verdict Health already computed, so the history and every other screen
+ * give the same answer to the same number. Nothing else carries a care level — Health has no opinion
+ * about a care note, and defaulting one to "routine" would be inventing one.
+ */
+fun ReadingEntity.toTimelineEntry(ageMonths: Int?): TimelineEntry {
+    val readingType = ReadingType.fromKey(type)
+    val tempSite = site?.let { TempSite.fromKey(it) }
+    val assessment = if (readingType == ReadingType.TEMPERATURE) {
+        Fever.assess(value, tempSite ?: TempSite.ORAL, ageMonths)
+    } else {
+        null
+    }
+    val headline = when (readingType) {
+        ReadingType.TEMPERATURE -> buildString {
+            append(Temperature.format(value, TempUnit.CELSIUS))
+            tempSite?.let { append(" (").append(it.label.lowercase()).append(')') }
+        }
+        ReadingType.BLOOD_PRESSURE ->
+            "${trimAmount(value)}/${secondaryValue?.let { trimAmount(it) } ?: "?"} ${readingType.unit}"
+        else -> "${trimAmount(value)} ${readingType.unit}"
+    }
+    return TimelineEntry(
+        id = "reading:$id",
+        kind = TimelineKind.READING,
+        atMillis = takenAt,
+        recordedAtMillis = createdAt,
+        headline = headline,
+        detail = listOfNotNull(
+            readingType.label.takeIf { readingType != ReadingType.TEMPERATURE },
+            assessment?.band?.label,
+            note
+        ).joinToString(" · ").ifBlank { null },
+        careLevel = assessment?.careLevel
+    )
+}
+
+/**
+ * A symptom becomes up to **two** entries: one where it started, one where it was marked over.
+ *
+ * They are separate moments and a history that showed only the start would be missing the answer to
+ * "when did the cough stop?" — which is usually the question being asked, because it is how you tell
+ * whether things are getting better.
+ */
+fun SymptomEntity.toTimelineEntries(): List<TimelineEntry> = buildList {
+    add(
+        TimelineEntry(
+            id = "symptom-start:$id",
+            kind = TimelineKind.SYMPTOM_STARTED,
+            atMillis = startedAt,
+            recordedAtMillis = createdAt,
+            headline = name,
+            detail = listOfNotNull("severity $severity of 5", note).joinToString(" · ")
+        )
+    )
+    endedAt?.let { ended ->
+        add(
+            TimelineEntry(
+                id = "symptom-end:$id",
+                kind = TimelineKind.SYMPTOM_ENDED,
+                atMillis = ended,
+                // The end was recorded when it was marked over, which Health doesn't store
+                // separately — the row's createdAt is when the symptom was *added*, and reusing it
+                // here would claim the ending was written up months before it happened.
+                recordedAtMillis = null,
+                headline = "$name passed"
+            )
+        )
+    }
+}
+
+fun DoseEntity.toTimelineEntry() = TimelineEntry(
+    id = "dose:$id",
+    kind = TimelineKind.DOSE,
+    atMillis = takenAt,
+    recordedAtMillis = createdAt,
+    headline = medicationName,
+    detail = listOfNotNull(
+        "${trimAmount(amount)} $unit".trim().takeIf { amount > 0 },
+        note
+    ).joinToString(" · ").ifBlank { null }
+)
+
+fun CareNoteEntity.toTimelineEntry() = TimelineEntry(
+    id = "care:$id",
+    kind = TimelineKind.CARE,
+    atMillis = at,
+    recordedAtMillis = createdAt,
+    headline = text,
+    detail = CareKind.fromKey(kind).label
+)
+
+/** Numbers in the history read as people write them: "5", not "5.0". */
+private fun trimAmount(value: Double): String =
+    if (value % 1.0 == 0.0) value.toLong().toString() else Temperature.round1(value).toString()
 
 fun EpisodeEntity.toModel() = Episode(
     id = id,
