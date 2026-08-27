@@ -221,8 +221,12 @@ fun DoseEntity.toModel() = Dose(
  * Readings carry the fever verdict Health already computed, so the history and every other screen
  * give the same answer to the same number. Nothing else carries a care level — Health has no opinion
  * about a care note, and defaulting one to "routine" would be inventing one.
+ *
+ * A temperature is stored in Celsius and read in whatever the household chose, so [unit] has to be
+ * passed in: this is the one mapper that writes a number the display unit governs, and hard-coding
+ * Celsius here is how a history ends up quoting °C to somebody who set the app to °F everywhere else.
  */
-fun ReadingEntity.toTimelineEntry(ageMonths: Int?): TimelineEntry {
+fun ReadingEntity.toTimelineEntry(ageMonths: Int?, unit: TempUnit): TimelineEntry {
     val readingType = ReadingType.fromKey(type)
     val tempSite = site?.let { TempSite.fromKey(it) }
     val assessment = if (readingType == ReadingType.TEMPERATURE) {
@@ -232,7 +236,7 @@ fun ReadingEntity.toTimelineEntry(ageMonths: Int?): TimelineEntry {
     }
     val headline = when (readingType) {
         ReadingType.TEMPERATURE -> buildString {
-            append(Temperature.format(value, TempUnit.CELSIUS))
+            append(Temperature.format(value, unit))
             tempSite?.let { append(" (").append(it.label.lowercase()).append(')') }
         }
         ReadingType.BLOOD_PRESSURE ->

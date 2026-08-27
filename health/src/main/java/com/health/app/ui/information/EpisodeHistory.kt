@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -15,6 +16,7 @@ import com.health.app.logic.Timeline
 import com.health.app.logic.TimelineDay
 import com.health.app.logic.TimelineEntry
 import com.health.app.logic.TimelineKind
+import com.health.app.logic.TimelineOrder
 import com.health.app.ui.common.*
 
 /**
@@ -32,8 +34,10 @@ import com.health.app.ui.common.*
  * happened* — which is the version a doctor asks for, and the version the person who was up all
  * three nights cannot produce from memory.
  *
- * Days read newest first, and each day reads forwards, because that is how the two are actually
- * used: you want the latest day immediately, and then to read it the way it was lived.
+ * The whole list runs one way — see [TimelineOrder] — and the reader says which. It opens newest
+ * first, because the question that gets asked at 3am is "where are we now"; the doctor in the
+ * waiting room wants it from the beginning, which is one tap away. What it never does again is run
+ * both ways at once, which used to put 23:55 and 00:05 a full day apart.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +49,12 @@ internal fun HistorySheet(
 ) {
     val total = Timeline.entryCount(days)
     val filledIn = Timeline.filledInCount(days)
+
+    // The sheet's own state, not the view model's: it changes nothing that was recorded and nothing
+    // any other screen reads, and re-sorting a history already in memory is cheaper than re-reading
+    // one from four tables.
+    var order by rememberSaveable { mutableStateOf(TimelineOrder.NEWEST_FIRST) }
+    val ordered = remember(days, order) { Timeline.inOrder(days, order) }
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(
@@ -79,6 +89,17 @@ internal fun HistorySheet(
                 }
             }
 
+            if (days.size > 1 || total > 1) {
+                item(key = "order") {
+                    ChoiceRow(
+                        options = TimelineOrder.entries,
+                        selected = order,
+                        onSelect = { order = it },
+                        label = { it.label }
+                    )
+                }
+            }
+
             if (days.isEmpty()) {
                 item(key = "empty") {
                     Text(
@@ -90,7 +111,7 @@ internal fun HistorySheet(
                 }
             }
 
-            days.forEach { day ->
+            ordered.forEach { day ->
                 item(key = "day:${day.date}") {
                     Row(
                         Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -103,7 +124,7 @@ internal fun HistorySheet(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            formatDay(day.entries.first().atMillis),
+                            formatDay(day.date),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
