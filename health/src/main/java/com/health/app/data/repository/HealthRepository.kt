@@ -1,10 +1,14 @@
 package com.health.app.data.repository
 
 import com.health.app.data.db.dao.HealthDao
+import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
+import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -15,6 +19,7 @@ import com.health.app.data.db.entities.ProviderEntity
 import com.health.app.data.db.entities.ProviderLinkEntity
 import com.health.app.data.db.entities.ReadingEntity
 import com.health.app.data.db.entities.SymptomEntity
+import com.health.app.data.model.Allergy
 import com.health.app.data.model.CabinetEntry
 import com.health.app.data.model.CabinetItem
 import com.health.app.data.model.CabinetUse
@@ -22,9 +27,12 @@ import com.health.app.data.model.CareKind
 import com.health.app.data.model.CareNote
 import com.health.app.data.model.CareRole
 import com.health.app.data.model.CareTeamMember
+import com.health.app.data.model.Condition
 import com.health.app.data.model.CoverageCard
+import com.health.app.data.model.Document
 import com.health.app.data.model.Dose
 import com.health.app.data.model.Episode
+import com.health.app.data.model.Immunization
 import com.health.app.data.model.InsuranceMembership
 import com.health.app.data.model.InsurancePlan
 import com.health.app.data.model.Medication
@@ -36,28 +44,39 @@ import com.health.app.data.model.Provider
 import com.health.app.data.model.ProviderLink
 import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
+import com.health.app.data.model.StandingRecord
 import com.health.app.data.model.Symptom
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.logic.Age
+import com.health.app.logic.Allergies
+import com.health.app.logic.AllergyKind
+import com.health.app.logic.AllergySeverity
+import com.health.app.logic.AllergyWarning
 import com.health.app.logic.Cabinet
 import com.health.app.logic.CabinetFacts
 import com.health.app.logic.CardFacts
 import com.health.app.logic.CareLevel
 import com.health.app.logic.CheckOutcome
+import com.health.app.logic.ConditionStatus
+import com.health.app.logic.Conditions
 import com.health.app.logic.CoverageKind
 import com.health.app.logic.DirectoryOutcome
 import com.health.app.logic.DirectoryProbe
 import com.health.app.logic.DosePoint
 import com.health.app.logic.DoseRecord
 import com.health.app.logic.DoseReminder
+import com.health.app.logic.DocumentKind
+import com.health.app.logic.Documents
 import com.health.app.logic.DoseSchedule
 import com.health.app.logic.DrugMonograph
 import com.health.app.logic.EpisodeFacts
 import com.health.app.logic.EpisodeSummaries
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.Fever
+import com.health.app.logic.Immunizations
 import com.health.app.logic.Insurance
 import com.health.app.logic.MedicationRule
+import com.health.app.logic.MedicineFacts
 import com.health.app.logic.NetworkCheckRecord
 import com.health.app.logic.NetworkStatus
 import com.health.app.logic.PlanType
@@ -65,6 +84,8 @@ import com.health.app.logic.ProviderDirectory
 import com.health.app.logic.ReminderMode
 import com.health.app.logic.SymptomPoint
 import com.health.app.logic.TempPoint
+import com.health.app.logic.VaccineSeries
+import com.health.app.logic.VaccineSource
 import com.health.app.logic.Temperature
 import com.health.app.logic.TempSite
 import com.health.app.logic.Timeline
@@ -133,7 +154,14 @@ class HealthRepository(
      * gone — never before, because a file deleted ahead of a write that then fails leaves a card
      * pointing at nothing.
      */
-    private val onCardImageDiscarded: (fileName: String) -> Unit = {}
+    private val onCardImageDiscarded: (fileName: String) -> Unit = {},
+    /**
+     * How the document store hears that a stored file is no longer referenced by any row.
+     *
+     * A hook for the same reason [onCardImageDiscarded] is one: the repository stays JVM-testable
+     * and knows nothing about disk. Called with the file name *after* the row naming it is gone.
+     */
+    private val onDocumentDiscarded: (fileName: String) -> Unit = {}
 ) {
 
     private fun now() = System.currentTimeMillis()
@@ -164,6 +192,16 @@ class HealthRepository(
         prefs.selectedProfileId = profileId
     }
 
+    /**
+     * Create a profile here and publish it as a new household member.
+     *
+     * **No longer reachable from Health's UI**, since Health has no household screen: profiles now
+     * arrive over the seam, from somebody being ticked as a household member in People (see
+     * [createFromPacket]). It is kept because it is the other half of a symmetric seam — a peer that
+     * can only ever receive is a peer that cannot be tested against one that sends — and because
+     * "Health may never create a person" is a product decision that could reasonably be revisited,
+     * where deleting the code would be a one-way door.
+     */
     suspend fun addProfile(
         name: String,
         relationship: String?,
@@ -232,6 +270,22 @@ class HealthRepository(
      * of the removal the next edit to that person in People brings their packet round again and
      * Health dutifully re-creates the profile that was just deleted.
      */
+    /**
+     * **No longer reachable from Health's UI either**, and the reason is worth writing down because
+     * it is not the same reason as [addProfile]'s.
+     *
+     * Removing somebody is the household directory's act now. What reaches Health when People
+     * deletes a person is a `deleted` packet, and `PersonMerge` turns that into an **archive** rather
+     * than a cascade — deliberately, and across all three peers: losing a household member's entire
+     * medical history because another app dropped a row is not a recoverable mistake, and the seam
+     * says so at the point of declaration (see [com.people.app.sync.PersonPacket.deleted]). An
+     * archived profile disappears from every screen here, because `observeProfiles` filters them out.
+     *
+     * So this cascade is the only code in the app that can actually destroy a person's medical
+     * records, and nothing calls it. That is the correct number of callers until somebody decides
+     * what should: a purge is a different feature from a removal, and it needs a confirmation in the
+     * app that holds the data rather than a side effect in the app that doesn't.
+     */
     suspend fun deleteProfile(profileId: String) {
         dao.getProfile(profileId)?.let { profile ->
             dao.upsertProfileTombstone(
@@ -243,7 +297,13 @@ class HealthRepository(
                 )
             )
         }
+        // Read the file names before the cascade drops the rows that name them — afterwards there is
+        // nothing left to ask, and the files would sit in `documents/` for ever with no row pointing
+        // at them. Household documents (profileId null) are untouched: an insurance statement is not
+        // about the person who has left.
+        val orphanedFiles = dao.documentFileNamesForProfile(profileId)
         dao.deleteProfileCascade(profileId)
+        orphanedFiles.forEach(onDocumentDiscarded)
         if (prefs.selectedProfileId == profileId) {
             prefs.selectedProfileId = dao.getProfiles().firstOrNull { !it.archived }?.id
         }
@@ -1166,6 +1226,342 @@ class HealthRepository(
     /** One person's current snapshot, read once — used by the Advisor bridge, which is not reactive. */
     suspend fun snapshotOnce(profile: Profile): ProfileSnapshot = observeSnapshot(profile).first()
 
+    // --- the standing record ------------------------------------------------------------------
+    //
+    // Allergies and conditions. Read together because that is how a record is read — "what must she
+    // not have, and what does she already have" is one question asked in one breath.
+
+    fun observeAllergies(profileId: String): Flow<List<Allergy>> =
+        dao.observeAllergies(profileId).map { rows -> sortAllergies(rows.map { it.toModel() }) }
+
+    fun observeConditions(profileId: String): Flow<List<Condition>> =
+        dao.observeConditions(profileId).map { rows -> sortConditions(rows.map { it.toModel() }) }
+
+    /** One person's standing facts as a unit — what the record screen and the Today strip both read. */
+    fun observeStandingRecord(profileId: String): Flow<StandingRecord> =
+        combine(
+            dao.observeAllergies(profileId),
+            dao.observeConditions(profileId)
+        ) { allergies, conditions ->
+            StandingRecord(
+                allergies = sortAllergies(allergies.map { it.toModel() }),
+                conditions = sortConditions(conditions.map { it.toModel() })
+            )
+        }
+
+    suspend fun standingRecordOnce(profileId: String): StandingRecord = StandingRecord(
+        allergies = sortAllergies(dao.getAllergies(profileId).map { it.toModel() }),
+        conditions = sortConditions(dao.getConditions(profileId).map { it.toModel() })
+    )
+
+    /**
+     * Worst first, and the ordering lives here rather than in SQL for the reason the DAO's own note
+     * gives: severity is stored as its key, so ordering by the column alphabetically would file
+     * "mild" above "severe". The enum in `logic/` is the only definition of worse, and this is the
+     * one place it is applied.
+     */
+    private fun sortAllergies(allergies: List<Allergy>): List<Allergy> =
+        allergies.sortedWith(
+            compareByDescending<Allergy> { it.severity.ordinal }
+                .thenBy { it.kind.ordinal }
+                .thenBy { it.substance.lowercase() }
+        )
+
+    private fun sortConditions(conditions: List<Condition>): List<Condition> =
+        Conditions.sort(conditions, status = { it.status }, onset = { it.onsetDate }, name = { it.name })
+
+    suspend fun addAllergy(
+        profileId: String,
+        substance: String,
+        kind: AllergyKind,
+        severity: AllergySeverity,
+        reaction: String? = null,
+        rxcui: String? = null,
+        noticedDate: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertAllergy(
+            AllergyEntity(
+                id = id,
+                profileId = profileId,
+                substance = substance.trim(),
+                kind = kind.key,
+                severity = severity.key,
+                reaction = reaction.clean(),
+                rxcui = rxcui.clean(),
+                noticedDate = noticedDate.clean(),
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateAllergy(allergy: Allergy) {
+        val existing = dao.getAllergy(allergy.id) ?: return
+        dao.upsertAllergy(
+            existing.copy(
+                substance = allergy.substance.trim(),
+                kind = allergy.kind.key,
+                severity = allergy.severity.key,
+                reaction = allergy.reaction.clean(),
+                rxcui = allergy.rxcui.clean(),
+                noticedDate = allergy.noticedDate.clean(),
+                note = allergy.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    suspend fun deleteAllergy(id: String) = dao.deleteAllergy(id)
+
+    suspend fun addCondition(
+        profileId: String,
+        name: String,
+        status: ConditionStatus = ConditionStatus.ACTIVE,
+        onsetDate: String? = null,
+        resolvedDate: String? = null,
+        providerId: String? = null,
+        monitorReadingType: ReadingType? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertCondition(
+            ConditionEntity(
+                id = id,
+                profileId = profileId,
+                name = name.trim(),
+                status = status.key,
+                onsetDate = onsetDate.clean(),
+                resolvedDate = resolvedDate.clean(),
+                providerId = providerId.clean(),
+                monitorReadingType = monitorReadingType?.key,
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateCondition(condition: Condition) {
+        val existing = dao.getCondition(condition.id) ?: return
+        dao.upsertCondition(
+            existing.copy(
+                name = condition.name.trim(),
+                status = condition.status.key,
+                onsetDate = condition.onsetDate.clean(),
+                resolvedDate = condition.resolvedDate.clean(),
+                providerId = condition.providerId.clean(),
+                monitorReadingType = condition.monitorReadingType?.key,
+                note = condition.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    suspend fun deleteCondition(id: String) = dao.deleteCondition(id)
+
+    /**
+     * Everything recorded for this person that matches a medicine, worst first.
+     *
+     * The ingredients come from the cached monograph when the product was looked up, which is what
+     * makes the check worth having: a household that searched for a medicine gets matched against
+     * the label's own ingredient list, while one that typed the name in gets matched against the
+     * name. Both are honest; they are not equally strong, and `logic/Allergies` says which is which.
+     *
+     * An **empty list is not a clearance.** It means nothing recorded matched — see the note on
+     * `logic/Allergies`. Callers must render it as that and never as an all-clear.
+     */
+    suspend fun allergyWarnings(
+        profileId: String,
+        name: String,
+        rxcui: String? = null
+    ): List<AllergyWarning> {
+        val allergies = dao.getAllergies(profileId).map { it.toModel().facts }
+        if (allergies.isEmpty()) return emptyList()
+        val monograph = rxcui?.clean()?.let { dao.getDrugFacts(it)?.let { row -> DrugFactsMapper.toMonograph(row) } }
+        return Allergies.check(
+            allergies,
+            MedicineFacts(
+                rxcui = rxcui.clean(),
+                name = name.trim(),
+                brandName = monograph?.brandName,
+                genericName = monograph?.genericName,
+                ingredients = monograph?.ingredients.orEmpty()
+            )
+        )
+    }
+
+    /** The same check for a medicine already on somebody's list — used when a dose is about to be given. */
+    suspend fun allergyWarnings(medication: Medication): List<AllergyWarning> =
+        allergyWarnings(medication.profileId, medication.name, medication.rxcui)
+
+    // --- the vaccination record ------------------------------------------------------------------
+
+    fun observeImmunizations(profileId: String): Flow<List<Immunization>> =
+        dao.observeImmunizations(profileId).map { rows -> rows.map { it.toModel() } }
+
+    /**
+     * The record as it is read: grouped into series, most recently given first.
+     *
+     * The grouping is `logic/Immunizations`' rather than SQL's, because deciding that "M.M.R." and
+     * "MMR" are one vaccine is a judgement about names and the database has no opinion about it.
+     */
+    fun observeVaccineSeries(profileId: String): Flow<List<VaccineSeries>> =
+        dao.observeImmunizations(profileId).map { rows ->
+            Immunizations.group(rows.map { it.toModel().dose })
+        }
+
+    suspend fun addImmunization(
+        profileId: String,
+        vaccine: String,
+        givenDate: String? = null,
+        doseNumber: Int? = null,
+        source: VaccineSource = VaccineSource.UNKNOWN,
+        cvxCode: String? = null,
+        providerId: String? = null,
+        lotNumber: String? = null,
+        site: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertImmunization(
+            ImmunizationEntity(
+                id = id,
+                profileId = profileId,
+                vaccine = vaccine.trim(),
+                cvxCode = cvxCode.clean(),
+                givenDate = givenDate.clean(),
+                doseNumber = doseNumber,
+                source = source.key,
+                providerId = providerId.clean(),
+                lotNumber = lotNumber.clean(),
+                site = site.clean(),
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    suspend fun updateImmunization(immunization: Immunization) {
+        val existing = dao.getImmunization(immunization.id) ?: return
+        dao.upsertImmunization(
+            existing.copy(
+                vaccine = immunization.vaccine.trim(),
+                cvxCode = immunization.cvxCode.clean(),
+                givenDate = immunization.givenDate.clean(),
+                doseNumber = immunization.doseNumber,
+                source = immunization.source.key,
+                providerId = immunization.providerId.clean(),
+                lotNumber = immunization.lotNumber.clean(),
+                site = immunization.site.clean(),
+                note = immunization.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    suspend fun deleteImmunization(id: String) = dao.deleteImmunization(id)
+
+    // --- documents --------------------------------------------------------------------------------
+    //
+    // Health stores the household's paperwork and reads none of it. Every fact on a document row was
+    // typed by a person; nothing here inspects a file's contents. See `logic/Documents`.
+
+    fun observeDocuments(profileId: String): Flow<List<Document>> =
+        dao.observeDocuments(profileId).map { rows -> sortDocuments(rows.map { it.toModel() }) }
+
+    /** The paperwork that belongs to the house rather than to anybody in it. */
+    fun observeHouseholdDocuments(): Flow<List<Document>> =
+        dao.observeHouseholdDocuments().map { rows -> sortDocuments(rows.map { it.toModel() }) }
+
+    suspend fun getDocument(id: String): Document? = dao.getDocument(id)?.toModel()
+
+    private fun sortDocuments(documents: List<Document>): List<Document> =
+        Documents.sort(documents, date = { it.documentDate }, title = { it.title })
+
+    /**
+     * File a document that has already been copied into the store.
+     *
+     * The bytes are moved first and the row is written second, deliberately. The other order leaves
+     * a window in which a row names a file that does not exist yet — and the screen that renders it
+     * in that window shows a document the household does not actually have.
+     */
+    suspend fun addDocument(
+        title: String,
+        kind: DocumentKind,
+        fileName: String,
+        profileId: String? = null,
+        documentDate: String? = null,
+        mimeType: String? = null,
+        sizeBytes: Long? = null,
+        episodeId: String? = null,
+        conditionId: String? = null,
+        immunizationId: String? = null,
+        providerId: String? = null,
+        note: String? = null
+    ): String {
+        val id = newId()
+        val timestamp = now()
+        dao.upsertDocument(
+            DocumentEntity(
+                id = id,
+                profileId = profileId.clean(),
+                title = title.trim().ifBlank { kind.label },
+                kind = kind.key,
+                documentDate = documentDate.clean(),
+                fileName = fileName,
+                mimeType = mimeType.clean(),
+                sizeBytes = sizeBytes,
+                episodeId = episodeId.clean(),
+                conditionId = conditionId.clean(),
+                immunizationId = immunizationId.clean(),
+                providerId = providerId.clean(),
+                note = note.clean(),
+                createdAt = timestamp,
+                updatedAt = timestamp
+            )
+        )
+        return id
+    }
+
+    /**
+     * Edit what was typed about a document. The file itself is never touched here — re-filing an
+     * after-visit summary under the right child does not change the PDF.
+     */
+    suspend fun updateDocument(document: Document) {
+        val existing = dao.getDocument(document.id) ?: return
+        dao.upsertDocument(
+            existing.copy(
+                profileId = document.profileId.clean(),
+                title = document.title.trim().ifBlank { document.kind.label },
+                kind = document.kind.key,
+                documentDate = document.documentDate.clean(),
+                episodeId = document.episodeId.clean(),
+                conditionId = document.conditionId.clean(),
+                immunizationId = document.immunizationId.clean(),
+                providerId = document.providerId.clean(),
+                note = document.note.clean(),
+                updatedAt = now()
+            )
+        )
+    }
+
+    /** Drop a document, and then the file behind it — in that order, never the other way round. */
+    suspend fun deleteDocument(id: String) {
+        val existing = dao.getDocument(id) ?: return
+        dao.deleteDocumentRow(id)
+        onDocumentDiscarded(existing.fileName)
+    }
+
     // --- coverage: the cards ---------------------------------------------------------------------
     //
     // A plan is household-scoped and a membership is not, exactly as a bottle is household-scoped and
@@ -1756,363 +2152,3 @@ class HealthRepository(
         )
     }
 }
-
-// --- entity → model mapping --------------------------------------------------------------------
-
-fun ProfileEntity.toModel() = Profile(
-    id = id,
-    name = name,
-    relationship = relationship,
-    birthDate = birthDate,
-    colorArgb = colorArgb,
-    baselineTempC = baselineTempC,
-    notes = notes,
-    sortOrder = sortOrder,
-    archived = archived
-)
-
-/**
- * This profile as the People sync seam sees them — identity only.
- *
- * Three fields are deliberately absent, and the reasons differ:
- *
- *  - [ProfileEntity.notes] is **medical** — allergies, conditions, the doctor's number. People has a
- *    field called `note` too, but it means "likes hiking, hates crowds". Mapping one onto the other
- *    would copy a person's conditions into the household directory and from there into LifeOps. A
- *    shared wire makes that leak a one-line mistake, so it is refused explicitly rather than left to
- *    whoever next edits this mapper.
- *  - [ProfileEntity.baselineTempC] and the colour are Health's own reading of a person; no other
- *    peer can show or edit them.
- *  - Email and phone are absent because Health has no columns for them. That costs a little binding
- *    strength on the very first round — Health matches by name until it has a key — and nothing
- *    afterwards, since the key is what binds from then on.
- */
-fun ProfileEntity.toPacket() = PersonPacket(
-    personKey = personKey ?: id,
-    name = name,
-    relationship = relationship,
-    birthDate = birthDate,
-    email = null,
-    phone = null,
-    note = null,
-    household = household,
-    archived = archived,
-    updatedAt = updatedAt,
-    deleted = false
-)
-
-fun ReadingEntity.toModel() = Reading(
-    id = id,
-    profileId = profileId,
-    episodeId = episodeId,
-    type = ReadingType.fromKey(type),
-    value = value,
-    secondaryValue = secondaryValue,
-    site = site?.let { TempSite.fromKey(it) },
-    takenAt = takenAt,
-    note = note
-)
-
-fun SymptomEntity.toModel() = Symptom(
-    id = id,
-    profileId = profileId,
-    episodeId = episodeId,
-    name = name,
-    severity = severity,
-    startedAt = startedAt,
-    endedAt = endedAt,
-    note = note
-)
-
-fun MedicationEntity.toModel() = Medication(
-    id = id,
-    profileId = profileId,
-    name = name,
-    strength = strength,
-    form = form,
-    doseAmount = doseAmount,
-    doseUnit = doseUnit,
-    minIntervalHours = minIntervalHours,
-    maxDosesPer24h = maxDosesPer24h,
-    maxAmountPer24h = maxAmountPer24h,
-    note = note,
-    active = active,
-    rxcui = rxcui,
-    cabinetItemId = cabinetItemId,
-    reminderMode = ReminderMode.fromKey(reminderMode),
-    reminderTimes = DoseReminder.parseTimes(reminderTimes)
-)
-
-fun CabinetItemEntity.toModel() = CabinetItem(
-    id = id,
-    rxcui = rxcui,
-    name = name,
-    brandName = brandName,
-    strength = strength,
-    form = form,
-    quantity = quantity,
-    quantityUnit = quantityUnit,
-    expiryDate = expiryDate,
-    location = location,
-    lowStockThreshold = lowStockThreshold,
-    note = note,
-    updatedAt = updatedAt
-)
-
-/** The stock facts `logic/Cabinet` reasons about, paired with one person's dose of the item. */
-fun CabinetItemEntity.toFacts(doseAmount: Double? = null, doseUnit: String = "") = CabinetFacts(
-    quantity = quantity,
-    quantityUnit = quantityUnit,
-    expiryDate = expiryDate,
-    lowStockThreshold = lowStockThreshold,
-    doseAmount = doseAmount,
-    doseUnit = doseUnit
-)
-
-/** The label's rules, in the shape `logic/DoseSchedule` reasons about. */
-fun MedicationEntity.toRule() = MedicationRule(
-    name = name,
-    doseAmount = doseAmount,
-    doseUnit = doseUnit,
-    minIntervalHours = minIntervalHours,
-    maxDosesPer24h = maxDosesPer24h,
-    maxAmountPer24h = maxAmountPer24h
-)
-
-fun DoseEntity.toModel() = Dose(
-    id = id,
-    profileId = profileId,
-    medicationId = medicationId,
-    medicationName = medicationName,
-    amount = amount,
-    unit = unit,
-    takenAt = takenAt,
-    note = note,
-    episodeId = episodeId
-)
-
-/**
- * The row → history-entry mappers.
- *
- * Each one decides how its record reads in a list somebody may be holding out to a doctor, which is
- * why the wording is plain and complete rather than terse: "38.4 °C (ear)" tells you what an
- * abbreviation would not, and the site is the difference between a fever and a normal reading.
- *
- * Readings carry the fever verdict Health already computed, so the history and every other screen
- * give the same answer to the same number. Nothing else carries a care level — Health has no opinion
- * about a care note, and defaulting one to "routine" would be inventing one.
- */
-fun ReadingEntity.toTimelineEntry(ageMonths: Int?): TimelineEntry {
-    val readingType = ReadingType.fromKey(type)
-    val tempSite = site?.let { TempSite.fromKey(it) }
-    val assessment = if (readingType == ReadingType.TEMPERATURE) {
-        Fever.assess(value, tempSite ?: TempSite.ORAL, ageMonths)
-    } else {
-        null
-    }
-    val headline = when (readingType) {
-        ReadingType.TEMPERATURE -> buildString {
-            append(Temperature.format(value, TempUnit.CELSIUS))
-            tempSite?.let { append(" (").append(it.label.lowercase()).append(')') }
-        }
-        ReadingType.BLOOD_PRESSURE ->
-            "${trimAmount(value)}/${secondaryValue?.let { trimAmount(it) } ?: "?"} ${readingType.unit}"
-        else -> "${trimAmount(value)} ${readingType.unit}"
-    }
-    return TimelineEntry(
-        id = "reading:$id",
-        kind = TimelineKind.READING,
-        atMillis = takenAt,
-        recordedAtMillis = createdAt,
-        headline = headline,
-        detail = listOfNotNull(
-            readingType.label.takeIf { readingType != ReadingType.TEMPERATURE },
-            assessment?.band?.label,
-            note
-        ).joinToString(" · ").ifBlank { null },
-        careLevel = assessment?.careLevel
-    )
-}
-
-/**
- * A symptom becomes up to **two** entries: one where it started, one where it was marked over.
- *
- * They are separate moments and a history that showed only the start would be missing the answer to
- * "when did the cough stop?" — which is usually the question being asked, because it is how you tell
- * whether things are getting better.
- */
-fun SymptomEntity.toTimelineEntries(): List<TimelineEntry> = buildList {
-    add(
-        TimelineEntry(
-            id = "symptom-start:$id",
-            kind = TimelineKind.SYMPTOM_STARTED,
-            atMillis = startedAt,
-            recordedAtMillis = createdAt,
-            headline = name,
-            detail = listOfNotNull("severity $severity of 5", note).joinToString(" · ")
-        )
-    )
-    endedAt?.let { ended ->
-        add(
-            TimelineEntry(
-                id = "symptom-end:$id",
-                kind = TimelineKind.SYMPTOM_ENDED,
-                atMillis = ended,
-                // The end was recorded when it was marked over, which Health doesn't store
-                // separately — the row's createdAt is when the symptom was *added*, and reusing it
-                // here would claim the ending was written up months before it happened.
-                recordedAtMillis = null,
-                headline = "$name passed"
-            )
-        )
-    }
-}
-
-fun DoseEntity.toTimelineEntry() = TimelineEntry(
-    id = "dose:$id",
-    kind = TimelineKind.DOSE,
-    atMillis = takenAt,
-    recordedAtMillis = createdAt,
-    headline = medicationName,
-    detail = listOfNotNull(
-        "${trimAmount(amount)} $unit".trim().takeIf { amount > 0 },
-        note
-    ).joinToString(" · ").ifBlank { null }
-)
-
-fun CareNoteEntity.toTimelineEntry() = TimelineEntry(
-    id = "care:$id",
-    kind = TimelineKind.CARE,
-    atMillis = at,
-    recordedAtMillis = createdAt,
-    headline = text,
-    detail = CareKind.fromKey(kind).label
-)
-
-/** Numbers in the history read as people write them: "5", not "5.0". */
-private fun trimAmount(value: Double): String =
-    if (value % 1.0 == 0.0) value.toLong().toString() else Temperature.round1(value).toString()
-
-fun EpisodeEntity.toModel() = Episode(
-    id = id,
-    profileId = profileId,
-    title = title,
-    startedAt = startedAt,
-    endedAt = endedAt,
-    note = note
-)
-
-fun CareNoteEntity.toModel() = CareNote(
-    id = id,
-    profileId = profileId,
-    episodeId = episodeId,
-    kind = CareKind.fromKey(kind),
-    text = text,
-    at = at
-)
-
-// --- coverage and care-team mapping ---------------------------------------------------------------
-
-fun InsurancePlanEntity.toModel() = InsurancePlan(
-    id = id,
-    carrierName = carrierName,
-    planName = planName,
-    coverageKind = CoverageKind.fromKey(coverageKind),
-    planType = PlanType.fromKey(planType),
-    groupNumber = groupNumber,
-    payerId = payerId,
-    rxBin = rxBin,
-    rxPcn = rxPcn,
-    rxGroup = rxGroup,
-    memberServicesPhone = memberServicesPhone,
-    nurseLinePhone = nurseLinePhone,
-    effectiveDate = effectiveDate,
-    endDate = endDate,
-    directoryUrl = directoryUrl,
-    directoryBaseUrl = directoryBaseUrl,
-    // A plan nobody has probed is NOT_CONFIGURED rather than UNREACHABLE: nothing was asked, so
-    // nothing failed, and the two read very differently to somebody deciding whether to trust it.
-    directoryStatus = directoryStatus?.let { DirectoryOutcome.fromKey(it) }
-        ?: DirectoryOutcome.NOT_CONFIGURED,
-    directoryCheckedAt = directoryCheckedAt,
-    directoryDetail = directoryDetail,
-    frontImagePath = frontImagePath,
-    backImagePath = backImagePath,
-    note = note,
-    archived = archived,
-    updatedAt = updatedAt
-)
-
-fun InsuranceMemberEntity.toModel() = InsuranceMembership(
-    id = id,
-    profileId = profileId,
-    planId = planId,
-    memberId = memberId,
-    personCode = personCode,
-    subscriberName = subscriberName,
-    relationshipToSubscriber = relationshipToSubscriber,
-    effectiveDate = effectiveDate,
-    endDate = endDate,
-    primaryCoverage = primaryCoverage,
-    frontImagePath = frontImagePath,
-    backImagePath = backImagePath,
-    note = note
-)
-
-fun ProviderEntity.toModel() = Provider(
-    id = id,
-    name = name,
-    npi = npi,
-    specialty = specialty,
-    practiceName = practiceName,
-    phone = phone,
-    addressLine = addressLine,
-    website = website,
-    note = note
-)
-
-fun ProviderLinkEntity.toModel() = ProviderLink(
-    id = id,
-    profileId = profileId,
-    providerId = providerId,
-    role = CareRole.fromKey(role),
-    since = since,
-    note = note
-)
-
-fun NetworkCheckEntity.toModel() = NetworkCheck(
-    id = id,
-    providerId = providerId,
-    planId = planId,
-    checkedAt = checkedAt,
-    outcome = CheckOutcome.fromKey(outcome),
-    directoryLabel = directoryLabel,
-    directoryUrl = directoryUrl,
-    matchedName = matchedName,
-    matchedNpi = matchedNpi,
-    matchCount = matchCount,
-    networks = networks?.split(CSV)?.map { it.trim() }?.filter { it.isNotBlank() }.orEmpty(),
-    detail = detail
-)
-
-/** The stored check, in the shape `logic/NetworkStatus` reasons about. */
-fun NetworkCheck.toRecord() = NetworkCheckRecord(
-    checkedAt = checkedAt,
-    outcome = outcome,
-    directoryLabel = directoryLabel,
-    matchedName = matchedName,
-    networks = networks,
-    detail = detail
-)
-
-/**
- * How the coverage tables store "nothing was typed here".
- *
- * Every one of these columns is optional and most of them stay empty, so a blank string arriving
- * from a text field has to become a null rather than an empty value that then renders as a card line
- * with nothing after the colon. Written once here because it is applied about sixty times.
- */
-private fun String?.clean(): String? = this?.trim()?.ifBlank { null }
-
-/** The separator for the short lists that don't earn a table — network names, at present. */
-private const val CSV = ", "

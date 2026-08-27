@@ -4,11 +4,15 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
+import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
+import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -102,6 +106,14 @@ interface HealthDao {
         // person leaving it is not a reason to forget the family plan or the family dentist.
         deleteInsuranceMembersForProfile(profileId)
         deleteProviderLinksForProfile(profileId)
+        // Their standing record goes too. An allergy is the least shareable fact in the app: it is
+        // about one person and is meaningless — and dangerous — attached to anybody else.
+        deleteAllergiesForProfile(profileId)
+        deleteConditionsForProfile(profileId)
+        deleteImmunizationsForProfile(profileId)
+        // Their documents go too. A household document (profileId null) is nobody's to delete here,
+        // and stays: an insurance statement is not about the person who has left.
+        deleteDocumentsForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -512,8 +524,20 @@ interface HealthDao {
     suspend fun deleteProviderCascade(providerId: String) {
         deleteProviderLinksForProvider(providerId)
         deleteNetworkChecksForProvider(providerId)
+        // A condition they managed is a fact about the *patient*, so it stays and simply loses its
+        // clinician — the same reasoning that keeps a dose when its medicine is deleted. Removing a
+        // doctor from the care team must never be a way to delete somebody's asthma.
+        clearProviderOnConditions(providerId)
+        // Same reasoning: the dose was still given, whoever gave it and wherever they work now.
+        clearProviderOnImmunizations(providerId)
         deleteProviderRow(providerId)
     }
+
+    @Query("UPDATE conditions SET providerId = NULL WHERE providerId = :providerId")
+    suspend fun clearProviderOnConditions(providerId: String)
+
+    @Query("UPDATE immunizations SET providerId = NULL WHERE providerId = :providerId")
+    suspend fun clearProviderOnImmunizations(providerId: String)
 
     @Query("DELETE FROM provider_links WHERE providerId = :providerId")
     suspend fun deleteProviderLinksForProvider(providerId: String)
@@ -553,4 +577,121 @@ interface HealthDao {
      */
     @Query("DELETE FROM network_checks WHERE id = :id")
     suspend fun deleteNetworkCheck(id: String)
+
+    // --- the standing record ----------------------------------------------------------------------
+    //
+    // Allergies and conditions are per-person and are never household-scoped — the one part of this
+    // schema where sharing a row between people would be actively dangerous rather than merely wrong.
+    //
+    // Neither is ordered meaningfully in SQL. Severity and status are stored as their keys, and
+    // ordering by those alphabetically would put "mild" above "severe"; the real order comes from the
+    // enums in `logic/`, applied by the repository, so there is exactly one definition of "worst
+    // first" in the app.
+
+    @Query("SELECT * FROM allergies WHERE profileId = :profileId ORDER BY substance COLLATE NOCASE")
+    fun observeAllergies(profileId: String): Flow<List<AllergyEntity>>
+
+    @Query("SELECT * FROM allergies WHERE profileId = :profileId ORDER BY substance COLLATE NOCASE")
+    suspend fun getAllergies(profileId: String): List<AllergyEntity>
+
+    @Query("SELECT * FROM allergies ORDER BY substance COLLATE NOCASE")
+    suspend fun getAllAllergies(): List<AllergyEntity>
+
+    @Query("SELECT * FROM allergies WHERE id = :id")
+    suspend fun getAllergy(id: String): AllergyEntity?
+
+    @Upsert
+    suspend fun upsertAllergy(allergy: AllergyEntity)
+
+    @Query("DELETE FROM allergies WHERE id = :id")
+    suspend fun deleteAllergy(id: String)
+
+    @Query("DELETE FROM allergies WHERE profileId = :profileId")
+    suspend fun deleteAllergiesForProfile(profileId: String)
+
+    @Query("SELECT * FROM conditions WHERE profileId = :profileId ORDER BY name COLLATE NOCASE")
+    fun observeConditions(profileId: String): Flow<List<ConditionEntity>>
+
+    @Query("SELECT * FROM conditions WHERE profileId = :profileId ORDER BY name COLLATE NOCASE")
+    suspend fun getConditions(profileId: String): List<ConditionEntity>
+
+    @Query("SELECT * FROM conditions ORDER BY name COLLATE NOCASE")
+    suspend fun getAllConditions(): List<ConditionEntity>
+
+    @Query("SELECT * FROM conditions WHERE id = :id")
+    suspend fun getCondition(id: String): ConditionEntity?
+
+    @Upsert
+    suspend fun upsertCondition(condition: ConditionEntity)
+
+    @Query("DELETE FROM conditions WHERE id = :id")
+    suspend fun deleteCondition(id: String)
+
+    @Query("DELETE FROM conditions WHERE profileId = :profileId")
+    suspend fun deleteConditionsForProfile(profileId: String)
+
+    // --- the vaccination record -------------------------------------------------------------------
+    //
+    // Ordered by date here only so the rows arrive in a sensible order; the grouping into series is
+    // `logic/Immunizations`' job, because a series is a judgement about which names mean the same
+    // vaccine and SQL has no opinion about whether "M.M.R." and "MMR" are one thing.
+
+    @Query("SELECT * FROM immunizations WHERE profileId = :profileId ORDER BY givenDate DESC")
+    fun observeImmunizations(profileId: String): Flow<List<ImmunizationEntity>>
+
+    @Query("SELECT * FROM immunizations WHERE profileId = :profileId ORDER BY givenDate DESC")
+    suspend fun getImmunizations(profileId: String): List<ImmunizationEntity>
+
+    @Query("SELECT * FROM immunizations ORDER BY givenDate DESC")
+    suspend fun getAllImmunizations(): List<ImmunizationEntity>
+
+    @Query("SELECT * FROM immunizations WHERE id = :id")
+    suspend fun getImmunization(id: String): ImmunizationEntity?
+
+    @Upsert
+    suspend fun upsertImmunization(immunization: ImmunizationEntity)
+
+    @Query("DELETE FROM immunizations WHERE id = :id")
+    suspend fun deleteImmunization(id: String)
+
+    @Query("DELETE FROM immunizations WHERE profileId = :profileId")
+    suspend fun deleteImmunizationsForProfile(profileId: String)
+
+    // --- documents --------------------------------------------------------------------------------
+    //
+    // A document belongs to a person or to the household, so there are two observers rather than one
+    // filtered query — "her lab results" and "the paperwork" are different lists that are read in
+    // different places, and folding them together would put the family's insurance statement into a
+    // child's medical record.
+    //
+    // Deleting a row never deletes its file: the repository does that afterwards, through the store,
+    // because a file removed ahead of a write that then fails leaves a document pointing at nothing.
+
+    @Query("SELECT * FROM documents WHERE profileId = :profileId ORDER BY documentDate DESC")
+    fun observeDocuments(profileId: String): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents WHERE profileId IS NULL ORDER BY documentDate DESC")
+    fun observeHouseholdDocuments(): Flow<List<DocumentEntity>>
+
+    @Query("SELECT * FROM documents ORDER BY documentDate DESC")
+    suspend fun getAllDocuments(): List<DocumentEntity>
+
+    @Query("SELECT * FROM documents WHERE id = :id")
+    suspend fun getDocument(id: String): DocumentEntity?
+
+    @Query("SELECT * FROM documents WHERE episodeId = :episodeId ORDER BY documentDate")
+    suspend fun getDocumentsForEpisode(episodeId: String): List<DocumentEntity>
+
+    @Upsert
+    suspend fun upsertDocument(document: DocumentEntity)
+
+    @Query("DELETE FROM documents WHERE id = :id")
+    suspend fun deleteDocumentRow(id: String)
+
+    @Query("DELETE FROM documents WHERE profileId = :profileId")
+    suspend fun deleteDocumentsForProfile(profileId: String)
+
+    /** The file names a profile's documents point at, read before the cascade drops the rows. */
+    @Query("SELECT fileName FROM documents WHERE profileId = :profileId")
+    suspend fun documentFileNamesForProfile(profileId: String): List<String>
 }

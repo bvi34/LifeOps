@@ -7,6 +7,7 @@ import com.health.app.data.db.HEALTH_DB_VERSION
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.store.CardImageStore
+import com.health.app.data.store.DocumentStore
 import com.operations.backupkit.AppId
 import com.operations.backupkit.BackupContributor
 import com.operations.backupkit.BackupSink
@@ -28,12 +29,13 @@ import java.io.File
  * the peers' envelopes, resurrecting people who had since been archived here because their old
  * packets would arrive looking newer than nothing at all.
  *
- * **Card photographs go with it.** Insurance card images are the one thing Health keeps outside the
- * database — a couple of megabytes each, in `filesDir/insurance-cards`, with only the file name on
- * the row (see [CardImageStore]). A backup that carried the row and not the picture would restore a
- * card that points at nothing, which is a worse outcome than not backing it up at all: the app would
- * look like it had the photo and quietly wouldn't. So the directory is copied entry by entry, and
- * restored the same way.
+ * **The files Health keeps outside the database go with it**, and there are two directories of them:
+ * insurance card photographs in `filesDir/insurance-cards` (see [CardImageStore]) and the
+ * household's paperwork in `filesDir/documents` (see [DocumentStore]). Both hold megabytes per item
+ * with only the file name on the row. A backup that carried the row and not the file would restore a
+ * card — or an after-visit summary — that points at nothing, which is a worse outcome than not
+ * backing it up at all: the app would look like it had the document and quietly wouldn't. So each
+ * directory is copied entry by entry, and restored the same way.
  *
  * Restore is a whole-file swap of `health.db`, so a Health restart is expected afterwards — the
  * sandbox surfaces that.
@@ -64,9 +66,12 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
             sink.entry("$PREFS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
         }
 
-        // The card photographs, which the rows only name. See the note above.
+        // The card photographs and the paperwork, which the rows only name. See the note above.
         CardImageStore(context).allFiles().forEach { file ->
             sink.entry("$CARDS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
+        }
+        DocumentStore(context).allFiles().forEach { file ->
+            sink.entry("$DOCS_PREFIX${file.name}").use { out -> file.inputStream().use { it.copyTo(out) } }
         }
     }
 
@@ -81,19 +86,11 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
             }
         }
 
-        // The card photographs, before the database that names them — so that the moment the rows
-        // arrive, every file they point at is already on disk. The other order leaves a window in
-        // which a card exists and its picture doesn't.
-        val cardsDir = File(context.filesDir, CardImageStore.DIR_NAME).apply { mkdirs() }
-        source.list().filter { it.startsWith(CARDS_PREFIX) }.forEach { rel ->
-            val name = rel.removePrefix(CARDS_PREFIX)
-            // Defensive: an archive entry is not allowed to name a path outside the directory.
-            if (name.isNotBlank() && !name.contains('/') && !name.contains("..")) {
-                source.open(rel)?.use { input ->
-                    File(cardsDir, name).outputStream().use { input.copyTo(it) }
-                }
-            }
-        }
+        // The files, before the database that names them — so that the moment the rows arrive, every
+        // file they point at is already on disk. The other order leaves a window in which a card, or
+        // a lab result, exists and the thing it points at doesn't.
+        restoreFiles(source, CARDS_PREFIX, CardImageStore.DIR_NAME)
+        restoreFiles(source, DOCS_PREFIX, DocumentStore.DIR_NAME)
 
         // Then swap the database file wholesale. Close the live handle, drop stale WAL/SHM sidecars
         // (which could otherwise shadow the restored file), and copy the archived db in its place.
@@ -116,6 +113,26 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
         runCatching { HealthApp.get(context).rescheduleReminders() }
     }
 
+    /**
+     * Copy one archive directory back onto disk.
+     *
+     * An archive entry is not allowed to name a path outside its directory. The archive is Health's
+     * own and normally trustworthy, but a restore writes files wherever it is told to, and a check
+     * that costs nothing is worth having on the one code path where being wrong means writing
+     * outside the app's private storage.
+     */
+    private fun restoreFiles(source: BackupSource, prefix: String, dirName: String) {
+        val dir = File(context.filesDir, dirName).apply { mkdirs() }
+        source.list().filter { it.startsWith(prefix) }.forEach { rel ->
+            val name = rel.removePrefix(prefix)
+            if (name.isNotBlank() && !name.contains('/') && !name.contains('\\') && !name.contains("..")) {
+                source.open(rel)?.use { input ->
+                    File(dir, name).outputStream().use { input.copyTo(it) }
+                }
+            }
+        }
+    }
+
     private fun sharedPrefsDir() = File(context.applicationInfo.dataDir, "shared_prefs")
 
     /** Health's own preference XML files, isolated from the other hosted apps by name prefix. */
@@ -131,6 +148,9 @@ class HealthBackupContributor(private val context: Context) : BackupContributor 
 
         /** Where the card photographs sit in the archive, mirroring their directory on disk. */
         private const val CARDS_PREFIX = "${CardImageStore.DIR_NAME}/"
+
+        /** And the household's paperwork, the same way. */
+        private const val DOCS_PREFIX = "${DocumentStore.DIR_NAME}/"
 
         /** Matches [HealthPrefs.FILE_NAME] and anything Health adds later under the same prefix. */
         private const val PREFS_NAME_PREFIX = "health"

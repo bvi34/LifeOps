@@ -89,10 +89,37 @@ the receipts.
 > the network — as against *"never listed"*, and to say *"couldn't tell them apart"* rather than
 > guessing between two people with the same surname.
 >
+>
+> Health has **no household screen of its own**: no People tab, no add-a-person form, no
+> remove-a-person button. The household belongs to the People app and Health is a peer on its sync
+> seam — a second place to add or rename somebody would be a second answer to "who lives here". The
+> profile bar switches between people on every tab, and its last chip opens People for anything else.
+> What Health *does* own about a person — their usual temperature and their medical note, neither of
+> which is ever published — lives on its **Information** tab, renamed from Illness because the
+> question asked far more often than "is anyone ill right now" is **what does normal look like for
+> this person**: a 37.6 means one thing for somebody who runs at 36.4 and another for somebody who
+> runs at 37.1. That tab now reads as who they are, what their normal is, how temperatures are shown,
+> and then the illnesses.
+>
+> Its Record tab holds **what is true about a person between illnesses**. Allergies and conditions are
+> now rows rather than a sentence in a free-text note — which means an allergy can be listed, ordered
+> by how badly it went last time, and **checked against a medicine as you add it**. That check matches
+> what you wrote down against what the label says and nothing else: it will not tell you that
+> penicillin and amoxicillin are relatives, because that is pharmacology and this app is no more
+> qualified to do it than to read a dose off a label — and **no warning is never an all-clear**, which
+> every surface says rather than showing a reassuring tick. Conditions are deliberately *not* illness
+> episodes: an episode has an end, and asthma doesn't. The tab also holds the **vaccination record** —
+> the card in the drawer, typed up, reported as what is *recorded* and never as "up to date", because
+> Health ships no schedule and a schedule varies by country, birth year and risk group — and the
+> **paperwork**: after-visit summaries, lab results, referral letters, school forms, stored exactly as
+> they arrived and **never read**. Nothing is parsed out of a document; that is a separate feature and
+> belongs to the change that owns it.
+>
 > The judgements it makes — whether a reading is a fever, given where it was taken and how old the
 > person is; whether the next dose is due yet under both the interval and a rolling 24-hour allowance;
-> whether a bottle is out of date or out of doses; where a doctor stands against a plan, read out of
-> every check ever made — live in `health/logic/` and are JVM-unit-tested. **No record ever leaves the
+>  whether a bottle is out of date or out of doses; where a doctor stands against a plan, read out of
+> every check ever made; whether a medicine matches something somebody is allergic to — live in
+> `health/logic/` and are JVM-unit-tested. **No record ever leaves the
 > device**: the drug lookup asks what a medicine *is*, never who takes it, and the directory check
 > asks about a *doctor*, never about anybody in the household — no member number, no profile, ever.
 > That is the line it holds. It records; it does not give medical advice.

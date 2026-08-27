@@ -14,9 +14,26 @@ import androidx.core.content.FileProvider
  * manifest. [androidx.core.content.FileProvider.getUriForFile] resolves by authority, so call sites
  * are unaffected.
  *
- * It grants read access to one thing only — the insurance card PDF Health writes into
- * `cacheDir/exports` when somebody asks to share one. The card *photographs* live in `filesDir` and
- * are deliberately not exposed here: they are a record, not an export, and the only way a card leaves
- * the app is the PDF the user explicitly asked for.
+ * It grants read access to one directory only — `cacheDir/exports`, where Health writes a file at the
+ * moment somebody asks to share it: the insurance card PDF, or a copy of a stored document.
+ *
+ * The records themselves are deliberately **not** exposed. Card photographs live in
+ * `filesDir/insurance-cards` and the household's paperwork in `filesDir/documents`; widening the
+ * provider to either would make every lab result in the house readable by anything that could guess
+ * a URI. They are records, not exports, and the only way one leaves the app is a copy the user
+ * explicitly asked for.
  */
-class HealthFileProvider : FileProvider()
+class HealthFileProvider : FileProvider() {
+
+    companion object {
+        /**
+         * Appended to the package name to form the authority. Matches `android:authorities` in the
+         * manifest, and is named here rather than repeated at each call site — an authority that
+         * drifts from the manifest fails at the moment somebody tries to share something, which is
+         * the worst possible time to find out.
+         */
+        const val AUTHORITY_SUFFIX = ".health.fileprovider"
+
+        fun authority(packageName: String): String = "$packageName$AUTHORITY_SUFFIX"
+    }
+}

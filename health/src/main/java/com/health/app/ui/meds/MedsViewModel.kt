@@ -11,6 +11,7 @@ import com.health.app.data.model.MedicationStatus
 import com.health.app.data.model.Profile
 import com.health.app.data.net.DrugLookupClient
 import com.health.app.data.repository.HealthRepository
+import com.health.app.logic.AllergyWarning
 import com.health.app.logic.DrugCandidate
 import com.health.app.logic.DrugMonograph
 import com.health.app.logic.ReminderMode
@@ -86,6 +87,34 @@ class MedsViewModel(
     private var searchJob: Job? = null
 
     fun select(profile: Profile) = repo.selectProfile(profile.id)
+
+    // --- the allergy check ------------------------------------------------------------------------
+
+    private val _allergyWarnings = MutableStateFlow<List<AllergyWarning>>(emptyList())
+
+    /**
+     * What the selected person's record says about the medicine currently being entered.
+     *
+     * Pushed rather than derived, because the thing being checked is *what is typed in the form* —
+     * which is not in the database yet and may never be. The form calls [checkAllergies] as the name
+     * settles and as a lookup result is picked, and the dialog shows whatever comes back.
+     *
+     * An empty list means **nothing recorded matched**, never "safe" — the banner that renders this
+     * says so, and `logic/Allergies` explains why the distinction is the whole point.
+     */
+    val allergyWarnings: StateFlow<List<AllergyWarning>> = _allergyWarnings.asStateFlow()
+
+    fun checkAllergies(name: String, rxcui: String? = null) = viewModelScope.launch {
+        val profile = selected.value
+        _allergyWarnings.value =
+            if (profile == null || name.isBlank()) emptyList()
+            else repo.allergyWarnings(profile.id, name, rxcui)
+    }
+
+    /** Dropped when the form closes, so the next one doesn't open showing the last one's answer. */
+    fun clearAllergyWarnings() {
+        _allergyWarnings.value = emptyList()
+    }
 
     // --- the drug lookup --------------------------------------------------------------------------
 

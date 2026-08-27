@@ -4,14 +4,16 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import com.health.app.data.db.dao.HealthDao
+import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
+import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
 import com.health.app.data.db.entities.EpisodeEntity
+import com.health.app.data.db.entities.ImmunizationEntity
 import com.health.app.data.db.entities.InsuranceMemberEntity
 import com.health.app.data.db.entities.InsurancePlanEntity
 import com.health.app.data.db.entities.MedicationEntity
@@ -30,14 +32,19 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 6
+const val HEALTH_DB_VERSION = 9
 
 /**
  * Health's own store: people, everything recorded about them, the medicine cabinet those records
- * draw on, and — since v6 — the coverage that pays for it and the care team that provides it.
+ * draw on, the coverage that pays for it, the care team that provides it, and — since v7 — the
+ * standing record of what is true about a person between illnesses.
  * Nothing here is shared with, or
  * sourced from, another app's database — no other module in the suite owns household health data —
  * so unlike Logistics there is no cross-app catalog bridge, only this one file.
+ *
+ * The schema steps themselves live in [HealthMigrations] — nine of them, and more lines than this
+ * whole file. A reader opening this one is looking for the table list or the singleton, not for what
+ * v4 did to the medicine cabinet.
  *
  * The whole file is backed up wholesale by [com.health.app.backup.HealthBackupContributor], exactly
  * like LifeOps, Citation and Logistics, so the Operations Sandbox "back up everything" stays
@@ -59,7 +66,11 @@ const val HEALTH_DB_VERSION = 6
         InsuranceMemberEntity::class,
         ProviderEntity::class,
         ProviderLinkEntity::class,
-        NetworkCheckEntity::class
+        NetworkCheckEntity::class,
+        AllergyEntity::class,
+        ConditionEntity::class,
+        ImmunizationEntity::class,
+        DocumentEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true
@@ -71,302 +82,6 @@ abstract class HealthDatabase : RoomDatabase() {
     companion object {
         const val DB_NAME = "health.db"
 
-        /**
-         * v2 makes Health a peer on the People sync seam: a profile gains the cross-peer
-         * [ProfileEntity.personKey] and the [ProfileEntity.syncVersion] stamp that decides what gets
-         * published. Existing profiles are seeded at version 1 so the people already being tracked
-         * are offered to the household directory on the first round, and keyed from their row id so
-         * they publish under a key the other peers will keep.
-         *
-         * Health never shipped at v1, so in practice this migration runs for nobody — it exists
-         * because a schema that changes without one is a crash waiting for whoever did install it.
-         */
-        val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE profiles ADD COLUMN personKey TEXT")
-                db.execSQL("ALTER TABLE profiles ADD COLUMN syncVersion INTEGER NOT NULL DEFAULT 0")
-                db.execSQL("UPDATE profiles SET personKey = id WHERE personKey IS NULL")
-                db.execSQL("UPDATE profiles SET syncVersion = 1 WHERE syncVersion = 0")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_profiles_syncVersion ON profiles(syncVersion)")
-            }
-        }
-
-        /**
-         * v3 gives the seam the two things it needs to let the *directory* decide who Health tracks.
-         *
-         * [ProfileEntity.household] is the directory's tick, copied here so Health's own packets
-         * don't flip it back on; existing profiles are seeded **true**, because a profile that
-         * already exists is somebody already being tracked and un-ticking them behind the user's
-         * back would be a strange way to introduce a feature.
-         *
-         * `profile_tombstones` is what makes a removal stick — see [ProfileTombstoneEntity].
-         */
-        val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE profiles ADD COLUMN household INTEGER NOT NULL DEFAULT 1")
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS profile_tombstones (" +
-                        "personKey TEXT NOT NULL PRIMARY KEY, " +
-                        "name TEXT NOT NULL, " +
-                        "removedAt INTEGER NOT NULL, " +
-                        "syncVersion INTEGER NOT NULL)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_profile_tombstones_syncVersion " +
-                        "ON profile_tombstones(syncVersion)"
-                )
-            }
-        }
-
-        /**
-         * v4 turns the Meds tab into a medicine cabinet.
-         *
-         * Two new tables, and neither is scoped to a profile — which is the point. `drug_facts`
-         * caches one looked-up product's monograph for the whole household, so the same bottle on
-         * two people's lists stores the label once and refreshes for both; `cabinet_items` is the
-         * physical stock, because a bottle is a household possession and duplicating it per person
-         * would mean four expiry dates to get wrong.
-         *
-         * `medications` gains the two links to them plus its reminder setting. Every existing row
-         * keeps working untouched: the links default to null (a medicine typed in by hand is still a
-         * medicine), and `reminderMode` defaults to `"off"`, so nobody's phone starts buzzing about
-         * a medicine they set up last year because they upgraded.
-         */
-        val MIGRATION_3_4 = object : Migration(3, 4) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS drug_facts (" +
-                        "rxcui TEXT NOT NULL PRIMARY KEY, " +
-                        "name TEXT NOT NULL, " +
-                        "genericName TEXT, " +
-                        "brandName TEXT, " +
-                        "doseForm TEXT, " +
-                        "routes TEXT, " +
-                        "ingredients TEXT, " +
-                        "availableStrengths TEXT, " +
-                        "schedule TEXT, " +
-                        "productType TEXT, " +
-                        "manufacturer TEXT, " +
-                        "labelSetId TEXT, " +
-                        "labelEffectiveTime TEXT, " +
-                        "sectionsJson TEXT, " +
-                        "sources TEXT, " +
-                        "fetchedAt INTEGER NOT NULL)"
-                )
-
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS cabinet_items (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "rxcui TEXT, " +
-                        "name TEXT NOT NULL, " +
-                        "brandName TEXT, " +
-                        "strength TEXT, " +
-                        "form TEXT, " +
-                        "quantity REAL, " +
-                        "quantityUnit TEXT NOT NULL, " +
-                        "expiryDate TEXT, " +
-                        "location TEXT, " +
-                        "lowStockThreshold REAL, " +
-                        "note TEXT, " +
-                        "createdAt INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_cabinet_items_name ON cabinet_items(name)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_cabinet_items_rxcui ON cabinet_items(rxcui)")
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_cabinet_items_expiryDate " +
-                        "ON cabinet_items(expiryDate)"
-                )
-
-                db.execSQL("ALTER TABLE medications ADD COLUMN rxcui TEXT")
-                db.execSQL("ALTER TABLE medications ADD COLUMN cabinetItemId TEXT")
-                db.execSQL(
-                    "ALTER TABLE medications ADD COLUMN reminderMode TEXT NOT NULL DEFAULT 'off'"
-                )
-                db.execSQL("ALTER TABLE medications ADD COLUMN reminderTimes TEXT")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_medications_rxcui ON medications(rxcui)")
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_medications_cabinetItemId " +
-                        "ON medications(cabinetItemId)"
-                )
-            }
-        }
-
-        /**
-         * v5 lets the history be filled in afterwards, and stay honest about it.
-         *
-         * Doses, symptoms and care notes gain `createdAt` — when the *row* was written, as against
-         * when the thing happened. They differ whenever somebody types up the 2am dose over
-         * breakfast, and the difference is worth keeping: a record made at the time and a record
-         * made from memory are both worth having and are not equally reliable.
-         *
-         * Nullable, with no backfill. Every row that predates the column was written by an app that
-         * could only record the present, so its event time is almost certainly also its entry time —
-         * but "almost certainly" is an assumption, and inventing one for thousands of existing rows
-         * to make a badge tidy is exactly the kind of quiet fiction this app is supposed to refuse.
-         * Null means "Health doesn't know when this was entered", and the history says so by saying
-         * nothing. Readings have carried a non-null `createdAt` since v1.
-         */
-        val MIGRATION_4_5 = object : Migration(4, 5) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE doses ADD COLUMN createdAt INTEGER")
-                db.execSQL("ALTER TABLE symptoms ADD COLUMN createdAt INTEGER")
-                db.execSQL("ALTER TABLE care_notes ADD COLUMN createdAt INTEGER")
-            }
-        }
-
-        /**
-         * v6 answers the two questions the medical half of the app never could: **who pays for
-         * this**, and **who do we take her to**.
-         *
-         * Five tables, and the shape of them is the design. `insurance_plans` and `providers` are
-         * household-scoped, exactly as `cabinet_items` is, because a family policy and a family
-         * doctor are single objects several people share; `insurance_members` and `provider_links`
-         * carry the per-person half — one member number each, one relationship each. Nothing is
-         * scoped to a plan that shouldn't be: a doctor belongs to the household, not to the policy
-         * that happens to cover them this year, which is what lets a carrier change without
-         * re-entering every clinician in the house.
-         *
-         * `network_checks` is append-only and is never rewritten by a later check. That is what
-         * makes "listed in March's directory, not in today's" a thing Health can say at all — with a
-         * single overwritten flag, a doctor who left the network is indistinguishable from one who
-         * was never in it, and those need different phone calls.
-         *
-         * Nothing existing is touched. A household that never opens the Care tab has five empty
-         * tables and no other change at all.
-         */
-        val MIGRATION_5_6 = object : Migration(5, 6) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS insurance_plans (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "carrierName TEXT NOT NULL, " +
-                        "planName TEXT, " +
-                        "coverageKind TEXT NOT NULL, " +
-                        "planType TEXT NOT NULL, " +
-                        "groupNumber TEXT, " +
-                        "payerId TEXT, " +
-                        "rxBin TEXT, " +
-                        "rxPcn TEXT, " +
-                        "rxGroup TEXT, " +
-                        "memberServicesPhone TEXT, " +
-                        "nurseLinePhone TEXT, " +
-                        "effectiveDate TEXT, " +
-                        "endDate TEXT, " +
-                        "directoryUrl TEXT, " +
-                        "directoryBaseUrl TEXT, " +
-                        "directoryStatus TEXT, " +
-                        "directoryCheckedAt INTEGER, " +
-                        "directoryDetail TEXT, " +
-                        "frontImagePath TEXT, " +
-                        "backImagePath TEXT, " +
-                        "note TEXT, " +
-                        "archived INTEGER NOT NULL DEFAULT 0, " +
-                        "createdAt INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_insurance_plans_carrierName " +
-                        "ON insurance_plans(carrierName)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_insurance_plans_archived " +
-                        "ON insurance_plans(archived)"
-                )
-
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS insurance_members (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "profileId TEXT NOT NULL, " +
-                        "planId TEXT NOT NULL, " +
-                        "memberId TEXT, " +
-                        "personCode TEXT, " +
-                        "subscriberName TEXT, " +
-                        "relationshipToSubscriber TEXT, " +
-                        "effectiveDate TEXT, " +
-                        "endDate TEXT, " +
-                        "primaryCoverage INTEGER NOT NULL DEFAULT 1, " +
-                        "frontImagePath TEXT, " +
-                        "backImagePath TEXT, " +
-                        "note TEXT, " +
-                        "createdAt INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_insurance_members_profileId " +
-                        "ON insurance_members(profileId)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_insurance_members_planId " +
-                        "ON insurance_members(planId)"
-                )
-
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS providers (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "name TEXT NOT NULL, " +
-                        "npi TEXT, " +
-                        "specialty TEXT, " +
-                        "practiceName TEXT, " +
-                        "phone TEXT, " +
-                        "addressLine TEXT, " +
-                        "website TEXT, " +
-                        "note TEXT, " +
-                        "createdAt INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_providers_name ON providers(name)")
-                db.execSQL("CREATE INDEX IF NOT EXISTS index_providers_npi ON providers(npi)")
-
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS provider_links (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "profileId TEXT NOT NULL, " +
-                        "providerId TEXT NOT NULL, " +
-                        "role TEXT NOT NULL, " +
-                        "since TEXT, " +
-                        "note TEXT, " +
-                        "createdAt INTEGER NOT NULL, " +
-                        "updatedAt INTEGER NOT NULL)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_provider_links_profileId " +
-                        "ON provider_links(profileId)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_provider_links_providerId " +
-                        "ON provider_links(providerId)"
-                )
-
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS network_checks (" +
-                        "id TEXT NOT NULL PRIMARY KEY, " +
-                        "providerId TEXT NOT NULL, " +
-                        "planId TEXT, " +
-                        "checkedAt INTEGER NOT NULL, " +
-                        "outcome TEXT NOT NULL, " +
-                        "directoryLabel TEXT, " +
-                        "directoryUrl TEXT, " +
-                        "matchedName TEXT, " +
-                        "matchedNpi TEXT, " +
-                        "matchCount INTEGER NOT NULL DEFAULT 0, " +
-                        "networks TEXT, " +
-                        "detail TEXT)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_network_checks_providerId " +
-                        "ON network_checks(providerId)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_network_checks_planId ON network_checks(planId)"
-                )
-                db.execSQL(
-                    "CREATE INDEX IF NOT EXISTS index_network_checks_checkedAt " +
-                        "ON network_checks(checkedAt)"
-                )
-            }
-        }
-
         @Volatile
         private var instance: HealthDatabase? = null
 
@@ -376,13 +91,7 @@ abstract class HealthDatabase : RoomDatabase() {
                     context.applicationContext,
                     HealthDatabase::class.java,
                     DB_NAME
-                ).addMigrations(
-                    MIGRATION_1_2,
-                    MIGRATION_2_3,
-                    MIGRATION_3_4,
-                    MIGRATION_4_5,
-                    MIGRATION_5_6
-                )
+                ).addMigrations(*HealthMigrations.ALL)
                     .build().also { instance = it }
             }
 

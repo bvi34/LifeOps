@@ -8,7 +8,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
-import kotlin.math.max
 
 /**
  * Where photographs of insurance cards are kept.
@@ -51,7 +50,7 @@ class CardImageStore(private val context: Context) {
      */
     suspend fun save(source: Uri): String? = withContext(Dispatchers.IO) {
         runCatching {
-            val bitmap = decodeDownsampled(source) ?: return@runCatching null
+            val bitmap = ImageDownsampler.decode(context, source, MAX_EDGE_PX) ?: return@runCatching null
             val name = "${UUID.randomUUID()}.jpg"
             File(dir, name).outputStream().use { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, out)
@@ -92,37 +91,17 @@ class CardImageStore(private val context: Context) {
     fun allFiles(): List<File> =
         dir.listFiles { f -> f.isFile }?.toList().orEmpty()
 
-    /**
-     * Decode at a sample size that gets the long edge near [MAX_EDGE_PX] without ever loading the
-     * full-resolution bitmap — the two-pass `inJustDecodeBounds` dance, which is the difference
-     * between a hundred kilobytes of working memory and forty megabytes of it.
-     */
-    private fun decodeDownsampled(source: Uri): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(source)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-        val longest = max(bounds.outWidth, bounds.outHeight)
-        if (longest <= 0) return null
-
-        var sample = 1
-        while (longest / (sample * 2) >= MAX_EDGE_PX) sample *= 2
-
-        val options = BitmapFactory.Options().apply { inSampleSize = sample }
-        return context.contentResolver.openInputStream(source)?.use {
-            BitmapFactory.decodeStream(it, null, options)
-        }
-    }
-
     companion object {
         /** Carried by the backup alongside `health.db`; see `HealthBackupContributor`. */
         const val DIR_NAME = "insurance-cards"
 
         /**
-         * Long edge, in pixels. Roughly 1600 is about 470 dpi across a credit card, which keeps a
-         * member number sharp when somebody zooms the exported PDF — the only resolution this
-         * feature actually needs.
+         * Long edge, in pixels — enough to keep a member number sharp when somebody zooms the
+         * exported PDF, which is the only resolution this feature actually needs. The decode itself
+         * lives in [ImageDownsampler], shared with the document store.
          */
-        private const val MAX_EDGE_PX = 1600
+        private const val MAX_EDGE_PX = ImageDownsampler.DEFAULT_MAX_EDGE_PX
 
-        private const val JPEG_QUALITY = 85
+        private const val JPEG_QUALITY = ImageDownsampler.DEFAULT_JPEG_QUALITY
     }
 }

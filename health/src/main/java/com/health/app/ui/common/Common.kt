@@ -9,7 +9,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -20,6 +20,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Profile
+import com.health.app.logic.Allergies
+import com.health.app.logic.AllergyWarning
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
 import java.time.Instant
@@ -120,7 +122,7 @@ fun ProfileBar(
     profiles: List<Profile>,
     selectedId: String?,
     onSelect: (Profile) -> Unit,
-    onAddProfile: (() -> Unit)? = null,
+    onOpenPeople: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -140,19 +142,28 @@ fun ProfileBar(
                 leadingIcon = { ProfileDot(profile, size = 24, selected = isSelected) }
             )
         }
-        onAddProfile?.let {
+        // "People", not "Add person": Health does not own who these people are and has no screen for
+        // adding one. The chip opens the household directory, which is the app that does.
+        onOpenPeople?.let {
             AssistChip(
                 onClick = it,
-                label = { Text("Add person") },
-                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null) }
+                label = { Text("People") },
+                leadingIcon = { Icon(Icons.Default.Groups, contentDescription = null) }
             )
         }
     }
 }
 
-/** The empty state shown before anyone has been added — every screen bottoms out here. */
+/**
+ * The empty state shown before anyone has been added — every screen bottoms out here.
+ *
+ * It points at **People** rather than offering a form. Health takes the people the household
+ * directory has ticked as members and grows a profile for each of them; a second place to add one
+ * would be a second answer to "who lives here", and the sync seam exists precisely so there is only
+ * one. See `HealthSyncService`.
+ */
 @Composable
-fun NoProfiles(onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
+fun NoProfiles(onOpenPeople: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
@@ -161,12 +172,13 @@ fun NoProfiles(onAddProfile: () -> Unit, modifier: Modifier = Modifier) {
         Text("Nobody here yet", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Health tracks one person at a time, and as many people as your household has. " +
-                "Add the first one to start recording temperatures, symptoms and doses.",
+            "Health keeps a separate record for everyone in the household — but it takes the " +
+                "household from People. Tick somebody as a household member there and they turn up " +
+                "here, birth date and all, ready to record against.",
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onAddProfile) { Text("Add a person") }
+        Button(onClick = onOpenPeople) { Text("Open People") }
     }
 }
 
@@ -278,4 +290,60 @@ fun RecordRow(
         },
         modifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     )
+}
+
+/**
+ * What the household has written down that matches the medicine in front of you.
+ *
+ * Rendered **only when something matched**. An empty check draws nothing at all — no green tick, no
+ * "no allergies found", no reassuring absence of a badge. That is the one rule this component has,
+ * and it is the reason it exists as a component rather than as a line in one dialog: "nothing
+ * recorded matched" and "she isn't allergic to this" are different sentences, and an app that shows
+ * the first as though it were the second is making a medical claim on no evidence. See
+ * `logic/Allergies`.
+ *
+ * Red, and one of only two places in Health that spends it — the other being a care level of
+ * SEEK_CARE_NOW. This is the moment it is for.
+ */
+@Composable
+fun AllergyWarningBanner(warnings: List<AllergyWarning>, personName: String?) {
+    if (warnings.isEmpty()) return
+    val color = MaterialTheme.colorScheme.error
+
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.10f),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                if (personName != null) "$personName has a recorded allergy to this"
+                else "There is a recorded allergy to this",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            warnings.forEach { warning ->
+                Column {
+                    Text(
+                        warning.headline,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    // The evidence, quoted rather than paraphrased. A warning nobody can audit is a
+                    // warning people learn to tap straight past.
+                    Text(
+                        warning.detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Text(
+                Allergies.DISCLAIMER,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

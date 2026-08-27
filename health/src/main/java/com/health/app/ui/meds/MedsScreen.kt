@@ -47,7 +47,7 @@ import com.health.app.ui.common.*
  * label, and the disclaimer at the bottom of the screen means what it says.
  */
 @Composable
-fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
+fun MedsScreen(vm: MedsViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val statuses by vm.statuses.collectAsStateWithLifecycle()
@@ -64,7 +64,7 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
     var reading by remember { mutableStateOf<CabinetEntry?>(null) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
 
@@ -78,7 +78,7 @@ fun MedsScreen(vm: MedsViewModel, onAddProfile: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            ProfileBar(profiles, selected?.id, vm::select, onAddProfile)
+            ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
             HorizontalDivider()
 
             TabRow(selectedTabIndex = tab) {

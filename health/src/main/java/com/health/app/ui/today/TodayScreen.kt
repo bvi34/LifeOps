@@ -14,103 +14,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
-import com.health.app.data.model.CareKind
 import com.health.app.data.model.Medication
 import com.health.app.data.model.MedicationStatus
-import com.health.app.data.model.Profile
 import com.health.app.data.model.ProfileSnapshot
-import com.health.app.data.repository.HealthRepository
 import com.health.app.logic.DoseSchedule
 import com.health.app.logic.DoseStatus
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
 import com.health.app.ui.common.*
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-
-/**
- * The Today screen's state. Everything is derived from the selected profile, so switching person
- * switches the whole screen without any screen-level bookkeeping.
- */
-@OptIn(ExperimentalCoroutinesApi::class)
-class TodayViewModel(private val repo: HealthRepository) : ViewModel() {
-
-    val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val unit: StateFlow<TempUnit> =
-        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
-
-    val snapshot: StateFlow<ProfileSnapshot?> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(null) else repo.observeSnapshot(profile) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
-
-    val medications: StateFlow<List<Medication>> = selected
-        .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeMedications(profile.id)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
-
-    fun logTemperature(celsius: Double, site: TempSite, note: String?, at: Long) = viewModelScope.launch {
-        selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
-    }
-
-    fun logDose(
-        medication: Medication?,
-        name: String,
-        amount: Double,
-        unit: String,
-        note: String?,
-        at: Long
-    ) =
-        viewModelScope.launch {
-            val profile = selected.value ?: return@launch
-            repo.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
-        }
-
-    fun addSymptom(name: String, severity: Int, note: String?, startedAt: Long) = viewModelScope.launch {
-        selected.value?.let { repo.addSymptom(it.id, name, severity, startedAt = startedAt, note = note) }
-    }
-
-    fun resolveSymptom(symptomId: String) = viewModelScope.launch { repo.setSymptomEnded(symptomId) }
-
-    fun addCareNote(kind: CareKind, text: String, at: Long) = viewModelScope.launch {
-        selected.value?.let { repo.addCareNote(it.id, kind, text, at = at) }
-    }
-
-    fun startEpisode(title: String, startedAt: Long = System.currentTimeMillis()) = viewModelScope.launch {
-        selected.value?.let { repo.startEpisode(it.id, title, startedAt = startedAt) }
-    }
-
-    fun endEpisode(episodeId: String) = viewModelScope.launch { repo.endEpisode(episodeId) }
-
-    class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = TodayViewModel(repo) as T
-    }
-}
 
 /**
  * The cockpit: who's ill, how they are right now, what's due, and four buttons that record the
  * things you're actually holding a phone to record.
  */
 @Composable
-fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
+fun TodayScreen(vm: TodayViewModel, onOpenPeople: () -> Unit) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -124,7 +44,7 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
     var showStartEpisode by remember { mutableStateOf(false) }
 
     if (profiles.isEmpty()) {
-        NoProfiles(onAddProfile)
+        NoProfiles(onOpenPeople)
         return
     }
 
@@ -133,7 +53,7 @@ fun TodayScreen(vm: TodayViewModel, onAddProfile: () -> Unit) {
             profiles = profiles,
             selectedId = selected?.id,
             onSelect = vm::select,
-            onAddProfile = onAddProfile
+            onOpenPeople = onOpenPeople
         )
         HorizontalDivider()
 
