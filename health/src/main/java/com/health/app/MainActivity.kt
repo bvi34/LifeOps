@@ -26,8 +26,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.health.app.ui.coverage.CoverageScreen
 import com.health.app.ui.coverage.CoverageViewModel
-import com.health.app.ui.episodes.EpisodesScreen
-import com.health.app.ui.episodes.EpisodesViewModel
+import com.health.app.ui.information.InformationScreen
+import com.health.app.ui.information.InformationViewModel
 import com.health.app.ui.meds.MedsScreen
 import com.health.app.ui.meds.MedsViewModel
 import com.health.app.ui.record.RecordScreen
@@ -153,8 +153,8 @@ class MainActivity : ComponentActivity() {
                             MedsScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Information.route) {
-                            val vm: EpisodesViewModel = viewModel(factory = EpisodesViewModel.Factory(app.repository))
-                            EpisodesScreen(vm, onOpenPeople = { openPeople() })
+                            val vm: InformationViewModel = viewModel(factory = InformationViewModel.Factory(app.repository))
+                            InformationScreen(vm, onOpenPeople = { openPeople() })
                         }
                         composable(Dest.Record.route) {
                             val vm: RecordViewModel = viewModel(

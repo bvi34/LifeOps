@@ -685,17 +685,23 @@ seriously enough to ignore them for exactly that reason.
 │   ├── EpisodeSummary   an illness read back: peak, trend, fever run, advice
 │   ├── Timeline         everything that happened, in order, by day — and what was filled in later
 │   └── Age              birth date → months/years, and the label people actually use
-├── data/             Room (HealthDatabase, entities, HealthDao) + repository + prefs
+├── data/             Room (HealthDatabase + HealthMigrations, entities, HealthDao) + repository + prefs
 │   ├── model/        domain types with the string columns resolved into enums
 │   ├── net/          DrugLookupClient, ProviderDirectoryClient — the only two classes that connect
 │   ├── store/        CardImageStore, DocumentStore — files beside the database rather than in it
 │   │                 (+ ImageDownsampler, the two-pass decode both of them share)
-│   ├── repository/   HealthRepository — rows in, models out, every judgement delegated to logic/
+│   ├── repository/   HealthRepository — what happens; Mappers.kt — what a row means. Every
+│   │                 judgement is delegated to logic/, and a mapper never invents a value
 │   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
 ├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
-├── ui/               Compose: today · vitals · meds · episodes (the Information tab) · record ·
-│                     coverage (+ common, theme). No `people/` — Health has no household screen.
+├── ui/               Compose, one package per tab, each with its own `*ViewModel.kt`:
+│                     today · vitals · meds · information · record · coverage (+ common, theme).
+│                     No `people/` — Health has no household screen; the People app owns the
+│                     household and Health is a peer on its sync seam.
+│   └── information/  InformationScreen (the shell) · PersonCards (who they are, what is normal,
+│                     the °C/°F choice) · EpisodeCards · EpisodeHistory · EpisodeDialogs ·
+│                     BackfillRecord (the vocabulary the dialogs and the view model share)
 ├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/ + documents/)
 ├── HealthFileProvider.kt  exposes cacheDir/exports only — the card PDF, and on-request copies of
 │                          stored documents. Never the record directories themselves.
