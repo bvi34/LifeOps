@@ -1151,15 +1151,18 @@ class HealthRepository(
      *
      * Read once on demand rather than observed, like the summary: it folds four tables, which is
      * worth doing when somebody opens the history and not worth redoing on every unrelated write.
+     * The display unit is read the same way, at the same moment, so the temperatures in the history
+     * are written in the scale the rest of the app is showing.
      */
     suspend fun episodeHistory(episodeId: String): List<TimelineDay> {
         val episode = dao.getEpisode(episodeId) ?: return emptyList()
         val profile = dao.getProfile(episode.profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
+        val unit = prefs.temperatureUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths) },
+                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths, unit) },
                 symptoms = dao.getSymptomsForEpisode(episodeId).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesForEpisode(episodeId).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesForEpisode(episodeId).map { it.toTimelineEntry() },
@@ -1181,10 +1184,11 @@ class HealthRepository(
     suspend fun profileHistory(profileId: String, sinceMillis: Long): List<TimelineDay> {
         val profile = dao.getProfile(profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
+        val unit = prefs.temperatureUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths) },
+                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths, unit) },
                 symptoms = dao.getSymptomsSince(profileId, sinceMillis).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesSince(profileId, sinceMillis).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesSince(profileId, sinceMillis).map { it.toTimelineEntry() }

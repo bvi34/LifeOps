@@ -614,10 +614,21 @@ version the person who was up all three nights cannot produce from memory.
 
 It merges all four kinds of record — readings, symptoms, doses, care notes — into one list, grouped
 by day of the illness. The day it started is **Day 1**, because that is how everybody counts it out
-loud and it is the number the question "how long has this been going on?" is really asking for. Days
-read newest first; each day reads forwards, the way it was lived. The episode's own start and end are
-entries too, so the bookends are visible. Nothing is summarised or dropped — the whole value of it is
-that it is complete.
+loud and it is the number the question "how long has this been going on?" is really asking for. The
+episode's own start and end are entries too, so the bookends are visible. Nothing is summarised or
+dropped — the whole value of it is that it is complete.
+
+The list runs **one way all the way down**, and the reader picks which — newest first by default,
+oldest first for reading the illness as a story. It used to run days newest-first with each day
+reading forwards, which sounds right and isn't: it broke the one promise a timeline makes, that
+moving one row moves you one step in time. A reading at 23:55 and the next one at 00:05 are ten
+minutes apart and were landing at opposite ends of the screen with a whole day between them —
+midnight being exactly the stretch somebody is trying to read. Whichever direction is chosen, it
+applies to the days, the entries inside them, and the tie-break between two records sharing a minute.
+
+Temperatures in it are written in the household's display unit, like every other number in the app.
+They are stored in Celsius and converted on the way out (see `logic/Temperature`), so the history is
+handed the unit when it is built, and rebuilt when the unit changes with an illness open.
 
 ### Filling it in afterwards
 
@@ -916,11 +927,15 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   reminder that lapses rather than nagging about a medicine nobody is taking, a late wake-up that still
   notifies and a hopelessly late one that doesn't, a window re-armed by somebody else's dose staying
   quiet, and an unparseable time being dropped rather than defaulted.
-- `TimelineTest` — days newest-first with each day reading forwards, the day an illness started being
+- `TimelineTest` — one consistent direction in both senses, days and entries together, with two
+  readings either side of midnight landing next to each other whichever way round it runs; flipping a
+  history sorting it rather than assuming which way it already ran; the day an illness started being
   Day 1, no day number invented when there is no episode to count from, a record written up hours
   later marked as filled in and one written at the time not, a row from before Health tracked it not
   being accused of anything, simultaneous entries reading in the order they happened, and days grouped
   in the reader's own zone rather than UTC.
+- `ReadingTimelineEntryTest` — a temperature in the history written in the unit asked for, the site
+  coming with it, and the fever verdict being the same call in either unit.
 - `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
   itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
   nobody filled in never reaching the card, the subscriber named only when it is somebody else, the

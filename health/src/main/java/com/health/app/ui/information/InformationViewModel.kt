@@ -92,8 +92,16 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      * temperatures should read for this household, so they sit together rather than in a settings
      * screen the app otherwise doesn't have. Readings are always stored in Celsius, so this never
      * rewrites anything already recorded.
+     *
+     * An open history is re-read afterwards. Everything else on the tab renders its temperatures
+     * from the live unit, but the history's rows are formatted once when it is loaded — so without
+     * this, switching to °F would change every number on screen except the ones in the illness that
+     * happens to be open, which is the one place the difference matters most.
      */
-    fun setUnit(unit: TempUnit) = repo.setTemperatureUnit(unit)
+    fun setUnit(unit: TempUnit) = viewModelScope.launch {
+        repo.setTemperatureUnit(unit)
+        summaryEpisodeId?.let { _openHistory.value = repo.episodeHistory(it) }
+    }
 
     /**
      * Edit the two things about a person that are **Health's own**.

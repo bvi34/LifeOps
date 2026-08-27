@@ -28,22 +28,86 @@ class TimelineTest {
     ) = TimelineEntry(id, kind, atMillis, recordedAtMillis, headline)
 
     @Test
-    fun `days read newest first and each day reads forwards`() {
-        // A list of days reads backwards — the latest is what you want first — but a single day of
-        // an illness reads the way it was lived.
+    fun `newest first runs one way all the way down`() {
+        // Days and the entries inside them, both backwards. The old version ran days backwards and
+        // each day forwards, which reads plausibly and means the row below is sometimes an hour
+        // earlier and sometimes a day later.
         val days = Timeline.build(
             TimelineFacts(
                 doses = listOf(
                     entry("a", TimelineKind.DOSE, at(10, 8)),
                     entry("b", TimelineKind.DOSE, at(10, 20)),
-                    entry("c", TimelineKind.DOSE, at(11, 9))
+                    entry("c", TimelineKind.DOSE, at(11, 9)),
+                    entry("d", TimelineKind.DOSE, at(11, 14))
                 )
             ),
-            zone
+            zone,
+            TimelineOrder.NEWEST_FIRST
         )
         assertEquals(2, days.size)
-        assertEquals(listOf("c"), days[0].entries.map { it.id })
-        assertEquals(listOf("a", "b"), days[1].entries.map { it.id })
+        assertEquals(listOf("d", "c"), days[0].entries.map { it.id })
+        assertEquals(listOf("b", "a"), days[1].entries.map { it.id })
+    }
+
+    @Test
+    fun `oldest first runs one way too`() {
+        val days = Timeline.build(
+            TimelineFacts(
+                doses = listOf(
+                    entry("a", TimelineKind.DOSE, at(10, 8)),
+                    entry("b", TimelineKind.DOSE, at(10, 20)),
+                    entry("c", TimelineKind.DOSE, at(11, 9)),
+                    entry("d", TimelineKind.DOSE, at(11, 14))
+                )
+            ),
+            zone,
+            TimelineOrder.OLDEST_FIRST
+        )
+        assertEquals(listOf("a", "b"), days[0].entries.map { it.id })
+        assertEquals(listOf("c", "d"), days[1].entries.map { it.id })
+    }
+
+    @Test
+    fun `two readings either side of midnight end up next to each other`() {
+        // The bug this fixes, stated as the thing a reader actually notices: 23:55 and 00:05 are ten
+        // minutes apart, and a history is only worth reading if it says so. Whichever way round the
+        // list runs, they are the last row of one day and the first row of the next.
+        val facts = TimelineFacts(
+            readings = listOf(
+                entry("before", TimelineKind.READING, at(10, 23, 55)),
+                entry("after", TimelineKind.READING, at(11, 0, 5))
+            ),
+            doses = listOf(
+                entry("morning", TimelineKind.DOSE, at(10, 7)),
+                entry("evening", TimelineKind.DOSE, at(11, 19))
+            )
+        )
+
+        val newest = Timeline.build(facts, zone, TimelineOrder.NEWEST_FIRST)
+        assertEquals("after", newest[0].entries.last().id)
+        assertEquals("before", newest[1].entries.first().id)
+
+        val oldest = Timeline.build(facts, zone, TimelineOrder.OLDEST_FIRST)
+        assertEquals("before", oldest[0].entries.last().id)
+        assertEquals("after", oldest[1].entries.first().id)
+    }
+
+    @Test
+    fun `flipping a history round sorts it rather than assuming which way it ran`() {
+        // The screen hands back whatever it last drew, so this has to be right from either end —
+        // and idempotent when nothing changed.
+        val facts = TimelineFacts(
+            doses = listOf(
+                entry("a", TimelineKind.DOSE, at(10, 8)),
+                entry("b", TimelineKind.DOSE, at(11, 9))
+            )
+        )
+        val newest = Timeline.build(facts, zone, TimelineOrder.NEWEST_FIRST)
+        val oldest = Timeline.build(facts, zone, TimelineOrder.OLDEST_FIRST)
+
+        assertEquals(oldest, Timeline.inOrder(newest, TimelineOrder.OLDEST_FIRST))
+        assertEquals(newest, Timeline.inOrder(oldest, TimelineOrder.NEWEST_FIRST))
+        assertEquals(newest, Timeline.inOrder(newest, TimelineOrder.NEWEST_FIRST))
     }
 
     @Test
@@ -147,16 +211,21 @@ class TimelineTest {
 
     @Test
     fun `simultaneous entries read in the order they happened`() {
-        // A dose given "at" the same minute as the reading that prompted it: the reading first.
-        val days = Timeline.build(
-            TimelineFacts(
-                readings = listOf(entry("r", TimelineKind.READING, at(10, 8))),
-                doses = listOf(entry("d", TimelineKind.DOSE, at(10, 8))),
-                careNotes = listOf(entry("c", TimelineKind.CARE, at(10, 8)))
-            ),
-            zone
+        // A dose given "at" the same minute as the reading that prompted it: the reading first —
+        // and last when the list runs newest first, because the tie-break flips with everything else.
+        val facts = TimelineFacts(
+            readings = listOf(entry("r", TimelineKind.READING, at(10, 8))),
+            doses = listOf(entry("d", TimelineKind.DOSE, at(10, 8))),
+            careNotes = listOf(entry("c", TimelineKind.CARE, at(10, 8)))
         )
-        assertEquals(listOf("r", "d", "c"), days.single().entries.map { it.id })
+        assertEquals(
+            listOf("r", "d", "c"),
+            Timeline.build(facts, zone, TimelineOrder.OLDEST_FIRST).single().entries.map { it.id }
+        )
+        assertEquals(
+            listOf("c", "d", "r"),
+            Timeline.build(facts, zone, TimelineOrder.NEWEST_FIRST).single().entries.map { it.id }
+        )
     }
 
     @Test

@@ -32,7 +32,10 @@ import java.time.temporal.ChronoUnit
  * Framework-free and unit-tested, like the rest of `logic/`.
  */
 
-/** What kind of thing happened. The order here is the order simultaneous entries read in. */
+/**
+ * What kind of thing happened. The order here is the order simultaneous entries happened in, which
+ * is the order they read in — reversed, like everything else, when the history reads newest first.
+ */
 enum class TimelineKind(val label: String) {
     /** A temperature or other measurement. */
     READING("Reading"),
@@ -90,6 +93,29 @@ data class TimelineEntry(
 }
 
 /**
+ * Which way the history reads.
+ *
+ * Whichever is chosen, it applies to **both** levels of the list — the days and the entries inside
+ * them. That sounds obvious and was, for a while, not what this did: days ran newest-first while each
+ * day ran forwards, on the reasoning that you want the latest day immediately and then to read it
+ * the way it was lived. Both halves of that are true and the combination is still wrong, because it
+ * breaks the one promise a timeline makes — that moving one row moves you one step in time. A
+ * reading at 23:55 and the next one at 00:05 are ten minutes apart and were landing at opposite ends
+ * of the screen, with a whole day of records between them, which is exactly the stretch of an
+ * illness somebody is trying to read when they are up at midnight.
+ *
+ * So the direction is one choice, made once, and the reader picks it: [NEWEST_FIRST] to see where
+ * things stand now, [OLDEST_FIRST] to read the illness as a story from the beginning.
+ */
+enum class TimelineOrder(val label: String) {
+    /** Now at the top; reading downwards walks backwards in time. */
+    NEWEST_FIRST("Newest first"),
+
+    /** The start at the top; reading downwards walks forwards, the way it was lived. */
+    OLDEST_FIRST("Oldest first")
+}
+
+/**
  * One day of the history: its entries, and which day of the illness it is.
  *
  * [dayNumber] counts calendar days from the episode's first day, so the day the illness started is
@@ -130,15 +156,17 @@ object Timeline {
     const val FILLED_IN_AFTER_MS: Long = 30L * 60 * 1000
 
     /**
-     * Merge everything into days, most recent day first, and each day's entries in the order they
-     * happened — earliest at the top, because a day of an illness reads forwards even though the
-     * list of days reads backwards.
+     * Merge everything into days, in one consistent direction — see [TimelineOrder].
      *
      * The episode's own start and end become entries too, so the history has its bookends and it is
      * obvious at a glance which records fall inside the illness and which were adopted from just
      * before it.
      */
-    fun build(facts: TimelineFacts, zone: ZoneId = ZoneId.systemDefault()): List<TimelineDay> {
+    fun build(
+        facts: TimelineFacts,
+        zone: ZoneId = ZoneId.systemDefault(),
+        order: TimelineOrder = TimelineOrder.NEWEST_FIRST
+    ): List<TimelineDay> {
         val entries = buildList {
             addAll(facts.readings)
             addAll(facts.symptoms)
@@ -173,20 +201,41 @@ object Timeline {
 
         val firstDay = facts.episodeStartedAtMillis?.let { dateOf(it, zone) }
 
-        return entries
+        val days = entries
             .groupBy { dateOf(it.atMillis, zone) }
             .map { (date, dayEntries) ->
                 TimelineDay(
                     date = date,
                     dayNumber = firstDay?.let { ChronoUnit.DAYS.between(it, date).toInt() + 1 },
-                    // Within a day, time order; ties broken by kind so a dose given "at" the same
-                    // minute as the reading that prompted it reads in the order it happened.
-                    entries = dayEntries.sortedWith(
-                        compareBy({ it.atMillis }, { it.kind.ordinal }, { it.id })
-                    )
+                    entries = dayEntries
                 )
             }
-            .sortedByDescending { it.date }
+
+        return inOrder(days, order)
+    }
+
+    /**
+     * Put a history the requested way round — days and the entries inside them together.
+     *
+     * Sorting rather than reversing, so it doesn't matter which way the list already ran: the screen
+     * that offers the reader a direction can hand back whatever it last drew and get the right answer.
+     *
+     * Ties are broken by [TimelineKind] and then id, so a dose given "at" the same minute as the
+     * reading that prompted it reads in the order the two actually happened — and the other way round
+     * under [TimelineOrder.NEWEST_FIRST], because that is what "later is higher" means when two rows
+     * share a minute. Every comparison flips together; a timeline that reversed one level and not
+     * another is the bug this replaced.
+     */
+    fun inOrder(days: List<TimelineDay>, order: TimelineOrder): List<TimelineDay> {
+        val newestFirst = order == TimelineOrder.NEWEST_FIRST
+        val byMoment = compareBy<TimelineEntry>({ it.atMillis }, { it.kind.ordinal }, { it.id })
+            .let { if (newestFirst) it.reversed() else it }
+        val byDate = compareBy<TimelineDay> { it.date }
+            .let { if (newestFirst) it.reversed() else it }
+
+        return days
+            .map { day -> day.copy(entries = day.entries.sortedWith(byMoment)) }
+            .sortedWith(byDate)
     }
 
     /**

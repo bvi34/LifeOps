@@ -25,6 +25,7 @@ import com.health.app.logic.AllergyWarning
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -45,6 +46,15 @@ fun formatTime(millis: Long): String =
 
 fun formatDay(millis: Long): String =
     dayFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+
+/**
+ * The same, for a date that is already a date.
+ *
+ * A day heading takes this rather than the instant of one of its entries: a group knows its own
+ * date, and deriving it from whichever row happens to be first breaks the moment the list is read
+ * the other way round.
+ */
+fun formatDay(date: LocalDate): String = dayFormat.format(date)
 
 fun formatDayTime(millis: Long): String =
     dayTimeFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
