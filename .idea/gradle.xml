@@ -10,12 +10,17 @@
         <option name="modules">
           <set>
             <option value="$PROJECT_DIR$" />
+            <option value="$PROJECT_DIR$/advisor" />
             <option value="$PROJECT_DIR$/app" />
             <option value="$PROJECT_DIR$/backupkit" />
             <option value="$PROJECT_DIR$/citation" />
             <option value="$PROJECT_DIR$/core" />
+            <option value="$PROJECT_DIR$/health" />
             <option value="$PROJECT_DIR$/lifeops" />
             <option value="$PROJECT_DIR$/logistics" />
+            <option value="$PROJECT_DIR$/people" />
+            <option value="$PROJECT_DIR$/suitekit" />
+            <option value="$PROJECT_DIR$/suiteui" />
           </set>
         </option>
       </GradleProjectSettings>

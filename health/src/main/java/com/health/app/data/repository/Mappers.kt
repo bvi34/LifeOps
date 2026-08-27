@@ -435,7 +435,7 @@ fun NetworkCheck.toRecord() = NetworkCheckRecord(
 internal fun String?.clean(): String? = this?.trim()?.ifBlank { null }
 
 /** The separator for the short lists that don't earn a table — network names, at present. */
-private const val CSV = ", "
+const val CSV = ", "
 
 fun AllergyEntity.toModel() = Allergy(
     id = id,
