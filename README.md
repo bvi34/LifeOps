@@ -18,7 +18,8 @@ the receipts.
 
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
 > single installed application and the central hub the whole suite opens through. It opens on a
-> **phone-style home screen**: a tile per app in that app's own icon and colour, over a dock holding
+> **phone-style home screen**: a tile per app in that app's own hand-drawn mark and colour — no two
+> share a silhouette, so a tile is recognisable before its colour registers — over a dock holding
 > the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), or Project (`:project`); one place to back the whole suite up into a single `.zip` and restore from it; and one

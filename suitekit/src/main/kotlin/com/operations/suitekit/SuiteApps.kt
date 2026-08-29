@@ -6,9 +6,11 @@ import com.operations.backupkit.AppId
  * One hosted app as the Operations Sandbox home screen presents it: what to call it, what it is
  * for, which glyph stands for it, and the colour it is known by.
  *
- * The [iconKey] is a *name*, not a drawable: :suitekit is Android-free, so it says "monitor-heart"
- * and lets :suiteui resolve that to a Material icon. Anything that keys off an app still keys off
- * [AppId], so adding an app is one entry here plus one line in the icon map.
+ * The [iconKey] is a *name*, not a drawable: :suitekit is Android-free, so it says "thermometer"
+ * and lets :suiteui resolve that to one of the suite's own hand-drawn marks (`SuiteGlyphs`).
+ * Anything that keys off an app still keys off [AppId], so adding an app is one entry here plus one
+ * mark over there. The names describe the *drawing*, not the app, because that is what a reader
+ * checking whether two apps look alike needs to compare.
  *
  * [defaultAccent] is each app's shipped identity — the hue it wore when it carried its own theme —
  * and stays only a default: the sandbox settings can repaint any app, and that choice is what the
@@ -32,49 +34,49 @@ object SuiteApps {
             appId = AppId.LIFEOPS,
             label = "LifeOps",
             tagline = "Tasks, aspects, weather and the week",
-            iconKey = "dashboard",
+            iconKey = "lifeops-dial",
             defaultAccent = 0xFF6200EEL
         ),
         SuiteAppInfo(
             appId = AppId.HEALTH,
             label = "Health",
             tagline = "Temperatures, symptoms, medicines",
-            iconKey = "monitor-heart",
+            iconKey = "thermometer",
             defaultAccent = 0xFF2C7A7BL
         ),
         SuiteAppInfo(
             appId = AppId.PEOPLE,
             label = "People",
             tagline = "The household directory",
-            iconKey = "groups",
+            iconKey = "household",
             defaultAccent = 0xFF5A5ABFL
         ),
         SuiteAppInfo(
             appId = AppId.PROJECT,
             label = "Project",
             tagline = "Outlines, docs, lore and the board",
-            iconKey = "account-tree",
+            iconKey = "board",
             defaultAccent = 0xFFB45309L
         ),
         SuiteAppInfo(
             appId = AppId.LOGISTICS,
             label = "Logistics",
             tagline = "Pantry, groceries and recipes",
-            iconKey = "inventory",
+            iconKey = "basket",
             defaultAccent = 0xFF2F855AL
         ),
         SuiteAppInfo(
             appId = AppId.CITATION,
             label = "Citation",
             tagline = "Library, reader and notes",
-            iconKey = "menu-book",
+            iconKey = "open-book",
             defaultAccent = 0xFF4A5568L
         ),
         SuiteAppInfo(
             appId = AppId.ADVISOR,
             label = "Advisor",
             tagline = "Grounded answers across the suite",
-            iconKey = "psychology",
+            iconKey = "answer-spark",
             defaultAccent = 0xFF9333EAL
         )
     )
