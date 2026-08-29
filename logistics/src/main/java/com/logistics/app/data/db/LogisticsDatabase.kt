@@ -7,10 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.logistics.app.data.db.dao.PantryDao
+import com.logistics.app.data.db.dao.RecipeShotDao
 import com.logistics.app.data.db.entities.GroceryItemEntity
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
+import com.logistics.app.data.db.entities.RecipeShotEntity
 
 /**
  * Logistics' own store. It holds only what LifeOps doesn't: pantry stock, the movement ledger, and
@@ -26,14 +28,15 @@ import com.logistics.app.data.db.entities.PantryTxnEntity
  * from here rather than repeating the number — a hand-copied version drifts the moment a migration
  * lands, and a manifest that lies about its schema is worse than no manifest.
  */
-const val LOGISTICS_DB_VERSION = 3
+const val LOGISTICS_DB_VERSION = 4
 
 @Database(
     entities = [
         PantryItemEntity::class,
         PantryTxnEntity::class,
         ImportBatchEntity::class,
-        GroceryItemEntity::class
+        GroceryItemEntity::class,
+        RecipeShotEntity::class
     ],
     version = LOGISTICS_DB_VERSION,
     exportSchema = true
@@ -41,6 +44,8 @@ const val LOGISTICS_DB_VERSION = 3
 abstract class LogisticsDatabase : RoomDatabase() {
 
     abstract fun pantryDao(): PantryDao
+
+    abstract fun recipeShotDao(): RecipeShotDao
 
     companion object {
         const val DB_NAME = "logistics.db"
@@ -82,6 +87,27 @@ abstract class LogisticsDatabase : RoomDatabase() {
             }
         }
 
+        /** v4 adds the recipe_shots table — the screenshots a recipe was read out of, or added to
+         *  it afterwards. Only the file name lives here; the JPEG itself sits in
+         *  `filesDir/recipe-shots/` (see [com.logistics.app.data.store.RecipeShotStore]), because a
+         *  database copied whole by every backup is no place for megabytes of picture. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS recipe_shots (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        recipeId TEXT NOT NULL,
+                        fileName TEXT NOT NULL,
+                        sortOrder INTEGER NOT NULL,
+                        createdAt TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_shots_recipeId ON recipe_shots(recipeId)")
+            }
+        }
+
         @Volatile
         private var instance: LogisticsDatabase? = null
 
@@ -91,7 +117,7 @@ abstract class LogisticsDatabase : RoomDatabase() {
                     context.applicationContext,
                     LogisticsDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

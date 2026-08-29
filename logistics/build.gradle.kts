@@ -67,6 +67,11 @@ dependencies {
     // On-device PDF text extraction for the Walmart order import. Pure-JVM PDFBox port; the parser
     // that turns the extracted text into pantry lines (logic/WalmartOrderParser) is framework-free.
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // On-device OCR for the recipe-screenshot import. The *bundled* Latin recogniser: the model
+    // ships inside the app, so reading a screenshot needs no network, no Play Services download and
+    // no account — the only shape of this that belongs in an offline-first suite. The layout reading
+    // it feeds (logic/RecipeTextParser) is framework-free and unit-tested.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

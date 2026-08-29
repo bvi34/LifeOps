@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalFireDepartment
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Restaurant
@@ -25,6 +26,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.logistics.app.ui.food.FoodScreen
+import com.logistics.app.ui.food.FoodViewModel
 import com.logistics.app.ui.grocery.GroceryScreen
 import com.logistics.app.ui.grocery.GroceryViewModel
 import com.logistics.app.ui.history.HistoryScreen
@@ -42,18 +45,22 @@ import com.logistics.app.ui.theme.LogisticsTheme
 private sealed class Dest(val route: String, val label: String, val icon: ImageVector) {
     object Pantry : Dest("pantry", "Pantry", Icons.Default.Inventory2)
     object Grocery : Dest("grocery", "Grocery", Icons.Default.ShoppingCart)
-    object Meal : Dest("meal", "Log meal", Icons.Default.Restaurant)
+    object Meal : Dest("meal", "Meal", Icons.Default.Restaurant)
+    // The food diary and its calories — LifeOps' own, opened here beside the shelf it came off.
+    object Food : Dest("food", "Food", Icons.Default.LocalFireDepartment)
     object History : Dest("history", "History", Icons.Default.History)
     object Recipes : Dest("recipes", "Recipes", Icons.Default.MenuBook)
     object Import : Dest("import", "Import", Icons.Default.ReceiptLong)
 }
 
-private val navItems = listOf(Dest.Pantry, Dest.Grocery, Dest.Meal, Dest.History, Dest.Recipes, Dest.Import)
+private val navItems =
+    listOf(Dest.Pantry, Dest.Grocery, Dest.Meal, Dest.Food, Dest.History, Dest.Recipes, Dest.Import)
 
 /**
- * Logistics' single entry point. A tabbed shell — Pantry, Grocery list, Log meal, History, Recipes,
- * Import — over the one [LogisticsApp] runtime. It also accepts a Walmart PDF shared from another
- * app (→ Import) and a shared recipe link or order text (→ Recipes / Import).
+ * Logistics' single entry point. A tabbed shell — Pantry, Grocery list, Meal, Food, History,
+ * Recipes, Import — over the one [LogisticsApp] runtime. It also accepts a Walmart PDF shared from
+ * another app (→ Import), a shared recipe link or order text (→ Recipes / Import), and
+ * **screenshots of a recipe** shared from anywhere at all (→ Recipes, straight into the OCR).
  */
 class MainActivity : ComponentActivity() {
 
@@ -70,6 +77,15 @@ class MainActivity : ComponentActivity() {
             intent?.action == Intent.ACTION_VIEW && intent.type == "application/pdf" -> intent.data
             else -> null
         }
+        // Screenshots of a recipe, shared from the gallery, a browser, a messaging app — one or
+        // several, since a recipe rarely fits on one screen.
+        val sharedImages: List<Uri> = when {
+            intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("image/") == true ->
+                listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            intent?.action == Intent.ACTION_SEND_MULTIPLE && intent.type?.startsWith("image/") == true ->
+                IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }
         val sharedText: String? = intent
             ?.takeIf { it.action == Intent.ACTION_SEND && it.type == "text/plain" }
             ?.getStringExtra(Intent.EXTRA_TEXT)
@@ -77,7 +93,7 @@ class MainActivity : ComponentActivity() {
         val orderText = sharedText?.takeUnless { it.trim().startsWith("http", ignoreCase = true) }
         val startRoute = when {
             importPdfUri != null || orderText != null -> Dest.Import.route
-            sharedUrl != null -> Dest.Recipes.route
+            sharedUrl != null || sharedImages.isNotEmpty() -> Dest.Recipes.route
             else -> Dest.Pantry.route
         }
 
@@ -129,13 +145,19 @@ class MainActivity : ComponentActivity() {
                             val vm: LogMealViewModel = viewModel(factory = LogMealViewModel.Factory(app.pantryRepository, app.catalog, app.prefs))
                             LogMealScreen(vm)
                         }
+                        composable(Dest.Food.route) {
+                            val vm: FoodViewModel = viewModel(factory = FoodViewModel.Factory(app.catalog))
+                            FoodScreen(vm)
+                        }
                         composable(Dest.History.route) {
                             val vm: HistoryViewModel = viewModel(factory = HistoryViewModel.Factory(app.pantryRepository))
                             HistoryScreen(vm)
                         }
                         composable(Dest.Recipes.route) {
-                            val vm: RecipeViewModel = viewModel(factory = RecipeViewModel.Factory(app.catalog))
-                            RecipeScreen(vm, initialUrl = sharedUrl)
+                            val vm: RecipeViewModel = viewModel(
+                                factory = RecipeViewModel.Factory(app.catalog, app.recipeShots, applicationContext)
+                            )
+                            RecipeScreen(vm, initialUrl = sharedUrl, initialImages = sharedImages)
                         }
                     }
                 }

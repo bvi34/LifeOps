@@ -22,12 +22,24 @@
                  a Walmart order PDF straight into the import flow. Note the action: *opening* a PDF
                  (ACTION_VIEW) belongs to Citation, which owns reading — a grocery order is the rare
                  PDF, a book the common one, so Logistics takes the deliberate "share to Logistics"
-                 gesture rather than every PDF tap on the device. -->
+                 gesture rather than every PDF tap on the device.
+
+                 Images are here for the same reason and land in the same place: a *screenshot* of a
+                 recipe, shared from the gallery or straight out of the app you found it in, opens
+                 the Recipes tab with the OCR already running on it. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
                 <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+
+            <!-- A recipe rarely fits on one screen, so several screenshots share as a batch. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
 

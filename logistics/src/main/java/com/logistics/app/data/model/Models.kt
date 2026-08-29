@@ -188,3 +188,36 @@ data class GroceryItem(
     val createdAt: String,
     val updatedAt: String
 )
+
+/**
+ * One resolved ingredient line of a LifeOps recipe, ready to show. [gapLabel] is why the line adds
+ * nothing to the recipe's macros when it doesn't ("macros not recorded", "food no longer in the
+ * catalog") — the same reason LifeOps prints, carried across rather than recomputed, so a recipe
+ * imported from a link or a screenshot reads as a floor rather than a fiction.
+ */
+data class IngredientRow(
+    val id: String,
+    val foodName: String,
+    val quantity: Double,
+    val unit: String,
+    val gapLabel: String? = null
+)
+
+/**
+ * A screenshot kept with a recipe — the picture the recipe was read out of, or one added to it
+ * afterwards. Plenty of recipes only ever exist as a photo of a card, a story slide, or a page of a
+ * cookbook; the OCR turns that into ingredients you can shop and cook from, and the picture stays so
+ * you can check the parse against the original.
+ *
+ * [recipeId] points at a LifeOps recipe the same soft way [PantryItem.foodItemId] points at a food —
+ * two databases in one process, so it is a plain id resolved at read time, not a foreign key.
+ * [fileName] names a JPEG in Logistics' own `recipe-shots/` directory; the bytes never go in the
+ * database (see `data/store/RecipeShotStore`).
+ */
+data class RecipeShot(
+    val id: String,
+    val recipeId: String,
+    val fileName: String,
+    val sortOrder: Int = 0,
+    val createdAt: String
+)

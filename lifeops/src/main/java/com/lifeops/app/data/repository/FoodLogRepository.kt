@@ -29,12 +29,23 @@ class FoodLogRepository(
     suspend fun getEntriesSince(startIso: String): List<FoodLogEntry> =
         foodLogDao.getSince(startIso).map { it.toModel() }
 
-    /** Logs a quantity of a saved FoodItem. Macros are snapshotted at log time so a later
-     *  edit to the FoodItem (or a USDA re-sync) can't rewrite diary history. */
-    suspend fun logFoodItem(foodItemId: String, quantity: Double, unit: IngredientUnit): FoodLogEntry? {
+    /**
+     * Logs a quantity of a saved FoodItem. Macros are snapshotted at log time so a later edit to the
+     * FoodItem (or a USDA re-sync) can't rewrite diary history.
+     *
+     * [loggedAt] defaults to now, which is what logging what you just ate means. It is a parameter
+     * because a diary is also read a day at a time: a screen sitting on Thursday and logging onto
+     * Friday must not write the entry onto today, where it would vanish from the day it was typed
+     * into. Callers on today's date pass nothing.
+     */
+    suspend fun logFoodItem(
+        foodItemId: String,
+        quantity: Double,
+        unit: IngredientUnit,
+        loggedAt: String = DateUtil.now()
+    ): FoodLogEntry? {
         val food = foodItemDao.getById(foodItemId)?.toModel() ?: return null
         val nutrition = NutritionCalculator.nutritionFor(food, quantity, unit) ?: return null
-        val now = DateUtil.now()
         val entry = FoodLogEntry(
             id = UUID.randomUUID().toString(),
             foodItemId = food.id,
@@ -45,10 +56,11 @@ class FoodLogRepository(
             carbsG = nutrition.carbsG,
             proteinG = nutrition.proteinG,
             fatG = nutrition.fatG,
-            loggedAt = now,
+            loggedAt = loggedAt,
             source = FoodLogSource.AD_HOC,
             confirmed = true,
-            confirmedAt = now
+            // What was eaten is placed on the day it was eaten; confirming it happened just now.
+            confirmedAt = DateUtil.now()
         )
         foodLogDao.insert(entry.toEntity())
         return entry
@@ -63,9 +75,9 @@ class FoodLogRepository(
         calories: Double,
         carbsG: Double,
         proteinG: Double,
-        fatG: Double
+        fatG: Double,
+        loggedAt: String = DateUtil.now()
     ): FoodLogEntry {
-        val now = DateUtil.now()
         val entry = FoodLogEntry(
             id = UUID.randomUUID().toString(),
             foodItemId = null,
@@ -76,10 +88,10 @@ class FoodLogRepository(
             carbsG = carbsG,
             proteinG = proteinG,
             fatG = fatG,
-            loggedAt = now,
+            loggedAt = loggedAt,
             source = FoodLogSource.AD_HOC,
             confirmed = true,
-            confirmedAt = now
+            confirmedAt = DateUtil.now()
         )
         foodLogDao.insert(entry.toEntity())
         return entry

@@ -117,6 +117,24 @@ class FoodLogRepositoryTest {
         assertEquals("f2", repo.getFrequentFoodItems().single().id)
     }
 
+    /** Logging while looking at another day must land on that day, not on today — otherwise the
+     *  entry disappears from the day it was typed into. */
+    @Test
+    fun `an explicit loggedAt places the entry on that day`() = runTest {
+        val logDao = FakeFoodLogDao()
+        val foodDao = FakeFoodItemDao().apply { items += food("f1") }
+        val repo = FoodLogRepository(logDao, foodDao)
+        val midday = DateUtil.isoFromEpoch(DateUtil.epochMillisForDate("2026-06-24", 12))
+
+        repo.logFoodItem("f1", 1.0, IngredientUnit.SERVING, loggedAt = midday)
+        repo.logAdHoc("Leftovers", 1.0, IngredientUnit.SERVING, 400.0, 30.0, 20.0, 15.0, loggedAt = midday)
+
+        val onDay = repo.observeForDate("2026-06-24").first()
+        assertEquals(listOf("Banana", "Leftovers"), onDay.map { it.name })
+        // Placing an entry on a past day doesn't back-date the act of confirming it.
+        assertTrue(onDay.all { it.confirmed && it.confirmedAt != null })
+    }
+
     @Test
     fun `observeForDate returns only entries logged on that calendar day`() = runTest {
         val logDao = FakeFoodLogDao()

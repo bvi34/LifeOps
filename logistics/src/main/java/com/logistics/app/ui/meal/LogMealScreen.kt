@@ -19,6 +19,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lifeops.app.data.model.NutritionTotals
 import com.lifeops.app.data.model.Recipe
 import com.logistics.app.data.model.PantryItem
 import com.logistics.app.data.prefs.LogisticsPrefs
@@ -56,6 +57,12 @@ class LogMealViewModel(
     var lastLogged by mutableStateOf<String?>(null)
         private set
 
+    /** The picked recipe's macros for one serving, or null when its ingredients carry none. Drives
+     *  the "log the calories too" offer below the picker — there's nothing honest to offer when the
+     *  recipe is an import whose ingredients are all placeholders. */
+    var recipePerServing by mutableStateOf<NutritionTotals?>(null)
+        private set
+
     /** Pantry item ids whose linked food is an ingredient of [recipeId] — the auto-selection when
      *  you cook a known recipe. */
     suspend fun matchedPantryIds(recipeId: String): Set<String> {
@@ -63,12 +70,33 @@ class LogMealViewModel(
         return items.value.filter { it.foodItemId != null && it.foodItemId in ingredientFoodIds }.map { it.id }.toSet()
     }
 
-    fun logMeal(mealName: String, recipeId: String?, selections: Map<String, Double>) = viewModelScope.launch {
+    /** Loads (or clears) the picked recipe's per-serving macros. */
+    fun loadRecipeMacros(recipeId: String?) = viewModelScope.launch {
+        recipePerServing = recipeId?.let { catalog.getRecipeNutrition(it)?.perServing }
+            ?.takeIf { it != NutritionTotals.ZERO }
+    }
+
+    /**
+     * Deducts the meal from the pantry and — when asked, and when the recipe knows its macros —
+     * writes the calories into the food diary in the same action. The two halves of "I cooked this"
+     * were always the same event; only the bookkeeping was in two places.
+     */
+    fun logMeal(
+        mealName: String,
+        recipeId: String?,
+        selections: Map<String, Double>,
+        logCalories: Boolean = false,
+        servings: Double = 1.0
+    ) = viewModelScope.launch {
         val consumptions = selections.filter { it.value > 0.0 }
             .map { PantryRepository.Consumption(it.key, it.value) }
         if (consumptions.isEmpty()) return@launch
         repo.consumeMeal(mealName, recipeId, consumptions)
-        lastLogged = "Logged \"$mealName\" — deducted ${consumptions.size} item(s)."
+        val diaried = if (logCalories && recipeId != null) {
+            catalog.logCookedRecipe(mealName, recipeId, servings)
+        } else null
+        lastLogged = "Logged \"$mealName\" — deducted ${consumptions.size} item(s)." +
+            (diaried?.let { " ${it.calories.toInt()} kcal in your food diary." } ?: "")
     }
 
     fun clearStatus() { lastLogged = null }
@@ -94,6 +122,9 @@ fun LogMealScreen(vm: LogMealViewModel) {
     var mealName by remember { mutableStateOf("") }
     var selectedRecipe by remember { mutableStateOf<Recipe?>(null) }
     var search by remember { mutableStateOf("") }
+    // Cooking a known recipe is also an entry in the food diary, if you want it to be.
+    var logCalories by remember { mutableStateOf(true) }
+    var servingsText by remember { mutableStateOf("1") }
     // itemId -> amount text
     val amounts = remember { mutableStateMapOf<String, String>() }
     val included = remember { mutableStateListOf<String>() }
@@ -104,6 +135,7 @@ fun LogMealScreen(vm: LogMealViewModel) {
             snackbar.showSnackbar(it)
             // Reset the form after a successful log.
             mealName = ""; selectedRecipe = null; included.clear(); amounts.clear(); search = ""
+            servingsText = "1"; vm.loadRecipeMacros(null)
             vm.clearStatus()
         }
     }
@@ -143,6 +175,7 @@ fun LogMealScreen(vm: LogMealViewModel) {
                     selected = selectedRecipe,
                     onSelect = { recipe ->
                         selectedRecipe = recipe
+                        vm.loadRecipeMacros(recipe?.id)
                         if (recipe != null) {
                             if (mealName.isBlank()) mealName = recipe.name
                             scope.launch {
@@ -153,6 +186,31 @@ fun LogMealScreen(vm: LogMealViewModel) {
                         }
                     }
                 )
+                // The calories of what you just cooked, offered where you cooked it. Only when the
+                // recipe actually knows them — a recipe imported without macros has nothing to say.
+                vm.recipePerServing?.let { perServing ->
+                    val servings = servingsText.toDoubleOrNull() ?: 1.0
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = logCalories, onCheckedChange = { logCalories = it })
+                        Column(Modifier.weight(1f)) {
+                            Text("Log it in the food diary too", style = MaterialTheme.typography.bodyMedium)
+                            Text(
+                                "${(perServing.calories * servings).toInt()} kcal for ${formatQty(servings)} serving(s)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedTextField(
+                            value = servingsText,
+                            onValueChange = { servingsText = it },
+                            label = { Text("Servings") },
+                            singleLine = true,
+                            enabled = logCalories,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            modifier = Modifier.width(110.dp)
+                        )
+                    }
+                }
             }
             HorizontalDivider()
             if (pantryItems.isEmpty()) {
@@ -218,7 +276,15 @@ fun LogMealScreen(vm: LogMealViewModel) {
                 Surface(tonalElevation = 3.dp) {
                     val selections = included.associateWith { (amounts[it] ?: "1").toDoubleOrNull() ?: 0.0 }
                     Button(
-                        onClick = { vm.logMeal(mealName.ifBlank { selectedRecipe?.name ?: "Meal" }, selectedRecipe?.id, selections) },
+                        onClick = {
+                            vm.logMeal(
+                                mealName = mealName.ifBlank { selectedRecipe?.name ?: "Meal" },
+                                recipeId = selectedRecipe?.id,
+                                selections = selections,
+                                logCalories = logCalories && vm.recipePerServing != null,
+                                servings = servingsText.toDoubleOrNull() ?: 1.0
+                            )
+                        },
                         enabled = included.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().padding(12.dp)
                     ) { Text("Log meal & deduct (${included.size})") }
