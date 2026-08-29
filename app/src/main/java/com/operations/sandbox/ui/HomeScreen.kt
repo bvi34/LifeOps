@@ -21,6 +21,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -65,16 +66,22 @@ import java.util.Locale
  *
  * Tap a tile to open the app; press and hold to jump to where its colour is chosen.
  *
+ * Above the grid sits the one piece of live information the shell shows on its own: a weather tile
+ * for wherever the phone is, on the theory that "is it raining?" is asked more often than any app
+ * on this screen is opened. It reads LifeOps' weather cache, so it costs nothing to show.
+ *
  * The backdrop is the user's: a shipped design, their own gradient, or the suite's own colours (the
  * default). Whichever it is, the text on top is written in the ink that wallpaper resolved to, so a
  * bright wallpaper cannot swallow the clock.
  */
 @Composable
 fun SandboxHomeScreen(
+    weather: WeatherWidgetController?,
     onOpenApp: (AppId) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBackups: () -> Unit,
-    onCustomizeApp: (AppId) -> Unit
+    onCustomizeApp: (AppId) -> Unit,
+    onOpenWeather: () -> Unit
 ) {
     val appearance = LocalSuiteAppearance.current
 
@@ -113,7 +120,13 @@ fun SandboxHomeScreen(
         ) {
             StatusHeader(ink = ink)
 
-            Spacer(Modifier.height(28.dp))
+            if (weather != null) {
+                LaunchedEffect(weather) { weather.start() }
+                Spacer(Modifier.height(16.dp))
+                WeatherWidget(controller = weather, onOpenWeather = onOpenWeather)
+            }
+
+            Spacer(Modifier.height(24.dp))
 
             // The grid takes the space between the clock and the dock and scrolls inside it, so a
             // eighth and ninth app can arrive without pushing the dock off a short screen.

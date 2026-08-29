@@ -19,7 +19,7 @@ the receipts.
 > **Operations Sandbox** is the container these apps now ship inside — it's the `:app` module, the
 > single installed application and the central hub the whole suite opens through. It opens on a
 > **phone-style home screen**: a tile per app in that app's own icon and colour, over a dock holding
-> the gear and the backups. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
+> the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), or Project (`:project`); one place to back the whole suite up into a single `.zip` and restore from it; and one
 > place that decides what all seven of them **look** like — a shared preset and light/dark mode, plus
@@ -327,6 +327,24 @@ same way enough times, the **Activities** screen suggests updating that activity
 mowing above the recommended temperature — raise the threshold?") with one-tap Apply/Dismiss. All in
 backup/restore (v11).
 
+**Phase 6 — where you actually are.** A location stops being a latitude you type in.
+`data/weather/DeviceLocationProvider.kt` asks the device where it is — platform `LocationManager`
+only (no Play Services), `ACCESS_COARSE_LOCATION` only (a forecast cell is ~2.5 km square, so fine
+location would buy nothing), cheapest-first: a recent last-known fix, else one bounded active
+request, else the stale fix rather than nothing. `WeatherRepository.setDeviceLocation(...)` keeps
+**one reserved row** pointed there instead of accumulating a location per fix; it sorts ahead of
+hand-added places, making it the weather screen's default and the "primary" that stamps counter
+ticks. A fix within 2 km of the stored one is treated as no movement and changes nothing, so a phone
+on a table can't discard a good forecast; past that the row moves and its now-wrong snapshots and
+alerts are dropped. Every failure is a value (`Fix.PermissionMissing` / `LocationDisabled` /
+`Unavailable`), never an exception, so each one can be phrased for the user. This is what the
+**Operations Sandbox home screen's weather tile** is built on (see
+[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)): current conditions, today's high/low, and
+an alert strip, read from the same cache LifeOps uses — cache-first, refreshed only past 45 minutes,
+tapping through to the full Weather screen. `util/TodayOutlook.kt` is the pure piece that turns NWS's
+alternating day/night halves into "the rest of today"; `util/Geo.kt` is the pure distance check
+behind the move threshold.
+
 ---
 
 ## People (Planning) — design note
@@ -533,6 +551,11 @@ JVM unit tests live in `app/src/test/`. Notable suites:
   distant-storm horizon, and delay-hint formatting.
 - `PreferenceLearningTest` — override-trend suggestions, min-observations gate, and the
   no-change-when-median-equals-default guard.
+- `TodayOutlookTest` — "rest of today" from NWS's day/night halves: high/low taken from each
+  period's own daytime flag (so an evening open reads tonight's low and tomorrow's high), worst
+  precipitation across the window, and a missing half reported rather than guessed.
+- `GeoTest` — great-circle distance behind the device-location move threshold: known city pair,
+  symmetry, a short hop staying under the threshold, and the antipodal arcsine guard.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 ---
@@ -548,3 +571,11 @@ explicitly export or share it. Back up regularly from **Settings → Data**:
 
 Exports are written as plain text (no compression). The JSON is the only format that can
 be restored.
+
+**The one thing that goes out.** Weather is fetched from the US National Weather Service
+(`api.weather.gov`) — no key, no account, and nothing sent but the coordinates a forecast needs.
+When you let the Operations Sandbox's weather tile use your location, those coordinates are your
+approximate position (`ACCESS_COARSE_LOCATION`, so already fuzzed by the OS) rather than a place you
+typed in. The fix itself is never stored anywhere but the local weather cache, and declining leaves
+every other part of the suite untouched — you can still add a location by hand on the Weather
+screen.

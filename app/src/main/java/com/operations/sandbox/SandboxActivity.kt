@@ -18,7 +18,9 @@ import com.operations.sandbox.ui.BackupController
 import com.operations.sandbox.ui.SandboxHomeScreen
 import com.operations.sandbox.ui.SandboxSettingsScreen
 import com.operations.sandbox.ui.SettingsTab
+import com.operations.sandbox.ui.WeatherWidgetController
 import com.operations.sandbox.ui.rememberBackupController
+import com.operations.sandbox.ui.rememberWeatherWidgetController
 import com.operations.sandbox.ui.theme.SandboxTheme
 
 /**
@@ -51,6 +53,10 @@ private const val ROUTE_SETTINGS = "settings"
 private fun SandboxShell(center: BackupCenter) {
     val context = LocalContext.current
     val backup: BackupController = rememberBackupController(center)
+    // Hoisted for the same reason the backup controller is: leaving the home screen for Settings
+    // shouldn't cancel a location fix or a forecast fetch that's already in flight. Null only if
+    // LifeOps somehow isn't installed in this process, in which case the home screen omits the tile.
+    val weather: WeatherWidgetController? = rememberWeatherWidgetController()
 
     var route by rememberSaveable { mutableStateOf(ROUTE_HOME) }
     var tabName by rememberSaveable { mutableStateOf(SettingsTab.APPEARANCE.name) }
@@ -75,12 +81,28 @@ private fun SandboxShell(center: BackupCenter) {
         )
 
         else -> SandboxHomeScreen(
+            weather = weather,
             onOpenApp = { appId -> openApp(context, appId) },
             onOpenSettings = { openSettings(SettingsTab.APPEARANCE) },
             onOpenBackups = { openSettings(SettingsTab.BACKUPS) },
-            onCustomizeApp = { appId -> openSettings(SettingsTab.APPEARANCE, appId.key) }
+            onCustomizeApp = { appId -> openSettings(SettingsTab.APPEARANCE, appId.key) },
+            onOpenWeather = { openWeather(context) }
         )
     }
+}
+
+/**
+ * The weather tile's tap target: LifeOps' own weather screen, which is where the hourly strip,
+ * radar, alerts and the outdoor-task windows live. The tile is one glance; this is the whole thing.
+ */
+private fun openWeather(context: Context) {
+    context.startActivity(
+        Intent(context, com.lifeops.app.MainActivity::class.java)
+            .putExtra(
+                com.lifeops.app.MainActivity.EXTRA_OPEN_DESTINATION,
+                com.lifeops.app.MainActivity.DEST_WEATHER
+            )
+    )
 }
 
 /** Open a hosted app's UI in this same process by launching its (now non-launcher) activity. */
