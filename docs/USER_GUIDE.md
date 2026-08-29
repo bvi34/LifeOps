@@ -99,6 +99,50 @@ Most of these are reversible (un-complete, un-skip, un-carry) until the week is 
 - A **hard deadline** is real: if the task is still pending at week-close, it **expires**
   rather than rolling over. Use it for things that genuinely can't slip.
 
+### The week's bar (commitments)
+
+A week is rarely a flat list of equally-important things. Tap the **star** on a task to mark it
+as one of the week's **commitments** — the few whose completion decides whether the week actually
+worked. The This Week header then shows **Bar: 3/5**, and when every one is done it says so:
+
+> ★ The week's bar is met — 5/5. Rest is earned.
+
+That sentence is the whole point. A completion percentage tells you how much of the list moved;
+it has no idea which of it mattered, so it can never tell you that you're finished. The bar can.
+
+A few deliberate rules:
+
+- **Marking a task essential earns you nothing.** No extra resources, no scoring change. If the
+  star paid out, every task would end up wearing one and it would stop meaning anything.
+- **Mark a handful, not the list.** If you mark more than about 60% of a week's tasks, week-close
+  will tell you: *"8 of 10 tasks marked essential. That's not a bar, that's the list."*
+- **A carried task keeps its star.** Something you called essential and didn't do hasn't stopped
+  being essential because the week ended — un-star it next week if you've genuinely changed your
+  mind. A **recurring** task does *not* inherit it: each new week sets its own bar.
+- **Nothing marked means no bar**, not a failed one. Week-close stays quiet about it.
+
+At close, **Commitment** leads the Week in Review with its own week-over-week delta, and a bar you
+missed is named: *"3/5 on the bar you set. 2 you called essential didn't happen."*
+
+### Does this week fit?
+
+Once you've closed a few weeks, the This Week header also holds your plan against your own
+history:
+
+> 23h planned. Your weeks hold about 11h. This one doesn't fit.
+
+It's the sum of your **estimates** against the **median** logged time of your last eight sealed
+weeks. Median, not average — one 40-hour crunch week shouldn't quietly license the next one.
+
+It never blocks you and never re-plans anything, and it stays silent when it hasn't earned the
+right to speak: fewer than three weeks of history means there's no baseline, and a guess dressed
+as a baseline is worse than nothing. If some tasks have no estimate, it says so — *"4 tasks
+unestimated, so that's a floor"* — because a partial total presented as the whole plan is the
+same over-commitment wearing a badge.
+
+The point is timing. The honest mirror at week-close can only tell you about a week you can no
+longer change; this says it while the week is still yours to shape.
+
 ### Estimates & scoring
 
 When you complete a task, its resource value is multiplied by an **accuracy multiplier**
@@ -131,7 +175,8 @@ planning a week elsewhere and dropping it in.
 
 When the week is done, **Close Week**:
 
-1. Snapshots the week (counts, resources, and a sealed per-aspect record for your rings).
+1. Snapshots the week (counts, resources, the week's bar, and a sealed per-aspect record for
+   your rings).
 2. Marks leftover pending tasks **Incomplete** (or **Expired** for hard deadlines).
 3. Carries forward the tasks you chose to keep, and re-seeds **recurring** tasks.
 4. Starts the next week and draws the closed week's **Growth ring**.

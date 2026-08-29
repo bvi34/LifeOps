@@ -120,4 +120,7 @@ interface TaskDao {
 
     @Query("SELECT slug FROM tasks WHERE weekId = :weekId")
     suspend fun getSlugsByWeek(weekId: String): List<String>
+
+    @Query("UPDATE tasks SET isCommitment = :isCommitment WHERE id = :id")
+    suspend fun setCommitment(id: String, isCommitment: Boolean)
 }

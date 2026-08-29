@@ -21,7 +21,9 @@ class WeekReviewTest {
         carried: Int = 0,
         hdHit: Int = 0,
         hdExpired: Int = 0,
-        aspectHistory: Map<String, AspectHistoryEntry> = emptyMap()
+        aspectHistory: Map<String, AspectHistoryEntry> = emptyMap(),
+        commitmentTotal: Int = 0,
+        commitmentCompleted: Int = 0
     ) = WeekSnapshot(
         id = "s-$createdAt",
         weekId = "w-$createdAt",
@@ -39,7 +41,9 @@ class WeekReviewTest {
         hardDeadlineCompletedCount = hdHit,
         hardDeadlineExpiredCount = hdExpired,
         createdAt = createdAt,
-        aspectHistory = aspectHistory
+        aspectHistory = aspectHistory,
+        commitmentTotal = commitmentTotal,
+        commitmentCompleted = commitmentCompleted
     )
 
     private fun hist(minutes: Int, name: String = "x") = AspectHistoryEntry(minutes, name, "#336699")
@@ -172,6 +176,96 @@ class WeekReviewTest {
             listOf(aspect("a"), aspect("b"), aspect("c"))
         )
         assertTrue(review.observations.size <= 3)
+    }
+
+    // --- The week's commitment ------------------------------------------------------------------
+
+    @Test
+    fun noBarSetMeansNoVerdictAndNoCommitmentMetric() {
+        // A week with nothing marked hasn't missed its bar — it never set one. `null`, not `false`.
+        val review = WeekReviewBuilder.build(closing, emptyList(), emptyList())
+        assertNull(review.commitmentMet)
+        assertTrue(review.headline.none { it.label == "Commitment" })
+        assertTrue(review.observations.none { it.contains("bar you set") })
+    }
+
+    @Test
+    fun aClearedBarIsTheWeeksResultNotAnObservation() {
+        // The completion rate is still only 70% — the point of the bar is that this week is
+        // nonetheless done, and the verdict says so where the three-observation cap can't bury it.
+        val met = closing.copy(commitmentTotal = 4, commitmentCompleted = 4)
+        val review = WeekReviewBuilder.build(met, emptyList(), emptyList())
+        assertEquals(true, review.commitmentMet)
+        assertEquals("4/4", review.headline.first { it.label == "Commitment" }.value)
+        assertTrue(review.observations.none { it.contains("didn't happen") })
+    }
+
+    @Test
+    fun aMissedBarIsStatedPlainlyInTheObservations() {
+        val missed = closing.copy(commitmentTotal = 5, commitmentCompleted = 3)
+        val review = WeekReviewBuilder.build(missed, emptyList(), emptyList())
+        assertEquals(false, review.commitmentMet)
+        assertTrue(review.observations.any { it.contains("3/5 on the bar you set") })
+        assertTrue(review.observations.any { it.contains("2 you called essential didn't happen") })
+    }
+
+    @Test
+    fun theCommitmentMetricLeadsTheHeadline() {
+        val met = closing.copy(commitmentTotal = 3, commitmentCompleted = 3)
+        val review = WeekReviewBuilder.build(met, emptyList(), emptyList())
+        assertEquals("Commitment", review.headline.first().label)
+    }
+
+    @Test
+    fun commitmentDeltaComparesBarToBarNotToCompletionRate() {
+        // Last week: 2/4 = 50% of its bar. This week 3/4 = 75% → +25pp.
+        val last = snap("2026-07-20", completed = 9, commitmentTotal = 4, commitmentCompleted = 2)
+        val thisWeek = closing.copy(commitmentTotal = 4, commitmentCompleted = 3)
+        val review = WeekReviewBuilder.build(thisWeek, listOf(last), emptyList())
+        val metric = review.headline.first { it.label == "Commitment" }
+        assertEquals("+25pp", metric.delta)
+        assertEquals(Trend.UP, metric.trend)
+    }
+
+    @Test
+    fun noDeltaAgainstAWeekThatSetNoBar() {
+        // A week closed before commitments existed seals 0/0. Comparing against it would read as a
+        // collapse from a bar that was never set, so there's simply no delta.
+        val preFeature = snap("2026-07-20", completed = 9)
+        val thisWeek = closing.copy(commitmentTotal = 4, commitmentCompleted = 2)
+        val review = WeekReviewBuilder.build(thisWeek, listOf(preFeature), emptyList())
+        assertNull(review.headline.first { it.label == "Commitment" }.delta)
+    }
+
+    @Test
+    fun markingMostOfTheListAsEssentialIsCalledOut() {
+        // 8 of 10 marked: the flag has stopped selecting anything, which is said *before* the
+        // hit/miss line because it changes what that line is worth.
+        val overMarked = closing.copy(totalRelevant = 10, commitmentTotal = 8, commitmentCompleted = 8)
+        val review = WeekReviewBuilder.build(overMarked, emptyList(), emptyList())
+        val first = review.observations.first()
+        assertTrue(first.contains("8 of 10 tasks marked essential"))
+        assertTrue(first.contains("that's the list"))
+    }
+
+    @Test
+    fun aSmallWeekIsNotAccusedOfOverMarking() {
+        // 3 of 4 is a light week, not an over-marked one — the ratio needs a real week to mean
+        // anything, so the line stays silent below the size floor.
+        val small = closing.copy(totalRelevant = 4, commitmentTotal = 3, commitmentCompleted = 3)
+        val review = WeekReviewBuilder.build(small, emptyList(), emptyList())
+        assertTrue(review.observations.none { it.contains("that's the list") })
+    }
+
+    @Test
+    fun aMissedBarSuppressesTheDryNodForAClimbingCompletionRate() {
+        // Completion climbed 30% → 70%, which alone earns the nod. It doesn't get one: essential
+        // work went undone, and congratulating the climb would be the mirror flattering.
+        val last = snap("2026-07-20", completed = 3, incomplete = 7)
+        val missed = closing.copy(commitmentTotal = 3, commitmentCompleted = 1)
+        val review = WeekReviewBuilder.build(missed, listOf(last), emptyList())
+        assertTrue(review.observations.none { it.contains("Keep it") })
+        assertTrue(review.observations.any { it.contains("didn't happen") })
     }
 
     @Test

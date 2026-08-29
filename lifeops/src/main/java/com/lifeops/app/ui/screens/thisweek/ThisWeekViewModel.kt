@@ -9,6 +9,8 @@ import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.toSlug
 import com.lifeops.app.util.ClosingWeekStats
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.WeekCapacity
+import com.lifeops.app.util.WeekCapacityBuilder
 import com.lifeops.app.util.WeekReview
 import com.lifeops.app.util.WeekReviewBuilder
 import com.lifeops.app.util.ImportParser
@@ -99,7 +101,13 @@ data class ThisWeekUiState(
     /** taskId → (checked, total) subtask counts, for the row progress chip. */
     val subtaskCounts: Map<String, Pair<Int, Int>> = emptyMap(),
     /** The user's own calendar/busy blocks — powers the "happening today" event banner. */
-    val busyBlocks: List<BusyBlock> = emptyList()
+    val busyBlocks: List<BusyBlock> = emptyList(),
+    /**
+     * What this week has been committed to, against what your weeks usually hold. Null until the
+     * trailing history has been read; [WeekCapacity.headline] is null whenever there's nothing
+     * honest to say (no estimates, or no baseline yet).
+     */
+    val capacity: WeekCapacity? = null
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -262,6 +270,10 @@ class ThisWeekViewModel(
                 val aspectMap = aspects.associateBy { it.id }
                 val categoryMap = categories.associateBy { it.id }
                 if (week != null) {
+                    // Read on this tick (week/aspect/category) rather than on every task edit.
+                    // Snapshots are only written at week-close, so the baseline can't move between
+                    // ticks — re-reading it per keystroke in the task list would be pure waste.
+                    val history = weekRepository.getAllSnapshotsSync()
                     combine(
                         taskRepository.observeTasksForWeek(week.id),
                         taskNoteRepository.observeByWeek(week.id),
@@ -300,6 +312,7 @@ class ThisWeekViewModel(
                                 taskCostEntries = costByTask,
                                 isLoading = false,
                                 weekProgress = computeProgress(tasks, timeByTask),
+                                capacity = computeCapacity(tasks, history),
                                 taskWeatherFit = computeWeatherFit(tasks, state.weatherRequirements, state.weeklyForecast)
                             )
                         }
@@ -315,7 +328,8 @@ class ThisWeekViewModel(
                             taskNotes = emptyMap(),
                             taskTimeMinutes = emptyMap(),
                             isLoading = false,
-                            weekProgress = WeekProgress(0, 0, 0)
+                            weekProgress = WeekProgress(0, 0, 0),
+                            capacity = null
                         )
                     }
                 }
@@ -352,7 +366,50 @@ class ThisWeekViewModel(
         val completed = relevant.count { it.status == TaskStatus.COMPLETED }
         val total = relevant.size
         val totalTime = timeByTask.values.sum()
-        return WeekProgress(completed, total, totalTime)
+        // Same denominator as the completion rate and the sealed snapshot, so the bar shown in the
+        // header is the bar the close dialog reviews.
+        val commitments = relevant.filter { it.isCommitment }
+        return WeekProgress(
+            completedCount = completed,
+            totalCount = total,
+            totalTimeMinutes = totalTime,
+            commitmentTotal = commitments.size,
+            commitmentCompleted = commitments.count { it.status == TaskStatus.COMPLETED }
+        )
+    }
+
+    /**
+     * The capacity read: what this week has been committed to, against what your weeks actually
+     * hold. Deliberately measures the *whole* plan — pending and already-completed work both count
+     * — rather than only what's left. Measuring the remainder against a full week's baseline would
+     * relax as the week ran down and read "realistic" on Friday for work that now has one day to
+     * happen in; the question here is whether the week you signed up for was ever a week's worth,
+     * and that answer shouldn't change just because you've done some of it.
+     *
+     * Carried and queued tasks belong to another week, and a skipped one has been taken off the
+     * plan — so the set is the same one the completion rate and the sealed bar are built from,
+     * minus what you've explicitly dropped.
+     */
+    private fun computeCapacity(tasks: List<Task>, history: List<WeekSnapshot>): WeekCapacity {
+        val planned = tasks.filter {
+            it.status == TaskStatus.PENDING || it.status == TaskStatus.COMPLETED
+        }
+        return WeekCapacityBuilder.build(
+            plannedMinutes = planned.sumOf { it.estimatedMinutes ?: 0 },
+            estimatedTasks = planned.count { it.estimatedMinutes != null },
+            unestimatedTasks = planned.count { it.estimatedMinutes == null },
+            history = history
+        )
+    }
+
+    /**
+     * Mark (or unmark) a task as part of the week's commitment. The flag touches nothing but the
+     * mirror — no rescoring, no status change, no reminder — so this is a bare column write.
+     */
+    fun onToggleCommitment(task: Task) {
+        viewModelScope.launch {
+            taskRepository.setCommitment(task.id, !task.isCommitment)
+        }
     }
 
     fun setSortOrder(order: SortOrder) {
@@ -587,7 +644,10 @@ class ThisWeekViewModel(
             // in the review so what closing mints from reading is visible before the mint. Off (0)
             // unless a reading aspect is chosen, matching closeWeek exactly.
             readingMinutes = reading.minutes.takeIf { reading.aspectId != null } ?: 0,
-            readingPoints = reading.points
+            readingPoints = reading.points,
+            // The same denominator closeWeek seals, so the review previews exactly what gets written.
+            commitmentTotal = s.weekProgress.commitmentTotal,
+            commitmentCompleted = s.weekProgress.commitmentCompleted
         )
         return WeekReviewBuilder.build(closing, weekRepository.getAllSnapshotsSync(), s.aspects.values.toList())
     }

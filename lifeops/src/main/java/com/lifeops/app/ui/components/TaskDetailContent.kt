@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -100,6 +102,8 @@ fun TaskDetailContent(
     onAttachRunbook: (runbookId: String) -> Unit = {},
     onDeleteSubtask: (id: String) -> Unit = {},
     onAddNote: (String) -> Unit = {},
+    /** Toggle this task in/out of the week's commitment; null renders the state without offering to change it. */
+    onToggleCommitment: (() -> Unit)? = null,
     attachments: List<TaskAttachment> = emptyList(),
     onAddAttachment: (Uri) -> Unit = {},
     onDeleteAttachment: (id: String) -> Unit = {},
@@ -257,6 +261,30 @@ fun TaskDetailContent(
                 confirmButton = {},
                 dismissButton = {
                     TextButton(onClick = { showCarryForwardReasonPicker = false }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // The week's bar, stated in words rather than as a star — the row's marker is for marking
+        // fast on Monday, this is for knowing what the marker meant when you come back to it.
+        if (onToggleCommitment != null || task.isCommitment) {
+            Spacer(Modifier.height(8.dp))
+            FilterChip(
+                selected = task.isCommitment,
+                onClick = { onToggleCommitment?.invoke() },
+                enabled = editable && onToggleCommitment != null,
+                label = {
+                    Text(
+                        if (task.isCommitment) "The week rests on this"
+                        else "Mark as one of the week's few"
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        if (task.isCommitment) Icons.Default.Star else Icons.Default.StarBorder,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             )
         }

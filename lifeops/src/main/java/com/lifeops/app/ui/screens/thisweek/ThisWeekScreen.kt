@@ -38,6 +38,7 @@ import com.lifeops.app.data.model.TemplateWithTasks
 import com.lifeops.app.data.model.WeatherAlert
 import com.lifeops.app.data.model.WeekProgress
 import com.lifeops.app.util.ReviewMetric
+import com.lifeops.app.util.WeekCapacity
 import com.lifeops.app.util.TodayEvents
 import com.lifeops.app.util.Trend
 import com.lifeops.app.util.WeatherAdvisory
@@ -206,6 +207,7 @@ fun ThisWeekScreen(
                             )
                             WeekProgressHeader(
                                 progress = state.weekProgress,
+                                capacity = state.capacity,
                                 canCloseWeek = state.week?.isClosed == false,
                                 onCloseWeek = { showCloseConfirm = true }
                             )
@@ -242,6 +244,11 @@ fun ThisWeekScreen(
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
                             val isTimerActive = activeTimer?.taskId == task.id
+                            // The bar can only be set on the tasks it counts. A carried or queued
+                            // task belongs to another week, so ticking it would change nothing —
+                            // one already carrying the flag still shows it, read-only.
+                            val canSetBar = task.status == TaskStatus.PENDING ||
+                                task.status == TaskStatus.COMPLETED
                             TaskRow(
                                 task = task,
                                 aspectColor = group.aspectColor,
@@ -268,7 +275,9 @@ fun ThisWeekScreen(
                                 onOpenDetail = { onOpenTask(task.id) },
                                 onMoveUp = { viewModel.movePlanningTask(task.id, -1) },
                                 onMoveDown = { viewModel.movePlanningTask(task.id, 1) },
-                                onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) }
+                                onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) },
+                                onToggleCommitment =
+                                    if (canSetBar) ({ viewModel.onToggleCommitment(task) }) else null
                             )
                         }
                     }
@@ -467,6 +476,19 @@ private fun WeekReviewSection(review: WeekReview) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         review.headline.forEach { metric -> MetricRow(metric) }
 
+        // The verdict on the bar, when one was set. It sits above the observations rather than
+        // among them because a clean pass is the week's *result*, not a remark about it — and
+        // because it must never be crowded out by the three-observation cap. The miss is stated
+        // in the observations instead, where the mirror's sharper lines live.
+        if (review.commitmentMet == true) {
+            Text(
+                "The bar you set was cleared. Rest is earned.",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary
+            )
+        }
+
         // Neglected aspects the Growth Record will scar — surfaced from 2 weeks grey.
         review.aspectBalance.filter { it.greyStreak >= 2 }.forEach { row ->
             Text(
@@ -540,50 +562,103 @@ private fun MetricRow(metric: ReviewMetric) {
 @Composable
 private fun WeekProgressHeader(
     progress: WeekProgress,
+    capacity: WeekCapacity? = null,
     canCloseWeek: Boolean = false,
     onCloseWeek: () -> Unit = {}
 ) {
     if (progress.totalCount == 0) return
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "${progress.completedCount}/${progress.totalCount} done",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
-            )
-            if (progress.totalCount > 0) {
-                LinearProgressIndicator(
-                    progress = { progress.completedCount.toFloat() / progress.totalCount },
-                    modifier = Modifier.weight(1f).height(4.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            } else {
-                Spacer(Modifier.weight(1f))
-            }
-            if (progress.totalTimeMinutes > 0) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
-                    formatMinutes(progress.totalTimeMinutes),
+                    "${progress.completedCount}/${progress.totalCount} done",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )
-            }
-            if (canCloseWeek) {
-                IconButton(onClick = onCloseWeek, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        Icons.Default.CheckCircle,
-                        contentDescription = "Close week",
-                        modifier = Modifier.size(20.dp)
+                if (progress.totalCount > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.completedCount.toFloat() / progress.totalCount },
+                        modifier = Modifier.weight(1f).height(4.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Spacer(Modifier.weight(1f))
+                }
+                if (progress.totalTimeMinutes > 0) {
+                    Text(
+                        formatMinutes(progress.totalTimeMinutes),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary
                     )
                 }
+                if (canCloseWeek) {
+                    IconButton(onClick = onCloseWeek, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = "Close week",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            }
+            // The bar you set, and whether the week you've planned actually fits. Both lines earn
+            // their place or don't appear: no commitments marked, no bar line; nothing honest to say
+            // about capacity, no capacity line.
+            CommitmentLine(progress)
+            capacity?.headline?.let { line ->
+                Text(
+                    line,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (capacity.isWarning) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+                )
             }
         }
+    }
+}
+
+/**
+ * The week's bar: how much of what you called essential is done. Shown only once something is
+ * marked — an empty bar is not a zero, it's a week you chose not to set one for, and drawing
+ * "0/0 committed" over every unmarked week would make the marker meaningless.
+ *
+ * When it's cleared it says so in as many words. That sentence is the whole point of the feature:
+ * a completion percentage can tell you how much of the list moved, never whether you're done.
+ */
+@Composable
+private fun CommitmentLine(progress: WeekProgress) {
+    if (progress.commitmentTotal == 0) return
+    val met = progress.commitmentMet
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            if (met) Icons.Default.Star else Icons.Default.StarBorder,
+            contentDescription = null,
+            tint = if (met) MaterialTheme.colorScheme.primary
+                   else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            if (met) "The week's bar is met — ${progress.commitmentTotal}/${progress.commitmentTotal}. Rest is earned."
+            else "Bar: ${progress.commitmentCompleted}/${progress.commitmentTotal}",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (met) FontWeight.Medium else FontWeight.Normal,
+            color = if (met) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        )
     }
 }
 

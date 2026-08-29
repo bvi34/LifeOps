@@ -46,5 +46,14 @@ data class WeekSnapshotEntity(
     val selfRatingNote: String? = null,
     // Phase 9: flat +1 per subtask check at week-close; no modifier, independent of task scoring
     @ColumnInfo(defaultValue = "0")
-    val subtaskTickCount: Int = 0
+    val subtaskTickCount: Int = 0,
+    // The week's commitment, sealed the same way aspectHistory is: how many tasks were marked as
+    // the week's bar, and how many of those were actually done. Sealed rather than re-derived
+    // because the flag is editable — un-ticking a commitment next month must not rewrite whether
+    // last month's week was met. Both zero for weeks closed before commitments existed, which
+    // reads correctly as "no bar was set", not as "the bar was missed".
+    @ColumnInfo(defaultValue = "0")
+    val commitmentTotal: Int = 0,
+    @ColumnInfo(defaultValue = "0")
+    val commitmentCompleted: Int = 0
 )

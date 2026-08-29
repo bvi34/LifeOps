@@ -79,5 +79,11 @@ data class TaskEntity(
     // Legacy recurring tasks default to weekly (interval 1), preserving prior behaviour.
     @ColumnInfo(defaultValue = "1")
     val recurrenceIntervalWeeks: Int = 1,
-    val recurrenceDayOfMonth: Int? = null
+    val recurrenceDayOfMonth: Int? = null,
+    // The week's bar: this task is one of the few whose completion decides whether the week
+    // succeeded. Deliberately NOT part of scoring — marking a task as a commitment mints nothing
+    // extra, or the flag would become a second economy and every task would end up wearing it.
+    // It moves one thing only: what the week reads back as at close.
+    @ColumnInfo(defaultValue = "0")
+    val isCommitment: Boolean = false
 )
