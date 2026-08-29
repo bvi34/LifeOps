@@ -55,6 +55,7 @@ dependencies {
     implementation(project(":advisor"))
     implementation(project(":health"))
     implementation(project(":people"))
+    implementation(project(":project"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

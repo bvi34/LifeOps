@@ -6,6 +6,7 @@ import com.citation.app.CitationApplication
 import com.health.app.HealthApp
 import com.lifeops.app.LifeOpsApp
 import com.people.app.PeopleApp
+import com.project.app.ProjectApp
 import com.logistics.app.LogisticsApp
 
 /**
@@ -32,5 +33,6 @@ class SandboxApplication : Application() {
         AdvisorApp.install(this)
         HealthApp.install(this)
         PeopleApp.install(this)
+        ProjectApp.install(this)
     }
 }

@@ -30,6 +30,11 @@ include(":logistics")
 include(":advisor")
 include(":health")
 include(":people")
+// Project is the document and planning repository: a shelf of projects, each with an outline, its
+// documents, its lore, its timeline and the board the work gets done on. Unlike People it is not a
+// peer on the sync spine — nothing else in the suite writes to a project, so there is nothing to
+// reconcile.
+include(":project")
 include(":core")
 include(":backupkit")
 // The suite's appearance: `:suitekit` is the pure-JVM contract (presets, palettes, each app's colour

@@ -2,6 +2,7 @@ package com.operations.suite.ui
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Home
@@ -26,6 +27,7 @@ object SuiteIcons {
         "psychology" -> Icons.Filled.Psychology
         "monitor-heart" -> Icons.Filled.MonitorHeart
         "groups" -> Icons.Filled.Groups
+        "account-tree" -> Icons.Filled.AccountTree
         else -> Icons.Filled.Home
     }
 

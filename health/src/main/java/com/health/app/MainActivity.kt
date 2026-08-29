@@ -75,7 +75,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Reconcile with the household directory every time Health comes to the foreground.
      *
-     * On `onStart` rather than on first composition because all six suite apps share one process:
+     * On `onStart` rather than on first composition because all seven suite apps share one process:
      * walking from Health to People and back does not recreate this activity, so a round tied to
      * composition would run once and then never again for the rest of the session — missing exactly
      * the edit the user just made next door. The round is idempotent and best-effort (a missing or
