@@ -190,4 +190,141 @@ class DocBlocksTest {
         assertEquals("", DocBlocks.preview(emptyList()))
         assertEquals("", DocBlocks.preview(parse("---")))
     }
+    @Test
+    fun `a pasted table becomes one table block, not a wall of pipes`() {
+        val blocks = parse(
+            """
+            Intro line.
+
+            | Stage | Type | Health |
+            |---|---|---|
+            | 1 | Normal | Low |
+            | 3 | Speed | Medium |
+
+            After the table.
+            """.trimIndent()
+        )
+
+        assertEquals(
+            listOf(BlockType.PARAGRAPH, BlockType.TABLE, BlockType.PARAGRAPH),
+            blocks.map { it.type }
+        )
+        val table = MarkdownTables.parse(blocks[1].text)!!
+        assertEquals(listOf("Stage", "Type", "Health"), table.header)
+        assertEquals(2, table.rows.size)
+        assertEquals("After the table.", blocks[2].text)
+    }
+
+    @Test
+    fun `a table that lost its line breaks is still a table`() {
+        val blocks = parse(
+            "| Stage | Type | |---|---| | 1 | Normal | | 2 | Screamer |"
+        )
+
+        assertEquals(listOf(BlockType.TABLE), blocks.map { it.type })
+        val table = MarkdownTables.parse(blocks[0].text)!!
+        assertEquals(listOf("Stage", "Type"), table.header)
+        assertEquals(listOf(listOf("1", "Normal"), listOf("2", "Screamer")), table.rows)
+    }
+
+    @Test
+    fun `a table survives the round trip out to markdown and back`() {
+        val source = """
+            | Stage | Type | Health |
+            |---|:---:|---:|
+            | 1 | Normal | Low |
+        """.trimIndent()
+
+        val once = DocBlocks.render(parse(source))
+        val twice = DocBlocks.render(parse(once))
+
+        assertEquals(once, twice)
+        assertEquals(listOf(BlockType.TABLE), parse(once).map { it.type })
+    }
+
+    @Test
+    fun `a table's word count is its content, not its scaffolding`() {
+        val blocks = parse(
+            """
+            | Stage | Type |
+            |---|---|
+            | 1 | Very Fast |
+            """.trimIndent()
+        )
+
+        // Stage, Type, 1, Very, Fast — and not one word for the pipes and dashes.
+        assertEquals(5, DocBlocks.wordCount(blocks))
+    }
+
+    @Test
+    fun `turning a flattened paragraph into a table puts its rows back`() {
+        val paragraph = parse("| Stage | Type | |---|---| | 1 | Normal |").first()
+            .copy(type = BlockType.PARAGRAPH)
+
+        val table = DocBlocks.retype(paragraph, BlockType.TABLE)
+
+        assertEquals(BlockType.TABLE, table.type)
+        assertEquals(listOf(listOf("1", "Normal")), MarkdownTables.parse(table.text)!!.rows)
+    }
+
+    @Test
+    fun `retyping anything else keeps the words it already had`() {
+        val block = DocBlock("b0", BlockType.PARAGRAPH, "She left before the tide turned.")
+
+        assertEquals(block.text, DocBlocks.retype(block, BlockType.HEADING2).text)
+        assertEquals(BlockType.HEADING2, DocBlocks.retype(block, BlockType.HEADING2).type)
+    }
+
+    @Test
+    fun `numbered lists count up, and restart after anything else`() {
+        val blocks = parse(
+            """
+            1. one
+            2. two
+
+            text
+
+            1. again
+            2. and
+            """.trimIndent()
+        )
+
+        assertEquals(listOf(1, 2, 0, 1, 2), DocBlocks.ordinals(blocks))
+    }
+
+    @Test
+    fun `a document that is only a table previews as its columns`() {
+        val blocks = parse("| Stage | Type |\n|---|---|\n| 1 | Normal |")
+
+        assertEquals("Stage · Type", DocBlocks.preview(blocks))
+    }
+
+    @Test
+    fun `a preview reads as the words, not as the markup around them`() {
+        val blocks = parse("She **left** before the [tide](https://example.com) turned.")
+
+        assertEquals("She left before the tide turned.", DocBlocks.preview(blocks))
+    }
+    @Test
+    fun `a document knows when it is carrying a flattened table`() {
+        val flattened = parse("| Stage | Type | |---|---| | 1 | Normal |")
+            .map { it.copy(type = BlockType.PARAGRAPH) }
+
+        assertTrue(DocBlocks.hasFlattenedTables(flattened))
+        assertFalse(DocBlocks.hasFlattenedTables(parse("Just some prose about zombies.")))
+        // Already a table: nothing left to repair.
+        assertFalse(DocBlocks.hasFlattenedTables(parse("| Stage | Type | |---|---| | 1 | Normal |")))
+    }
+
+    @Test
+    fun `a block reads as its words for searching`() {
+        val table = parse("| Stage | Type | |---|---| | 1 | Normal |").single()
+        assertEquals("Stage Type 1 Normal", DocBlocks.plainText(table))
+
+        val emphasised = DocBlock("b0", BlockType.PARAGRAPH, "She **left** at `dawn`")
+        assertEquals("She left at dawn", DocBlocks.plainText(emphasised))
+
+        val code = DocBlock("b1", BlockType.CODE, "val x = a * b * c")
+        assertEquals("val x = a * b * c", DocBlocks.plainText(code))
+    }
 }
