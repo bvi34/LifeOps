@@ -12,7 +12,7 @@ package com.advisor.app.logic
  *
  *  1. **Contradiction detection** — if recalled memory or profile entries conflict, it does not pick
  *     one: it asks which is correct ([EngineDecision.CLARIFY]).
- *  2. **Ambiguity** — an unresolved reference ("it", "that", "the project") with nothing to bind it
+ *  2. **Ambiguity** — an unresolved reference ("it", "that", "the operation") with nothing to bind it
  *     to is a question the engine won't guess the subject of; it asks.
  *  3. **Grounding / uncertainty** — if nothing on hand (identity, profiles, memory, granted app data)
  *     matches the question, it does not let the model improvise. If the topic clearly needs a source
@@ -223,7 +223,7 @@ class C3AEngine(
         const val MIN_BASE = 2
 
         val DEICTIC_WORDS = setOf("it", "that", "this", "these", "those", "they", "them", "he", "she", "him", "her")
-        val DEICTIC_PHRASES = listOf("the project", "the task", "the book", "the file", "the thing")
+        val DEICTIC_PHRASES = listOf("the operation", "the project", "the task", "the book", "the file", "the thing")
 
         // Social openers/closers — present but not something to be uncertain about.
         val GREETING_WORDS = setOf(
@@ -235,7 +235,7 @@ class C3AEngine(
         val NEGATION_TOKENS = setOf("not", "never", "cannot", "no", "without", "avoid", "dont", "doesnt", "isnt", "wont")
 
         val APP_KEYWORDS: Map<SourceApp, Set<String>> = mapOf(
-            SourceApp.LIFEOPS to setOf("task", "tasks", "week", "aspect", "aspects", "project", "projects", "milestone", "milestones", "goal", "goals", "priority", "deadline"),
+            SourceApp.LIFEOPS to setOf("task", "tasks", "week", "aspect", "aspects", "operation", "operations", "project", "projects", "milestone", "milestones", "goal", "goals", "priority", "deadline"),
             SourceApp.CITATION to setOf("book", "books", "read", "reading", "note", "notes", "author", "library", "highlight", "highlights"),
             SourceApp.LOGISTICS to setOf("pantry", "grocery", "groceries", "food", "stock", "ingredient", "ingredients", "recipe", "recipes", "meal", "meals"),
             SourceApp.HEALTH to setOf("temperature", "temperatures", "fever", "temp", "sick", "ill", "illness", "symptom", "symptoms", "medicine", "medicines", "dose", "doses", "medication", "paracetamol", "ibuprofen", "cough", "poorly", "doctor", "cabinet", "expired", "expiry", "pharmacy"),

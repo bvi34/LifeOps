@@ -16,7 +16,7 @@ fun TaskEntity.toModel() = Task(
     id, weekId, title, aspectId, categoryId,
     Priority.from(priority), dueDate, hardDeadline,
     TaskStatus.from(status), resourceValue, completedAt, carriedFromTaskId, createdAt,
-    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
+    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, operationId,
     TaskSource.from(source), slug,
     CarryForwardReason.from(carryForwardReason), counterId,
     recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment
@@ -26,7 +26,7 @@ fun Task.toEntity() = TaskEntity(
     id, weekId, title, aspectId, categoryId,
     priority.label, dueDate, hardDeadline,
     status.value, resourceValue, completedAt, carriedFromTaskId, createdAt,
-    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId,
+    isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, operationId,
     source.name, slug.ifEmpty { title.toSlug() },
     carryForwardReason?.value, counterId,
     recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment
@@ -140,12 +140,12 @@ fun BookTimeEntryEntity.toModel() = BookTimeEntry(id, bookId, durationMinutes, n
 fun BookTimeEntry.toEntity() = BookTimeEntryEntity(id, bookId, durationMinutes, note, recordedAt)
 
 // The entity's legacy long-form `content` column stays only for old-backup compatibility;
-// MIGRATION_25_26 folded it into future_project_notes, so notes are the source of truth now.
-fun FutureProjectEntity.toModel() = FutureProject(id, title, createdAt, updatedAt, FutureProjectStatus.from(status))
-fun FutureProject.toEntity() = FutureProjectEntity(id, title, "", createdAt, updatedAt, status.value)
+// MIGRATION_25_26 folded it into future_operation_notes, so notes are the source of truth now.
+fun FutureOperationEntity.toModel() = FutureOperation(id, title, createdAt, updatedAt, FutureOperationStatus.from(status))
+fun FutureOperation.toEntity() = FutureOperationEntity(id, title, "", createdAt, updatedAt, status.value)
 
-fun FutureProjectNoteEntity.toModel() = FutureProjectNote(id, projectId, content, createdAt)
-fun FutureProjectNote.toEntity() = FutureProjectNoteEntity(id, projectId, content, createdAt)
+fun FutureOperationNoteEntity.toModel() = FutureOperationNote(id, operationId, content, createdAt)
+fun FutureOperationNote.toEntity() = FutureOperationNoteEntity(id, operationId, content, createdAt)
 
 // Weather — the domain models are deliberately source-agnostic (no sortOrder/createdAt/locationId),
 // so entity construction that needs those persistence-only fields lives in WeatherRepository.

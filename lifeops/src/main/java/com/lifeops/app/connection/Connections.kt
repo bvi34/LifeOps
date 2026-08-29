@@ -7,11 +7,11 @@ import com.lifeops.app.connection.local.LocalBookConnection
 import com.lifeops.app.connection.local.LocalCostConnection
 import com.lifeops.app.connection.local.LocalCounterConnection
 import com.lifeops.app.connection.local.LocalFoodConnection
-import com.lifeops.app.connection.local.LocalFutureProjectConnection
+import com.lifeops.app.connection.local.LocalFutureOperationConnection
 import com.lifeops.app.connection.local.LocalMenuConnection
 import com.lifeops.app.connection.local.LocalNoteConnection
 import com.lifeops.app.connection.local.LocalPersonConnection
-import com.lifeops.app.connection.local.LocalProjectConnection
+import com.lifeops.app.connection.local.LocalOperationConnection
 import com.lifeops.app.connection.local.LocalRunbookConnection
 import com.lifeops.app.connection.local.LocalScheduleConnection
 import com.lifeops.app.connection.local.LocalTaskConnection
@@ -24,11 +24,11 @@ import com.lifeops.app.connection.service.BusyBlockService
 import com.lifeops.app.connection.service.CostService
 import com.lifeops.app.connection.service.CounterService
 import com.lifeops.app.connection.service.FoodService
-import com.lifeops.app.connection.service.FutureProjectService
+import com.lifeops.app.connection.service.FutureOperationService
 import com.lifeops.app.connection.service.MealPlanService
 import com.lifeops.app.connection.service.NoteService
 import com.lifeops.app.connection.service.PersonService
-import com.lifeops.app.connection.service.ProjectService
+import com.lifeops.app.connection.service.OperationService
 import com.lifeops.app.connection.service.RecipeService
 import com.lifeops.app.connection.service.RunbookService
 import com.lifeops.app.connection.service.TaskService
@@ -48,7 +48,7 @@ object Connections {
     data class Services(
         val task: TaskService,
         val week: WeekService,
-        val project: ProjectService,
+        val operation: OperationService,
         val counter: CounterService,
         val note: NoteService,
         val aspect: AspectService,
@@ -59,7 +59,7 @@ object Connections {
         val recipe: RecipeService,
         val food: FoodService,
         val mealPlan: MealPlanService,
-        val futureProject: FutureProjectService,
+        val futureOperation: FutureOperationService,
         val cost: CostService,
         val activity: ActivityService,
         val runbook: RunbookService,
@@ -71,7 +71,7 @@ object Connections {
         // --- local: internal app comms ---
         LocalTaskConnection.register(registry, services.task)
         LocalWeekConnection.register(registry, services.week)
-        LocalProjectConnection.register(registry, services.project)
+        LocalOperationConnection.register(registry, services.operation)
         LocalCounterConnection.register(registry, services.counter)
         LocalNoteConnection.register(registry, services.note)
         LocalAspectConnection.register(registry, services.aspect)
@@ -80,7 +80,7 @@ object Connections {
         LocalBookConnection.register(registry, services.book)
         LocalFoodConnection.register(registry, services.food, services.recipe)
         LocalMenuConnection.register(registry, services.mealPlan)
-        LocalFutureProjectConnection.register(registry, services.futureProject)
+        LocalFutureOperationConnection.register(registry, services.futureOperation)
         LocalCostConnection.register(registry, services.cost)
         LocalActivityConnection.register(registry, services.activity)
         LocalRunbookConnection.register(registry, services.runbook)

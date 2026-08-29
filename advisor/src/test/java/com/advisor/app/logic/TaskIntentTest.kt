@@ -64,7 +64,7 @@ class TaskIntentTest {
     @Test
     fun a_trailing_target_keeps_a_fallback_title() {
         // "to the website" may well be part of the title; the writer restores this longer form when
-        // the target turns out to name no project, aspect or category.
+        // the target turns out to name no operation, aspect or category.
         val command = command("add a task called Publish blog post to the website")
         assertEquals("Publish blog post", command.title)
         assertEquals("website", command.target)

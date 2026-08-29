@@ -11,7 +11,7 @@ enum class ObjectType(val label: String) {
     BOOK("book"),
     NOTE("note"),
     TASK("task"),
-    PROJECT("project"),
+    OPERATION("operation"),
     MILESTONE("milestone"),
     ASPECT("life area"),
     RECIPE("recipe"),
@@ -34,7 +34,7 @@ enum class ObjectType(val label: String) {
  * the two sides compare cleanly:
  *
  *  - books: `reading`, `to_read`, `done`
- *  - tasks/projects: `done`, `doing`, `todo`
+ *  - tasks/operations: `done`, `doing`, `todo`
  *  - pantry: `low`, `stocked`  ·  grocery: `needed`, `bought`
  *  - recipes and shelved ideas: none — a recipe has no lifecycle, and an idea's active/archived
  *    split is a shelf, not a state a question ever asks to match
@@ -54,7 +54,7 @@ object KnowledgeFacets {
         }
         SourceApp.LIFEOPS -> when (doc.kind) {
             "task" -> ObjectType.TASK
-            "project" -> ObjectType.PROJECT
+            "operation" -> ObjectType.OPERATION
             "milestone" -> ObjectType.MILESTONE
             "aspect" -> ObjectType.ASPECT
             // The Collection. A LifeOps book is the same kind of thing as a Citation one — same
@@ -90,7 +90,7 @@ object KnowledgeFacets {
             "DONE" -> DONE
             else -> null
         }
-        ObjectType.TASK, ObjectType.PROJECT -> normalizeTaskState(DocumentFacts.status(doc))
+        ObjectType.TASK, ObjectType.OPERATION -> normalizeTaskState(DocumentFacts.status(doc))
         ObjectType.PANTRY_ITEM -> if (DocumentFacts.isLowStock(doc)) LOW else STOCKED
         ObjectType.GROCERY_ITEM -> if (DocumentFacts.groceryNeeded(doc)) NEEDED else BOUGHT
         else -> null

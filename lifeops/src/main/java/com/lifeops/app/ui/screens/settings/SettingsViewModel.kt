@@ -22,7 +22,7 @@ data class SettingsUiState(
     val expandedAspectId: String? = null,
     val editingAspect: Aspect? = null,
     val editingCategory: Category? = null,
-    val editingProject: Project? = null,
+    val editingOperation: Operation? = null,
     val showNewAspectDialog: Boolean = false,
     val suggestedAspectColor: String = "#6200EE",
     val showNewCategoryDialog: Boolean = false,
@@ -42,8 +42,8 @@ data class SettingsUiState(
     val pendingArchiveCategoryId: String? = null,
     val costResources: List<CostResource> = emptyList(),
     val showNewCostResourceDialog: Boolean = false,
-    val projects: List<Project> = emptyList(),
-    val showNewProjectDialog: Boolean = false,
+    val operations: List<Operation> = emptyList(),
+    val showNewOperationDialog: Boolean = false,
     val themePreset: ThemePreset = ThemePreset.DEFAULT,
     val isDarkMode: Boolean = true,
     val customPalette: CustomPalette = CustomPalette(),
@@ -70,7 +70,7 @@ class SettingsViewModel(
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
-    private val projectRepository: ProjectRepository? = null,
+    private val operationRepository: OperationRepository? = null,
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
     private val templateRepository: TemplateRepository? = null,
@@ -129,10 +129,10 @@ class SettingsViewModel(
                 }
             }
         }
-        projectRepository?.let { repo ->
+        operationRepository?.let { repo ->
             viewModelScope.launch {
-                repo.observeAll().collectLatest { projects ->
-                    _uiState.update { it.copy(projects = projects) }
+                repo.observeAll().collectLatest { operations ->
+                    _uiState.update { it.copy(operations = operations) }
                 }
             }
         }
@@ -472,9 +472,9 @@ class SettingsViewModel(
                         _uiState.update { it.copy(customPalette = restoredPalette) }
                     }
                     val warning = when {
-                        version < 2 -> "Older backup (v$version) — cost resource and project data not included."
-                        version < 3 -> "Backup from before project tracking — project assignments not included."
-                        version < 6 -> "Backup from before the Collection hub — recipes, books, and future projects not included."
+                        version < 2 -> "Older backup (v$version) — cost resource and operation data not included."
+                        version < 3 -> "Backup from before operation tracking — operation assignments not included."
+                        version < 6 -> "Backup from before the Collection hub — recipes, books, and future operations not included."
                         else -> null
                     }
                     _uiState.update { it.copy(showRestoreDialog = false, restoreJson = "", restoreError = null, restoreWarning = warning) }
@@ -483,29 +483,29 @@ class SettingsViewModel(
         }
     }
 
-    fun showNewProjectDialog() = _uiState.update { it.copy(showNewProjectDialog = true) }
-    fun hideNewProjectDialog() = _uiState.update { it.copy(showNewProjectDialog = false) }
+    fun showNewOperationDialog() = _uiState.update { it.copy(showNewOperationDialog = true) }
+    fun hideNewOperationDialog() = _uiState.update { it.copy(showNewOperationDialog = false) }
 
-    fun addProject(title: String, aspectId: String?) {
-        val repo = projectRepository ?: return
+    fun addOperation(title: String, aspectId: String?) {
+        val repo = operationRepository ?: return
         viewModelScope.launch {
-            repo.createProject(java.util.UUID.randomUUID().toString(), title, aspectId)
-            _uiState.update { it.copy(showNewProjectDialog = false) }
+            repo.createOperation(java.util.UUID.randomUUID().toString(), title, aspectId)
+            _uiState.update { it.copy(showNewOperationDialog = false) }
         }
     }
 
-    fun setProjectStatus(id: String, status: ProjectStatus) {
-        viewModelScope.launch { projectRepository?.setStatus(id, status) }
+    fun setOperationStatus(id: String, status: OperationStatus) {
+        viewModelScope.launch { operationRepository?.setStatus(id, status) }
     }
 
-    fun showEditProjectDialog(project: Project) = _uiState.update { it.copy(editingProject = project) }
-    fun hideEditProjectDialog() = _uiState.update { it.copy(editingProject = null) }
+    fun showEditOperationDialog(operation: Operation) = _uiState.update { it.copy(editingOperation = operation) }
+    fun hideEditOperationDialog() = _uiState.update { it.copy(editingOperation = null) }
 
-    fun saveProjectEdit(project: Project, title: String, aspectId: String?, categoryId: String?, description: String?) {
-        val repo = projectRepository ?: return
+    fun saveOperationEdit(operation: Operation, title: String, aspectId: String?, categoryId: String?, description: String?) {
+        val repo = operationRepository ?: return
         viewModelScope.launch {
-            repo.update(project.copy(title = title, aspectId = aspectId, categoryId = categoryId, description = description))
-            _uiState.update { it.copy(editingProject = null) }
+            repo.update(operation.copy(title = title, aspectId = aspectId, categoryId = categoryId, description = description))
+            _uiState.update { it.copy(editingOperation = null) }
         }
     }
 
@@ -612,7 +612,7 @@ class SettingsViewModelFactory(
     private val backupRepository: BackupRepository? = null,
     private val taskRepository: TaskRepository? = null,
     private val costResourceRepository: CostResourceRepository? = null,
-    private val projectRepository: ProjectRepository? = null,
+    private val operationRepository: OperationRepository? = null,
     private val growthRepository: GrowthRepository? = null,
     private val runbookRepository: RunbookRepository? = null,
     private val templateRepository: TemplateRepository? = null,
@@ -621,5 +621,5 @@ class SettingsViewModelFactory(
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, projectRepository, growthRepository, runbookRepository, templateRepository, foodItemRepository, wellnessRepository) as T
+        SettingsViewModel(aspectRepository, gameResourceRepository, preferencesRepository, backupRepository, taskRepository, costResourceRepository, operationRepository, growthRepository, runbookRepository, templateRepository, foodItemRepository, wellnessRepository) as T
 }

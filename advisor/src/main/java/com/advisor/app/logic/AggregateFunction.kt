@@ -75,7 +75,7 @@ class AggregateFunction : AdvisorFunction {
 
         val docs = when (plan.scope) {
             Scope.TASKS -> kind(request, "task", plan.scope.apps)
-            Scope.PROJECTS -> kind(request, "project", plan.scope.apps)
+            Scope.OPERATIONS -> kind(request, "operation", plan.scope.apps)
             Scope.MILESTONES -> kind(request, "milestone", plan.scope.apps)
             Scope.BOOKS -> kind(request, "book", plan.scope.apps)
             Scope.NOTES -> kind(request, "note", plan.scope.apps)
@@ -137,7 +137,7 @@ class AggregateFunction : AdvisorFunction {
     private fun be(n: Int) = if (n == 1) "is" else "are"
     private fun noun(scope: Scope, n: Int = 2): String {
         val one = when (scope) {
-            Scope.TASKS -> "task"; Scope.PROJECTS -> "project"; Scope.MILESTONES -> "milestone"
+            Scope.TASKS -> "task"; Scope.OPERATIONS -> "operation"; Scope.MILESTONES -> "milestone"
             Scope.BOOKS -> "book"; Scope.NOTES -> "note"; Scope.MEMORIES -> "memory"; Scope.PROFILES -> "profile"
         }
         return if (n == 1) one else if (one == "memory") "memories" else one + "s"
@@ -148,7 +148,7 @@ class AggregateFunction : AdvisorFunction {
     private enum class Op { SUM, AVERAGE, MIN, MAX, COUNT }
     private enum class Metric { TASK_TIME, MILESTONE_POINTS }
     private enum class Scope(val apps: Set<SourceApp>) {
-        TASKS(setOf(SourceApp.LIFEOPS)), PROJECTS(setOf(SourceApp.LIFEOPS)),
+        TASKS(setOf(SourceApp.LIFEOPS)), OPERATIONS(setOf(SourceApp.LIFEOPS)),
         MILESTONES(setOf(SourceApp.LIFEOPS)),
         BOOKS(setOf(SourceApp.CITATION, SourceApp.LIFEOPS)),
         NOTES(setOf(SourceApp.CITATION, SourceApp.LIFEOPS)),
@@ -189,7 +189,9 @@ class AggregateFunction : AdvisorFunction {
 
     private fun scopeFrom(word: String): Scope? = when (word.lowercase().trim()) {
         "task", "tasks", "to-do", "to-dos", "todo", "todos" -> Scope.TASKS
-        "project", "projects" -> Scope.PROJECTS
+        // "project"/"projects" remain accepted: the feature is called Operations now, but the
+        // question arrives in the user's own word.
+        "operation", "operations", "project", "projects" -> Scope.OPERATIONS
         "milestone", "milestones" -> Scope.MILESTONES
         "book", "books" -> Scope.BOOKS
         "note", "notes" -> Scope.NOTES
@@ -220,7 +222,7 @@ class AggregateFunction : AdvisorFunction {
         // "how many <noun>", "count (my) <noun>", "number of <noun>"
         val COUNT_SCOPE = Regex(
             """(?i)\b(?:how many|count(?:\s+my)?|number of|total number of)\s+(?:my\s+|the\s+)?""" +
-                """(tasks?|to-dos?|todos?|projects?|milestones?|books?|notes?|memories|memory|profiles?)\b"""
+                """(tasks?|to-dos?|todos?|operations?|projects?|milestones?|books?|notes?|memories|memory|profiles?)\b"""
         )
         // A status/priority qualifier for task counts.
         val TASK_FILTER = Regex(

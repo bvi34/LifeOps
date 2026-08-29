@@ -26,19 +26,19 @@ import com.lifeops.app.ui.components.AppHeader
 enum class CollectionTab(val label: String) {
     RECIPES("Recipes"),
     BOOKS("Books"),
-    PROJECTS("Projects")
+    OPERATIONS("Operations")
 }
 
 /** Collection: a reference library independent of any given week — recipes to cook from,
- *  books to read, and future project ideas jotted down for later. */
+ *  books to read, and future operation ideas jotted down for later. */
 @Composable
 fun CollectionScreen(
     recipeViewModel: RecipeViewModel,
     bookViewModel: BookViewModel,
-    futureProjectViewModel: FutureProjectViewModel,
+    futureOperationViewModel: FutureOperationViewModel,
     onOpenRecipe: (String) -> Unit,
     onOpenBook: (String) -> Unit,
-    onOpenFutureProject: (String) -> Unit
+    onOpenFutureOperation: (String) -> Unit
 ) {
     var selectedTab by rememberSaveable { mutableStateOf(CollectionTab.RECIPES) }
 
@@ -59,7 +59,7 @@ fun CollectionScreen(
                 when (selectedTab) {
                     CollectionTab.RECIPES -> RecipesScreen(recipeViewModel, onOpenRecipe)
                     CollectionTab.BOOKS -> BooksScreen(bookViewModel, onOpenBook)
-                    CollectionTab.PROJECTS -> FutureProjectsScreen(futureProjectViewModel, onOpenFutureProject)
+                    CollectionTab.OPERATIONS -> FutureOperationsScreen(futureOperationViewModel, onOpenFutureOperation)
                 }
             }
         }

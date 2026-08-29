@@ -6,18 +6,18 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "future_project_notes",
+    tableName = "future_operation_notes",
     foreignKeys = [ForeignKey(
-        entity = FutureProjectEntity::class,
+        entity = FutureOperationEntity::class,
         parentColumns = ["id"],
-        childColumns = ["projectId"],
+        childColumns = ["operationId"],
         onDelete = ForeignKey.CASCADE
     )],
-    indices = [Index("projectId")]
+    indices = [Index("operationId")]
 )
-data class FutureProjectNoteEntity(
+data class FutureOperationNoteEntity(
     @PrimaryKey val id: String,
-    val projectId: String,
+    val operationId: String,
     val content: String,
     val createdAt: String
 )

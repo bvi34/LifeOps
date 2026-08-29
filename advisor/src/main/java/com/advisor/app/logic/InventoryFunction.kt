@@ -165,7 +165,8 @@ class InventoryFunction : AdvisorFunction {
         // Words that are never a specific pantry item — either other apps' nouns or generic terms that
         // should route to the pantry summary (or another function) instead of an item lookup.
         val LOOKUP_STOP = setOf(
-            "task", "tasks", "book", "books", "note", "notes", "project", "projects",
+            "task", "tasks", "book", "books", "note", "notes", "operation", "operations",
+            "project", "projects",
             "milestone", "milestones", "memory", "memories", "profile", "profiles", "time", "money",
             "pantry", "pantry item", "pantry items", "item", "items", "stock", "inventory",
             "everything", "anything", "food", "things", "stuff"

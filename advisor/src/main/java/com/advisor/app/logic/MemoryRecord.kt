@@ -6,7 +6,7 @@ package com.advisor.app.logic
  * from the live app data it retrieves and from identity; it is never permission-gated.
  *
  * [tags] are the recall backbone — free-form and ideally namespaced (`person:sam`, `topic:health`,
- * `project:kitchen`) — so a memory can be found by facet as well as by text. [salience] (0–100) and
+ * `operation:kitchen`) — so a memory can be found by facet as well as by text. [salience] (0–100) and
  * [pinned] are gentle priors that keep important memories reachable even when the wording differs.
  */
 data class MemoryRecord(

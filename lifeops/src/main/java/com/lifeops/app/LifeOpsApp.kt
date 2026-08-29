@@ -97,7 +97,7 @@ class LifeOpsApp private constructor(private val app: Application) {
         CostResourceRepository(database.costResourceDao(), database.taskCostEntryDao())
     }
     val backupRepository by lazy { BackupRepository(database) }
-    val projectRepository by lazy { ProjectRepository(database.projectDao()) }
+    val operationRepository by lazy { OperationRepository(database.operationDao()) }
     // Stamps each live counter tick with the freshest cached conditions for the primary weather
     // location (cache-only, so logging never blocks on the network); yields null when there's no
     // tracked location or the cache is empty/stale, in which case the tick records no weather.
@@ -148,7 +148,7 @@ class LifeOpsApp private constructor(private val app: Application) {
             writeCursor = { peer, version -> preferencesRepository.setPeopleSyncCursor(peer, version) }
         )
     }
-    val futureProjectRepository by lazy { FutureProjectRepository(database.futureProjectDao()) }
+    val futureOperationRepository by lazy { FutureOperationRepository(database.futureOperationDao()) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     // The People-seam publish hook is wired here rather than at each ViewModel: a person is minted
     // in more places than the People screen (the calendar worker, the connection layer, the detail
@@ -186,8 +186,8 @@ class LifeOpsApp private constructor(private val app: Application) {
     val weekService by lazy {
         com.lifeops.app.connection.service.WeekService(weekRepository, taskRepository)
     }
-    val projectService by lazy {
-        com.lifeops.app.connection.service.ProjectService(projectRepository)
+    val operationService by lazy {
+        com.lifeops.app.connection.service.OperationService(operationRepository)
     }
     val counterService by lazy {
         com.lifeops.app.connection.service.CounterService(counterRepository)
@@ -221,8 +221,8 @@ class LifeOpsApp private constructor(private val app: Application) {
             weeklyMenuRepository, recipeRepository, foodLogRepository
         )
     }
-    val futureProjectService by lazy {
-        com.lifeops.app.connection.service.FutureProjectService(futureProjectRepository)
+    val futureOperationService by lazy {
+        com.lifeops.app.connection.service.FutureOperationService(futureOperationRepository)
     }
     val costService by lazy {
         com.lifeops.app.connection.service.CostService(costResourceRepository)
@@ -241,7 +241,7 @@ class LifeOpsApp private constructor(private val app: Application) {
             com.lifeops.app.connection.Connections.Services(
                 task = taskService,
                 week = weekService,
-                project = projectService,
+                operation = operationService,
                 counter = counterService,
                 note = noteService,
                 aspect = aspectService,
@@ -252,7 +252,7 @@ class LifeOpsApp private constructor(private val app: Application) {
                 recipe = recipeService,
                 food = foodService,
                 mealPlan = mealPlanService,
-                futureProject = futureProjectService,
+                futureOperation = futureOperationService,
                 cost = costService,
                 activity = activityService,
                 runbook = runbookService,

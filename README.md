@@ -183,15 +183,16 @@ the receipts.
 | **This Week** | The cockpit. Create tasks, set priority/estimate/due date, log time (timer, Pomodoro, or manual), complete/skip/carry tasks, then **close the week**. |
 | **Game** | An arcade wave-holdout run funded by the resources your real work earns. Spend Energy to enter, commit banked resources into your loadout, and fight a week-seeded run. See **[DESIGN.md](DESIGN.md)**. |
 | **Resources** | RPG-style resource slots that fill as you complete work, mapped from your aspects. The economy behind the Game. |
-| **Reports** | Trends: completion rate, aspect balance, time spent, scoring, project health, priority breakdown, resource usage, carryover. |
+| **Reports** | Trends: completion rate, aspect balance, time spent, scoring, operation health, priority breakdown, resource usage, carryover. |
 | **Growth Record** | A permanent, per-week concentric-ring history. One ring per week; effort shows as colour; skipped weeks leave grey scars. |
-| **Settings** | Aspects & categories, projects, cost resources, notifications, theme, and all backup/export actions. |
+| **Settings** | Aspects & categories, operations, cost resources, notifications, theme, and all backup/export actions. |
 
 ### Core concepts
 
 - **Aspect** — a top-level area of life (e.g. *Body*, *Craft*, *Mind*). Has a name and colour.
 - **Category** — a sub-grouping inside an aspect.
-- **Project** — a longer effort that groups related tasks within an aspect.
+- **Operation** — a longer effort that groups related tasks within an aspect. (Called a
+  *Project* until the suite grew a Project app of its own; the word now belongs to that app.)
 - **Week** — Monday→Sunday. The current week is open; you **close** it manually, which
   snapshots it, carries forward what you chose to keep, and starts the next one.
 - **Task** — a unit of work with a priority, optional estimate, due date, and logged time.
@@ -245,7 +246,7 @@ app/src/main/java/com/lifeops/app/
 │   ├── repository/    Repositories (the only thing ViewModels talk to)
 │   └── weather/       NWS (api.weather.gov) network client — the only thing that touches the net
 ├── ui/
-│   ├── screens/       thisweek · resources · reports · growth · settings · projectdetail
+│   ├── screens/       thisweek · resources · reports · growth · settings · operationdetail
 │   ├── components/    Reusable composables (header, dialogs, task rows, …)
 │   └── theme/         LifeOpsTheme — a one-line wrapper over the suite's theme (:suiteui)
 ├── util/              Pure logic: scoring, dates, growth rings/colour/export, CSV, weather
@@ -342,7 +343,7 @@ cache, **included in backup/restore** (backup v8) since profiles are real user d
 The **Milestones** page (History hub → Milestones) records the rare, once-in-a-lifetime
 accomplishments that don't fit the weekly task rhythm. A milestone is a title, an optional
 description, a point value, an *achieved on* date, and an optional attachment to an **aspect**
-and/or a **person** (nullable FKs with `ON DELETE SET NULL`, the same shape as `tasks.projectId`,
+and/or a **person** (nullable FKs with `ON DELETE SET NULL`, the same shape as `tasks.operationId`,
 so removing an aspect or person leaves the milestone standing with its link cleared).
 
 Milestones are the **deliberate exception to "only closed weeks emit resources."** Because they are

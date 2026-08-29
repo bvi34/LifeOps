@@ -42,8 +42,8 @@ data class QueryFacets(
                         return KnowledgeFacets.READING
                 }
             }
-            // Task/project lifecycle.
-            if (types.contains(ObjectType.TASK) || types.contains(ObjectType.PROJECT)) {
+            // Task/operation lifecycle.
+            if (types.contains(ObjectType.TASK) || types.contains(ObjectType.OPERATION)) {
                 when {
                     DONE_CUE.containsMatchIn(q) -> return KnowledgeFacets.DONE
                     DOING_CUE.containsMatchIn(q) -> return KnowledgeFacets.DOING
@@ -58,10 +58,13 @@ data class QueryFacets(
             Regex("""\b(book|books|reading|read|novel|novels|audiobook|library|reader)\b""") to ObjectType.BOOK,
             Regex("""\b(note|notes|highlight|highlights|quote|quotes|annotation|annotations)\b""") to ObjectType.NOTE,
             Regex("""\b(task|tasks|todo|todos|to-do|to-dos|chore|chores|errand|errands)\b""") to ObjectType.TASK,
-            Regex("""\b(project|projects)\b""") to ObjectType.PROJECT,
+            // "project"/"projects" stay in the cue list: LifeOps renamed the thing to an
+            // Operation, but a question is asked in whatever word the user has in their head,
+            // and the old one will be in there for a long while yet.
+            Regex("""\b(operation|operations|project|projects)\b""") to ObjectType.OPERATION,
             Regex("""\b(milestone|milestones|achievement|achievements)\b""") to ObjectType.MILESTONE,
             Regex("""\b(recipe|recipes|cook|cooking|dish|dishes|bake|baking)\b""") to ObjectType.RECIPE,
-            Regex("""\b(idea|ideas|someday|future project|future projects|backlog|shelved)\b""") to ObjectType.IDEA,
+            Regex("""\b(idea|ideas|someday|future operation|future operations|future project|future projects|backlog|shelved)\b""") to ObjectType.IDEA,
             Regex("""\b(pantry|ingredient|ingredients|in stock|restock|fridge)\b""") to ObjectType.PANTRY_ITEM,
             Regex("""\b(grocery|groceries|shopping list|to buy)\b""") to ObjectType.GROCERY_ITEM
         )

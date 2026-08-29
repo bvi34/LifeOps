@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 /**
- * One timeline note about a person — same append-only shape as future_project_notes / book_notes.
+ * One timeline note about a person — same append-only shape as future_operation_notes / book_notes.
  * Cascades away when the person is deleted.
  */
 @Entity(

@@ -69,7 +69,7 @@ class KnowledgeFacetsTest {
     fun a_recipe_or_an_idea_has_no_state_to_disagree_about() {
         // "Serves 2" and "(active)" are not lifecycle states, and must never be read as one.
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "recipe", "Recipe: Stew. Serves 2.")))
-        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "idea", "Future project idea: X (active)")))
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.LIFEOPS, "idea", "Future operation idea: X (active)")))
     }
 
     @Test

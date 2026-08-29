@@ -91,7 +91,7 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 }
 
 private fun describe(app: SourceApp): String = when (app) {
-    SourceApp.LIFEOPS -> "Tasks, aspects, projects and milestones. Can add a task when you ask for one."
+    SourceApp.LIFEOPS -> "Tasks, aspects, operations and milestones. Can add a task when you ask for one."
     SourceApp.CITATION -> "Your library and reading notes."
     SourceApp.LOGISTICS -> "Pantry stock and grocery list."
     SourceApp.HEALTH -> "Household health records: who's in them, temperatures and other readings, " +

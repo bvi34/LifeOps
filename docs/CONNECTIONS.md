@@ -46,7 +46,7 @@ caller ──▶ ConnectionDispatcher ──▶ RouteHandler ──▶ Service (
   (current-week resolution, de-duplication, scoring, notification scheduling). Both the connection
   routes and the screen ViewModels call it, so every path behaves identically. Each ViewModel
   constructs the service(s) it needs inline from the repositories it already holds; reads and
-  genuinely cross-domain steps (task↔project promotion, clearing a category off tasks) stay on the
+  genuinely cross-domain steps (task↔operation promotion, clearing a category off tasks) stay on the
   repositories.
 - **Repositories** remain the single source of truth for persistence.
 
@@ -97,7 +97,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 |---|---|---|---|
 | `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). |
 | `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
-| `project` | `create`, `update`, `complete`, `reopen` | `ProjectService` | `complete`/`reopen` flip status. |
+| `operation` | `create`, `update`, `complete`, `reopen` | `OperationService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |
 | `note` | `add`, `delete` | `NoteService` | Task notes. |
 | `aspect` | `create`, `rename`, `archive` | `AspectService` | `create` is find-or-create. |
@@ -109,7 +109,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `food` | `createCustom`, `log`, `logAdHoc`, `confirm`, `adjust`, `promote` | `FoodService` | `unit`: `gram`/`serving`; macros are `Double`. |
 | `recipe` | `create`, `update`, `delete`, `addIngredient`, `removeIngredient` | `RecipeService` | `create`/`update` carry `instructions` (the method, one step per line) and `sourceUrl`. On `update` an omitted field is left alone; a blank one clears it. |
 | `menu` | `plan`, `unplan` | `MealPlanService` | `plan` commits a recipe (or a freeform `mealName`) to a `date`; a recipe-backed plan also writes that day's *planned* diary entry. `unplan` drops the meal and its still-unconfirmed entry — a confirmed one is kept. |
-| `futureProject` | `create`, `addNote`, `archive`, `delete` | `FutureProjectService` | The "someday" backlog. |
+| `futureOperation` | `create`, `addNote`, `archive`, `delete` | `FutureOperationService` | The "someday" backlog. |
 | `costResource` | `create`, `archive` | `CostService` | Budgets/quotas. |
 | `cost` | `log`, `delete` | `CostService` | Per-task cost entries. |
 | `activity` | `create`, `delete` | `ActivityService` | Saved outdoor activities. |
@@ -126,7 +126,7 @@ growth rings, weather cache, notifications, backup, preferences) — these aren'
 ## Reference implementation
 
 `local/task` is the worked example end-to-end: `LocalTaskConnection` → `TaskService` →
-`TaskRepository`, with `week`/`project`/`counter` following the same shape. New resources should
+`TaskRepository`, with `week`/`operation`/`counter` following the same shape. New resources should
 mirror it. The routing core (`ConnectionAddress`, `ConnectionParams`, `ConnectionRegistry`,
 `ConnectionDispatcher`) is pure JVM and unit-tested under
 `app/src/test/java/com/lifeops/app/connection/`.

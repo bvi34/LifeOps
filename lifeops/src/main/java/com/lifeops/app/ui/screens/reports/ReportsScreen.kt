@@ -22,8 +22,8 @@ import com.lifeops.app.data.model.CarryForwardEntry
 import com.lifeops.app.data.model.CarryoverSummaryRow
 import com.lifeops.app.data.model.CostUsageRow
 import com.lifeops.app.data.model.PriorityCompletionRow
-import com.lifeops.app.data.model.ProjectStats
-import com.lifeops.app.data.model.ProjectStatus
+import com.lifeops.app.data.model.OperationStats
+import com.lifeops.app.data.model.OperationStatus
 import com.lifeops.app.data.model.ResourceResetCycle
 import com.lifeops.app.data.model.ScoringPoint
 import com.lifeops.app.data.model.TaskStatus
@@ -38,7 +38,7 @@ import com.lifeops.app.ui.theme.priorityColor
 @Composable
 fun ReportsScreen(
     viewModel: ReportsViewModel,
-    onNavigateToProject: (String) -> Unit = {},
+    onNavigateToOperation: (String) -> Unit = {},
     onBack: (() -> Unit)? = null
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -74,8 +74,8 @@ fun ReportsScreen(
                     if (state.scoringTrend.isNotEmpty()) {
                         item { ScoringTrendCard(state.scoringTrend) }
                     }
-                    if (state.projectStats.isNotEmpty()) {
-                        item { ProjectStatsCard(state.projectStats, state.aspects, onNavigateToProject) }
+                    if (state.operationStats.isNotEmpty()) {
+                        item { OperationStatsCard(state.operationStats, state.aspects, onNavigateToOperation) }
                     }
                     if (state.priorityBreakdown.isNotEmpty()) {
                         item { PriorityBreakdownCard(state.priorityBreakdown) }
@@ -448,26 +448,26 @@ private fun ScoringTrendCard(trend: List<ScoringPoint>) {
 }
 
 @Composable
-private fun ProjectStatsCard(
-    projectStats: List<ProjectStats>,
+private fun OperationStatsCard(
+    operationStats: List<OperationStats>,
     aspects: Map<String, Aspect>,
-    onProjectClick: (String) -> Unit = {}
+    onOperationClick: (String) -> Unit = {}
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Project Health", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            Text("Operation Health", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(12.dp))
-            projectStats.forEach { stat ->
-                val isDone = stat.project.status == ProjectStatus.COMPLETED
+            operationStats.forEach { stat ->
+                val isDone = stat.operation.status == OperationStatus.COMPLETED
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        .then(Modifier.clickable { onProjectClick(stat.project.id) }),
+                        .then(Modifier.clickable { onOperationClick(stat.operation.id) }),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                stat.project.title,
+                                stat.operation.title,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
                                 color = if (isDone) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
@@ -488,7 +488,7 @@ private fun ProjectStatsCard(
                                 )
                             }
                         }
-                        stat.project.aspectId?.let { aspectId ->
+                        stat.operation.aspectId?.let { aspectId ->
                             aspects[aspectId]?.let { aspect ->
                                 Text(
                                     aspect.name,

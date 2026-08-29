@@ -38,7 +38,7 @@ class TaskService(
         val hardDeadline: Boolean = false,
         val isRecurring: Boolean = false,
         val estimatedMinutes: Int? = null,
-        val projectId: String? = null,
+        val operationId: String? = null,
         val counterId: String? = null,
         val recurrenceIntervalWeeks: Int = 1,
         val recurrenceDayOfMonth: Int? = null
@@ -85,7 +85,7 @@ class TaskService(
             isRecurring = input.isRecurring,
             estimatedMinutes = input.estimatedMinutes,
             isManuallyAdded = true,
-            projectId = input.projectId,
+            operationId = input.operationId,
             slug = slug,
             counterId = input.counterId,
             recurrenceIntervalWeeks = if (input.isRecurring) input.recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
@@ -112,7 +112,7 @@ class TaskService(
         dueDate: String? = null,
         hardDeadline: Boolean? = null,
         estimatedMinutes: Int? = null,
-        projectId: String? = null
+        operationId: String? = null
     ): Task? {
         val current = taskRepository.getById(taskId) ?: return null
 
@@ -131,7 +131,7 @@ class TaskService(
             dueDate = newDueDate,
             hardDeadline = newHardDeadline,
             estimatedMinutes = newEstimate,
-            projectId = projectId ?: current.projectId,
+            operationId = operationId ?: current.operationId,
             resourceValue = ImportParser.computeResourceValue(
                 newPriority.label, newHardDeadline, newEstimate,
                 isManuallyAdded = current.isManuallyAdded

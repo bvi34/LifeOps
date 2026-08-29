@@ -17,14 +17,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
-import com.lifeops.app.data.model.Project
-import com.lifeops.app.data.model.ProjectStatus
+import com.lifeops.app.data.model.Operation
+import com.lifeops.app.data.model.OperationStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.screens.settings.SettingsViewModel
 
 @Composable
-fun ProjectsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
+fun OperationsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -40,61 +40,61 @@ fun ProjectsScreen(viewModel: SettingsViewModel, onBack: () -> Unit) {
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Projects",
+                        "Operations",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = viewModel::showNewProjectDialog) {
-                        Icon(Icons.Default.Add, contentDescription = "Add project")
+                    IconButton(onClick = viewModel::showNewOperationDialog) {
+                        Icon(Icons.Default.Add, contentDescription = "Add operation")
                     }
                 }
                 Text(
-                    "Group related tasks into projects within an aspect.",
+                    "Group related tasks into operations within an aspect.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
                 Spacer(Modifier.height(4.dp))
             }
-            items(state.projects, key = { it.id }) { project ->
-                ProjectItem(
-                    project = project,
-                    aspectName = state.aspects.firstOrNull { it.id == project.aspectId }?.name,
+            items(state.operations, key = { it.id }) { operation ->
+                OperationItem(
+                    operation = operation,
+                    aspectName = state.aspects.firstOrNull { it.id == operation.aspectId }?.name,
                     onToggleStatus = {
-                        val newStatus = if (project.status == ProjectStatus.ACTIVE)
-                            ProjectStatus.COMPLETED else ProjectStatus.ACTIVE
-                        viewModel.setProjectStatus(project.id, newStatus)
+                        val newStatus = if (operation.status == OperationStatus.ACTIVE)
+                            OperationStatus.COMPLETED else OperationStatus.ACTIVE
+                        viewModel.setOperationStatus(operation.id, newStatus)
                     },
-                    onEdit = { viewModel.showEditProjectDialog(project) }
+                    onEdit = { viewModel.showEditOperationDialog(operation) }
                 )
             }
         }
     }
 
-    if (state.showNewProjectDialog) {
-        NewProjectDialog(
+    if (state.showNewOperationDialog) {
+        NewOperationDialog(
             aspects = state.aspects.filter { !it.isArchived },
-            onConfirm = { title, aspectId -> viewModel.addProject(title, aspectId) },
-            onDismiss = viewModel::hideNewProjectDialog
+            onConfirm = { title, aspectId -> viewModel.addOperation(title, aspectId) },
+            onDismiss = viewModel::hideNewOperationDialog
         )
     }
 
-    state.editingProject?.let { project ->
-        EditProjectDialog(
-            project = project,
+    state.editingOperation?.let { operation ->
+        EditOperationDialog(
+            operation = operation,
             aspects = state.aspects,
             categories = state.categories,
             onConfirm = { title, aspectId, categoryId, description ->
-                viewModel.saveProjectEdit(project, title, aspectId, categoryId, description)
+                viewModel.saveOperationEdit(operation, title, aspectId, categoryId, description)
             },
-            onDismiss = viewModel::hideEditProjectDialog
+            onDismiss = viewModel::hideEditOperationDialog
         )
     }
 }
 
 @Composable
-private fun ProjectItem(
-    project: Project,
+private fun OperationItem(
+    operation: Operation,
     aspectName: String?,
     onToggleStatus: () -> Unit,
     onEdit: () -> Unit
@@ -106,13 +106,13 @@ private fun ProjectItem(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    project.title,
+                    operation.title,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = if (project.status == ProjectStatus.ACTIVE) MaterialTheme.colorScheme.onSurface
+                    color = if (operation.status == OperationStatus.ACTIVE) MaterialTheme.colorScheme.onSurface
                             else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
-                val statusLabel = if (project.status == ProjectStatus.ACTIVE) "Active" else "Completed"
+                val statusLabel = if (operation.status == OperationStatus.ACTIVE) "Active" else "Completed"
                 val subLabel = listOfNotNull(aspectName, statusLabel).joinToString(" · ")
                 if (subLabel.isNotEmpty()) {
                     Text(
@@ -123,17 +123,17 @@ private fun ProjectItem(
                 }
             }
             IconButton(onClick = onEdit, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit project", modifier = Modifier.size(18.dp))
+                Icon(Icons.Default.Edit, contentDescription = "Edit operation", modifier = Modifier.size(18.dp))
             }
             TextButton(onClick = onToggleStatus) {
-                Text(if (project.status == ProjectStatus.ACTIVE) "Complete" else "Reopen")
+                Text(if (operation.status == OperationStatus.ACTIVE) "Complete" else "Reopen")
             }
         }
     }
 }
 
 @Composable
-private fun NewProjectDialog(
+private fun NewOperationDialog(
     aspects: List<Aspect>,
     onConfirm: (title: String, aspectId: String?) -> Unit,
     onDismiss: () -> Unit
@@ -145,7 +145,7 @@ private fun NewProjectDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Project") },
+        title = { Text("New Operation") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
@@ -198,17 +198,17 @@ private fun NewProjectDialog(
 }
 
 @Composable
-private fun EditProjectDialog(
-    project: Project,
+private fun EditOperationDialog(
+    operation: Operation,
     aspects: List<Aspect>,
     categories: Map<String, List<Category>>,
     onConfirm: (title: String, aspectId: String?, categoryId: String?, description: String?) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var title by remember(project.id) { mutableStateOf(project.title) }
-    var description by remember(project.id) { mutableStateOf(project.description ?: "") }
-    var selectedAspectId by remember(project.id) { mutableStateOf(project.aspectId) }
-    var selectedCategoryId by remember(project.id) { mutableStateOf(project.categoryId) }
+    var title by remember(operation.id) { mutableStateOf(operation.title) }
+    var description by remember(operation.id) { mutableStateOf(operation.description ?: "") }
+    var selectedAspectId by remember(operation.id) { mutableStateOf(operation.aspectId) }
+    var selectedCategoryId by remember(operation.id) { mutableStateOf(operation.categoryId) }
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
 
@@ -218,7 +218,7 @@ private fun EditProjectDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit Project") },
+        title = { Text("Edit Operation") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(

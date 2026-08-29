@@ -31,7 +31,7 @@ import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 
 /**
- * Global search across tasks, notes, projects, people, counters, books, recipes, future projects,
+ * Global search across tasks, notes, operations, people, counters, books, recipes, future operations,
  * runbooks, templates, activities, foods, and weather locations. Tapping a result opens its detail
  * when one exists (via [onNavigate]); dashboard-level hits jump to their hub screen.
  */

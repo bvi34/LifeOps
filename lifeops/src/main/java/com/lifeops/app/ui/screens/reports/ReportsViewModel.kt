@@ -73,7 +73,7 @@ data class ReportsUiState(
     val carryoverSummary: List<CarryoverSummaryRow> = emptyList(),
     val costUsage: List<CostUsageRow> = emptyList(),
     val isLoading: Boolean = true,
-    val projectStats: List<ProjectStats> = emptyList(),
+    val operationStats: List<OperationStats> = emptyList(),
     val scoringTrend: List<ScoringPoint> = emptyList(),
     val priorityBreakdown: List<PriorityCompletionRow> = emptyList(),
     val selfRatingPoints: List<SelfRatingPoint> = emptyList(),
@@ -90,7 +90,7 @@ class ReportsViewModel(
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val wellnessRepository: WellnessRepository,
     private val foodLogRepository: FoodLogRepository,
     private val counterRepository: CounterRepository,
@@ -248,27 +248,27 @@ class ReportsViewModel(
             if (total == 0) null else PriorityCompletionRow(p, completed, total)
         }
 
-        // Project stats
-        val allProjects = projectRepository.getAll()
-        val taskProjectMap = tasks.associate { it.id to it.projectId }
-        val minutesByProject = mutableMapOf<String, Int>()
+        // Operation stats
+        val allOperations = operationRepository.getAll()
+        val taskOperationMap = tasks.associate { it.id to it.operationId }
+        val minutesByOperation = mutableMapOf<String, Int>()
         timeEntries.forEach { entry ->
-            val pid = taskProjectMap[entry.taskId] ?: return@forEach
-            minutesByProject[pid] = (minutesByProject[pid] ?: 0) + entry.durationMinutes
+            val pid = taskOperationMap[entry.taskId] ?: return@forEach
+            minutesByOperation[pid] = (minutesByOperation[pid] ?: 0) + entry.durationMinutes
         }
-        val tasksByProject = tasks.groupBy { it.projectId }
-        val projectStatsList = allProjects
-            .filter { proj -> tasksByProject.containsKey(proj.id) || proj.status == ProjectStatus.ACTIVE }
+        val tasksByOperation = tasks.groupBy { it.operationId }
+        val operationStatsList = allOperations
+            .filter { proj -> tasksByOperation.containsKey(proj.id) || proj.status == OperationStatus.ACTIVE }
             .map { proj ->
-                val projTasks = tasksByProject[proj.id] ?: emptyList()
-                ProjectStats(
+                val projTasks = tasksByOperation[proj.id] ?: emptyList()
+                OperationStats(
                     proj,
                     projTasks.size,
                     projTasks.count { it.status == TaskStatus.COMPLETED },
-                    minutesByProject[proj.id] ?: 0
+                    minutesByOperation[proj.id] ?: 0
                 )
             }
-            .sortedWith(compareBy({ it.project.status.value }, { -(it.completedCount) }))
+            .sortedWith(compareBy({ it.operation.status.value }, { -(it.completedCount) }))
 
         // Carryover summary
         val allTasksAll = taskRepository.getAllTasks()
@@ -372,7 +372,7 @@ class ReportsViewModel(
                 carryHistory = carryEntries,
                 carryoverSummary = carryoverSummary,
                 costUsage = costUsageRows,
-                projectStats = projectStatsList,
+                operationStats = operationStatsList,
                 scoringTrend = scoringTrend,
                 priorityBreakdown = priorityStats,
                 selfRatingPoints = ratingPoints,
@@ -398,7 +398,7 @@ class ReportsViewModelFactory(
     private val taskRepository: TaskRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val wellnessRepository: WellnessRepository,
     private val foodLogRepository: FoodLogRepository,
     private val counterRepository: CounterRepository,
@@ -410,7 +410,7 @@ class ReportsViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         ReportsViewModel(
             weekRepository, aspectRepository, taskRepository, timeEntryRepository, costResourceRepository,
-            projectRepository, wellnessRepository, foodLogRepository, counterRepository, bookRepository,
+            operationRepository, wellnessRepository, foodLogRepository, counterRepository, bookRepository,
             preferencesRepository, citationSync
         ) as T
 }
