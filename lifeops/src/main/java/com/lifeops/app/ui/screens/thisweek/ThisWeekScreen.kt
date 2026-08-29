@@ -57,7 +57,7 @@ import kotlinx.coroutines.delay
 @Composable
 fun ThisWeekScreen(
     viewModel: ThisWeekViewModel,
-    onOpenProject: (String) -> Unit = {},
+    onOpenOperation: (String) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
     onOpenCounter: (String) -> Unit = {},
     onOpenTask: (String) -> Unit = {}
@@ -258,7 +258,7 @@ fun ThisWeekScreen(
                                 isTimerActive = isTimerActive,
                                 timerElapsedSeconds = { timerElapsedState.value },
                                 isPlanningMode = false,
-                                projectName = task.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid }?.title },
+                                operationName = task.operationId?.let { pid -> state.operations.firstOrNull { it.id == pid }?.title },
                                 weatherFit = state.taskWeatherFit[task.id],
                                 counterName = task.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid }?.name },
                                 peopleNames = (state.taskPeople[task.id] ?: emptyList())
@@ -312,13 +312,13 @@ fun ThisWeekScreen(
         CreateTaskDialog(
             aspects = state.aspects.values.toList(),
             allCategories = state.categories,
-            projects = state.projects,
+            operations = state.operations,
             runbooks = state.runbooks,
             counters = state.counters,
             currentWeekEndDate = state.week?.endDate,
-            onCreateProject = viewModel::onCreateProject,
-            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
-                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
+            onCreateOperation = viewModel::onCreateOperation,
+            onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, operationId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
+                viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, operationId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::hideCreateTaskDialog
         )
@@ -329,11 +329,11 @@ fun ThisWeekScreen(
             task = task,
             aspects = state.aspects.values.filter { !it.isArchived }.toList(),
             allCategories = state.categories,
-            projects = state.projects,
+            operations = state.operations,
             counters = state.counters,
-            onCreateProject = viewModel::onCreateProject,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
-                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
+            onCreateOperation = viewModel::onCreateOperation,
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, operationId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
+                viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, operationId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::cancelEditTask
         )

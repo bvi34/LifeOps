@@ -17,7 +17,7 @@ import java.time.format.DateTimeFormatter
  * another app.
  *
  * It does not touch LifeOps' tables itself. It resolves the target the user named ("life ops", "the
- * beacon project") to a real project/aspect/category and then calls LifeOps' own
+ * beacon op") to a real operation/aspect/category and then calls LifeOps' own
  * `/v1/LifeOps/local/task/create` connection route, so the task gets the identical treatment a task
  * added from LifeOps' own UI gets: current week resolution, same-week duplicate-title protection,
  * resource-value scoring, queued-vs-pending placement and reminder scheduling. Nothing about task
@@ -50,7 +50,7 @@ class LifeOpsTaskWriter(context: Context) : TaskWriter {
             "/v1/LifeOps/local/task/create",
             ConnectionParams.of(
                 "title" to title,
-                "projectId" to match?.projectId,
+                "operationId" to match?.operationId,
                 "aspectId" to match?.aspectId,
                 "categoryId" to match?.categoryId,
                 "priority" to (command.priority ?: "medium")
@@ -71,23 +71,24 @@ class LifeOpsTaskWriter(context: Context) : TaskWriter {
         }
     }
 
-    /** A resolved filing target: which project/aspect/category the task should hang off. */
+    /** A resolved filing target: which operation/aspect/category the task should hang off. */
     private data class Target(
         val label: String,
-        val projectId: String? = null,
+        val operationId: String? = null,
         val aspectId: String? = null,
         val categoryId: String? = null
     )
 
     /**
-     * Resolve [name] as the user said it — against projects first (the most specific thing a task is
-     * filed under), then aspects, then categories. A project also carries its aspect and category
-     * across, so the task lands in the same group in This Week as the project's other tasks.
+     * Resolve [name] as the user said it — against operations first (the most specific thing a task
+     * is filed under), then aspects, then categories. An operation also carries its aspect and
+     * category across, so the task lands in the same group in This Week as the operation's other
+     * tasks.
      */
     private suspend fun resolve(db: LifeOpsDatabase, name: String): Target? {
-        val projects = db.projectDao().getAll().filter { it.status == ACTIVE }
-        projects.match(name) { it.title }?.let {
-            return Target(it.title, projectId = it.id, aspectId = it.aspectId, categoryId = it.categoryId)
+        val operations = db.operationDao().getAll().filter { it.status == ACTIVE }
+        operations.match(name) { it.title }?.let {
+            return Target(it.title, operationId = it.id, aspectId = it.aspectId, categoryId = it.categoryId)
         }
         val aspects = db.aspectDao().getAllSync().filter { !it.isArchived }
         aspects.match(name) { it.name }?.let {

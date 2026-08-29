@@ -35,8 +35,8 @@ object QueryUnderstanding {
         "tackle" to setOf("task", "priority"),
         "due" to setOf("deadline", "task"),
         "urgent" to setOf("priority", "deadline"),
-        "goal" to setOf("project", "milestone"),
-        "goals" to setOf("projects", "milestones"),
+        "goal" to setOf("operation", "milestone"),
+        "goals" to setOf("operations", "milestones"),
 
         "food" to setOf("grocery", "groceries", "pantry", "meal"),
         "shop" to setOf("grocery", "groceries"),

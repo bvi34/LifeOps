@@ -48,7 +48,7 @@ import com.lifeops.app.data.model.CarryForwardReason
 import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Person
-import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.RunbookWithSteps
 import com.lifeops.app.data.model.Subtask
 import com.lifeops.app.data.model.Task
@@ -81,9 +81,9 @@ fun TaskDetailContent(
     isPomodoroActive: Boolean = false,
     costEntries: List<TaskCostEntry> = emptyList(),
     costResources: List<CostResource> = emptyList(),
-    project: Project? = null,
-    projects: List<Project> = emptyList(),
-    onAssignProject: ((String?) -> Unit)? = null,
+    operation: Operation? = null,
+    operations: List<Operation> = emptyList(),
+    onAssignOperation: ((String?) -> Unit)? = null,
     subtasks: List<Subtask> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
     weatherFit: TaskWeatherFit? = null,
@@ -97,7 +97,7 @@ fun TaskDetailContent(
     counterWeeklyTotal: Int? = null,
     onLogCounter: () -> Unit = {},
     onOpenCounter: (counterId: String) -> Unit = {},
-    onOpenProject: (projectId: String) -> Unit = {},
+    onOpenOperation: (operationId: String) -> Unit = {},
     onToggleSubtask: (id: String, checked: Boolean) -> Unit = { _, _ -> },
     onAttachRunbook: (runbookId: String) -> Unit = {},
     onDeleteSubtask: (id: String) -> Unit = {},
@@ -112,7 +112,7 @@ fun TaskDetailContent(
     onUnCarryForward: (() -> Unit)? = null,
     onUnsuccessful: (() -> Unit)? = null,
     onUnUnsuccessful: (() -> Unit)? = null,
-    onPromoteToProject: (() -> Unit)? = null,
+    onPromoteToOperation: (() -> Unit)? = null,
     ancestorNotes: List<TaskNote> = emptyList(),
     onStartTimer: () -> Unit = {},
     onStopTimer: () -> Unit = {},
@@ -289,19 +289,19 @@ fun TaskDetailContent(
             )
         }
 
-        if (editable && task.carriedCount >= 2 && task.projectId == null && onPromoteToProject != null) {
+        if (editable && task.carriedCount >= 2 && task.operationId == null && onPromoteToOperation != null) {
             Spacer(Modifier.height(8.dp))
             SuggestionChip(
-                onClick = onPromoteToProject,
-                label = { Text("Looks like a project — promote?") },
+                onClick = onPromoteToOperation,
+                label = { Text("Looks like a operation — promote?") },
                 icon = { Icon(Icons.Default.Folder, contentDescription = null, modifier = Modifier.size(16.dp)) }
             )
         }
 
-        // Project section
-        if (project != null || (editable && onAssignProject != null && projects.isNotEmpty())) {
+        // Operation section
+        if (operation != null || (editable && onAssignOperation != null && operations.isNotEmpty())) {
             Spacer(Modifier.height(4.dp))
-            var showProjectPicker by remember { mutableStateOf(false) }
+            var showOperationPicker by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Default.Folder,
@@ -310,28 +310,28 @@ fun TaskDetailContent(
                     tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
                 )
                 Spacer(Modifier.width(4.dp))
-                if (project != null) {
+                if (operation != null) {
                     Text(
-                        project.title,
+                        operation.title,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier
                             .weight(1f)
-                            .clickable { onOpenProject(project.id) }
+                            .clickable { onOpenOperation(operation.id) }
                     )
-                    if (editable && onAssignProject != null) {
+                    if (editable && onAssignOperation != null) {
                         IconButton(
-                            onClick = { onAssignProject(null) },
+                            onClick = { onAssignOperation(null) },
                             modifier = Modifier.size(24.dp)
                         ) {
                             Icon(
                                 Icons.Default.Close,
-                                contentDescription = "Remove project",
+                                contentDescription = "Remove operation",
                                 modifier = Modifier.size(14.dp)
                             )
                         }
                         TextButton(
-                            onClick = { showProjectPicker = true },
+                            onClick = { showOperationPicker = true },
                             contentPadding = PaddingValues(horizontal = 4.dp)
                         ) {
                             Text("Change", style = MaterialTheme.typography.bodySmall)
@@ -339,31 +339,31 @@ fun TaskDetailContent(
                     }
                 } else if (editable) {
                     TextButton(
-                        onClick = { showProjectPicker = true },
+                        onClick = { showOperationPicker = true },
                         contentPadding = PaddingValues(0.dp)
                     ) {
-                        Text("Assign to project", style = MaterialTheme.typography.bodySmall)
+                        Text("Assign to operation", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
-            if (showProjectPicker && onAssignProject != null) {
+            if (showOperationPicker && onAssignOperation != null) {
                 AlertDialog(
-                    onDismissRequest = { showProjectPicker = false },
-                    title = { Text("Assign to Project") },
+                    onDismissRequest = { showOperationPicker = false },
+                    title = { Text("Assign to Operation") },
                     text = {
                         Column {
-                            if (project != null) {
+                            if (operation != null) {
                                 TextButton(
-                                    onClick = { onAssignProject(null); showProjectPicker = false },
+                                    onClick = { onAssignOperation(null); showOperationPicker = false },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Text("Remove project assignment")
+                                    Text("Remove operation assignment")
                                 }
                                 HorizontalDivider()
                             }
-                            projects.forEach { proj ->
+                            operations.forEach { proj ->
                                 TextButton(
-                                    onClick = { onAssignProject(proj.id); showProjectPicker = false },
+                                    onClick = { onAssignOperation(proj.id); showOperationPicker = false },
                                     modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(proj.title)
@@ -373,7 +373,7 @@ fun TaskDetailContent(
                     },
                     confirmButton = {},
                     dismissButton = {
-                        TextButton(onClick = { showProjectPicker = false }) { Text("Cancel") }
+                        TextButton(onClick = { showOperationPicker = false }) { Text("Cancel") }
                     }
                 )
             }

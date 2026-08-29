@@ -34,8 +34,9 @@ back-dated, so it's worth feeding honestly.
 - **Aspect** — a top-level area of life (e.g. *Body*). Has a name and a colour. Aspects are
   the backbone: tasks, time, resources, reports, and rings are all organised by aspect.
 - **Category** — an optional sub-grouping inside an aspect (e.g. *Body → Running*).
-- **Project** — a longer effort that groups related tasks within an aspect (e.g. *Write the
-  book*). Track its progress over many weeks.
+- **Operation** — a longer effort that groups related tasks within an aspect (e.g. *Write the
+  book*). Track its progress over many weeks. These were called *Projects* until the suite
+  grew a Project app of its own — same thing, new name.
 - **Week** — runs Monday→Sunday. Exactly one week is "open" at a time. You **close** it
   yourself when you're ready; there is no automatic rollover.
 - **Task** — a unit of work with a priority, optional estimate, optional due date, and any
@@ -66,7 +67,7 @@ Tap **+** and fill in:
 - **Due date** and **Hard deadline** — see below.
 - **Recurring** — if set, the task is re-seeded into next week when you close the current
   one.
-- **Project** — optionally attach the task to a project.
+- **Operation** — optionally attach the task to an operation.
 
 ### Logging time (this is the important part)
 
@@ -158,9 +159,9 @@ based on estimate vs. logged time:
 
 The lesson the app is teaching: **estimate, then track.** Accurate planning is worth double.
 
-### Projects, notes & costs
+### Operations, notes & costs
 
-- **Promote to project** turns a task into (or assigns it to) a project.
+- **Promote to operation** turns a task into (or assigns it to) an operation.
 - **Notes** — attach free-text notes to a task.
 - **Costs** — log usage of an external **cost resource** against a task (e.g. credits/API
   usage). Costs are tracked for reporting; they don't affect scoring.
@@ -202,7 +203,7 @@ Trends and breakdowns over a selectable range (**30 days / 90 days / Lifetime**)
 - **Aspect balance** — where your resources came from.
 - **Time spent** by aspect.
 - **Scoring trend** — resources earned per week.
-- **Project health** — completion and time per project.
+- **Operation health** — completion and time per operation.
 - **Completion by priority.**
 - **Resource usage** — cost resources consumed.
 - **Category slip rates** — where things tend to fall through.
@@ -275,7 +276,7 @@ From **Settings → Data**:
 - **Game Resource Slots** — rename your resource slots.
 - **Cost Resources** — define external resources to track per task (with optional reset
   cycle and capacity).
-- **Projects** — create and manage projects, mark them complete/active.
+- **Operations** — create and manage operations, mark them complete/active.
 
 ---
 
@@ -303,9 +304,9 @@ Everything is stored **locally on your device**. There is no cloud and no accoun
 **back up regularly**.
 
 - **Backup JSON** (Settings → Data) — the complete, restorable snapshot: aspects, weeks,
-  tasks, time, notes, snapshots, projects, cost data, and your palette. **Restore** reads it
+  tasks, time, notes, snapshots, operations, cost data, and your palette. **Restore** reads it
   back. This is the one true backup.
-- **Export Tasks CSV** — every task as one row, with aspect/category/project names, logged
+- **Export Tasks CSV** — every task as one row, with aspect/category/operation names, logged
   time, costs, notes, and timestamps. Great for spreadsheets; **not** restorable.
 - **Rings CSV / SVG** — your Growth Record as data or as a vector image.
 

@@ -28,12 +28,12 @@ import com.lifeops.app.ui.components.HubCard
 
 /**
  * The Planning hub: a landing page that drills into the forward-looking
- * management screens (projects, counters, runbooks, templates, cost resources).
+ * management screens (operations, counters, runbooks, templates, cost resources).
  */
 @Composable
 fun PlanningScreen(
     onOpenFutureTasks: () -> Unit,
-    onOpenProjects: () -> Unit,
+    onOpenOperations: () -> Unit,
     onOpenCounters: () -> Unit,
     onOpenRunbooks: () -> Unit,
     onOpenTemplates: () -> Unit,
@@ -69,10 +69,10 @@ fun PlanningScreen(
             }
             item {
                 HubCard(
-                    title = "Projects",
+                    title = "Operations",
                     subtitle = "Group related tasks into longer efforts",
                     icon = Icons.Default.AccountTree,
-                    onClick = onOpenProjects
+                    onClick = onOpenOperations
                 )
             }
             item {

@@ -1099,12 +1099,162 @@ private val MIGRATION_52_53 = object : Migration(52, 53) {
     }
 }
 
+private val MIGRATION_53_54 = object : Migration(53, 54) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // "Projects" become "Operations" throughout LifeOps — the name collided with the suite's
+        // own Project app (`:project`, the document/planning repository), and two different things
+        // called the same word in one launcher is a bug in the vocabulary. Pure rename: every row,
+        // every id and every link is carried across unchanged; nothing is created or dropped.
+        //
+        // Each table is rebuilt rather than renamed with ALTER TABLE ... RENAME. `operations` and
+        // `tasks` need a column renamed too (sourceFutureProjectId, projectId), and SQLite only
+        // learned RENAME COLUMN in 3.25 — minSdk is 26, whose bundled SQLite predates it. Rebuild
+        // is also the pattern the rest of this file already uses (MIGRATION_22_23 onwards) and is
+        // the only form that leaves a byte-identical schema for Room's startup validation.
+        //
+        // Room runs migrations with foreign_keys off, so dropping a parent before its children are
+        // rebuilt is safe; the children are rebuilt against the new parents in the same
+        // transaction. Order: projects → operations, then future_projects → future_operations and
+        // its notes child, then tasks (whose projectId is a bare column, no FK).
+
+        // ---- projects -> operations (sourceFutureProjectId -> sourceFutureOperationId) ----
+        db.execSQL("""
+            CREATE TABLE operations (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                aspectId TEXT,
+                categoryId TEXT,
+                status TEXT NOT NULL DEFAULT 'active',
+                description TEXT,
+                createdAt TEXT NOT NULL,
+                completedAt TEXT,
+                sourceFutureOperationId TEXT,
+                FOREIGN KEY(aspectId) REFERENCES aspects(id) ON DELETE SET NULL,
+                FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO operations (
+                id, title, aspectId, categoryId, status, description, createdAt, completedAt,
+                sourceFutureOperationId
+            )
+            SELECT
+                id, title, aspectId, categoryId, status, description, createdAt, completedAt,
+                sourceFutureProjectId
+            FROM projects
+        """.trimIndent())
+        db.execSQL("DROP TABLE projects")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_aspectId ON operations(aspectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_categoryId ON operations(categoryId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_operations_status ON operations(status)")
+
+        // ---- future_projects -> future_operations ----
+        db.execSQL("""
+            CREATE TABLE future_operations (
+                id TEXT NOT NULL PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                updatedAt TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active'
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO future_operations (id, title, content, createdAt, updatedAt, status)
+            SELECT id, title, content, createdAt, updatedAt, status FROM future_projects
+        """.trimIndent())
+
+        // ---- future_project_notes -> future_operation_notes (projectId -> operationId) ----
+        // Built against the new parent and filled from the old table before either old table is
+        // dropped, so the notes are never without a row to hang off.
+        db.execSQL("""
+            CREATE TABLE future_operation_notes (
+                id TEXT NOT NULL PRIMARY KEY,
+                operationId TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(operationId) REFERENCES future_operations(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO future_operation_notes (id, operationId, content, createdAt)
+            SELECT id, projectId, content, createdAt FROM future_project_notes
+        """.trimIndent())
+        db.execSQL("DROP TABLE future_project_notes")
+        db.execSQL("DROP TABLE future_projects")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_future_operation_notes_operationId ON future_operation_notes(operationId)")
+
+        // ---- tasks.projectId -> tasks.operationId ----
+        db.execSQL("""
+            CREATE TABLE tasks_new (
+                id TEXT NOT NULL PRIMARY KEY,
+                weekId TEXT NOT NULL,
+                title TEXT NOT NULL,
+                aspectId TEXT,
+                categoryId TEXT,
+                priority TEXT NOT NULL,
+                dueDate TEXT,
+                hardDeadline INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                resourceValue INTEGER NOT NULL,
+                completedAt TEXT,
+                carriedFromTaskId TEXT,
+                createdAt TEXT NOT NULL,
+                isRecurring INTEGER NOT NULL DEFAULT 0,
+                estimatedMinutes INTEGER,
+                carriedCount INTEGER NOT NULL DEFAULT 0,
+                sortOrder INTEGER NOT NULL DEFAULT 0,
+                isManuallyAdded INTEGER NOT NULL DEFAULT 0,
+                operationId TEXT,
+                source TEXT NOT NULL DEFAULT 'MANUAL',
+                slug TEXT NOT NULL DEFAULT '',
+                carryForwardReason TEXT,
+                counterId TEXT,
+                recurrenceIntervalWeeks INTEGER NOT NULL DEFAULT 1,
+                recurrenceDayOfMonth INTEGER,
+                isCommitment INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(weekId) REFERENCES weeks(id) ON DELETE CASCADE,
+                FOREIGN KEY(aspectId) REFERENCES aspects(id) ON DELETE SET NULL,
+                FOREIGN KEY(categoryId) REFERENCES categories(id) ON DELETE SET NULL
+            )
+        """.trimIndent())
+        db.execSQL("""
+            INSERT INTO tasks_new (
+                id, weekId, title, aspectId, categoryId, priority, dueDate, hardDeadline,
+                status, resourceValue, completedAt, carriedFromTaskId, createdAt, isRecurring,
+                estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, operationId, source,
+                slug, carryForwardReason, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth,
+                isCommitment
+            )
+            SELECT
+                id, weekId, title, aspectId, categoryId, priority, dueDate, hardDeadline,
+                status, resourceValue, completedAt, carriedFromTaskId, createdAt, isRecurring,
+                estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, projectId, source,
+                slug, carryForwardReason, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth,
+                isCommitment
+            FROM tasks
+        """.trimIndent())
+        db.execSQL("DROP TABLE tasks")
+        db.execSQL("ALTER TABLE tasks_new RENAME TO tasks")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_weekId ON tasks(weekId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_aspectId ON tasks(aspectId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_categoryId ON tasks(categoryId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_createdAt ON tasks(createdAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_completedAt ON tasks(completedAt)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_status ON tasks(status)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_operationId ON tasks(operationId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_source ON tasks(source)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_counterId ON tasks(counterId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_weekId_slug ON tasks(weekId, slug)")
+    }
+}
+
 /**
  * The schema version, in one place. [com.lifeops.app.backup.LifeOpsBackupContributor] records it in
  * the backup manifest as the version the copied `lifeops.db` was written at, and reads it from here
  * rather than repeating the number — the hand-copied one had drifted seven migrations behind.
  */
-const val LIFEOPS_DB_VERSION = 53
+const val LIFEOPS_DB_VERSION = 54
 
 @Database(
     entities = [
@@ -1121,7 +1271,7 @@ const val LIFEOPS_DB_VERSION = 53
         ResourceTransactionEntity::class,
         CostResourceEntity::class,
         TaskCostEntryEntity::class,
-        ProjectEntity::class,
+        OperationEntity::class,
         RunbookEntity::class,
         RunbookStepEntity::class,
         SubtaskEntity::class,
@@ -1137,8 +1287,8 @@ const val LIFEOPS_DB_VERSION = 53
         BookEntity::class,
         BookNoteEntity::class,
         BookTimeEntryEntity::class,
-        FutureProjectEntity::class,
-        FutureProjectNoteEntity::class,
+        FutureOperationEntity::class,
+        FutureOperationNoteEntity::class,
         WeatherLocationEntity::class,
         WeatherSnapshotEntity::class,
         WeatherAlertEntity::class,
@@ -1177,7 +1327,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun resourceTransactionDao(): ResourceTransactionDao
     abstract fun costResourceDao(): CostResourceDao
     abstract fun taskCostEntryDao(): TaskCostEntryDao
-    abstract fun projectDao(): ProjectDao
+    abstract fun operationDao(): OperationDao
     abstract fun runbookDao(): RunbookDao
     abstract fun subtaskDao(): SubtaskDao
     abstract fun templateDao(): TemplateDao
@@ -1187,7 +1337,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun foodLogDao(): FoodLogDao
     abstract fun weeklyMenuItemDao(): WeeklyMenuItemDao
     abstract fun bookDao(): BookDao
-    abstract fun futureProjectDao(): FutureProjectDao
+    abstract fun futureOperationDao(): FutureOperationDao
     abstract fun weatherDao(): WeatherDao
     abstract fun personDao(): PersonDao
     abstract fun activityTemplateDao(): ActivityTemplateDao
@@ -1207,7 +1357,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54)
                     .build()
                     .also { INSTANCE = it }
             }

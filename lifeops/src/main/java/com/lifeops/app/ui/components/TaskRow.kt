@@ -67,7 +67,7 @@ fun TaskRow(
     // not the whole list. Only invoked inside the `isTimerActive` branches below.
     timerElapsedSeconds: () -> Int,
     isPlanningMode: Boolean = false,
-    projectName: String? = null,
+    operationName: String? = null,
     weatherFit: TaskWeatherFit? = null,
     counterName: String? = null,
     peopleNames: List<String> = emptyList(),
@@ -88,7 +88,7 @@ fun TaskRow(
     /**
      * Toggle this task in or out of the week's commitment. Null hides the affordance entirely —
      * the marker still shows on a task that carries it, so read-only surfaces (a closed week, a
-     * project's task list) report the bar without offering to move it.
+     * operation's task list) report the bar without offering to move it.
      */
     onToggleCommitment: (() -> Unit)? = null,
     modifier: Modifier = Modifier
@@ -316,7 +316,7 @@ fun TaskRow(
                                     color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.8f)
                                 )
                             }
-                            projectName?.let { name ->
+                            operationName?.let { name ->
                                 Text(
                                     "▸ $name",
                                     style = MaterialTheme.typography.labelSmall,
@@ -401,9 +401,9 @@ fun TaskRow(
                                     modifier = Modifier.padding(bottom = 2.dp)
                                 )
                             }
-                            projectName?.let { name ->
+                            operationName?.let { name ->
                                 Text(
-                                    "Project: $name",
+                                    "Operation: $name",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
                                     modifier = Modifier.padding(bottom = 2.dp)

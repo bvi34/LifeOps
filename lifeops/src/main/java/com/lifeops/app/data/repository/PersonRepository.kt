@@ -22,7 +22,7 @@ import java.util.UUID
 
 /**
  * The one thing ViewModels talk to for household people, their notes, and which tasks involve
- * them. Mirrors CounterRepository / FutureProjectRepository in shape: plain models out, entity
+ * them. Mirrors CounterRepository / FutureOperationRepository in shape: plain models out, entity
  * plumbing hidden. Task involvement is a many-to-many join surfaced both ways (tasks-for-person
  * and person-ids-for-task).
  *

@@ -55,7 +55,7 @@ object DocumentFacts {
     fun points(doc: KnowledgeDocument): Int? =
         POINTS.find(doc.body)?.groupValues?.get(1)?.toIntOrNull()
 
-    /** A task's/project's status label, e.g. "done". */
+    /** A task's/operation's status label, e.g. "done". */
     fun status(doc: KnowledgeDocument): String? =
         STATUS.find(doc.body)?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
 

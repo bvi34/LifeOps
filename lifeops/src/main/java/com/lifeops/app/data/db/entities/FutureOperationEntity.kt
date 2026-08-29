@@ -4,8 +4,8 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "future_projects")
-data class FutureProjectEntity(
+@Entity(tableName = "future_operations")
+data class FutureOperationEntity(
     @PrimaryKey val id: String,
     val title: String,
     val content: String,

@@ -16,40 +16,40 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeops.app.data.model.FutureProjectStatus
-import com.lifeops.app.data.repository.FutureProjectListItem
+import com.lifeops.app.data.model.FutureOperationStatus
+import com.lifeops.app.data.repository.FutureOperationListItem
 
 @Composable
-fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (String) -> Unit) {
+fun FutureOperationsScreen(viewModel: FutureOperationViewModel, onOpenOperation: (String) -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         floatingActionButton = {
             FloatingActionButton(onClick = { viewModel.showCreateDialog() }) {
-                Icon(Icons.Default.Add, contentDescription = "New future project")
+                Icon(Icons.Default.Add, contentDescription = "New future operation")
             }
         }
     ) { padding ->
-        if (state.projects.isEmpty()) {
+        if (state.operations.isEmpty()) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text(
-                    "No future projects yet. Tap + to jot one down.",
+                    "No future operations yet. Tap + to jot one down.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
             }
         } else {
-            val (archived, active) = state.projects.partition { it.project.status == FutureProjectStatus.ARCHIVED }
+            val (archived, active) = state.operations.partition { it.operation.status == FutureOperationStatus.ARCHIVED }
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(active, key = { it.project.id }) { item ->
-                    FutureProjectCard(
+                items(active, key = { it.operation.id }) { item ->
+                    FutureOperationCard(
                         item,
-                        onClick = { onOpenProject(item.project.id) },
-                        onToggleStatus = { viewModel.setStatus(item.project.id, FutureProjectStatus.ARCHIVED) }
+                        onClick = { onOpenOperation(item.operation.id) },
+                        onToggleStatus = { viewModel.setStatus(item.operation.id, FutureOperationStatus.ARCHIVED) }
                     )
                 }
                 if (archived.isNotEmpty()) {
@@ -61,11 +61,11 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                         )
                     }
-                    items(archived, key = { it.project.id }) { item ->
-                        FutureProjectCard(
+                    items(archived, key = { it.operation.id }) { item ->
+                        FutureOperationCard(
                             item,
-                            onClick = { onOpenProject(item.project.id) },
-                            onToggleStatus = { viewModel.setStatus(item.project.id, FutureProjectStatus.ACTIVE) }
+                            onClick = { onOpenOperation(item.operation.id) },
+                            onToggleStatus = { viewModel.setStatus(item.operation.id, FutureOperationStatus.ACTIVE) }
                         )
                     }
                 }
@@ -74,20 +74,20 @@ fun FutureProjectsScreen(viewModel: FutureProjectViewModel, onOpenProject: (Stri
     }
 
     if (state.showCreateDialog) {
-        CreateFutureProjectDialog(
+        CreateFutureOperationDialog(
             onDismiss = { viewModel.hideCreateDialog() },
-            onConfirm = { title -> viewModel.createProject(title) }
+            onConfirm = { title -> viewModel.createOperation(title) }
         )
     }
 }
 
 @Composable
-private fun FutureProjectCard(
-    item: FutureProjectListItem,
+private fun FutureOperationCard(
+    item: FutureOperationListItem,
     onClick: () -> Unit,
     onToggleStatus: () -> Unit
 ) {
-    val isArchived = item.project.status == FutureProjectStatus.ARCHIVED
+    val isArchived = item.operation.status == FutureOperationStatus.ARCHIVED
     Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
@@ -95,7 +95,7 @@ private fun FutureProjectCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    item.project.title,
+                    item.operation.title,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = if (isArchived) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
@@ -118,12 +118,12 @@ private fun FutureProjectCard(
 }
 
 @Composable
-private fun CreateFutureProjectDialog(onDismiss: () -> Unit, onConfirm: (title: String) -> Unit) {
+private fun CreateFutureOperationDialog(onDismiss: () -> Unit, onConfirm: (title: String) -> Unit) {
     var title by rememberSaveable { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New future project") },
+        title = { Text("New future operation") },
         text = {
             OutlinedTextField(
                 value = title,

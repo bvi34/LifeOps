@@ -80,7 +80,7 @@ data class Task(
     val carriedCount: Int = 0,
     val sortOrder: Int = 0,
     val isManuallyAdded: Boolean = false,
-    val projectId: String? = null,
+    val operationId: String? = null,
     val source: TaskSource = TaskSource.MANUAL,
     val slug: String = "",
     val carryForwardReason: CarryForwardReason? = null,
@@ -237,26 +237,26 @@ data class WeekSnapshot(
     val commitmentCompleted: Int = 0
 )
 
-enum class ProjectStatus(val value: String) {
+enum class OperationStatus(val value: String) {
     ACTIVE("active"),
     COMPLETED("completed");
     companion object { fun from(value: String) = entries.firstOrNull { it.value == value } ?: ACTIVE }
 }
 
-data class Project(
+data class Operation(
     val id: String,
     val title: String,
     val aspectId: String? = null,
     val categoryId: String? = null,
-    val status: ProjectStatus = ProjectStatus.ACTIVE,
+    val status: OperationStatus = OperationStatus.ACTIVE,
     val description: String? = null,
     val createdAt: String,
     val completedAt: String? = null,
-    val sourceFutureProjectId: String? = null
+    val sourceFutureOperationId: String? = null
 )
 
-data class ProjectStats(
-    val project: Project,
+data class OperationStats(
+    val operation: Operation,
     val taskCount: Int,
     val completedCount: Int,
     val totalTimeMinutes: Int
@@ -612,23 +612,23 @@ data class BookTimeEntry(
     val recordedAt: String
 )
 
-enum class FutureProjectStatus(val value: String) {
+enum class FutureOperationStatus(val value: String) {
     ACTIVE("active"),
     ARCHIVED("archived");
     companion object { fun from(value: String) = entries.firstOrNull { it.value == value } ?: ACTIVE }
 }
 
-data class FutureProject(
+data class FutureOperation(
     val id: String,
     val title: String,
     val createdAt: String,
     val updatedAt: String,
-    val status: FutureProjectStatus = FutureProjectStatus.ACTIVE
+    val status: FutureOperationStatus = FutureOperationStatus.ACTIVE
 )
 
-data class FutureProjectNote(
+data class FutureOperationNote(
     val id: String,
-    val projectId: String,
+    val operationId: String,
     val content: String,
     val createdAt: String
 )

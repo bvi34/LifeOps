@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 16,
+    val version: Int = 17,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -28,8 +28,12 @@ private data class BackupData(
     val weekSnapshots: List<WeekSnapshotEntity>,
     val costResources: List<CostResourceEntity> = emptyList(),
     val taskCostEntries: List<TaskCostEntryEntity> = emptyList(),
-    val projects: List<ProjectEntity> = emptyList(),
-    // Collection hub (v6): books, recipes, and future project ideas. Food items ride along
+    // v17: Projects became Operations. Written under the new names from here on; backups
+    // written before v17 say `projects`/`futureProjects`/`futureProjectNotes` (and carry
+    // `projectId`/`sourceFutureProjectId` inside their rows) and are translated on the way
+    // in by [renameLegacyProjectKeys].
+    val operations: List<OperationEntity> = emptyList(),
+    // Collection hub (v6): books, recipes, and future operation ideas. Food items ride along
     // because recipe ingredients hold a foreign key into them.
     val books: List<BookEntity> = emptyList(),
     val bookNotes: List<BookNoteEntity> = emptyList(),
@@ -37,9 +41,9 @@ private data class BackupData(
     val foodItems: List<FoodItemEntity> = emptyList(),
     val recipes: List<RecipeEntity> = emptyList(),
     val recipeIngredients: List<RecipeIngredientEntity> = emptyList(),
-    val futureProjects: List<FutureProjectEntity> = emptyList(),
-    // v7: future project notes replace the long-form content blob on future_projects.
-    val futureProjectNotes: List<FutureProjectNoteEntity> = emptyList(),
+    val futureOperations: List<FutureOperationEntity> = emptyList(),
+    // v7: future operation notes replace the long-form content blob on future_operations.
+    val futureOperationNotes: List<FutureOperationNoteEntity> = emptyList(),
     // v8: household people, their notes, and task-involvement links.
     val persons: List<PersonEntity> = emptyList(),
     val personNotes: List<PersonNoteEntity> = emptyList(),
@@ -78,15 +82,15 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             weekSnapshots = db.weekSnapshotDao().getAll(),
             costResources = db.costResourceDao().getAllSync(),
             taskCostEntries = db.taskCostEntryDao().getAll(),
-            projects = db.projectDao().getAll(),
+            operations = db.operationDao().getAll(),
             books = db.bookDao().getAll(),
             bookNotes = db.bookDao().getAllNotes(),
             bookTimeEntries = db.bookDao().getAllTimeEntries(),
             foodItems = db.foodItemDao().getAll(),
             recipes = db.recipeDao().getAll(),
             recipeIngredients = db.recipeDao().getAllIngredients(),
-            futureProjects = db.futureProjectDao().getAll(),
-            futureProjectNotes = db.futureProjectDao().getAllNotes(),
+            futureOperations = db.futureOperationDao().getAll(),
+            futureOperationNotes = db.futureOperationDao().getAllNotes(),
             persons = db.personDao().getAll(),
             personNotes = db.personDao().getAllNotes(),
             taskPeople = db.personDao().getAllLinks(),
@@ -104,7 +108,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
     }
 
     fun extractCustomPalette(json: String): CustomPalette? = try {
-        gson.fromJson(json, BackupData::class.java)?.customPalette
+        gson.fromJson(renameLegacyProjectKeys(json), BackupData::class.java)?.customPalette
     } catch (_: Exception) { null }
 
     suspend fun saveBackupFile(context: Context, json: String): Uri? = withContext(Dispatchers.IO) {
@@ -131,9 +135,39 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         JsonParser.parseString(json).asJsonObject.get("version")?.asInt ?: 1
     } catch (_: Exception) { 1 }
 
+    /**
+     * Translate a pre-v17 backup, which still calls Operations "projects", into the current key
+     * names. Gson binds by field name, so without this every operation, future operation and note
+     * in an older backup would silently restore as an empty list — the worst possible failure for
+     * a restore, since it looks like it worked.
+     *
+     * Renames are applied only where the modern key is absent, so a current backup passes through
+     * untouched and re-running this is a no-op. Anything unparseable is handed back verbatim for
+     * [restore]'s own error handling to report.
+     */
+    private fun renameLegacyProjectKeys(json: String): String = try {
+        val root = JsonParser.parseString(json).asJsonObject
+        fun rename(obj: com.google.gson.JsonObject, from: String, to: String) {
+            if (obj.has(from) && !obj.has(to)) obj.add(to, obj.remove(from))
+        }
+        fun renameInEach(arrayKey: String, from: String, to: String) {
+            root.getAsJsonArray(arrayKey)?.forEach { element ->
+                if (element.isJsonObject) rename(element.asJsonObject, from, to)
+            }
+        }
+        rename(root, "projects", "operations")
+        rename(root, "futureProjects", "futureOperations")
+        rename(root, "futureProjectNotes", "futureOperationNotes")
+        // Row-level columns renamed by MIGRATION_53_54.
+        renameInEach("tasks", "projectId", "operationId")
+        renameInEach("operations", "sourceFutureProjectId", "sourceFutureOperationId")
+        renameInEach("futureOperationNotes", "projectId", "operationId")
+        gson.toJson(root)
+    } catch (_: Exception) { json }
+
     suspend fun restore(json: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val data = gson.fromJson(json, BackupData::class.java)
+            val data = gson.fromJson(renameLegacyProjectKeys(json), BackupData::class.java)
                 ?: return@withContext Result.failure(IllegalArgumentException("Invalid backup JSON"))
             db.withTransaction {
                 for (a in data.aspects) db.aspectDao().upsert(a)
@@ -152,7 +186,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 }
                 for (r in data.costResources) db.costResourceDao().upsert(r)
                 for (ce in data.taskCostEntries) db.taskCostEntryDao().insert(ce)
-                for (p in data.projects) db.projectDao().upsert(p)
+                for (p in data.operations) db.operationDao().upsert(p)
                 for (b in data.books) db.bookDao().upsert(b)
                 for (bn in data.bookNotes) db.bookDao().insertNote(bn)
                 for (bt in data.bookTimeEntries) db.bookDao().insertTimeEntry(bt)
@@ -160,13 +194,13 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 for (fi in data.foodItems) db.foodItemDao().upsert(fi)
                 for (rc in data.recipes) db.recipeDao().upsert(rc)
                 for (ri in data.recipeIngredients) db.recipeDao().upsertIngredient(ri)
-                for (fp in data.futureProjects) {
+                for (fp in data.futureOperations) {
                     // Backups written before the archive lifecycle carry no status; Gson leaves
                     // it null despite the Kotlin default, which would violate NOT NULL.
                     val rawStatus: String? = fp.status
-                    db.futureProjectDao().upsert(fp.copy(content = "", status = rawStatus ?: "active"))
+                    db.futureOperationDao().upsert(fp.copy(content = "", status = rawStatus ?: "active"))
                 }
-                for (fpn in data.futureProjectNotes) db.futureProjectDao().insertNote(fpn)
+                for (fpn in data.futureOperationNotes) db.futureOperationDao().insertNote(fpn)
                 // People before their notes/links (FK), and after tasks (task_people → tasks).
                 for (person in data.persons) db.personDao().upsertPerson(person)
                 for (pn in data.personNotes) db.personDao().insertNote(pn)
@@ -188,13 +222,13 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 // upsert never re-runs the immediate point grant, so restoring can't double-mint.
                 for (m in data.milestones) db.milestoneDao().upsert(m)
                 // Backups written before v7 carried one long-form content blob per future
-                // project; fold it into a single catch-up note. The deterministic '-catchup'
+                // operation; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring
-                // onto an already-migrated project) can't duplicate the note.
-                for (fp in data.futureProjects) {
+                // onto an already-migrated operation) can't duplicate the note.
+                for (fp in data.futureOperations) {
                     if (fp.content.isNotBlank()) {
-                        db.futureProjectDao().insertNote(
-                            FutureProjectNoteEntity("${fp.id}-catchup", fp.id, fp.content, fp.updatedAt)
+                        db.futureOperationDao().insertNote(
+                            FutureOperationNoteEntity("${fp.id}-catchup", fp.id, fp.content, fp.updatedAt)
                         )
                     }
                 }
@@ -210,7 +244,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         val aspects = db.aspectDao().getAllSync().associateBy { it.id }
         val categories = db.categoryDao().getAllSync().associateBy { it.id }
         val weeks = db.weekDao().getAllSync().associateBy { it.id }
-        val projects = db.projectDao().getAll().associateBy { it.id }
+        val operations = db.operationDao().getAll().associateBy { it.id }
         val timeByTask = db.timeEntryDao().getAll()
             .groupBy { it.taskId }
             .mapValues { (_, entries) -> entries.sumOf { it.durationMinutes } }
@@ -229,7 +263,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         // full. Still a flat projection: the JSON backup remains the lossless / restorable copy.
         val sb = StringBuilder()
         sb.append(Csv.row(listOf(
-            "ID", "Title", "Week", "Aspect", "Category", "Project", "Priority", "Status", "Source",
+            "ID", "Title", "Week", "Aspect", "Category", "Operation", "Priority", "Status", "Source",
             "DueDate", "HardDeadline", "Recurring", "EstimatedMinutes", "TimeLoggedMinutes",
             "ResourceValue", "CarriedCount", "CostEntries", "Notes", "CreatedAt", "CompletedAt"
         ))).append('\n')
@@ -240,7 +274,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 weeks[t.weekId]?.startDate ?: "",
                 aspects[t.aspectId]?.name ?: "",
                 categories[t.categoryId]?.name ?: "",
-                projects[t.projectId]?.title ?: "",
+                operations[t.operationId]?.title ?: "",
                 t.priority,
                 t.status,
                 t.source,

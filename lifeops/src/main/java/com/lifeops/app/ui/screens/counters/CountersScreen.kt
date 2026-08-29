@@ -385,7 +385,7 @@ private fun CounterCard(
     }
 }
 
-/** Name + aspect/category picker — same two-dropdown pattern projects use. */
+/** Name + aspect/category picker — same two-dropdown pattern operations use. */
 @Composable
 private fun CounterEditorDialog(
     title: String,

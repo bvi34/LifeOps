@@ -73,7 +73,7 @@ data class ThisWeekUiState(
     val weekProgress: WeekProgress = WeekProgress(0, 0, 0),
     val costResources: List<CostResource> = emptyList(),
     val taskCostEntries: Map<String, List<TaskCostEntry>> = emptyMap(),
-    val projects: List<Project> = emptyList(),
+    val operations: List<Operation> = emptyList(),
     val showOverdueOnly: Boolean = false,
     val showTemplatePickerDialog: Boolean = false,
     val availableTemplates: List<TemplateWithTasks> = emptyList(),
@@ -123,7 +123,7 @@ class ThisWeekViewModel(
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
@@ -148,7 +148,7 @@ class ThisWeekViewModel(
         com.lifeops.app.connection.service.TimeEntryService(timeEntryRepository, taskRepository)
     private val costService = com.lifeops.app.connection.service.CostService(costResourceRepository)
     private val runbookService = com.lifeops.app.connection.service.RunbookService(runbookRepository)
-    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+    private val operationService = com.lifeops.app.connection.service.OperationService(operationRepository)
     private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
     private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
 
@@ -177,8 +177,8 @@ class ThisWeekViewModel(
             }
         }
         viewModelScope.launch {
-            projectRepository.observeActive().collectLatest { projects ->
-                _uiState.update { it.copy(projects = projects) }
+            operationRepository.observeActive().collectLatest { operations ->
+                _uiState.update { it.copy(operations = operations) }
             }
         }
         // Weather is read cache-only (never triggers a network refresh — the WeatherRefreshWorker
@@ -652,12 +652,12 @@ class ThisWeekViewModel(
         return WeekReviewBuilder.build(closing, weekRepository.getAllSnapshotsSync(), s.aspects.values.toList())
     }
 
-    fun onPromoteToProject(taskId: String) {
+    fun onPromoteToOperation(taskId: String) {
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
-            val projectId = java.util.UUID.randomUUID().toString()
-            projectService.create(title = task.title, aspectId = task.aspectId, id = projectId)
-            taskRepository.promoteTaskToProject(taskId, projectId)
+            val operationId = java.util.UUID.randomUUID().toString()
+            operationService.create(title = task.title, aspectId = task.aspectId, id = operationId)
+            taskRepository.promoteTaskToOperation(taskId, operationId)
         }
     }
 
@@ -735,7 +735,7 @@ class ThisWeekViewModel(
         hardDeadline: Boolean,
         isRecurring: Boolean = false,
         estimatedMinutes: Int? = null,
-        projectId: String? = null,
+        operationId: String? = null,
         runbookId: String? = null,
         counterId: String? = null,
         recurrenceIntervalWeeks: Int = 1,
@@ -755,7 +755,7 @@ class ThisWeekViewModel(
                     hardDeadline = hardDeadline,
                     isRecurring = isRecurring,
                     estimatedMinutes = estimatedMinutes,
-                    projectId = projectId,
+                    operationId = operationId,
                     counterId = counterId,
                     recurrenceIntervalWeeks = recurrenceIntervalWeeks,
                     recurrenceDayOfMonth = recurrenceDayOfMonth
@@ -788,14 +788,14 @@ class ThisWeekViewModel(
         }
     }
 
-    fun onCreateProject(id: String, title: String, aspectId: String?) {
-        viewModelScope.launch { projectService.create(title = title, aspectId = aspectId, id = id) }
+    fun onCreateOperation(id: String, title: String, aspectId: String?) {
+        viewModelScope.launch { operationService.create(title = title, aspectId = aspectId, id = id) }
     }
 
-    fun onAssignProject(taskId: String, projectId: String?) {
+    fun onAssignOperation(taskId: String, operationId: String?) {
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
-            taskRepository.updateTask(task.copy(projectId = projectId))
+            taskRepository.updateTask(task.copy(operationId = operationId))
         }
     }
 
@@ -827,7 +827,7 @@ class ThisWeekViewModel(
         estimatedMinutes: Int? = null,
         aspectId: String? = null,
         categoryId: String? = null,
-        projectId: String? = null,
+        operationId: String? = null,
         counterId: String? = null,
         recurrenceIntervalWeeks: Int = 1,
         recurrenceDayOfMonth: Int? = null
@@ -858,7 +858,7 @@ class ThisWeekViewModel(
                 estimatedMinutes = estimatedMinutes,
                 aspectId = aspectId,
                 categoryId = categoryId,
-                projectId = projectId,
+                operationId = operationId,
                 counterId = counterId,
                 recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
                 recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
@@ -900,7 +900,7 @@ class ThisWeekViewModelFactory(
     private val timeEntryRepository: TimeEntryRepository,
     private val notificationRepository: NotificationRepository,
     private val costResourceRepository: CostResourceRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val preferencesRepository: PreferencesRepository,
     private val runbookRepository: RunbookRepository,
     private val templateRepository: TemplateRepository,
@@ -915,7 +915,7 @@ class ThisWeekViewModelFactory(
         ThisWeekViewModel(
             appContext, saveScope, weekRepository, taskRepository, aspectRepository, importRepository,
             taskNoteRepository, taskAttachmentRepository, timeEntryRepository, notificationRepository, costResourceRepository,
-            projectRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
+            operationRepository, preferencesRepository, runbookRepository, templateRepository, counterRepository,
             weatherRepository, personRepository, busyBlockRepository, timerController
         ) as T
 }

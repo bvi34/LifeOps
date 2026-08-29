@@ -1,5 +1,5 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
-package com.lifeops.app.ui.screens.projectdetail
+package com.lifeops.app.ui.screens.operationdetail
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,7 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.lifeops.app.data.model.ProjectStatus
+import com.lifeops.app.data.model.OperationStatus
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.util.DateUtil
@@ -23,12 +23,12 @@ import com.lifeops.app.ui.components.formatMinutes
 import com.lifeops.app.ui.theme.CompletedGreen
 
 @Composable
-fun ProjectDetailScreen(
-    viewModel: ProjectDetailViewModel,
+fun OperationDetailScreen(
+    viewModel: OperationDetailViewModel,
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsState()
-    val project = state.project
+    val operation = state.operation
 
     Scaffold(
         topBar = {
@@ -39,13 +39,13 @@ fun ProjectDetailScreen(
                     }
                 },
                 actions = {
-                    if (project != null) {
-                        if (project.status == ProjectStatus.ACTIVE) {
-                            TextButton(onClick = { viewModel.setProjectStatus(ProjectStatus.COMPLETED) }) {
+                    if (operation != null) {
+                        if (operation.status == OperationStatus.ACTIVE) {
+                            TextButton(onClick = { viewModel.setOperationStatus(OperationStatus.COMPLETED) }) {
                                 Text("Complete")
                             }
                         } else {
-                            TextButton(onClick = { viewModel.setProjectStatus(ProjectStatus.ACTIVE) }) {
+                            TextButton(onClick = { viewModel.setOperationStatus(OperationStatus.ACTIVE) }) {
                                 Text("Reactivate")
                             }
                         }
@@ -79,7 +79,7 @@ fun ProjectDetailScreen(
                     }
                 }
             }
-            // Brainstorm notes carried over from the future project this one was promoted from
+            // Brainstorm notes carried over from the future operation this one was promoted from
             if (state.brainstormNotes.isNotEmpty()) {
                 item {
                     Text(

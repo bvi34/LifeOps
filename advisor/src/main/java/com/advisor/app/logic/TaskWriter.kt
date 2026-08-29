@@ -4,7 +4,7 @@ package com.advisor.app.logic
 sealed interface TaskWriteResult {
 
     /**
-     * The task exists now. [target] is the project/aspect/category it was filed under (null when the
+     * The task exists now. [target] is the operation/aspect/category it was filed under (null when the
      * user named none), and [unmatchedTarget] is a name they gave that matched nothing in the app —
      * the task is still created, and the reply says so rather than quietly dropping the intent.
      */

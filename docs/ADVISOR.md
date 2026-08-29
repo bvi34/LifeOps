@@ -193,7 +193,7 @@ returns an `EngineDecision`:
    A conflict always yields `CLARIFY` — it asks which is correct rather than picking one. This check
    fires even right after a previous clarification, because answering from conflicting data is exactly
    the "being wrong" the rule forbids.
-2. **Ambiguity.** An unresolved reference ("it", "that", "the project") with nothing to bind it to
+2. **Ambiguity.** An unresolved reference ("it", "that", "the operation") with nothing to bind it to
    yields `CLARIFY` — it asks what you mean rather than guessing the subject. *Once the chat is under
    way, the recent conversation is somewhere to bind*, so a follow-up proceeds instead of re-asking
    (the same concession as `justAsked`), and prior turns count as grounding evidence.
@@ -264,7 +264,7 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 
 | Source | Reads |
 |---|---|
-| **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, projects, milestones — and the **Collection**: books (reading state, logged minutes, category) with their notes, recipes (servings, ingredient names, method, source link), and the someday backlog of future projects with their notes |
+| **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, operations, milestones — and the **Collection**: books (reading state, logged minutes, category) with their notes, recipes (servings, ingredient names, method, source link), and the someday backlog of future operations with their notes |
 | **Citation** | library books (title, author, reading state) and reading notes |
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
 | **People** | the household directory: who is in it, how to reach them, the dates that come round (a birth date doubles as a birthday), and the notes kept about them |
@@ -289,7 +289,7 @@ rather than enumerated: a year of temperatures would otherwise drown every other
 
 The Collection is indexed because that's where a whole class of question lives — "what can I make
 with the beef", "didn't I have an idea about X", "how long have I spent on this book" — and until it
-was, Advisor could only answer from the week's machinery. Recipes and future projects have no
+was, Advisor could only answer from the week's machinery. Recipes and future operations have no
 lifecycle state, so `KnowledgeFacets` reports none for them rather than inventing one; a LifeOps book
 uses the same `Reading state:` phrasing as a Citation one, so a reading question judges both alike.
 
@@ -315,7 +315,7 @@ Advisor writes into exactly one place outside its own stores: a **task the user 
 create**. `logic/TaskWriter` is the seam (framework-free, so the pipeline stays JVM-testable) and
 `data/action/LifeOpsTaskWriter` implements it for LifeOps.
 
-It does not touch LifeOps' tables. It resolves the target the user named — against active projects
+It does not touch LifeOps' tables. It resolves the target the user named — against active operations
 first, then aspects, then categories, matching on the name ignoring case, spacing and punctuation, and
 resolving an ambiguous partial match to *nothing* rather than guessing — and then calls LifeOps' own
 `/v1/LifeOps/local/task/create` connection route (see `docs/CONNECTIONS.md`). So the task is created by

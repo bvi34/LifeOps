@@ -31,7 +31,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index("weekId"), Index("aspectId"), Index("categoryId"),
         Index("createdAt"), Index("completedAt"), Index("status"),
-        Index("projectId"), Index("source"), Index("counterId"),
+        Index("operationId"), Index("source"), Index("counterId"),
         // Backs the per-week slug dedup query (TaskDao.getSlugsByWeek) and matches the
         // index MIGRATION_14_15 creates as index_tasks_weekId_slug. Must be declared here
         // or Room's post-migration schema validation crashes on launch for upgrading users.
@@ -61,13 +61,13 @@ data class TaskEntity(
     val sortOrder: Int = 0,
     @ColumnInfo(defaultValue = "0")
     val isManuallyAdded: Boolean = false,
-    val projectId: String? = null,
+    val operationId: String? = null,
     @ColumnInfo(name = "source", defaultValue = "MANUAL")
     val source: String = "MANUAL",
     @ColumnInfo(defaultValue = "")
     val slug: String = "",
     val carryForwardReason: String? = null,
-    // Optional counter this task ticks when completed (no FK — mirrors projectId; counters are
+    // Optional counter this task ticks when completed (no FK — mirrors operationId; counters are
     // archived, never deleted, so the reference can't dangle).
     val counterId: String? = null,
     // Recurrence cadence (only meaningful when isRecurring = true). Two modes:

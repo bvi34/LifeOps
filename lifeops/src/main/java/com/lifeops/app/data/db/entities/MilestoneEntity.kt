@@ -12,7 +12,7 @@ import androidx.room.PrimaryKey
  * week-close. It optionally attaches to an aspect and/or a person; the aspect attachment is what
  * routes its points into that aspect's mapped game resources.
  *
- * Both attachments are nullable FKs with ON DELETE SET NULL (the same shape as tasks.projectId),
+ * Both attachments are nullable FKs with ON DELETE SET NULL (the same shape as tasks.operationId),
  * so deleting an aspect or person leaves the milestone standing with its attachment cleared. No
  * @ColumnInfo(defaultValue) on any column, so the CREATE in MIGRATION_44_45 must match exactly.
  */

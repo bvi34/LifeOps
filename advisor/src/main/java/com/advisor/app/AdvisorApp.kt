@@ -73,7 +73,7 @@ class AdvisorApp private constructor(private val app: Application) {
      */
     val knowledgeSources: List<KnowledgeSource> by lazy {
         listOf(
-            LifeOpsKnowledgeSource(app).cachedOn("aspects", "tasks", "projects", "milestones") {
+            LifeOpsKnowledgeSource(app).cachedOn("aspects", "tasks", "operations", "milestones") {
                 LifeOpsDatabase.getInstance(app)
             },
             CitationKnowledgeSource(app).cachedOn("books", "notes") {

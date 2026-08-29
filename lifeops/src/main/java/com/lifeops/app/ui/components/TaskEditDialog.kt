@@ -15,7 +15,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Priority
-import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.Task
 import java.util.UUID
 
@@ -24,9 +24,9 @@ fun TaskEditDialog(
     task: Task,
     aspects: List<Aspect>,
     allCategories: Map<String, Category>,
-    projects: List<Project> = emptyList(),
+    operations: List<Operation> = emptyList(),
     counters: List<Counter> = emptyList(),
-    onCreateProject: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
+    onCreateOperation: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onSave: (
         title: String,
         priority: Priority,
@@ -36,7 +36,7 @@ fun TaskEditDialog(
         estimatedMinutes: Int?,
         aspectId: String?,
         categoryId: String?,
-        projectId: String?,
+        operationId: String?,
         counterId: String?,
         recurrenceIntervalWeeks: Int,
         recurrenceDayOfMonth: Int?
@@ -53,13 +53,13 @@ fun TaskEditDialog(
     var estimatedMinutes by remember(task.id) { mutableStateOf(task.estimatedMinutes?.toString() ?: "") }
     var selectedAspectId by remember(task.id) { mutableStateOf(task.aspectId) }
     var selectedCategoryId by remember(task.id) { mutableStateOf(task.categoryId) }
-    var selectedProjectId by remember(task.id) { mutableStateOf(task.projectId) }
+    var selectedOperationId by remember(task.id) { mutableStateOf(task.operationId) }
     var selectedCounterId by remember(task.id) { mutableStateOf(task.counterId) }
-    var showNewProjectDialog by remember { mutableStateOf(false) }
+    var showNewOperationDialog by remember { mutableStateOf(false) }
 
     var aspectExpanded by remember { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
-    var projectExpanded by remember { mutableStateOf(false) }
+    var operationExpanded by remember { mutableStateOf(false) }
     var counterExpanded by remember { mutableStateOf(false) }
 
     val categoriesForAspect = remember(selectedAspectId, allCategories) {
@@ -67,9 +67,9 @@ fun TaskEditDialog(
         else allCategories.values.filter { it.aspectId == selectedAspectId && !it.isArchived }
     }
 
-    val suggestedProjects = remember(selectedAspectId, projects) {
-        if (selectedAspectId == null) projects
-        else projects.filter { it.aspectId == selectedAspectId }
+    val suggestedOperations = remember(selectedAspectId, operations) {
+        if (selectedAspectId == null) operations
+        else operations.filter { it.aspectId == selectedAspectId }
     }
 
     AlertDialog(
@@ -143,32 +143,32 @@ fun TaskEditDialog(
                     }
                 }
 
-                // Project dropdown
-                val selectedProject = projects.firstOrNull { it.id == selectedProjectId }
-                ExposedDropdownMenuBox(expanded = projectExpanded, onExpandedChange = { projectExpanded = it }) {
+                // Operation dropdown
+                val selectedOperation = operations.firstOrNull { it.id == selectedOperationId }
+                ExposedDropdownMenuBox(expanded = operationExpanded, onExpandedChange = { operationExpanded = it }) {
                     OutlinedTextField(
-                        value = selectedProject?.title ?: "No project",
+                        value = selectedOperation?.title ?: "No operation",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Project (optional)") },
+                        label = { Text("Operation (optional)") },
                         modifier = Modifier.menuAnchor().fillMaxWidth(),
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(projectExpanded) }
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(operationExpanded) }
                     )
-                    ExposedDropdownMenu(expanded = projectExpanded, onDismissRequest = { projectExpanded = false }) {
+                    ExposedDropdownMenu(expanded = operationExpanded, onDismissRequest = { operationExpanded = false }) {
                         DropdownMenuItem(
-                            text = { Text("No project") },
-                            onClick = { selectedProjectId = null; projectExpanded = false }
+                            text = { Text("No operation") },
+                            onClick = { selectedOperationId = null; operationExpanded = false }
                         )
-                        suggestedProjects.forEach { project ->
+                        suggestedOperations.forEach { operation ->
                             DropdownMenuItem(
-                                text = { Text(project.title) },
-                                onClick = { selectedProjectId = project.id; projectExpanded = false }
+                                text = { Text(operation.title) },
+                                onClick = { selectedOperationId = operation.id; operationExpanded = false }
                             )
                         }
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("New project…") },
-                            onClick = { showNewProjectDialog = true; projectExpanded = false }
+                            text = { Text("New operation…") },
+                            onClick = { showNewOperationDialog = true; operationExpanded = false }
                         )
                     }
                 }
@@ -254,7 +254,7 @@ fun TaskEditDialog(
                         estimatedMinutes.toIntOrNull(),
                         selectedAspectId,
                         selectedCategoryId,
-                        selectedProjectId,
+                        selectedOperationId,
                         selectedCounterId,
                         recurrenceIntervalWeeks,
                         recurrenceDayOfMonth
@@ -266,25 +266,25 @@ fun TaskEditDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 
-    if (showNewProjectDialog) {
-        NewProjectQuickEditDialog(
-            onConfirm = { projectTitle ->
+    if (showNewOperationDialog) {
+        NewOperationQuickEditDialog(
+            onConfirm = { operationTitle ->
                 val newId = UUID.randomUUID().toString()
-                onCreateProject(newId, projectTitle, selectedAspectId)
-                selectedProjectId = newId
-                showNewProjectDialog = false
+                onCreateOperation(newId, operationTitle, selectedAspectId)
+                selectedOperationId = newId
+                showNewOperationDialog = false
             },
-            onDismiss = { showNewProjectDialog = false }
+            onDismiss = { showNewOperationDialog = false }
         )
     }
 }
 
 @Composable
-private fun NewProjectQuickEditDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun NewOperationQuickEditDialog(onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
     var name by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Project") },
+        title = { Text("New Operation") },
         text = {
             OutlinedTextField(
                 value = name,

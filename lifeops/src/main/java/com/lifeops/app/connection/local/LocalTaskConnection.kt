@@ -13,7 +13,7 @@ import com.lifeops.app.data.model.Priority
  *
  * Routes:
  *  - `/v1/LifeOps/local/task/create`   — params: title (required), note, aspectId, categoryId,
- *    priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, projectId, counterId,
+ *    priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, operationId, counterId,
  *    recurrenceIntervalWeeks, recurrenceDayOfMonth
  *  - `/v1/LifeOps/local/task/update`   — params: id (required) + any create field to change
  *  - `/v1/LifeOps/local/task/complete` — params: id (required)
@@ -38,7 +38,7 @@ object LocalTaskConnection {
                     hardDeadline = p.getBoolean("hardDeadline"),
                     isRecurring = p.getBoolean("isRecurring"),
                     estimatedMinutes = p.getInt("estimatedMinutes"),
-                    projectId = p.getString("projectId"),
+                    operationId = p.getString("operationId"),
                     counterId = p.getString("counterId"),
                     recurrenceIntervalWeeks = p.getInt("recurrenceIntervalWeeks") ?: 1,
                     recurrenceDayOfMonth = p.getInt("recurrenceDayOfMonth")
@@ -64,7 +64,7 @@ object LocalTaskConnection {
                 dueDate = p.getString("dueDate"),
                 hardDeadline = if (p.has("hardDeadline")) p.getBoolean("hardDeadline") else null,
                 estimatedMinutes = p.getInt("estimatedMinutes"),
-                projectId = p.getString("projectId")
+                operationId = p.getString("operationId")
             )
             updated?.let { ConnectionResult.ok("id" to it.id) } ?: notFound(id)
         }

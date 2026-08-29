@@ -40,7 +40,7 @@ import com.lifeops.app.ui.components.LocalGlobalSearch
 import com.lifeops.app.util.WeatherGlyph
 import com.lifeops.app.ui.screens.collection.BookViewModel
 import com.lifeops.app.ui.screens.collection.CollectionScreen
-import com.lifeops.app.ui.screens.collection.FutureProjectViewModel
+import com.lifeops.app.ui.screens.collection.FutureOperationViewModel
 import com.lifeops.app.ui.screens.collection.RecipeViewModel
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanScreen
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel
@@ -57,7 +57,7 @@ enum class WeekHubTab(val label: String) {
 
 /** Shell over the three sub-views. Tasks is the default landing tab. Daily Plan stays
  *  week-scoped (re-keys off [selectedWeekStart] since its data is plain date-stamped); Collection
- *  is a standalone reference library (recipes, books, future projects) with no week concept, so
+ *  is a standalone reference library (recipes, books, future operations) with no week concept, so
  *  it never re-keys off the selected week. Task Manager keeps showing the actual current week
  *  regardless (see its own ViewModel), since browsing past/future weeks of tasks would mean
  *  either fabricating Week rows for dates that were never closed into (breaking the "exactly one
@@ -69,11 +69,11 @@ fun WeekHubScreen(
     taskManagerViewModel: ThisWeekViewModel,
     recipeViewModel: RecipeViewModel,
     bookViewModel: BookViewModel,
-    futureProjectViewModel: FutureProjectViewModel,
+    futureOperationViewModel: FutureOperationViewModel,
     onOpenRecipe: (String) -> Unit,
     onOpenBook: (String) -> Unit,
-    onOpenFutureProject: (String) -> Unit,
-    onOpenProject: (String) -> Unit = {},
+    onOpenFutureOperation: (String) -> Unit,
+    onOpenOperation: (String) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
     onOpenCounter: (String) -> Unit = {},
     onOpenTask: (String) -> Unit = {},
@@ -154,7 +154,7 @@ fun WeekHubScreen(
             when (selectedTab) {
                 WeekHubTab.TASK_MANAGER -> ThisWeekScreen(
                     taskManagerViewModel,
-                    onOpenProject = onOpenProject,
+                    onOpenOperation = onOpenOperation,
                     onOpenPerson = onOpenPerson,
                     onOpenCounter = onOpenCounter,
                     onOpenTask = onOpenTask
@@ -163,10 +163,10 @@ fun WeekHubScreen(
                 WeekHubTab.COLLECTION -> CollectionScreen(
                     recipeViewModel = recipeViewModel,
                     bookViewModel = bookViewModel,
-                    futureProjectViewModel = futureProjectViewModel,
+                    futureOperationViewModel = futureOperationViewModel,
                     onOpenRecipe = onOpenRecipe,
                     onOpenBook = onOpenBook,
-                    onOpenFutureProject = onOpenFutureProject
+                    onOpenFutureOperation = onOpenFutureOperation
                 )
             }
         }

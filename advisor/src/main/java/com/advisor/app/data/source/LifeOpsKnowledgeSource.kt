@@ -7,7 +7,7 @@ import com.lifeops.app.data.db.LifeOpsDatabase
 
 /**
  * Reads LifeOps' own database and flattens the parts worth reasoning over into
- * [KnowledgeDocument]s: the week's machinery (tasks, aspects, projects, milestones) *and* the
+ * [KnowledgeDocument]s: the week's machinery (tasks, aspects, operations, milestones) *and* the
  * Collection — recipes, books, and the someday backlog — which is the half a question like "what
  * can I make with the beef" or "didn't I have an idea about X" actually lives in.
  *
@@ -59,19 +59,19 @@ class LifeOpsKnowledgeSource(context: Context) : KnowledgeSource {
             )
         }
 
-        // Projects — longer efforts that group tasks.
-        for (project in db.projectDao().getAll()) {
-            val aspect = project.aspectId?.let { aspectName[it] }
+        // Operations — longer efforts that group tasks.
+        for (operation in db.operationDao().getAll()) {
+            val aspect = operation.aspectId?.let { aspectName[it] }
             docs += KnowledgeDocument(
-                id = "lifeops:project:${project.id}",
+                id = "lifeops:operation:${operation.id}",
                 source = source,
-                kind = "project",
-                title = project.title,
+                kind = "operation",
+                title = operation.title,
                 body = buildString {
-                    append("Project: ").append(project.title)
-                    append(". Status: ").append(project.status)
+                    append("Operation: ").append(operation.title)
+                    append(". Status: ").append(operation.status)
                     if (aspect != null) append(". Aspect: ").append(aspect)
-                    project.description?.takeIf { it.isNotBlank() }?.let { append(". ").append(it) }
+                    operation.description?.takeIf { it.isNotBlank() }?.let { append(". ").append(it) }
                 }
             )
         }
@@ -164,17 +164,17 @@ class LifeOpsKnowledgeSource(context: Context) : KnowledgeSource {
             )
         }
 
-        // Future projects — the someday backlog. Worth indexing precisely because it's the part of
+        // Future operations — the someday backlog. Worth indexing precisely because it's the part of
         // the app the user forgets they wrote; "didn't I have an idea about X" is its whole job.
-        val ideaNotes = db.futureProjectDao().getAllNotes().groupBy { it.projectId }
-        for (idea in db.futureProjectDao().getAll()) {
+        val ideaNotes = db.futureOperationDao().getAllNotes().groupBy { it.operationId }
+        for (idea in db.futureOperationDao().getAll()) {
             docs += KnowledgeDocument(
                 id = "lifeops:idea:${idea.id}",
                 source = source,
                 kind = "idea",
                 title = idea.title,
                 body = buildString {
-                    append("Future project idea: ").append(idea.title)
+                    append("Future operation idea: ").append(idea.title)
                     append(" (").append(idea.status).append(')')
                     idea.content.takeIf { it.isNotBlank() }?.let { append(". ").append(it) }
                     val notes = ideaNotes[idea.id].orEmpty().joinToString(" ") { it.content }

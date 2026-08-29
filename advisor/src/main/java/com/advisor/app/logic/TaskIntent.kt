@@ -2,8 +2,8 @@ package com.advisor.app.logic
 
 /**
  * A task the user asked the Advisor to create in one of the hosted apps. [target] is whatever they
- * named it against in their own words ("life ops", "the beacon project") — resolving that to a real
- * project/aspect/category is the writing app's job, not the parser's.
+ * named it against in their own words ("life ops", "the beacon op") — resolving that to a real
+ * operation/aspect/category is the writing app's job, not the parser's.
  */
 data class TaskCommand(
     val title: String,
@@ -11,7 +11,7 @@ data class TaskCommand(
     val target: String? = null,
     /**
      * The title with [target] still on the end, when it was trimmed off ("Publish blog post to the
-     * website"). Only "… to <somewhere>" that names a real project/aspect/category is filing; when it
+     * website"). Only "… to <somewhere>" that names a real operation/aspect/category is filing; when it
      * turns out to name nothing, the writer restores this and keeps the title the user typed.
      */
     val titleWithTarget: String? = null,
@@ -77,10 +77,10 @@ object TaskIntent {
         RegexOption.DOT_MATCHES_ALL
     )
 
-    // "to life ops", "in the beacon project" — where the user wants it filed.
+    // "to life ops", "in the beacon op" — where the user wants it filed.
     private val TARGET = Regex(
         """(?i)\b(?:to|in|into|under|onto|for)[ \t]+(?:my[ \t]+|the[ \t]+|our[ \t]+)?""" +
-            """([A-Za-z0-9][\w'&. -]{1,40}?)(?:[ \t]+(?:project|list|board|aspect|category|app))?""" +
+            """([A-Za-z0-9][\w'&. -]{1,40}?)(?:[ \t]+(?:operation|project|list|board|aspect|category|app))?""" +
             """(?=[ \t]*(?:[,.;:?!]|$|\b(?:and|please|titled|called|named|entitled|maybe|so|then)\b))"""
     )
 
@@ -166,7 +166,7 @@ object TaskIntent {
         val withTarget = if (target == null) null else {
             val trailingTarget = Regex(
                 """(?i)[ \t,]*\b(?:to|in|into|under|onto|for)[ \t]+(?:my[ \t]+|the[ \t]+|our[ \t]+)?""" +
-                    Regex.escape(target) + """(?:[ \t]+(?:project|list|board|aspect|category|app))?[ \t]*[.!]*$"""
+                    Regex.escape(target) + """(?:[ \t]+(?:operation|project|list|board|aspect|category|app))?[ \t]*[.!]*$"""
             )
             val trimmed = text.replace(trailingTarget, "")
             (text.takeIf { trimmed != text })?.also { text = trimmed }

@@ -9,12 +9,12 @@ import kotlinx.coroutines.withContext
 enum class SearchCategory(val label: String) {
     TASK("Tasks"),
     NOTE("Notes"),
-    PROJECT("Projects"),
+    OPERATION("Operations"),
     PERSON("People"),
     COUNTER("Counters"),
     BOOK("Books"),
     RECIPE("Recipes"),
-    FUTURE_PROJECT("Future Projects"),
+    FUTURE_OPERATION("Future Operations"),
     RUNBOOK("Runbooks"),
     TEMPLATE("Task Templates"),
     ACTIVITY("Activities"),
@@ -65,8 +65,8 @@ class SearchRepository(private val db: LifeOpsDatabase) {
         val bookById = books.associateBy { it.id }
         val people = db.personDao().getAll()
         val personById = people.associateBy { it.id }
-        val futureProjects = db.futureProjectDao().getAll()
-        val futureProjectById = futureProjects.associateBy { it.id }
+        val futureOperations = db.futureOperationDao().getAll()
+        val futureOperationById = futureOperations.associateBy { it.id }
         fun taskSubtitle(taskId: String, prefix: String? = null): String? {
             val task = taskById[taskId] ?: return prefix
             val weekLabel = weekById[task.weekId]?.startDate?.let { "Week of ${DateUtil.formatDate(it)}" }
@@ -96,10 +96,10 @@ class SearchRepository(private val db: LifeOpsDatabase) {
                 )
             }
 
-        db.projectDao().getAll()
+        db.operationDao().getAll()
             .filter { matches(it.title) }
             .take(PER_CATEGORY)
-            .forEach { results += SearchResult(SearchCategory.PROJECT, it.id, it.title, null, "project_detail/${it.id}") }
+            .forEach { results += SearchResult(SearchCategory.OPERATION, it.id, it.title, null, "operation_detail/${it.id}") }
 
         people
             .filter { matches(it.name) }
@@ -151,23 +151,23 @@ class SearchRepository(private val db: LifeOpsDatabase) {
             .take(PER_CATEGORY)
             .forEach { results += SearchResult(SearchCategory.RECIPE, it.id, it.name, null, "recipe_detail/${it.id}") }
 
-        futureProjects
+        futureOperations
             .filter { matches(it.title) }
             .take(PER_CATEGORY)
-            .forEach { results += SearchResult(SearchCategory.FUTURE_PROJECT, it.id, it.title, null, "future_project_detail/${it.id}") }
+            .forEach { results += SearchResult(SearchCategory.FUTURE_OPERATION, it.id, it.title, null, "future_operation_detail/${it.id}") }
 
-        db.futureProjectDao().getAllNotes()
+        db.futureOperationDao().getAllNotes()
             .filter { matches(it.content) }
             .sortedByDescending { it.createdAt }
             .take(PER_CATEGORY)
             .forEach { note ->
-                val project = futureProjectById[note.projectId]
+                val operation = futureOperationById[note.operationId]
                 results += SearchResult(
                     SearchCategory.NOTE,
-                    "future_project_note_${note.id}",
-                    project?.title ?: "Future-project note",
-                    snippet(note.content, "Future-project note"),
-                    project?.let { "future_project_detail/${it.id}" }
+                    "future_operation_note_${note.id}",
+                    operation?.title ?: "Future-operation note",
+                    snippet(note.content, "Future-operation note"),
+                    operation?.let { "future_operation_detail/${it.id}" }
                 )
             }
 

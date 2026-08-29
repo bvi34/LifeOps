@@ -15,7 +15,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeops.app.data.model.ProjectStatus
+import com.lifeops.app.data.model.OperationStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.components.TaskDetailContent
@@ -29,7 +29,7 @@ import com.lifeops.app.ui.components.TaskEditDialog
 @Composable
 fun TaskDetailScreen(
     viewModel: TaskDetailViewModel,
-    onOpenProject: (projectId: String) -> Unit = {},
+    onOpenOperation: (operationId: String) -> Unit = {},
     onOpenCounter: (counterId: String) -> Unit = {},
     onOpenPerson: (personId: String) -> Unit = {},
     onBack: () -> Unit
@@ -62,7 +62,7 @@ fun TaskDetailScreen(
             else -> {
                 val isTimerActive = activeTimer?.taskId == task.id
                 val isPomodoroActive = isTimerActive && activeTimer?.isPomodoro == true
-                val project = task.projectId?.let { pid -> state.projects.firstOrNull { it.id == pid } }
+                val operation = task.operationId?.let { pid -> state.operations.firstOrNull { it.id == pid } }
                 val counter = task.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid } }
                 TaskDetailContent(
                     task = task,
@@ -77,9 +77,9 @@ fun TaskDetailScreen(
                     isPomodoroActive = isPomodoroActive,
                     costEntries = state.costEntries,
                     costResources = state.costResources,
-                    project = project,
-                    projects = state.projects.filter { it.status == ProjectStatus.ACTIVE },
-                    onAssignProject = { projectId -> viewModel.onAssignProject(projectId) },
+                    operation = operation,
+                    operations = state.operations.filter { it.status == OperationStatus.ACTIVE },
+                    onAssignOperation = { operationId -> viewModel.onAssignOperation(operationId) },
                     subtasks = state.subtasks,
                     runbooks = state.runbooks,
                     weatherRequirement = state.weatherRequirement,
@@ -92,7 +92,7 @@ fun TaskDetailScreen(
                     counterWeeklyTotal = counter?.let { state.counterWeeklyTotals[it.id] } ?: 0,
                     onLogCounter = { counter?.let { viewModel.logCounter(it.id) } },
                     onOpenCounter = onOpenCounter,
-                    onOpenProject = onOpenProject,
+                    onOpenOperation = onOpenOperation,
                     onToggleSubtask = viewModel::onToggleSubtask,
                     onAttachRunbook = viewModel::onAttachRunbook,
                     onDeleteSubtask = viewModel::onDeleteSubtask,
@@ -105,7 +105,7 @@ fun TaskDetailScreen(
                     onUnCarryForward = { viewModel.onUnCarryForward() },
                     onUnsuccessful = { viewModel.onUnsuccess() },
                     onUnUnsuccessful = { viewModel.onUnUnsuccess() },
-                    onPromoteToProject = { viewModel.onPromoteToProject() },
+                    onPromoteToOperation = { viewModel.onPromoteToOperation() },
                     onToggleCommitment = { viewModel.onToggleCommitment() },
                     onStartTimer = { viewModel.startTimer() },
                     onStopTimer = { viewModel.stopTimer() },
@@ -123,11 +123,11 @@ fun TaskDetailScreen(
             task = editing,
             aspects = state.aspects,
             allCategories = state.categories,
-            projects = state.projects,
+            operations = state.operations,
             counters = state.counters,
-            onCreateProject = viewModel::onCreateProject,
-            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
-                viewModel.saveEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, projectId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
+            onCreateOperation = viewModel::onCreateOperation,
+            onSave = { title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, operationId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
+                viewModel.saveEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, operationId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::cancelEdit
         )

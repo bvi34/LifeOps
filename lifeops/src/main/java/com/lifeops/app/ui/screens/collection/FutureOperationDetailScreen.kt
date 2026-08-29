@@ -18,7 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lifeops.app.data.model.FutureProjectStatus
+import com.lifeops.app.data.model.FutureOperationStatus
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.util.DateUtil
 import com.lifeops.app.ui.components.BackNavIcon
@@ -26,12 +26,12 @@ import com.lifeops.app.ui.components.BackNavIcon
 /** Notes are posted as timestamped segments, the same journal shape as task notes — each
  *  entry is committed once via the composer at the bottom rather than edited in place. */
 @Composable
-fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: () -> Unit) {
+fun FutureOperationDetailScreen(viewModel: FutureOperationDetailViewModel, onBack: () -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val project = state.project
+    val operation = state.operation
 
-    var title by rememberSaveable(project?.id) { mutableStateOf(project?.title ?: "") }
-    var newNoteText by rememberSaveable(project?.id) { mutableStateOf("") }
+    var title by rememberSaveable(operation?.id) { mutableStateOf(operation?.title ?: "") }
+    var newNoteText by rememberSaveable(operation?.id) { mutableStateOf("") }
     val listState = rememberLazyListState()
 
     // Newest notes sit at the bottom next to the composer; keep them in view as they post.
@@ -44,28 +44,28 @@ fun FutureProjectDetailScreen(viewModel: FutureProjectDetailViewModel, onBack: (
             AppHeader(
                 navigationIcon = { BackNavIcon(onBack) },
                 actions = {
-                    // Mirrors the Complete/Reactivate lifecycle on current projects: active
-                    // ideas can be promoted into a real project or shelved; archived ones restored.
-                    if (project != null) {
-                        if (project.status == FutureProjectStatus.ACTIVE) {
+                    // Mirrors the Complete/Reactivate lifecycle on current operations: active
+                    // ideas can be promoted into a real operation or shelved; archived ones restored.
+                    if (operation != null) {
+                        if (operation.status == FutureOperationStatus.ACTIVE) {
                             TextButton(onClick = { viewModel.promote() }) { Text("Promote") }
-                            TextButton(onClick = { viewModel.setStatus(FutureProjectStatus.ARCHIVED) }) {
+                            TextButton(onClick = { viewModel.setStatus(FutureOperationStatus.ARCHIVED) }) {
                                 Text("Archive")
                             }
                         } else {
-                            TextButton(onClick = { viewModel.setStatus(FutureProjectStatus.ACTIVE) }) {
+                            TextButton(onClick = { viewModel.setStatus(FutureOperationStatus.ACTIVE) }) {
                                 Text("Restore")
                             }
                         }
                     }
                     IconButton(onClick = { viewModel.delete(onBack) }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete project")
+                        Icon(Icons.Default.Delete, contentDescription = "Delete operation")
                     }
                 }
             )
         }
     ) { padding ->
-        if (project == null) {
+        if (operation == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("Loading…", style = MaterialTheme.typography.bodyMedium)
             }

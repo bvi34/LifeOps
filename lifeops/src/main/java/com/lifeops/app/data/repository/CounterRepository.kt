@@ -31,7 +31,7 @@ class CounterRepository(
     private val weatherProvider: CounterWeatherProvider? = null
 ) {
 
-    // --- Counters list / lifecycle (same shape as ProjectRepository) ---
+    // --- Counters list / lifecycle (same shape as OperationRepository) ---
 
     fun observeAll(): Flow<List<Counter>> =
         counterDao.observeAll().map { list -> list.map { it.toModel() } }
@@ -44,7 +44,7 @@ class CounterRepository(
 
     suspend fun getById(id: String): Counter? = counterDao.getById(id)?.toModel()
 
-    /** Create a counter, optionally a habit with its own daily reminder. Mirrors createProject. */
+    /** Create a counter, optionally a habit with its own daily reminder. Mirrors createOperation. */
     suspend fun createCounter(
         id: String,
         name: String,
@@ -68,9 +68,9 @@ class CounterRepository(
 
     /**
      * Persist an edited counter (rename, archive, attach/detach category, habit flag, reminder).
-     * Attach is just update(counter.copy(categoryId = ...)), exactly how projects do it —
-     * categoryId is nullable and null detaches. Categories are the same shared set projects/imports
-     * use (AspectRepository.findOrCreateCategory), so counters and projects can't fork categories.
+     * Attach is just update(counter.copy(categoryId = ...)), exactly how operations do it —
+     * categoryId is nullable and null detaches. Categories are the same shared set operations/imports
+     * use (AspectRepository.findOrCreateCategory), so counters and operations can't fork categories.
      * The habit reminder is re-synced from the saved state so a changed hour / cleared reminder /
      * un-flagged habit takes effect immediately.
      */

@@ -68,10 +68,18 @@ class QueryFacetsTest {
     }
 
     @Test
-    fun a_future_project_question_wants_both_ideas_and_projects() {
-        // "future project" is literally both words; collecting both types is the point.
-        val f = QueryFacets.infer("what future projects have I written down?")
+    fun a_future_operation_question_wants_both_ideas_and_operations() {
+        // "future operation" is literally both words; collecting both types is the point.
+        val f = QueryFacets.infer("what future operations have I written down?")
         assertTrue(ObjectType.IDEA in f.objectTypes)
-        assertTrue(ObjectType.PROJECT in f.objectTypes)
+        assertTrue(ObjectType.OPERATION in f.objectTypes)
+    }
+
+    @Test
+    fun the_old_word_project_still_names_an_operation() {
+        // Operations were called Projects until the suite grew a Project app of its own. Questions
+        // keep arriving in the old word for as long as the user still thinks in it.
+        assertTrue(ObjectType.OPERATION in QueryFacets.infer("which projects are still open?").objectTypes)
+        assertTrue(ObjectType.IDEA in QueryFacets.infer("what future projects have I written down?").objectTypes)
     }
 }

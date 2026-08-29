@@ -47,11 +47,11 @@ import com.lifeops.app.ui.screens.planning.PeopleViewModelFactory
 import com.lifeops.app.ui.screens.planning.PersonDetailScreen
 import com.lifeops.app.ui.screens.planning.PersonDetailViewModelFactory
 import com.lifeops.app.ui.screens.planning.PlanningScreen
-import com.lifeops.app.ui.screens.planning.ProjectsScreen
+import com.lifeops.app.ui.screens.planning.OperationsScreen
 import com.lifeops.app.ui.screens.planning.RunbooksScreen
 import com.lifeops.app.ui.screens.planning.TemplatesScreen
-import com.lifeops.app.ui.screens.projectdetail.ProjectDetailScreen
-import com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModelFactory
+import com.lifeops.app.ui.screens.operationdetail.OperationDetailScreen
+import com.lifeops.app.ui.screens.operationdetail.OperationDetailViewModelFactory
 import com.lifeops.app.ui.screens.reports.ReportsScreen
 import com.lifeops.app.ui.screens.reports.ReportsViewModelFactory
 import com.lifeops.app.ui.screens.resources.ResourcesScreen
@@ -206,14 +206,14 @@ fun LifeOpsNavHost(
         }
         if (openDestination != null) onDestinationConsumed()
     }
-    // One factory shared by Settings and the Planning management screens (projects,
+    // One factory shared by Settings and the Planning management screens (operations,
     // runbooks, templates, cost resources). Each destination still gets its own
     // ViewModel instance scoped to its back-stack entry.
     val settingsVmFactory = remember {
         SettingsViewModelFactory(
             app.aspectRepository, app.gameResourceRepository,
             app.preferencesRepository, app.backupRepository, app.taskRepository,
-            app.costResourceRepository, app.projectRepository, app.growthRepository,
+            app.costResourceRepository, app.operationRepository, app.growthRepository,
             app.runbookRepository, app.templateRepository, app.foodItemRepository,
             app.wellnessRepository
         )
@@ -256,7 +256,7 @@ fun LifeOpsNavHost(
             modifier = Modifier.padding(innerPadding)
         ) {
             // This Week — Tasks/Daily Plan/Collection hub, plus the Collection detail screens
-            // (recipes, books, future projects) it drills into.
+            // (recipes, books, future operations) it drills into.
             navigation(startDestination = "this_week_hub", route = Screen.ThisWeek.route) {
                 composable("this_week_hub") {
                     val taskManagerVm = viewModel<com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel>(
@@ -265,7 +265,7 @@ fun LifeOpsNavHost(
                             app.applicationScope,
                             app.weekRepository, app.taskRepository, app.aspectRepository, app.importRepository,
                             app.taskNoteRepository, app.taskAttachmentRepository, app.timeEntryRepository, app.notificationRepository,
-                            app.costResourceRepository, app.projectRepository, app.preferencesRepository,
+                            app.costResourceRepository, app.operationRepository, app.preferencesRepository,
                             app.runbookRepository, app.templateRepository, app.counterRepository,
                             app.weatherRepository, app.personRepository, app.busyBlockRepository, app.timerController
                         )
@@ -282,19 +282,19 @@ fun LifeOpsNavHost(
                     val bookVm = viewModel<com.lifeops.app.ui.screens.collection.BookViewModel>(
                         factory = com.lifeops.app.ui.screens.collection.BookViewModelFactory(app.bookRepository, app.citationSyncRepository)
                     )
-                    val futureProjectVm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectViewModel>(
-                        factory = com.lifeops.app.ui.screens.collection.FutureProjectViewModelFactory(app.futureProjectRepository)
+                    val futureOperationVm = viewModel<com.lifeops.app.ui.screens.collection.FutureOperationViewModel>(
+                        factory = com.lifeops.app.ui.screens.collection.FutureOperationViewModelFactory(app.futureOperationRepository)
                     )
                     com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
                         dailyPlanViewModel = dailyPlanVm,
                         taskManagerViewModel = taskManagerVm,
                         recipeViewModel = recipeVm,
                         bookViewModel = bookVm,
-                        futureProjectViewModel = futureProjectVm,
+                        futureOperationViewModel = futureOperationVm,
                         onOpenRecipe = { id -> navController.navigate("recipe_detail/$id") },
                         onOpenBook = { id -> navController.navigate("book_detail/$id") },
-                        onOpenFutureProject = { id -> navController.navigate("future_project_detail/$id") },
-                        onOpenProject = { id -> navController.navigate("project_detail/$id") },
+                        onOpenFutureOperation = { id -> navController.navigate("future_operation_detail/$id") },
+                        onOpenOperation = { id -> navController.navigate("operation_detail/$id") },
                         onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                         onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
                         onOpenTask = { id -> navController.navigate("task_detail/$id") },
@@ -323,15 +323,15 @@ fun LifeOpsNavHost(
                     )
                     com.lifeops.app.ui.screens.collection.BookDetailScreen(vm) { navController.navigateUp() }
                 }
-                composable("future_project_detail/{projectId}") { backStackEntry ->
-                    val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
-                    val vm = viewModel<com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModel>(
-                        key = "future_project_detail_$projectId",
-                        factory = com.lifeops.app.ui.screens.collection.FutureProjectDetailViewModelFactory(
-                            projectId, app.futureProjectRepository, app.projectRepository
+                composable("future_operation_detail/{operationId}") { backStackEntry ->
+                    val operationId = backStackEntry.arguments?.getString("operationId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.collection.FutureOperationDetailViewModel>(
+                        key = "future_operation_detail_$operationId",
+                        factory = com.lifeops.app.ui.screens.collection.FutureOperationDetailViewModelFactory(
+                            operationId, app.futureOperationRepository, app.operationRepository
                         )
                     )
-                    com.lifeops.app.ui.screens.collection.FutureProjectDetailScreen(vm) { navController.navigateUp() }
+                    com.lifeops.app.ui.screens.collection.FutureOperationDetailScreen(vm) { navController.navigateUp() }
                 }
             }
 
@@ -340,7 +340,7 @@ fun LifeOpsNavHost(
                 composable("planning_hub") {
                     PlanningScreen(
                         onOpenFutureTasks = { navController.navigate("future_tasks") },
-                        onOpenProjects = { navController.navigate("projects") },
+                        onOpenOperations = { navController.navigate("operations") },
                         onOpenCounters = { navController.navigate("counters") },
                         onOpenRunbooks = { navController.navigate("runbooks") },
                         onOpenTemplates = { navController.navigate("templates") },
@@ -380,9 +380,9 @@ fun LifeOpsNavHost(
                     )
                     com.lifeops.app.ui.screens.planning.FutureTasksScreen(vm) { navController.navigateUp() }
                 }
-                composable("projects") {
+                composable("operations") {
                     val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
-                    ProjectsScreen(vm) { navController.navigateUp() }
+                    OperationsScreen(vm) { navController.navigateUp() }
                 }
                 composable("counters") {
                     val vm = viewModel<com.lifeops.app.ui.screens.counters.CountersViewModel>(
@@ -525,14 +525,14 @@ fun LifeOpsNavHost(
                         factory = ReportsViewModelFactory(
                             app.weekRepository, app.aspectRepository,
                             app.taskRepository, app.timeEntryRepository, app.costResourceRepository,
-                            app.projectRepository, app.wellnessRepository, app.foodLogRepository,
+                            app.operationRepository, app.wellnessRepository, app.foodLogRepository,
                             app.counterRepository, app.bookRepository,
                             app.preferencesRepository, app.citationSyncRepository
                         )
                     )
                     ReportsScreen(
                         vm,
-                        onNavigateToProject = { id -> navController.navigate("project_detail/$id") },
+                        onNavigateToOperation = { id -> navController.navigate("operation_detail/$id") },
                         onBack = { navController.navigateUp() }
                     )
                 }
@@ -544,17 +544,17 @@ fun LifeOpsNavHost(
                     )
                     ResourcesScreen(vm, onBack = { navController.navigateUp() })
                 }
-                composable("project_detail/{projectId}") { backStackEntry ->
-                    val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
-                    val vm = viewModel<com.lifeops.app.ui.screens.projectdetail.ProjectDetailViewModel>(
-                        key = "project_detail_$projectId",
-                        factory = ProjectDetailViewModelFactory(
-                            projectId, app.projectRepository, app.taskRepository, app.weekRepository,
+                composable("operation_detail/{operationId}") { backStackEntry ->
+                    val operationId = backStackEntry.arguments?.getString("operationId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.operationdetail.OperationDetailViewModel>(
+                        key = "operation_detail_$operationId",
+                        factory = OperationDetailViewModelFactory(
+                            operationId, app.operationRepository, app.taskRepository, app.weekRepository,
                             app.timeEntryRepository, app.taskNoteRepository, app.aspectRepository,
-                            app.futureProjectRepository
+                            app.futureOperationRepository
                         )
                     )
-                    ProjectDetailScreen(vm) { navController.navigateUp() }
+                    OperationDetailScreen(vm) { navController.navigateUp() }
                 }
             }
 
@@ -584,7 +584,7 @@ fun LifeOpsNavHost(
                     key = "task_detail_$taskId",
                     factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
                         app.appContext, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
-                        app.costResourceRepository, app.runbookRepository, app.projectRepository,
+                        app.costResourceRepository, app.runbookRepository, app.operationRepository,
                         app.counterRepository, app.personRepository, app.taskAttachmentRepository,
                         app.weatherRepository, app.weekRepository, app.aspectRepository,
                         app.notificationRepository, app.timerController
@@ -592,7 +592,7 @@ fun LifeOpsNavHost(
                 )
                 com.lifeops.app.ui.screens.taskdetail.TaskDetailScreen(
                     viewModel = vm,
-                    onOpenProject = { id -> navController.navigate("project_detail/$id") },
+                    onOpenOperation = { id -> navController.navigate("operation_detail/$id") },
                     onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
                     onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                     onBack = { navController.navigateUp() }

@@ -12,7 +12,7 @@ import com.lifeops.app.data.model.CostResource
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.data.model.Priority
-import com.lifeops.app.data.model.Project
+import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.RunbookWithSteps
 import com.lifeops.app.data.model.Subtask
 import com.lifeops.app.data.model.Task
@@ -26,7 +26,7 @@ import com.lifeops.app.data.repository.CostResourceRepository
 import com.lifeops.app.data.repository.CounterRepository
 import com.lifeops.app.data.repository.NotificationRepository
 import com.lifeops.app.data.repository.PersonRepository
-import com.lifeops.app.data.repository.ProjectRepository
+import com.lifeops.app.data.repository.OperationRepository
 import com.lifeops.app.data.repository.RunbookRepository
 import com.lifeops.app.data.repository.TaskAttachmentRepository
 import com.lifeops.app.data.repository.TaskNoteRepository
@@ -64,7 +64,7 @@ data class TaskDetailUiState(
     val totalTimeMinutes: Int = 0,
     val subtasks: List<Subtask> = emptyList(),
     val runbooks: List<RunbookWithSteps> = emptyList(),
-    val projects: List<Project> = emptyList(),
+    val operations: List<Operation> = emptyList(),
     val counterWeeklyTotals: Map<String, Int> = emptyMap(),
     val involvedPeople: List<Person> = emptyList(),
     val allPeople: List<Person> = emptyList(),
@@ -86,7 +86,7 @@ class TaskDetailViewModel(
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
     private val runbookRepository: RunbookRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val counterRepository: CounterRepository,
     private val personRepository: PersonRepository,
     private val taskAttachmentRepository: TaskAttachmentRepository,
@@ -104,7 +104,7 @@ class TaskDetailViewModel(
         com.lifeops.app.connection.service.TimeEntryService(timeEntryRepository, taskRepository)
     private val costService = com.lifeops.app.connection.service.CostService(costResourceRepository)
     private val runbookService = com.lifeops.app.connection.service.RunbookService(runbookRepository)
-    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+    private val operationService = com.lifeops.app.connection.service.OperationService(operationRepository)
     private val personService = com.lifeops.app.connection.service.PersonService(personRepository)
     private val counterService = com.lifeops.app.connection.service.CounterService(counterRepository)
 
@@ -189,8 +189,8 @@ class TaskDetailViewModel(
             }
         }
         viewModelScope.launch {
-            projectRepository.observeActive().collect { projects ->
-                _uiState.update { it.copy(projects = projects) }
+            operationRepository.observeActive().collect { operations ->
+                _uiState.update { it.copy(operations = operations) }
             }
         }
         viewModelScope.launch {
@@ -236,10 +236,10 @@ class TaskDetailViewModel(
     fun stopTimer() = timerController.stop(saveEntry = true)
 
     // --- Task operations (current-week / editable only) ---
-    fun onAssignProject(projectId: String?) {
+    fun onAssignOperation(operationId: String?) {
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
-            taskRepository.updateTask(task.copy(projectId = projectId))
+            taskRepository.updateTask(task.copy(operationId = operationId))
         }
     }
 
@@ -318,17 +318,17 @@ class TaskDetailViewModel(
         viewModelScope.launch { taskRepository.unUnsuccessTask(taskId) }
     }
 
-    fun onPromoteToProject() {
+    fun onPromoteToOperation() {
         viewModelScope.launch {
             val task = taskRepository.getById(taskId) ?: return@launch
-            val projectId = UUID.randomUUID().toString()
-            projectService.create(title = task.title, aspectId = task.aspectId, id = projectId)
-            taskRepository.promoteTaskToProject(taskId, projectId)
+            val operationId = UUID.randomUUID().toString()
+            operationService.create(title = task.title, aspectId = task.aspectId, id = operationId)
+            taskRepository.promoteTaskToOperation(taskId, operationId)
         }
     }
 
-    fun onCreateProject(id: String, title: String, aspectId: String?) {
-        viewModelScope.launch { projectService.create(title = title, aspectId = aspectId, id = id) }
+    fun onCreateOperation(id: String, title: String, aspectId: String?) {
+        viewModelScope.launch { operationService.create(title = title, aspectId = aspectId, id = id) }
     }
 
     // --- Edit dialog ---
@@ -344,7 +344,7 @@ class TaskDetailViewModel(
         estimatedMinutes: Int?,
         aspectId: String?,
         categoryId: String?,
-        projectId: String?,
+        operationId: String?,
         counterId: String?,
         recurrenceIntervalWeeks: Int,
         recurrenceDayOfMonth: Int?
@@ -374,7 +374,7 @@ class TaskDetailViewModel(
                 estimatedMinutes = estimatedMinutes,
                 aspectId = aspectId,
                 categoryId = categoryId,
-                projectId = projectId,
+                operationId = operationId,
                 counterId = counterId,
                 recurrenceIntervalWeeks = if (isRecurring) recurrenceIntervalWeeks.coerceAtLeast(1) else 1,
                 recurrenceDayOfMonth = if (isRecurring) recurrenceDayOfMonth else null
@@ -397,7 +397,7 @@ class TaskDetailViewModelFactory(
     private val timeEntryRepository: TimeEntryRepository,
     private val costResourceRepository: CostResourceRepository,
     private val runbookRepository: RunbookRepository,
-    private val projectRepository: ProjectRepository,
+    private val operationRepository: OperationRepository,
     private val counterRepository: CounterRepository,
     private val personRepository: PersonRepository,
     private val taskAttachmentRepository: TaskAttachmentRepository,
@@ -411,7 +411,7 @@ class TaskDetailViewModelFactory(
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
         TaskDetailViewModel(
             appContext, taskId, taskRepository, taskNoteRepository, timeEntryRepository,
-            costResourceRepository, runbookRepository, projectRepository, counterRepository,
+            costResourceRepository, runbookRepository, operationRepository, counterRepository,
             personRepository, taskAttachmentRepository, weatherRepository, weekRepository,
             aspectRepository, notificationRepository, timerController
         ) as T

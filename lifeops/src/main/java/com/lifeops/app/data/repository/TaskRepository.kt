@@ -274,12 +274,12 @@ class TaskRepository(
         }
     }
 
-    suspend fun promoteTaskToProject(taskId: String, projectId: String) {
+    suspend fun promoteTaskToOperation(taskId: String, operationId: String) {
         val lineageIds = getLineageIds(taskId)
         db.withTransaction {
             for (id in lineageIds) {
                 val entity = taskDao.getById(id) ?: continue
-                taskDao.update(entity.copy(projectId = projectId))
+                taskDao.update(entity.copy(operationId = operationId))
             }
         }
     }

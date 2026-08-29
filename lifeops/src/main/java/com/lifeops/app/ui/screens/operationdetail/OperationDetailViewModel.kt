@@ -1,4 +1,4 @@
-package com.lifeops.app.ui.screens.projectdetail
+package com.lifeops.app.ui.screens.operationdetail
 
 import androidx.lifecycle.*
 import com.lifeops.app.data.model.*
@@ -6,45 +6,45 @@ import com.lifeops.app.data.repository.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
-data class ProjectDetailUiState(
-    val project: Project? = null,
+data class OperationDetailUiState(
+    val operation: Operation? = null,
     val tasks: List<Task> = emptyList(),
     val tasksByWeek: Map<Week, List<Task>> = emptyMap(),
     val aspects: Map<String, Aspect> = emptyMap(),
     val notes: List<Pair<String, TaskNote>> = emptyList(), // Pair(taskTitle, note)
-    // Notes carried over from the future project this one was promoted from, if any.
-    val brainstormNotes: List<FutureProjectNote> = emptyList(),
+    // Notes carried over from the future operation this one was promoted from, if any.
+    val brainstormNotes: List<FutureOperationNote> = emptyList(),
     val totalTimeMinutes: Int = 0,
     val totalPoints: Int = 0,
     val isLoading: Boolean = true
 )
 
-class ProjectDetailViewModel(
-    private val projectId: String,
-    private val projectRepository: ProjectRepository,
+class OperationDetailViewModel(
+    private val operationId: String,
+    private val operationRepository: OperationRepository,
     private val taskRepository: TaskRepository,
     private val weekRepository: WeekRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val taskNoteRepository: TaskNoteRepository,
     private val aspectRepository: AspectRepository,
-    private val futureProjectRepository: FutureProjectRepository
+    private val futureOperationRepository: FutureOperationRepository
 ) : ViewModel() {
 
-    private val projectService = com.lifeops.app.connection.service.ProjectService(projectRepository)
+    private val operationService = com.lifeops.app.connection.service.OperationService(operationRepository)
 
-    private val _uiState = MutableStateFlow(ProjectDetailUiState())
-    val uiState: StateFlow<ProjectDetailUiState> = _uiState.asStateFlow()
+    private val _uiState = MutableStateFlow(OperationDetailUiState())
+    val uiState: StateFlow<OperationDetailUiState> = _uiState.asStateFlow()
 
     init {
         viewModelScope.launch { load() }
     }
 
     private suspend fun load() {
-        val project = projectRepository.getProjectById(projectId) ?: run {
+        val operation = operationRepository.getOperationById(operationId) ?: run {
             _uiState.update { it.copy(isLoading = false) }
             return
         }
-        val allTasks = taskRepository.getAllTasks().filter { it.projectId == projectId }
+        val allTasks = taskRepository.getAllTasks().filter { it.operationId == operationId }
         val aspects = aspectRepository.getAllAspectsSync()
         val allWeeks = weekRepository.getAllWeeksSync()
         val weekById = allWeeks.associateBy { it.id }
@@ -64,8 +64,8 @@ class ProjectDetailViewModel(
         }
         allNotes.sortBy { it.second.createdAt }
 
-        val brainstormNotes = project.sourceFutureProjectId
-            ?.let { futureProjectRepository.getNotes(it) }
+        val brainstormNotes = operation.sourceFutureOperationId
+            ?.let { futureOperationRepository.getNotes(it) }
             .orEmpty()
 
         // Group tasks by week, newest first
@@ -78,7 +78,7 @@ class ProjectDetailViewModel(
 
         _uiState.update {
             it.copy(
-                project = project,
+                operation = operation,
                 tasks = allTasks,
                 tasksByWeek = tasksByWeek,
                 aspects = aspects.associateBy { a -> a.id },
@@ -91,28 +91,28 @@ class ProjectDetailViewModel(
         }
     }
 
-    fun setProjectStatus(status: ProjectStatus) {
+    fun setOperationStatus(status: OperationStatus) {
         viewModelScope.launch {
-            projectService.setStatus(projectId, status)
+            operationService.setStatus(operationId, status)
             load()
         }
     }
 }
 
-class ProjectDetailViewModelFactory(
-    private val projectId: String,
-    private val projectRepository: ProjectRepository,
+class OperationDetailViewModelFactory(
+    private val operationId: String,
+    private val operationRepository: OperationRepository,
     private val taskRepository: TaskRepository,
     private val weekRepository: WeekRepository,
     private val timeEntryRepository: TimeEntryRepository,
     private val taskNoteRepository: TaskNoteRepository,
     private val aspectRepository: AspectRepository,
-    private val futureProjectRepository: FutureProjectRepository
+    private val futureOperationRepository: FutureOperationRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ProjectDetailViewModel(
-            projectId, projectRepository, taskRepository, weekRepository,
-            timeEntryRepository, taskNoteRepository, aspectRepository, futureProjectRepository
+        OperationDetailViewModel(
+            operationId, operationRepository, taskRepository, weekRepository,
+            timeEntryRepository, taskNoteRepository, aspectRepository, futureOperationRepository
         ) as T
 }
