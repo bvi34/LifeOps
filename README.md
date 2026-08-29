@@ -171,8 +171,14 @@ the receipts.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
 > meals you cooked ("for *X* meal, here's what I used"), **builds a grocery list** from what's running
 > low or a recipe's missing ingredients — and shelves it back into the pantry when you've shopped —
-> and grabs recipes from links, reusing LifeOps' food & recipe catalog rather than keeping its own.
-> Its framework-free parsers live in `logistics/logic/` and are JVM-unit-tested.
+> and grabs recipes from links **or from screenshots of one** (on-device OCR; the picture is kept with
+> the recipe), reusing LifeOps' food & recipe catalog rather than keeping its own. It also carries
+> **the whole food-and-calorie side of LifeOps** — the day's diary, its planned-vs-confirmed totals,
+> Confirm/Adjust, ad-hoc entries, custom foods and planning a recipe onto a day — as its own **Food**
+> tab, writing through LifeOps' food service into LifeOps' diary rather than keeping a second one, so
+> a bowl of chili logged in either app is one row. Cooking a known recipe can put its calories in the
+> diary in the same tap that deducts it from the shelf. Its framework-free parsers live in
+> `logistics/logic/` and are JVM-unit-tested.
 
 ---
 

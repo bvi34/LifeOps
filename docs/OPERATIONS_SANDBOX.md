@@ -74,6 +74,7 @@ would put the *same* app on the chooser twice. One module owns each type outrigh
 | **Open** (`ACTION_VIEW`) | `application/pdf`, `application/epub+zip`, `application/epub` | **Citation** | Reading is Citation's whole job. Tapping a book — in either of its formats — opens the reader, which imports the file and picks up on the page you left. |
 | **Share** (`ACTION_SEND`) | `application/pdf` | **Logistics** | A Walmart order PDF is a *grocery* document, not something to read. Sharing it is the deliberate gesture, so it doesn't have to compete with every book tap. |
 | **Share** (`ACTION_SEND`) | `text/plain` | LifeOps (JSON import), Logistics (recipe link / order text), Citation (a passage) | Ambiguous by nature — a chooser here is honest, so all three offer themselves. |
+| **Share** (`ACTION_SEND` / `SEND_MULTIPLE`) | `image/*` | **Logistics** | A picture shared *into* the suite is a screenshot of a recipe — Logistics reads it on-device and offers the parse. No other module wants images, so it owns the type outright. |
 | **Select text** (`PROCESS_TEXT`) | `text/plain` | Citation | The capture ladder — see `CITATION.md`. |
 
 Citation sniffs the opened file's **magic number** (`%PDF`, `PK`) rather than trusting the intent's

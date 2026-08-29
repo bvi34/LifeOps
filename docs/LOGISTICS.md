@@ -14,9 +14,10 @@ what's left, and what went into each meal is a **ledger**, not a vibe.
 |---|---|
 | **Pantry** | The shelf. Every stock line with its quantity, unit and category; quick +/- adjustments, low-stock flags, add-by-hand, **Break into pieces** to re-express one line at a finer granularity, and — tap a row — **set its exact amount and a low-stock alert level**. |
 | **Grocery** | The shopping list. Add items by hand, pull in everything **running low** in one tap, or gather a recipe's **missing ingredients**; check things off as you shop, then **Add to pantry** shelves the checked lines (a `restock` ledger entry each) and clears them. |
-| **Log meal** | "For *X* meal, here's what I used." **Search** the shelf to grab specific items, name a meal (optionally from a LifeOps recipe), mark what you took, and Logistics deducts it from the pantry. |
+| **Meal** | "For *X* meal, here's what I used." **Search** the shelf to grab specific items, name a meal (optionally from a LifeOps recipe), mark what you took, and Logistics deducts it from the pantry — and, when the recipe knows its macros, **logs the calories to the food diary in the same tap**. |
+| **Food** | The **food diary and its calories** — LifeOps' own, opened here. A day at a time: what's logged, what's planned, the day's kcal/macros against your 7-day average, Confirm/Adjust, ad-hoc entries, "save as a food", and planning a recipe onto a day. |
 | **History** | Every past meal, newest first, with the items it drew down — **Make again** re-deducts the same items in one tap. |
-| **Recipes** | Grab a recipe from any link (schema.org data) into **LifeOps'** recipe book, and browse the recipes already there. |
+| **Recipes** | Grab a recipe from any link (schema.org data) **or from screenshots of one** (on-device OCR), correct the parse, and keep it in **LifeOps'** recipe book — with the screenshots attached. Tap a recipe to see its calories per serving, its ingredient lines and the pictures it came from. |
 | **Import** | Fill the pantry from a **Walmart order** — pick the order's PDF, share it to Logistics, or paste its text, review the parsed lines, confirm. |
 
 ## How it relates to LifeOps
@@ -26,6 +27,14 @@ and reads/writes LifeOps' existing `food_items` / `recipes` catalog through
 `LifeOpsCatalog` (which wraps LifeOps' own `FoodItemRepository` / `RecipeRepository` over the shared
 `LifeOpsDatabase`). So the food and recipe data is **one catalog, shared by both apps** — exactly
 the "take the food, recipes, etc. from LifeOps" ask.
+
+The same rule now covers **the food diary and its calories**. Logistics' **Food** tab is not a second
+diary beside LifeOps' — it *is* LifeOps' diary: `LifeOpsCatalog` wraps LifeOps' own `FoodService` and
+`MealPlanService`, so logging a bowl of chili here writes the row LifeOps' Daily Plan shows, planning
+a recipe here lands on the same `weekly_menu_items` week, and confirming it in either app confirms it
+in both. The calorie maths is LifeOps' `NutritionCalculator`, imported rather than re-derived — which
+is also why a recipe whose ingredients carry no macros reads as a **floor** ("at least 312 kcal — 4 of
+9 ingredients have no macros recorded") rather than a confident number.
 
 Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 
@@ -39,6 +48,10 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 - **`grocery_items`** — the shopping list: name, quantity, unit, category, a nullable LifeOps food
   link, a `source` (`manual` / `low_stock` / `recipe`), and a `checked` tick. *Schema v3 adds this
   table via `MIGRATION_2_3`.*
+- **`recipe_shots`** — the screenshots kept with a recipe: a soft `recipeId` into LifeOps' book, the
+  JPEG's **file name**, and a sort order (a recipe rarely fits on one screen). The bytes live in
+  `filesDir/recipe-shots/`, not in the database — see below. *Schema v4 adds this table via
+  `MIGRATION_3_4`.*
 
 ## Module layout
 
@@ -49,14 +62,18 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 │   ├── PantryUnits          product name → packaging unit + aisle category
 │   ├── GroceryPlanner       restock-quantity + missing-ingredient rules for the list
 │   ├── IngredientLineParser "2 cups flour" → {qty, unit, name}
-│   └── RecipeLinkParser     page HTML → schema.org Recipe (JSON-LD + microdata)
+│   ├── RecipeLinkParser     page HTML → schema.org Recipe (JSON-LD + microdata)
+│   └── RecipeTextParser     OCR'd screenshot text → the same ParsedRecipe, by layout
 ├── net/              the only Android/IO shims
-│   ├── PdfTextExtractor     PDFBox-Android: PDF → text (feeds WalmartOrderParser)
-│   └── RecipeFetcher        HttpURLConnection: URL → HTML (feeds RecipeLinkParser)
-├── data/             Room (LogisticsDatabase, entities, PantryDao) + repositories
-│   └── repository/   PantryRepository (pantry + ledger + import + consume + grocery) · LifeOpsCatalog (bridge)
-├── ui/               Compose: pantry · grocery · importflow · meal · history · recipe (+ theme)
-├── backup/           LogisticsBackupContributor (whole-file logistics.db copy)
+│   ├── PdfTextExtractor      PDFBox-Android: PDF → text (feeds WalmartOrderParser)
+│   ├── RecipeFetcher         HttpURLConnection: URL → HTML (feeds RecipeLinkParser)
+│   └── RecipeScreenshotReader ML Kit (bundled, on-device): picture → text (feeds RecipeTextParser)
+├── data/             Room (LogisticsDatabase, entities, PantryDao, RecipeShotDao) + repositories
+│   ├── repository/   PantryRepository (pantry + ledger + import + consume + grocery) · LifeOpsCatalog
+│   │                 (bridge: foods, recipes, and LifeOps' food diary) · RecipeShotRepository
+│   └── store/        RecipeShotStore — the screenshots on disk, downsampled, out of the database
+├── ui/               Compose: pantry · grocery · importflow · meal · food · history · recipe (+ theme)
+├── backup/           LogisticsBackupContributor (whole-file logistics.db copy + the screenshots)
 ├── LogisticsApp.kt   tiny runtime container (install/get), like LifeOpsApp
 └── MainActivity.kt   tabbed shell; also handles SEND pdf|text|link intents
 ```
@@ -145,12 +162,72 @@ on the food's serving unit and the ingredient is stored as a SERVING quantity �
 stays faithful even when macros are unknown, and LifeOps' recipe screen flags those lines instead of
 summing them as zero.
 
+## Recipe-from-screenshot
+
+Plenty of the recipes people actually cook never had a page to link: a photograph of a handwritten
+card, a story slide, a page of a cookbook, a text from a relative. Screenshotting one is the gesture
+people already make, so the Recipes tab takes screenshots as a first-class import — picked from the
+gallery, or **shared straight into Logistics** (`image/*` on `SEND` and `SEND_MULTIPLE`, which opens
+the Recipes tab with the OCR already running).
+
+`RecipeScreenshotReader` recognises the text on-device with ML Kit's **bundled** Latin recogniser —
+the model ships inside the app, so it needs no network, no Play Services download and no account, and
+nothing about the picture leaves the phone. Several pictures are read as **one page**, in order, since
+a recipe is normally two or three shots (ingredients, then method).
+
+The layout reading is the framework-free `RecipeTextParser`, and it is a *layout* reader rather than a
+format reader: it finds the "Ingredients" and "Directions"/"Method" headings that nearly every recipe
+prints, takes the title from the block above them, reads `Serves 4` / `Makes 12` / `4 servings`
+wherever it appears, and drops the page furniture (prep times, ratings, *Print*/*Save*/*Jump to
+recipe*). A crop with no headings at all is read by its quantities — every line that opens with an
+amount is an ingredient, which is exactly what those crops look like. It is deliberately forgiving:
+an unclassifiable line lands in the ingredient list rather than being dropped, because a wrong line
+you can delete beats a missing one you have to notice.
+
+Then the parse is **shown for correction before it is kept** — name, servings, ingredients and method,
+one per line, all editable — because OCR is a reading of a picture and not a fact. Saving materializes
+it as a LifeOps recipe exactly like a link import does, and **attaches the screenshots to it**, so the
+original is always there to check the parse against. The same "Add a screenshot" action hangs off any
+recipe already in the book.
+
+## The Food tab — the diary, in the app where the food is
+
+The **Food** tab is LifeOps' food-and-calorie surface, opened beside the shelf it came off: a day at a
+time, with the day's chips across the top and the week steppable either side.
+
+- **The day's totals**, logged and planned side by side (kcal, carbs, protein, fat), over a **7-day
+  per-day average** — totals ÷ the days actually logged, so a week with three logged days averages
+  over three rather than reading as a third of a week.
+- **Log food** — search the catalog (or take a **recent/frequent** suggestion, which is most real
+  logging), in **servings or grams**, or enter something by hand with its macros. LifeOps' maths is
+  strict on purpose: a quantity is either servings of the food or grams of it, never a guessed
+  cup-to-gram conversion, so a gram entry against a food with no known serving weight is refused with
+  a reason rather than silently zeroed.
+- **Confirm / Adjust** on every entry, and **"Save as food"** to promote a one-off entry into a
+  permanent catalog food — type "my protein shake" once, find it forever.
+- **Plan a meal from a recipe** onto the day, which writes the menu line and the planned (unconfirmed)
+  diary entry carrying the recipe's macros for the servings planned; unplanning takes it back off
+  unless it has already been confirmed, at which point it records what was actually eaten.
+
+And the join the two halves of the app were always missing: picking a known recipe in **Meal** now
+offers "**log it in the food diary too**", with the kcal it would add, so deducting a cooked recipe
+from the pantry and recording what you ate is one action instead of two. It is offered only when the
+recipe knows its macros — an import whose ingredients are all placeholders has nothing honest to log.
+
 ## Backup
 
 `LogisticsBackupContributor` (registered as `AppId.LOGISTICS`) copies the whole `logistics.db` into
 the sandbox archive and swaps it back on restore — complete by construction, the same approach
-LifeOps uses. Foods and recipes are LifeOps' data and are backed up by LifeOps' contributor, so
-Logistics never double-stores them.
+LifeOps uses. Foods, recipes and diary entries are LifeOps' data and are backed up by LifeOps'
+contributor, so Logistics never double-stores them.
+
+The **recipe screenshots go with it**, entry by entry, because they are Logistics' own and live
+outside the database: the row keeps a file name and the JPEG sits in `filesDir/recipe-shots/`. A
+backup that carried the row and not the picture would restore a recipe that claims a screenshot and
+hasn't got one — worse than not backing it up at all, since the app would look like it had it. On
+restore the files are written **before** the database that names them, and an archive entry that
+tries to name a path outside the directory is refused. It is the same shape as Health's insurance
+cards and paperwork.
 
 ## Tests
 
@@ -167,3 +244,8 @@ Pure-JVM suites under `logistics/src/test` (run with `gradle :logistics:testDebu
   free-form lines.
 - `RecipeLinkParserTest` — JSON-LD, `@graph`, HTML-entity decoding, the microdata fallback, and the
   four shapes `recipeInstructions` arrives in (steps, sections, one blob, none).
+- `RecipeTextParserTest` — the screenshot layout reader: title/servings/ingredients/method off a
+  recipe card, page furniture (times, *Print*, a nutrition line) dropped, bullets and checkboxes
+  stripped, an unlabelled crop read by its quantities, `Serves`/`Makes`/`4 servings` phrasing, step
+  numbering removed, the seam between two overlapping screenshots collapsed, and empty text parsing
+  to an empty recipe rather than throwing.

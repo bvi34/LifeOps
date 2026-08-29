@@ -46,9 +46,16 @@ class FoodService(
         )
     }
 
-    /** Log a quantity of a saved food. Null if [foodItemId] is unknown or the unit can't apply. */
-    suspend fun logFood(foodItemId: String, quantity: Double, unit: IngredientUnit): FoodLogEntry? =
-        foodLogRepository.logFoodItem(foodItemId, quantity, unit)
+    /** Log a quantity of a saved food. Null if [foodItemId] is unknown or the unit can't apply.
+     *  [loggedAt] defaults to now; a screen sitting on another day passes that day's instant. */
+    suspend fun logFood(
+        foodItemId: String,
+        quantity: Double,
+        unit: IngredientUnit,
+        loggedAt: String? = null
+    ): FoodLogEntry? =
+        if (loggedAt == null) foodLogRepository.logFoodItem(foodItemId, quantity, unit)
+        else foodLogRepository.logFoodItem(foodItemId, quantity, unit, loggedAt)
 
     /** Log a one-off entry with typed-in macros. */
     suspend fun logAdHoc(
@@ -58,10 +65,15 @@ class FoodService(
         calories: Double,
         carbsG: Double,
         proteinG: Double,
-        fatG: Double
+        fatG: Double,
+        loggedAt: String? = null
     ): FoodLogEntry {
         require(name.isNotBlank()) { "Food name must not be blank" }
-        return foodLogRepository.logAdHoc(name.trim(), quantity, unit, calories, carbsG, proteinG, fatG)
+        return if (loggedAt == null) {
+            foodLogRepository.logAdHoc(name.trim(), quantity, unit, calories, carbsG, proteinG, fatG)
+        } else {
+            foodLogRepository.logAdHoc(name.trim(), quantity, unit, calories, carbsG, proteinG, fatG, loggedAt)
+        }
     }
 
     suspend fun confirmEntry(entryId: String): FoodLogEntry? = foodLogRepository.confirmEntry(entryId)
