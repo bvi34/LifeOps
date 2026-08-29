@@ -77,16 +77,41 @@ the same code — so a document orphaned by a deleted folder is still drawn, at 
 than vanishing with it. A document cannot be filed inside itself or anything under it; the picker
 never offers the move rather than refusing it afterwards.
 
-**Reading mode** drops the fields and draws the blocks as text. Nine tenths of the time a document is
-opened it is to be read, and a page of outlined input boxes reads like a form. To-dos stay tickable
-while reading: a checklist you cannot tick is a picture of a checklist.
+**Reading mode** drops the fields and draws the blocks as Markdown. Emphasis reads as emphasis, a
+quote gets a rule down its side instead of a literal `|`, code sits on its own ground, a numbered
+list counts up, and links open. Nine tenths of the time a document is opened it is to be read, and a
+page of outlined input boxes reads like a form. Everything a reader can act on stays live: to-dos are
+tickable, because a checklist you cannot tick is a picture of a checklist.
 
-Inline formatting is left alone on purpose. Bold and italic stay as the asterisks you typed:
-half-parsing Markdown — structure yes, emphasis no — is the version that loses least, and an editor
-that silently eats a literal `*` in a shell command is worse than one that shows it.
+**Nothing is rewritten to make it draw prettily.** The asterisks you typed stay in the block, in the
+export and in the field you edit; the emphasis is a *reading* of the text computed on the way to the
+screen. That is what keeps the round trip honest, and it is why unmatched markers stay literal — a
+lone `*` at the end of a line is an asterisk, not the start of an italic run that eats the paragraph,
+and a `*` inside a code span is never touched at all.
 
-**Word count is prose only** — code blocks and dividers are excluded. A count that jumps by four
-hundred because you pasted a config file is a count nobody trusts again.
+**Tables are blocks.** A table's rows are not paragraphs, and joining them the way hard-wrapped prose
+is joined is exactly how a stat block becomes a grey wall of pipes — which is what a pasted table
+used to look like here. So a table is one block holding its own source, drawn as a grid: header band,
+ruled and banded rows, columns sized to their content, alignment as the delimiter row's colons ask
+for, scrolled sideways when it is wider than the phone. A wide table can also be read **a row at a
+time**, each row a card of labelled values, which is the only honest way to show eight columns on a
+phone; which way round you read tables is remembered, like reading mode, because it is a fact about
+the screen in your hand rather than about any one table.
+
+Tables written before this **repair themselves**: a table that lost its line breaks kept its pipes,
+and the shape can be recovered from them — the delimiter row and the header propose a column count,
+and whichever divides the cells into rows that end where rows should end wins, so a hand-written rule
+one `---` short does not shunt every cell a column to the left. "Rebuild tables" appears in a
+document's menu only when that document has one to rebuild.
+
+**Word count is prose only** — code blocks and dividers are excluded, and a table counts its cells
+rather than its scaffolding. A count that jumps by four hundred because you pasted a config file is a
+count nobody trusts again, and one that counts `|` and `---` as words you wrote is the same lie in a
+smaller font. Search reads documents the same way: it matches the words, so `**left**` is found by
+searching for *left*, and a hit inside a table shows the cells rather than the pipes between them.
+
+A document with headings has a **contents sheet** — the headings indented by level, tapping one
+scrolling to it. A long draft without one is a scroll bar and a hope.
 
 A document can be **linked to an outline node**, and that link is the join that makes this one app
 rather than five. Link a doc to a scene and the scene's word count becomes the sum of the documents
@@ -217,13 +242,15 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Outline.kt` | Rolling up words and finished pieces from the leaves, and the four structural edits. |
 | `Manuscript.kt` | Compiling the outline and its documents into one document, and finding the holes in it. |
 | `ProjectSearch.kt` | Matching, snippets and ranking across all five sections. |
-| `DocBlocks.kt` | The Markdown ↔ blocks round trip, word counts, headings, to-do progress, previews. |
+| `DocBlocks.kt` | The Markdown ↔ blocks round trip, word counts, headings, list numbering, to-do progress, previews. |
+| `MarkdownInline.kt` | Emphasis, code, strikethrough and links inside a line — read, never rewritten. |
+| `MarkdownTables.kt` | Pipe tables: reading them, rendering them back, and rebuilding ones that lost their line breaks. |
 | `Lore.kt` | Wiki links, the name/alias index, backlinks, broken links, ambiguity. |
 | `Timeline.kt` | Reading a "when" label, era bands, gaps, and order contradictions. |
 | `Board.kt` | Lanes, WIP-limit state, moving a card between columns, orphans, default columns. |
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
 
-That is 102 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 137 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |

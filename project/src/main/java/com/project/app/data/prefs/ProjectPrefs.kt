@@ -36,10 +36,21 @@ class ProjectPrefs(context: Context) {
         get() = prefs.getBoolean(KEY_READING_MODE, false)
         set(value) = prefs.edit().putBoolean(KEY_READING_MODE, value).apply()
 
+    /**
+     * Whether tables are read as cards rather than as a grid.
+     *
+     * A preference about *this screen*, not about any one table: how wide a table can be before it
+     * stops fitting is a fact about the phone in your hand.
+     */
+    var docTableCards: Boolean
+        get() = prefs.getBoolean(KEY_TABLE_CARDS, false)
+        set(value) = prefs.edit().putBoolean(KEY_TABLE_CARDS, value).apply()
+
     companion object {
         const val FILE_NAME = "project_prefs"
         private const val KEY_LAST_PROJECT = "last_project_id"
         private const val KEY_LAST_SECTION = "last_section"
         private const val KEY_READING_MODE = "doc_reading_mode"
+        private const val KEY_TABLE_CARDS = "doc_table_cards"
     }
 }

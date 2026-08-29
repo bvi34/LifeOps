@@ -20,6 +20,7 @@ import com.project.app.logic.BoardColumn
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.DocBlocks
+import com.project.app.logic.MarkdownTables
 import com.project.app.logic.CompileOptions
 import com.project.app.logic.Lore
 import com.project.app.logic.LoreCategory
@@ -374,7 +375,10 @@ class ProjectRepository(private val dao: ProjectDao) {
         val at = afterBlockId?.let { id -> blocks.indexOfFirst { it.id == id } } ?: (blocks.size - 1)
         val id = newId()
         val inserted = blocks.toMutableList()
-        inserted.add((at + 1).coerceIn(0, blocks.size), DocBlockEntity(id, docId, type.key, "", false, 0))
+        // A table starts as a table: an empty one is a grid you can type into, whereas an empty
+        // string is a block with nothing to draw and no hint of what belongs in it.
+        val seed = if (type == BlockType.TABLE) MarkdownTables.blank() else ""
+        inserted.add((at + 1).coerceIn(0, blocks.size), DocBlockEntity(id, docId, type.key, seed, false, 0))
         dao.upsertBlocks(inserted.mapIndexed { index, block -> block.copy(sortOrder = index) })
         refreshDocCount(docId)
         return id
@@ -425,6 +429,26 @@ class ProjectRepository(private val dao: ProjectDao) {
             }
         )
         refreshDocCount(docId)
+    }
+
+    /**
+     * Turn the flattened tables in a document back into tables, and say how many there were.
+     *
+     * The repair for documents written before tables were blocks, where a table pasted in arrived as
+     * one paragraph of pipes. Doing it a block at a time through the block menu works, but a stat
+     * block of forty rows is not something anybody should have to find by hand — and the shape is
+     * recoverable, so it may as well be recovered.
+     */
+    suspend fun repairTables(docId: String): Int {
+        val repaired = dao.getBlocks(docId).mapNotNull { row ->
+            if (row.type == BlockType.TABLE.key || !MarkdownTables.isFlattened(row.text)) return@mapNotNull null
+            MarkdownTables.recover(row.text)
+                ?.let { row.copy(type = BlockType.TABLE.key, text = it.render()) }
+        }
+        if (repaired.isEmpty()) return 0
+        dao.upsertBlocks(repaired)
+        refreshDocCount(docId)
+        return repaired.size
     }
 
     /** The document as Markdown — the export half of the same round trip. */
@@ -781,7 +805,11 @@ class ProjectRepository(private val dao: ProjectDao) {
                 SearchDoc(
                     id = doc.id,
                     title = doc.title,
-                    text = byDoc[doc.id].orEmpty().joinToString(" ") { it.text }
+                    // The text as it reads, not as it is stored: a search for a word should find
+                    // it whether or not somebody put asterisks round it, and a hit inside a table
+                    // should show the cells rather than the pipes between them.
+                    text = byDoc[doc.id].orEmpty()
+                        .joinToString(" ") { DocBlocks.plainText(it.toLogic()) }
                 )
             }
         }
