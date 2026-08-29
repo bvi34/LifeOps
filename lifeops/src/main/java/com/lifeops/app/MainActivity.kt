@@ -185,6 +185,10 @@ class MainActivity : ComponentActivity() {
 
         /** [EXTRA_OPEN_DESTINATION] value that opens the Settings screen. */
         const val DEST_SETTINGS = "settings"
+
+        /** [EXTRA_OPEN_DESTINATION] value that opens the Weather screen — what the Operations
+         *  Sandbox's weather widget hands over to when it's tapped. */
+        const val DEST_WEATHER = "weather"
     }
 }
 
@@ -203,6 +207,9 @@ fun LifeOpsNavHost(
         when (openDestination) {
             MainActivity.DEST_SETTINGS ->
                 navController.navigate(Screen.Settings.route) { launchSingleTop = true }
+
+            MainActivity.DEST_WEATHER ->
+                navController.navigate("weather") { launchSingleTop = true }
         }
         if (openDestination != null) onDestinationConsumed()
     }

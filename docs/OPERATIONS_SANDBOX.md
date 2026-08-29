@@ -161,12 +161,14 @@ reopen it** — reopening just the hosted screen would reuse the now-closed data
 The sandbox opens on a **phone-style home screen**, because that is the honest picture of what it
 is: seven apps behind one icon.
 
-- A **tile per app**, laid out three to a row, each carrying that app's own glyph and colour — so
-  "the teal one" and "the green one" mean something before you have read a word. Tapping a tile
+- A **tile per app**, laid out three to a row, each carrying that app's own mark and colour — so
+  "the thermometer" and "the green basket" mean something before you have read a word. Tapping a tile
   launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
-  jumps straight to where that app's colour is chosen.
+  jumps straight to where that app's colour is chosen. The marks are the suite's own — see *Seven
+  marks* below.
 - A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
   container rather than to any app: **Settings** (the gear) and **Backups**.
+- A **weather tile** between the clock and the grid — see *Weather on the home screen* below.
 - A **wallpaper** behind the lot — see *The launcher's wallpaper* below. Out of the box it is mixed
   from the suite's own colours, so the home screen is already wearing the chosen preset before an
   app is opened; a user who wants something else picks it in the gear.
@@ -174,7 +176,48 @@ is: seven apps behind one icon.
 `SandboxActivity` is a two-route shell (`when` over a route, not a navigation graph). The settings
 screen's state — which tab, which app is being recoloured — is hoisted into it, and so is the
 `BackupController`: an archive can take a while, and backing out to the home screen mid-backup must
-not cancel it.
+not cancel it. The `WeatherWidgetController` is hoisted for the same reason — a location fix or a
+forecast fetch must survive a trip to the gear.
+
+### Weather on the home screen
+
+The clock earns its place on this screen by being true without being asked. Weather is the only
+other fact like that — *is it raining, and will it be?* gets asked more often than any tile here
+gets tapped — so it sits directly beneath the clock as one glance-deep card: the current
+temperature, what the sky is doing, the day's high and low, and a line of place / chance of
+precipitation / wind. An active NWS watch or warning adds a strip across the top, tinted red at
+Severe and above. Tapping it opens LifeOps' full **Weather** screen, which is where the hourly
+strip, radar and outdoor-task windows live.
+
+Two decisions are worth naming.
+
+**It owns no weather data.** LifeOps already has the whole stack — the NWS client, the offline-first
+Room cache, the 2-hour refresh worker — so `WeatherWidgetController` borrows `WeatherRepository`
+rather than growing a second one. The reading on the home screen is the same reading LifeOps' weather
+screen shows and the same one that stamps a counter tick. It reads from the cache, so the tile paints
+on the first frame and a phone in airplane mode shows this morning's forecast instead of an error;
+the network is touched only once that cache passes 45 minutes old, and a failed touch becomes a quiet
+line under a real reading rather than replacing it. Refreshing again is cheap and idempotent, so the
+tile re-checks on every return to the home screen.
+
+**What it adds is the choice of place.** Before this, a location was a latitude and a longitude you
+typed into LifeOps. The sandbox asks the device instead (`data/weather/DeviceLocationProvider.kt`)
+and keeps one reserved row — `WeatherRepository.DEVICE_LOCATION_ID` — pointed wherever the phone is;
+it sorts ahead of every hand-added place, which makes it the weather screen's default and the
+"primary" whose conditions stamp a counter tick, on the principle that where you are outranks a place
+you once typed in. A fix within 2 km of the stored one is treated as no movement at all and the row
+is left untouched, so the ordinary jitter of a phone on a table cannot throw away a good forecast;
+beyond that the coordinates move, the cached snapshots and alerts are dropped as describing the place
+you left, and the name is blanked for the next refresh to re-resolve.
+
+The permission asked for is `ACCESS_COARSE_LOCATION` and nothing more — a forecast grid cell is about
+2.5 km square, so fine location would buy nothing and ask more of the user. There is no Play Services
+dependency: the platform `LocationManager` is enough, cheapest-first (a recent last-known fix, then
+one bounded active request, then the stale fix as a fallback). Every failure is a value rather than an
+exception — no permission, location switched off device-wide, no fix, no forecast for this spot — and
+each one the tile can phrase for the user, with the button that clears it where a button exists. None
+of them is fatal: a user who never grants location gets the first place they added in LifeOps,
+refreshed, and a "Use my location" button that removes itself once taken up.
 
 ### The gear: appearance and backups
 
@@ -241,8 +284,33 @@ of the suite's types), so the two doors cannot disagree. On first read the store
 existing preset, mode and palette, so nobody's theme resets.
 
 Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent) and
-one line in `SuiteIcons` mapping that name to a Material icon — `:suitekit` stays Android-free by
-naming glyphs rather than importing them.
+one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
+than importing them.
+
+### Seven marks
+
+The home screen first shipped with stock Material icons, one per app, and they were wrong twice
+over. They named a *category* — a dashboard, a box, a group of people — where the screen needed a
+picture of the work. And four of the seven were rectangles with something inside them, so the grid
+read as four grey boxes and a book, leaving colour to do all the identifying on its own.
+
+`SuiteGlyphs` replaces them with a drawn mark per app: a dial, a thermometer, a roofline, a board, a
+basket, an open book, a bubble with a tail. The rule they are drawn to is that **no two share a
+silhouette**, so a tile is recognisable in peripheral vision — before the colour registers, and well
+before the label is read. A unit test holds the weaker half of that line: every app resolves to a
+mark of its own, no two marks carry the same geometry, and nothing falls back.
+
+LifeOps' is not a new drawing. It is the mark LifeOps already wore as its launcher icon
+(`ic_app_logo`: a dial, four quarter ticks, a checkmark for a needle), redrawn at icon scale — its
+proportions adapted rather than transcribed, since a hairline ring at 35% alpha reads as a delicate
+dial on a 120dp logo and disappears entirely at 18dp. The ring is heavier and less faint; the
+1 : 1.6 : 2.6 weight ladder from ring to ticks to needle is kept, and a test asserts it.
+
+Every mark is drawn in the same 24×24 viewport as line art with selective solid fills, and every one
+is a single colour: `AppGlyph` tints the whole vector to whichever ink contrasts the app's accent, so
+a mark can never lean on a second hue to be legible. What it *can* lean on is alpha — a stroke at 0.5
+survives tinting, and is how secondary detail (a book's text lines, a board's header rule) stays
+subordinate to the shape carrying the identity.
 
 ---
 
@@ -305,8 +373,16 @@ gradient and one of the two inks, dimming a pale design flips its text before it
 a fixed design ignores the preset while `THEME` follows it, and a document written before wallpapers
 existed (or one naming a design this build has never heard of) lands on the default backdrop.
 
-The Android glue (contributors, the home screen and settings, the module surgery) is verified by
-building and running the container app.
+`:suiteui` is an Android module but its icon set isn't: `SuiteGlyphsTest`
+(`gradle :suiteui:testDebugUnitTest`) runs on the JVM because an `ImageVector` is data until
+something draws it. It holds the wiring a code review can't see — every app resolves to a mark of
+its own rather than the fallback, no mark exists for an app that doesn't, none is empty, all share
+the 24×24 viewport that makes stroke weights comparable, and no two carry the same geometry — plus
+LifeOps' ring-ticks-needle weight ladder, which is the part of its inherited mark that a well-meaning
+tidy-up would flatten.
+
+The rest of the Android glue (contributors, the home screen and settings, the module surgery) is
+verified by building and running the container app.
 
 > Note: code shrinking (`minifyEnabled`) is off in `:app`'s release build for now — the merged
 > LifeOps + Citation code needs a vetted keep-rule set (Room/Gson/Glance/WorkManager reflection)

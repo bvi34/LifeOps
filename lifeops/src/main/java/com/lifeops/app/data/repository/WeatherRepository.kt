@@ -14,6 +14,7 @@ import com.lifeops.app.data.model.WeatherReport
 import com.lifeops.app.data.model.Wind
 import com.lifeops.app.data.weather.NwsClient
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.Geo
 import com.lifeops.app.util.toEntity
 import com.lifeops.app.util.toModel
 import kotlinx.coroutines.flow.Flow
@@ -74,6 +75,61 @@ class WeatherRepository(
         val existing = weatherDao.getLocation(id) ?: return
         weatherDao.deleteLocation(existing) // snapshots + alerts cascade
     }
+
+    // --- The location that follows the device ---
+
+    /**
+     * Point the device row at a fresh fix, creating it the first time.
+     *
+     * There is one reserved row ([DEVICE_LOCATION_ID]) rather than a new location per fix, so a
+     * year of walking around leaves a single entry in the user's list instead of a travel diary.
+     *
+     * Two things make this safe to call on every app open. A fix within [MOVE_THRESHOLD_METERS] of
+     * the stored one is treated as no movement at all and the row is left completely untouched —
+     * so the cached forecast, and the name NWS resolved for it, survive the ordinary jitter of a
+     * phone sitting on a table. A fix beyond it means the user is genuinely somewhere else, so the
+     * cached snapshots and alerts are dropped (they describe the place you left) and the name is
+     * blanked for the next refresh to re-resolve.
+     *
+     * The row sorts ahead of every hand-added location, which makes it the default selection on the
+     * weather screen and the "primary" whose conditions stamp a counter tick. That is the point:
+     * where you actually are outranks a place you once typed in.
+     */
+    suspend fun setDeviceLocation(latitude: Double, longitude: Double): WeatherLocation {
+        val existing = weatherDao.getLocation(DEVICE_LOCATION_ID)
+        if (existing != null) {
+            val moved = Geo.distanceMeters(
+                existing.latitude, existing.longitude, latitude, longitude
+            )
+            if (moved <= MOVE_THRESHOLD_METERS) return existing.toModel()
+
+            val relocated = existing.copy(latitude = latitude, longitude = longitude, name = "")
+            weatherDao.updateLocation(relocated)
+            weatherDao.trimSnapshots(DEVICE_LOCATION_ID, 0)
+            weatherDao.clearAlerts(DEVICE_LOCATION_ID)
+            return relocated.toModel()
+        }
+
+        val created = WeatherLocationEntity(
+            id = DEVICE_LOCATION_ID,
+            latitude = latitude,
+            longitude = longitude,
+            // Left blank on purpose: the first refresh adopts whatever NWS calls this spot, which
+            // is a better label than any coordinate we could format here.
+            name = "",
+            sortOrder = DEVICE_SORT_ORDER,
+            createdAt = DateUtil.now()
+        )
+        weatherDao.upsertLocation(created)
+        return created.toModel()
+    }
+
+    /** True when [locationId] is the device row — the UI marks it with a pin rather than a name. */
+    fun isDeviceLocation(locationId: String) = locationId == DEVICE_LOCATION_ID
+
+    /** How stale the newest cached snapshot for [locationId] is, in minutes; null when there is none. */
+    suspend fun cachedSnapshotAgeMinutes(locationId: String): Long? =
+        weatherDao.getLatestSnapshot(locationId)?.let { snapshotAgeMinutes(it.fetchedAt) }
 
     // --- Cached report (offline-first read path) ---
 
@@ -267,6 +323,22 @@ class WeatherRepository(
     companion object {
         /** Retain a short snapshot history per location; the newest is what the UI reads. */
         const val SNAPSHOTS_KEPT = 8
+
+        /** The reserved id of the one row that tracks the device's own position. */
+        const val DEVICE_LOCATION_ID = "device-current-location"
+
+        /**
+         * Negative so the device row sorts ahead of hand-added locations (which default to 0)
+         * without having to renumber any of them.
+         */
+        const val DEVICE_SORT_ORDER = -100
+
+        /**
+         * How far the device must move before the tracked point follows it. Two kilometres sits
+         * comfortably inside an NWS forecast grid cell (~2.5 km), so anything under it would fetch
+         * the identical forecast — while a commute or a trip clears it easily.
+         */
+        const val MOVE_THRESHOLD_METERS = 2_000.0
 
         /**
          * How stale a cached snapshot may be and still be recorded as the conditions "right now"

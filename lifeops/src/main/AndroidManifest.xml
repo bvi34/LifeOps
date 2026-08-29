@@ -6,6 +6,12 @@
          opens and works fully offline; the network is only touched on an explicit refresh. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Weather that follows you: a coarse fix picks the forecast grid you're standing in, so the
+         sandbox's weather widget and the weather screen don't need a hand-typed latitude. Coarse
+         only — a forecast cell is ~2.5 km square, so fine location would buy nothing and ask more
+         of the user. Requested at the point of use; everything degrades to a typed-in location. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
