@@ -6,8 +6,8 @@ launcher icon. Opening it gives you a **phone home screen**: a tile per app, eac
 and colour, over a dock holding the gear and the backups. From there it:
 
 - opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
-  **Advisor**, **Health**, and **People**),
-- **paints all six of them**: one preset, one light/dark mode, and one accent per app, chosen in the
+  **Advisor**, **Health**, **People**, and **Project**),
+- **paints all seven of them**: one preset, one light/dark mode, and one accent per app, chosen in the
   gear and obeyed everywhere,
 - **wears a wallpaper of your choosing** on its own home screen — a shipped design, a gradient you
   mixed, or (the default) the suite's own colours, and
@@ -139,6 +139,12 @@ no per-entity allow-list to fall out of date.
   cache is intentionally **not** backed up (it's refetchable by design). The O'Reilly card/PIN lives
   in Keystore-bound `EncryptedSharedPreferences`, which can't be portably restored (the Keystore key
   doesn't survive a reinstall), so it is deliberately left out — it's a re-enterable credential.
+- **Project** — WAL-checkpoints and copies `project.db` (the shelf, and every project's outline,
+  documents and their blocks, lore, timeline and board), plus `shared_prefs/project_*.xml`. The
+  database is copied as bytes rather than re-serialised, and that matters more here than elsewhere: a
+  project's documents may be the only copy of that writing anywhere — there is no cloud workspace
+  holding a second one — so the backup has to be the file, not a re-export a future schema change
+  could quietly narrow.
 
 Because the two apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
 each contributor scopes strictly to its own files by name.
@@ -152,7 +158,7 @@ reopen it** — reopening just the hosted screen would reuse the now-closed data
 ## The GUI (`:app`)
 
 The sandbox opens on a **phone-style home screen**, because that is the honest picture of what it
-is: six apps behind one icon.
+is: seven apps behind one icon.
 
 - A **tile per app**, laid out three to a row, each carrying that app's own glyph and colour — so
   "the teal one" and "the green one" mean something before you have read a word. Tapping a tile
@@ -171,7 +177,7 @@ not cancel it.
 
 ### The gear: appearance and backups
 
-**Appearance** (see *One look for six apps* below) is the suite's, not LifeOps': one preset, one
+**Appearance** (see *One look for seven apps* below) is the suite's, not LifeOps': one preset, one
 light/dark mode, one custom palette, an accent per app — and the home screen's own wallpaper, which
 is the container's alone.
 
@@ -185,10 +191,10 @@ is the container's alone.
 
 ---
 
-## One look for six apps (`:suitekit` + `:suiteui`)
+## One look for seven apps (`:suitekit` + `:suiteui`)
 
 Every hosted app used to own its palette: Citation's warm paper, Health's clinical teal, LifeOps'
-five presets. That made six apps that happened to be installed together look like six apps that
+five presets. That made the apps that happened to be installed together look like apps that
 happened to be installed together. Appearance now belongs to the **container**, and an app names
 itself rather than choosing colours.
 

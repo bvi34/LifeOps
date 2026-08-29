@@ -20,12 +20,12 @@ the receipts.
 > single installed application and the central hub the whole suite opens through. It opens on a
 > **phone-style home screen**: a tile per app in that app's own icon and colour, over a dock holding
 > the gear and the backups. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
-> (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), or People
-> (`:people`); one place to back the whole suite up into a single `.zip` and restore from it; and one
-> place that decides what all six of them **look** like — a shared preset and light/dark mode, plus
+> (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
+> (`:people`), or Project (`:project`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> place that decides what all seven of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
-> (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health
-> and People are library modules hosted in that one process —
+> (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
+> People and Project are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -123,6 +123,49 @@ the receipts.
 > device**: the drug lookup asks what a medicine *is*, never who takes it, and the directory check
 > asks about a *doctor*, never about anybody in the household — no member number, no profile, ever.
 > That is the line it holds. It records; it does not give medical advice.
+
+> **Project** (the document and planning repository) is a peer module — see **[docs/PROJECT.md](docs/PROJECT.md)**.
+> It owns *the work you are making*: a shelf of projects, and inside each one five ways of looking at
+> the same thing — the **Outline** it is shaped by, the **Docs** it is written in, the **Lore** it has
+> to stay consistent with, the **Timeline** it happens on, and the **Board** it gets built through.
+> Notion's blocks, Reedsy's manuscript outline and a kanban board, in one place, because they are
+> five views of one project rather than five apps.
+>
+> The outline's rows are *parts of the work* — they nest, they carry a status through drafting and
+> revision, and they carry a **length**: words roll up from the leaves, so an act's number is the sum
+> of its scenes and nobody maintains it. **Cut** is a status rather than a delete, because the scene
+> you cut in August is the one you want back in October. Documents are **blocks**, and the
+> interchange in both directions is **Markdown** — paste a chapter in, get it back out — with the
+> word count taken over prose only, so a pasted config file cannot inflate it. Link a document to a
+> scene and that scene's length becomes the document's, kept in step on every edit; the outline stops
+> being a plan you maintain beside the writing and becomes a view of it.
+>
+> Lore links with `[[double brackets]]` and **only** with those — nothing is linked because a word
+> appeared in a sentence — and it reports the two things a wiki knows and you don't: **backlinks**
+> (where an entry is spoken of, collected without anyone recording them) and **broken links** (every
+> name the project referred to and never wrote down, which is the list of pages worth writing next).
+> An ambiguous name resolves to *nothing* rather than to whichever row came first. On the timeline,
+> the author's order is the timeline and the "when" is a note about it — free text, read as a date,
+> year, day or chapter where it can be — so the app can say **"you put the coronation before the
+> battle and dated it after"**, which is the error a story timeline exists to catch and is only
+> catchable because the two are kept apart. The board's **WIP limits warn and never refuse** (a board
+> that rejects the card in your hand teaches you to lie to it), and deleting a column **keeps its
+> cards**, stranded on purpose, with a banner to re-file them.
+>
+> Two things tie the sections into one app rather than five. **Compile** walks the whole outline,
+> pulls in every document linked to it, and hands you the manuscript — and it reports the holes
+> rather than hiding them: pieces with nothing written are listed by name, and documents belonging to
+> no piece are counted even when excluded, because "12 documents are not in this export" is the
+> sentence that saves you. **Search** covers all five sections at once, matching every term against
+> the whole record rather than title-and-body separately (so "kestrel smuggler" finds the entry whose
+> name is in one and description in the other), ranked title-before-body and fully deterministic.
+>
+> Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
+> like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
+> project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
+> the timeline reading, the board moves, the compile and the search are pure JVM in `project/logic/`
+> and covered by 102 unit tests. It requests no permissions and has no `INTERNET`; nothing it holds
+> leaves the device.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

@@ -50,6 +50,13 @@ object SuiteApps {
             defaultAccent = 0xFF5A5ABFL
         ),
         SuiteAppInfo(
+            appId = AppId.PROJECT,
+            label = "Project",
+            tagline = "Outlines, docs, lore and the board",
+            iconKey = "account-tree",
+            defaultAccent = 0xFFB45309L
+        ),
+        SuiteAppInfo(
             appId = AppId.LOGISTICS,
             label = "Logistics",
             tagline = "Pantry, groceries and recipes",
