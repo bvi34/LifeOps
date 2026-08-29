@@ -259,6 +259,14 @@ class TaskDetailViewModel(
         viewModelScope.launch { costService.deleteEntry(id) }
     }
 
+    /** Mark (or unmark) this task as part of the week's commitment. See [TaskRepository.setCommitment]. */
+    fun onToggleCommitment() {
+        viewModelScope.launch {
+            val task = taskRepository.getById(taskId) ?: return@launch
+            taskRepository.setCommitment(taskId, !task.isCommitment)
+        }
+    }
+
     fun onToggleSubtask(subtaskId: String, checked: Boolean) {
         viewModelScope.launch { runbookService.setSubtaskChecked(subtaskId, checked) }
     }

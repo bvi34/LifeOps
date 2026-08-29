@@ -12,6 +12,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccessTime
@@ -22,11 +23,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -81,6 +85,12 @@ fun TaskRow(
     onMoveUp: () -> Unit = {},
     onMoveDown: () -> Unit = {},
     onQuickLogTime: ((Int) -> Unit)? = null,
+    /**
+     * Toggle this task in or out of the week's commitment. Null hides the affordance entirely —
+     * the marker still shows on a task that carries it, so read-only surfaces (a closed week, a
+     * project's task list) report the bar without offering to move it.
+     */
+    onToggleCommitment: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -228,6 +238,30 @@ fun TaskRow(
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f)
                         )
+                        // The week's bar. A distinct tap target inside the card, so it doesn't
+                        // compete with the row's own gestures (tap = expand, long-press = detail,
+                        // swipes = complete/timer) — marking five tasks on Monday is five taps.
+                        if (onToggleCommitment != null || task.isCommitment) {
+                            Icon(
+                                if (task.isCommitment) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = if (task.isCommitment)
+                                    "In the week's commitment. Tap to remove."
+                                else "Not in the week's commitment. Tap to add.",
+                                tint = if (task.isCommitment) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.3f),
+                                modifier = Modifier
+                                    .padding(start = 2.dp)
+                                    .then(
+                                        if (onToggleCommitment != null)
+                                            Modifier
+                                                .clip(CircleShape)
+                                                .clickable { onToggleCommitment() }
+                                                .padding(6.dp)
+                                        else Modifier
+                                    )
+                                    .size(16.dp)
+                            )
+                        }
                         if (task.hardDeadline) {
                             Icon(
                                 Icons.Default.AccessTime,

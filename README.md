@@ -152,6 +152,9 @@ the receipts.
 - **Week** — Monday→Sunday. The current week is open; you **close** it manually, which
   snapshots it, carries forward what you chose to keep, and starts the next one.
 - **Task** — a unit of work with a priority, optional estimate, due date, and logged time.
+- **Commitment** — the handful of a week's tasks whose completion decides whether the week
+  worked. Marked with a star, worth no extra points, and the one thing that lets the app say
+  *"rest is earned"* rather than quote a percentage.
 - **Resource value & scoring** — completing a task earns `resourceValue × accuracy`, where
   accuracy rewards estimating well (see the guide).
 
@@ -335,6 +338,72 @@ snapshot, and the close path (mint next week, snapshot/settle, seed recurring) i
 
 ---
 
+## The week's bar — design note
+
+LifeOps' completion rate answers *how much of the list moved*. It cannot answer *am I done* —
+a percentage has no idea which of the tasks mattered — and "am I done" is the question the whole
+week-shaped rhythm exists to answer. So a task can be marked as one of the week's **commitments**
+(`tasks.isCommitment`, migration 52→53): the few whose completion decides whether the week worked.
+The header reads `Bar: 3/5`, and on a clean pass says so outright.
+
+**The flag is deliberately outside the economy.** Marking a task essential mints nothing extra and
+changes no resource value. Every scoring path — `ImportParser.computeResourceValue`, the
+aspect→resource mapping, the week-close mint — is untouched, and `TaskRepository.setCommitment` is
+a bare column write rather than an upsert so it cannot disturb status, scoring or a reminder. If
+the star paid out, every task would end up wearing one and the bar would stop selecting anything.
+It moves exactly one thing: what the week reads back as.
+
+The counts are **sealed into the snapshot** (`week_snapshots.commitmentTotal` /
+`commitmentCompleted`) on the same principle as `aspectHistory`: the flag stays editable, and
+un-ticking a commitment next month must not rewrite whether last month's week was met. Weeks
+closed before the feature seal `0/0`, which reads as *"no bar was set"* — never as a missed one,
+which is why `WeekReview.commitmentMet` is a nullable `Boolean` rather than a `false`.
+
+Propagation is two opposite calls, both made explicitly rather than inherited from a `copy`:
+a **carried** task keeps its star (something you called essential and didn't do has not stopped
+being essential because the week ended), while a **recurring** seed clears it (marking one
+instance essential says something about *that* week; inheriting it would silently re-mark the same
+chores forever until the bar covered the list). The mirror polices the same failure directly —
+past 60% of a week's tasks it says *"That's not a bar, that's the list."*
+
+At close, **Commitment** leads the Week in Review with a bar-to-bar delta (never against a
+completion rate, and never against a week that set no bar). A cleared bar is reported as the
+week's *result*, above the observations, rather than as one of them — it must not lose a slot to
+the three-observation cap — while a missed one is stated among the sharp lines, where it also
+suppresses the dry "completion climbed" nod: congratulating a climb while essential work sat
+undone is the mirror flattering.
+
+---
+
+## Week capacity — design note
+
+The honest mirror runs at close, which is the moment it can change nothing. A week you
+over-committed on Monday is a week you cannot rest at the end of — and the app already holds every
+number needed to have said so on Monday: the estimates you typed, and the sealed weeks behind you.
+
+`util/WeekCapacity.kt` is the plan-time counterpart to `util/WeekReview.kt` — pure, Android-free
+and JVM-unit-tested like `GrowthRings` / `BestTime` / `ScoringUtils`. It sums the week's estimates
+and holds them against the **median** logged minutes of the trailing eight sealed weeks, banding
+the ratio into `ROOM` / `REALISTIC` / `STRETCHED` / `OVERCOMMITTED`.
+
+**Median, not mean** — the same window `WeekReviewBuilder` compares against, read differently on
+purpose: a mean lets one 40-hour crunch week raise the very bar it is supposed to be measured
+against, quietly licensing the next one.
+
+It measures the **whole** plan, pending and completed alike, rather than what's left. Measuring
+the remainder against a full week's baseline would relax as the week ran down and read
+"realistic" on Friday for work that now has a day to happen in — and that is week-pacing, a
+different feature. The question here is whether the week you signed up for was ever a week's
+worth, and that answer shouldn't change because you've done some of it.
+
+It **never blocks and never re-plans**, and it stays silent unless it has earned the right to
+speak: under three sealed weeks with logged time there is no baseline, and a guess dressed as a
+baseline is worse than nothing (`NO_BASELINE`, headline `null`). When some tasks carry no
+estimate, the headline says the total is a **floor** — a partial number presented as the whole
+plan is the same over-commitment wearing a badge.
+
+---
+
 ## Reading rewards — design note
 
 Reading (in the **Citation** companion app) is the one activity rewarded *by time* rather than by
@@ -396,6 +465,11 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 - `GrowthDataTest` — sealed-vs-live source selection, stable aspect ordering, and
   `deleteAspect_preservesHistoricalSnapshots`.
 - `CsvTest` — CSV quoting/round-trip.
+- `WeekCapacityTest` — median baseline (one crunch week can't raise the bar), the trailing
+  window, the minimum-history silence, verdict bands, and the unestimated-tasks "floor" caveat.
+- `WeekReviewTest` — commitment metric/verdict, bar-to-bar deltas, no delta against a week that
+  set no bar, the over-marking call-out and its small-week floor, plus the existing headline,
+  grey-scar, estimate-bias and observation-cap coverage.
 - `WeatherMathTest` — heat-index / wind-chill "feels like", including the humidity/wind extremes.
 - `NwsParserTest` — api.weather.gov `/points`, forecast, and alert parsing (wind-text → mph,
   nested unit-values, graceful empty/malformed payloads).

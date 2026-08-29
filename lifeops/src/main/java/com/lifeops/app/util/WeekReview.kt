@@ -54,7 +54,13 @@ data class WeekReview(
     val aspectBalance: List<AspectBalanceRow>,
     val observations: List<String>,
     /** This week's completion rate (0..1), or `null` if nothing was relevant — for the live self-rating mirror. */
-    val completionRate: Float?
+    val completionRate: Float?,
+    /**
+     * Whether the week's bar was cleared: `true` every commitment done, `false` some left, `null`
+     * when no bar was set. The one line that answers "can I actually rest" — which a completion
+     * percentage never does, because a percentage has no idea which of the tasks mattered.
+     */
+    val commitmentMet: Boolean? = null
 ) {
     /** True once at least one metric has a baseline to compare against (i.e. there's history). */
     val hasHistory: Boolean get() = headline.any { it.delta != null }
@@ -79,7 +85,11 @@ data class ClosingWeekStats(
      */
     val readingMinutes: Int = 0,
     /** Points those [readingMinutes] mint at close, floored once over the weekly total (see `ReadingRewards`). */
-    val readingPoints: Int = 0
+    val readingPoints: Int = 0,
+    /** Tasks marked as this week's bar (carried-forward and queued ones excluded, as everywhere else). */
+    val commitmentTotal: Int = 0,
+    /** How many of those were completed. */
+    val commitmentCompleted: Int = 0
 )
 
 object WeekReviewBuilder {
@@ -88,6 +98,10 @@ object WeekReviewBuilder {
     /** Match [ScoringUtils]' accuracy window so "on target" here means the same thing it does at scoring. */
     private const val ESTIMATE_TOLERANCE = 15
     private const val MAX_OBSERVATIONS = 3
+    /** Above this share of the week's tasks, a "commitment" has stopped selecting anything. */
+    private const val BAR_RATIO_PCT = 60
+    /** Weeks smaller than this make the ratio meaningless — 2 of 3 is a light week, not over-marking. */
+    private const val MIN_WEEK_FOR_BAR_RATIO = 5
 
     fun build(
         closing: ClosingWeekStats,
@@ -104,7 +118,9 @@ object WeekReviewBuilder {
             headline = buildHeadline(closing, thisRate, lastWeek, trailing),
             aspectBalance = balance,
             observations = buildObservations(closing, thisRate, lastWeek, balance),
-            completionRate = thisRate
+            completionRate = thisRate,
+            commitmentMet = if (closing.commitmentTotal > 0)
+                closing.commitmentCompleted >= closing.commitmentTotal else null
         )
     }
 
@@ -117,6 +133,25 @@ object WeekReviewBuilder {
         trailing: List<WeekSnapshot>
     ): List<ReviewMetric> {
         val metrics = mutableListOf<ReviewMetric>()
+
+        // The week's bar leads, when one was set: it's the metric that decides whether the week
+        // succeeded, and burying it under a completion percentage would put the number that can't
+        // answer that question above the one that can. Compared against last week's *bar*, not its
+        // completion rate — and only when last week actually set one.
+        if (closing.commitmentTotal > 0) {
+            val thisCommit = rate(closing.commitmentCompleted, closing.commitmentTotal)
+            val lastCommit = lastWeek
+                ?.takeIf { it.commitmentTotal > 0 }
+                ?.let { rate(it.commitmentCompleted, it.commitmentTotal) }
+            metrics += ReviewMetric(
+                label = "Commitment",
+                value = "${closing.commitmentCompleted}/${closing.commitmentTotal}",
+                delta = if (thisCommit != null && lastCommit != null)
+                    "${signed(((thisCommit - lastCommit) * 100).roundToInt())}pp" else null,
+                trend = trendOf(thisCommit, lastCommit),
+                higherIsBetter = true
+            )
+        }
 
         // Completion rate vs last week (in percentage points).
         val lastRate = lastWeek?.let { rate(it.completedCount, relevantOf(it)) }
@@ -225,7 +260,28 @@ object WeekReviewBuilder {
     ): List<String> {
         val out = mutableListOf<String>()
 
-        // Grey scars first — the neglected areas the Growth Record will mark.
+        // The bar first, when one was set — it's the week's actual verdict, so nothing outranks it.
+        // Only the *sharp* readings live here: the clean pass is not an observation, it's the
+        // week's result, and it reaches the UI as `WeekReview.commitmentMet` rather than competing
+        // with a grey scar for one of three slots.
+        if (closing.commitmentTotal > 0) {
+            // A bar that covers most of the list isn't a bar. Said before the hit/miss line,
+            // because it changes what that line is worth. Only on weeks big enough for the ratio
+            // to mean anything — 2 of 3 tasks is a small week, not an over-marked one.
+            if (closing.totalRelevant >= MIN_WEEK_FOR_BAR_RATIO &&
+                closing.commitmentTotal * 100 >= closing.totalRelevant * BAR_RATIO_PCT
+            ) {
+                out += "${closing.commitmentTotal} of ${closing.totalRelevant} tasks marked essential. " +
+                    "That's not a bar, that's the list."
+            }
+            val missed = closing.commitmentTotal - closing.commitmentCompleted
+            if (missed > 0) {
+                out += "${closing.commitmentCompleted}/${closing.commitmentTotal} on the bar you set. " +
+                    "$missed you called essential didn't happen."
+            }
+        }
+
+        // Then grey scars — the neglected areas the Growth Record will mark.
         balance.filter { it.greyStreak >= 3 }
             .sortedByDescending { it.greyStreak }
             .take(2)
@@ -259,7 +315,8 @@ object WeekReviewBuilder {
             out += "${closing.carried} carried, ${closing.completed} done — the pile's winning."
         }
 
-        // A dry nod up — only if nothing sharper needed saying.
+        // A dry nod up — only if nothing sharper needed saying. (`out.isEmpty()` already rules out
+        // a missed bar, which is exactly the week that shouldn't be congratulated for a climb.)
         if (out.isEmpty() && thisRate != null && lastRate != null && thisRate - lastRate >= 0.15f) {
             out += "Completion climbed ${pctInt(lastRate)}% → ${pctInt(thisRate)}%. Keep it."
         }

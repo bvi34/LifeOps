@@ -106,6 +106,7 @@ fun TaskDetailScreen(
                     onUnsuccessful = { viewModel.onUnsuccess() },
                     onUnUnsuccessful = { viewModel.onUnUnsuccess() },
                     onPromoteToProject = { viewModel.onPromoteToProject() },
+                    onToggleCommitment = { viewModel.onToggleCommitment() },
                     onStartTimer = { viewModel.startTimer() },
                     onStopTimer = { viewModel.stopTimer() },
                     onStartPomodoro = { viewModel.startTimer(isPomodoro = true) },

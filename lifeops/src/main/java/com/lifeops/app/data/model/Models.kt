@@ -87,7 +87,9 @@ data class Task(
     val counterId: String? = null,
     // See TaskEntity: week-interval cadence (recurrenceDayOfMonth == null) or monthly-by-date.
     val recurrenceIntervalWeeks: Int = 1,
-    val recurrenceDayOfMonth: Int? = null
+    val recurrenceDayOfMonth: Int? = null,
+    /** One of the few tasks the week is actually judged on. See [TaskEntity.isCommitment]. */
+    val isCommitment: Boolean = false
 )
 
 data class BusyBlock(
@@ -131,8 +133,14 @@ data class CarryForwardEntry(
 data class WeekProgress(
     val completedCount: Int,
     val totalCount: Int,
-    val totalTimeMinutes: Int
-)
+    val totalTimeMinutes: Int,
+    /** Tasks marked as this week's bar, and how many are done — the line that licenses the weekend. */
+    val commitmentTotal: Int = 0,
+    val commitmentCompleted: Int = 0
+) {
+    /** True once every commitment is done — and only when a bar was actually set. */
+    val commitmentMet: Boolean get() = commitmentTotal > 0 && commitmentCompleted >= commitmentTotal
+}
 
 data class TaskNote(
     val id: String,
@@ -222,7 +230,11 @@ data class WeekSnapshot(
     val aspectHistory: Map<String, AspectHistoryEntry> = emptyMap(),
     val selfRating: Int? = null,
     val selfRatingNote: String? = null,
-    val subtaskTickCount: Int = 0
+    val subtaskTickCount: Int = 0,
+    /** How many tasks were marked as this week's bar. Zero = no bar was set that week. */
+    val commitmentTotal: Int = 0,
+    /** How many of those were completed. Only meaningful when [commitmentTotal] > 0. */
+    val commitmentCompleted: Int = 0
 )
 
 enum class ProjectStatus(val value: String) {

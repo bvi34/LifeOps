@@ -121,6 +121,10 @@ class TaskRepository(
             }
             for (carried in carriedForward) {
                 if (taskDao.getChildOf(carried.id) == null) {
+                    // isCommitment rides along deliberately, unlike the recurring seed below: a
+                    // task you called essential and didn't do has not stopped being essential
+                    // because the week ended. Un-tick it next week if you've changed your mind —
+                    // that's a decision, and it should have to be made rather than defaulted.
                     val newTask = carried.copy(
                         id = java.util.UUID.randomUUID().toString(),
                         weekId = newWeekId,
@@ -346,6 +350,12 @@ class TaskRepository(
             AspectHistoryEntry(mins, meta?.first ?: id, meta?.second ?: GrowthRings.SCAR_COLOR)
         }
 
+        val commitmentTasks = tasks.filter {
+            it.isCommitment &&
+                it.status != TaskStatus.CARRIED_FORWARD &&
+                it.status != TaskStatus.QUEUED
+        }
+
         val hdCompleted = tasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED }
         val hdExpired = tasks.count { it.hardDeadline && it.status == TaskStatus.EXPIRED }
 
@@ -377,7 +387,12 @@ class TaskRepository(
             aspectHistory = gson.toJson(aspectHistory),
             selfRating = selfRating,
             selfRatingNote = selfRatingNote?.takeIf { it.isNotBlank() },
-            subtaskTickCount = subtaskTickCount
+            subtaskTickCount = subtaskTickCount,
+            // The week's bar, sealed. Carried-forward tasks are excluded from the denominator for
+            // the same reason they're excluded from the completion rate: they were explicitly moved
+            // to next week, not failed this one. A commitment left pending simply wasn't met.
+            commitmentTotal = commitmentTasks.size,
+            commitmentCompleted = commitmentTasks.count { it.status == TaskStatus.COMPLETED }
         )
     }
 
@@ -430,6 +445,14 @@ class TaskRepository(
     suspend fun clearCategoryFromTasks(categoryId: String) = taskDao.nullifyCategoryId(categoryId)
 
     suspend fun unSkipTask(taskId: String) = taskDao.unSkipTask(taskId)
+
+    /**
+     * Mark (or unmark) a task as part of the week's commitment — the subset the week is judged on.
+     * A targeted column write rather than a full upsert, so it can't disturb scoring, status or the
+     * reminder: the flag deliberately changes nothing but what the week reads back as.
+     */
+    suspend fun setCommitment(taskId: String, isCommitment: Boolean) =
+        taskDao.setCommitment(taskId, isCommitment)
 
     suspend fun updateTaskSortOrder(taskId: String, order: Int) = taskDao.updateSortOrder(taskId, order)
 
@@ -541,7 +564,12 @@ class TaskRepository(
                     carriedFromTaskId = null,
                     carriedCount = 0,
                     sortOrder = 0,
-                    createdAt = now
+                    createdAt = now,
+                    // A new week re-decides its own bar. Marking one instance of a recurring chore
+                    // essential says something about that week, not about every week the series
+                    // will ever land in — inheriting it would quietly re-mark the same tasks
+                    // forever until the bar covered the whole list and meant nothing.
+                    isCommitment = false
                 )
                 taskDao.upsert(newTask)
             }
