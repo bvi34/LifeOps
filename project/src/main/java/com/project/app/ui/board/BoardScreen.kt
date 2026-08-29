@@ -47,26 +47,38 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
 import com.project.app.logic.BoardColumn
 import com.project.app.logic.BoardLane
 import com.project.app.logic.Outline
+import com.project.app.logic.OutlineRow
+import com.project.app.logic.Tree
 import com.project.app.logic.ProjectKind
+import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
+import com.project.app.ui.common.OutlinePickerDialog
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** What the board screen draws: the lanes, plus anything stranded by a deleted column. */
+/** What the board screen draws: the lanes, anything stranded, and what a card can point at. */
 data class BoardState(
     val lanes: List<BoardLane> = emptyList(),
     val orphans: List<BoardCard> = emptyList(),
-    val outlineTitles: Map<String, String> = emptyMap()
-)
+    val outlineRows: List<OutlineRow> = emptyList(),
+    val docs: List<Doc> = emptyList()
+) {
+    /** Outline titles by id, for the line under a card that names the piece it is work on. */
+    val outlineTitles: Map<String, String> =
+        outlineRows.associate { it.node.id to "${it.number} ${it.node.title}" }
+
+    val docTitles: Map<String, String> = docs.associate { it.id to it.title }
+}
 
 class BoardViewModel(
     private val repo: ProjectRepository,
@@ -76,12 +88,14 @@ class BoardViewModel(
     val state: StateFlow<BoardState> = combine(
         repo.observeColumns(projectId),
         repo.observeCards(projectId),
-        repo.observeOutline(projectId)
-    ) { columns, cards, outline ->
+        repo.observeOutline(projectId),
+        repo.observeDocs(projectId)
+    ) { columns, cards, outline, docs ->
         BoardState(
             lanes = Board.lanes(columns, cards),
             orphans = Board.orphans(columns, cards),
-            outlineTitles = Outline.flatten(outline).associate { it.node.id to "${it.number} ${it.node.title}" }
+            outlineRows = Outline.flatten(outline),
+            docs = docs
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BoardState())
 
@@ -192,6 +206,7 @@ fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
                         lane = lane,
                         kind = kind,
                         outlineTitles = state.outlineTitles,
+                        docTitles = state.docTitles,
                         onAddCard = { addingCardIn = lane.column.id },
                         onOpenCard = { editingCard = it },
                         onMoveCard = { movingCard = it },
@@ -231,6 +246,11 @@ fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
     editingCard?.let { card ->
         CardDialog(
             card = card,
+            kind = kind,
+            outlineRows = state.outlineRows,
+            docs = state.docs,
+            outlineTitles = state.outlineTitles,
+            docTitles = state.docTitles,
             onDismiss = { editingCard = null },
             onSave = {
                 vm.updateCard(it)
@@ -274,6 +294,7 @@ private fun Lane(
     lane: BoardLane,
     kind: ProjectKind,
     outlineTitles: Map<String, String>,
+    docTitles: Map<String, String>,
     onAddCard: () -> Unit,
     onOpenCard: (BoardCard) -> Unit,
     onMoveCard: (BoardCard) -> Unit,
@@ -386,6 +407,13 @@ private fun Lane(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        card.docId?.let { docId ->
+                            Text(
+                                docTitles[docId] ?: "linked document no longer here",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -427,15 +455,36 @@ private fun TextPromptDialog(
     )
 }
 
+/**
+ * One card, and what it is work *on*.
+ *
+ * The two links are the reason the board is in this app rather than in a separate one. A card that
+ * points at a scene and at the document being written for it turns "what am I doing this week" into
+ * one tap from the thing itself — and it is why the outline can be told which of its pieces are
+ * actually in flight.
+ */
 @Composable
 private fun CardDialog(
     card: BoardCard,
+    kind: ProjectKind,
+    outlineRows: List<OutlineRow>,
+    docs: List<Doc>,
+    outlineTitles: Map<String, String>,
+    docTitles: Map<String, String>,
     onDismiss: () -> Unit,
     onSave: (BoardCard) -> Unit,
     onDelete: () -> Unit
 ) {
     var title by remember(card.id) { mutableStateOf(card.title) }
     var notes by remember(card.id) { mutableStateOf(card.notes.orEmpty()) }
+    var outlineNodeId by remember(card.id) { mutableStateOf(card.outlineNodeId) }
+    var docId by remember(card.id) { mutableStateOf(card.docId) }
+    var pickingOutline by remember { mutableStateOf(false) }
+    var pickingDoc by remember { mutableStateOf(false) }
+
+    val docTree = remember(docs) {
+        Tree.flatten(docs, { it.id }, { it.parentDocId }, compareBy({ it.sortOrder }, { it.title.lowercase() }))
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -455,16 +504,64 @@ private fun CardDialog(
                     label = { Text("Notes") },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                TextButton(onClick = { pickingOutline = true }) {
+                    Text(
+                        outlineNodeId?.let { "${kind.piece.replaceFirstChar { c -> c.uppercase() }}: " +
+                            (outlineTitles[it] ?: "no longer in the outline") }
+                            ?: "Link to a ${kind.piece}…"
+                    )
+                }
+                TextButton(onClick = { pickingDoc = true }) {
+                    Text(
+                        docId?.let { "Document: ${docTitles[it] ?: "no longer here"}" }
+                            ?: "Link to a document…"
+                    )
+                }
+
                 TextButton(onClick = onDelete) { Text("Delete card") }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(card.copy(title = title, notes = notes.ifBlank { null }))
+                onSave(
+                    card.copy(
+                        title = title,
+                        notes = notes.ifBlank { null },
+                        outlineNodeId = outlineNodeId,
+                        docId = docId
+                    )
+                )
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+
+    if (pickingOutline) {
+        OutlinePickerDialog(
+            title = "Work on which ${kind.piece}?",
+            rows = outlineRows,
+            selectedId = outlineNodeId,
+            onDismiss = { pickingOutline = false },
+            onPick = {
+                outlineNodeId = it
+                pickingOutline = false
+            }
+        )
+    }
+
+    if (pickingDoc) {
+        DocPickerDialog(
+            title = "Which document?",
+            rows = docTree,
+            selectedId = docId,
+            onDismiss = { pickingDoc = false },
+            onPick = {
+                docId = it
+                pickingDoc = false
+            }
+        )
+    }
 }
 
 @Composable

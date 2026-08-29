@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -42,10 +43,13 @@ import androidx.lifecycle.viewModelScope
 import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Outline
+import com.project.app.logic.Tree
 import com.project.app.logic.OutlineNode
 import com.project.app.logic.ProjectKind
 import com.project.app.logic.ProjectPulse
+import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
+import com.project.app.ui.common.OutlinePickerDialog
 import com.project.app.ui.common.formatDayTime
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -73,6 +77,9 @@ class DocsViewModel(
 
     fun delete(docId: String) = viewModelScope.launch { repo.deleteDoc(docId) }
 
+    fun move(docId: String, newParentId: String?) =
+        viewModelScope.launch { repo.moveDoc(projectId, docId, newParentId) }
+
     class Factory(
         private val repo: ProjectRepository,
         private val projectId: String
@@ -91,6 +98,11 @@ class DocsViewModel(
  * kept in step on every keystroke; the outline stops being a plan you maintain by hand beside the
  * writing and becomes a view of it.
  *
+ * Documents nest, so a project can keep its chapters in folders and its research beside them rather
+ * than in one flat list of forty. The nesting is the same parent-pointer tree as the outline and is
+ * walked by the same code (`logic/Tree`), which is why an orphaned document is still drawn — at the
+ * top level — instead of vanishing with the folder that held it.
+ *
  * The list shows length and the link, because those are what tell one draft from another when there
  * are forty of them.
  */
@@ -105,9 +117,14 @@ fun DocsScreen(
 
     var showAdd by remember { mutableStateOf(false) }
     var linking by remember { mutableStateOf<Doc?>(null) }
+    var moving by remember { mutableStateOf<Doc?>(null) }
     var confirmDelete by remember { mutableStateOf<Doc?>(null) }
 
-    val titles = remember(outline) { Outline.flatten(outline).associate { it.node.id to "${it.number} ${it.node.title}" } }
+    val outlineRows = remember(outline) { Outline.flatten(outline) }
+    val titles = remember(outlineRows) { outlineRows.associate { it.node.id to "${it.number} ${it.node.title}" } }
+    val tree = remember(docs) {
+        Tree.flatten(docs, { it.id }, { it.parentDocId }, compareBy({ it.sortOrder }, { it.title.lowercase() }))
+    }
 
     Scaffold(
         floatingActionButton = {
@@ -133,13 +150,16 @@ fun DocsScreen(
                 }
             }
 
-            items(docs, key = { it.id }) { doc ->
+            items(tree, key = { it.item.id }) { row ->
                 DocRow(
-                    doc = doc,
-                    linkedTitle = doc.outlineNodeId?.let { titles[it] },
-                    onOpen = { onOpenDoc(doc) },
-                    onLink = { linking = doc },
-                    onDelete = { confirmDelete = doc }
+                    doc = row.item,
+                    depth = row.depth,
+                    hasChildren = row.hasChildren,
+                    linkedTitle = row.item.outlineNodeId?.let { titles[it] },
+                    onOpen = { onOpenDoc(row.item) },
+                    onLink = { linking = row.item },
+                    onMove = { moving = row.item },
+                    onDelete = { confirmDelete = row.item }
                 )
             }
         }
@@ -170,14 +190,31 @@ fun DocsScreen(
     }
 
     linking?.let { doc ->
-        LinkToOutlineDialog(
-            doc = doc,
-            options = Outline.flatten(outline),
+        OutlinePickerDialog(
+            title = "Link “${doc.title}”",
+            rows = outlineRows,
+            selectedId = doc.outlineNodeId,
             onDismiss = { linking = null },
             onPick = { nodeId ->
                 vm.update(doc.copy(outlineNodeId = nodeId))
                 linking = null
             }
+        )
+    }
+
+    moving?.let { doc ->
+        DocPickerDialog(
+            title = "Move “${doc.title}” into",
+            rows = tree,
+            selectedId = doc.parentDocId,
+            onDismiss = { moving = null },
+            onPick = { parentId ->
+                vm.move(doc.id, parentId)
+                moving = null
+            },
+            noneLabel = "Top level",
+            // A document cannot be filed inside itself or anything under it.
+            excluded = Tree.subtree(docs, { it.id }, { it.parentDocId }, doc.id).toSet()
         )
     }
 
@@ -200,22 +237,37 @@ fun DocsScreen(
 @Composable
 private fun DocRow(
     doc: Doc,
+    depth: Int,
+    hasChildren: Boolean,
     linkedTitle: String?,
     onOpen: () -> Unit,
     onLink: () -> Unit,
+    onMove: () -> Unit,
     onDelete: () -> Unit
 ) {
     var menuOpen by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            // Capped like the outline's: depth beyond four stops eating the title.
+            .padding(start = (depth.coerceAtMost(4) * 16).dp)
+            .clickable(onClick = onOpen)
+    ) {
         Row(
             modifier = Modifier.padding(12.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(doc.icon ?: "", style = MaterialTheme.typography.titleLarge)
-            if (doc.icon == null) {
-                Icon(Icons.Filled.Description, contentDescription = null)
+            if (doc.icon != null) {
+                Text(doc.icon, style = MaterialTheme.typography.titleLarge)
+            } else {
+                // A document holding others reads as a folder, without being a different kind of
+                // thing: it still has its own text, and can still be opened and written in.
+                Icon(
+                    if (hasChildren) Icons.Filled.Folder else Icons.Filled.Description,
+                    contentDescription = null
+                )
             }
 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -247,6 +299,13 @@ private fun DocRow(
                         }
                     )
                     DropdownMenuItem(
+                        text = { Text("Move into…") },
+                        onClick = {
+                            menuOpen = false
+                            onMove()
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text("Delete…") },
                         onClick = {
                             menuOpen = false
@@ -257,48 +316,4 @@ private fun DocRow(
             }
         }
     }
-}
-
-@Composable
-private fun LinkToOutlineDialog(
-    doc: Doc,
-    options: List<com.project.app.logic.OutlineRow>,
-    onDismiss: () -> Unit,
-    onPick: (String?) -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Link “${doc.title}”") },
-        text = {
-            if (options.isEmpty()) {
-                Text("There is nothing in the outline to link to yet.")
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    item(key = "none") {
-                        Text(
-                            "Not linked",
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPick(null) }
-                                .padding(vertical = 8.dp)
-                        )
-                    }
-                    items(options, key = { it.node.id }) { row ->
-                        Text(
-                            "${row.number}  ${row.node.title}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (row.node.id == doc.outlineNodeId) MaterialTheme.colorScheme.primary
-                            else MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onPick(row.node.id) }
-                                .padding(start = (row.depth.coerceAtMost(4) * 12).dp, top = 8.dp, bottom = 8.dp)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
-    )
 }

@@ -8,8 +8,12 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.ViewKanban
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,7 +26,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.project.app.data.model.Doc
 import com.project.app.data.model.Project
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.SearchSection
 import com.project.app.ui.board.BoardScreen
 import com.project.app.ui.board.BoardViewModel
 import com.project.app.ui.docs.DocsScreen
@@ -57,15 +62,31 @@ import kotlinx.coroutines.flow.stateIn
  * has to stay consistent with, **Timeline** is what happens in what order, and **Board** is what is
  * being done about it this week.
  */
-enum class ProjectSection(val key: String, val label: String, val icon: ImageVector) {
-    OUTLINE("outline", "Outline", Icons.Filled.AccountTree),
-    DOCS("docs", "Docs", Icons.Filled.Description),
-    LORE("lore", "Lore", Icons.AutoMirrored.Filled.MenuBook),
-    TIMELINE("timeline", "Timeline", Icons.Filled.Timeline),
-    BOARD("board", "Board", Icons.Filled.ViewKanban);
+enum class ProjectSection(
+    /**
+     * The section as the searcher names it.
+     *
+     * Held as the enum rather than as a matching string, so a search hit turns into a destination
+     * through the type system: adding a section to one of these two enums and not the other becomes
+     * a compile error instead of a jump that silently lands on the Outline.
+     */
+    val section: SearchSection,
+    val icon: ImageVector
+) {
+    OUTLINE(SearchSection.OUTLINE, Icons.Filled.AccountTree),
+    DOCS(SearchSection.DOCS, Icons.Filled.Description),
+    LORE(SearchSection.LORE, Icons.AutoMirrored.Filled.MenuBook),
+    TIMELINE(SearchSection.TIMELINE, Icons.Filled.Timeline),
+    BOARD(SearchSection.BOARD, Icons.Filled.ViewKanban);
+
+    val key: String get() = section.key
+    val label: String get() = section.label
 
     companion object {
+        /** Tolerant lookup for the remembered section; anything unknown opens on the Outline. */
         fun fromKey(key: String?): ProjectSection = entries.firstOrNull { it.key == key } ?: OUTLINE
+
+        fun of(section: SearchSection): ProjectSection = entries.first { it.section == section }
     }
 }
 
@@ -91,10 +112,14 @@ class WorkspaceViewModel(
 /**
  * One project, open.
  *
- * The section is state held here rather than a navigation route, on purpose: switching from Docs to
- * Board and back is *looking at the same thing differently*, not going somewhere, and putting each
- * on the back stack would mean five taps of Back to leave a project you glanced at. Back leaves the
- * project, which is what the gesture means here.
+ * The section is state rather than a navigation route, on purpose: switching from Docs to Board and
+ * back is *looking at the same thing differently*, not going somewhere, and putting each on the back
+ * stack would mean five taps of Back to leave a project you glanced at. Back leaves the project,
+ * which is what the gesture means here.
+ *
+ * That state is **hoisted to the navigation graph** rather than kept here, because search needs to
+ * set it: tapping a lore hit has to land you on Lore, and a section owned privately by this
+ * composable could not be told to move.
  *
  * The section screens each get their own ViewModel keyed by the project — they observe different
  * tables and none of them needs the others' state, so a single workspace ViewModel would be five
@@ -105,9 +130,11 @@ class WorkspaceViewModel(
 fun ProjectWorkspace(
     repo: ProjectRepository,
     projectId: String,
-    initialSection: ProjectSection,
+    section: ProjectSection,
     onSectionChange: (ProjectSection) -> Unit,
     onOpenDoc: (Doc) -> Unit,
+    onSearch: () -> Unit,
+    onCompile: () -> Unit,
     onBack: () -> Unit
 ) {
     val vm: WorkspaceViewModel = viewModel(
@@ -115,9 +142,7 @@ fun ProjectWorkspace(
         factory = WorkspaceViewModel.Factory(repo, projectId)
     )
     val project by vm.project.collectAsStateWithLifecycle()
-
-    var sectionKey by rememberSaveable(projectId) { mutableStateOf(initialSection.key) }
-    val section = ProjectSection.fromKey(sectionKey)
+    var menuOpen by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -127,6 +152,25 @@ fun ProjectWorkspace(
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to projects")
                     }
+                },
+                actions = {
+                    IconButton(onClick = onSearch) {
+                        Icon(Icons.Filled.Search, contentDescription = "Search this project")
+                    }
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "Project menu")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Compile…") },
+                                onClick = {
+                                    menuOpen = false
+                                    onCompile()
+                                }
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -135,10 +179,7 @@ fun ProjectWorkspace(
                 ProjectSection.entries.forEach { candidate ->
                     NavigationBarItem(
                         selected = candidate == section,
-                        onClick = {
-                            sectionKey = candidate.key
-                            onSectionChange(candidate)
-                        },
+                        onClick = { onSectionChange(candidate) },
                         icon = { Icon(candidate.icon, contentDescription = candidate.label) },
                         label = { Text(candidate.label) }
                     )

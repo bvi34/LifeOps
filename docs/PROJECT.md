@@ -10,6 +10,7 @@ Citation, Logistics, Advisor, Health and People.
 
 ```
 Operations Sandbox  →  Project  →  a specific project  →  Outline · Docs · Lore · Timeline · Board
+                                                          ↳ search · compile
 ```
 
 ## What it is, and what it deliberately is not
@@ -65,9 +66,20 @@ reorder a line, turn a paragraph into a heading, or tick a to-do without rewriti
 and because a to-do's ticked state is a fact about a line, not a character in it.
 
 The **interchange is Markdown, in both directions**. Paste a chapter in and it becomes blocks; the
-same document renders back out as Markdown, with numbered runs renumbered from 1 so a list that lost
-its middle item does not export as 1, 2, 4. A repository you cannot get writing *out* of is a hostage
-situation, not a tool.
+same document goes back out to the clipboard or the share sheet as Markdown, with numbered runs
+renumbered from 1 so a list that lost its middle item does not export as 1, 2, 4. A repository you
+cannot get writing *out* of is a hostage situation, not a tool — and an export buried in a settings
+screen is one most people never find, which is why both live in the document's own menu.
+
+Documents **nest**. A project keeps its chapters in a folder and its research beside them rather than
+in one flat list of forty, and the nesting is the same parent-pointer tree as the outline, walked by
+the same code — so a document orphaned by a deleted folder is still drawn, at the top level, rather
+than vanishing with it. A document cannot be filed inside itself or anything under it; the picker
+never offers the move rather than refusing it afterwards.
+
+**Reading mode** drops the fields and draws the blocks as text. Nine tenths of the time a document is
+opened it is to be read, and a page of outlined input boxes reads like a form. To-dos stay tickable
+while reading: a checklist you cannot tick is a picture of a checklist.
 
 Inline formatting is left alone on purpose. Bold and italic stay as the asterisks you typed:
 half-parsing Markdown — structure yes, emphasis no — is the version that loses least, and an editor
@@ -144,6 +156,49 @@ Moving a card is a menu of destinations rather than a drag, for the same reason 
 arrows: dragging between two columns that are half off-screen is a guess, and the one thing a board
 must never be is unsure where it just put your work.
 
+## Compile — the whole thing as one document
+
+The operation the app exists to make possible, and the reason the outline↔document link is worth
+maintaining on every edit. The outline knows the order, the documents hold the text, so "give me the
+manuscript" is a walk rather than a feature. Nothing is stored; a compile is derived on demand and
+thrown away, because a cached one would be a second answer to "how long is this" that goes stale the
+moment somebody types.
+
+Options — headings, synopses, cut material, unplaced documents — recompile as you toggle them, so
+"what does it look like with the cut scenes back in?" is a question you answer by asking it. The
+options are carried on the result and the renderer takes none of its own, which removes a whole class
+of bug: a summary that counts a cut scene as omitted while the text beside it prints the scene anyway.
+
+The rule that shapes the screen: **a hole is reported, never hidden.**
+
+- Pieces of the outline with nothing written for them are listed *by name* before the preview. A
+  compiler that silently skipped them would hand you a manuscript with a scene missing and no way to
+  know — the failure you discover after sending the file to somebody.
+- Documents belonging to no piece of the outline are counted even when they are excluded, because
+  "12 documents are not in this export" is the sentence that saves you.
+- Only *leaves* count as holes: an act is supposed to have no text of its own.
+
+The result goes out to the clipboard or the share sheet as Markdown, like everything else here.
+
+## Search — across all five sections
+
+Until this existed only Lore could be searched, which meant that past about forty documents the
+repository stopped being a repository and became a pile.
+
+The matching is deliberately plain: **case-insensitive substring, all terms required, matched against
+the whole record.** That last part is the one that matters — "kestrel smuggler" has the name in the
+title and the description in the body, and requiring every term to land on the same side would find
+nothing while the entry sits there containing both words.
+
+No stemming and no fuzzy matching. For a corpus of one person's own project that is not a compromise:
+you are looking for a phrase you wrote yourself and can spell, and fuzzy matching over a small corpus
+mostly produces confident wrong answers. A search that returns the scene you did not mean is worse
+than one that returns nothing and lets you retype.
+
+Ranking is title-before-body, then section order, then alphabetical — fully deterministic, so the same
+query always gives the same list. Results are grouped by section; a document hit opens the document,
+and anything else takes you to the section that holds it.
+
 ## Vocabulary
 
 A project has a **kind** — Writing, Software, Research, General — and it decides nothing except what
@@ -158,12 +213,19 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 
 | File | What it decides |
 |---|---|
-| `Outline.kt` | Flattening the tree, numbering rows, rolling up words and pieces, and the four structural edits. |
+| `Tree.kt` | Walking a parent-pointer tree — the outline's and the docs' folders alike: depth-first order, numbering, orphans drawn rather than hidden, cycles that terminate, and whether a re-parent is legal. |
+| `Outline.kt` | Rolling up words and finished pieces from the leaves, and the four structural edits. |
+| `Manuscript.kt` | Compiling the outline and its documents into one document, and finding the holes in it. |
+| `ProjectSearch.kt` | Matching, snippets and ranking across all five sections. |
 | `DocBlocks.kt` | The Markdown ↔ blocks round trip, word counts, headings, to-do progress, previews. |
 | `Lore.kt` | Wiki links, the name/alias index, backlinks, broken links, ambiguity. |
 | `Timeline.kt` | Reading a "when" label, era bands, gaps, and order contradictions. |
 | `Board.kt` | Lanes, WIP-limit state, moving a card between columns, orphans, default columns. |
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
+
+That is 102 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+terminating — are each asserted directly, because both are the kind of thing that is invisible until
+the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |
 
 The Android side (`data/`, `ui/`) adds Room storage and the Compose screens and decides nothing else:
@@ -176,10 +238,12 @@ One Room database, `project.db`, with eight tables and one project id threaded t
 That column is the architecture: every section is scoped to a project and cascades with it, so
 deleting a project cannot leave a doc or a card behind for a query that forgot to filter.
 
-The **cross-section links are soft** — a card's outline node, a doc's outline node, an event's scene
-— declared without a foreign key so deleting a scene does not delete the notes written about it. When
-an outline subtree *is* deleted, those links are explicitly cut in the same transaction: a link that
-dangles for ever is indistinguishable from one that was never made.
+The **cross-section links are soft** — a card's outline node and document, a doc's outline node, an
+event's scene — declared without a foreign key so deleting a scene does not delete the notes written
+about it. When an outline subtree *is* deleted, those links are explicitly cut in the same
+transaction: a link that dangles for ever is indistinguishable from one that was never made. Every
+one of them is settable from the section that owns it, and always alongside a **Not linked** option,
+since un-linking has to be as easy as linking or the link becomes a trap.
 
 Derived numbers are **written down, not recomputed on read**. A document's word count lives on the
 document and a scene's on the scene, because the shelf draws hundreds of them at once. Every write

@@ -171,6 +171,25 @@ interface ProjectDao {
     @Query("SELECT * FROM doc_blocks WHERE docId = :docId ORDER BY sortOrder")
     suspend fun getBlocks(docId: String): List<DocBlockEntity>
 
+    /**
+     * Every block in a project, joined through its document.
+     *
+     * Blocks carry no `projectId` of their own — they belong to a document, which belongs to a
+     * project — so this is the one query that has to reach across. Both readers of it want the whole
+     * corpus anyway: search matches over all of it, and a compile renders all of it.
+     */
+    @Query(
+        "SELECT b.* FROM doc_blocks b INNER JOIN docs d ON d.id = b.docId " +
+            "WHERE d.projectId = :projectId ORDER BY b.docId, b.sortOrder"
+    )
+    fun observeBlocksOfProject(projectId: String): Flow<List<DocBlockEntity>>
+
+    @Query(
+        "SELECT b.* FROM doc_blocks b INNER JOIN docs d ON d.id = b.docId " +
+            "WHERE d.projectId = :projectId ORDER BY b.docId, b.sortOrder"
+    )
+    suspend fun blocksOfProject(projectId: String): List<DocBlockEntity>
+
     @Upsert
     suspend fun upsertBlock(block: DocBlockEntity)
 

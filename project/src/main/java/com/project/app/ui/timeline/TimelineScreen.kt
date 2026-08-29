@@ -45,10 +45,13 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.Outline
+import com.project.app.logic.OutlineRow
 import com.project.app.logic.Timeline
 import com.project.app.logic.TimelineEvent
 import com.project.app.logic.TimelineRow
 import com.project.app.ui.common.EmptyState
+import com.project.app.ui.common.OutlinePickerDialog
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -71,8 +74,14 @@ class TimelineViewModel(
         events.map { Timeline.canAutoSort(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    fun add(title: String, whenLabel: String?, era: String?, detail: String?) =
-        viewModelScope.launch { repo.addEvent(projectId, title, whenLabel, era, detail) }
+    /** The outline, so an event can be told which piece of the work it happens in. */
+    val outline: StateFlow<List<OutlineRow>> =
+        repo.observeOutline(projectId)
+            .map { Outline.flatten(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun add(title: String, whenLabel: String?, era: String?, detail: String?, outlineNodeId: String?) =
+        viewModelScope.launch { repo.addEvent(projectId, title, whenLabel, era, detail, outlineNodeId) }
 
     fun update(event: TimelineEvent) = viewModelScope.launch { repo.updateEvent(projectId, event) }
 
@@ -109,6 +118,11 @@ class TimelineViewModel(
 fun TimelineScreen(vm: TimelineViewModel) {
     val rows by vm.rows.collectAsStateWithLifecycle()
     val canSort by vm.canAutoSort.collectAsStateWithLifecycle()
+    val outline by vm.outline.collectAsStateWithLifecycle()
+
+    val outlineTitles = remember(outline) {
+        outline.associate { it.node.id to "${it.number} ${it.node.title}" }
+    }
 
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<TimelineEvent?>(null) }
@@ -178,6 +192,7 @@ fun TimelineScreen(vm: TimelineViewModel) {
                 }
                 EventCard(
                     row = row,
+                    linkedTitle = row.event.outlineNodeId?.let { outlineTitles[it] },
                     onEdit = { editing = row.event },
                     onMove = { delta -> vm.move(row.event.id, delta) },
                     onDelete = { vm.delete(row.event.id) }
@@ -190,9 +205,11 @@ fun TimelineScreen(vm: TimelineViewModel) {
         EventDialog(
             title = "New event",
             event = null,
+            outlineRows = outline,
+            outlineTitles = outlineTitles,
             onDismiss = { adding = false },
-            onSave = { title, whenLabel, era, detail ->
-                vm.add(title, whenLabel, era, detail)
+            onSave = { title, whenLabel, era, detail, nodeId ->
+                vm.add(title, whenLabel, era, detail, nodeId)
                 adding = false
             }
         )
@@ -202,9 +219,19 @@ fun TimelineScreen(vm: TimelineViewModel) {
         EventDialog(
             title = "Edit event",
             event = event,
+            outlineRows = outline,
+            outlineTitles = outlineTitles,
             onDismiss = { editing = null },
-            onSave = { title, whenLabel, era, detail ->
-                vm.update(event.copy(title = title, whenLabel = whenLabel, era = era, detail = detail))
+            onSave = { title, whenLabel, era, detail, nodeId ->
+                vm.update(
+                    event.copy(
+                        title = title,
+                        whenLabel = whenLabel,
+                        era = era,
+                        detail = detail,
+                        outlineNodeId = nodeId
+                    )
+                )
                 editing = null
             }
         )
@@ -214,6 +241,7 @@ fun TimelineScreen(vm: TimelineViewModel) {
 @Composable
 private fun EventCard(
     row: TimelineRow,
+    linkedTitle: String?,
     onEdit: () -> Unit,
     onMove: (Int) -> Unit,
     onDelete: () -> Unit
@@ -277,6 +305,14 @@ private fun EventCard(
                 Text(it, style = MaterialTheme.typography.bodySmall)
             }
 
+            linkedTitle?.let {
+                Text(
+                    "Happens in $it",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+
             // The gap only means something between two labels on the same scale, which is why it is
             // rendered from the row rather than computed here.
             row.gapFromPrevious?.takeIf { it != 0L }?.let { gap ->
@@ -304,14 +340,18 @@ private fun EventCard(
 private fun EventDialog(
     title: String,
     event: TimelineEvent?,
+    outlineRows: List<OutlineRow>,
+    outlineTitles: Map<String, String>,
     onDismiss: () -> Unit,
-    onSave: (String, String?, String?, String?) -> Unit
+    onSave: (String, String?, String?, String?, String?) -> Unit
 ) {
     val key = event?.id ?: "new"
     var name by remember(key) { mutableStateOf(event?.title.orEmpty()) }
     var whenLabel by remember(key) { mutableStateOf(event?.whenLabel.orEmpty()) }
     var era by remember(key) { mutableStateOf(event?.era.orEmpty()) }
     var detail by remember(key) { mutableStateOf(event?.detail.orEmpty()) }
+    var outlineNodeId by remember(key) { mutableStateOf(event?.outlineNodeId) }
+    var picking by remember { mutableStateOf(false) }
 
     val parsed = Timeline.parseWhen(whenLabel)
 
@@ -354,13 +394,41 @@ private fun EventDialog(
                     label = { Text("Detail (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                // Which scene this happens in. The timeline is what the story does; the outline is
+                // where it is told — and they are not the same order, which is the whole point of
+                // being able to say so.
+                TextButton(onClick = { picking = true }) {
+                    Text(
+                        outlineNodeId?.let { "Happens in ${outlineTitles[it] ?: "something no longer there"}" }
+                            ?: "Happens in… (optional)"
+                    )
+                }
             }
         },
         confirmButton = {
             TextButton(enabled = name.isNotBlank(), onClick = {
-                onSave(name, whenLabel.ifBlank { null }, era.ifBlank { null }, detail.ifBlank { null })
+                onSave(
+                    name,
+                    whenLabel.ifBlank { null },
+                    era.ifBlank { null },
+                    detail.ifBlank { null },
+                    outlineNodeId
+                )
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+
+    if (picking) {
+        OutlinePickerDialog(
+            title = "Happens in",
+            rows = outlineRows,
+            selectedId = outlineNodeId,
+            onDismiss = { picking = false },
+            onPick = {
+                outlineNodeId = it
+                picking = false
+            }
+        )
+    }
 }

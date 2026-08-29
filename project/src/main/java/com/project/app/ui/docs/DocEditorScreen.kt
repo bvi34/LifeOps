@@ -1,5 +1,6 @@
 package com.project.app.ui.docs
 
+import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -27,6 +30,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -36,10 +41,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -50,24 +59,42 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.project.app.data.model.DocContent
+import com.project.app.data.prefs.ProjectPrefs
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.DocBlocks
 import com.project.app.logic.ProjectPulse
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class DocEditorViewModel(
     private val repo: ProjectRepository,
+    private val prefs: ProjectPrefs,
     private val docId: String
 ) : ViewModel() {
 
     val content: StateFlow<DocContent?> =
         repo.observeDocContent(docId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Reading or editing. Remembered across documents and launches, because it is a mode you are
+     * *in* — somebody re-reading a draft wants every document they open to be readable, not to
+     * reach for the toggle forty times.
+     */
+    private val _readingMode = MutableStateFlow(prefs.docReadingMode)
+    val readingMode: StateFlow<Boolean> = _readingMode.asStateFlow()
+
+    fun toggleReadingMode() {
+        val next = !_readingMode.value
+        _readingMode.value = next
+        prefs.docReadingMode = next
+    }
 
     fun updateBlock(block: DocBlock) = viewModelScope.launch { repo.updateBlock(docId, block) }
 
@@ -87,13 +114,18 @@ class DocEditorViewModel(
     fun replaceFromMarkdown(markdown: String) =
         viewModelScope.launch { repo.replaceDocFromMarkdown(docId, markdown) }
 
+    /** The document as Markdown, handed to whoever asked — the clipboard or the share sheet. */
+    fun exportMarkdown(onReady: (String) -> Unit) =
+        viewModelScope.launch { onReady(repo.docAsMarkdown(docId)) }
+
     class Factory(
         private val repo: ProjectRepository,
+        private val prefs: ProjectPrefs,
         private val docId: String
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            DocEditorViewModel(repo, docId) as T
+            DocEditorViewModel(repo, prefs, docId) as T
     }
 }
 
@@ -106,14 +138,23 @@ class DocEditorViewModel(
  * save button, because a document editor that can lose the last paragraph to a back gesture is not
  * one anybody should trust their only copy to.
  *
- * The paste-in and copy-out are Markdown (see `logic/DocBlocks`), and both are offered here rather
- * than hidden in a settings screen. A repository you cannot get writing *out* of is a hostage
- * situation, not a tool.
+ * **Reading mode** drops the fields and draws the same blocks as text. Nine tenths of the time a
+ * document is opened it is to be read, and a page of outlined input boxes reads like a form.
+ *
+ * The way writing gets **out** is Markdown, to the clipboard or the share sheet, matching the way it
+ * comes in. That pairing is the point: a repository you cannot get writing out of is a hostage
+ * situation, not a tool, and an export buried in a settings screen is one most people never find.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
     val content by vm.content.collectAsStateWithLifecycle()
+    val reading by vm.readingMode.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    val snackbars = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
     var renaming by remember { mutableStateOf(false) }
     var importing by remember { mutableStateOf(false) }
@@ -125,6 +166,7 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
     val blocks = content?.blocks.orEmpty()
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbars) },
         topBar = {
             TopAppBar(
                 title = { Text(doc?.title ?: "Document") },
@@ -134,6 +176,12 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    IconButton(onClick = { vm.toggleReadingMode() }) {
+                        Icon(
+                            if (reading) Icons.Filled.Edit else Icons.Filled.MenuBook,
+                            contentDescription = if (reading) "Edit" else "Read"
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Filled.MoreVert, contentDescription = "Document menu")
@@ -144,6 +192,29 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
                                 onClick = {
                                     menuOpen = false
                                     renaming = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Copy as Markdown") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.exportMarkdown { markdown ->
+                                        clipboard.setText(AnnotatedString(markdown))
+                                        scope.launch {
+                                            snackbars.showSnackbar(
+                                                "Copied ${ProjectPulse.count(DocBlocks.wordCount(blocks))} words"
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Share as text…") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.exportMarkdown { markdown ->
+                                        shareText(context, doc?.title ?: "Document", markdown)
+                                    }
                                 }
                             )
                             DropdownMenuItem(
@@ -182,28 +253,34 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
+                verticalArrangement = Arrangement.spacedBy(if (reading) 8.dp else 2.dp)
             ) {
                 items(blocks, key = { it.id }) { block ->
-                    BlockRow(
-                        block = block,
-                        onChange = { vm.updateBlock(it) },
-                        onMove = { delta -> vm.moveBlock(block.id, delta) },
-                        onDelete = { vm.deleteBlock(block.id) },
-                        onAddAfter = {
-                            addingAfter = block.id
-                            showAddMenu = true
-                        }
-                    )
+                    if (reading) {
+                        ReadOnlyBlock(block)
+                    } else {
+                        BlockRow(
+                            block = block,
+                            onChange = { vm.updateBlock(it) },
+                            onMove = { delta -> vm.moveBlock(block.id, delta) },
+                            onDelete = { vm.deleteBlock(block.id) },
+                            onAddAfter = {
+                                addingAfter = block.id
+                                showAddMenu = true
+                            }
+                        )
+                    }
                 }
 
-                item(key = "add-at-end") {
-                    TextButton(onClick = {
-                        addingAfter = blocks.lastOrNull()?.id
-                        showAddMenu = true
-                    }) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Text("  Add a block")
+                if (!reading) {
+                    item(key = "add-at-end") {
+                        TextButton(onClick = {
+                            addingAfter = blocks.lastOrNull()?.id
+                            showAddMenu = true
+                        }) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Text("  Add a block")
+                        }
                     }
                 }
             }
@@ -275,7 +352,65 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
 }
 
 /**
- * One block.
+ * Hand [markdown] to whatever the device can send text with.
+ *
+ * `ACTION_SEND` with plain text rather than a file: it needs no permission and no FileProvider, and
+ * every note-taking app, mail client and messenger on the device accepts it. Writing a temporary
+ * file to share would be a bigger promise than "get this text out of here".
+ */
+private fun shareText(context: android.content.Context, title: String, markdown: String) {
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, title)
+        putExtra(Intent.EXTRA_TEXT, markdown)
+    }
+    runCatching { context.startActivity(Intent.createChooser(send, "Share document")) }
+}
+
+/** A block as it reads, not as it is edited. */
+@Composable
+private fun ReadOnlyBlock(block: DocBlock) {
+    when (block.type) {
+        BlockType.DIVIDER -> HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        BlockType.TODO -> Row(verticalAlignment = Alignment.CenterVertically) {
+            // Ticking stays live in reading mode: a checklist you cannot tick while reading it is a
+            // picture of a checklist.
+            Checkbox(checked = block.checked, onCheckedChange = null)
+            Text(
+                block.text,
+                style = MaterialTheme.typography.bodyLarge,
+                textDecoration = if (block.checked) TextDecoration.LineThrough else null,
+                modifier = Modifier.padding(start = 8.dp)
+            )
+        }
+
+        else -> Text(
+            text = when (block.type) {
+                BlockType.BULLET -> "•  ${block.text}"
+                BlockType.NUMBERED -> "•  ${block.text}"
+                BlockType.QUOTE -> block.text
+                else -> block.text
+            },
+            style = when (block.type) {
+                BlockType.HEADING1 -> MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold)
+                BlockType.HEADING2 -> MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
+                BlockType.HEADING3 -> MaterialTheme.typography.titleMedium
+                BlockType.QUOTE -> MaterialTheme.typography.bodyLarge.copy(fontStyle = FontStyle.Italic)
+                BlockType.CODE -> MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+                else -> MaterialTheme.typography.bodyLarge
+            },
+            color = if (block.type == BlockType.QUOTE) MaterialTheme.colorScheme.onSurfaceVariant
+            else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = if (block.type == BlockType.QUOTE) 16.dp else 0.dp)
+        )
+    }
+}
+
+/**
+ * One block, editable.
  *
  * A divider draws itself; everything else is a text field styled for what it is, so a heading
  * *looks* like a heading while you are typing it. The controls sit on the row rather than in a

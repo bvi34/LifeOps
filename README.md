@@ -152,11 +152,20 @@ the receipts.
 > that rejects the card in your hand teaches you to lie to it), and deleting a column **keeps its
 > cards**, stranded on purpose, with a banner to re-file them.
 >
+> Two things tie the sections into one app rather than five. **Compile** walks the whole outline,
+> pulls in every document linked to it, and hands you the manuscript — and it reports the holes
+> rather than hiding them: pieces with nothing written are listed by name, and documents belonging to
+> no piece are counted even when excluded, because "12 documents are not in this export" is the
+> sentence that saves you. **Search** covers all five sections at once, matching every term against
+> the whole record rather than title-and-body separately (so "kestrel smuggler" finds the entry whose
+> name is in one and description in the other), ranked title-before-body and fully deterministic.
+>
 > Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
 > like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
-> the timeline reading and the board moves are pure JVM in `project/logic/` and unit-tested. It
-> requests no permissions and has no `INTERNET`; nothing it holds leaves the device.
+> the timeline reading, the board moves, the compile and the search are pure JVM in `project/logic/`
+> and covered by 102 unit tests. It requests no permissions and has no `INTERNET`; nothing it holds
+> leaves the device.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

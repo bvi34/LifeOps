@@ -99,49 +99,33 @@ data class OutlineRow(
  * screen asks of it ("how deep is this", "what is 2.3.1", "how many words are under Act II") is
  * answered here, on the JVM, where it can be tested.
  *
- * Two decisions worth naming:
- *
- * **Orphans are shown, not dropped.** A node whose parent is missing is treated as a root. The
- * tempting alternative — walk from the real roots and emit whatever you reach — quietly hides rows
- * that still exist in the database, and a piece of writing you cannot see is a piece of writing you
- * cannot rescue.
- *
- * **A cycle cannot hang the screen.** Parent pointers are edited by a UI and restored from
- * backups, so a loop is possible however carefully [indent] behaves. The walk emits each node at
- * most once, so the worst a cycle can do is leave part of the tree unreachable rather than spin.
+ * The walk itself — including the two guarantees that matter, that orphans are drawn rather than
+ * hidden and that a cycle cannot spin — belongs to [Tree], which the docs' folder tree uses too.
+ * What is specific to an outline, and therefore lives here, is the *rollup*: words and finished
+ * pieces gathered from the leaves up.
  */
 object Outline {
+
+    /** Siblings are drawn in stored order, ties broken by title so the list never jitters. */
+    private val ORDER: Comparator<OutlineNode> =
+        compareBy({ it.sortOrder }, { it.title.lowercase() })
+
+    private fun idOf(node: OutlineNode) = node.id
+    private fun parentOf(node: OutlineNode) = node.parentId
 
     /** Depth-first, in sort order: the tree as a list of rows with their rollups. */
     fun flatten(nodes: List<OutlineNode>): List<OutlineRow> {
         if (nodes.isEmpty()) return emptyList()
-        val byId = nodes.associateBy { it.id }
-        val children = nodes.groupBy { node ->
-            // A node whose parent is missing (or is itself) is a root, not a lost row.
-            node.parentId?.takeIf { it != node.id && byId.containsKey(it) }
-        }.mapValues { (_, kids) -> kids.sortedWith(compareBy({ it.sortOrder }, { it.title.lowercase() })) }
-
         val rollups = rollups(nodes)
-        val rows = ArrayList<OutlineRow>(nodes.size)
-        val emitted = HashSet<String>(nodes.size)
-
-        fun walk(parentId: String?, depth: Int, prefix: String) {
-            children[parentId].orEmpty().forEachIndexed { index, node ->
-                if (!emitted.add(node.id)) return@forEachIndexed
-                val number = if (prefix.isEmpty()) "${index + 1}" else "$prefix.${index + 1}"
-                rows += OutlineRow(
-                    node = node,
-                    depth = depth,
-                    number = number,
-                    hasChildren = children[node.id].orEmpty().isNotEmpty(),
-                    totals = rollups[node.id] ?: OutlineTotals.EMPTY
-                )
-                walk(node.id, depth + 1, number)
-            }
+        return Tree.flatten(nodes, ::idOf, ::parentOf, ORDER).map { row ->
+            OutlineRow(
+                node = row.item,
+                depth = row.depth,
+                number = row.number,
+                hasChildren = row.hasChildren,
+                totals = rollups[row.item.id] ?: OutlineTotals.EMPTY
+            )
         }
-
-        walk(null, 0, "")
-        return rows
     }
 
     /**
@@ -152,10 +136,7 @@ object Outline {
      * the manuscript. Cut material contributes to [OutlineTotals.cut] and to nothing else.
      */
     fun rollups(nodes: List<OutlineNode>): Map<String, OutlineTotals> {
-        val byId = nodes.associateBy { it.id }
-        val children = nodes.groupBy { node ->
-            node.parentId?.takeIf { it != node.id && byId.containsKey(it) }
-        }
+        val children = Tree.childMap(nodes, ::idOf, ::parentOf, ORDER)
         val out = HashMap<String, OutlineTotals>(nodes.size)
         val visiting = HashSet<String>()
 
@@ -190,39 +171,20 @@ object Outline {
 
     /** The whole project's totals: every root's rollup, added up. */
     fun projectTotals(nodes: List<OutlineNode>): OutlineTotals {
-        val byId = nodes.associateBy { it.id }
-        val roots = nodes.filter { node ->
-            val parent = node.parentId
-            parent == null || parent == node.id || !byId.containsKey(parent)
-        }
         val rollups = rollups(nodes)
+        val roots = Tree.childMap(nodes, ::idOf, ::parentOf, ORDER)[null].orEmpty()
         return roots.fold(OutlineTotals.EMPTY) { acc, root -> acc + (rollups[root.id] ?: OutlineTotals.EMPTY) }
     }
 
     /** Ids of [id] and everything beneath it — what a delete actually takes with it. */
-    fun subtree(nodes: List<OutlineNode>, id: String): List<String> {
-        val children = nodes.groupBy { it.parentId }
-        val out = ArrayList<String>()
-        val seen = HashSet<String>()
-        fun walk(current: String) {
-            if (!seen.add(current)) return
-            out += current
-            children[current].orEmpty().forEach { walk(it.id) }
-        }
-        walk(id)
-        return out
-    }
+    fun subtree(nodes: List<OutlineNode>, id: String): List<String> =
+        Tree.subtree(nodes, ::idOf, ::parentOf, id)
 
     /** The siblings of [node], in the order they are drawn. */
     private fun siblingsOf(nodes: List<OutlineNode>, node: OutlineNode): List<OutlineNode> {
-        val byId = nodes.associateBy { it.id }
-        val parent = node.parentId?.takeIf { it != node.id && byId.containsKey(it) }
-        return nodes
-            .filter { candidate ->
-                val candidateParent = candidate.parentId?.takeIf { it != candidate.id && byId.containsKey(it) }
-                candidateParent == parent
-            }
-            .sortedWith(compareBy({ it.sortOrder }, { it.title.lowercase() }))
+        val known = nodes.mapTo(HashSet()) { it.id }
+        val parent = Tree.parentKeyOf(node, ::idOf, ::parentOf, known)
+        return Tree.childMap(nodes, ::idOf, ::parentOf, ORDER)[parent].orEmpty()
     }
 
     /**
