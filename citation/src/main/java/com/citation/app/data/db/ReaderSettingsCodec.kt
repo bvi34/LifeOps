@@ -29,6 +29,8 @@ object ReaderSettingsCodec {
         put("hyphenate", settings.hyphenate)
         put("paragraphs", settings.paragraphs.name)
         put("theme", settings.theme.name)
+        settings.customBackground?.let { put("customBackground", it) }
+        settings.customText?.let { put("customText", it) }
         put("trueBlack", settings.trueBlack)
         put("warmth", settings.warmth.toDouble())
         put("brightness", settings.brightness.toDouble())
@@ -56,6 +58,8 @@ object ReaderSettingsCodec {
             hyphenate = obj.optBoolean("hyphenate", defaults.hyphenate),
             paragraphs = obj.enum("paragraphs", defaults.paragraphs) { ParagraphSpacing.valueOf(it) },
             theme = obj.enum("theme", defaults.theme) { ReaderTheme.valueOf(it) },
+            customBackground = obj.colour("customBackground"),
+            customText = obj.colour("customText"),
             trueBlack = obj.optBoolean("trueBlack", defaults.trueBlack),
             warmth = obj.float("warmth", defaults.warmth),
             brightness = obj.float("brightness", defaults.brightness),
@@ -66,6 +70,20 @@ object ReaderSettingsCodec {
             orientation = obj.enum("orientation", defaults.orientation) { ScreenOrientation.valueOf(it) },
             immersive = obj.optBoolean("immersive", defaults.immersive)
         ).sanitized()
+    }
+
+    /**
+     * A stored ARGB colour, or `null` when the reader never picked one.
+     *
+     * Absent has to stay distinguishable from black: `optInt` would hand back `0` for a key that was
+     * never written, which is a perfectly valid colour and would leave a reader who has never opened
+     * the custom theme with a transparent page. Read as a long so a value written out as one — an
+     * opaque colour is negative as a signed `Int` — still round-trips.
+     */
+    private fun JSONObject.colour(name: String): Int? {
+        if (!has(name) || isNull(name)) return null
+        val raw = optLong(name, Long.MIN_VALUE)
+        return if (raw == Long.MIN_VALUE) null else raw.toInt()
     }
 
     private fun JSONObject.float(name: String, fallback: Float): Float =
