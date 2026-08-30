@@ -15,17 +15,25 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -42,6 +50,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -49,8 +58,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.citation.app.ui.reader.fontDisplayName
 import com.citation.core.reader.ParagraphSpacing
+import com.citation.core.reader.ReaderFont
+import com.citation.core.reader.ReaderFontNames
 import com.citation.core.reader.ReaderPalette
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReaderTheme
@@ -70,13 +80,21 @@ import com.citation.core.reader.ScreenOrientation
 fun DisplaySheet(
     settings: ReaderSettings,
     perBook: Boolean,
-    fonts: List<String>,
+    fonts: List<ReaderFont>,
     canScopeToBook: Boolean,
     onSettings: ((ReaderSettings) -> ReaderSettings) -> Unit,
     onPerBook: (Boolean) -> Unit,
     onPickFont: () -> Unit,
+    onRenameFont: (String, String) -> Unit,
+    onDeleteFont: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // A font the reader is renaming, and one they have asked to remove. Held here rather than inside
+    // the rows so the dialog outlives the row that opened it — a rename that renumbered the sorted
+    // list under its own dialog would be an odd way to lose your typing.
+    var renaming by remember { mutableStateOf<ReaderFont?>(null) }
+    var deleting by remember { mutableStateOf<ReaderFont?>(null) }
+
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Column(
             Modifier
@@ -147,7 +165,7 @@ fun DisplaySheet(
                 Column(Modifier.weight(1f)) {
                     Text("Your own font", fontSize = 14.sp)
                     Text(
-                        settings.customFontPath?.let { fontDisplayName(it) }
+                        fonts.firstOrNull { it.path == settings.customFontPath }?.name
                             ?: "Add a .ttf or .otf — a dyslexia face, or one you prefer.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.secondary,
@@ -158,17 +176,20 @@ fun DisplaySheet(
                 TextButton(onClick = onPickFont) { Text("Add") }
             }
 
-            if (fonts.size > 1 || (fonts.size == 1 && settings.customFontPath != fonts.firstOrNull())) {
-                Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    fonts.forEach { path ->
-                        Choice(fontDisplayName(path), settings.customFontPath == path) {
-                            onSettings { it.copy(typeface = ReaderTypeface.CUSTOM, customFontPath = path) }
-                        }
-                    }
-                }
+            // A list rather than a row of chips, because each font now has things you can do *to*
+            // it as well as with it, and an action hidden behind a long-press on a chip is an action
+            // nobody finds.
+            fonts.forEach { font ->
+                FontRow(
+                    font = font,
+                    selected = settings.customFontPath == font.path &&
+                        settings.typeface == ReaderTypeface.CUSTOM,
+                    onUse = {
+                        onSettings { it.copy(typeface = ReaderTypeface.CUSTOM, customFontPath = font.path) }
+                    },
+                    onRename = { renaming = font },
+                    onDelete = { deleting = font }
+                )
             }
 
             // --- Setting ------------------------------------------------------------------
@@ -325,6 +346,111 @@ fun DisplaySheet(
             }
         }
     }
+
+    renaming?.let { font ->
+        RenameFontDialog(
+            font = font,
+            onSave = { name -> onRenameFont(font.path, name); renaming = null },
+            onDismiss = { renaming = null }
+        )
+    }
+    deleting?.let { font ->
+        RemoveFontDialog(
+            font = font,
+            onRemove = { onDeleteFont(font.path); deleting = null },
+            onDismiss = { deleting = null }
+        )
+    }
+}
+
+/** One of the reader's fonts: tap the row to read in it, or rename or remove it. */
+@Composable
+private fun FontRow(
+    font: ReaderFont,
+    selected: Boolean,
+    onUse: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(
+        // `selectable` on the row with a null-handler button, rather than a click on each: it makes
+        // the whole row the target, and it stops a screen reader announcing the button and the row
+        // as two separate controls that do the same thing.
+        Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onUse)
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(
+            font.name,
+            Modifier.weight(1f),
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        IconButton(onClick = onRename) {
+            Icon(Icons.Default.Edit, contentDescription = "Rename ${font.name}")
+        }
+        IconButton(onClick = onDelete) {
+            Icon(Icons.Default.Delete, contentDescription = "Remove ${font.name}")
+        }
+    }
+}
+
+/**
+ * Give a font a name.
+ *
+ * Renaming matters more here than it looks: a stored font is named on disk by a digest of its bytes,
+ * so without this a reader comparing three weights of one family is choosing between three strings
+ * of hex. The picked file's name is only a first guess — `Atkinson-Hyperlegible-Regular-102a` is
+ * what a download is called, not what its reader calls it.
+ */
+@Composable
+private fun RenameFontDialog(font: ReaderFont, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember(font.path) { mutableStateOf(font.name) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename font") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { if (it.length <= ReaderFontNames.MAX_LENGTH) name = it },
+                singleLine = true,
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = name.isNotBlank(), onClick = { onSave(name) }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * Confirm removing a font.
+ *
+ * Worth confirming rather than undoing: Citation keeps its own copy precisely so a book does not
+ * change face when a downloads folder is cleaned, which means this copy may well be the last one
+ * left. The dialog says what happens to books already set in it instead of leaving that to be
+ * discovered.
+ */
+@Composable
+private fun RemoveFontDialog(font: ReaderFont, onRemove: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Remove ${font.name}?") },
+        text = {
+            Text(
+                "Citation keeps its own copy of a font you add, so this removes it from the app " +
+                    "entirely. Books set in it go back to sans until you add the file again."
+            )
+        },
+        confirmButton = { TextButton(onClick = onRemove) { Text("Remove") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Keep") } }
+    )
 }
 
 /**

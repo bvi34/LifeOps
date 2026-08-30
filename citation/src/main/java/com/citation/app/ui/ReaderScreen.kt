@@ -1,5 +1,8 @@
 package com.citation.app.ui
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
@@ -261,9 +264,15 @@ private fun FlowingReader(vm: ReaderViewModel) {
         val bytes = runCatching {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         }.getOrNull()
-        val extension = uri.lastPathSegment?.substringAfterLast('.', "")?.takeIf { it.length <= 4 } ?: "ttf"
+        // The document's own name — what the reader will recognise the face by, and the only chance
+        // to learn it. `lastPathSegment` is a provider's document id on most devices ("msf:1234"),
+        // so it is asked for by name and only used for the extension when the provider has none.
+        val pickedName = documentName(context, uri)
+        val extension = (pickedName ?: uri.lastPathSegment.orEmpty())
+            .substringAfterLast('.', "")
+            .takeIf { it.length in 1..4 } ?: "ttf"
         if (bytes == null || bytes.isEmpty()) vm.reportImportProblem("Couldn't read that font file.")
-        else vm.addReaderFont(bytes, extension)
+        else vm.addReaderFont(bytes, extension, pickedName)
     }
     LaunchedEffect(showFontPicker) {
         if (showFontPicker) {
@@ -433,6 +442,8 @@ private fun FlowingReader(vm: ReaderViewModel) {
             onSettings = vm::updateSettings,
             onPerBook = vm::setPerBookSettings,
             onPickFont = { showFontPicker = true },
+            onRenameFont = vm::renameReaderFont,
+            onDeleteFont = vm::deleteReaderFont,
             onDismiss = { showFormat = false }
         )
     }
@@ -974,6 +985,19 @@ private fun readerTextStyle(
     hyphens = if (settings.hyphenate) Hyphens.Auto else Hyphens.None,
     lineBreak = if (settings.justify || settings.hyphenate) LineBreak.Paragraph else LineBreak.Simple
 )
+
+/**
+ * The name a content provider gives a picked document, or null.
+ *
+ * Worth a query rather than reading the URI: `content://` paths carry a provider's internal document
+ * id, so the file name is only available by asking, and it is the difference between a font the
+ * reader can recognise in a list and one labelled by a digest of its bytes.
+ */
+private fun documentName(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver
+        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+}.getOrNull()?.takeIf { it.isNotBlank() }
 
 /** Shade a display range, clipped to the string being built. */
 private fun androidx.compose.ui.text.AnnotatedString.Builder.shade(range: IntRange, color: Color) {

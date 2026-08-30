@@ -58,7 +58,3 @@ private suspend fun loadFont(path: String): FontFamily? = withContext(Dispatcher
         FontFamily(Font(file))
     }.getOrNull()
 }
-
-/** A readable name for a stored font file, for the picker. */
-fun fontDisplayName(path: String): String =
-    File(path).name.substringBeforeLast('.').take(24)

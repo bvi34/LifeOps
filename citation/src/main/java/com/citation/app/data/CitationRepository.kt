@@ -38,6 +38,7 @@ import com.citation.core.key.KeyAllocator
 import com.citation.core.library.BookCollection
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReaderFont
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReadingPace
 import com.citation.core.opds.CatalogPage
@@ -1388,13 +1389,28 @@ class CitationRepository private constructor(
      *
      * Kept in the sovereign store because a book set in a face that vanishes is a book that changes
      * appearance for no reason the reader can see. Named by a digest of its bytes, so picking the
-     * same file twice does not accumulate copies.
+     * same file twice does not accumulate copies — and labelled with [pickedName], the file the
+     * reader chose it from, since the digest is no use to anybody reading a list.
      */
-    suspend fun storeReaderFont(bytes: ByteArray, extension: String): String? =
-        runCatching { files.writeReaderFont(bytes, extension).absolutePath }.getOrNull()
+    suspend fun storeReaderFont(bytes: ByteArray, extension: String, pickedName: String? = null): String? =
+        runCatching { files.writeReaderFont(bytes, extension, pickedName).absolutePath }.getOrNull()
 
     /** Fonts the reader has added, for the picker to offer again without a second trip to the files. */
-    fun readerFonts(): List<String> = files.readerFonts().map { it.absolutePath }
+    fun readerFonts(): List<ReaderFont> = files.readerFonts()
+
+    /** Rename a font the reader added. False when the name is empty or the font has gone. */
+    suspend fun renameReaderFont(path: String, name: String): Boolean =
+        runCatching { files.renameReaderFont(path, name) }.getOrDefault(false)
+
+    /**
+     * Remove a font the reader added.
+     *
+     * Books still set in it are not rewritten: the face falls back to sans on the next render, which
+     * is the same thing that happens to any font that has gone, and is why a missing font has never
+     * been able to make a book unopenable.
+     */
+    suspend fun deleteReaderFont(path: String): Boolean =
+        runCatching { files.deleteReaderFont(path) }.getOrDefault(false)
 
     // --- Reading pace ----------------------------------------------------------------------------
     //
