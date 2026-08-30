@@ -1,5 +1,8 @@
 package com.citation.app.ui
 
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.AnimatedContent
@@ -105,6 +108,7 @@ import com.citation.app.ui.reader.RenderedChapter
 import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.reader.Paginator
 import com.citation.core.reader.Lookup
+import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ReaderPalette
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.VolumeKeys
@@ -261,9 +265,15 @@ private fun FlowingReader(vm: ReaderViewModel) {
         val bytes = runCatching {
             context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         }.getOrNull()
-        val extension = uri.lastPathSegment?.substringAfterLast('.', "")?.takeIf { it.length <= 4 } ?: "ttf"
+        // The document's own name — what the reader will recognise the face by, and the only chance
+        // to learn it. `lastPathSegment` is a provider's document id on most devices ("msf:1234"),
+        // so it is asked for by name and only used for the extension when the provider has none.
+        val pickedName = documentName(context, uri)
+        val extension = (pickedName ?: uri.lastPathSegment.orEmpty())
+            .substringAfterLast('.', "")
+            .takeIf { it.length in 1..4 } ?: "ttf"
         if (bytes == null || bytes.isEmpty()) vm.reportImportProblem("Couldn't read that font file.")
-        else vm.addReaderFont(bytes, extension)
+        else vm.addReaderFont(bytes, extension, pickedName)
     }
     LaunchedEffect(showFontPicker) {
         if (showFontPicker) {
@@ -415,6 +425,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         settings = settings,
                         family = family,
                         foreground = foreground,
+                        background = background,
                         turnThreshold = turnThreshold,
                         onOpenNote = { openNote = it },
                         onProvideHint = { hintProvider.value = it }
@@ -433,6 +444,8 @@ private fun FlowingReader(vm: ReaderViewModel) {
             onSettings = vm::updateSettings,
             onPerBook = vm::setPerBookSettings,
             onPickFont = { showFontPicker = true },
+            onRenameFont = vm::renameReaderFont,
+            onDeleteFont = vm::deleteReaderFont,
             onDismiss = { showFormat = false }
         )
     }
@@ -466,6 +479,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); openNote = null },
             onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
+            onSaveHighlight = { color -> vm.setNoteHighlight(note.key.toString(), color) },
             onJump = { vm.jumpToNote(note); openNote = null },
             onDelete = { vm.deleteNote(note.key.toString()); openNote = null },
             onDismiss = { openNote = null }
@@ -491,6 +505,8 @@ private fun ChapterPage(
     settings: ReaderSettings,
     family: FontFamily,
     foreground: Color,
+    /** The page these highlights will be drawn on; a mark's colour is derived against it. */
+    background: Color,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
     onProvideHint: (() -> Int) -> Unit
@@ -499,7 +515,15 @@ private fun ChapterPage(
     val text = chapter?.text ?: "(chapter unavailable)"
     val title = chapter?.title ?: ""
     val lastIndex = book.chapters.lastIndex
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    // A highlight is not drawn on a fixed page, so it cannot be a fixed colour: a translucent tint
+    // that reads as a highlighter on white goes muddy on a night page and near-invisible on one the
+    // reader tinted themselves. Each colour is resolved against the page it will actually sit on and
+    // against the text that sits on top of it — see ReaderPalette.highlight.
+    val shadeOf = remember(background, foreground) {
+        { color: HighlightColor ->
+            Color(ReaderPalette.highlight(color.tint, background.toArgb(), foreground.toArgb()))
+        }
+    }
     // A different colour from a highlight on purpose: a search match is transient and not yours.
     val searchColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f)
     val accent = MaterialTheme.colorScheme.primary
@@ -564,13 +588,13 @@ private fun ChapterPage(
     val searchDisplayRanges = remember(rendered, searchRanges) {
         searchRanges.map { rendered.displayRange(it) }.filter { !it.isEmpty() }
     }
-    val annotated = remember(rendered, ranges, searchDisplayRanges, highlightColor, searchColor) {
+    val annotated = remember(rendered, ranges, searchDisplayRanges, shadeOf, searchColor) {
         if (ranges.isEmpty() && searchDisplayRanges.isEmpty()) {
             rendered.display
         } else {
             buildAnnotatedString {
                 append(rendered.display)
-                ranges.forEach { (_, range) -> shade(range, highlightColor) }
+                ranges.forEach { (note, range) -> shade(range, shadeOf(note.highlightColor)) }
                 searchDisplayRanges.forEach { range -> shade(range, searchColor) }
             }
         }
@@ -974,6 +998,19 @@ private fun readerTextStyle(
     hyphens = if (settings.hyphenate) Hyphens.Auto else Hyphens.None,
     lineBreak = if (settings.justify || settings.hyphenate) LineBreak.Paragraph else LineBreak.Simple
 )
+
+/**
+ * The name a content provider gives a picked document, or null.
+ *
+ * Worth a query rather than reading the URI: `content://` paths carry a provider's internal document
+ * id, so the file name is only available by asking, and it is the difference between a font the
+ * reader can recognise in a list and one labelled by a digest of its bytes.
+ */
+private fun documentName(context: Context, uri: Uri): String? = runCatching {
+    context.contentResolver
+        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
+}.getOrNull()?.takeIf { it.isNotBlank() }
 
 /** Shade a display range, clipped to the string being built. */
 private fun androidx.compose.ui.text.AnnotatedString.Builder.shade(range: IntRange, color: Color) {

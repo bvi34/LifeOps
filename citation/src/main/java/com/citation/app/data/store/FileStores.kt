@@ -2,6 +2,8 @@ package com.citation.app.data.store
 
 import android.content.Context
 import com.citation.core.model.SourceType
+import com.citation.core.reader.ReaderFont
+import com.citation.core.reader.ReaderFontNames
 import com.citation.core.store.Ownership
 import com.citation.core.store.Store
 import java.io.File
@@ -139,19 +141,69 @@ class FileStores(context: Context) {
      * — from Downloads, then from a file manager — must not leave two copies, and a face whose file
      * name changed is still the same face. It lives in the sovereign store because a book set in a
      * font that vanishes is a book that changes appearance for no reason the reader can see.
+     *
+     * [pickedName] is the file the reader chose it from, used as its first label — the digest that
+     * names the file is unusable as one. Never written over a label that already exists: adding the
+     * same face a second time, from another folder, must not undo a rename.
      */
-    fun writeReaderFont(bytes: ByteArray, extension: String): File {
+    fun writeReaderFont(bytes: ByteArray, extension: String, pickedName: String? = null): File {
         val safe = extension.filter { it.isLetterOrDigit() }.lowercase().take(4).ifEmpty { "ttf" }
         val file = File(fontDir, digestBytes(bytes) + "." + safe)
         if (!file.exists()) file.writeBytes(bytes)
+        val label = labelFile(file)
+        if (!label.exists()) {
+            ReaderFontNames.fromFileName(pickedName.orEmpty())
+                .takeIf { it.isNotEmpty() }
+                ?.let { runCatching { label.writeText(it) } }
+        }
         return file
     }
 
-    /** Every stored font, for the picker to list what is already here. */
-    fun readerFonts(): List<File> = fontDir.listFiles()?.sortedBy { it.name }.orEmpty()
+    /** Every stored font with the name it goes by, for the picker to list what is already here. */
+    fun readerFonts(): List<ReaderFont> = fontDir.listFiles().orEmpty()
+        .filter { it.isFile && !it.name.endsWith(LABEL_SUFFIX) }
+        .map { ReaderFont(it.absolutePath, ReaderFontNames.of(it.absolutePath, readLabel(it))) }
+        // Sorted by the name the reader sees rather than by the digest, which orders them at random.
+        .sortedBy { it.name.lowercase() }
 
-    fun deleteReaderFont(path: String): Boolean =
-        File(path).takeIf { it.parentFile == fontDir && it.exists() }?.delete() ?: false
+    /**
+     * Rename a stored font.
+     *
+     * The label is a sidecar file rather than a rename of the font itself: the font's name *is* its
+     * content digest, and every book already set in it refers to it by that path. Renaming the file
+     * would silently unset the face of every such book.
+     */
+    fun renameReaderFont(path: String, name: String): Boolean {
+        val font = readerFontAt(path) ?: return false
+        val clean = ReaderFontNames.clean(name)
+        if (clean.isEmpty()) return false
+        return runCatching { labelFile(font).writeText(clean) }.isSuccess
+    }
+
+    /** Remove a stored font and the name that went with it. */
+    fun deleteReaderFont(path: String): Boolean {
+        val font = readerFontAt(path) ?: return false
+        // The label goes first: an orphaned one is harmless, but a font left behind with its name
+        // deleted would come back into the list looking like a font the reader never added.
+        runCatching { labelFile(font).delete() }
+        return font.delete()
+    }
+
+    /**
+     * The stored font at [path], or null.
+     *
+     * The parent check is the whole point: paths reach here from settings rows written by older
+     * builds and from the UI, and nothing outside the font directory may be renamed or deleted
+     * through them.
+     */
+    private fun readerFontAt(path: String): File? = File(path).takeIf {
+        it.parentFile == fontDir && it.isFile && !it.name.endsWith(LABEL_SUFFIX)
+    }
+
+    private fun labelFile(font: File): File = File(font.parentFile, font.name + LABEL_SUFFIX)
+
+    private fun readLabel(font: File): String? =
+        runCatching { labelFile(font).takeIf { it.exists() }?.readText() }.getOrNull()
 
     private fun digestBytes(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-1")
@@ -165,3 +217,11 @@ class FileStores(context: Context) {
             .joinToString("") { "%02x".format(it) }
             .take(24)
 }
+
+/**
+ * Suffix for the sidecar file holding a font's name.
+ *
+ * Safe to filter the font directory on: a stored font's extension is sanitized to at most four
+ * alphanumeric characters, so no font file can ever end in `.label`.
+ */
+private const val LABEL_SUFFIX = ".label"

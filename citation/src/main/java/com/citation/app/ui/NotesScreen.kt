@@ -1,5 +1,7 @@
 package com.citation.app.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +13,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -34,7 +39,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -42,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteType
@@ -124,6 +134,7 @@ fun NotesList(vm: ReaderViewModel, modifier: Modifier = Modifier) {
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); editing = null },
             onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
+            onSaveHighlight = { color -> vm.setNoteHighlight(note.key.toString(), color) },
             onJump = { vm.jumpToNote(note); editing = null },
             onDelete = { vm.deleteNote(note.key.toString()); editing = null },
             onDismiss = { editing = null },
@@ -224,11 +235,13 @@ fun NoteDetailDialog(
     onDismiss: () -> Unit,
     onDelete: (() -> Unit)? = null,
     onSaveTags: ((String) -> Unit)? = null,
+    onSaveHighlight: ((HighlightColor) -> Unit)? = null,
     linkTargets: List<CitationRepository.BookSummary> = emptyList(),
     onLink: ((String) -> Unit)? = null
 ) {
     var body by remember(note.key) { mutableStateOf(note.body) }
     var tagsText by remember(note.key) { mutableStateOf(Tags.format(note.tags)) }
+    var color by remember(note.key) { mutableStateOf(note.highlightColor) }
     var picking by remember(note.key) { mutableStateOf(false) }
     val canJump = note.source.bookKey != null
     // An unbound capture can be linked to a book you already hold — bind its source by hand.
@@ -271,6 +284,13 @@ fun NoteDetailDialog(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
+                // The other half of filing: tags are what you search, the colour is what you see
+                // while turning pages. Offered here rather than at capture so marking a passage
+                // stays one gesture — you file it in the colour you are working in, and change the
+                // odd one afterwards.
+                if (onSaveHighlight != null && note.references.isNotEmpty()) {
+                    HighlightColorRow(selected = color, onPick = { color = it })
+                }
                 Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
                     if (canJump) {
                         TextButton(onClick = onJump) { Text("Jump to source") }
@@ -289,6 +309,7 @@ fun NoteDetailDialog(
         confirmButton = {
             Button(onClick = {
                 onSaveTags?.invoke(tagsText)
+                if (color != note.highlightColor) onSaveHighlight?.invoke(color)
                 onSave(body)
             }) { Text("Save") }
         },
@@ -301,6 +322,47 @@ fun NoteDetailDialog(
             onPick = { bookKey -> picking = false; onLink(bookKey) },
             onDismiss = { picking = false }
         )
+    }
+}
+
+/**
+ * The five highlight colours, as swatches.
+ *
+ * Named colours rather than a picker, and that is the point rather than a shortcut: a highlight
+ * colour is only worth anything if it *means* something — yellow for what the book says, blue for
+ * what you argue with — and a meaning has to hold across a year of reading. Five you can tell apart
+ * and remember beats a million you cannot.
+ *
+ * Each swatch is drawn at full strength here. On the page it is mixed into whatever colour the
+ * reader set their pages to, which is why a yellow chip and a yellow mark do not match exactly.
+ */
+@Composable
+private fun HighlightColorRow(selected: HighlightColor, onPick: (HighlightColor) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        HighlightColor.entries.forEach { option ->
+            val chosen = option == selected
+            Box(
+                Modifier
+                    .size(30.dp)
+                    .clip(CircleShape)
+                    .background(Color(option.tint))
+                    .border(
+                        width = if (chosen) 3.dp else 1.dp,
+                        color = if (chosen) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.outlineVariant
+                        },
+                        shape = CircleShape
+                    )
+                    .selectable(selected = chosen, role = Role.RadioButton) { onPick(option) }
+                    .semantics { contentDescription = option.label }
+            )
+        }
     }
 }
 

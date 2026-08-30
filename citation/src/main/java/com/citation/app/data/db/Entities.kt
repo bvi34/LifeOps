@@ -148,7 +148,10 @@ data class NoteEntity(
     val syncVersion: Long? = null,
     // Free-form organizational tags, serialized as a JSON string array. A local retrieval layer
     // (search/facet/group); deliberately not on the sync wire. Defaults to an empty array.
-    val tagsJson: String = "[]"
+    val tagsJson: String = "[]",
+    // Which colour this note's passage is shaded in. Filing, like the tags above, and off the sync
+    // wire for the same reason. Stored by name so an unknown value degrades to a plain highlight.
+    val highlight: String = "YELLOW"
 )
 
 /** Per-app key allocator high-water marks, so minting resumes without gaps across restarts. */

@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * here rather than repeating the number — the same version stated twice drifts the moment a
  * migration lands.
  */
-const val CITATION_DB_VERSION = 8
+const val CITATION_DB_VERSION = 9
 
 @Database(
     entities = [
@@ -217,13 +217,27 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v8 → v9: a highlight can be a colour.
+         *
+         * Every highlight used to be drawn in one shade, so a chapter of them said nothing about
+         * which was the argument and which was the evidence — `tags` could carry that but only for
+         * a note you opened. Existing highlights become plain yellow, which is what they already
+         * looked like.
+         */
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `notes` ADD COLUMN `highlight` TEXT NOT NULL DEFAULT 'YELLOW'")
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                     // A restore can swap in a `citation.db` written by a *newer* Citation build than
                     // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
                     // default reaction to that downgrade is to throw on open — a permanent boot-crash.

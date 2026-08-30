@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.citation.core.note.HighlightColor
 import org.junit.Test
 
 /**
@@ -111,6 +112,233 @@ class ReaderSettingsTest {
         val onBlack = ReaderPalette.foreground(ReaderTheme.NIGHT, trueBlack = true)!! and 0xFF
         val onNear = ReaderPalette.foreground(ReaderTheme.NIGHT, trueBlack = false)!! and 0xFF
         assertTrue("full-strength text on pure black is a harsh edge in a dark room", onBlack < onNear)
+    }
+
+    // --- Colours the reader chose --------------------------------------------------------------
+
+    @Test
+    fun `the custom theme uses the reader's own colours`() {
+        val s = ReaderSettings(
+            theme = ReaderTheme.CUSTOM,
+            customBackground = 0xFF102030.toInt(),
+            customText = 0xFFEEDDCC.toInt()
+        )
+        assertEquals(0xFF102030.toInt(), ReaderPalette.background(s.theme, s.trueBlack, s.customBackground))
+        assertEquals(0xFFEEDDCC.toInt(), ReaderPalette.foreground(s.theme, s.trueBlack, s.customText))
+        val (bg, fg) = ReaderPalette.of(s)!!
+        assertEquals(0xFF102030.toInt(), bg)
+        assertEquals(0xFFEEDDCC.toInt(), fg)
+    }
+
+    @Test
+    fun `a custom theme with nothing chosen yet is a readable page rather than nothing`() {
+        val (bg, fg) = ReaderPalette.of(ReaderSettings(theme = ReaderTheme.CUSTOM))!!
+        assertEquals(ReaderPalette.CUSTOM_BG, bg)
+        assertEquals(ReaderPalette.CUSTOM_FG, fg)
+        assertTrue("the starting point must be legible", ReaderPalette.isLegible(fg, bg))
+    }
+
+    @Test
+    fun `colours the reader chose are kept but ignored under the other themes`() {
+        // Held across a switch so comparing against Sepia and coming back does not lose the work.
+        val s = ReaderSettings(
+            theme = ReaderTheme.SEPIA,
+            customBackground = 0xFF102030.toInt(),
+            customText = 0xFFEEDDCC.toInt()
+        )
+        val (bg, fg) = ReaderPalette.of(s)!!
+        assertEquals(ReaderPalette.SEPIA_BG, bg)
+        assertEquals(ReaderPalette.SEPIA_FG, fg)
+        assertEquals(0xFF102030.toInt(), s.customBackground)
+    }
+
+    @Test
+    fun `a part-transparent choice is made opaque rather than letting the app show through`() {
+        val s = ReaderSettings(customBackground = 0x40FF0000, customText = 0x00112233).sanitized()
+        assertEquals(0xFFFF0000.toInt(), s.customBackground)
+        assertEquals(0xFF112233.toInt(), s.customText)
+    }
+
+    @Test
+    fun `not having chosen a colour survives sanitizing`() {
+        val s = ReaderSettings().sanitized()
+        assertNull(s.customBackground)
+        assertNull(s.customText)
+    }
+
+    @Test
+    fun `the reader's colours warm with everything else`() {
+        val s = ReaderSettings(
+            theme = ReaderTheme.CUSTOM,
+            customBackground = 0xFFFFFFFF.toInt(),
+            customText = 0xFF3366CC.toInt(),
+            warmth = 1f
+        )
+        val (bg, fg) = ReaderPalette.of(s)!!
+        assertTrue("a warmed page loses blue like any other", (bg and 0xFF) < 0xFF)
+        assertTrue((fg and 0xFF) < 0xCC)
+    }
+
+    // --- Hex codes ---------------------------------------------------------------------------
+
+    @Test
+    fun `hex codes are read in the forms people actually type`() {
+        assertEquals(0xFFAABBCC.toInt(), ReaderPalette.parseHex("#AABBCC"))
+        assertEquals(0xFFAABBCC.toInt(), ReaderPalette.parseHex("aabbcc"))
+        assertEquals(0xFFAABBCC.toInt(), ReaderPalette.parseHex("  #ABC  "))
+        assertEquals(0xFFAABBCC.toInt(), ReaderPalette.parseHex("0xFFAABBCC"))
+    }
+
+    @Test
+    fun `a hex code that is not one is refused rather than guessed at`() {
+        assertNull(ReaderPalette.parseHex(""))
+        assertNull(ReaderPalette.parseHex("#"))
+        assertNull(ReaderPalette.parseHex("#AABB"))
+        assertNull(ReaderPalette.parseHex("#GGHHII"))
+        assertNull(ReaderPalette.parseHex("cornflower"))
+    }
+
+    @Test
+    fun `an alpha-less code still comes back opaque`() {
+        assertEquals(0xFF, (ReaderPalette.parseHex("#00AABBCC")!! ushr 24) and 0xFF)
+        assertEquals(0xFF, (ReaderPalette.parseHex("000000")!! ushr 24) and 0xFF)
+    }
+
+    @Test
+    fun `a colour round-trips through its hex code`() {
+        listOf(ReaderPalette.PAPER_BG, ReaderPalette.SEPIA_FG, ReaderPalette.BLACK, 0xFFFFFFFF.toInt())
+            .forEach { assertEquals(it, ReaderPalette.parseHex(ReaderPalette.hex(it))) }
+    }
+
+    // --- Contrast ----------------------------------------------------------------------------
+
+    @Test
+    fun `contrast runs from one for a colour on itself to twenty-one for black on white`() {
+        assertEquals(1.0, ReaderPalette.contrast(ReaderPalette.PAPER_BG, ReaderPalette.PAPER_BG), 0.001)
+        assertEquals(21.0, ReaderPalette.contrast(0xFF000000.toInt(), 0xFFFFFFFF.toInt()), 0.01)
+    }
+
+    @Test
+    fun `contrast does not care which colour is named first`() {
+        val a = 0xFF2B2B2B.toInt()
+        val b = 0xFFFBF7EF.toInt()
+        assertEquals(ReaderPalette.contrast(a, b), ReaderPalette.contrast(b, a), 0.0001)
+    }
+
+    @Test
+    fun `every shipped theme is legible, and a pair that is not gets called out`() {
+        listOf(ReaderTheme.PAPER, ReaderTheme.SEPIA, ReaderTheme.NIGHT).forEach { theme ->
+            listOf(true, false).forEach { trueBlack ->
+                val bg = ReaderPalette.background(theme, trueBlack)!!
+                val fg = ReaderPalette.foreground(theme, trueBlack)!!
+                assertTrue("$theme (trueBlack=$trueBlack) must be readable", ReaderPalette.isLegible(fg, bg))
+            }
+        }
+        // Grey on cream is the mistake the warning exists for.
+        assertFalse(ReaderPalette.isLegible(0xFFBBBBBB.toInt(), ReaderPalette.PAPER_BG))
+        assertFalse(ReaderPalette.isLegible(ReaderPalette.BLACK, ReaderPalette.BLACK))
+    }
+
+    @Test
+    fun `luminance follows brightness rather than raw channel values`() {
+        // Green reads far brighter than blue at the same channel value; a naive average would not
+        // notice, and would wave through blue text on a green page.
+        assertTrue(ReaderPalette.luminance(0xFF00FF00.toInt()) > ReaderPalette.luminance(0xFF0000FF.toInt()))
+        assertTrue(ReaderPalette.luminance(0xFFFFFFFF.toInt()) > ReaderPalette.luminance(0xFF808080.toInt()))
+        assertTrue(ReaderPalette.luminance(0xFF808080.toInt()) > ReaderPalette.luminance(ReaderPalette.BLACK))
+    }
+
+    // --- Highlights ---------------------------------------------------------------------------
+
+    @Test
+    fun `mixing runs from all base to all tint`() {
+        val tint = 0xFFFF0000.toInt()
+        val base = 0xFF0000FF.toInt()
+        assertEquals(base, ReaderPalette.mix(tint, base, 0f))
+        assertEquals(tint, ReaderPalette.mix(tint, base, 1f))
+        val half = ReaderPalette.mix(tint, base, 0.5f)
+        assertTrue((half ushr 16 and 0xFF) in 0x7E..0x80)
+        assertTrue((half and 0xFF) in 0x7E..0x80)
+    }
+
+    @Test
+    fun `a mixed colour is always opaque`() {
+        assertEquals(0xFF, (ReaderPalette.mix(0x00FF0000, 0x000000FF, 0.5f) ushr 24) and 0xFF)
+    }
+
+    @Test
+    fun `a highlight is visible on a light page and on a dark one`() {
+        val tint = HighlightColor.YELLOW.tint
+        val onPaper = ReaderPalette.highlight(tint, ReaderPalette.PAPER_BG, ReaderPalette.PAPER_FG)
+        val onNight = ReaderPalette.highlight(tint, ReaderPalette.NIGHT_BG, ReaderPalette.NIGHT_FG)
+        // "Visible" means it is not the page it is drawn on. A fixed colour cannot manage both.
+        assertNotEquals(ReaderPalette.PAPER_BG, onPaper)
+        assertNotEquals(ReaderPalette.NIGHT_BG, onNight)
+        assertNotEquals("the same tint cannot look the same on both pages", onPaper, onNight)
+    }
+
+    @Test
+    fun `a highlight never makes its own sentence unreadable`() {
+        // The failure this exists to prevent: a mark so strong the words under it are gone, which
+        // reads as a broken book rather than as a colour choice.
+        val pages = listOf(
+            ReaderPalette.PAPER_BG to ReaderPalette.PAPER_FG,
+            ReaderPalette.SEPIA_BG to ReaderPalette.SEPIA_FG,
+            ReaderPalette.NIGHT_BG to ReaderPalette.NIGHT_FG,
+            ReaderPalette.BLACK to ReaderPalette.TRUE_BLACK_FG,
+            0xFF102030.toInt() to 0xFFEEDDCC.toInt()
+        )
+        pages.forEach { (page, text) ->
+            HighlightColor.entries.forEach { colour ->
+                val shade = ReaderPalette.highlight(colour.tint, page, text)
+                assertTrue(
+                    "${colour.label} on ${ReaderPalette.hex(page)} left text at " +
+                        "${ReaderPalette.contrast(text, shade)}",
+                    ReaderPalette.isLegible(text, shade)
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a highlight is as strong as the text on top allows`() {
+        // Black text on white leaves plenty of room, so the mark comes out stronger than it does
+        // where the text is already close to the page.
+        val roomy = ReaderPalette.highlight(
+            HighlightColor.BLUE.tint, 0xFFFFFFFF.toInt(), ReaderPalette.BLACK
+        )
+        val tight = ReaderPalette.highlight(
+            HighlightColor.BLUE.tint, 0xFFFFFFFF.toInt(), 0xFF767676.toInt()
+        )
+        assertTrue(
+            "a page with contrast to spare should carry a stronger mark",
+            ReaderPalette.contrast(roomy, 0xFFFFFFFF.toInt()) >
+                ReaderPalette.contrast(tight, 0xFFFFFFFF.toInt())
+        )
+    }
+
+    @Test
+    fun `an impossible page still gets a visible mark rather than none`() {
+        // Mid-grey text on mid-grey: nothing keeps it legible, and a highlight nobody can see is
+        // worse than a faint one.
+        val page = 0xFF808080.toInt()
+        val shade = ReaderPalette.highlight(HighlightColor.PINK.tint, page, 0xFF8A8A8A.toInt())
+        assertNotEquals(page, shade)
+    }
+
+    @Test
+    fun `the five highlight colours are actually distinguishable on a page`() {
+        val shades = HighlightColor.entries.map {
+            ReaderPalette.highlight(it.tint, ReaderPalette.PAPER_BG, ReaderPalette.PAPER_FG)
+        }
+        assertEquals("a colour that means something has to be told apart", shades.size, shades.toSet().size)
+    }
+
+    @Test
+    fun `an unknown stored colour is a plain highlight rather than a crash`() {
+        assertEquals(HighlightColor.YELLOW, HighlightColor.from(null))
+        assertEquals(HighlightColor.YELLOW, HighlightColor.from("CHARTREUSE"))
+        assertEquals(HighlightColor.BLUE, HighlightColor.from("BLUE"))
     }
 
     // --- Volume keys -------------------------------------------------------------------------

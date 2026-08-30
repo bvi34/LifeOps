@@ -14,6 +14,7 @@ import com.citation.core.model.Chapter
 import com.citation.core.model.SourceType
 import com.citation.core.model.TableOfContents
 import com.citation.core.note.Highlight
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteType
 import com.citation.core.note.SourceDescriptor
@@ -184,7 +185,8 @@ object CitationMappers {
             referencesJson = AnchorCodec.encodeReferences(note.references),
             createdAt = note.createdAt,
             syncVersion = syncVersion,
-            tagsJson = AnchorCodec.encodeTags(note.tags)
+            tagsJson = AnchorCodec.encodeTags(note.tags),
+            highlight = note.highlightColor.name
         )
 
     fun noteFromEntity(entity: NoteEntity): Note =
@@ -201,7 +203,8 @@ object CitationMappers {
             ),
             references = AnchorCodec.decodeReferences(entity.referencesJson),
             createdAt = entity.createdAt,
-            tags = AnchorCodec.decodeTags(entity.tagsJson)
+            tags = AnchorCodec.decodeTags(entity.tagsJson),
+            highlightColor = HighlightColor.from(entity.highlight)
         )
 
     /**

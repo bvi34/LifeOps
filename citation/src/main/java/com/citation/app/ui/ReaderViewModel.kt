@@ -20,6 +20,7 @@ import com.citation.core.opds.OpdsFeed
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.model.TocEntry
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
@@ -29,6 +30,7 @@ import com.citation.core.reader.BookSearch
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
 import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReaderFont
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReaderTypeface
 import com.citation.core.reader.ReadingProgress
@@ -157,8 +159,8 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
 
     private val _readerFonts = MutableStateFlow(repository.readerFonts())
 
-    /** Fonts the reader has added, for the picker to offer again. */
-    val readerFonts: StateFlow<List<String>> = _readerFonts.asStateFlow()
+    /** Fonts the reader has added, each under the name it goes by, for the picker to offer again. */
+    val readerFonts: StateFlow<List<ReaderFont>> = _readerFonts.asStateFlow()
 
     private fun refreshPerBookFlag(bookKey: String?) {
         if (bookKey == null) {
@@ -197,17 +199,77 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         }
     }
 
-    /** Store a font the reader picked and set the book to use it. */
-    fun addReaderFont(bytes: ByteArray, extension: String) {
+    /**
+     * Recolour a highlight.
+     *
+     * Not a re-post: what a note *says* travels on the sync wire, what its mark looks like on your
+     * page does not. Recolouring one is filing, like tagging it.
+     */
+    fun setNoteHighlight(noteKey: String, color: HighlightColor) {
+        viewModelScope.launch { repository.setNoteHighlight(noteKey, color) }
+    }
+
+    /**
+     * Store a font the reader picked and set the book to use it.
+     *
+     * [pickedName] is the document's own name, which becomes the font's first label — what the file
+     * is called on disk here is a digest of its bytes, and no reader would recognise a face by it.
+     */
+    fun addReaderFont(bytes: ByteArray, extension: String, pickedName: String? = null) {
         viewModelScope.launch {
-            val path = repository.storeReaderFont(bytes, extension)
+            val path = repository.storeReaderFont(bytes, extension, pickedName)
             if (path == null) {
                 _status.value = "Couldn’t read that font file."
                 return@launch
             }
-            _readerFonts.value = repository.readerFonts()
+            val fonts = repository.readerFonts()
+            _readerFonts.value = fonts
             updateSettings { it.copy(typeface = ReaderTypeface.CUSTOM, customFontPath = path) }
-            _status.value = "Reading in ${java.io.File(path).name}."
+            _status.value = "Reading in ${fonts.firstOrNull { it.path == path }?.name ?: "your font"}."
+        }
+    }
+
+    /**
+     * Rename a font the reader added.
+     *
+     * A rename touches the label only, never the file: the font's name on disk is its content digest
+     * and every book already set in it refers to it by that path.
+     */
+    fun renameReaderFont(path: String, name: String) {
+        viewModelScope.launch {
+            if (!repository.renameReaderFont(path, name)) {
+                _status.value = "Couldn’t rename that font."
+                return@launch
+            }
+            _readerFonts.value = repository.readerFonts()
+        }
+    }
+
+    /**
+     * Remove a font the reader added.
+     *
+     * If it was the face being read in, the setting goes back to sans rather than being left
+     * pointing at a file that is gone. Other books set in it are not rewritten — they fall back to
+     * sans when rendered, which is what has always happened to a font that vanished, and rewriting
+     * every book's settings to chase one deleted file would be a worse trade.
+     */
+    fun deleteReaderFont(path: String) {
+        viewModelScope.launch {
+            val name = _readerFonts.value.firstOrNull { it.path == path }?.name
+            if (!repository.deleteReaderFont(path)) {
+                _status.value = "Couldn’t remove that font."
+                return@launch
+            }
+            _readerFonts.value = repository.readerFonts()
+            if (settings.value.customFontPath == path) {
+                updateSettings {
+                    it.copy(
+                        customFontPath = null,
+                        typeface = if (it.typeface == ReaderTypeface.CUSTOM) ReaderTypeface.SANS else it.typeface
+                    )
+                }
+            }
+            _status.value = name?.let { "Removed $it." } ?: "Font removed."
         }
     }
 
@@ -1266,7 +1328,8 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 chapterOrdinal = _chapterOrdinal.value,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
-                noteBody = body
+                noteBody = body,
+                color = settings.value.highlightColor
             )
             _status.value = "Note ${note.key} captured — queued for LifeOps."
         }

@@ -38,6 +38,7 @@ import com.citation.core.key.KeyAllocator
 import com.citation.core.library.BookCollection
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReaderFont
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReadingPace
 import com.citation.core.opds.CatalogPage
@@ -51,6 +52,7 @@ import com.citation.core.model.Book
 import com.citation.core.model.Chapter
 import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.PassageReference
@@ -785,12 +787,15 @@ class CitationRepository private constructor(
         selectionStart: Int,
         selectionEnd: Int,
         noteBody: String,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        // The colour the reader is currently filing in. Defaulted so every other caller — and the
+        // tests — keep working without knowing that highlights have colours at all.
+        color: HighlightColor = HighlightColor.YELLOW
     ): Note {
         val chapter = book.chapterAt(chapterOrdinal) ?: error("no chapter $chapterOrdinal")
         val descriptor = descriptorFor(book)
         val highlight = highlightFor(book, chapter, chapterOrdinal, selectionStart, selectionEnd, descriptor, now)
-        val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now)
+        val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now, color)
 
         val versioned = mailbox.post(NotePacket.of(note))
 
@@ -965,6 +970,18 @@ class CitationRepository private constructor(
     suspend fun setNoteTags(noteKey: String, tags: List<String>): Note? {
         val entity = db.noteDao().get(noteKey) ?: return null
         val updated = CitationMappers.noteFromEntity(entity).copy(tags = tags)
+        db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
+        return updated
+    }
+
+    /**
+     * Recolour a note's highlight — filing, exactly like [setNoteTags], and off the sync wire for
+     * the same reason: what a highlight *says* is the note's text and travels; what it looks like on
+     * your page is yours. The existing sync version is preserved so recolouring never re-posts.
+     */
+    suspend fun setNoteHighlight(noteKey: String, highlight: HighlightColor): Note? {
+        val entity = db.noteDao().get(noteKey) ?: return null
+        val updated = CitationMappers.noteFromEntity(entity).copy(highlightColor = highlight)
         db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
         return updated
     }
@@ -1388,13 +1405,28 @@ class CitationRepository private constructor(
      *
      * Kept in the sovereign store because a book set in a face that vanishes is a book that changes
      * appearance for no reason the reader can see. Named by a digest of its bytes, so picking the
-     * same file twice does not accumulate copies.
+     * same file twice does not accumulate copies — and labelled with [pickedName], the file the
+     * reader chose it from, since the digest is no use to anybody reading a list.
      */
-    suspend fun storeReaderFont(bytes: ByteArray, extension: String): String? =
-        runCatching { files.writeReaderFont(bytes, extension).absolutePath }.getOrNull()
+    suspend fun storeReaderFont(bytes: ByteArray, extension: String, pickedName: String? = null): String? =
+        runCatching { files.writeReaderFont(bytes, extension, pickedName).absolutePath }.getOrNull()
 
     /** Fonts the reader has added, for the picker to offer again without a second trip to the files. */
-    fun readerFonts(): List<String> = files.readerFonts().map { it.absolutePath }
+    fun readerFonts(): List<ReaderFont> = files.readerFonts()
+
+    /** Rename a font the reader added. False when the name is empty or the font has gone. */
+    suspend fun renameReaderFont(path: String, name: String): Boolean =
+        runCatching { files.renameReaderFont(path, name) }.getOrDefault(false)
+
+    /**
+     * Remove a font the reader added.
+     *
+     * Books still set in it are not rewritten: the face falls back to sans on the next render, which
+     * is the same thing that happens to any font that has gone, and is why a missing font has never
+     * been able to make a book unopenable.
+     */
+    suspend fun deleteReaderFont(path: String): Boolean =
+        runCatching { files.deleteReaderFont(path) }.getOrDefault(false)
 
     // --- Reading pace ----------------------------------------------------------------------------
     //
