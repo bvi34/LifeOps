@@ -20,6 +20,12 @@ object Vin {
 
     const val LENGTH = 17
 
+    /**
+     * How much of a VIN describes the model rather than the vehicle: WMI, the descriptor section,
+     * the check digit, the model-year code and the plant. Everything after this is the serial.
+     */
+    const val DESCRIPTIVE_LENGTH = 11
+
     /** Where the check digit lives (0-based), and where the model year does. */
     private const val CHECK_INDEX = 8
     private const val YEAR_INDEX = 9
@@ -80,6 +86,30 @@ object Vin {
         }
         val remainder = sum % 11
         return if (remainder == 10) 'X' else '0' + remainder
+    }
+
+    /**
+     * The part of a VIN that describes the *model*, with the part that identifies *your vehicle*
+     * replaced by wildcards — `1C4HJXDG5JW******`.
+     *
+     * This is the privacy rule of the whole decode feature, written as a function so it is a thing
+     * that can be tested rather than a thing somebody remembered to do. A VIN's last six characters
+     * are the serial: they are what appears on your title and your insurance, and they are what a
+     * vehicle-history service keys off. They contribute **nothing** to a decode — NHTSA's vPIC
+     * returns the same make, model, year, trim, engine, drive and transmission for the eleven
+     * characters as for the seventeen, which was checked against the live API before this was
+     * written.
+     *
+     * So the app sends the question *"what is a 2018 Wrangler Unlimited Sport 3.6 4x4?"* and never
+     * the question *"what is this specific truck?"* — the same line Health draws between asking what
+     * a medicine is and saying who takes it.
+     *
+     * Null when there is not enough of a VIN to be worth asking about.
+     */
+    fun decodeQuery(vin: String): String? {
+        val value = normalise(vin)
+        if (value.length < DESCRIPTIVE_LENGTH) return null
+        return value.take(DESCRIPTIVE_LENGTH).padEnd(LENGTH, '*')
     }
 
     /** The manufacturer's identifier — the first three characters. Not decoded; there is no table. */

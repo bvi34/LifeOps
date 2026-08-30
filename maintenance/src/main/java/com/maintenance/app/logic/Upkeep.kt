@@ -21,10 +21,35 @@ data class UpkeepPlan(
     val notes: String? = null,
     val everyDays: Int? = null,
     val everyMeter: Long? = null,
+    /**
+     * Absolute meter milestones — "spark plugs at 100,000 miles" — ascending.
+     *
+     * This is the other half of how a manufacturer writes a schedule, and it is **not** the same as
+     * [everyMeter]. A cadence is measured from the last time the job was done; a milestone is a
+     * number on the odometer. On a car bought at 60,000 miles the difference is "next at 100,000"
+     * versus "100,000 from now", which is four years of getting it wrong.
+     *
+     * When both are empty the plan has no meter leg. When this is set it *replaces* the cadence
+     * rather than adding to it: a schedule that wants both says so by listing the milestones.
+     */
+    val atMeter: List<Long> = emptyList(),
     val lastDoneAt: Long? = null,
     val lastDoneMeter: Long? = null,
     val createdAt: Long = 0L,
     val active: Boolean = true,
+    /**
+     * What kind of thing this is — work to be done, or a prompt to read the meter.
+     *
+     * They look the same on a list and behave differently when satisfied: see [PlanKind].
+     */
+    val kind: PlanKind = PlanKind.UPKEEP,
+    /**
+     * The schedule pack and item this plan came from, when it wasn't typed by hand
+     * (`"jeep-jl-36-a"` / `"spark-plugs"`). Applying a pack again matches on this pair, so a second
+     * apply adds what's new and leaves everything you have already tuned exactly as it is.
+     */
+    val sourcePack: String? = null,
+    val sourceItem: String? = null,
     /**
      * Whether this plan puts itself on the LifeOps week as a task, dated the day it falls due.
      *
@@ -34,6 +59,27 @@ data class UpkeepPlan(
      */
     val publishToLifeOps: Boolean = true
 )
+
+/**
+ * Work, or a meter reading.
+ *
+ * The distinction earns its place at exactly one moment: what "done" means. Finishing a job writes a
+ * service record and restarts its clock. "Read the odometer" is not a job — there is nothing to
+ * record and nothing to cost, and a service history full of weekly zero-pound entries called *Read
+ * the odometer* would bury the eleven entries that matter.
+ *
+ * It also gets satisfied differently. A LifeOps task cannot carry a number, so ticking one off over
+ * there cannot be what captures a reading. Instead the **reading satisfies the prompt** — type it in
+ * here and the task ticks itself off in LifeOps — and the task is what nudges you to do that.
+ */
+enum class PlanKind(val key: String, val label: String) {
+    UPKEEP("upkeep", "Upkeep"),
+    METER_READING("meter_reading", "Meter reading");
+
+    companion object {
+        fun of(key: String?): PlanKind = entries.firstOrNull { it.key == key } ?: UPKEEP
+    }
+}
 
 /** Where a due date stands. The order of the entries is the order things get attention in. */
 enum class DueStatus {
@@ -101,7 +147,7 @@ object Upkeep {
         soonDays: Int = SOON_DAYS
     ): DueVerdict {
         if (!plan.active) return DueVerdict(DueStatus.DORMANT, summary = "Paused")
-        if (plan.everyDays == null && plan.everyMeter == null) {
+        if (plan.everyDays == null && plan.everyMeter == null && plan.atMeter.isEmpty()) {
             return DueVerdict(DueStatus.DORMANT, summary = "No schedule — done when you say so")
         }
 
@@ -112,8 +158,11 @@ object Upkeep {
         val daysLeft = dateDue?.let { ceil((it - now).toDouble() / DAY_MILLIS).toInt() }
 
         // --- the meter leg ---
-        val meterDue = plan.everyMeter?.let { interval -> plan.lastDoneMeter?.let { it + interval } }
         val meterNow = meter?.current
+        val meterDue = nextMeterTarget(plan, meterNow)
+        // How far this leg spans, for the "last tenth counts as soon" fallback below: a cadence
+        // spans its interval; a milestone spans the gap from whatever it is measured after.
+        val meterSpan = meterSpan(plan, meterDue)
         // A rate of zero is no rate: a meter that hasn't moved between two readings cannot date a
         // mileage interval, and dividing by it would put the due date at the end of time.
         val perDay = meter?.perDay?.takeIf { it > 0.0 }
@@ -124,7 +173,9 @@ object Upkeep {
             null
         }
 
-        if (plan.everyMeter != null && plan.lastDoneMeter == null && plan.everyDays == null) {
+        // Milestones need no baseline — they are anchored on the odometer itself — so this is only
+        // about a cadence with nothing to measure from.
+        if (plan.atMeter.isEmpty() && plan.everyMeter != null && plan.lastDoneMeter == null && plan.everyDays == null) {
             val unit = meter?.unit
             val interval = unit?.format(plan.everyMeter) ?: "${MeterUnit.group(plan.everyMeter)}"
             return DueVerdict(
@@ -140,7 +191,7 @@ object Upkeep {
             else -> meterDueAt < dateDue
         }
         val effectiveDue = if (meterFirst) meterDueAt else dateDue
-        val status = status(daysLeft, meterLeft, plan.everyMeter, meterDueAt, dateDue, now, soonDays)
+        val status = status(daysLeft, meterLeft, meterSpan, meterDueAt, dateDue, now, soonDays)
 
         return DueVerdict(
             status = status,
@@ -153,10 +204,36 @@ object Upkeep {
         )
     }
 
+    /**
+     * The next number on the meter this plan is waiting for.
+     *
+     * Milestones win when a plan has them. The one judgement in here is what to do about milestones
+     * that are **already behind you** when a schedule is first applied: they are taken as done. The
+     * app cannot know what a previous owner had done at 30,000 miles, and starting a used car off
+     * with eleven overdue jobs produces a list nobody reads — the same reason a plan that has never
+     * been done starts its clock the day it was written rather than instantly overdue.
+     */
+    fun nextMeterTarget(plan: UpkeepPlan, meterNow: Long?): Long? {
+        if (plan.atMeter.isNotEmpty()) {
+            val floor = plan.lastDoneMeter ?: meterNow
+            return if (floor == null) plan.atMeter.firstOrNull() else plan.atMeter.firstOrNull { it > floor }
+        }
+        val interval = plan.everyMeter ?: return null
+        return plan.lastDoneMeter?.let { it + interval }
+    }
+
+    /** The distance this leg covers, used only to judge "nearly there" without a usage rate. */
+    private fun meterSpan(plan: UpkeepPlan, meterDue: Long?): Long? {
+        if (plan.atMeter.isEmpty()) return plan.everyMeter
+        if (meterDue == null) return null
+        val previous = plan.lastDoneMeter ?: plan.atMeter.lastOrNull { it < meterDue } ?: 0L
+        return (meterDue - previous).takeIf { it > 0L }
+    }
+
     private fun status(
         daysLeft: Int?,
         meterLeft: Long?,
-        everyMeter: Long?,
+        meterSpan: Long?,
         meterDueAt: Long?,
         dateDue: Long?,
         now: Long,
@@ -171,8 +248,8 @@ object Upkeep {
         val meterSoonByDate = meterDueAt != null && meterDueAt - now <= soonDays.toLong() * DAY_MILLIS
         // No rate to date the meter with: fall back to "the last tenth of the interval", which is
         // the only thing distance alone can say about urgency.
-        val meterSoonByDistance = meterDueAt == null && meterLeft != null && everyMeter != null &&
-            meterLeft <= (everyMeter * METER_SOON_FRACTION).roundToLong()
+        val meterSoonByDistance = meterDueAt == null && meterLeft != null && meterSpan != null &&
+            meterLeft <= (meterSpan * METER_SOON_FRACTION).roundToLong()
         if (dateSoon || meterSoonByDate || meterSoonByDistance) return DueStatus.DUE_SOON
 
         return if (dateDue == null && meterLeft == null) DueStatus.NEEDS_BASELINE else DueStatus.SCHEDULED

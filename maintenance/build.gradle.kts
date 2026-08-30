@@ -70,6 +70,9 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
     implementation(libs.kotlinx.coroutines.android)
+    // Parsing two public, keyless government JSON APIs (vPIC and NHTSA recalls). Pure-JVM, so the
+    // parsers stay in logic/ and unit-tested — the same split Health uses for its drug lookup.
+    implementation(libs.gson)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

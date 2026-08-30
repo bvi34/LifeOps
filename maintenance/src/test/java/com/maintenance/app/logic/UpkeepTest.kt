@@ -138,6 +138,85 @@ class UpkeepTest {
         assertEquals("Due in 5 days", verdict.summary)
     }
 
+    // --- milestones: the other half of how a manufacturer writes a schedule ---
+
+    private fun milestones(vararg at: Long, lastDoneMeter: Long? = null) = plan(
+        everyDays = null,
+        lastDoneMeter = lastDoneMeter
+    ).copy(atMeter = at.toList(), title = "Spark plugs")
+
+    @Test
+    fun `a milestone is a number on the odometer, not a distance from now`() {
+        val meter = MeterState(MeterUnit.MILES, current = 88_000, perDay = 30.0)
+        val verdict = Upkeep.evaluate(milestones(100_000), now, meter)
+
+        assertEquals(DueStatus.SCHEDULED, verdict.status)
+        assertEquals(100_000L, verdict.dueMeter)
+        assertEquals(12_000L, verdict.meterRemaining)
+        assertEquals("Due in 12,000 mi", verdict.summary)
+    }
+
+    @Test
+    fun `milestones already behind you when the schedule arrives are taken as done`() {
+        // A used car bought at 60,000 miles. Nobody knows what the last owner did at 30,000, and
+        // starting it off overdue for everything produces a list nobody reads.
+        val meter = MeterState(MeterUnit.MILES, current = 60_000, perDay = 30.0)
+        val verdict = Upkeep.evaluate(milestones(30_000, 60_000, 90_000), now, meter)
+
+        assertEquals(90_000L, verdict.dueMeter)
+        assertEquals(DueStatus.SCHEDULED, verdict.status)
+    }
+
+    @Test
+    fun `once one is done the next one is the target`() {
+        val meter = MeterState(MeterUnit.MILES, current = 61_000, perDay = 30.0)
+        val verdict = Upkeep.evaluate(milestones(30_000, 60_000, 90_000, lastDoneMeter = 60_000), now, meter)
+
+        assertEquals(90_000L, verdict.dueMeter)
+        assertEquals(29_000L, verdict.meterRemaining)
+    }
+
+    @Test
+    fun `a milestone you have driven past is overdue`() {
+        val meter = MeterState(MeterUnit.MILES, current = 102_000, perDay = 30.0)
+        val verdict = Upkeep.evaluate(milestones(100_000, lastDoneMeter = 60_000), now, meter)
+
+        assertEquals(DueStatus.OVERDUE, verdict.status)
+        assertEquals("Overdue by 2,000 mi", verdict.summary)
+    }
+
+    @Test
+    fun `a milestone plan needs no baseline - the odometer is the baseline`() {
+        val meter = MeterState(MeterUnit.MILES, current = 88_000, perDay = null)
+        val verdict = Upkeep.evaluate(milestones(100_000), now, meter)
+
+        // Not NEEDS_BASELINE: nothing has to be logged first for a number on the dial to mean something.
+        assertEquals(DueStatus.SCHEDULED, verdict.status)
+        assertEquals(100_000L, verdict.dueMeter)
+    }
+
+    @Test
+    fun `the last milestone passed leaves nothing scheduled on the meter`() {
+        val meter = MeterState(MeterUnit.MILES, current = 130_000, perDay = 30.0)
+        val verdict = Upkeep.evaluate(milestones(100_000, lastDoneMeter = 100_000), now, meter)
+
+        assertEquals(null, verdict.dueMeter)
+        assertEquals(null, verdict.meterRemaining)
+    }
+
+    @Test
+    fun `a milestone and a time interval still race, whichever comes first`() {
+        val meter = MeterState(MeterUnit.MILES, current = 99_900, perDay = 10.0)
+        val plan = milestones(100_000).copy(everyDays = 365, lastDoneAt = now - 300 * day)
+
+        val verdict = Upkeep.evaluate(plan, now, meter)
+
+        // 100 miles at 10 a day is ten days away; the year has 65 days left to run.
+        assertEquals(DueStatus.DUE_SOON, verdict.status)
+        assertTrue(verdict.byMeter)
+        assertEquals("Due in 100 mi", verdict.summary)
+    }
+
     @Test
     fun `plans that cannot be dated sort after those that can`() {
         val dated = DueVerdict(DueStatus.SCHEDULED, dueAt = now, summary = "")
