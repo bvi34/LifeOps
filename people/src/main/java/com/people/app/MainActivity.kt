@@ -10,6 +10,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -22,9 +23,12 @@ import androidx.navigation.navArgument
 import androidx.navigation.NavType
 import com.people.app.ui.detail.PersonDetailScreen
 import com.people.app.ui.detail.PersonDetailViewModel
+import com.people.app.ui.partner.PartnerWeekScreen
+import com.people.app.ui.partner.PartnerWeekViewModel
 import com.people.app.ui.roster.RosterScreen
 import com.people.app.ui.roster.RosterViewModel
 import com.people.app.ui.theme.PeopleTheme
+import kotlinx.coroutines.launch
 
 /**
  * People's single entry point: the roster, and one person at a time.
@@ -57,9 +61,14 @@ class MainActivity : ComponentActivity() {
                     ) {
                         composable("roster") {
                             val vm: RosterViewModel = viewModel(
-                                factory = RosterViewModel.Factory(app.repository, app.syncService, app.peers)
+                                factory = RosterViewModel.Factory(
+                                    app.repository,
+                                    app.syncService,
+                                    app.peers,
+                                    app.partnerRepository
+                                )
                             )
-                            SyncOnStart(vm)
+                            SyncOnStart(vm, app)
                             RosterScreen(vm, onOpenPerson = { nav.navigate("person/${it.id}") })
                         }
                         composable(
@@ -72,10 +81,32 @@ class MainActivity : ComponentActivity() {
                                     app.repository,
                                     app.syncService,
                                     app.peers,
+                                    personId,
+                                    app.partnerRepository,
+                                    app.partnerSyncService,
+                                    app.partnerPrefs
+                                )
+                            )
+                            PersonDetailScreen(
+                                vm,
+                                onBack = { nav.popBackStack() },
+                                onOpenPartnerWeek = { nav.navigate("partner/$personId") }
+                            )
+                        }
+                        composable(
+                            route = "partner/{personId}",
+                            arguments = listOf(navArgument("personId") { type = NavType.StringType })
+                        ) { entry ->
+                            val personId = entry.arguments?.getString("personId").orEmpty()
+                            val vm: PartnerWeekViewModel = viewModel(
+                                factory = PartnerWeekViewModel.Factory(
+                                    app.partnerRepository,
+                                    app.partnerSyncService,
+                                    app.repository,
                                     personId
                                 )
                             )
-                            PersonDetailScreen(vm, onBack = { nav.popBackStack() })
+                            PartnerWeekScreen(vm, onBack = { nav.popBackStack() })
                         }
                     }
                 }
@@ -92,11 +123,23 @@ class MainActivity : ComponentActivity() {
  * rather than a `LaunchedEffect` for the first case and something else for all the others.
  */
 @Composable
-private fun SyncOnStart(vm: RosterViewModel) {
+private fun SyncOnStart(vm: RosterViewModel, app: PeopleApp) {
     val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_START) vm.sync()
+            if (event == Lifecycle.Event.ON_START) {
+                vm.sync()
+                // The partner round rides the same trigger, and for a sharper version of the same
+                // reason: this is the *only* moment it ever runs. There is no push and no service
+                // behind it, so "what did they change?" is answered by whatever arrived since the
+                // last time somebody opened the app — which is exactly what the change log on the
+                // person's page is for.
+                //
+                // It is launched rather than awaited so a slow or absent partner folder cannot hold
+                // up the roster the user is already looking at.
+                scope.launch { runCatching { app.partnerSyncService.sync() } }
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }

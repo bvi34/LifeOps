@@ -1,9 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- People requests no permissions. It notably does *not* read the device's contacts: the
-         household directory is what you typed into it, not a mirror of your phone book, and the
-         moment it could read contacts it would become the app that quietly slurped them. -->
+    <!-- People asks for the camera, and for nothing else.
+
+         It is used at exactly one moment: reading a partner's pairing QR code (see
+         ui/partner/PartnerPairing). Nothing is recorded, nothing is stored, and the scanner is only
+         ever opened by tapping "Scan theirs". Every pairing screen also offers a typed code, so a
+         person who declines the permission can still pair.
+
+         The permission is declared here rather than left to the scanner library's own manifest so
+         that the reason for it lives beside People's code, where somebody auditing this app will
+         look — and it is why the marker below still holds for everything else.
+
+         People notably does *not* read the device's contacts: the household directory is what you
+         typed into it, not a mirror of your phone book, and the moment it could read contacts it
+         would become the app that quietly slurped them. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- A device with no camera can still do everything else here, pairing included, by typing the
+         code. Without this the host app would inherit a hard camera requirement from a feature that
+         has a perfectly good fallback. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <!-- People is a library module: no app-level attributes here (name/icon/theme/label live on the
          :app host). Only People's own components are declared for the manifest merger. -->

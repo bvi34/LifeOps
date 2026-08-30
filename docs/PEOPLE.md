@@ -30,8 +30,9 @@ tombstone table); nothing was moved, dropped, or de-keyed.
 
 | Screen | Purpose |
 |---|---|
-| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Sync status and a **Sync now** button live at the bottom. |
-| **Person** | One person: their details (shared over the seam), the dates that come round, and the timeline notes (which stay in People), with archive/restore. |
+| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Sync status and a **Sync now** button live at the bottom; a badge marks anyone whose paired partner has changed something. |
+| **Person** | One person: their details (shared over the seam), the dates that come round, the timeline notes (which stay in People), **Partner sync** — pairing with their LifeOps by QR code — and archive/restore. |
+| **Partner week** | A paired partner's current LifeOps week, mirrored here and shown on its own: their tasks, what they have changed since you last looked, and a box to add a task to *their* week. See **[Partner sync](#partner-sync--pairing-two-households)**. |
 
 A person's birth date doubles as a birthday automatically, so nobody enters the same date twice.
 
@@ -242,6 +243,108 @@ anything that doesn't parse is kept out rather than written in. Storing `"Daught
 every reader parses as an enum wouldn't merely be lossy — `Relationship.from` returns null for it, so
 the person would silently drop out of the relationship-balance analytics that column exists to feed.
 
+## Partner sync — pairing two households
+
+Everything above is one seam: People, LifeOps and Health reconciling **inside one install**. The
+partner seam is a second, separate one, and almost none of the rules above apply to it.
+
+| | The People seam | The partner seam |
+|---|---|---|
+| Who is on the other end | Another app in this process | Somebody else's install, on their device |
+| Trust | Total — same install, same user | None until two people have scanned each other |
+| What crosses | The household directory, both ways | One week, one way each, plus tasks added by hand |
+| What it writes here | `people.db` rows other apps also own | `partner_*` tables and nothing else |
+| Merge | Field-wise, convergent, both sides author | None: each side owns its own week |
+
+The point of the second table column is the last two rows. **A partner's week is never merged into
+this household's LifeOps.** It is mirrored into People's own tables and shown on People's own screen.
+
+### The shape of it
+
+```
+People → a person → Partner sync → View LifeOps
+```
+
+- **Their week, mirrored.** What a partner publishes is *their* real LifeOps week for the current
+  seven days, and it is shown here as a read-only view: their tasks, ticked as they tick them. It is
+  not on your week, not in your aspects, not counted in your capacity, and closing your week does
+  nothing to it.
+- **Your week, published.** They see the same of yours. Pairing publishes your **whole** current week
+  to that partner — which is why pairing is a deliberate, per-person act with the consequence spelled
+  out on the screen that hands over the code, rather than a setting somewhere.
+- **Adding a task.** From their week you can add one, and it becomes a real task on **their** LifeOps
+  week. It is the only thing on this seam that ever becomes a row in anybody's planner.
+- **What changed.** A round runs when the app opens. What it finds is stored as events and shown the
+  next time somebody opens that partner's week — "Marta finished Book the van" — with an unread count
+  on the roster, because the round happens while nobody is looking.
+
+### Pairing: why two scans
+
+Each person's page mints **half a secret** and shows it in a QR code. Scanning the other person's code
+stores their half. The token that gates the seam is a hash of *both* halves, sorted so both devices
+compute the same one from opposite directions:
+
+```
+A shows code (secret A)  ──scan──▶  B stores A
+B shows code (secret B)  ──scan──▶  A stores B
+        both can now compute token = sha256(sorted(A, B))
+```
+
+That makes the connection two-way **by construction** rather than by a rule somebody has to enforce.
+One scan yields one half of a token neither side can complete alone, so a device that was never
+scanned cannot address you, and knowing an instance id — which is not secret — buys nothing. Every
+inbound share is checked four ways before a line of it is believed: right instance, addressed to us,
+correct token, and about the week we are actually in.
+
+There is a typed-code fallback carrying the identical payload, for a cracked lens or a code that
+arrived in a message.
+
+### What crosses into LifeOps, and what cannot
+
+Exactly one payload type reaches a planner: a `Contribution` — a task somebody deliberately added to
+their partner's week. It is its own type on the wire precisely so that the code path which can create
+a LifeOps task is reached by one kind of message and nothing else; a mirrored week has no route to it
+at all.
+
+Contributions are taken **once, for good**. `partner_taken` is consulted before the write and appended
+after it, and the row is kept even when the task it made is later deleted — a contribution that was
+taken and then binned was decided about, and re-offering it on the next app open would be the app
+arguing with the person who binned it. A contribution keeps being republished until it comes back
+stamped in the partner's published week, which is how it survives a partner who does not open their
+app for a week.
+
+`partner/HouseholdWeek` is the whole door: `current()` reads, `createTask()` writes one task.
+
+It is a **port, not a call**, and the reason is a module cycle. LifeOps owns the week, so People
+reaching into it is the obvious shape — but `:lifeops` already depends on `:people` (it mints people
+from calendar attendees and publishes them over the directory seam), so an edge back would be a
+cycle. So People declares the interface and LifeOps registers the adapter
+(`lifeops/data/repository/PartnerWeekBridge`, wired in `LifeOpsApp`), which is the direction every
+other call between the two already runs.
+
+A registered holder rather than constructor injection, because the two containers are built at
+different moments and in either order. Its default answer — *nothing registered* — is the honest one
+for a host with no planner in it: a paired household then publishes an empty week, and an arriving
+contribution stays **untaken** rather than being dropped, so it lands if a planner ever appears.
+
+### Transport
+
+`filesDir/partner-sync`, one `<instance>-partner.json` per install, write-then-rename — the same
+arrangement the People seam uses, and deliberately **not** the same folder. That one holds envelopes
+written by apps in this install; this one holds a stranger's. Keeping them apart means neither can
+read the other's files by accident, and a household that shares this directory between devices is not
+thereby sharing its own directory's sync traffic.
+
+Instance ids arriving from a scanned code name files, so they are sanitised to letters, digits, `-`
+and `_` before they touch the filesystem.
+
+### The week rolls over on its own
+
+The seam only ever publishes the current week, so sharing expires by itself: close the week and last
+week's tasks stop being published, with nothing to revoke. A partner whose app has not been opened
+since the week turned over is reported as `DIFFERENT_WEEK` — connected, but showing nothing — which is
+a different problem from a pairing that never completed, and the screen says which.
+
 ## Module layout
 
 ```
@@ -252,21 +355,38 @@ the person would silently drop out of the relationship-balance analytics that co
 │   ├── PersonMerge       newer wins per field; a blank never beats a value; delete = archive
 │   ├── PeopleSyncEngine  one round, over :core's Mailbox; CreationPolicy picks who a peer creates
 │   └── PeopleSyncCodec   JSON codec + the per-peer file transport
+├── partner/          pure JVM, unit-tested — the *other* seam: two households
+│   ├── PartnerInvite     the QR payload, and the two half-secrets that make a pair token
+│   ├── PartnerPacket     a partner's week, a Contribution, the addressed PartnerShare
+│   ├── PartnerWeekDiff   what changed on their week — no merge; they own it
+│   ├── PartnerSyncEngine one round: four checks, then mirror + accept
+│   ├── PartnerSyncCodec  JSON codec + the per-instance file transport
+│   ├── HouseholdWeek     the port onto this household's own week — LifeOps registers the adapter
+│   └── QrMatrix          the code as a grid, tested against zxing's own decoder
 ├── logic/            pure JVM, unit-tested
 │   └── ImportantDates    recurring dates, incl. the 29 February case
-├── data/             Room (PeopleDatabase, entities, PeopleDao) + repository + prefs
-├── ui/               Compose: roster · person detail (+ common, theme)
+├── data/             Room (PeopleDatabase, entities, PeopleDao/PartnerDao) + repositories + prefs
+├── ui/               Compose: roster · person detail · partner week (+ common, theme)
 ├── backup/           PeopleBackupContributor (whole-file people.db + people_* prefs)
 ├── PeopleApp.kt      tiny runtime container (install/get)
-└── MainActivity.kt   roster → person, and a sync round on every foreground
+└── MainActivity.kt   roster → person → partner week, and both seams' rounds on every foreground
 ```
 
 `:people` depends on `:core` for `Mailbox` — the monotonic-version bookkeeping every peer syncs over
-— rather than growing a second implementation of the same protocol. Both peers run the *same* engine
+— rather than growing a second implementation of the same protocol. It does **not** depend on
+`:lifeops`: that module already depends on this one, so the partner seam's need for the week is met
+by a port People declares and LifeOps registers an adapter for, rather than by a second edge that
+would be a cycle. Both peers run the *same* engine
 and the *same* merge rule out of this module; a merge rule implemented twice is a merge rule that
 disagrees with itself the first time either copy is edited.
 
 ## LifeOps' side
+
+`PartnerWeekBridge` is LifeOps' adapter for People's partner seam: it answers "what is on this
+household's week" and "put this one task on it", and `LifeOpsApp` registers it at startup. It is a
+sibling of `PeopleSyncRepository` and worth telling apart from it — that one reconciles the household
+*roster* with apps inside this install, where every peer is trusted; this one hands a week to somebody
+else's install, behind a pairing two people performed with a camera.
 
 `PeopleSyncRepository` is the counterpart to `CitationSyncRepository`, and is built the same way:
 cursor accessors are plain lambdas so a round can be driven in a test against a temp folder.
@@ -302,9 +422,21 @@ seam where the rows left it.
 
 ## Privacy
 
-People declares **no permissions**. It notably does *not* read the device's contacts: the household
-directory is what you typed into it, not a mirror of your phone book, and the moment it could read
-contacts it would become the app that quietly slurped them.
+People declares **one permission: the camera**, and uses it at exactly one moment — reading a
+partner's pairing QR code. Nothing is recorded or stored, the scanner opens only on "Scan theirs",
+and every pairing screen also takes a typed code, so declining the permission costs nothing but
+convenience.
+
+It notably does *not* read the device's contacts: the household directory is what you typed into it,
+not a mirror of your phone book, and the moment it could read contacts it would become the app that
+quietly slurped them.
+
+Partner sync is off until two people deliberately turn it on for each other, and its reach is bounded
+in three directions at once: **one week**, **one person at a time**, and **never into your planner**.
+A partner sees your current week and nothing else — not your directory, your notes, your dates, your
+aspects or any week but this one — and what they publish back is a view in People rather than rows in
+LifeOps. Unlinking removes their week from this app immediately; tasks they had already added to your
+week stay, because those are yours now.
 
 Advisor can read People behind the usual per-app gate, denied by default. It indexes **People's**
 copy and not LifeOps' `persons` table — indexing both would put two documents about the same person
@@ -313,7 +445,7 @@ staler.
 
 ## Tests
 
-Pure-JVM suites under `people/src/test` (run with `gradle :people:testDebugUnitTest`) — 44 tests:
+Pure-JVM suites under `people/src/test` (run with `gradle :people:testDebugUnitTest`) — 91 tests:
 
 - `PersonBinderTest` — the key outranking everything, email binding across differently-typed names,
   a name binding through case/punctuation/accents, and the two-Alexes case where a contradicting
@@ -341,3 +473,24 @@ Pure-JVM suites under `people/src/test` (run with `gradle :people:testDebugUnitT
 - `ImportantDatesTest` — next-occurrence rollover, today counting as next, the **29 February** case
   landing on the 28th in common years, rejecting invented dates like 31 April, the age being turned,
   and countdowns that read the way a person would say them.
+
+The partner seam's suites, same directory, same command:
+
+- `PartnerInviteCodecTest` — a code round-tripping (punctuation in names included), a wifi code or a
+  URL decoding to null rather than throwing, a code from a newer wire refused rather than half-read,
+  and both devices computing the same pair token from opposite directions.
+- `QrMatrixTest` — an invite encoded to a real QR grid and read back by **zxing's own decoder**,
+  including a display name nobody sensible would type; plus the quiet zone, and equal grids for equal
+  payloads so the view can cache on them.
+- `PartnerWeekDiffTest` — additions, removals, ticks told apart from unticks, edits, and a week that
+  has not changed reporting nothing (in any order).
+- `PartnerSyncEngineTest` — the four checks each refusing on their own (wrong instance, not addressed
+  to us, wrong token, wrong week), a half-made pairing publishing and reading nothing, the first sight
+  of a week mirrored *without* announcing every task as news, contributions accepted even when their
+  own week is stale, a contribution never taken twice, and — the boundary itself — a mirrored week
+  contributing nothing to what the caller may put on this household's planner.
+- `TwoInstanceRoundTest` — two whole instances over a real folder: pairing by scanning each other and
+  each then seeing the *other's* week rather than a merger of both; a task added on one landing on the
+  other's planner, coming back mirrored and stopping being resent; a contribution not re-offered after
+  the receiver deletes the task; a stranger who guessed both instance ids writing neither a week nor a
+  task; and an instance id from a scanned code unable to name a file outside the folder.

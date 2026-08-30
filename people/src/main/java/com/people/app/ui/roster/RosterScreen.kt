@@ -20,6 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.people.app.data.model.Person
 import com.people.app.data.model.SyncStatus
+import com.people.app.data.repository.PartnerRepository
 import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
 import com.people.app.logic.ImportantDates
@@ -38,8 +39,19 @@ import kotlinx.coroutines.launch
 class RosterViewModel(
     private val repo: PeopleRepository,
     private val syncService: PeopleSyncService,
-    private val peers: List<String>
+    private val peers: List<String>,
+    partnerRepo: PartnerRepository
 ) : ViewModel() {
+
+    /**
+     * Unread partner changes per person.
+     *
+     * On the roster because a partner round runs while the app is *closed*: without a mark here,
+     * the only way to discover that somebody changed their week is to open their page and look,
+     * which is not a notification.
+     */
+    val partnerBadges: StateFlow<Map<String, Int>> = partnerRepo.observeUnseenByPerson()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     val people: StateFlow<List<Person>> =
         repo.observeAllPeople().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -79,11 +91,12 @@ class RosterViewModel(
     class Factory(
         private val repo: PeopleRepository,
         private val syncService: PeopleSyncService,
-        private val peers: List<String>
+        private val peers: List<String>,
+        private val partnerRepo: PartnerRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            RosterViewModel(repo, syncService, peers) as T
+            RosterViewModel(repo, syncService, peers, partnerRepo) as T
     }
 }
 
@@ -97,6 +110,7 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
     val upcoming by vm.upcoming.collectAsStateWithLifecycle()
     val status by vm.syncStatus.collectAsStateWithLifecycle()
     val syncing by vm.syncing.collectAsStateWithLifecycle()
+    val partnerBadges by vm.partnerBadges.collectAsStateWithLifecycle()
 
     var showAdd by remember { mutableStateOf(false) }
 
@@ -174,6 +188,9 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
                                         style = MaterialTheme.typography.bodySmall
                                     )
                                 }
+                            }
+                            partnerBadges[person.id]?.takeIf { it > 0 }?.let { unseen ->
+                                Badge { Text("$unseen") }
                             }
                         }
                     }
