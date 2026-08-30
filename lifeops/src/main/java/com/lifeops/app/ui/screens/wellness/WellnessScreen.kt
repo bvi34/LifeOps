@@ -79,8 +79,9 @@ fun WellnessScreen(
     }
     if (showCheckIn) {
         CheckInDialog(
-            onSubmit = { trend, initiative, energy, sensory, why ->
-                viewModel.logCheckin(trend, initiative, energy, sensory, why); showCheckIn = false
+            onSubmit = { trend, initiative, sensoryTrend, energy, sensory, why ->
+                viewModel.logCheckin(trend, initiative, sensoryTrend, energy, sensory, why)
+                showCheckIn = false
             },
             onDismiss = { showCheckIn = false },
             // Newest-first, so the head of the feed is the reading this check-in is compared against.
@@ -283,7 +284,7 @@ private fun EntryRow(entry: WellnessCheckin) {
                     entry.initiative?.let { add("Initiative ${it.label.lowercase()}") }
                     // "~" marks an energy stepped from the trend rather than one that was entered.
                     entry.energy?.let { add("Energy ${if (entry.energyDerived) "~" else ""}$it") }
-                    entry.sensory?.let { add("Sensory $it") }
+                    entry.sensory?.let { add("Sensory ${if (entry.sensoryDerived) "~" else ""}$it") }
                 }.joinToString("  ·  ")
             }
             if (detail.isNotBlank()) {

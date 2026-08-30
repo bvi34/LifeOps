@@ -8,6 +8,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.AspectRepository
@@ -217,13 +218,15 @@ class CountersViewModel(
 
     /**
      * Attach a wellness check-in to the moment a habit was marked. Offered (never forced) right
-     * after ticking a habit: better/same/worse since the last reading plus initiative, rather than
+     * after ticking a habit: better/same/worse since the last reading, the same for sensory load,
+     * plus initiative, rather than
      * the full 1–10 strips the daytime prompt used to repeat. Persists a standard daytime CHECKIN,
      * so it also flows into the wellness reports.
      */
     fun logWellnessCheckin(
         trend: WellnessTrend,
         initiative: Initiative,
+        sensoryTrend: SensoryTrend,
         energy: Int?,
         sensory: Int?,
         note: String?
@@ -232,6 +235,7 @@ class CountersViewModel(
             wellnessRepository.logCheckin(
                 trend = trend,
                 initiative = initiative,
+                sensoryTrend = sensoryTrend,
                 energy = energy,
                 sensory = sensory,
                 note = note

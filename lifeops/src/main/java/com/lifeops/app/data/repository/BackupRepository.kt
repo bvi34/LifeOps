@@ -299,7 +299,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
         val sb = StringBuilder()
         sb.append(Csv.row(listOf(
             "Kind", "RecordedAt", "Day", "Trend", "Initiative", "Energy", "EnergyDerived",
-            "Sensory", "Tired", "SleepMinutes", "Note"
+            "SensoryTrend", "Sensory", "SensoryDerived", "Tired", "SleepMinutes", "Note"
         ))).append('\n')
         rows.forEach { r ->
             sb.append(Csv.row(listOf(
@@ -311,7 +311,10 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 r.energy?.toString() ?: "",
                 // Whether the energy was stepped from the trend rather than entered by hand.
                 if (r.energyDerived) "true" else "false",
+                r.sensoryTrend ?: "",
                 r.sensory?.toString() ?: "",
+                // The same flag for a sensory load stepped from its trend rather than entered.
+                if (r.sensoryDerived) "true" else "false",
                 r.tired?.toString() ?: "",
                 r.sleepMinutes?.toString() ?: "",
                 r.note ?: ""

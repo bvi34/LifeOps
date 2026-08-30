@@ -114,7 +114,14 @@ class TaskRepository(
     suspend fun getAllSince(since: String): List<Task> =
         taskDao.getAllSince(since).map { it.toModel() }
 
-    suspend fun closeWeek(weekId: String, newWeekId: String, selfRating: Int? = null, selfRatingNote: String? = null) {
+    suspend fun closeWeek(
+        weekId: String,
+        newWeekId: String,
+        selfRating: Int? = null,
+        selfRatingNote: String? = null,
+        mentalReset: Boolean? = null,
+        exhaustion: Int? = null
+    ) {
         val week = weekDao.getById(weekId) ?: return
         if (week.isClosed) return
         val now = DateUtil.now()
@@ -183,7 +190,7 @@ class TaskRepository(
             val readingPoints = reading.points
             val snapshot = buildSnapshot(
                 weekId, allTasks, timeByTask, now, aspectMeta, selfRating, selfRatingNote,
-                subtaskTickCount, readingAspectId, readingPoints
+                mentalReset, exhaustion, subtaskTickCount, readingAspectId, readingPoints
             )
             weekSnapshotDao.insert(snapshot)
             weekDao.update(week.copy(isClosed = true, closedAt = now))
@@ -314,6 +321,8 @@ class TaskRepository(
         aspectMeta: Map<String, Pair<String, String>>,
         selfRating: Int? = null,
         selfRatingNote: String? = null,
+        mentalReset: Boolean? = null,
+        exhaustion: Int? = null,
         subtaskTickCount: Int = 0,
         readingAspectId: String? = null,
         readingPoints: Int = 0
@@ -406,6 +415,8 @@ class TaskRepository(
             aspectHistory = gson.toJson(aspectHistory),
             selfRating = selfRating,
             selfRatingNote = selfRatingNote?.takeIf { it.isNotBlank() },
+            mentalReset = mentalReset,
+            exhaustion = exhaustion,
             subtaskTickCount = subtaskTickCount,
             // The week's bar, sealed. Carried-forward tasks are excluded from the denominator for
             // the same reason they're excluded from the completion rate: they were explicitly moved

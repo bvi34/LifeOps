@@ -7,6 +7,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.Initiative
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.AspectRepository
 import com.lifeops.app.data.repository.TaskRepository
@@ -141,11 +142,14 @@ class WellnessViewModel(
     fun logCheckin(
         trend: WellnessTrend,
         initiative: Initiative,
+        sensoryTrend: SensoryTrend,
         energy: Int?,
         sensory: Int?,
         why: String
     ) {
-        viewModelScope.launch { wellnessService.checkin(trend, initiative, energy, sensory, why) }
+        viewModelScope.launch {
+            wellnessService.checkin(trend, initiative, sensoryTrend, energy, sensory, why)
+        }
     }
 
     /** Log a sleep report on demand. Keeps the reconstruction only when the user didn't override the total. */

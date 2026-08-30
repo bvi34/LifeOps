@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessTrend
 import com.lifeops.app.data.repository.WellnessRepository
@@ -81,12 +82,13 @@ class WellnessPromptViewModel(
     fun submitCheckin(
         trend: WellnessTrend,
         initiative: Initiative,
+        sensoryTrend: SensoryTrend,
         energy: Int?,
         sensory: Int?,
         why: String
     ) {
         viewModelScope.launch {
-            wellnessService.checkin(trend, initiative, energy, sensory, why)
+            wellnessService.checkin(trend, initiative, sensoryTrend, energy, sensory, why)
             _state.value = WellnessPromptState(WellnessPromptKind.NONE)
         }
     }

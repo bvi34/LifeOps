@@ -182,6 +182,13 @@ When the week is done, **Close Week**:
 3. Carries forward the tasks you chose to keep, and re-seeds **recurring** tasks.
 4. Starts the next week and draws the closed week's **Growth ring**.
 
+Before it commits, the close dialog asks you three things and seals the answers with the
+snapshot: how you think the week went (0–10, held against what the board actually shows),
+whether a **mental reset** was achieved, and your **overall exhaustion** (1 fresh → 10 wiped
+out). All three are optional — tap an answer again to clear it — and the last two are there
+because a completion rate says nothing about whether you got your head back or what the week
+cost you.
+
 You drive this — close when *you* decide the week is over.
 
 ---

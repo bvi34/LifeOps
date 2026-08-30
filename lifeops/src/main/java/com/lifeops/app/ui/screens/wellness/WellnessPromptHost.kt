@@ -36,8 +36,8 @@ fun WellnessPromptHost(repo: WellnessRepository, enabled: Boolean = true) {
 
     when (state.kind) {
         WellnessPromptKind.CHECKIN -> CheckInDialog(
-            onSubmit = { trend, initiative, energy, sensory, why ->
-                vm.submitCheckin(trend, initiative, energy, sensory, why)
+            onSubmit = { trend, initiative, sensoryTrend, energy, sensory, why ->
+                vm.submitCheckin(trend, initiative, sensoryTrend, energy, sensory, why)
             },
             onDismiss = { vm.dismiss() },
             previous = state.previous

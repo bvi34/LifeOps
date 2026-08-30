@@ -1249,12 +1249,35 @@ private val MIGRATION_53_54 = object : Migration(53, 54) {
     }
 }
 
+private val MIGRATION_54_55 = object : Migration(54, 55) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Two additions, both about the half of a week the task board can't see.
+        //
+        // The check-in's sensory question becomes relative, the way energy already is: instead of
+        // living only behind "Add exact ratings" as a 1-10 strip, it's asked every time as
+        // better/neutral/worse and stepped from the last reading (WellnessRepository.deriveSensory),
+        // so the sensory series the reports read stays continuous. sensoryTrend is nullable — SLEEP
+        // rows never carry one, nor do check-ins written before this. sensoryDerived is NOT NULL
+        // with a SQL DEFAULT matching @ColumnInfo(defaultValue), like energyDerived before it
+        // (MIGRATION_49_50): every sensory value already stored was typed in by hand.
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN sensoryTrend TEXT")
+        db.execSQL("ALTER TABLE wellness_checkins ADD COLUMN sensoryDerived INTEGER NOT NULL DEFAULT 0")
+
+        // The week-close ritual gains two questions beside the self-rating: whether a mental reset
+        // was actually achieved, and how spent you are overall (1-10, the wellness scale). Both
+        // nullable and unbackfilled — the prompts can be skipped, and a week closed before they
+        // existed never answered them, which is not the same as answering "no" or "not tired".
+        db.execSQL("ALTER TABLE week_snapshots ADD COLUMN mentalReset INTEGER")
+        db.execSQL("ALTER TABLE week_snapshots ADD COLUMN exhaustion INTEGER")
+    }
+}
+
 /**
  * The schema version, in one place. [com.lifeops.app.backup.LifeOpsBackupContributor] records it in
  * the backup manifest as the version the copied `lifeops.db` was written at, and reads it from here
  * rather than repeating the number — the hand-copied one had drifted seven migrations behind.
  */
-const val LIFEOPS_DB_VERSION = 54
+const val LIFEOPS_DB_VERSION = 55
 
 @Database(
     entities = [
@@ -1357,7 +1380,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
                     LifeOpsDatabase::class.java,
                     "lifeops.db"
                 )
-                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54)
+                    .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
                     .build()
                     .also { INSTANCE = it }
             }

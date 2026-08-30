@@ -11,7 +11,8 @@ import com.lifeops.app.connection.service.WeekService
  *  - `/v1/LifeOps/local/week/current` — resolve (creating if needed) the open week; returns
  *    `id`, `startDate`, `endDate`.
  *  - `/v1/LifeOps/local/week/close`   — close the open week and open the next; params: selfRating
- *    (optional int), selfRatingNote (optional string). Returns the closed and new week ids.
+ *    (optional int), selfRatingNote (optional string), mentalReset (optional bool — "was a mental
+ *    reset achieved?"), exhaustion (optional int 1–10). Returns the closed and new week ids.
  */
 object LocalWeekConnection {
 
@@ -32,7 +33,9 @@ object LocalWeekConnection {
             val p = request.params
             when (val outcome = weekService.close(
                 selfRating = p.getInt("selfRating"),
-                selfRatingNote = p.getString("selfRatingNote")
+                selfRatingNote = p.getString("selfRatingNote"),
+                mentalReset = p.getBooleanOrNull("mentalReset"),
+                exhaustion = p.getInt("exhaustion")
             )) {
                 is WeekService.CloseOutcome.Closed ->
                     ConnectionResult.ok(
