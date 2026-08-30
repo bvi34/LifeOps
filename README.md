@@ -22,11 +22,11 @@ the receipts.
 > share a silhouette, so a tile is recognisable before its colour registers — over a dock holding
 > the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
-> (`:people`), or Project (`:project`); one place to back the whole suite up into a single `.zip` and restore from it; and one
-> place that decides what all seven of them **look** like — a shared preset and light/dark mode, plus
+> (`:people`), Project (`:project`), or Maintenance (`:maintenance`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> place that decides what all eight of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
-> People and Project are library modules hosted in that one process —
+> People, Project and Maintenance are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -167,6 +167,41 @@ the receipts.
 > the timeline reading, the board moves, the compile and the search are pure JVM in `project/logic/`
 > and covered by 102 unit tests. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
+
+> **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.
+> It owns *the things you own*: the house, the cars, the furnace, the mower — what each one **is**,
+> what is **owed** on it, what it **costs** to keep, and what it **next needs done**. The shape is
+> borrowed from [Homi](https://github.com/Yuss9/homi) and then narrowed hard: no accounts, no roles,
+> no invitations, no object store — none of that is purpose-built for one person on one device inside
+> an app that already ships as a single install.
+>
+> Kind-specific fields are **declared as data, not as columns**: a vehicle asks for a VIN, a plate and
+> a trim; a home asks for an address, a year built and a parcel number; an appliance asks for a serial
+> number and where it lives. Adding a kind is authoring — one entry in `logic/AssetKind` grows its own
+> fields, already validated, everywhere they are shown. A **meter belongs to a kind** too, so mileage
+> intervals are only offered where there is an odometer to measure them against.
+>
+> Schedules carry **either or both** intervals — *"every 5,000 miles or 6 months, whichever comes
+> first"*, the way an owner's manual writes it — and the app says which leg won. Two odometer readings
+> give a **rate**, and a rate turns 5,000 miles into a date; one reading gives no date rather than a
+> guessed one. A mileage interval with no baseline says *"log one service to start the clock"* instead
+> of quietly granting itself a free 5,000 miles. **Logging the work is the only thing that moves a
+> clock** — there is no silent reset, which is why the history has no holes in it.
+>
+> The **mortgage** is typed as the note reads (principal, rate, term, first payment) and everything
+> else is derived: balance today, principal and interest paid, payoff month — or *never*, when the
+> payment doesn't cover the interest — and equity, negative when it is. There is deliberately **no
+> stored balance**, which is the field that makes every other app's mortgage page wrong within a
+> month; rates are basis points and money is whole cents, so nothing drifts. **VINs are checked
+> offline** by their own check digit, and a digit that disagrees is *reported, not rejected* — plenty
+> of vehicles built outside North America carry a valid VIN that fails that arithmetic. Costs refuse
+> to annualise a history shorter than a year.
+>
+> Maintenance knows what is due; it never decides when you'll get to it and raises **no
+> notifications** — scheduling is LifeOps' job. Nothing derived is stored, so nothing goes stale in a
+> drawer. Its logic lives in `maintenance/logic/` under **63 JVM unit tests**. It requests no
+> permissions and has no `INTERNET`: a VIN, a parcel number and a mortgage balance are about as
+> identifying as household data gets, so there is deliberately nowhere for them to go.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
@@ -516,6 +551,7 @@ gradle :app:assembleDebug        # build the Operations Sandbox container APK
 gradle :lifeops:testDebugUnitTest # run LifeOps' JVM unit tests
 gradle :backupkit:test           # run the backup format/engine tests (pure JVM, no SDK needed)
 gradle :suitekit:test            # run the suite appearance tests (pure JVM, no SDK needed)
+gradle :maintenance:test         # run Maintenance's logic tests (VIN, due dates, amortisation)
 ```
 
 > Note: the Gradle wrapper jar/scripts are not committed, so use a locally installed
@@ -558,6 +594,11 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 - `GeoTest` — great-circle distance behind the device-location move threshold: known city pair,
   symmetry, a short hop staying under the threshold, and the antipodal arcsine guard.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
+
+The hosted apps keep their own JVM suites beside their logic — `maintenance/src/test/` covers the
+VIN check digit and its thirty-year model-year cycle, whichever-comes-first service intervals, a
+meter that went backwards, textbook amortisation to the cent, and the refusal to annualise a
+history shorter than a year (`gradle :maintenance:test`).
 
 ---
 

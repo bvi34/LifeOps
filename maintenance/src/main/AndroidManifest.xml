@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Maintenance requests no permissions. A VIN, a parcel number and a mortgage balance are
+         about as identifying as household data gets, so this app deliberately has no way to send
+         them anywhere: no INTERNET, no VIN decoder call, no account. Everything here you typed in,
+         and it stays on the device. -->
+
+    <!-- Maintenance is a library module: no app-level attributes here (name/icon/theme/label live
+         on the :app host). Only Maintenance's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Maintenance"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

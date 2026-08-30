@@ -58,7 +58,7 @@ import java.util.Locale
 /**
  * The Operations Sandbox home: a phone home screen for a suite that lives inside one app.
  *
- * The metaphor is doing real work, not decoration. Seven apps share a process and an installer, so a
+ * The metaphor is doing real work, not decoration. Eight apps share a process and an installer, so a
  * launcher grid is the honest picture of them — each tile carries the app's own glyph and colour,
  * so "the green one" and "the teal one" mean something before you have read a word. The dock holds
  * what belongs to the container rather than to any app: the settings that paint the whole suite,
