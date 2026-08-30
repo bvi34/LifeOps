@@ -32,7 +32,16 @@ import java.time.LocalDate
  */
 class LifeOpsTasks(
     private val taskService: TaskService,
-    private val taskRepository: TaskRepository
+    private val taskRepository: TaskRepository,
+    /**
+     * The aspect a published task is filed under, read from LifeOps' own settings on each publish.
+     *
+     * Which part of your life an upkeep job counts towards is **LifeOps' decision, not this app's** —
+     * exactly as it is for the reading time Citation reports (`Settings → Reading rewards`). So this
+     * is a lambda over a LifeOps preference rather than a field Maintenance keeps: there is one
+     * place to change it, and it is the place that owns aspects.
+     */
+    private val aspectId: () -> String? = { null }
 ) : UpkeepWeek {
 
     /**
@@ -49,6 +58,10 @@ class LifeOpsTasks(
                 title = title,
                 note = note,
                 dueDate = due.toString(),
+                // Whatever LifeOps' settings say today. Read at publish rather than stamped on the
+                // plan, so the answer comes from one place — and so changing it re-files what is
+                // published from then on without reaching back into weeks already planned.
+                aspectId = aspectId(),
                 // Not recurring, not a hard deadline — see the class note.
                 isRecurring = false,
                 hardDeadline = false
@@ -57,7 +70,13 @@ class LifeOpsTasks(
         return (outcome as? TaskService.CreateOutcome.Created)?.task?.id
     }
 
-    /** Move an open task's date (and fix its title when the plan or the asset was renamed). */
+    /**
+     * Move an open task's date (and fix its title when the plan or the asset was renamed).
+     *
+     * The aspect is deliberately **not** passed: `TaskService.update` leaves a field alone when it
+     * is null, so a task you re-filed by hand in LifeOps keeps where you put it. The app owns the
+     * title and the date because it is the only thing that knows them; it does not own your filing.
+     */
     override suspend fun reschedule(taskId: String, due: LocalDate, title: String): Boolean =
         taskService.update(taskId = taskId, title = title, dueDate = due.toString()) != null
 
@@ -113,7 +132,11 @@ class LifeOpsTasks(
          */
         fun createOrNull(): LifeOpsTasks? {
             val lifeOps = LifeOpsApp.getOrNull() ?: return null
-            return LifeOpsTasks(lifeOps.taskService, lifeOps.taskRepository)
+            return LifeOpsTasks(
+                taskService = lifeOps.taskService,
+                taskRepository = lifeOps.taskRepository,
+                aspectId = { lifeOps.preferencesRepository.maintenanceAspectId }
+            )
         }
     }
 }

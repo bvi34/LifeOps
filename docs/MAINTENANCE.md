@@ -255,11 +255,18 @@ list looking like something you chose to do now.
 | Title | `Truck: Oil change` — the asset leads, because a week's list is read across a dozen unrelated things and "Oil change" on its own is a question |
 | Due date | The day the verdict falls due; **today** when a plan is overdue with no date behind it yet (a mileage interval with no rate) |
 | Note | Where it came from, its cadence, where it stands, and what ticking it will do |
+| Aspect | Whatever **LifeOps** says in `Settings → Maintenance upkeep` — the same arrangement Citation's reading time has. Which part of your life an upkeep job counts towards is LifeOps' decision, not this app's; unfiled is a fine answer, and the task still scores |
 | Recurring | **Never.** LifeOps can repeat a task on its own cadence, and a plan using that would put two engines in charge of when the next oil change is. Maintenance owns the cadence; each occurrence is published as a one-off |
 | Hard deadline | **Never.** A hard deadline expires the task at week close, which would quietly bin a job that simply didn't get done that week |
 
 It is a **per-plan switch**, on by default. "Change the furnace filter" belongs on a week; "check the
 roof after a storm" does not.
+
+The aspect is read from LifeOps' settings **at publish**, not stamped on the plan. So there is one
+place to change it — the app that owns aspects — and changing it re-files everything published from
+then on while leaving weeks already planned alone. A task you moved to a different aspect by hand in
+LifeOps keeps where you put it: the round fixes the title and the date, because it is the only thing
+that knows them, and never touches your filing.
 
 ### The tick coming back
 
@@ -387,9 +394,6 @@ Named so it is a decision rather than an omission:
   gist meanwhile.
 - **No reminders of its own.** Deliberate, per above: upkeep goes onto the LifeOps week and LifeOps
   does the reminding. Nothing here posts a notification.
-- **No aspect on a published task.** A task Maintenance puts on the week carries no LifeOps aspect,
-  so it scores but doesn't fold into an aspect's ring. Picking a default aspect per plan (or per
-  app) is a small, obvious addition and is deliberately not guessed at here.
 - **No Advisor indexing.** Advisor can already read LifeOps, Citation, Logistics, Health and People
   under its permission gate; Maintenance would be a natural sixth source ("when did I last service
   the truck?") and is not wired in yet. It needs a knowledge source and a permission entry, both

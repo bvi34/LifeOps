@@ -203,7 +203,10 @@ the receipts.
 > **Tick it in LifeOps and the tick comes back**: the service is logged here, the clock restarts from
 > the completion, and the next occurrence goes on the week. Never as a *recurring* LifeOps task —
 > that would put two engines in charge of when the next oil change is — and never with a hard
-> deadline, which would bin the job at week close. It is a per-plan switch, on by default.
+> deadline, which would bin the job at week close. It is a per-plan switch, on by default. **Which
+> aspect those tasks are filed under is LifeOps' call, not Maintenance's** — `Settings → Maintenance
+> upkeep`, the same arrangement Citation's reading time has — read at publish, so changing it re-files
+> what goes on the week from then on and leaves anything you moved by hand exactly where you put it.
 >
 > The seam is a **reconciliation, not an event handler**: LifeOps announces the tick as it happens
 > (one small outbound bus in its connection layer), but the same round also runs when Maintenance

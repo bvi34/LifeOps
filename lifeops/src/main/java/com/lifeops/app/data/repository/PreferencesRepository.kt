@@ -19,6 +19,27 @@ class PreferencesRepository(context: Context) {
             prefs.edit().apply { if (value == null) remove("reading_aspect_id") else putString("reading_aspect_id", value) }.apply()
         }
 
+    /**
+     * The aspect the tasks **Maintenance** puts on the week are filed under (null = none).
+     *
+     * The same shape as [readingAspectId] and for the same reason: another app in the suite feeds
+     * work into LifeOps, and LifeOps — not that app — decides which part of your life it counts
+     * towards. Maintenance publishes an upkeep task dated the day it falls due (see
+     * `docs/MAINTENANCE.md`); this says whether it arrives as "Home", "Vehicles", or unfiled.
+     *
+     * Unlike reading rewards, null does not turn anything off: the tasks still arrive, they simply
+     * carry no aspect. The setting is read when a task is **published**, so changing it re-files
+     * everything published from then on and leaves what is already on a week alone — including any
+     * task you re-filed by hand.
+     */
+    var maintenanceAspectId: String?
+        get() = prefs.getString("maintenance_aspect_id", null)
+        set(value) {
+            prefs.edit().apply {
+                if (value == null) remove("maintenance_aspect_id") else putString("maintenance_aspect_id", value)
+            }.apply()
+        }
+
     /** Resource points earned per engaged hour of reading (flat rate; default 5). */
     var readingPointsPerHour: Int
         get() = prefs.getInt("reading_points_per_hour", com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR)
