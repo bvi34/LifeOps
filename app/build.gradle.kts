@@ -6,8 +6,8 @@ plugins {
 
 // :app — the Operations Sandbox container. This is the single installable application (and the
 // default Android Studio run target); it hosts LifeOps (:lifeops), Citation (:citation),
-// Logistics (:logistics), Advisor (:advisor), Health (:health) and People (:people) as
-// library modules in one process with shared storage, which is what makes a true cross-app
+// Logistics (:logistics), Advisor (:advisor), Health (:health), People (:people), Project
+// (:project) and Maintenance (:maintenance) as library modules in one process with shared storage, which is what makes a true cross-app
 // "back up everything into one zip / restore from it" possible without any inter-process plumbing.
 // The home screen picks an app to open and drives backup/restore. New suite apps plug in here.
 android {
@@ -56,6 +56,7 @@ dependencies {
     implementation(project(":health"))
     implementation(project(":people"))
     implementation(project(":project"))
+    implementation(project(":maintenance"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

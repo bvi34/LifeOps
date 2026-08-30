@@ -17,6 +17,8 @@ data class SettingsUiState(
     // Reading rewards: which aspect reading time earns into (null = off) and the flat points/hour.
     val readingAspectId: String? = null,
     val readingPointsPerHour: Int = com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR,
+    // Which aspect the upkeep tasks Maintenance publishes onto the week are filed under (null = none).
+    val maintenanceAspectId: String? = null,
     val categories: Map<String, List<Category>> = emptyMap(),
     val gameResources: List<GameResource> = emptyList(),
     val expandedAspectId: String? = null,
@@ -96,7 +98,8 @@ class SettingsViewModel(
                 sleepTrackingEnabled = preferencesRepository.sleepTrackingEnabled,
                 wellnessSlotHours = preferencesRepository.wellnessSlotHours,
                 readingAspectId = preferencesRepository.readingAspectId,
-                readingPointsPerHour = preferencesRepository.readingPointsPerHour
+                readingPointsPerHour = preferencesRepository.readingPointsPerHour,
+                maintenanceAspectId = preferencesRepository.maintenanceAspectId
             )
         }
         foodItemRepository?.let { repo ->
@@ -247,6 +250,17 @@ class SettingsViewModel(
     fun setReadingAspect(aspectId: String?) {
         preferencesRepository.readingAspectId = aspectId
         _uiState.update { it.copy(readingAspectId = aspectId) }
+    }
+
+    /**
+     * Choose the aspect Maintenance's upkeep tasks are filed under (null = none).
+     *
+     * Takes effect on the next task Maintenance publishes; tasks already on a week keep the aspect
+     * they arrived with, so a re-filing you did by hand is never overwritten by this.
+     */
+    fun setMaintenanceAspect(aspectId: String?) {
+        preferencesRepository.maintenanceAspectId = aspectId
+        _uiState.update { it.copy(maintenanceAspectId = aspectId) }
     }
 
     /** Set the flat reward rate (resource points per engaged hour of reading). */

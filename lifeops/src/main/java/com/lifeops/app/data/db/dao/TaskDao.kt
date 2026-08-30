@@ -121,6 +121,13 @@ interface TaskDao {
     @Query("SELECT slug FROM tasks WHERE weekId = :weekId")
     suspend fun getSlugsByWeek(weekId: String): List<String>
 
+    /**
+     * The rows behind that slug, not just the fact of it — what a caller needs in order to *adopt*
+     * an existing task rather than skip a create. Backed by the same `(weekId, slug)` index.
+     */
+    @Query("SELECT * FROM tasks WHERE weekId = :weekId AND slug = :slug")
+    suspend fun getBySlugInWeek(weekId: String, slug: String): List<TaskEntity>
+
     @Query("UPDATE tasks SET isCommitment = :isCommitment WHERE id = :id")
     suspend fun setCommitment(id: String, isCommitment: Boolean)
 }

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- THE PROMISE: nothing that identifies you, your address or your vehicle leaves this device.
+         Not a full VIN, not a parcel number, not a lender, not a balance, not a plate.
+
+         Maintenance used to keep that by declaring no permissions at all. The permission count was
+         the means, never the promise, and the promise is the part that must not move. So the test
+         for anything added here — Health's test, and for the same reason — is not "does it touch the
+         network". It is: COULD THIS REQUEST TELL ANYONE SOMETHING ABOUT THIS HOUSEHOLD?
+
+             "What is a 2018 Jeep Wrangler Unlimited Sport 3.6 4x4?"
+                 → a question about a PRODUCT. Anyone could type it into a search engine.
+             "Which truck is parked outside this address?"
+                 → a question about a HOUSEHOLD. It never leaves.
+
+         INTERNET — two lookups ask the first kind of question, and neither can ask the second.
+
+           * VIN decode (`data/net/VehicleLookupClient.decode`) sends the first ELEVEN characters of
+             a VIN with the rest wildcarded — `1C4HJXDG5JW******`. Those eleven describe the model;
+             the six dropped are the serial, the part on your title and the part a history service
+             is keyed on. They are dropped because they identify your vehicle AND because vPIC
+             returns an identical answer without them. The rule is a tested function
+             (`logic/Vin.decodeQuery`), not a habit somebody has to remember.
+
+           * Recall check (`…recalls`) sends a make, a model and a year. No VIN at all. The answer is
+             the same for every 2018 Wrangler in the country.
+
+         Both run only because somebody pressed a button — nothing here polls, syncs or wakes up —
+         and both answers are stored locally so the same question isn't asked twice. Everything else
+         in this app (the mortgage, the parcel number, the service history, the odometer) has no code
+         path to the network at all. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Maintenance is a library module: no app-level attributes here (name/icon/theme/label live
+         on the :app host). Only Maintenance's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Maintenance"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

@@ -264,7 +264,7 @@ class LifeOpsApp private constructor(private val app: Application) {
     /**
      * Reconcile the household roster with People and Health, in the background, best-effort.
      *
-     * This is deliberately *not* startup-only. All seven suite apps share one process, so LifeOps'
+     * This is deliberately *not* startup-only. All eight suite apps share one process, so LifeOps'
      * startup runs once and then never again however many times the user walks between LifeOps,
      * People and Health — which is precisely the case where the roster falls out of step. So the
      * round runs on every LifeOps foreground (see `MainActivity.onStart`) as well as after every

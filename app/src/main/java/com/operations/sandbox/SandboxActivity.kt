@@ -115,6 +115,7 @@ private fun openApp(context: Context, appId: AppId) {
         AppId.HEALTH -> com.health.app.MainActivity::class.java
         AppId.PEOPLE -> com.people.app.MainActivity::class.java
         AppId.PROJECT -> com.project.app.MainActivity::class.java
+        AppId.MAINTENANCE -> com.maintenance.app.MainActivity::class.java
     }
     context.startActivity(Intent(context, target))
 }

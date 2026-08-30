@@ -6,8 +6,8 @@ launcher icon. Opening it gives you a **phone home screen**: a tile per app, eac
 and colour, over a dock holding the gear and the backups. From there it:
 
 - opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
-  **Advisor**, **Health**, **People**, and **Project**),
-- **paints all seven of them**: one preset, one light/dark mode, and one accent per app, chosen in the
+  **Advisor**, **Health**, **People**, **Project**, and **Maintenance**),
+- **paints all eight of them**: one preset, one light/dark mode, and one accent per app, chosen in the
   gear and obeyed everywhere,
 - **wears a wallpaper of your choosing** on its own home screen — a shipped design, a gradient you
   mixed, or (the default) the suite's own colours, and
@@ -147,7 +147,15 @@ no per-entity allow-list to fall out of date.
   holding a second one — so the backup has to be the file, not a re-export a future schema change
   could quietly narrow.
 
-Because the two apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
+- **Maintenance** — WAL-checkpoints and copies `maintenance.db` (the assets, their kind-specific
+  attributes, the upkeep schedules, the service log, the meter readings, the loans, the coverages,
+  and the safety recalls with whether this household has dealt with each), plus
+  `shared_prefs/maintenance_*.xml`. Nothing in it is derived-and-stored — balances,
+  due dates and costs are all computed on read — so a restored file cannot come back internally
+  inconsistent; what it does hold is a VIN off a door jamb and a parcel number off a tax bill, which
+  is exactly the kind of thing nobody can reconstruct from memory.
+
+Because the apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
 each contributor scopes strictly to its own files by name.
 
 **Restore requires a restart.** Swapping database files closes the live Room handle for the lifetime
@@ -235,7 +243,7 @@ is the container's alone.
 
 ---
 
-## One look for seven apps (`:suitekit` + `:suiteui`)
+## One look for eight apps (`:suitekit` + `:suiteui`)
 
 Every hosted app used to own its palette: Citation's warm paper, Health's clinical teal, LifeOps'
 five presets. That made the apps that happened to be installed together look like apps that
@@ -287,7 +295,7 @@ Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name,
 one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
 than importing them.
 
-### Seven marks
+### Eight marks
 
 The home screen first shipped with stock Material icons, one per app, and they were wrong twice
 over. They named a *category* — a dashboard, a box, a group of people — where the screen needed a
@@ -295,7 +303,7 @@ picture of the work. And four of the seven were rectangles with something inside
 read as four grey boxes and a book, leaving colour to do all the identifying on its own.
 
 `SuiteGlyphs` replaces them with a drawn mark per app: a dial, a thermometer, a roofline, a board, a
-basket, an open book, a bubble with a tail. The rule they are drawn to is that **no two share a
+basket, an open book, a bubble with a tail, a spanner on the diagonal. The rule they are drawn to is that **no two share a
 silhouette**, so a tile is recognisable in peripheral vision — before the colour registers, and well
 before the label is read. A unit test holds the weaker half of that line: every app resolves to a
 mark of its own, no two marks carry the same geometry, and nothing falls back.
