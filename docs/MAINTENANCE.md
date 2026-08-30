@@ -315,6 +315,89 @@ and knows nothing about who is listening — it behaves identically whether or n
 publishing a task is a call into LifeOps' own `TaskService`, the same seam Logistics uses for the
 food catalog. One week planner in the suite, with a door into it.
 
+## What the VIN opens
+
+Seventeen characters on a door jamb are the most useful thing a vehicle carries, and the app can get
+three things out of them without asking you anything else.
+
+```
+VIN ──11 chars──▶ vPIC ──▶ VehicleFacts ──▶ schedule pack ──▶ plans ──▶ the LifeOps week
+                              └──make/model/year──▶ NHTSA recalls ──▶ the docket
+```
+
+### The eleven characters, and the six that stay here
+
+A decode sends `1C4HJXDG5JW******` — the world manufacturer, the descriptor section, the check
+digit, the model year and the plant. The six dropped are the serial: the part on your title, the
+part an insurer quotes, the part a vehicle-history service is keyed on.
+
+They are dropped for two reasons and the second one is what makes it easy. They identify *your*
+vehicle rather than a model — and **vPIC returns an identical answer without them**, which was
+checked against the live API before any of this was written. So the app asks *"what is a 2018
+Wrangler Unlimited Sport 3.6 4x4?"* and has no code path that could ask *"which truck is parked
+outside this address?"*
+
+The rule lives in `logic/Vin.decodeQuery` and is unit-tested, because a privacy promise that depends
+on somebody remembering to truncate a string is not a promise. It is the same test Health applies to
+its drug lookup: *could this request tell anyone something about this household?*
+
+The decode is **offered, never applied**. It fills in only the fields you left blank, and the
+schedules it matches are listed for you to choose from rather than imported on your behalf.
+
+### Schedule packs
+
+There is no public Mopar API for maintenance intervals — no public OEM API for them at all. The
+schedules live in owner's manuals, and the owner sites that hold them are behind logins. Scraping
+one would put OEM credentials inside an offline household app and a parser that breaks the week they
+redesign: a worse app that is also more likely to be wrong.
+
+So a pack is **transcribed once, by hand, from the manual** and shipped as Kotlin — versioned in
+git, reviewable in a diff, unit-tested, offline. The decode's job is not to fetch a schedule but to
+**choose** one. This build ships two:
+
+| Pack | For | Items |
+|---|---|---|
+| `jeep-jl-36-a` | Jeep Wrangler JL, 3.6L, 2018–2026 — **Schedule A** | 12 |
+| `generic-vehicle` | Anything, as a starting point | 6 |
+
+The generic pack matches everything and is always offered *beneath* whatever specific pack matched,
+because a wrong-but-specific schedule applied silently would be the worst outcome available here.
+
+Every pack carries its [source] and, until somebody checks it against a manual in their own
+glovebox, a **provisional** flag that the screen shows. The numbers are a starting point: the moment
+a pack is applied its items become ordinary plans — yours to rename, re-time, pause or delete — and
+nothing re-imposes them afterwards. Applying a pack again adds only what is missing.
+
+### Recalls
+
+NHTSA's recall API is keyed by **make, model and year — no VIN**, so this costs nothing in privacy:
+the answer is the same for every 2018 Wrangler in the country. A recall is the third thing a vehicle
+can owe you, and the only one somebody else raised — which is exactly why it is worth surfacing, as
+the letter goes to whatever address the DMV last had.
+
+How loudly they speak is a judgement. NHTSA publishes two flags — **do not drive** and **do not park
+indoors** — and those come through as *overdue*, at the top of the docket. Every other campaign is
+*scheduled*: a used vehicle can carry a decade of open recalls, most long since done by somebody,
+and fourteen red lines on the day you add a truck is a docket you stop reading. They stay on the
+list, on the asset's page, and counted — just not shouted.
+
+**Acknowledging** one is the only part of a recall this app owns: NHTSA says what is open for the
+model, you say whether it has been dealt with on yours. It comes off the docket and stays on file.
+
+### The odometer prompt
+
+Every mile-based interval in this app rests on readings, and nothing collects them on its own. So a
+vehicle schedule includes a **weekly "Odometer reading"** — which is a plan, but not a job:
+
+- it writes **no service record** when satisfied (a history full of weekly zero-pound entries called
+  *Read the odometer* would bury the eleven entries that matter), and
+- **the reading satisfies it, not the tick**. A LifeOps task cannot carry a number, so typing the
+  reading in here is what completes the task over there. The task is the nudge; the reading is the
+  work.
+
+That is the one call in the whole seam that runs the other way — Maintenance completing a LifeOps
+task rather than reacting to one — and it is why `logic/PlanKind` exists.
+
 ## The screens
 
 **Due** — the docket, pressing by default, everything one chip away.
@@ -341,12 +424,14 @@ are standing in the garage trying to get the car into the app at all.
 ```
 maintenance/src/main/java/com/maintenance/app/
 ├── logic/          Pure JVM, unit-tested: AssetKind · Vin · Meter · Upkeep · Coverage · Loan · Money · Costs · Docket
+│                   VehicleFacts · VpicParser · Recalls · SchedulePack/SchedulePacks · SchedulePlans
 │                   …and the LifeOps seam's brain: UpkeepTasks (what should happen to a plan's task)
 │                   and UpkeepRound (the reconciliation, over two interfaces)
 ├── data/
 │   ├── db/         Room database, seven entities, one DAO
 │   ├── model/      Asset, AssetCard, AssetDetail, PlanView, LoanView, CoverageView
 │   ├── prefs/      maintenance_prefs — which tab, which filters
+│   ├── net/        VehicleLookupClient — the only class here that touches the network
 │   └── repository/ MaintenanceRepository — rows in, logic types out, every multi-row write
 │                   LifeOpsTasks — the bridge into LifeOps' task service
 │                   UpkeepPublisher — finds the week planner and runs a round against it
@@ -361,7 +446,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 91 JVM unit tests over `logic/`, no SDK or emulator needed:
+`gradle :maintenance:test` — 120 JVM unit tests over `logic/`, no SDK or emulator needed:
 
 - `VinTest` — the check digit on a real VIN, the two typos a VIN catches by itself, a failing check
   digit reported rather than rejected, and the thirty-year model-year cycle resolved against three
@@ -390,6 +475,14 @@ scale, nothing.
   new row beside the old one. A fake that modelled the first as "some titles are refused" is what let
   *"tick it and the next occurrence never lands"* through the first time.
 
+- `UpkeepTest` (milestones) — a number on the odometer rather than a distance from now; milestones
+  already behind you taken as done; the one you have driven past; a milestone racing a time interval.
+- `SchedulePlansTest` — which pack a VIN's facts choose and which they don't, the fallback always
+  offered beneath, applying twice adding nothing, and a plan you typed by hand being adopted.
+- `VpicParserTest` and `RecallsParserTest` — both against fixtures trimmed from **real** responses,
+  because a hand-written ideal payload proves only that a parser can read itself. Including the rule
+  that the serial never leaves the device.
+
 LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
 one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the
 listener after it.
@@ -398,6 +491,11 @@ listener after it.
 
 Named so it is a decision rather than an omission:
 
+- **Milestones are shown, not edited.** A pack's `at 60,000, 120,000` list is visible on the plan
+  and in its dialog but has no editor yet — it is a list rather than a number, and a text box that
+  turned it into one wrong figure would be worse than not offering one.
+- **One vehicle pack.** Adding another is authoring — one entry in `SchedulePacks` — but nobody has
+  authored it.
 - **No files.** Manuals, invoices and photos are the obvious next thing; they need a file store, a
   backup story for it and a viewer, which is a piece of work rather than a field. Notes hold the
   gist meanwhile.

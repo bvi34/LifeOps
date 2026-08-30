@@ -33,6 +33,16 @@ interface UpkeepWeek {
     /** Take a task off the week. */
     suspend fun retire(taskId: String): Boolean
 
+    /**
+     * Tick a task off, from this side.
+     *
+     * The one call that runs against the grain of the seam. Everywhere else the week planner
+     * announces a completion and Maintenance reacts; but a task cannot carry a number, so a prompt
+     * to read the odometer is satisfied by the reading being typed here — and the task it published
+     * should tick itself off rather than sit there asking for something you have already done.
+     */
+    suspend fun complete(taskId: String): Boolean
+
     /** What the planner holds for a task, following any carry-forward hop. Null when it is gone. */
     suspend fun state(taskId: String): UpkeepTasks.PublishedTask?
 }

@@ -98,6 +98,15 @@ class LifeOpsTasks(
     override suspend fun retire(taskId: String): Boolean = taskService.delete(taskId)
 
     /**
+     * Tick a task off in LifeOps, because the thing it was asking for has been done here.
+     *
+     * LifeOps announces that completion on its own bus, so a round follows a moment later and finds
+     * the prompt satisfied — which is fine, and is why completing the plan from a week is written to
+     * be safe to run twice.
+     */
+    override suspend fun complete(taskId: String): Boolean = taskService.complete(taskId)
+
+    /**
      * What LifeOps holds for [taskId] — following carry-forward hops.
      *
      * When a week closes without the job being done and the task was marked to carry, LifeOps mints

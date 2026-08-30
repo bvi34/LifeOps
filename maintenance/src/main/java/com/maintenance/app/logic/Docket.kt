@@ -1,7 +1,13 @@
 package com.maintenance.app.logic
 
-/** Where a docket line came from — the two things that can be owed on an asset. */
-enum class DocketSource { UPKEEP, COVERAGE }
+/**
+ * Where a docket line came from — the three things that can be owed on an asset.
+ *
+ * A recall is not like the other two: nothing falls due, and it is not work you scheduled. It earns
+ * its place because it is the one obligation on this list that somebody *else* raised, and because
+ * nobody goes looking for one — the letter goes to whatever address the DMV last had.
+ */
+enum class DocketSource { UPKEEP, COVERAGE, RECALL }
 
 /**
  * One line on the docket: something an asset needs, with the asset it belongs to already attached.

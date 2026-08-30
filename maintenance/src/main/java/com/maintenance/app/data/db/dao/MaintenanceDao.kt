@@ -9,6 +9,7 @@ import com.maintenance.app.data.db.entities.AssetEntity
 import com.maintenance.app.data.db.entities.CoverageEntity
 import com.maintenance.app.data.db.entities.LoanEntity
 import com.maintenance.app.data.db.entities.MeterReadingEntity
+import com.maintenance.app.data.db.entities.RecallEntity
 import com.maintenance.app.data.db.entities.ServiceRecordEntity
 import com.maintenance.app.data.db.entities.UpkeepPlanEntity
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +69,10 @@ interface MaintenanceDao {
 
     @Query("SELECT * FROM asset_attributes WHERE assetId = :assetId")
     fun observeAttributesFor(assetId: String): Flow<List<AssetAttributeEntity>>
+
+    /** A one-shot read, for a write that has to look before it leaps — see `applyVehicleFacts`. */
+    @Query("SELECT * FROM asset_attributes WHERE assetId = :assetId")
+    suspend fun attributesOf(assetId: String): List<AssetAttributeEntity>
 
     @Upsert
     suspend fun upsertAttributes(attributes: List<AssetAttributeEntity>)
@@ -147,6 +152,38 @@ interface MaintenanceDao {
 
     @Query("DELETE FROM meter_readings WHERE id = :id")
     suspend fun deleteReading(id: String)
+
+    /** The plans on an asset, for applying a schedule pack against what is already there. */
+    @Query("SELECT * FROM upkeep_plans WHERE assetId = :assetId ORDER BY sortOrder, title COLLATE NOCASE")
+    suspend fun plansOf(assetId: String): List<UpkeepPlanEntity>
+
+    @Upsert
+    suspend fun upsertPlans(plans: List<UpkeepPlanEntity>)
+
+    /**
+     * Meter-reading prompts on an asset, active ones only — what a new reading satisfies.
+     * Ordinary upkeep is never satisfied by a number; see `logic/PlanKind`.
+     */
+    // The literal is `PlanKind.METER_READING.key`; SQL cannot ask an enum for it.
+    @Query("SELECT * FROM upkeep_plans WHERE assetId = :assetId AND kind = 'meter_reading' AND active = 1")
+    suspend fun meterPromptsOf(assetId: String): List<UpkeepPlanEntity>
+
+    // --- recalls ---
+
+    @Query("SELECT * FROM recalls ORDER BY parkIt DESC, parkOutside DESC, reportedOnEpochDay DESC")
+    fun observeRecalls(): Flow<List<RecallEntity>>
+
+    @Query("SELECT * FROM recalls WHERE assetId = :assetId ORDER BY parkIt DESC, parkOutside DESC, reportedOnEpochDay DESC")
+    fun observeRecallsFor(assetId: String): Flow<List<RecallEntity>>
+
+    @Query("SELECT * FROM recalls WHERE assetId = :assetId AND campaignNumber = :campaign")
+    suspend fun getRecall(assetId: String, campaign: String): RecallEntity?
+
+    @Upsert
+    suspend fun upsertRecalls(recalls: List<RecallEntity>)
+
+    @Query("UPDATE recalls SET acknowledgedAt = :at WHERE assetId = :assetId AND campaignNumber = :campaign")
+    suspend fun setRecallAcknowledged(assetId: String, campaign: String, at: Long?)
 
     // --- loans ---
 

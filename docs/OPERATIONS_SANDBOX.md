@@ -148,8 +148,9 @@ no per-entity allow-list to fall out of date.
   could quietly narrow.
 
 - **Maintenance** — WAL-checkpoints and copies `maintenance.db` (the assets, their kind-specific
-  attributes, the upkeep schedules, the service log, the meter readings, the loans and the
-  coverages), plus `shared_prefs/maintenance_*.xml`. Nothing in it is derived-and-stored — balances,
+  attributes, the upkeep schedules, the service log, the meter readings, the loans, the coverages,
+  and the safety recalls with whether this household has dealt with each), plus
+  `shared_prefs/maintenance_*.xml`. Nothing in it is derived-and-stored — balances,
   due dates and costs are all computed on read — so a restored file cannot come back internally
   inconsistent; what it does hold is a VIN off a door jamb and a parcel number off a tax bill, which
   is exactly the kind of thing nobody can reconstruct from memory.

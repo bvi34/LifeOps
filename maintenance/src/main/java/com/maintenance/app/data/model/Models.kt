@@ -10,6 +10,7 @@ import com.maintenance.app.logic.LoanSnapshot
 import com.maintenance.app.logic.LoanTerms
 import com.maintenance.app.logic.MeterReading
 import com.maintenance.app.logic.MeterState
+import com.maintenance.app.logic.Recall
 import com.maintenance.app.logic.ServiceEntry
 import com.maintenance.app.logic.UpkeepPlan
 import com.maintenance.app.logic.UpkeepTasks
@@ -75,6 +76,14 @@ data class PlanView(
     val link: UpkeepTasks.TaskLink = UpkeepTasks.TaskLink.NONE
 )
 
+/**
+ * One recall, and where this household stands with it.
+ *
+ * [acknowledged] is local and is the only part of a recall this app owns: NHTSA says what is open
+ * for the model, you say whether it has been dealt with on *your* vehicle.
+ */
+data class RecallView(val recall: Recall, val acknowledged: Boolean)
+
 /** One coverage with where its expiry stands today. */
 data class CoverageView(val coverage: Coverage, val status: DueStatus, val summary: String)
 
@@ -125,8 +134,14 @@ data class AssetDetail(
     /** Spend per year, or null while the history is too short to divide honestly. */
     val perYearCents: Long?,
     /** Cents per mile or hour, or null when the meter cannot say how far it went. */
-    val centsPerMeterUnit: Double?
-)
+    val centsPerMeterUnit: Double?,
+    val recalls: List<RecallView> = emptyList(),
+    /** When NHTSA was last asked. Null means never — which the screen says rather than hides. */
+    val recallsCheckedAt: Long? = null
+) {
+    val openRecalls: Int get() = recalls.count { !it.acknowledged }
+    val urgentRecalls: Int get() = recalls.count { !it.acknowledged && it.recall.isUrgent }
+}
 
 /** One logged job. The cost-only shape the rollups use is `logic/ServiceEntry`. */
 data class ServiceRecord(

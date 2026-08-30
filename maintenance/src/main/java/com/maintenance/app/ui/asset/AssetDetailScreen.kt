@@ -40,6 +40,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maintenance.app.data.model.AssetDetail
+import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Vin
@@ -157,7 +158,7 @@ fun AssetDetailScreen(
             }
 
             when (tab) {
-                AssetTab.OVERVIEW -> OverviewTab(detail = current, onEdit = { editing = true })
+                AssetTab.OVERVIEW -> OverviewTab(vm = vm, detail = current, onEdit = { editing = true })
                 AssetTab.UPKEEP -> UpkeepTab(vm = vm, detail = current)
                 AssetTab.HISTORY -> HistoryTab(vm = vm, detail = current)
                 AssetTab.MONEY -> MoneyTab(vm = vm, detail = current)
@@ -204,7 +205,7 @@ fun AssetDetailScreen(
  * for four years.
  */
 @Composable
-private fun OverviewTab(detail: AssetDetail, onEdit: () -> Unit) {
+private fun OverviewTab(vm: AssetDetailViewModel, detail: AssetDetail, onEdit: () -> Unit) {
     val asset = detail.asset
 
     LazyColumn(
@@ -293,6 +294,13 @@ private fun OverviewTab(detail: AssetDetail, onEdit: () -> Unit) {
         }
 
         val notes = asset.notes
+        if (asset.kind == AssetKind.VEHICLE) {
+            item(key = "vin-lookup") { VehicleSection(vm = vm, detail = detail) }
+            if (detail.recalls.isNotEmpty()) {
+                item(key = "recalls") { RecallsSection(vm = vm, detail = detail) }
+            }
+        }
+
         if (!notes.isNullOrBlank()) {
             item(key = "notes") {
                 SectionCard(title = "Notes") { Text(notes, style = MaterialTheme.typography.bodyMedium) }

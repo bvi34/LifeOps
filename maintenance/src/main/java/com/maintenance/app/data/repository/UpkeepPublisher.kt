@@ -38,6 +38,17 @@ class UpkeepPublisher(
     }
 
     /**
+     * Tick specific tasks off the week — used when a meter reading satisfies the prompt that asked
+     * for it. Outside the gate deliberately: it is a completion, not a decision about what should be
+     * on the week, and LifeOps' own announcement will bring a round along behind it.
+     */
+    suspend fun completeTasks(taskIds: List<String>) {
+        if (taskIds.isEmpty()) return
+        val planner = week() ?: return
+        taskIds.forEach { planner.complete(it) }
+    }
+
+    /**
      * Take specific tasks off the week — used when the plan or the asset behind them is deleted, so
      * the round can never see them again to work it out for itself.
      *

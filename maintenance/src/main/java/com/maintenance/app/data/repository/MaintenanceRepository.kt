@@ -6,6 +6,7 @@ import com.maintenance.app.data.db.entities.AssetEntity
 import com.maintenance.app.data.db.entities.CoverageEntity
 import com.maintenance.app.data.db.entities.LoanEntity
 import com.maintenance.app.data.db.entities.MeterReadingEntity
+import com.maintenance.app.data.db.entities.RecallEntity
 import com.maintenance.app.data.db.entities.ServiceRecordEntity
 import com.maintenance.app.data.db.entities.UpkeepPlanEntity
 import com.maintenance.app.data.model.Asset
@@ -14,6 +15,7 @@ import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.data.model.CoverageView
 import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.data.model.PlanView
+import com.maintenance.app.data.model.RecallView
 import com.maintenance.app.data.model.ServiceRecord
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.Costs
@@ -29,10 +31,16 @@ import com.maintenance.app.logic.LoanTerms
 import com.maintenance.app.logic.MeterReading
 import com.maintenance.app.logic.MeterState
 import com.maintenance.app.logic.PlanSnapshot
+import com.maintenance.app.logic.PlanKind
 import com.maintenance.app.logic.PremiumPeriod
+import com.maintenance.app.logic.Recall
+import com.maintenance.app.logic.titleCaseComponent
+import com.maintenance.app.logic.SchedulePack
+import com.maintenance.app.logic.SchedulePlans
 import com.maintenance.app.logic.Upkeep
 import com.maintenance.app.logic.UpkeepPlan
 import com.maintenance.app.logic.UpkeepStore
+import com.maintenance.app.logic.VehicleFacts
 import com.maintenance.app.logic.UpkeepTasks
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
@@ -78,13 +86,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
     fun observeAssetCards(): Flow<List<AssetCard>> {
         val things = combine(dao.observeAssets(), dao.observeAttributes(), dao.observeReadings(), ::Triple)
         val owed = combine(dao.observePlans(), dao.observeCoverages(), dao.observeLoans(), ::Triple)
-        return combine(things, owed) { (assets, attributes, readings), (plans, coverages, loans) ->
+        return combine(things, owed, dao.observeRecalls()) { (assets, attributes, readings), (plans, coverages, loans), recalls ->
             val now = now()
             val attributesByAsset = attributes.groupBy { it.assetId }
             val readingsByAsset = readings.groupBy { it.assetId }
             val plansByAsset = plans.groupBy { it.assetId }
             val coveragesByAsset = coverages.groupBy { it.assetId }
             val loansByAsset = loans.groupBy { it.assetId }
+            val recallsByAsset = recalls.groupBy { it.assetId }
 
             assets.map { row ->
                 val asset = row.toAsset(attributesByAsset[row.id].orEmpty())
@@ -93,6 +102,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                     asset = asset,
                     plans = plansByAsset[row.id].orEmpty(),
                     coverages = coveragesByAsset[row.id].orEmpty(),
+                    recalls = recallsByAsset[row.id].orEmpty(),
                     meter = meter,
                     now = now
                 )
@@ -117,13 +127,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
      */
     fun observeDocket(): Flow<List<DocketEntry>> {
         val things = combine(dao.observeAssets(), dao.observeAttributes(), dao.observeReadings(), ::Triple)
-        val owed = combine(dao.observePlans(), dao.observeCoverages()) { plans, coverages -> plans to coverages }
-        return combine(things, owed) { (assets, attributes, readings), (plans, coverages) ->
+        val owed = combine(dao.observePlans(), dao.observeCoverages(), dao.observeRecalls(), ::Triple)
+        return combine(things, owed) { (assets, attributes, readings), (plans, coverages, recalls) ->
             val now = now()
             val attributesByAsset = attributes.groupBy { it.assetId }
             val readingsByAsset = readings.groupBy { it.assetId }
             val plansByAsset = plans.groupBy { it.assetId }
             val coveragesByAsset = coverages.groupBy { it.assetId }
+            val recallsByAsset = recalls.groupBy { it.assetId }
 
             Docket.order(
                 assets.filterNot { it.archived }.flatMap { row ->
@@ -132,6 +143,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                         asset = asset,
                         plans = plansByAsset[row.id].orEmpty(),
                         coverages = coveragesByAsset[row.id].orEmpty(),
+                        recalls = recallsByAsset[row.id].orEmpty(),
                         meter = meterStateOf(asset.kind, readingsByAsset[row.id].orEmpty()),
                         now = now
                     )
@@ -154,7 +166,8 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
             dao.observeCoveragesFor(assetId),
             ::Triple
         )
-        return combine(core, rest, dao.observeAttributesFor(assetId)) { (row, planRows, recordRows), (readingRows, loanRows, coverageRows), attributeRows ->
+        val extras = combine(dao.observeAttributesFor(assetId), dao.observeRecallsFor(assetId)) { attrs, recalls -> attrs to recalls }
+        return combine(core, rest, extras) { (row, planRows, recordRows), (readingRows, loanRows, coverageRows), (attributeRows, recallRows) ->
             if (row == null) return@combine null
             val now = now()
             val asset = row.toAsset(attributeRows)
@@ -178,7 +191,9 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 costsThisYear = Costs.summary(entries, since = now - YEAR_MILLIS, coverages = coverages, now = now),
                 costsAllTime = Costs.summary(entries),
                 perYearCents = Costs.perYear(entries, now),
-                centsPerMeterUnit = Costs.centsPerMeterUnit(entries, readings)
+                centsPerMeterUnit = Costs.centsPerMeterUnit(entries, readings),
+                recalls = recallRows.map { RecallView(it.toRecall(), acknowledged = it.acknowledgedAt != null) },
+                recallsCheckedAt = row.recallsCheckedAt
             )
         }
     }
@@ -312,6 +327,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 notes = plan.notes?.trim()?.takeIf { it.isNotBlank() },
                 everyDays = plan.everyDays?.takeIf { it > 0 },
                 everyMeter = plan.everyMeter?.takeIf { it > 0 },
+                atMeter = plan.atMeter.toMilestoneColumn(),
                 active = plan.active,
                 publishToLifeOps = plan.publishToLifeOps,
                 updatedAt = now()
@@ -356,7 +372,17 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
      */
     override suspend fun completeFromWeek(planId: String, completedAt: Long): Boolean {
         val plan = dao.getPlan(planId) ?: return false
-        val baseline = if (plan.everyMeter != null) {
+
+        // A meter prompt is not work: ticking "read the odometer" writes no service record and costs
+        // nothing. It just moves the prompt on — and if a reading arrived in the meantime, that
+        // reading has already moved it, which is why this is safe to run twice.
+        if (PlanKind.of(plan.kind) == PlanKind.METER_READING) {
+            dao.upsertPlan(plan.copy(lastDoneAt = completedAt, updatedAt = now()))
+            dao.setPlanLink(planId, null, null)
+            return true
+        }
+
+        val baseline = if (plan.everyMeter != null || !plan.atMeter.isNullOrBlank()) {
             dao.readingsOf(plan.assetId).maxByOrNull { it.readAt }?.value
         } else {
             null
@@ -468,9 +494,108 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
 
     suspend fun deleteRecord(recordId: String) = dao.deleteRecord(recordId)
 
+    /**
+     * Apply a schedule pack to an asset: add the items it doesn't already have, touch nothing else.
+     *
+     * What to add is decided in `logic/SchedulePlans` — including the rule that a plan you had
+     * already typed under the same title is *adopted* rather than duplicated — so this is only the
+     * write. Returns what was applied, for the screen to report.
+     */
+    suspend fun applyPack(assetId: String, pack: SchedulePack): SchedulePlans.Application {
+        val existing = dao.plansOf(assetId).map { it.toPlan() }
+        val application = SchedulePlans.plan(pack, existing)
+        if (application.toCreate.isEmpty()) return application
+
+        val stamp = now()
+        var order = dao.nextPlanSortOrder(assetId)
+        dao.upsertPlans(
+            application.toCreate.map { item ->
+                val plan = SchedulePlans.toPlan(item, pack, assetId, newId(), stamp)
+                UpkeepPlanEntity(
+                    id = plan.id,
+                    assetId = assetId,
+                    title = plan.title,
+                    notes = plan.notes,
+                    everyDays = plan.everyDays,
+                    everyMeter = plan.everyMeter,
+                    atMeter = plan.atMeter.toMilestoneColumn(),
+                    lastDoneAt = null,
+                    lastDoneMeter = null,
+                    active = true,
+                    kind = plan.kind.key,
+                    sourcePack = plan.sourcePack,
+                    sourceItem = plan.sourceItem,
+                    publishToLifeOps = true,
+                    sortOrder = order++,
+                    createdAt = stamp,
+                    updatedAt = stamp
+                )
+            }
+        )
+        return application
+    }
+
+    /** Fill in what a VIN decode found, leaving anything you already typed exactly as it is. */
+    suspend fun applyVehicleFacts(assetId: String, facts: VehicleFacts) {
+        val existing = dao.getAsset(assetId) ?: return
+        dao.upsertAsset(
+            existing.copy(
+                make = existing.make ?: facts.make,
+                model = existing.model ?: facts.model,
+                year = existing.year ?: facts.year,
+                updatedAt = now()
+            )
+        )
+        val trim = facts.trim
+        if (!trim.isNullOrBlank() && dao.attributesOf(assetId).none { it.key == ATTR_TRIM }) {
+            dao.upsertAttributes(listOf(AssetAttributeEntity(assetId, ATTR_TRIM, trim)))
+        }
+    }
+
+    // ------------------------------------------------------------------ recalls
+
+    /**
+     * Store what NHTSA said, keeping what this household already decided about each one.
+     *
+     * A recall you have acknowledged stays acknowledged when the list is fetched again — the
+     * campaign is the identity, and NHTSA re-sends every open campaign every time.
+     */
+    suspend fun saveRecalls(assetId: String, recalls: List<Recall>, fetchedAt: Long = now()) {
+        val rows = recalls.map { recall ->
+            RecallEntity(
+                assetId = assetId,
+                campaignNumber = recall.campaignNumber,
+                component = recall.component,
+                summary = recall.summary,
+                consequence = recall.consequence,
+                remedy = recall.remedy,
+                manufacturer = recall.manufacturer,
+                reportedOnEpochDay = recall.reportedOn?.toEpochDay(),
+                parkIt = recall.parkIt,
+                parkOutside = recall.parkOutside,
+                fetchedAt = fetchedAt,
+                acknowledgedAt = dao.getRecall(assetId, recall.campaignNumber)?.acknowledgedAt
+            )
+        }
+        if (rows.isNotEmpty()) dao.upsertRecalls(rows)
+        dao.getAsset(assetId)?.let { dao.upsertAsset(it.copy(recallsCheckedAt = fetchedAt)) }
+    }
+
+    /** "Dealt with" — off the docket, still on file. Passing null puts it back. */
+    suspend fun setRecallAcknowledged(assetId: String, campaign: String, acknowledged: Boolean) =
+        dao.setRecallAcknowledged(assetId, campaign, if (acknowledged) now() else null)
+
     // ------------------------------------------------------------------ meter
 
-    suspend fun addReading(assetId: String, value: Long, readAt: Long = now()) {
+    /**
+     * File a reading — and satisfy any prompt that was asking for one.
+     *
+     * Returns the LifeOps tasks those prompts had published, for the caller to tick off. That is the
+     * one place in this app where the seam runs the other way: everywhere else LifeOps announces a
+     * completion and Maintenance reacts, but a task cannot carry a number, so *typing the number
+     * here* is what completes the task over there. The nudge is the task; the reading is the work.
+     */
+    suspend fun addReading(assetId: String, value: Long, readAt: Long = now()): List<String> {
         dao.insertReading(
             MeterReadingEntity(
                 id = newId(),
@@ -480,6 +605,12 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 source = READING_MANUAL
             )
         )
+
+        val satisfied = dao.meterPromptsOf(assetId)
+        satisfied.forEach { prompt ->
+            dao.upsertPlan(prompt.copy(lastDoneAt = readAt, lastDoneMeter = value, updatedAt = now()))
+        }
+        return satisfied.mapNotNull { it.lifeOpsTaskId }
     }
 
     suspend fun deleteReading(readingId: String) = dao.deleteReading(readingId)
@@ -567,6 +698,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         asset: Asset,
         plans: List<UpkeepPlanEntity>,
         coverages: List<CoverageEntity>,
+        recalls: List<RecallEntity>,
         meter: MeterState?,
         now: Long
     ): List<DocketEntry> {
@@ -597,8 +729,50 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 source = DocketSource.COVERAGE
             )
         }
-        return fromPlans + fromCoverages
+        /*
+         * Recalls, and the judgement in how loudly they speak.
+         *
+         * NHTSA's two flags — do not drive, do not park indoors — are an emergency, so they come
+         * through as overdue and sit at the top of the docket. Everything else is *scheduled*: a
+         * vehicle can carry a decade of open campaigns, most of them already done by somebody, and
+         * fourteen red lines on the day you add a used truck is a docket you stop reading. They are
+         * still on the list, still on the asset's page, and still counted — just not shouted.
+         */
+        val fromRecalls = recalls.filter { it.acknowledgedAt == null }.map { row ->
+            DocketEntry(
+                id = row.campaignNumber,
+                assetId = asset.id,
+                assetName = asset.name,
+                title = "Recall · ${row.component.titleCaseComponent().ifBlank { row.campaignNumber }}",
+                detail = recallDetail(row),
+                status = if (row.parkIt || row.parkOutside) DueStatus.OVERDUE else DueStatus.SCHEDULED,
+                // A recall has no due date; the day it was reported is the only date it has, and it
+                // is what orders one urgent recall against another.
+                dueAt = row.reportedOnEpochDay?.let { LocalDate.ofEpochDay(it).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli() },
+                source = DocketSource.RECALL
+            )
+        }
+
+        return fromPlans + fromCoverages + fromRecalls
     }
+
+    private fun recallDetail(row: RecallEntity): String = when {
+        row.parkIt -> "Do not drive — ${row.summary}"
+        row.parkOutside -> "Do not park indoors — ${row.summary}"
+        else -> row.summary
+    }
+
+    private fun RecallEntity.toRecall() = Recall(
+        campaignNumber = campaignNumber,
+        component = component,
+        summary = summary,
+        consequence = consequence,
+        remedy = remedy,
+        manufacturer = manufacturer,
+        reportedOn = reportedOnEpochDay?.let { LocalDate.ofEpochDay(it) },
+        parkIt = parkIt,
+        parkOutside = parkOutside
+    )
 
     private fun meterStateOf(kind: AssetKind, rows: List<MeterReadingEntity>): MeterState? =
         MeterState.from(kind.meter, rows.map { MeterReading(it.readAt, it.value) })
@@ -629,6 +803,13 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         publishedDue = publishedDueDay?.let { LocalDate.ofEpochDay(it) }
     )
 
+    /** `"60000,120000"` → `[60000, 120000]`, sorted and forgiving of whatever ended up in the column. */
+    private fun String?.toMilestones(): List<Long> =
+        orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }.filter { it > 0 }.sorted()
+
+    private fun List<Long>.toMilestoneColumn(): String? =
+        filter { it > 0 }.sorted().joinToString(",").takeIf { it.isNotEmpty() }
+
     private fun UpkeepPlanEntity.toPlan() = UpkeepPlan(
         id = id,
         assetId = assetId,
@@ -636,10 +817,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         notes = notes,
         everyDays = everyDays,
         everyMeter = everyMeter,
+        atMeter = atMeter.toMilestones(),
         lastDoneAt = lastDoneAt,
         lastDoneMeter = lastDoneMeter,
         createdAt = createdAt,
         active = active,
+        kind = PlanKind.of(kind),
+        sourcePack = sourcePack,
+        sourceItem = sourceItem,
         publishToLifeOps = publishToLifeOps
     )
 
@@ -707,6 +892,9 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
 
         /** A neutral slate; an asset's colour is picked when it is added and edited any time. */
         const val DEFAULT_COLOR = 0xFF64748BL
+
+        /** The kind-specific attribute a decoded trim lands in; see `logic/AssetKind`. */
+        const val ATTR_TRIM = "trim"
 
         const val READING_MANUAL = "manual"
         const val READING_FROM_SERVICE = "service"

@@ -14,6 +14,10 @@ import java.io.File
  * Maintenance's hook into the Operations Sandbox backup: the whole `maintenance.db` plus
  * Maintenance's own `maintenance_*` preferences.
  *
+ * What it carries now includes the recalls a vehicle has been told about and which of them this
+ * household has dealt with — the second half of which exists nowhere else, since NHTSA knows what is
+ * open for a model and only you know what has been done to yours.
+ *
  * The database is copied as a file rather than exported as JSON. What this app holds is the only
  * copy of things that are genuinely hard to reconstruct — a VIN off a door jamb, a parcel number
  * off a tax bill, eleven years of what the furnace cost — so the backup should be the bytes, not a

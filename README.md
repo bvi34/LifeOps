@@ -217,10 +217,31 @@ the receipts.
 > off the week. Maintenance raises **no notifications of its own**; deciding
 > what today looks like stays LifeOps' job.
 >
+> A vehicle's **VIN opens three things**, and the app sends **eleven of its seventeen characters** to
+> do it: the half that describes the model. The six dropped are the serial — the part on your title,
+> the part a history service is keyed on — and they are dropped because they identify your vehicle
+> *and* because NHTSA's decoder returns an identical answer without them, which was checked against
+> the live API. The rule is a unit-tested function, not a habit. What comes back is **offered, never
+> applied**: it fills in only the fields you left blank, and it **chooses a maintenance schedule**
+> rather than fetching one — there is no public OEM API for service intervals, so a schedule is
+> transcribed by hand from the manual and shipped as data (a Jeep Wrangler JL 3.6 Schedule A pack and
+> a generic fallback), carrying its source and flagged provisional until somebody checks it. Applying
+> one turns its items into ordinary plans you own; applying it again adds only what is new. The third
+> thing is **safety recalls**, keyed by make/model/year with no VIN at all — NHTSA's *do not drive*
+> and *do not park indoors* flags arrive as overdue, everything else as scheduled, because fourteen
+> red lines on the day you add a used truck is a docket you stop reading.
+>
+> Schedules understand **odometer milestones** as well as intervals — "spark plugs at 100,000 miles"
+> is not "100,000 miles from now", which on a car bought at 60,000 is four years of being wrong — and
+> milestones already behind you when a schedule is applied are taken as done, because nobody knows
+> what the last owner did. A vehicle also gets a weekly **odometer prompt**, which is the one thing in
+> the suite that completes a LifeOps task rather than reacting to one: a task can't carry a number, so
+> typing the reading here ticks it off there.
+>
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **91 JVM unit tests**. It requests no permissions and has no `INTERNET`:
-> a VIN, a parcel number and a mortgage balance are about as identifying as household data gets, so
-> there is deliberately nowhere for them to go.
+> `maintenance/logic/` under **120 JVM unit tests**. It holds `INTERNET` for those two keyless
+> government lookups and nothing else — the mortgage, the parcel number, the service history and the
+> odometer have no code path to the network at all.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

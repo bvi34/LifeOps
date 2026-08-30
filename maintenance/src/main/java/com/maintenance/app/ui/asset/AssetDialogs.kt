@@ -209,6 +209,21 @@ fun PlanDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 TextField(label = "What", value = title, onChange = { title = it })
+
+                // Milestones come from a schedule pack and are shown rather than edited: they are a
+                // list, not a number, and a text box that turned "60,000, 120,000" into one wrong
+                // figure would be worse than not offering it. Everything else about the plan is
+                // editable, and the intervals below still apply alongside them.
+                val milestones = plan?.atMeter.orEmpty()
+                if (milestones.isNotEmpty()) {
+                    Text(
+                        "Due at " + milestones.joinToString(", ") { meterUnit?.format(it) ?: MeterUnit.group(it) } +
+                            " — from the schedule, and not editable here yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 NumberField(label = "Every … days", value = days, onChange = { days = it })
                 if (meterUnit != null) {
                     NumberField(

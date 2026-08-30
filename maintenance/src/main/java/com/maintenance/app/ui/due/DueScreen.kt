@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Handyman
+import androidx.compose.material.icons.filled.ReportProblem
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -145,6 +146,8 @@ private fun DocketRow(entry: DocketEntry, onClick: () -> Unit) {
                 imageVector = when (entry.source) {
                     DocketSource.UPKEEP -> Icons.Filled.Handyman
                     DocketSource.COVERAGE -> Icons.Filled.Description
+                    // A recall is the one line on this list somebody else raised.
+                    DocketSource.RECALL -> Icons.Filled.ReportProblem
                 },
                 contentDescription = null,
                 tint = statusColor(entry.status)

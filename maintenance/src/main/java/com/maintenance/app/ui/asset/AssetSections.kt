@@ -33,6 +33,8 @@ import com.maintenance.app.data.model.PlanView
 import com.maintenance.app.data.model.ServiceRecord
 import com.maintenance.app.logic.Loan
 import com.maintenance.app.logic.MeterUnit
+import com.maintenance.app.logic.PlanKind
+import com.maintenance.app.logic.SchedulePacks
 import com.maintenance.app.logic.PremiumPeriod
 import com.maintenance.app.logic.UpkeepPlan
 import com.maintenance.app.ui.common.EmptyState
@@ -176,6 +178,22 @@ private fun PlanCard(
         weekLine(view)?.let {
             Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
+        if (plan.kind == PlanKind.METER_READING) {
+            Text(
+                "Type the reading in and this ticks itself off — here and on the week.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        plan.sourcePack?.let { packId ->
+            SchedulePacks.byId(packId)?.let { pack ->
+                Text(
+                    "From ${pack.label}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
         val lastDone = plan.lastDoneAt?.let { at ->
             val meter = plan.lastDoneMeter?.let { m -> " at ${meterUnit?.format(m) ?: MeterUnit.group(m)}" }.orEmpty()
             "Last done ${formatDay(at)}$meter"
@@ -207,10 +225,22 @@ private fun weekLine(view: PlanView): String? = when {
     else -> "On the LifeOps week"
 }
 
-/** "Every 5,000 mi or 6 months" — the line under a plan's name. */
+/**
+ * "Every 5,000 mi or 6 months" — the line under a plan's name.
+ *
+ * Milestones read as the numbers they are ("at 100,000 mi") rather than as an interval, because
+ * that is the difference the whole `atMeter` idea exists to preserve: a cadence is measured from the
+ * last time you did it, a milestone is a number on the dial.
+ */
 private fun intervalLine(plan: UpkeepPlan, meterUnit: MeterUnit?): String {
+    fun meter(value: Long) = meterUnit?.format(value) ?: MeterUnit.group(value)
+
     val parts = buildList {
-        plan.everyMeter?.let { add("every ${meterUnit?.format(it) ?: MeterUnit.group(it)}") }
+        if (plan.atMeter.isNotEmpty()) {
+            add("at " + plan.atMeter.joinToString(", ") { meter(it) })
+        } else {
+            plan.everyMeter?.let { add("every ${meter(it)}") }
+        }
         plan.everyDays?.let { add("every ${intervalDays(it)}") }
     }
     if (parts.isEmpty()) return "No interval — done when you say so"

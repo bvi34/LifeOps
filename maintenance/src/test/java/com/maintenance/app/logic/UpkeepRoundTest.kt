@@ -62,6 +62,12 @@ class UpkeepRoundTest {
 
         override suspend fun retire(taskId: String): Boolean = tasks.remove(taskId) != null
 
+        override suspend fun complete(taskId: String): Boolean {
+            val task = tasks[taskId] ?: return false
+            tasks[taskId] = task.copy(completed = true, completedAtMillis = 1L)
+            return true
+        }
+
         /**
          * What the bridge does: follow carry-forward hops to the row that is actually live. The
          * original stays where it was — LifeOps keeps it, marked carried, in the week it belonged to.
@@ -370,6 +376,7 @@ class UpkeepRoundTest {
                 override suspend fun publish(title: String, due: LocalDate, note: String): String? = null
                 override suspend fun reschedule(taskId: String, due: LocalDate, title: String) = false
                 override suspend fun retire(taskId: String) = false
+                override suspend fun complete(taskId: String) = false
                 override suspend fun state(taskId: String): UpkeepTasks.PublishedTask? = null
             },
             store = store,
