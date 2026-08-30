@@ -207,6 +207,36 @@ object SuiteGlyphs {
         }
     }
 
+    /**
+     * Maintenance — an open-ended spanner, laid across the tile on the diagonal.
+     *
+     * The diagonal is doing the work. Every other mark in the set is upright and roughly square in
+     * its bounding box; this one crosses corner to corner, so it is told apart by its angle before
+     * any of its detail resolves. The jaws are drawn open rather than as a closed ring because a
+     * ring at 18dp is a doughnut, and a doughnut on a stick is a magnifying glass.
+     */
+    val Wrench: ImageVector by lazy {
+        glyph("SuiteWrench") {
+            // The handle: the heaviest stroke, and the line the whole silhouette is read from.
+            line(width = 2.6f) { moveTo(9.6f, 9.6f); lineTo(18.6f, 18.6f) }
+            // The head — three quarters of a ring, opening up and to the left.
+            line(width = 1.9f) {
+                moveTo(7.4f, 4.3f)
+                arcTo(3.1f, 3.1f, 0f, true, true, 4.3f, 7.4f)
+            }
+            // The jaws themselves, carried past the ring so the opening reads as a bite.
+            line(width = 1.9f) {
+                moveTo(7.4f, 4.3f); lineTo(5.9f, 2.8f)
+                moveTo(4.3f, 7.4f); lineTo(2.8f, 5.9f)
+            }
+            // The grip, crossing the handle: secondary, so it survives tinting without competing.
+            line(width = 1.3f, alpha = 0.5f) {
+                moveTo(12.7f, 15.1f); lineTo(15.1f, 12.7f)
+                moveTo(14.9f, 17.3f); lineTo(17.3f, 14.9f)
+            }
+        }
+    }
+
     /** Every mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it. */
     val byKey: Map<String, ImageVector> by lazy {
         mapOf(
@@ -216,7 +246,8 @@ object SuiteGlyphs {
             "board" to Board,
             "basket" to Basket,
             "open-book" to OpenBook,
-            "answer-spark" to AnswerSpark
+            "answer-spark" to AnswerSpark,
+            "wrench" to Wrench
         )
     }
 }
@@ -224,7 +255,7 @@ object SuiteGlyphs {
 // --- Drawing helpers -------------------------------------------------------------------------
 //
 // A 24×24 viewport for every mark, so the coordinates above can be compared across apps by eye and
-// a stroke width means the same thing in all seven.
+// a stroke width means the same thing in all of them.
 
 private fun glyph(name: String, paths: ImageVector.Builder.() -> Unit): ImageVector =
     ImageVector.Builder(

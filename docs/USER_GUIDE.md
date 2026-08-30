@@ -272,6 +272,10 @@ From **Settings → Data**:
   paints Citation, Logistics, Advisor, Health and People too. Each app's own accent colour is
   chosen in that gear, as is the wallpaper behind the sandbox's home screen — a shipped design
   (Midnight, Aurora, Sunrise, Paper…), your own gradient, or the suite's own colours.
+- **Maintenance upkeep** — the aspect that upkeep tasks arrive under. Maintenance puts each job it
+  tracks on your week as a task dated the day it falls due (an oil change, a filter, a
+  registration); this decides which part of your life it counts towards. Leave it unfiled and the
+  tasks still arrive, they just don't fold into an aspect.
 - **Data** — Backup JSON, Restore, Export Tasks CSV, and the Rings CSV/SVG exports.
 - **Game Resource Slots** — rename your resource slots.
 - **Cost Resources** — define external resources to track per task (with optional reset

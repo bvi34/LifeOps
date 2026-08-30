@@ -35,6 +35,14 @@ include(":people")
 // peer on the sync spine — nothing else in the suite writes to a project, so there is nothing to
 // reconcile.
 include(":project")
+// Maintenance is the register of what the household owns and what those things need: assets (a
+// home, a car, the furnace), the identity each kind is known by (VIN, parcel number, serial), the
+// schedules that come round, the log of what was done, and the money — mortgages, loans, policies.
+// Like Project it is not a peer on the sync spine: nothing else in the suite writes to an asset. It
+// does write *outward*, though — an upkeep plan publishes itself onto the LifeOps week as a task
+// dated the day it falls due, and takes the tick back. That is a one-way module dependency
+// (:maintenance -> :lifeops) plus a bus LifeOps announces completions on, not a second planner.
+include(":maintenance")
 include(":core")
 include(":backupkit")
 // The suite's appearance: `:suitekit` is the pure-JVM contract (presets, palettes, each app's colour

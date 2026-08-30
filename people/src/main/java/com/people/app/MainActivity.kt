@@ -34,7 +34,7 @@ import com.people.app.ui.theme.PeopleTheme
  * moment somebody is about to look at it. The round is idempotent, so doing it on every open costs a
  * file read when there is nothing to do.
  *
- * It hangs off the lifecycle rather than off first composition because the seven suite apps share one
+ * It hangs off the lifecycle rather than off first composition because the eight suite apps share one
  * process: walking from People to Health and back does not recreate this activity, and a round that
  * only ran when the roster was first composed would miss exactly the edit the user just made
  * somewhere else.

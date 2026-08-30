@@ -95,7 +95,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 
 | Resource | Actions | Service | Notes |
 |---|---|---|---|
-| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). |
+| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). It skips a title already used in the current week — the incumbent survives — unless the caller passes `allowDuplicateTitle`, which is for an app that owns its task by *id* and dedups on that (`TaskService.findOpen` is how such a caller adopts one you wrote by hand instead). See [MAINTENANCE.md](MAINTENANCE.md#the-lifeops-week). |
 | `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
 | `operation` | `create`, `update`, `complete`, `reopen` | `OperationService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |
@@ -122,6 +122,39 @@ Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does 
 **Deliberately not routed:** task image attachments (creation is bound to an Android photo-picker
 `Uri`/`Context`, not a serialisable payload), and read-only/reporting/infra surfaces (search,
 growth rings, weather cache, notifications, backup, preferences) — these aren't command-shaped.
+
+## The one thing that points outward
+
+Everything above points *inwards*: an address, a payload, a use-case invoked on LifeOps. There is
+exactly one seam going the other way — `connection/TaskCompletionBus`.
+
+It exists because a task can be **owned by another hosted app**. Maintenance publishes its upkeep
+onto a future week (`Truck: Oil change`, dated the day it falls due) and has to know the moment that
+line is ticked, so the service can be logged and the next occurrence scheduled. Polling would answer
+that question a foreground later.
+
+```kotlin
+TaskCompletionBus.register { completion ->
+    // completion.taskId / .title / .completedAtMillis
+}
+```
+
+Three rules keep it from becoming a back door into the task lifecycle:
+
+- **It announces facts, not requests.** A listener is told a task was completed. Nothing waits for
+  it, reads its answer, or lets it veto anything — LifeOps behaves identically whether or not
+  anybody is listening.
+- **A listener cannot break a tick.** Each is called inside `runCatching`; a hosted app whose
+  database is mid-restore must not turn "mark done" into a crash here. `TaskCompletionBusTest` holds
+  that line.
+- **It fires after the transaction commits**, and only when the tick actually happened — a task that
+  was already complete announces nothing.
+
+There is deliberately no un-completion event: un-ticking is a correction to *this* week, and what
+another app wrote down in response to the tick is its record to correct. Listeners are expected to
+**reconcile rather than depend on the announcement** — Maintenance's round reaches the same answer
+from a foreground or an edit, so a missed announcement costs latency, never correctness. See
+[MAINTENANCE.md](MAINTENANCE.md#the-lifeops-week).
 
 ## Reference implementation
 

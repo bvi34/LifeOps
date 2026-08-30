@@ -59,6 +59,13 @@ object SuiteApps {
             defaultAccent = 0xFFB45309L
         ),
         SuiteAppInfo(
+            appId = AppId.MAINTENANCE,
+            label = "Maintenance",
+            tagline = "Assets, upkeep and what they cost",
+            iconKey = "wrench",
+            defaultAccent = 0xFFB91C1CL
+        ),
+        SuiteAppInfo(
             appId = AppId.LOGISTICS,
             label = "Logistics",
             tagline = "Pantry, groceries and recipes",

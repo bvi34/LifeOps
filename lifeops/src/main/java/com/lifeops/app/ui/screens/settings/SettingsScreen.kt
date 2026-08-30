@@ -185,6 +185,17 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             }
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Maintenance upkeep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                MaintenanceAspectSection(
+                    aspects = state.aspects,
+                    selectedAspectId = state.maintenanceAspectId,
+                    onSelectAspect = viewModel::setMaintenanceAspect
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Theme", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(
                     "Suite-wide: this is the same setting as the Operations Sandbox's gear, so it " +
@@ -420,6 +431,63 @@ private fun ReadingRewardsSection(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Which aspect the upkeep tasks Maintenance puts on the week are filed under.
+ *
+ * The same shape as [ReadingRewardsSection], for the same reason: another app in the suite feeds
+ * work into LifeOps, and LifeOps decides which part of your life it counts towards — not that app.
+ *
+ * The one difference is what "none" means. Reading rewards are *off* until an aspect is chosen;
+ * upkeep tasks arrive either way, and an unfiled one still scores. So the chip says "Unfiled"
+ * rather than "Off", because nothing here is being switched off.
+ */
+@Composable
+private fun MaintenanceAspectSection(
+    aspects: List<Aspect>,
+    selectedAspectId: String?,
+    onSelectAspect: (String?) -> Unit
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Maintenance puts each upkeep job on your week as a task, dated the day it falls " +
+                    "due — an oil change, a filter, a registration. This is the aspect they arrive under.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(10.dp))
+            Text("Filed under", style = MaterialTheme.typography.labelLarge)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = selectedAspectId == null,
+                    onClick = { onSelectAspect(null) },
+                    label = { Text("Unfiled") }
+                )
+                aspects.filter { !it.isArchived }.forEach { aspect ->
+                    FilterChip(
+                        selected = selectedAspectId == aspect.id,
+                        onClick = { onSelectAspect(aspect.id) },
+                        label = { Text(aspect.name) }
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Changing this re-files the tasks published from now on. Anything already on a week " +
+                    "keeps the aspect it arrived with — including one you moved by hand.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

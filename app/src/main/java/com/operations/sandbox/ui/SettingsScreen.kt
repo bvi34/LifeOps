@@ -57,7 +57,7 @@ enum class SettingsTab(val label: String) { APPEARANCE("Appearance"), BACKUPS("B
  * The sandbox's gear: the two things that belong to the container rather than to any one app.
  *
  * **Appearance** is the suite's, not LifeOps'. One preset, one light/dark choice and one custom
- * palette paint all seven apps; under them each app carries an accent that is also chosen here. This
+ * palette paint all eight apps; under them each app carries an accent that is also chosen here. This
  * is the whole point of the screen — an app no longer decides what it looks like, so there is
  * exactly one place to look when something is the wrong colour. The launcher's own wallpaper is
  * chosen here too: it belongs to the container's home screen, so no hosted app is affected by it.

@@ -41,7 +41,18 @@ class TaskService(
         val operationId: String? = null,
         val counterId: String? = null,
         val recurrenceIntervalWeeks: Int = 1,
-        val recurrenceDayOfMonth: Int? = null
+        val recurrenceDayOfMonth: Int? = null,
+        /**
+         * Skip the same-week duplicate-title check.
+         *
+         * That check exists to stop a *person* adding the same thing twice — the incumbent survives
+         * and the second add is dropped. It is the wrong rule for a task published by another app in
+         * the suite, which keeps the id of the one task it owns and dedups on that: Maintenance
+         * completes "Truck: Oil change" and immediately publishes the next occurrence, and the
+         * completed row is still in this week, so the title check would silently swallow it. Callers
+         * that set this are asserting they do their own de-duplication (see [findOpen]).
+         */
+        val allowDuplicateTitle: Boolean = false
     )
 
     /** Outcome of a create call. A same-week slug collision yields [DuplicateSkipped]. */
@@ -56,8 +67,9 @@ class TaskService(
 
         val week = weekRepository.getOrCreateCurrentWeek()
         val slug = title.toSlug()
-        // Incumbent survives: a duplicate title in the same week is skipped, not overwritten.
-        if (slug in taskRepository.getSlugsByWeek(week.id)) {
+        // Incumbent survives: a duplicate title in the same week is skipped, not overwritten. An
+        // app that owns its task by id opts out — see [CreateInput.allowDuplicateTitle].
+        if (!input.allowDuplicateTitle && slug in taskRepository.getSlugsByWeek(week.id)) {
             return CreateOutcome.DuplicateSkipped(slug)
         }
 
@@ -144,6 +156,25 @@ class TaskService(
         return updated
     }
 
+    /**
+     * The open task in the current week called [title], if there is one.
+     *
+     * "Open" means still actionable — this week's list, the future queue, or marked to carry. A
+     * completed or expired row is *not* offered: it is a record of something that happened, and
+     * handing it back as a live task would let a caller adopt a job that is already done.
+     *
+     * This is the other half of [CreateInput.allowDuplicateTitle]. An app publishing tasks into
+     * LifeOps asks this first: if you had already written the job onto your week by hand, it adopts
+     * that row rather than adding a second one beside it — so ticking the one you wrote is ticking
+     * the one it is watching.
+     */
+    suspend fun findOpen(title: String): Task? {
+        val slug = title.trim().toSlug()
+        if (slug.isBlank()) return null
+        val week = weekRepository.getOrCreateCurrentWeek()
+        return taskRepository.getBySlugInWeek(week.id, slug).firstOrNull { it.status in OPEN_STATUSES }
+    }
+
     /** Mark a task complete. Returns `false` when no task has [taskId]. */
     suspend fun complete(taskId: String): Boolean {
         val task = taskRepository.getById(taskId) ?: return false
@@ -156,5 +187,10 @@ class TaskService(
         taskRepository.getById(taskId) ?: return false
         taskRepository.deleteTask(taskId)
         return true
+    }
+
+    private companion object {
+        /** Still actionable: this week's list, the future queue, or marked to carry forward. */
+        val OPEN_STATUSES = setOf(TaskStatus.PENDING, TaskStatus.QUEUED, TaskStatus.CARRIED_FORWARD)
     }
 }
