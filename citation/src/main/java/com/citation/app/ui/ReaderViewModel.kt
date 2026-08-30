@@ -20,6 +20,7 @@ import com.citation.core.opds.OpdsFeed
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.model.TocEntry
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
@@ -196,6 +197,16 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             if (own) repository.saveReaderSettings(current, bookKey) else repository.clearReaderSettings(bookKey)
             _perBookSettings.value = own
         }
+    }
+
+    /**
+     * Recolour a highlight.
+     *
+     * Not a re-post: what a note *says* travels on the sync wire, what its mark looks like on your
+     * page does not. Recolouring one is filing, like tagging it.
+     */
+    fun setNoteHighlight(noteKey: String, color: HighlightColor) {
+        viewModelScope.launch { repository.setNoteHighlight(noteKey, color) }
     }
 
     /**
@@ -1317,7 +1328,8 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 chapterOrdinal = _chapterOrdinal.value,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
-                noteBody = body
+                noteBody = body,
+                color = settings.value.highlightColor
             )
             _status.value = "Note ${note.key} captured — queued for LifeOps."
         }

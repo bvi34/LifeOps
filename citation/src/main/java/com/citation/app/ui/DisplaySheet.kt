@@ -51,6 +51,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ParagraphSpacing
 import com.citation.core.reader.ReaderFont
 import com.citation.core.reader.ReaderFontNames
@@ -310,6 +313,46 @@ fun DisplaySheet(
                     onSettings { it.copy(brightness = v) }
                 }
             }
+
+            // The colour a new highlight is made in. Here rather than at capture because marking a
+            // passage has to stay one gesture: you file in the colour you are working in, and
+            // recolour the odd one from the note itself.
+            ChoiceRow("Highlights") {
+                HighlightColor.entries.forEach { color ->
+                    Box(
+                        Modifier
+                            .padding(end = 10.dp)
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(Color(color.tint))
+                            .border(
+                                width = if (settings.highlightColor == color) 3.dp else 1.dp,
+                                color = if (settings.highlightColor == color) {
+                                    MaterialTheme.colorScheme.onSurface
+                                } else {
+                                    MaterialTheme.colorScheme.outlineVariant
+                                },
+                                shape = CircleShape
+                            )
+                            .selectable(
+                                selected = settings.highlightColor == color,
+                                role = Role.RadioButton
+                            ) { onSettings { it.copy(highlightColor = color) } }
+                            .semantics { contentDescription = color.label }
+                    )
+                }
+            }
+
+            // Kindle and O'Reilly are read inside their own web readers, because the content is
+            // licensed and Citation caches none of it. Without this the whole sheet above applies to
+            // one of four reading tracks. It is a switch rather than a certainty because those are
+            // other people's readers: they change without notice, and a reader looking at a page
+            // Citation has made worse needs a way to stop it.
+            SwitchRow(
+                label = "Use these in Kindle and O'Reilly",
+                caption = "Colours, spacing and your font, carried into the readers they host.",
+                checked = settings.styleReadInPlace
+            ) { on -> onSettings { it.copy(styleReadInPlace = on) } }
 
             // --- Screen -------------------------------------------------------------------
             Divider(Modifier.padding(vertical = 12.dp))

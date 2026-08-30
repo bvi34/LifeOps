@@ -1,5 +1,6 @@
 package com.citation.app.data.db
 
+import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ParagraphSpacing
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReaderTheme
@@ -33,6 +34,8 @@ object ReaderSettingsCodec {
         settings.customText?.let { put("customText", it) }
         put("trueBlack", settings.trueBlack)
         put("warmth", settings.warmth.toDouble())
+        put("styleReadInPlace", settings.styleReadInPlace)
+        put("highlightColor", settings.highlightColor.name)
         put("brightness", settings.brightness.toDouble())
         put("paged", settings.paged)
         put("keepAwake", settings.keepAwake)
@@ -62,6 +65,8 @@ object ReaderSettingsCodec {
             customText = obj.colour("customText"),
             trueBlack = obj.optBoolean("trueBlack", defaults.trueBlack),
             warmth = obj.float("warmth", defaults.warmth),
+            styleReadInPlace = obj.optBoolean("styleReadInPlace", defaults.styleReadInPlace),
+            highlightColor = obj.enum("highlightColor", defaults.highlightColor) { HighlightColor.valueOf(it) },
             brightness = obj.float("brightness", defaults.brightness),
             paged = obj.optBoolean("paged", defaults.paged),
             keepAwake = obj.optBoolean("keepAwake", defaults.keepAwake),

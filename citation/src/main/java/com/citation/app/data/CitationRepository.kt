@@ -52,6 +52,7 @@ import com.citation.core.model.Book
 import com.citation.core.model.Chapter
 import com.citation.core.model.SourceType
 import com.citation.core.note.Highlight
+import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.PassageReference
@@ -786,12 +787,15 @@ class CitationRepository private constructor(
         selectionStart: Int,
         selectionEnd: Int,
         noteBody: String,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        // The colour the reader is currently filing in. Defaulted so every other caller — and the
+        // tests — keep working without knowing that highlights have colours at all.
+        color: HighlightColor = HighlightColor.YELLOW
     ): Note {
         val chapter = book.chapterAt(chapterOrdinal) ?: error("no chapter $chapterOrdinal")
         val descriptor = descriptorFor(book)
         val highlight = highlightFor(book, chapter, chapterOrdinal, selectionStart, selectionEnd, descriptor, now)
-        val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now)
+        val note = Note.anchored(keys.next(EntityType.NOTE), noteBody, highlight, now, color)
 
         val versioned = mailbox.post(NotePacket.of(note))
 
@@ -966,6 +970,18 @@ class CitationRepository private constructor(
     suspend fun setNoteTags(noteKey: String, tags: List<String>): Note? {
         val entity = db.noteDao().get(noteKey) ?: return null
         val updated = CitationMappers.noteFromEntity(entity).copy(tags = tags)
+        db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
+        return updated
+    }
+
+    /**
+     * Recolour a note's highlight — filing, exactly like [setNoteTags], and off the sync wire for
+     * the same reason: what a highlight *says* is the note's text and travels; what it looks like on
+     * your page is yours. The existing sync version is preserved so recolouring never re-posts.
+     */
+    suspend fun setNoteHighlight(noteKey: String, highlight: HighlightColor): Note? {
+        val entity = db.noteDao().get(noteKey) ?: return null
+        val updated = CitationMappers.noteFromEntity(entity).copy(highlightColor = highlight)
         db.noteDao().upsert(CitationMappers.noteToEntity(updated, entity.syncVersion))
         return updated
     }

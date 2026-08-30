@@ -108,6 +108,7 @@ import com.citation.app.ui.reader.RenderedChapter
 import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.reader.Paginator
 import com.citation.core.reader.Lookup
+import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ReaderPalette
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.VolumeKeys
@@ -424,6 +425,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         settings = settings,
                         family = family,
                         foreground = foreground,
+                        background = background,
                         turnThreshold = turnThreshold,
                         onOpenNote = { openNote = it },
                         onProvideHint = { hintProvider.value = it }
@@ -477,6 +479,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
             note = note,
             onSave = { body -> vm.editNote(note.key.toString(), body); openNote = null },
             onSaveTags = { raw -> vm.setNoteTags(note.key.toString(), raw) },
+            onSaveHighlight = { color -> vm.setNoteHighlight(note.key.toString(), color) },
             onJump = { vm.jumpToNote(note); openNote = null },
             onDelete = { vm.deleteNote(note.key.toString()); openNote = null },
             onDismiss = { openNote = null }
@@ -502,6 +505,8 @@ private fun ChapterPage(
     settings: ReaderSettings,
     family: FontFamily,
     foreground: Color,
+    /** The page these highlights will be drawn on; a mark's colour is derived against it. */
+    background: Color,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
     onProvideHint: (() -> Int) -> Unit
@@ -510,7 +515,15 @@ private fun ChapterPage(
     val text = chapter?.text ?: "(chapter unavailable)"
     val title = chapter?.title ?: ""
     val lastIndex = book.chapters.lastIndex
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+    // A highlight is not drawn on a fixed page, so it cannot be a fixed colour: a translucent tint
+    // that reads as a highlighter on white goes muddy on a night page and near-invisible on one the
+    // reader tinted themselves. Each colour is resolved against the page it will actually sit on and
+    // against the text that sits on top of it — see ReaderPalette.highlight.
+    val shadeOf = remember(background, foreground) {
+        { color: HighlightColor ->
+            Color(ReaderPalette.highlight(color.tint, background.toArgb(), foreground.toArgb()))
+        }
+    }
     // A different colour from a highlight on purpose: a search match is transient and not yours.
     val searchColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f)
     val accent = MaterialTheme.colorScheme.primary
@@ -575,13 +588,13 @@ private fun ChapterPage(
     val searchDisplayRanges = remember(rendered, searchRanges) {
         searchRanges.map { rendered.displayRange(it) }.filter { !it.isEmpty() }
     }
-    val annotated = remember(rendered, ranges, searchDisplayRanges, highlightColor, searchColor) {
+    val annotated = remember(rendered, ranges, searchDisplayRanges, shadeOf, searchColor) {
         if (ranges.isEmpty() && searchDisplayRanges.isEmpty()) {
             rendered.display
         } else {
             buildAnnotatedString {
                 append(rendered.display)
-                ranges.forEach { (_, range) -> shade(range, highlightColor) }
+                ranges.forEach { (note, range) -> shade(range, shadeOf(note.highlightColor)) }
                 searchDisplayRanges.forEach { range -> shade(range, searchColor) }
             }
         }

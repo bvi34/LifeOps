@@ -34,8 +34,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
 import com.citation.app.data.OreillyWebCache
+import com.citation.app.ui.reader.ReaderWebStyler
 import com.citation.core.oreilly.EzproxyLogin
 import com.citation.core.oreilly.OreillyLink
 
@@ -60,6 +62,11 @@ fun OreillyReaderScreen(session: CitationRepository.OreillySession, vm: ReaderVi
     var quote by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var webView by remember { mutableStateOf<WebView?>(null) }
+
+    // The Display sheet's settings reach this reader too: Citation hosts the page, it does not own
+    // it, but a reader who needs a night page or their own face needs it in every book they open.
+    val readerSettings by vm.settings.collectAsStateWithLifecycle()
+    ReaderWebStyler(webView, readerSettings)
 
     // Fill (and submit) the library sign-in form with the stored card/PIN. Also the manual fallback
     // if a site tweak defeats auto-submit — the button just re-runs the same fill.

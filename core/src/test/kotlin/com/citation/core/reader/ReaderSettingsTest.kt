@@ -5,6 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import com.citation.core.note.HighlightColor
 import org.junit.Test
 
 /**
@@ -245,6 +246,99 @@ class ReaderSettingsTest {
         assertTrue(ReaderPalette.luminance(0xFF00FF00.toInt()) > ReaderPalette.luminance(0xFF0000FF.toInt()))
         assertTrue(ReaderPalette.luminance(0xFFFFFFFF.toInt()) > ReaderPalette.luminance(0xFF808080.toInt()))
         assertTrue(ReaderPalette.luminance(0xFF808080.toInt()) > ReaderPalette.luminance(ReaderPalette.BLACK))
+    }
+
+    // --- Highlights ---------------------------------------------------------------------------
+
+    @Test
+    fun `mixing runs from all base to all tint`() {
+        val tint = 0xFFFF0000.toInt()
+        val base = 0xFF0000FF.toInt()
+        assertEquals(base, ReaderPalette.mix(tint, base, 0f))
+        assertEquals(tint, ReaderPalette.mix(tint, base, 1f))
+        val half = ReaderPalette.mix(tint, base, 0.5f)
+        assertTrue((half ushr 16 and 0xFF) in 0x7E..0x80)
+        assertTrue((half and 0xFF) in 0x7E..0x80)
+    }
+
+    @Test
+    fun `a mixed colour is always opaque`() {
+        assertEquals(0xFF, (ReaderPalette.mix(0x00FF0000, 0x000000FF, 0.5f) ushr 24) and 0xFF)
+    }
+
+    @Test
+    fun `a highlight is visible on a light page and on a dark one`() {
+        val tint = HighlightColor.YELLOW.tint
+        val onPaper = ReaderPalette.highlight(tint, ReaderPalette.PAPER_BG, ReaderPalette.PAPER_FG)
+        val onNight = ReaderPalette.highlight(tint, ReaderPalette.NIGHT_BG, ReaderPalette.NIGHT_FG)
+        // "Visible" means it is not the page it is drawn on. A fixed colour cannot manage both.
+        assertNotEquals(ReaderPalette.PAPER_BG, onPaper)
+        assertNotEquals(ReaderPalette.NIGHT_BG, onNight)
+        assertNotEquals("the same tint cannot look the same on both pages", onPaper, onNight)
+    }
+
+    @Test
+    fun `a highlight never makes its own sentence unreadable`() {
+        // The failure this exists to prevent: a mark so strong the words under it are gone, which
+        // reads as a broken book rather than as a colour choice.
+        val pages = listOf(
+            ReaderPalette.PAPER_BG to ReaderPalette.PAPER_FG,
+            ReaderPalette.SEPIA_BG to ReaderPalette.SEPIA_FG,
+            ReaderPalette.NIGHT_BG to ReaderPalette.NIGHT_FG,
+            ReaderPalette.BLACK to ReaderPalette.TRUE_BLACK_FG,
+            0xFF102030.toInt() to 0xFFEEDDCC.toInt()
+        )
+        pages.forEach { (page, text) ->
+            HighlightColor.entries.forEach { colour ->
+                val shade = ReaderPalette.highlight(colour.tint, page, text)
+                assertTrue(
+                    "${colour.label} on ${ReaderPalette.hex(page)} left text at " +
+                        "${ReaderPalette.contrast(text, shade)}",
+                    ReaderPalette.isLegible(text, shade)
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a highlight is as strong as the text on top allows`() {
+        // Black text on white leaves plenty of room, so the mark comes out stronger than it does
+        // where the text is already close to the page.
+        val roomy = ReaderPalette.highlight(
+            HighlightColor.BLUE.tint, 0xFFFFFFFF.toInt(), ReaderPalette.BLACK
+        )
+        val tight = ReaderPalette.highlight(
+            HighlightColor.BLUE.tint, 0xFFFFFFFF.toInt(), 0xFF767676.toInt()
+        )
+        assertTrue(
+            "a page with contrast to spare should carry a stronger mark",
+            ReaderPalette.contrast(roomy, 0xFFFFFFFF.toInt()) >
+                ReaderPalette.contrast(tight, 0xFFFFFFFF.toInt())
+        )
+    }
+
+    @Test
+    fun `an impossible page still gets a visible mark rather than none`() {
+        // Mid-grey text on mid-grey: nothing keeps it legible, and a highlight nobody can see is
+        // worse than a faint one.
+        val page = 0xFF808080.toInt()
+        val shade = ReaderPalette.highlight(HighlightColor.PINK.tint, page, 0xFF8A8A8A.toInt())
+        assertNotEquals(page, shade)
+    }
+
+    @Test
+    fun `the five highlight colours are actually distinguishable on a page`() {
+        val shades = HighlightColor.entries.map {
+            ReaderPalette.highlight(it.tint, ReaderPalette.PAPER_BG, ReaderPalette.PAPER_FG)
+        }
+        assertEquals("a colour that means something has to be told apart", shades.size, shades.toSet().size)
+    }
+
+    @Test
+    fun `an unknown stored colour is a plain highlight rather than a crash`() {
+        assertEquals(HighlightColor.YELLOW, HighlightColor.from(null))
+        assertEquals(HighlightColor.YELLOW, HighlightColor.from("CHARTREUSE"))
+        assertEquals(HighlightColor.BLUE, HighlightColor.from("BLUE"))
     }
 
     // --- Volume keys -------------------------------------------------------------------------

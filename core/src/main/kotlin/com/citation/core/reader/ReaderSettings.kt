@@ -1,6 +1,8 @@
 package com.citation.core.reader
 
+import com.citation.core.note.HighlightColor
 import kotlin.math.pow
+import kotlin.math.roundToInt
 
 /**
  * Everything about how a book is set on the page and how the screen behaves while you read it.
@@ -56,6 +58,24 @@ data class ReaderSettings(
     val trueBlack: Boolean = false,
     /** 0 = untouched, 1 = strongly amber. Cuts blue light without dimming the panel. */
     val warmth: Float = 0f,
+    /**
+     * Carry these settings into the **read-in-place** readers (Kindle, O'Reilly) by styling their
+     * pages — see [ReaderWebStyle].
+     *
+     * On by default, because settings that reach one of four reading tracks are barely settings at
+     * all. A switch rather than a certainty, because those are other people's readers: they change
+     * without notice, and the reader looking at a page Citation has made worse needs a way to stop
+     * it that is faster than uninstalling.
+     */
+    val styleReadInPlace: Boolean = true,
+    /**
+     * The colour a new highlight is made in.
+     *
+     * A default rather than a prompt: capturing a passage has to stay one gesture. A reader who
+     * files by colour changes it here when they change what they are looking for, and recolours the
+     * odd one afterwards from the note itself.
+     */
+    val highlightColor: HighlightColor = HighlightColor.YELLOW,
     /** In-reader screen brightness, 0..1; [SYSTEM_BRIGHTNESS] follows the device setting. */
     val brightness: Float = SYSTEM_BRIGHTNESS,
 
@@ -261,6 +281,48 @@ object ReaderPalette {
      */
     fun isLegible(foreground: Int, background: Int): Boolean =
         contrast(foreground, background) >= MIN_CONTRAST
+
+    /** Mix [tint] into [base] by [amount] (0 = all base, 1 = all tint). Always opaque. */
+    fun mix(tint: Int, base: Int, amount: Float): Int {
+        val t = amount.coerceIn(0f, 1f)
+        fun channel(shift: Int): Int {
+            val a = (tint ushr shift) and 0xFF
+            val b = (base ushr shift) and 0xFF
+            return (b + (a - b) * t).roundToInt().coerceIn(0, 255)
+        }
+        return opaque((channel(16) shl 16) or (channel(8) shl 8) or channel(0))
+    }
+
+    /**
+     * The shade actually drawn behind a highlighted passage.
+     *
+     * A highlight cannot be a fixed colour, because it is not drawn on a fixed page. A translucent
+     * yellow that reads as a highlighter on white becomes a muddy olive on a night page and a
+     * near-invisible smear on a page somebody tinted themselves — and the reader has just been given
+     * a colour picker, so "whatever the app's accent is at 28% alpha" stopped being an answer.
+     *
+     * So it is derived instead: [tint] is mixed into the [page] as strongly as the [text] on top can
+     * still be read over, stepping back until the passage is comfortable to read rather than merely
+     * marked. That way the mark is as visible as it can be on a white page *and* on a black one, and
+     * a highlight can never render its own sentence unreadable — the failure that makes a reader
+     * think their book is broken.
+     *
+     * The floor is deliberate: below it there is no visible mark at all, and a highlight nobody can
+     * see is worse than a faint one.
+     */
+    fun highlight(tint: Int, page: Int, text: Int): Int {
+        HIGHLIGHT_STRENGTHS.forEach { strength ->
+            val shade = mix(tint, page, strength)
+            if (contrast(text, shade) >= MIN_CONTRAST) return shade
+        }
+        return mix(tint, page, HIGHLIGHT_STRENGTHS.last())
+    }
+
+    /**
+     * Blend strengths tried for a highlight, strongest first. The last is the floor: a highlight has
+     * to be visible even where nothing keeps the text at full contrast.
+     */
+    private val HIGHLIGHT_STRENGTHS = listOf(0.60f, 0.50f, 0.40f, 0.32f, 0.25f, 0.18f)
 
     private const val GREEN_CUT = 0.10f
     private const val BLUE_CUT = 0.45f

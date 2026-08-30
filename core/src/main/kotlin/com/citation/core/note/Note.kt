@@ -24,6 +24,8 @@ import com.citation.core.model.SourceType
  * @property tags free-form organizational labels (normalized lowercase, no leading `#`). A local
  *   retrieval layer — they let a pile of highlights be queried and grouped. Not carried on the sync
  *   wire (a note's *text* syncs; its filing is Citation's own).
+ * @property highlightColor the colour this note's passage is shaded in. Filing, like [tags], and
+ *   kept off the sync wire for the same reason — and, unlike tags, filing you can see while reading.
  */
 data class Note(
     val key: EntityKey,
@@ -32,7 +34,8 @@ data class Note(
     val source: SourceDescriptor,
     val references: List<PassageReference>,
     val createdAt: Long,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val highlightColor: HighlightColor = HighlightColor.YELLOW
 ) {
     init {
         if (type == NoteType.PASSAGE_ANCHORED) {
@@ -48,14 +51,16 @@ data class Note(
             key: EntityKey,
             body: String,
             highlight: Highlight,
-            createdAt: Long
+            createdAt: Long,
+            color: HighlightColor = HighlightColor.YELLOW
         ): Note = Note(
             key = key,
             type = NoteType.PASSAGE_ANCHORED,
             body = body,
             source = highlight.source,
             references = listOf(highlight.toReference()),
-            createdAt = createdAt
+            createdAt = createdAt,
+            highlightColor = color
         )
 
         /** Build a freestanding synthesis note, optionally citing several passages. */
@@ -116,3 +121,32 @@ data class SourceDescriptor(
     val title: String,
     val author: String?
 )
+
+/**
+ * The colour a highlighted passage is shaded in.
+ *
+ * A fixed, named set rather than a colour wheel, and that is the point rather than a shortcut. A
+ * highlight colour is only useful if it *means* something — yellow for what the book says, blue for
+ * what you disagree with — and a meaning has to stay stable across a year of reading to be worth
+ * anything. Five you can tell apart at a glance and remember beats a million you cannot.
+ *
+ * It pairs with [Note.tags]: tags are the filing you search, these are the filing you can see while
+ * turning pages, without opening a single note.
+ *
+ * The [tint] is a full-strength colour, not the shade actually drawn. What reaches the page depends
+ * on the page — see `ReaderPalette.highlight`, which mixes it into whatever colour the reader has
+ * set their pages to, as strongly as the text on top can still be read over.
+ */
+enum class HighlightColor(val label: String, val tint: Int) {
+    YELLOW("Yellow", 0xFFFFD54F.toInt()),
+    GREEN("Green", 0xFF81C784.toInt()),
+    BLUE("Blue", 0xFF64B5F6.toInt()),
+    PINK("Pink", 0xFFF06292.toInt()),
+    PURPLE("Purple", 0xFFBA68C8.toInt());
+
+    companion object {
+        /** Tolerant lookup by name; anything unknown (or absent) is a plain [YELLOW] highlight. */
+        fun from(value: String?): HighlightColor =
+            entries.firstOrNull { it.name == value } ?: YELLOW
+    }
+}

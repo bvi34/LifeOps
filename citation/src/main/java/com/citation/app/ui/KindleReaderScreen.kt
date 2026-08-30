@@ -35,7 +35,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.app.ui.reader.ReaderWebStyler
 import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
 
@@ -61,6 +63,11 @@ fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderView
     var quote by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var webView by remember { mutableStateOf<WebView?>(null) }
+
+    // The Display sheet's settings reach this reader too: Citation hosts the page, it does not own
+    // it, but a reader who needs a night page or their own face needs it in every book they open.
+    val readerSettings by vm.settings.collectAsStateWithLifecycle()
+    ReaderWebStyler(webView, readerSettings)
 
     // Poll the footer while the reader is open: read the position label, and when it changes, reflect it
     // in the note composer's prefill and persist it as "where you were". The page is a single-page app,
