@@ -3,7 +3,10 @@ package com.people.app
 import android.app.Application
 import android.content.Context
 import com.people.app.data.db.PeopleDatabase
+import com.people.app.data.prefs.PartnerPrefs
 import com.people.app.data.prefs.PeoplePrefs
+import com.people.app.data.repository.PartnerRepository
+import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
 import com.people.app.sync.Peers
@@ -24,7 +27,22 @@ class PeopleApp private constructor(private val app: Application) {
     val prefs by lazy { PeoplePrefs(app) }
     val repository by lazy { PeopleRepository(database.peopleDao()) }
 
+    val partnerPrefs by lazy { PartnerPrefs(app) }
+    val partnerRepository by lazy { PartnerRepository(database.partnerDao()) }
+
     val syncDir: File get() = File(app.filesDir, SYNC_DIR)
+
+    /**
+     * The partner seam's exchange folder — a sibling of [syncDir], and deliberately not the same
+     * one.
+     *
+     * The People seam's folder is an *internal* seam: every file in it was written by an app in this
+     * install, and every peer reading it is trusted. This folder holds envelopes from other
+     * households. Keeping them apart means the two seams can never read each other's files by
+     * accident, and a household that shares this directory to move partner envelopes between devices
+     * is not thereby sharing its own directory's sync traffic.
+     */
+    val partnerSyncDir: File get() = File(app.filesDir, PARTNER_SYNC_DIR)
 
     val syncService by lazy {
         PeopleSyncService(
@@ -45,8 +63,27 @@ class PeopleApp private constructor(private val app: Application) {
      */
     val peers: List<String> = listOf(Peers.LIFEOPS, Peers.HEALTH)
 
+    /**
+     * The partner seam's driver.
+     *
+     * Separate from [syncService] because the two seams answer to different rules — one reconciles
+     * trusted apps in this install, the other exchanges a week with a stranger's device behind a
+     * pairing check — and folding them into one service would be the first step towards a partner's
+     * envelope being applied by code written for a peer's.
+     */
+    val partnerSyncService by lazy {
+        PartnerSyncService(
+            repository = partnerRepository,
+            syncDir = partnerSyncDir,
+            instanceId = { partnerPrefs.instanceId },
+            displayName = { partnerPrefs.displayName },
+            markRoundAt = { partnerPrefs.lastRoundAt = it }
+        )
+    }
+
     companion object {
         const val SYNC_DIR = "people-sync"
+        const val PARTNER_SYNC_DIR = "partner-sync"
 
         @Volatile
         private var instance: PeopleApp? = null

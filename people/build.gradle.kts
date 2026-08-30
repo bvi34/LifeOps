@@ -9,6 +9,14 @@ plugins {
     // reaches them over the sync seam rather than by reading their databases. That is the difference
     // between this module and Logistics' `LifeOpsCatalog`: a catalog is read live from its owner in
     // the same process; a directory is *replicated*, because both ends can edit it.
+    //
+    // The partner seam (`partner/`) pairs this household with somebody else's install. It needs
+    // LifeOps' week — to publish it, and to put a partner's contributed task on it — but it must not
+    // *depend* on LifeOps: `:lifeops` already depends on this module, and a second edge back would
+    // be a cycle. So People declares the port (`partner/HouseholdWeek`) and LifeOps registers the
+    // adapter for it at startup, which is the same direction every other call between them runs.
+    // What crosses is bounded by that port: a partner's week is a view in People, never rows in a
+    // planner.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -70,6 +78,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     // The sync wire format (see sync/PeopleSyncCodec) — pure JVM, same codec choice as :core.
     implementation(libs.gson)
+    // Partner pairing by QR code. The encoder (`partner/QrMatrix`) is plain Java and unit-tested
+    // against zxing's own decoder; the camera half brings the scanning activity and declares the
+    // CAMERA permission the manifest merger folds into the host.
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

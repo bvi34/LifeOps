@@ -61,6 +61,18 @@ the receipts.
 > left exactly as they were; the migration that made it a peer is purely additive. The contract —
 > packet, binder, merge, engine — is pure JVM in `people/sync/` and unit-tested, including a full
 > two-peer round.
+>
+> People also carries a **second, separate seam: partner sync**, which pairs two *different*
+> households by QR code. Each person scans the other's code — one scan yields half a secret, and the
+> token that gates the seam needs both, so the connection is two-way by construction and an install
+> that was never scanned can address nobody. Once paired, **People → a person → View LifeOps** shows
+> that partner's current week: their real LifeOps tasks, ticked as they tick them, mirrored into
+> People's own tables and shown on their own screen. It is **never merged into your LifeOps** — not
+> your week, not your aspects, not your capacity. Exactly one thing crosses into a planner, and only
+> because somebody asked for it by name: a task you add *to their* week, which becomes a real task on
+> theirs (and is taken once, for good). Rounds run on app open, so what a partner changed is kept and
+> reported the next time you look. Sharing expires by itself — the seam only ever publishes the
+> current week.
 
 > **Health** (the household health tracker) is a peer module — see **[docs/HEALTH.md](docs/HEALTH.md)**.
 > It keeps a **profile per person** and, against each of them, the temperatures and other readings

@@ -631,6 +631,15 @@ class TaskRepository(
 
     suspend fun getAllTasks(): List<Task> = taskDao.getAll().map { it.toModel() }
 
+    /**
+     * One week's tasks, once, rather than as a Flow. The observing variant
+     * ([observeTasksForWeek]) is what screens want; a caller doing a single pass over the week —
+     * People publishing it across the partner seam, say — wants the snapshot without holding a
+     * subscription open for the length of a round.
+     */
+    suspend fun getTasksForWeek(weekId: String): List<Task> =
+        taskDao.getAllByWeek(weekId).map { it.toModel() }
+
     suspend fun getEarnedThisWeekByAspect(weekId: String): Map<String, Int> {
         val tasks = taskDao.getAllByWeek(weekId).map { it.toModel() }
         val timeByTask = db.timeEntryDao().getByWeek(weekId)

@@ -186,6 +186,17 @@ class LifeOpsApp private constructor(private val app: Application) {
     val weekService by lazy {
         com.lifeops.app.connection.service.WeekService(weekRepository, taskRepository)
     }
+
+    /**
+     * LifeOps' side of People's **partner seam** — this household's week, for a paired household.
+     *
+     * Registered rather than injected, because People cannot depend on this module: `:lifeops`
+     * already depends on `:people`, so the edge back would be a cycle. People declares the port and
+     * finds the adapter here. See [PartnerWeekBridge].
+     */
+    val partnerWeekBridge by lazy {
+        com.lifeops.app.data.repository.PartnerWeekBridge(taskService, taskRepository, weekRepository)
+    }
     val operationService by lazy {
         com.lifeops.app.connection.service.OperationService(operationRepository)
     }
@@ -339,6 +350,13 @@ class LifeOpsApp private constructor(private val app: Application) {
             // This is the *first* round, not the only one; see [syncPeople].
             runCatching { peopleSyncRepository.sync() }
         }
+        // Hand People the week, so its partner seam has something to publish to a paired household
+        // and somewhere to put a task that household adds. Registered eagerly and outside the
+        // coroutine above: People's screens can be opened the moment the sandbox home appears, and a
+        // partner round that found no planner would publish an empty week and defer every arriving
+        // contribution — recoverable, but it would look to both people like the pairing had failed.
+        com.people.app.partner.HouseholdWeeks.register(partnerWeekBridge)
+
         // Keep the weather cache warm in the background (no-op-cheap when no locations exist).
         com.lifeops.app.worker.WeatherRefreshWorker.schedulePeriodic(app)
         // Daytime wellness check-in reminders at the configured slots (default 10:00/15:00/21:00).

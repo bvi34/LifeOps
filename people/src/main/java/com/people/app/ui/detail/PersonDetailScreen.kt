@@ -13,19 +13,29 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.people.app.data.model.ImportantDate
+import com.people.app.data.model.PartnerLink
 import com.people.app.data.model.Person
 import com.people.app.data.model.PersonNote
+import com.people.app.data.prefs.PartnerPrefs
+import com.people.app.data.repository.PartnerRepository
+import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
 import com.people.app.logic.DateKind
 import com.people.app.logic.ImportantDates
+import com.people.app.partner.PartnerInvite
+import com.people.app.partner.PartnerInviteCodec
 import com.people.app.ui.common.DetailRow
 import com.people.app.ui.common.HouseholdToggle
 import com.people.app.ui.common.PersonDot
 import com.people.app.ui.common.SectionCard
 import com.people.app.ui.common.formatDay
+import com.people.app.ui.partner.PartnerSection
+import com.people.app.ui.partner.PartnerSectionState
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,7 +43,10 @@ class PersonDetailViewModel(
     private val repo: PeopleRepository,
     private val syncService: PeopleSyncService,
     private val peers: List<String>,
-    private val personId: String
+    private val personId: String,
+    private val partnerRepo: PartnerRepository,
+    private val partnerSync: PartnerSyncService,
+    private val partnerPrefs: PartnerPrefs
 ) : ViewModel() {
 
     val person: StateFlow<Person?> =
@@ -76,24 +89,126 @@ class PersonDetailViewModel(
         runCatching { syncService.sync(peers) }
     }
 
+    // --- the partner seam ---
+
+    val partnerLink: StateFlow<PartnerLink?> =
+        partnerRepo.observeLink(personId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _myCode = MutableStateFlow<String?>(null)
+    val myCode: StateFlow<String?> = _myCode.asStateFlow()
+
+    private val _partnerDisplayName = MutableStateFlow(partnerPrefs.displayName)
+    val partnerDisplayName: StateFlow<String> = _partnerDisplayName.asStateFlow()
+
+    private val _partnerMessage = MutableStateFlow<String?>(null)
+    val partnerMessage: StateFlow<String?> = _partnerMessage.asStateFlow()
+
+    /**
+     * Build this person's code, minting our half of the pairing secret if it does not exist yet.
+     *
+     * The code is per-person rather than per-install: it is *this* pairing's half-secret, so showing
+     * the same screen to two different people hands out two different codes and one cannot be used
+     * to join a conversation meant for the other.
+     */
+    fun showMyCode() = viewModelScope.launch {
+        val current = person.value ?: return@launch
+        val link = partnerRepo.ensureLink(personId, current.name)
+        _myCode.value = PartnerInviteCodec.encode(
+            PartnerInvite(
+                instanceId = partnerPrefs.instanceId,
+                displayName = partnerPrefs.displayName,
+                personKey = current.personKey,
+                secret = link.mySecret,
+                issuedAt = System.currentTimeMillis()
+            )
+        )
+    }
+
+    fun setPartnerDisplayName(name: String) {
+        _partnerDisplayName.value = name
+        partnerPrefs.displayName = name
+        // Re-issue the code so the name on it is the one just typed rather than the one it was
+        // built with — the QR is on screen while this field is being edited.
+        if (_myCode.value != null) showMyCode()
+    }
+
+    /** Take a scanned or pasted code and complete our half of the pairing. */
+    fun onCodeScanned(text: String) = viewModelScope.launch {
+        val current = person.value ?: return@launch
+        val invite = PartnerInviteCodec.decode(text)
+        if (invite == null) {
+            _partnerMessage.value = "That isn't a LifeOps pairing code."
+            return@launch
+        }
+        when (val result = partnerRepo.acceptScan(personId, invite, partnerPrefs.instanceId)) {
+            is PartnerRepository.ScanResult.Paired -> {
+                _partnerMessage.value =
+                    "Paired with ${result.link.partnerName.ifBlank { current.name }}. " +
+                        "They need to scan your code too."
+                runCatching { partnerSync.sync() }
+            }
+
+            is PartnerRepository.ScanResult.Refused -> {
+                _partnerMessage.value = when (result.reason) {
+                    PartnerRepository.ScanRefusal.OUR_OWN_CODE ->
+                        "That's this app's own code — scan the other person's."
+
+                    PartnerRepository.ScanRefusal.ALREADY_PAIRED_ELSEWHERE ->
+                        "That app is already paired with ${result.existingPartnerName.orEmpty()}. " +
+                            "Unlink them first."
+                }
+            }
+        }
+    }
+
+    fun unlinkPartner() = viewModelScope.launch {
+        partnerLink.value?.let { partnerRepo.unlink(it.id) }
+        _myCode.value = null
+        _partnerMessage.value = null
+    }
+
+    fun resetPairing() = viewModelScope.launch {
+        partnerLink.value?.let { partnerRepo.resetPairing(it.id) }
+        _myCode.value = null
+        _partnerMessage.value = "Pairing reset. Swap codes again — both of you."
+    }
+
+    fun dismissPartnerMessage() {
+        _partnerMessage.value = null
+    }
+
     class Factory(
         private val repo: PeopleRepository,
         private val syncService: PeopleSyncService,
         private val peers: List<String>,
-        private val personId: String
+        private val personId: String,
+        private val partnerRepo: PartnerRepository,
+        private val partnerSync: PartnerSyncService,
+        private val partnerPrefs: PartnerPrefs
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            PersonDetailViewModel(repo, syncService, peers, personId) as T
+            PersonDetailViewModel(
+                repo, syncService, peers, personId, partnerRepo, partnerSync, partnerPrefs
+            ) as T
     }
 }
 
-/** One person: who they are, the dates that come round, and the running notes about them. */
+/** One person: who they are, the dates that come round, the notes, and the pairing with their app. */
 @Composable
-fun PersonDetailScreen(vm: PersonDetailViewModel, onBack: () -> Unit) {
+fun PersonDetailScreen(
+    vm: PersonDetailViewModel,
+    onBack: () -> Unit,
+    onOpenPartnerWeek: () -> Unit
+) {
     val person by vm.person.collectAsStateWithLifecycle()
     val notes by vm.notes.collectAsStateWithLifecycle()
     val dates by vm.dates.collectAsStateWithLifecycle()
+    val partnerLink by vm.partnerLink.collectAsStateWithLifecycle()
+    val myCode by vm.myCode.collectAsStateWithLifecycle()
+    val myName by vm.partnerDisplayName.collectAsStateWithLifecycle()
+    val partnerMessage by vm.partnerMessage.collectAsStateWithLifecycle()
 
     var showEdit by remember { mutableStateOf(false) }
     var showDate by remember { mutableStateOf(false) }
@@ -145,6 +260,23 @@ fun PersonDetailScreen(vm: PersonDetailViewModel, onBack: () -> Unit) {
                 onCheckedChange = { vm.setHousehold(it) }
             )
         }
+
+        PartnerSection(
+            state = PartnerSectionState(
+                personName = current.name,
+                link = partnerLink,
+                myCode = myCode,
+                myDisplayName = myName,
+                message = partnerMessage
+            ),
+            onShowCode = vm::showMyCode,
+            onDisplayNameChange = vm::setPartnerDisplayName,
+            onCodeScanned = vm::onCodeScanned,
+            onOpenWeek = onOpenPartnerWeek,
+            onUnlink = vm::unlinkPartner,
+            onReset = vm::resetPairing,
+            onDismissMessage = vm::dismissPartnerMessage
+        )
 
         SectionCard(
             title = "Dates",
