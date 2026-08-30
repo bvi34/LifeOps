@@ -108,8 +108,16 @@ class UpkeepRound(
 
     private suspend fun onePass(now: Long): Report {
         var report = Report()
+        val snapshots = store.planSnapshots(now)
 
-        for (item in store.planSnapshots(now)) {
+        // The task ids already standing for a plan. Publishing *adopts* an open task of the same
+        // title rather than adding a second beside it, which is right when the task is one you wrote
+        // by hand — and wrong if it already belongs to another plan. Two schedules named the same
+        // thing on one asset would otherwise quietly share a row, and one tick would complete both.
+        // The loser of that race simply goes without a task until it is renamed.
+        val claimed = snapshots.mapNotNullTo(mutableSetOf()) { it.link.taskId }
+
+        for (item in snapshots) {
             val planId = item.plan.id
             val stored = item.link
             val task = stored.taskId?.let { week.state(it) }
@@ -138,10 +146,11 @@ class UpkeepRound(
                 is UpkeepTasks.Action.Idle -> Unit
 
                 is UpkeepTasks.Action.Publish -> {
-                    val taskId = week.publish(action.title, action.due, action.note)
-                    // The occurrence is recorded as published even when the planner declined it as a
-                    // duplicate of something you wrote by hand — otherwise every round would try
-                    // again, forever, against a task that is already there.
+                    // `add` returns false when the id is already spoken for — see [claimed].
+                    val taskId = week.publish(action.title, action.due, action.note)?.takeIf { claimed.add(it) }
+                    // The occurrence is recorded as published even when nothing came back, so the
+                    // round doesn't try again on every pass against a week that isn't going to
+                    // give it a task.
                     store.setPlanLink(planId, taskId, action.due)
                     if (taskId != null) report = report.copy(published = report.published + 1)
                 }

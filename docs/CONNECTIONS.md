@@ -95,7 +95,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 
 | Resource | Actions | Service | Notes |
 |---|---|---|---|
-| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). |
+| `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). It skips a title already used in the current week — the incumbent survives — unless the caller passes `allowDuplicateTitle`, which is for an app that owns its task by *id* and dedups on that (`TaskService.findOpen` is how such a caller adopts one you wrote by hand instead). See [MAINTENANCE.md](MAINTENANCE.md#the-lifeops-week). |
 | `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
 | `operation` | `create`, `update`, `complete`, `reopen` | `OperationService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |

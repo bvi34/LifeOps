@@ -107,6 +107,10 @@ class TaskRepository(
 
     suspend fun getById(id: String): Task? = taskDao.getById(id)?.toModel()
 
+    /** Every task in [weekId] carrying [slug] — the rows behind the duplicate-title check. */
+    suspend fun getBySlugInWeek(weekId: String, slug: String): List<Task> =
+        taskDao.getBySlugInWeek(weekId, slug).map { it.toModel() }
+
     suspend fun getAllSince(since: String): List<Task> =
         taskDao.getAllSince(since).map { it.toModel() }
 

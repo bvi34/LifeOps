@@ -102,7 +102,13 @@ object UpkeepTasks {
 
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         val target = targetDue(verdict, today, zone)
-        val wanted = plan.active && plan.publishToLifeOps && target != null
+
+        // "Doesn't want a task" and "can't be dated right now" are different things, and conflating
+        // them cost a plan its place on the week: a mileage interval whose usage rate becomes
+        // unknowable (a meter replaced, leaving one reading to measure from) has no date to publish
+        // for — but it has not stopped being a schedule, and pulling its task off the week would be
+        // an app quietly cancelling work you still have to do.
+        val wanted = plan.active && plan.publishToLifeOps && verdict.status != DueStatus.DORMANT
 
         if (!wanted) {
             // Nothing should be on the week. Take down what is still standing; a task stranded in a
@@ -118,23 +124,27 @@ object UpkeepTasks {
         // The link names a task LifeOps no longer has.
         if (link.taskId != null && task == null) return Action.Forget
 
+        // Wanted, but undatable today. Leave whatever is on the week where it is and wait for a
+        // reading — the next round will have a date, or the plan will go overdue and get one.
+        if (target == null) return Action.Idle
+
         val title = title(assetName, plan)
 
         // The week it was on closed without it being done. The job still needs doing, so it goes on
         // *this* week rather than sitting in a closed one nobody can tick.
         if (task != null && !task.open) {
-            return Action.Publish(target!!, title, note(plan, verdict, meterUnit))
+            return Action.Publish(target, title, note(plan, verdict, meterUnit))
         }
 
         if (task == null) {
             // Already published for this occurrence and it isn't there any more: somebody deleted
             // it on purpose. Wait for the plan to move on rather than arguing about it.
             if (link.publishedDue == target) return Action.Idle
-            return Action.Publish(target!!, title, note(plan, verdict, meterUnit))
+            return Action.Publish(target, title, note(plan, verdict, meterUnit))
         }
 
         return if (task.dueDate != target || task.title != title) {
-            Action.Reschedule(task.id, target!!, title)
+            Action.Reschedule(task.id, target, title)
         } else {
             Action.Idle
         }

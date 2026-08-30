@@ -1,6 +1,8 @@
 package com.maintenance.app.data.repository
 
 import com.maintenance.app.logic.UpkeepRound
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.ZoneId
 
 /**
@@ -20,19 +22,39 @@ class UpkeepPublisher(
     private val onPublished: () -> Unit = {}
 ) {
 
-    /** Reconcile every plan with the week. Idempotent: safe to call after anything, and often. */
-    suspend fun round(now: Long = System.currentTimeMillis()): UpkeepRound.Report {
-        val planner = week() ?: return UpkeepRound.Report()
-        return UpkeepRound(planner, repository, zone, onPublished).run(now)
+    /**
+     * Reconcile every plan with the week. Idempotent: safe to call after anything, and often.
+     *
+     * **One at a time.** Rounds are kicked off from three unrelated places — the app coming to the
+     * foreground, a completion announced by LifeOps, and every edit to a schedule — and any two of
+     * those can land together. Two rounds reading "no task yet" would both publish one, leaving an
+     * orphan on the week that nothing points at; two rounds reading the same completed task would
+     * both log the service. The round is idempotent when it is the only one running, and this is
+     * what makes that true.
+     */
+    suspend fun round(now: Long = System.currentTimeMillis()): UpkeepRound.Report = gate.withLock {
+        val planner = week() ?: return@withLock UpkeepRound.Report()
+        UpkeepRound(planner, repository, zone, onPublished).run(now)
     }
 
     /**
      * Take specific tasks off the week — used when the plan or the asset behind them is deleted, so
      * the round can never see them again to work it out for itself.
+     *
+     * Behind the same gate as [round]: a round mid-flight could otherwise publish a fresh task for
+     * the very plan being deleted, a moment after its old one was taken down.
      */
     suspend fun retire(taskIds: List<String>) {
         if (taskIds.isEmpty()) return
-        val planner = week() ?: return
-        taskIds.forEach { planner.retire(it) }
+        gate.withLock {
+            val planner = week() ?: return@withLock
+            taskIds.forEach { planner.retire(it) }
+        }
     }
+
+    /**
+     * One round at a time, process-wide for this publisher. The publisher is a singleton on
+     * [com.maintenance.app.MaintenanceApp], so this is every round the app runs.
+     */
+    private val gate = Mutex()
 }

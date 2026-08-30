@@ -212,12 +212,13 @@ the receipts.
 > (one small outbound bus in its connection layer), but the same round also runs when Maintenance
 > comes to the foreground and after every edit, and reaches the same answer. So the awkward cases are
 > ordinary — a task you deleted stays deleted until the plan moves on, one carried into a new week is
-> *followed* rather than duplicated, one stranded in a closed week is put on this one, and a plan you
-> paused takes its task off the week. Maintenance raises **no notifications of its own**; deciding
+> *followed* rather than duplicated, one stranded in a closed week is put on this one, a job you had
+> already written by hand is **adopted** rather than duplicated, and a plan you paused takes its task
+> off the week. Maintenance raises **no notifications of its own**; deciding
 > what today looks like stays LifeOps' job.
 >
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **88 JVM unit tests**. It requests no permissions and has no `INTERNET`:
+> `maintenance/logic/` under **91 JVM unit tests**. It requests no permissions and has no `INTERNET`:
 > a VIN, a parcel number and a mortgage balance are about as identifying as household data gets, so
 > there is deliberately nowhere for them to go.
 

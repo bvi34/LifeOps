@@ -256,6 +256,7 @@ list looking like something you chose to do now.
 | Due date | The day the verdict falls due; **today** when a plan is overdue with no date behind it yet (a mileage interval with no rate) |
 | Note | Where it came from, its cadence, where it stands, and what ticking it will do |
 | Aspect | Whatever **LifeOps** says in `Settings → Maintenance upkeep` — the same arrangement Citation's reading time has. Which part of your life an upkeep job counts towards is LifeOps' decision, not this app's; unfiled is a fine answer, and the task still scores |
+| Duplicates | Handled by **id, not title**: an open task with the same title is adopted, and the create that follows opts out of LifeOps' same-week title check. That check counts completed rows, and a future-dated task lives in the current week until it closes — so without opting out, the occurrence published seconds after you tick this one would be silently swallowed |
 | Recurring | **Never.** LifeOps can repeat a task on its own cadence, and a plan using that would put two engines in charge of when the next oil change is. Maintenance owns the cadence; each occurrence is published as a one-off |
 | Hard deadline | **Never.** A hard deadline expires the task at week close, which would quietly bin a job that simply didn't get done that week |
 
@@ -297,7 +298,9 @@ depends on having caught a particular moment — which is what makes the awkward
 | The week closed and left it **stranded** (not done, not carried) | Publishes it again on the current week. The stranded row is left where it is: that week has already been reviewed |
 | You **paused** the plan, switched publishing off, or **archived** the asset | Takes the task off the week |
 | You **deleted** the plan or the asset | Takes its task off the week first — a database cascade cannot reach into another app, and "Truck: Oil change" outliving the truck is exactly the orphan that teaches people to distrust a shared week |
-| A task with that **title already exists** in the week | LifeOps declines the duplicate and keeps the one you wrote by hand. The occurrence is recorded as published anyway, so the round stops arguing about it |
+| You had already written that job onto the week **by hand** | It is *adopted* — the plan links to your row rather than adding a second beside it, so ticking the one you wrote ticks the one Maintenance is watching. Its date is brought in step on the next pass |
+| Two plans on one asset are **named the same** | Only one gets the task. Adoption is by title, so the second would otherwise share the first's row and be completed by the same tick; it goes without until it is renamed |
+| The plan **can't be dated** today (a mileage interval whose usage rate has become unknowable) | Nothing is published, and anything already on the week is left where it is. Undatable is not the same as unwanted |
 | LifeOps **isn't installed** in the process | The round is a no-op. Maintenance keeps its schedules and its docket; it simply stops putting them on a week that isn't there |
 
 One thing the bus deliberately does not carry is an **un-completion**. Un-ticking a task in LifeOps
@@ -358,7 +361,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 88 JVM unit tests over `logic/`, no SDK or emulator needed:
+`gradle :maintenance:test` — 91 JVM unit tests over `logic/`, no SDK or emulator needed:
 
 - `VinTest` — the check digit on a real VIN, the two typos a VIN catches by itself, a failing check
   digit reported rather than rejected, and the thirty-year model-year cycle resolved against three
@@ -379,7 +382,13 @@ scale, nothing.
 - `UpkeepRoundTest` — the seam driven end to end against a fake week planner and a fake store:
   publish once and stay put; tick it and watch the service logged, the clock move and the *next*
   occurrence go on; delete it and see it stay deleted until the plan moves on; carry it forward and
-  see the link follow rather than duplicate.
+  see the link follow rather than duplicate; write the job by hand and see it adopted; name two
+  plans the same thing and watch them refuse to share a task.
+
+  The fake planner deliberately reproduces the two LifeOps behaviours that have caught this seam
+  out — titles collide **within a week and completed rows count**, and a carried-forward task is a
+  new row beside the old one. A fake that modelled the first as "some titles are refused" is what let
+  *"tick it and the next occurrence never lands"* through the first time.
 
 LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
 one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the

@@ -45,14 +45,25 @@ class LifeOpsTasks(
 ) : UpkeepWeek {
 
     /**
-     * Put a task on the week, dated [due]. Returns its id, or null when LifeOps declined it.
+     * Put a task on the week, dated [due] — **adopting** an open one with the same title rather than
+     * adding a second beside it. Returns the task's id, or null if LifeOps refused outright.
      *
-     * The decline is real and worth handling rather than asserting away: LifeOps skips a create
-     * whose title collides with an existing task in the same week, so a job you had already written
-     * onto the week by hand keeps its own row instead of gaining a duplicate. The caller records the
-     * occurrence as published either way, so the round doesn't retry on every pass.
+     * Both halves of that matter, and the second one is a bug this once had.
+     *
+     * *Adopt*, because if you had already written "Truck: Oil change" onto your week by hand, the
+     * honest answer is that it is the job — so it gets adopted, and ticking the row you wrote ticks
+     * the one Maintenance is watching. Two rows for one job is the worse outcome.
+     *
+     * *Bypass the title check* for the create that follows, because LifeOps' duplicate rule looks at
+     * every task in the current week **including completed ones**, and a future-dated task lives in
+     * the current week until it closes. Tick this cycle's oil change and the next occurrence is
+     * published seconds later under the same title — which the check would silently swallow, and the
+     * plan would never reach a week again. De-duplication here is by the task id this app keeps,
+     * which is exactly what `allowDuplicateTitle` is for. `UpkeepRoundTest` holds that line.
      */
     override suspend fun publish(title: String, due: LocalDate, note: String): String? {
+        taskService.findOpen(title)?.let { return it.id }
+
         val outcome = taskService.create(
             TaskService.CreateInput(
                 title = title,
@@ -64,7 +75,10 @@ class LifeOpsTasks(
                 aspectId = aspectId(),
                 // Not recurring, not a hard deadline — see the class note.
                 isRecurring = false,
-                hardDeadline = false
+                hardDeadline = false,
+                // We adopted above if there was anything to adopt; anything left is a title
+                // collision with a *finished* row, which must not swallow the next occurrence.
+                allowDuplicateTitle = true
             )
         )
         return (outcome as? TaskService.CreateOutcome.Created)?.task?.id

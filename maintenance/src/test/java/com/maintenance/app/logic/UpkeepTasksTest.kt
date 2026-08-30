@@ -178,6 +178,20 @@ class UpkeepTasksTest {
     }
 
     @Test
+    fun `a plan that can't be dated today keeps the task it already has`() {
+        // A mileage interval whose rate has become unknowable — a meter replaced, one reading left
+        // to measure from. There is no date to publish for, but the job has not gone away.
+        val action = decide(
+            plan = plan(everyDays = null, everyMeter = 5_000),
+            verdict = verdict(status = DueStatus.SCHEDULED, dueAt = null, summary = "Due in 200 mi"),
+            link = UpkeepTasks.TaskLink("task-1", LocalDate.of(2026, 3, 31)),
+            task = task()
+        )
+
+        assertEquals(UpkeepTasks.Action.Idle, action)
+    }
+
+    @Test
     fun `a task stranded in a closed week is published again on this one`() {
         val action = decide(
             verdict = verdict(status = DueStatus.OVERDUE, dueAt = now - 5 * day, summary = "Overdue by 5 days"),

@@ -2,6 +2,7 @@ package com.maintenance.app.logic
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -24,17 +25,29 @@ class UpkeepRoundTest {
 
     // --- the fake week planner -------------------------------------------------------------
 
+    /**
+     * A stand-in for LifeOps, behaving the way LifeOps actually does at the two points that have
+     * bitten this seam.
+     *
+     * **Titles collide within a week, and completed rows count.** LifeOps' duplicate-title check
+     * looks at every task in the current week, finished ones included, and a future-dated task lives
+     * in the current week until it closes. So the fake keeps one flat table and refuses nothing —
+     * mirroring the bridge, which adopts an *open* task of the same title and otherwise creates with
+     * the title check bypassed. Modelling the decline as a set of refused titles is what let the
+     * "tick it and the next occurrence never lands" bug through the first time.
+     *
+     * **A carried-forward task is a new row**, and the original stays where it was.
+     */
     private class FakeWeek : UpkeepWeek {
         var nextId = 1
         val tasks = LinkedHashMap<String, UpkeepTasks.PublishedTask>()
-        /** Titles the planner refuses, standing in for "you already wrote that one by hand". */
-        val declines = mutableSetOf<String>()
         /** old task id → the row a week close carried it into. */
         private val carriedInto = mutableMapOf<String, String>()
         var published = 0
 
         override suspend fun publish(title: String, due: LocalDate, note: String): String? {
-            if (title in declines) return null
+            // What the bridge does: adopt an open task with this title rather than adding a second.
+            tasks.values.firstOrNull { it.title == title && it.open && !it.completed }?.let { return it.id }
             val id = "task-${nextId++}"
             tasks[id] = UpkeepTasks.PublishedTask(id, title, due, completed = false, completedAtMillis = null)
             published++
@@ -108,6 +121,21 @@ class UpkeepRoundTest {
             link = UpkeepTasks.TaskLink.NONE
             return true
         }
+    }
+
+    /** A store over several plans, for the cases that are about how plans interact. */
+    private class FakeMultiStore(private val plans: List<UpkeepPlan>) : UpkeepStore {
+        val links = plans.associate { it.id to UpkeepTasks.TaskLink.NONE }.toMutableMap()
+
+        override suspend fun planSnapshots(now: Long): List<PlanSnapshot> = plans.map {
+            PlanSnapshot(it, "Truck", null, links.getValue(it.id), Upkeep.evaluate(it, now, null))
+        }
+
+        override suspend fun setPlanLink(planId: String, taskId: String?, publishedDue: LocalDate?) {
+            links[planId] = UpkeepTasks.TaskLink(taskId, publishedDue)
+        }
+
+        override suspend fun completeFromWeek(planId: String, completedAt: Long) = true
     }
 
     private fun plan(everyDays: Int? = 90, active: Boolean = true, publish: Boolean = true) = UpkeepPlan(
@@ -250,18 +278,70 @@ class UpkeepRoundTest {
     }
 
     @Test
-    fun `a title LifeOps already has is not fought over`() = runTest {
+    fun `a job you already wrote onto the week by hand is adopted, not duplicated`() = runTest {
         val week = FakeWeek()
         val store = FakeStore(plan())
-        week.declines += "Truck: Oil change"
+        // You wrote it yourself, before Maintenance got round to publishing it.
+        val yours = week.publish("Truck: Oil change", LocalDate.of(2026, 4, 1), "")!!
+        week.published = 0
 
-        val first = round(week, store).run(now)
-        assertEquals(0, first.published)
-        // The occurrence is remembered even though nothing was created, so the round stops trying.
-        assertEquals(LocalDate.of(2026, 5, 30), store.link.publishedDue)
-        assertNull(store.link.taskId)
-        assertEquals(UpkeepRound.Report(), round(week, store).run(now))
+        val report = round(week, store).run(now)
+
+        assertEquals(1, week.tasks.size)
         assertEquals(0, week.published)
+        assertEquals(yours, store.link.taskId)
+        assertEquals(1, report.published)
+        // Adopted as it stood. The date it carries is yours until the next pass brings it in step
+        // with the plan — the round converges rather than the bridge reaching over to fix it.
+        assertEquals(LocalDate.of(2026, 4, 1), week.tasks.getValue(yours).dueDate)
+        assertEquals(1, round(week, store).run(now).rescheduled)
+        assertEquals(LocalDate.of(2026, 5, 30), week.tasks.getValue(yours).dueDate)
+
+        // …and ticking the one you wrote completes the plan.
+        week.complete(yours, now + day)
+        assertEquals(1, round(week, store).run(now + day).completed)
+    }
+
+    @Test
+    fun `the next occurrence lands even though the completed one is still in the week`() = runTest {
+        // The regression: LifeOps' duplicate-title check counts completed rows, and a future-dated
+        // task sits in the current week until it closes. Publishing the next occurrence seconds
+        // after ticking this one must not be swallowed by the title it shares with the finished row.
+        val week = FakeWeek()
+        val store = FakeStore(plan())
+        round(week, store).run(now)
+        val first = store.link.taskId!!
+
+        week.complete(first, now + day)
+        round(week, store).run(now + day)
+
+        val next = store.link.taskId
+        assertNotNull("the next occurrence should be on the week", next)
+        assertTrue(next != first)
+        assertEquals(2, week.published)
+        assertTrue(week.tasks.getValue(first).completed)
+        assertTrue(!week.tasks.getValue(next!!).completed)
+    }
+
+    @Test
+    fun `two plans with the same name do not end up sharing one task`() = runTest {
+        // A degenerate setup — two schedules called the same thing on one asset — but adoption makes
+        // it dangerous rather than merely odd: one tick would complete both. The second goes without
+        // a task until it is renamed.
+        val week = FakeWeek()
+        val store = FakeMultiStore(
+            listOf(plan(), plan().copy(id = "plan-2"))
+        )
+
+        val report = UpkeepRound(week, store, zone).run(now)
+
+        assertEquals(1, report.published)
+        assertEquals(1, week.tasks.size)
+        val taken = store.links.getValue("plan-1").taskId
+        assertNotNull(taken)
+        assertNull(store.links.getValue("plan-2").taskId)
+        // …and it remembers the occurrence, so it stops trying every round.
+        assertEquals(LocalDate.of(2026, 5, 30), store.links.getValue("plan-2").publishedDue)
     }
 
     @Test
