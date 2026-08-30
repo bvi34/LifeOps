@@ -4,14 +4,17 @@ import com.lifeops.app.connection.ConnectionRegistry
 import com.lifeops.app.connection.ConnectionResult
 import com.lifeops.app.connection.service.WellnessService
 import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessTrend
 
 /**
  * The `local/wellness` routes.
  *
  *  - `checkin` — params: trend ("BETTER"/"SAME"/"WORSE", required), initiative
- *    ("YES"/"NEUTRAL"/"NO", required), energy (int, optional exact rating), sensory (int, optional),
- *    note, at (epoch millis). Omitting energy is the normal case: it's derived from the trend.
+ *    ("YES"/"NEUTRAL"/"NO", required), sensoryTrend ("BETTER"/"NEUTRAL"/"WORSE", optional — the
+ *    dialog always asks, this route may skip it), energy (int, optional exact rating), sensory
+ *    (int, optional), note, at (epoch millis). Omitting energy/sensory is the normal case: each is
+ *    derived from its trend.
  *  - `sleep`   — params: energy (int, required), tired (int, required), sleepMinutes (int), note,
  *    at (epoch millis).
  */
@@ -27,9 +30,16 @@ object LocalWellnessConnection {
                 ?: throw IllegalArgumentException(
                     "initiative must be one of ${Initiative.entries.joinToString("/") { it.value }}"
                 )
+            val sensoryTrendRaw = p.getString("sensoryTrend")
+            val sensoryTrend = sensoryTrendRaw?.let {
+                SensoryTrend.from(it) ?: throw IllegalArgumentException(
+                    "sensoryTrend must be one of ${SensoryTrend.entries.joinToString("/") { e -> e.value }}"
+                )
+            }
             wellnessService.checkin(
                 trend = trend,
                 initiative = initiative,
+                sensoryTrend = sensoryTrend,
                 energy = p.getInt("energy"),
                 sensory = p.getInt("sensory"),
                 note = p.getString("note"),

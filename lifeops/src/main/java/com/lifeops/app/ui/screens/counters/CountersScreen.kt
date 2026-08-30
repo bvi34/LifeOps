@@ -158,12 +158,12 @@ fun CountersScreen(
     }
 
     // The habit tick is already saved by the time this shows; the wellness check is a bonus the
-    // user can fill in or skip. It's the same relative check-in the daytime prompt asks — one
-    // better/same/worse plus initiative, not a second set of 1-10 strips.
+    // user can fill in or skip. It's the same relative check-in the daytime prompt asks — two
+    // better/worse answers plus initiative, not a second set of 1-10 strips.
     habitCheckIn?.let { prompt ->
         com.lifeops.app.ui.screens.wellness.CheckInDialog(
-            onSubmit = { trend, initiative, energy, sensory, why ->
-                viewModel.logWellnessCheckin(trend, initiative, energy, sensory, why)
+            onSubmit = { trend, initiative, sensoryTrend, energy, sensory, why ->
+                viewModel.logWellnessCheckin(trend, initiative, sensoryTrend, energy, sensory, why)
             },
             onDismiss = { viewModel.dismissHabitCheckIn() },
             title = "Nice — how are you?",

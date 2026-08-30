@@ -48,6 +48,15 @@ class ConnectionParamsTest {
     }
 
     @Test
+    fun `getBooleanOrNull separates an absent key from a false one`() {
+        val p = ConnectionParams.of("t" to "true", "f" to false, "n" to 0)
+        assertEquals(true, p.getBooleanOrNull("t"))
+        assertEquals(false, p.getBooleanOrNull("f"))
+        assertEquals(false, p.getBooleanOrNull("n"))
+        assertNull(p.getBooleanOrNull("missing"))
+    }
+
+    @Test
     fun `getStringList tolerates a scalar or a list`() {
         val p = ConnectionParams.of("one" to "solo", "many" to listOf("a", "b"))
         assertEquals(listOf("solo"), p.getStringList("one"))

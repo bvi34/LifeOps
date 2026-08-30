@@ -55,12 +55,19 @@ class ConnectionParams(private val values: Map<String, Any?>) {
 
     fun requireInt(key: String): Int = getInt(key) ?: throw MissingParamException(key)
 
-    fun getBoolean(key: String, default: Boolean = false): Boolean = when (val v = values[key]) {
-        null -> default
+    fun getBoolean(key: String, default: Boolean = false): Boolean =
+        getBooleanOrNull(key) ?: default
+
+    /**
+     * The tri-state read: null when the caller didn't supply the key at all, which for an optional
+     * yes/no answer is a different thing from "no" (see the week-close prompts).
+     */
+    fun getBooleanOrNull(key: String): Boolean? = when (val v = values[key]) {
+        null -> null
         is Boolean -> v
         is String -> v.equals("true", ignoreCase = true)
         is Number -> v.toInt() != 0
-        else -> default
+        else -> null
     }
 
     /** A list of strings, tolerating either a real list or a single scalar value. */

@@ -26,14 +26,20 @@ class WeekService(
     }
 
     /**
-     * Close the current open week and open the next one. [selfRating]/[selfRatingNote] are sealed
-     * into the closing week's snapshot. Idempotent-ish: relies on [WeekRepository.createNextWeek]'s
-     * mutex to avoid double-opening when called concurrently.
+     * Close the current open week and open the next one. The close ritual's answers —
+     * [selfRating]/[selfRatingNote], whether a [mentalReset] was achieved, and the week's overall
+     * [exhaustion] (1–10) — are sealed into the closing week's snapshot. Idempotent-ish: relies on
+     * [WeekRepository.createNextWeek]'s mutex to avoid double-opening when called concurrently.
      */
-    suspend fun close(selfRating: Int? = null, selfRatingNote: String? = null): CloseOutcome {
+    suspend fun close(
+        selfRating: Int? = null,
+        selfRatingNote: String? = null,
+        mentalReset: Boolean? = null,
+        exhaustion: Int? = null
+    ): CloseOutcome {
         val week = weekRepository.getCurrentWeek() ?: return CloseOutcome.NoOpenWeek
         val newWeek = weekRepository.createNextWeek(week)
-        taskRepository.closeWeek(week.id, newWeek.id, selfRating, selfRatingNote)
+        taskRepository.closeWeek(week.id, newWeek.id, selfRating, selfRatingNote, mentalReset, exhaustion)
         taskRepository.seedRecurringTasks(week.id, newWeek.id)
         return CloseOutcome.Closed(closedWeek = week, newWeek = newWeek)
     }

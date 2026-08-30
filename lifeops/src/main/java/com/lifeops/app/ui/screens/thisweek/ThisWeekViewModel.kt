@@ -594,7 +594,12 @@ class ThisWeekViewModel(
 
     private var weekCloseInFlight = false
 
-    fun onCloseWeek(selfRating: Int? = null, selfRatingNote: String? = null) {
+    fun onCloseWeek(
+        selfRating: Int? = null,
+        selfRatingNote: String? = null,
+        mentalReset: Boolean? = null,
+        exhaustion: Int? = null
+    ) {
         if (weekCloseInFlight) return
         viewModelScope.launch {
             weekCloseInFlight = true
@@ -603,7 +608,7 @@ class ThisWeekViewModel(
                 stopTimer(saveEntry = true)
                 // Mint-next-week + snapshot/settle + seed-recurring is owned by WeekService (the
                 // same close path the /v1/LifeOps/local/week/close connection route drives).
-                weekService.close(selfRating, selfRatingNote)
+                weekService.close(selfRating, selfRatingNote, mentalReset, exhaustion)
                 refreshWidget()
             } finally {
                 weekCloseInFlight = false

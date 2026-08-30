@@ -3,6 +3,7 @@ package com.lifeops.app.data.repository
 import android.content.Context
 import com.lifeops.app.data.db.dao.WellnessCheckinDao
 import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
 import com.lifeops.app.data.model.WellnessTrend
@@ -69,21 +70,26 @@ class WellnessRepository(
     suspend fun getAllCheckins(): List<WellnessCheckin> = dao.getAll().map { it.toModel() }
 
     /**
-     * Persist a daytime check-in. The answer is relative — [trend] against the previous reading and
-     * [initiative] (desire to do things) — because re-scoring the same 1–10 scales three times a day
-     * mostly produced repeated numbers. [energy]/[sensory] are only non-null when the user opened
-     * the optional exact ratings; otherwise the energy is stepped from the last reading by the trend
-     * (see [deriveEnergy]) and flagged as derived, so the reports' 1–10 series stays continuous.
+     * Persist a daytime check-in. The answers are relative — [trend] and [sensoryTrend] against the
+     * previous reading, plus [initiative] (desire to do things) — because re-scoring the same 1–10
+     * scales three times a day mostly produced repeated numbers. [energy]/[sensory] are only
+     * non-null when the user opened the optional exact ratings; otherwise each is stepped from the
+     * last reading by its trend (see [deriveEnergy]/[deriveSensory]) and flagged as derived, so the
+     * reports' 1–10 series stay continuous. [sensoryTrend] is null only on the connection route,
+     * which may omit it — the check-in dialog always asks.
      */
     suspend fun logCheckin(
         trend: WellnessTrend,
         initiative: Initiative,
+        sensoryTrend: SensoryTrend? = null,
         energy: Int? = null,
         sensory: Int? = null,
         note: String? = null,
         at: Long = System.currentTimeMillis()
     ) {
         val recordedAt = DateUtil.isoFromEpoch(at)
+        val derivedSensory = if (sensory == null && sensoryTrend != null)
+            deriveSensory(sensoryTrend, recordedAt) else null
         insert(
             WellnessCheckin(
                 id = UUID.randomUUID().toString(),
@@ -92,10 +98,12 @@ class WellnessRepository(
                 weekKey = DateUtil.weekIndexFor(at),
                 dayKey = DateUtil.localDateKey(at),
                 energy = energy ?: deriveEnergy(trend, recordedAt),
-                sensory = sensory,
+                sensory = sensory ?: derivedSensory,
                 trend = trend,
+                sensoryTrend = sensoryTrend,
                 initiative = initiative,
                 energyDerived = energy == null,
+                sensoryDerived = derivedSensory != null,
                 note = note?.takeIf { it.isNotBlank() }
             )
         )
@@ -108,6 +116,14 @@ class WellnessRepository(
      */
     private suspend fun deriveEnergy(trend: WellnessTrend, atIso: String): Int =
         trend.energyFrom(dao.latestWithEnergyBefore(atIso)?.energy)
+
+    /**
+     * The same walk for sensory load, anchored on the last reading that carried one. Sleep reports
+     * never do, so the anchor is always the previous check-in — and before the first one, the middle
+     * of the scale.
+     */
+    private suspend fun deriveSensory(sensoryTrend: SensoryTrend, atIso: String): Int =
+        sensoryTrend.sensoryFrom(dao.latestWithSensoryBefore(atIso)?.sensory)
 
     /** The reading a "better/same/worse" answer is measured against — null before anything is logged. */
     suspend fun latestReading(now: Long = System.currentTimeMillis()): WellnessCheckin? =

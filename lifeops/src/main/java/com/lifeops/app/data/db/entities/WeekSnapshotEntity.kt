@@ -44,6 +44,13 @@ data class WeekSnapshotEntity(
     val aspectHistory: String = "{}",
     val selfRating: Int? = null,
     val selfRatingNote: String? = null,
+    // The two rest questions the close ritual asks alongside the rating, because a week is not only
+    // a completion rate: whether the head actually cleared (1 = yes, 0 = no) and how spent the body
+    // is on the same 1–10 scale the wellness reports use. Both nullable — the prompts can be
+    // skipped, and every week closed before they existed simply never answered them, which is not
+    // the same as answering "no".
+    val mentalReset: Boolean? = null,
+    val exhaustion: Int? = null,
     // Phase 9: flat +1 per subtask check at week-close; no modifier, independent of task scoring
     @ColumnInfo(defaultValue = "0")
     val subtaskTickCount: Int = 0,

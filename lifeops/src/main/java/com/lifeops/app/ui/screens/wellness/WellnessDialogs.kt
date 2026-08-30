@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.lifeops.app.data.model.Initiative
+import com.lifeops.app.data.model.SensoryTrend
 import com.lifeops.app.data.model.WellnessCheckin
 import com.lifeops.app.data.model.WellnessKind
 import com.lifeops.app.data.model.WellnessTrend
@@ -76,7 +77,8 @@ fun RatingRow(
 }
 
 /**
- * A row of mutually exclusive choices (Better/Same/Worse, Yes/Neutral/No). Null = nothing chosen.
+ * A row of mutually exclusive choices (Better/Same/Worse, Better/Neutral/Worse, Yes/Neutral/No).
+ * Null = nothing chosen.
  */
 @Composable
 fun ChoiceRow(
@@ -130,21 +132,24 @@ fun checkInAnchorLabel(previous: WellnessCheckin?): String? {
         previous.trend?.let { add(it.label.lowercase()) }
         previous.initiative?.let { add("initiative ${it.label.lowercase()}") }
         previous.energy?.let { add("energy ${if (previous.energyDerived) "~" else ""}$it") }
+        previous.sensory?.let { add("sensory ${if (previous.sensoryDerived) "~" else ""}$it") }
     }.joinToString("  ·  ")
 }
 
 /**
  * The check-in pop-up — the daytime prompt, the report screen's "+", and the nudge after a habit is
- * ticked all share it. It asks how you're doing *relative* to the last reading (better/same/worse)
- * plus whether you feel like doing things (initiative), instead of re-scoring the same 1–10 scales
- * every few hours; the exact ratings are still there behind "Add exact ratings" for when the numbers
- * are worth setting. [previous] is the reading being compared against, shown for context.
+ * ticked all share it. It asks how you're doing *relative* to the last reading (better/same/worse),
+ * how the sensory load compares (better/neutral/worse), and whether you feel like doing things
+ * (initiative), instead of re-scoring the same 1–10 scales every few hours; the exact ratings are
+ * still there behind "Add exact ratings" for when the numbers are worth setting. [previous] is the
+ * reading being compared against, shown for context.
  */
 @Composable
 fun CheckInDialog(
     onSubmit: (
         trend: WellnessTrend,
         initiative: Initiative,
+        sensoryTrend: SensoryTrend,
         energy: Int?,
         sensory: Int?,
         why: String
@@ -156,6 +161,7 @@ fun CheckInDialog(
     previous: WellnessCheckin? = null
 ) {
     var trend by remember { mutableStateOf<WellnessTrend?>(null) }
+    var sensoryTrend by remember { mutableStateOf<SensoryTrend?>(null) }
     var initiative by remember { mutableStateOf<Initiative?>(null) }
     var showExact by remember { mutableStateOf(false) }
     var energy by remember { mutableStateOf<Int?>(null) }
@@ -188,6 +194,11 @@ fun CheckInDialog(
                     selectedIndex = trend?.ordinal
                 ) { trend = WellnessTrend.entries[it] }
                 ChoiceRow(
+                    label = "Sensory load — compared with your last reading",
+                    options = SensoryTrend.entries.map { it.label },
+                    selectedIndex = sensoryTrend?.ordinal
+                ) { sensoryTrend = SensoryTrend.entries[it] }
+                ChoiceRow(
                     label = "Initiative — feel like doing things?",
                     options = Initiative.entries.map { it.label },
                     selectedIndex = initiative?.ordinal
@@ -215,8 +226,8 @@ fun CheckInDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onSubmit(trend!!, initiative!!, energy, sensory, why) },
-                enabled = trend != null && initiative != null
+                onClick = { onSubmit(trend!!, initiative!!, sensoryTrend!!, energy, sensory, why) },
+                enabled = trend != null && initiative != null && sensoryTrend != null
             ) { Text("Save") }
         },
         dismissButton = {

@@ -96,7 +96,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | Resource | Actions | Service | Notes |
 |---|---|---|---|
 | `task` | `create`, `update`, `complete`, `delete` | `TaskService` | Reference implementation. `create` is also how Advisor adds a task you asked it for (`data/action/LifeOpsTaskWriter`). |
-| `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series. |
+| `week` | `current`, `close` | `WeekService` | `close` mints the next week, snapshots the closing one, seeds recurring series; optional `selfRating`/`selfRatingNote`, `mentalReset` (bool) and `exhaustion` (1–10) are sealed into the snapshot. |
 | `operation` | `create`, `update`, `complete`, `reopen` | `OperationService` | `complete`/`reopen` flip status. |
 | `counter` | `create`, `log`, `archive`, `update` | `CounterService` | `log` ticks a counter/habit; `occurredAt` (epoch millis) backdates. |
 | `note` | `add`, `delete` | `NoteService` | Task notes. |
@@ -115,7 +115,7 @@ All under the `local` connection today (`/v1/LifeOps/local/…`):
 | `activity` | `create`, `delete` | `ActivityService` | Saved outdoor activities. |
 | `runbook` | `create`, `delete`, `stamp` | `RunbookService` | `stamp` writes a runbook's steps as subtasks on a task. |
 | `subtask` | `check`, `delete` | `RunbookService` | — |
-| `wellness` | `checkin`, `sleep` | `WellnessService` | `checkin` takes `trend` (`BETTER`/`SAME`/`WORSE`) + `initiative` (`YES`/`NEUTRAL`/`NO`); `energy`/`sensory` are optional exact 1–10 ratings. |
+| `wellness` | `checkin`, `sleep` | `WellnessService` | `checkin` takes `trend` (`BETTER`/`SAME`/`WORSE`) + `initiative` (`YES`/`NEUTRAL`/`NO`), plus an optional `sensoryTrend` (`BETTER`/`NEUTRAL`/`WORSE`); `energy`/`sensory` are optional exact 1–10 ratings, each derived from its trend when omitted. |
 
 Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does not.
 

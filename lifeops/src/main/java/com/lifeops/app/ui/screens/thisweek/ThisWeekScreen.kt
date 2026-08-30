@@ -48,6 +48,8 @@ import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
+import com.lifeops.app.ui.screens.wellness.ChoiceRow
+import com.lifeops.app.ui.screens.wellness.RatingRow
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.ui.theme.priorityColor
 import java.time.LocalDate
@@ -347,6 +349,8 @@ fun ThisWeekScreen(
 
         var selfRating by remember { mutableStateOf<Int?>(null) }
         var selfRatingNote by remember { mutableStateOf("") }
+        var mentalReset by remember { mutableStateOf<Boolean?>(null) }
+        var exhaustion by remember { mutableStateOf<Int?>(null) }
         // The retrospective is assembled off the UI thread from live tasks + trailing history.
         val review by produceState<WeekReview?>(initialValue = null) { value = viewModel.buildWeekReview() }
 
@@ -441,12 +445,38 @@ fun ThisWeekScreen(
                             maxLines = 3
                         )
                     }
+
+                    Spacer(Modifier.height(2.dp))
+
+                    // The two rest questions. A week's completion rate says nothing about whether
+                    // you actually got your head back or how spent you are at the end of it, and
+                    // those are what decide whether the next week starts from a standing position.
+                    // Both optional — tapping the same answer again clears it.
+                    ChoiceRow(
+                        label = "Mental reset achieved?",
+                        options = listOf("Yes", "No"),
+                        selectedIndex = mentalReset?.let { if (it) 0 else 1 }
+                    ) { index ->
+                        val picked = index == 0
+                        mentalReset = if (mentalReset == picked) null else picked
+                    }
+                    // Same 1–10 strip the wellness check-ins use, so "an 8 week" means the same
+                    // thing here as it does in a daytime reading.
+                    RatingRow(
+                        label = "Overall exhaustion (1 fresh → 10 wiped out)",
+                        value = exhaustion
+                    ) { exhaustion = if (exhaustion == it) null else it }
                 }
             },
             confirmButton = {
                 Button(onClick = {
                     showCloseConfirm = false
-                    viewModel.onCloseWeek(selfRating, selfRatingNote.takeIf { it.isNotBlank() })
+                    viewModel.onCloseWeek(
+                        selfRating,
+                        selfRatingNote.takeIf { it.isNotBlank() },
+                        mentalReset,
+                        exhaustion
+                    )
                 }) { Text("Close Week") }
             },
             dismissButton = {

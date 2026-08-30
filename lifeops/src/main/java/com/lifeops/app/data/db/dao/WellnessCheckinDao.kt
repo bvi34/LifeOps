@@ -35,6 +35,13 @@ interface WellnessCheckinDao {
     )
     suspend fun latestWithEnergyBefore(atIso: String): WellnessCheckinEntity?
 
+    /** The newest entry at or before [atIso] that has a sensory reading — the anchor a sensory trend steps from. */
+    @Query(
+        "SELECT * FROM wellness_checkins WHERE sensory IS NOT NULL AND recordedAt <= :atIso " +
+            "ORDER BY recordedAt DESC LIMIT 1"
+    )
+    suspend fun latestWithSensoryBefore(atIso: String): WellnessCheckinEntity?
+
     /** Full-table snapshot for backup export. */
     @Query("SELECT * FROM wellness_checkins ORDER BY recordedAt ASC")
     suspend fun getAll(): List<WellnessCheckinEntity>
