@@ -3,6 +3,7 @@ package com.lifeops.app.data.repository
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.lifeops.app.connection.TaskCompletionBus
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.lifeops.app.data.db.dao.*
 import com.lifeops.app.data.db.entities.WeekSnapshotEntity
@@ -53,6 +54,7 @@ class TaskRepository(
 
     suspend fun completeTask(task: Task) {
         if (taskDao.getChildOf(task.id) != null) return
+        var completion: TaskCompletionBus.Completion? = null
         db.withTransaction {
             val current = taskDao.getById(task.id) ?: return@withTransaction
             if (current.status == TaskStatus.COMPLETED.value) return@withTransaction // already done — no double tick
@@ -61,8 +63,21 @@ class TaskRepository(
             // Same transaction as the status flip: if anything fails the tick rolls back too,
             // so a half-completed task can never leave a phantom CounterEvent.
             current.counterId?.let { counterRepository.logEvent(it, occurredAt = nowMillis) }
+            completion = TaskCompletionBus.Completion(current.id, current.title, nowMillis)
         }
+        // Announced *after* the commit, and only when the tick actually happened — a task that was
+        // already complete, or whose transaction rolled back, tells nobody anything. Some tasks are
+        // owned by another hosted app (Maintenance publishes its upkeep onto a future week); this is
+        // how the tick gets back to whoever has to move a schedule because of it.
+        completion?.let { TaskCompletionBus.announce(it) }
     }
+
+    /**
+     * The task this one was carried forward into, when a week rolled over without it being done —
+     * a *new* row with a new id. Anything holding a task id across a week close (an app that
+     * published the task in the first place) has to be able to follow that hop.
+     */
+    suspend fun childOf(taskId: String): Task? = taskDao.getChildOf(taskId)?.toModel()
 
     suspend fun skipTask(taskId: String) {
         taskDao.updateStatus(taskId, TaskStatus.SKIPPED.value)

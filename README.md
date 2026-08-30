@@ -197,11 +197,26 @@ the receipts.
 > of vehicles built outside North America carry a valid VIN that fails that arithmetic. Costs refuse
 > to annualise a history shorter than a year.
 >
-> Maintenance knows what is due; it never decides when you'll get to it and raises **no
-> notifications** — scheduling is LifeOps' job. Nothing derived is stored, so nothing goes stale in a
-> drawer. Its logic lives in `maintenance/logic/` under **63 JVM unit tests**. It requests no
-> permissions and has no `INTERNET`: a VIN, a parcel number and a mortgage balance are about as
-> identifying as household data gets, so there is deliberately nowhere for them to go.
+> Upkeep goes **on the LifeOps week**. A plan publishes itself as a task dated the day it falls due
+> — `Truck: Oil change`, 30 May — which LifeOps parks in its **Future Tasks** queue and wakes into the
+> week that contains that date, so a service five months out lands in the right week five months out.
+> **Tick it in LifeOps and the tick comes back**: the service is logged here, the clock restarts from
+> the completion, and the next occurrence goes on the week. Never as a *recurring* LifeOps task —
+> that would put two engines in charge of when the next oil change is — and never with a hard
+> deadline, which would bin the job at week close. It is a per-plan switch, on by default.
+>
+> The seam is a **reconciliation, not an event handler**: LifeOps announces the tick as it happens
+> (one small outbound bus in its connection layer), but the same round also runs when Maintenance
+> comes to the foreground and after every edit, and reaches the same answer. So the awkward cases are
+> ordinary — a task you deleted stays deleted until the plan moves on, one carried into a new week is
+> *followed* rather than duplicated, one stranded in a closed week is put on this one, and a plan you
+> paused takes its task off the week. Maintenance raises **no notifications of its own**; deciding
+> what today looks like stays LifeOps' job.
+>
+> Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
+> `maintenance/logic/` under **88 JVM unit tests**. It requests no permissions and has no `INTERNET`:
+> a VIN, a parcel number and a mortgage balance are about as identifying as household data gets, so
+> there is deliberately nowhere for them to go.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
@@ -597,8 +612,11 @@ JVM unit tests live in `app/src/test/`. Notable suites:
 
 The hosted apps keep their own JVM suites beside their logic — `maintenance/src/test/` covers the
 VIN check digit and its thirty-year model-year cycle, whichever-comes-first service intervals, a
-meter that went backwards, textbook amortisation to the cent, and the refusal to annualise a
-history shorter than a year (`gradle :maintenance:test`).
+meter that went backwards, textbook amortisation to the cent, the refusal to annualise a history
+shorter than a year, and the LifeOps seam driven end to end against a fake week planner: publish,
+tick, log, republish; a deleted task that stays deleted; a carried-forward one that is followed
+rather than duplicated (`gradle :maintenance:test`). LifeOps' half of that seam has
+`TaskCompletionBusTest` — a listener that throws cannot break a tick.
 
 ---
 

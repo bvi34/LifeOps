@@ -11,6 +11,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
@@ -190,12 +192,13 @@ fun PlanDialog(
     plan: UpkeepPlan?,
     meterUnit: MeterUnit?,
     onDismiss: () -> Unit,
-    onSave: (title: String, everyDays: Int?, everyMeter: Long?, notes: String?) -> Unit
+    onSave: (title: String, everyDays: Int?, everyMeter: Long?, notes: String?, publish: Boolean) -> Unit
 ) {
     var title by remember { mutableStateOf(plan?.title.orEmpty()) }
     var days by remember { mutableStateOf(plan?.everyDays?.toString().orEmpty()) }
     var meter by remember { mutableStateOf(plan?.everyMeter?.toString().orEmpty()) }
     var notes by remember { mutableStateOf(plan?.notes.orEmpty()) }
+    var publish by remember { mutableStateOf(plan?.publishToLifeOps ?: true) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -220,6 +223,21 @@ fun PlanDialog(
                     )
                 }
                 TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+
+                // The seam, said plainly and switchable per plan. "Change the furnace filter"
+                // belongs on a week; "check the roof after a storm" does not.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Put it on the LifeOps week", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "A task dated the day it's due — it waits in LifeOps' future queue until " +
+                                "that week opens. Tick it there and it's logged here.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(checked = publish, onCheckedChange = { publish = it })
+                }
             }
         },
         confirmButton = {
@@ -230,7 +248,8 @@ fun PlanDialog(
                         title.trim(),
                         days.toIntOrNull(),
                         meter.toLongOrNull(),
-                        notes.takeIf { it.isNotBlank() }
+                        notes.takeIf { it.isNotBlank() },
+                        publish
                     )
                 }
             ) { Text("Save") }

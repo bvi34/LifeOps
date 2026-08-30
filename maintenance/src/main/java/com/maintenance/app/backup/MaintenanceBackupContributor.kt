@@ -23,6 +23,12 @@ import java.io.File
  *
  * Restore is a whole-file swap, so a Maintenance restart is expected afterwards — the sandbox
  * surfaces that.
+ *
+ * The one thing in this file that can arrive *stale* is the LifeOps task id each upkeep plan carries
+ * (see `logic/UpkeepTasks`): restore Maintenance without restoring LifeOps and those ids name tasks
+ * that no longer exist. Nothing here compensates for that, deliberately — the next publishing round
+ * reads the week, finds them gone, and drops the links. A seam that reconciles doesn't need its
+ * backup to be clever.
  */
 class MaintenanceBackupContributor(private val context: Context) : BackupContributor {
 

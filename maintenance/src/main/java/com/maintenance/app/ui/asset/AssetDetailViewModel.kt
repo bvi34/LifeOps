@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.maintenance.app.data.model.Asset
 import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.data.repository.MaintenanceRepository
+import com.maintenance.app.data.repository.UpkeepPublisher
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.PremiumPeriod
 import com.maintenance.app.logic.UpkeepPlan
@@ -25,6 +26,7 @@ import kotlinx.coroutines.launch
  */
 class AssetDetailViewModel(
     private val repo: MaintenanceRepository,
+    private val publisher: UpkeepPublisher,
     private val assetId: String
 ) : ViewModel() {
 
@@ -36,24 +38,44 @@ class AssetDetailViewModel(
     fun save(asset: Asset, attributes: Map<String, String>) =
         viewModelScope.launch { repo.updateAsset(asset, attributes) }
 
-    fun setArchived(archived: Boolean) = viewModelScope.launch { repo.setArchived(assetId, archived) }
+    fun setArchived(archived: Boolean) = viewModelScope.launch {
+        repo.setArchived(assetId, archived)
+        // An asset you no longer own has nothing owed on it: the round takes its tasks off the week.
+        publisher.round()
+    }
 
     fun delete(onDeleted: () -> Unit) = viewModelScope.launch {
-        repo.deleteAsset(assetId)
+        // The cascade cannot reach into LifeOps, so the tasks come off the week here, before the
+        // rows that name them are gone.
+        publisher.retire(repo.deleteAsset(assetId))
         onDeleted()
     }
 
     // --- upkeep ---
 
-    fun addPlan(title: String, everyDays: Int?, everyMeter: Long?, notes: String?) =
-        viewModelScope.launch { repo.addPlan(assetId, title, everyDays, everyMeter, notes) }
+    // Every write that can change *when* something is due ends with a round, because the whole
+    // promise of the seam is that the week and the schedule agree. The round is idempotent, so
+    // calling it after each edit is cheaper than reasoning about which edits could matter.
 
-    fun updatePlan(plan: UpkeepPlan) = viewModelScope.launch { repo.updatePlan(plan) }
+    fun addPlan(title: String, everyDays: Int?, everyMeter: Long?, notes: String?, publishToLifeOps: Boolean) =
+        viewModelScope.launch {
+            repo.addPlan(assetId, title, everyDays, everyMeter, notes, publishToLifeOps)
+            publisher.round()
+        }
 
-    fun setPlanActive(planId: String, active: Boolean) =
-        viewModelScope.launch { repo.setPlanActive(planId, active) }
+    fun updatePlan(plan: UpkeepPlan) = viewModelScope.launch {
+        repo.updatePlan(plan)
+        publisher.round()
+    }
 
-    fun deletePlan(planId: String) = viewModelScope.launch { repo.deletePlan(planId) }
+    fun setPlanActive(planId: String, active: Boolean) = viewModelScope.launch {
+        repo.setPlanActive(planId, active)
+        publisher.round()
+    }
+
+    fun deletePlan(planId: String) = viewModelScope.launch {
+        repo.deletePlan(planId)?.let { publisher.retire(listOf(it)) }
+    }
 
     fun logService(
         planId: String?,
@@ -65,13 +87,20 @@ class AssetDetailViewModel(
         notes: String?
     ) = viewModelScope.launch {
         repo.logService(assetId, planId, title, vendor, performedAt, costCents, meterValue, notes)
+        // The clock moved: this occurrence's task comes off the week and the next one goes on.
+        publisher.round()
     }
 
     fun deleteRecord(recordId: String) = viewModelScope.launch { repo.deleteRecord(recordId) }
 
     // --- meter ---
 
-    fun addReading(value: Long, readAt: Long) = viewModelScope.launch { repo.addReading(assetId, value, readAt) }
+    fun addReading(value: Long, readAt: Long) = viewModelScope.launch {
+        repo.addReading(assetId, value, readAt)
+        // A reading changes the usage rate, and the rate is what dates a mileage interval — so the
+        // task's date on the week can move because of a number typed at a petrol pump.
+        publisher.round()
+    }
 
     // --- money ---
 
@@ -114,10 +143,11 @@ class AssetDetailViewModel(
 
     class Factory(
         private val repo: MaintenanceRepository,
+        private val publisher: UpkeepPublisher,
         private val assetId: String
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AssetDetailViewModel(repo, assetId) as T
+            AssetDetailViewModel(repo, publisher, assetId) as T
     }
 }

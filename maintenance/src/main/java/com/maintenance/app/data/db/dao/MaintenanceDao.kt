@@ -47,6 +47,13 @@ interface MaintenanceDao {
     @Query("SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM assets")
     suspend fun nextAssetSortOrder(): Int
 
+    /** Every asset, for the publishing round — which reads once and folds, rather than per plan. */
+    @Query("SELECT * FROM assets")
+    suspend fun allAssets(): List<AssetEntity>
+
+    @Query("SELECT * FROM meter_readings ORDER BY readAt")
+    suspend fun allReadings(): List<MeterReadingEntity>
+
     @Upsert
     suspend fun upsertAsset(asset: AssetEntity)
 
@@ -88,6 +95,27 @@ interface MaintenanceDao {
 
     @Query("DELETE FROM upkeep_plans WHERE id = :id")
     suspend fun deletePlan(id: String)
+
+    /**
+     * Write the LifeOps link on a plan.
+     *
+     * Its own statement rather than an upsert of the whole row, because the publisher writes it
+     * from a background round while the user may be editing the same plan on screen: a full upsert
+     * would carry a stale title back over the edit.
+     */
+    @Query("UPDATE upkeep_plans SET lifeOpsTaskId = :taskId, publishedDueDay = :publishedDueDay WHERE id = :id")
+    suspend fun setPlanLink(id: String, taskId: String?, publishedDueDay: Long?)
+
+    /**
+     * The LifeOps tasks standing for an asset's plans — read *before* the asset is deleted, so its
+     * tasks can be taken off the week rather than stranded there by the cascade.
+     */
+    @Query("SELECT lifeOpsTaskId FROM upkeep_plans WHERE assetId = :assetId AND lifeOpsTaskId IS NOT NULL")
+    suspend fun taskIdsForAsset(assetId: String): List<String>
+
+    /** Every plan, for a publishing round. */
+    @Query("SELECT * FROM upkeep_plans ORDER BY sortOrder, title COLLATE NOCASE")
+    suspend fun allPlans(): List<UpkeepPlanEntity>
 
     // --- service records ---
 

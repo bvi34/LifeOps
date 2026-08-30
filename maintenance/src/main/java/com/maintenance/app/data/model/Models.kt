@@ -12,6 +12,7 @@ import com.maintenance.app.logic.MeterReading
 import com.maintenance.app.logic.MeterState
 import com.maintenance.app.logic.ServiceEntry
 import com.maintenance.app.logic.UpkeepPlan
+import com.maintenance.app.logic.UpkeepTasks
 import java.time.LocalDate
 
 /**
@@ -61,8 +62,18 @@ data class Asset(
         ).joinToString(" ")
 }
 
-/** One upkeep plan with the app's verdict on it. */
-data class PlanView(val plan: UpkeepPlan, val verdict: DueVerdict)
+/**
+ * One upkeep plan with the app's verdict on it, and whatever LifeOps currently holds for it.
+ *
+ * The link is on the view rather than on the plan because it is not something you edit — it is the
+ * seam's own bookkeeping, and the screen shows it as a line of prose ("on the week for 31 Mar")
+ * rather than as a field.
+ */
+data class PlanView(
+    val plan: UpkeepPlan,
+    val verdict: DueVerdict,
+    val link: UpkeepTasks.TaskLink = UpkeepTasks.TaskLink.NONE
+)
 
 /** One coverage with where its expiry stands today. */
 data class CoverageView(val coverage: Coverage, val status: DueStatus, val summary: String)
@@ -131,3 +142,4 @@ data class ServiceRecord(
 ) {
     fun asEntry(): ServiceEntry = ServiceEntry(id, assetId, performedAt, costCents, meterValue)
 }
+

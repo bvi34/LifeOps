@@ -52,6 +52,8 @@ fun formatShortDay(millis: Long): String =
 
 fun formatMonth(date: LocalDate): String = monthFormat.format(date)
 
+fun formatDate(date: LocalDate): String = dayFormat.format(date)
+
 fun toEpochMillis(date: LocalDate): Long =
     date.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 

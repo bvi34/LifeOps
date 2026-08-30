@@ -1,5 +1,6 @@
 package com.maintenance.app.data.db.entities
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -122,6 +123,27 @@ data class UpkeepPlanEntity(
     val lastDoneAt: Long?,
     val lastDoneMeter: Long?,
     val active: Boolean,
+    /**
+     * Whether this plan puts itself on the LifeOps week as a task dated the day it falls due.
+     * Defaults to on — a schedule nobody is reminded of is a schedule nobody keeps.
+     */
+    @ColumnInfo(defaultValue = "1")
+    val publishToLifeOps: Boolean = true,
+    /**
+     * The LifeOps task currently standing for this plan, if there is one.
+     *
+     * A **soft link into another app's database**, deliberately unenforceable: LifeOps can delete
+     * the task, and a week close can replace it with a carried-forward copy under a new id. Both
+     * are handled by re-reading rather than by a constraint — see `logic/UpkeepTasks`.
+     */
+    val lifeOpsTaskId: String? = null,
+    /**
+     * The due *day* (epoch day) this plan was last published for.
+     *
+     * Kept even after [lifeOpsTaskId] is dropped, which is the whole point: it is how the app knows
+     * a task it published was deleted on purpose, and stops itself putting the same one back.
+     */
+    val publishedDueDay: Long? = null,
     val sortOrder: Int,
     val createdAt: Long,
     val updatedAt: Long

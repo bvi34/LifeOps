@@ -24,7 +24,15 @@ data class UpkeepPlan(
     val lastDoneAt: Long? = null,
     val lastDoneMeter: Long? = null,
     val createdAt: Long = 0L,
-    val active: Boolean = true
+    val active: Boolean = true,
+    /**
+     * Whether this plan puts itself on the LifeOps week as a task, dated the day it falls due.
+     *
+     * On by default, because a schedule nobody is reminded of is a schedule nobody keeps — and
+     * per-plan rather than app-wide, because "change the furnace filter" belongs on a week and
+     * "check the roof after a storm" does not. See `logic/UpkeepTasks`.
+     */
+    val publishToLifeOps: Boolean = true
 )
 
 /** Where a due date stands. The order of the entries is the order things get attention in. */

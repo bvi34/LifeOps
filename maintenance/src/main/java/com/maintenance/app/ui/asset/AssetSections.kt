@@ -39,6 +39,7 @@ import com.maintenance.app.ui.common.EmptyState
 import com.maintenance.app.ui.common.LabeledValue
 import com.maintenance.app.ui.common.SectionCard
 import com.maintenance.app.ui.common.StatusPill
+import com.maintenance.app.ui.common.formatDate
 import com.maintenance.app.ui.common.formatDay
 import com.maintenance.app.ui.common.formatMonth
 import com.maintenance.app.ui.common.money
@@ -98,9 +99,9 @@ fun UpkeepTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             plan = null,
             meterUnit = detail.meter?.unit,
             onDismiss = { adding = false },
-            onSave = { title, everyDays, everyMeter, notes ->
+            onSave = { title, everyDays, everyMeter, notes, publish ->
                 adding = false
-                vm.addPlan(title, everyDays, everyMeter, notes)
+                vm.addPlan(title, everyDays, everyMeter, notes, publish)
             }
         )
     }
@@ -110,9 +111,17 @@ fun UpkeepTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             plan = plan,
             meterUnit = detail.meter?.unit,
             onDismiss = { editing = null },
-            onSave = { title, everyDays, everyMeter, notes ->
+            onSave = { title, everyDays, everyMeter, notes, publish ->
                 editing = null
-                vm.updatePlan(plan.copy(title = title, everyDays = everyDays, everyMeter = everyMeter, notes = notes))
+                vm.updatePlan(
+                    plan.copy(
+                        title = title,
+                        everyDays = everyDays,
+                        everyMeter = everyMeter,
+                        notes = notes,
+                        publishToLifeOps = publish
+                    )
+                )
             }
         )
     }
@@ -164,6 +173,9 @@ private fun PlanCard(
             style = MaterialTheme.typography.bodyMedium,
             color = statusColor(view.verdict.status)
         )
+        weekLine(view)?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        }
         val lastDone = plan.lastDoneAt?.let { at ->
             val meter = plan.lastDoneMeter?.let { m -> " at ${meterUnit?.format(m) ?: MeterUnit.group(m)}" }.orEmpty()
             "Last done ${formatDay(at)}$meter"
@@ -178,6 +190,21 @@ private fun PlanCard(
             TextButton(onClick = onDelete) { Text("Delete") }
         }
     }
+}
+
+/**
+ * Where this plan stands with the LifeOps week.
+ *
+ * Null when there is nothing to say — a plan that publishes and simply hasn't been put on a week
+ * yet says nothing rather than reporting its own plumbing. The two states worth a line are "it is
+ * over there, dated" and "you have deliberately kept it out of the week".
+ */
+@Composable
+private fun weekLine(view: PlanView): String? = when {
+    !view.plan.publishToLifeOps -> "Kept off the LifeOps week"
+    view.link.taskId == null -> null
+    view.link.publishedDue != null -> "On the LifeOps week for ${formatDate(view.link.publishedDue)}"
+    else -> "On the LifeOps week"
 }
 
 /** "Every 5,000 mi or 6 months" — the line under a plan's name. */

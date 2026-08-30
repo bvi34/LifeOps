@@ -28,12 +28,16 @@ import com.maintenance.app.logic.Loan
 import com.maintenance.app.logic.LoanTerms
 import com.maintenance.app.logic.MeterReading
 import com.maintenance.app.logic.MeterState
+import com.maintenance.app.logic.PlanSnapshot
 import com.maintenance.app.logic.PremiumPeriod
 import com.maintenance.app.logic.Upkeep
 import com.maintenance.app.logic.UpkeepPlan
+import com.maintenance.app.logic.UpkeepStore
+import com.maintenance.app.logic.UpkeepTasks
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import java.time.LocalDate
 import java.time.ZoneId
 import java.util.UUID
 
@@ -58,7 +62,7 @@ import java.util.UUID
  * 3 days" when the data changes or the screen re-collects, not on a timer — which is exactly right
  * for a list you look at rather than watch.
  */
-class MaintenanceRepository(private val dao: MaintenanceDao) {
+class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
 
     private fun now() = System.currentTimeMillis()
     private fun newId() = UUID.randomUUID().toString()
@@ -164,7 +168,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
                 asset = asset,
                 plans = planRows.map { plan ->
                     val model = plan.toPlan()
-                    PlanView(model, Upkeep.evaluate(model, now, meter))
+                    PlanView(model, Upkeep.evaluate(model, now, meter), plan.toLink())
                 },
                 records = records,
                 readings = readings,
@@ -256,7 +260,17 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         dao.upsertAsset(existing.copy(archived = archived, updatedAt = now()))
     }
 
-    suspend fun deleteAsset(assetId: String) = dao.deleteAsset(assetId)
+    /**
+     * Delete an asset and everything under it. Returns the LifeOps tasks its plans had published,
+     * which the caller takes off the week: the database cascade cannot reach into another app, and
+     * "Truck: Oil change" outliving the truck by a year is exactly the kind of orphan that teaches
+     * people to stop trusting a shared week.
+     */
+    suspend fun deleteAsset(assetId: String): List<String> {
+        val published = dao.taskIdsForAsset(assetId)
+        dao.deleteAsset(assetId)
+        return published
+    }
 
     // ------------------------------------------------------------------ upkeep
 
@@ -265,7 +279,8 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         title: String,
         everyDays: Int?,
         everyMeter: Long?,
-        notes: String? = null
+        notes: String? = null,
+        publishToLifeOps: Boolean = true
     ): String {
         val id = newId()
         val stamp = now()
@@ -280,6 +295,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
                 lastDoneAt = null,
                 lastDoneMeter = null,
                 active = true,
+                publishToLifeOps = publishToLifeOps,
                 sortOrder = dao.nextPlanSortOrder(assetId),
                 createdAt = stamp,
                 updatedAt = stamp
@@ -297,6 +313,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
                 everyDays = plan.everyDays?.takeIf { it > 0 },
                 everyMeter = plan.everyMeter?.takeIf { it > 0 },
                 active = plan.active,
+                publishToLifeOps = plan.publishToLifeOps,
                 updatedAt = now()
             )
         )
@@ -307,7 +324,83 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         dao.upsertPlan(existing.copy(active = active, updatedAt = now()))
     }
 
-    suspend fun deletePlan(planId: String) = dao.deletePlan(planId)
+    /** Delete a plan. Returns the LifeOps task it had published, for the caller to retire. */
+    suspend fun deletePlan(planId: String): String? {
+        val published = dao.getPlan(planId)?.lifeOpsTaskId
+        dao.deletePlan(planId)
+        return published
+    }
+
+    // ------------------------------------------------------------------ the LifeOps seam
+    //
+    // Maintenance knows when a thing is due; LifeOps is where a week is planned. So a plan puts
+    // itself on that week as a task dated the day it falls due, and the tick comes back here. What
+    // decides *which* of those things should happen is `logic/UpkeepTasks`; this is where the
+    // decision is stored and where the tick lands.
+
+    /** Record which LifeOps task now stands for a plan, and which occurrence it was published for. */
+    override suspend fun setPlanLink(planId: String, taskId: String?, publishedDue: LocalDate?) =
+        dao.setPlanLink(planId, taskId, publishedDue?.toEpochDay())
+
+    /**
+     * A plan was ticked in LifeOps: log the service, move the clock, and let go of the task.
+     *
+     * The record it writes is deliberately thin — no cost, no vendor — because a tick in a week
+     * planner says *that* the job was done and nothing about what it involved. The note says so, so
+     * a £0 line in the history reads as "not priced" rather than "free".
+     *
+     * For a plan with a mileage interval the **last known reading** is taken as the new baseline.
+     * Without it the mileage leg would never move and the plan would be permanently overdue on one
+     * of its two legs; with it the arithmetic restarts from the best number anybody has. It is
+     * written onto the record but *not* filed as a new reading, because nobody read the dial.
+     */
+    override suspend fun completeFromWeek(planId: String, completedAt: Long): Boolean {
+        val plan = dao.getPlan(planId) ?: return false
+        val baseline = if (plan.everyMeter != null) {
+            dao.readingsOf(plan.assetId).maxByOrNull { it.readAt }?.value
+        } else {
+            null
+        }
+        logService(
+            assetId = plan.assetId,
+            planId = planId,
+            title = plan.title,
+            vendor = null,
+            performedAt = completedAt,
+            costCents = 0L,
+            meterValue = baseline,
+            notes = COMPLETED_IN_LIFEOPS,
+            recordReading = false
+        )
+        // The occurrence is done with; the next round publishes the next one.
+        dao.setPlanLink(planId, null, null)
+        return true
+    }
+
+    /**
+     * Everything a publishing round needs, read once and folded rather than queried per plan.
+     *
+     * A plan on an asset you no longer own is reported as inactive rather than filtered out — the
+     * round has to see it in order to take its task *off* the week, and a filtered-out plan would
+     * leave "Truck: Oil change" sitting in a week for a truck you sold.
+     */
+    override suspend fun planSnapshots(now: Long): List<PlanSnapshot> {
+        val assets = dao.allAssets().associateBy { it.id }
+        val readings = dao.allReadings().groupBy { it.assetId }
+        return dao.allPlans().mapNotNull { row ->
+            val asset = assets[row.assetId] ?: return@mapNotNull null
+            val kind = AssetKind.of(asset.kind)
+            val meter = meterStateOf(kind, readings[asset.id].orEmpty())
+            val plan = row.toPlan().let { if (asset.archived) it.copy(active = false) else it }
+            PlanSnapshot(
+                plan = plan,
+                assetName = asset.name,
+                meter = meter,
+                link = row.toLink(),
+                verdict = Upkeep.evaluate(plan, now, meter)
+            )
+        }
+    }
 
     /**
      * Record work done — and, when it satisfied a plan, move that plan's clock.
@@ -325,7 +418,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         performedAt: Long,
         costCents: Long,
         meterValue: Long?,
-        notes: String?
+        notes: String?,
+        /**
+         * Whether [meterValue] is also filed as a meter reading. True for work you logged by hand —
+         * you read the dial. False when the figure is the *last known* reading rather than one
+         * anybody took (see [completeFromLifeOps]): writing it as a reading would invent a
+         * measurement, and two equal readings a month apart would then flatten the usage rate.
+         */
+        recordReading: Boolean = true
     ) {
         val stamp = now()
         dao.upsertRecord(
@@ -342,7 +442,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
                 createdAt = stamp
             )
         )
-        if (meterValue != null && meterValue > 0L) {
+        if (recordReading && meterValue != null && meterValue > 0L) {
             dao.insertReading(
                 MeterReadingEntity(
                     id = newId(),
@@ -524,6 +624,11 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         attributes = attributes.associate { it.key to it.value }
     )
 
+    private fun UpkeepPlanEntity.toLink() = UpkeepTasks.TaskLink(
+        taskId = lifeOpsTaskId,
+        publishedDue = publishedDueDay?.let { LocalDate.ofEpochDay(it) }
+    )
+
     private fun UpkeepPlanEntity.toPlan() = UpkeepPlan(
         id = id,
         assetId = assetId,
@@ -534,8 +639,10 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
         lastDoneAt = lastDoneAt,
         lastDoneMeter = lastDoneMeter,
         createdAt = createdAt,
-        active = active
+        active = active,
+        publishToLifeOps = publishToLifeOps
     )
+
 
     private fun ServiceRecordEntity.toRecord() = ServiceRecord(
         id = id,
@@ -603,5 +710,9 @@ class MaintenanceRepository(private val dao: MaintenanceDao) {
 
         const val READING_MANUAL = "manual"
         const val READING_FROM_SERVICE = "service"
+
+        /** What a service record says when the tick came from the LifeOps week rather than from here. */
+        const val COMPLETED_IN_LIFEOPS =
+            "Ticked off in LifeOps. No cost or odometer recorded — edit this if it matters."
     }
 }

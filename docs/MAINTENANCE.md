@@ -36,10 +36,14 @@ without asking anyone), and the **debt** against it. A house you service and a h
 off are the same house, and answering "what is it worth, what is left on it, when is it clear" in a
 different app to "when was the furnace last serviced" is how neither question gets answered.
 
-Maintenance also does **not** schedule anything. It knows what is due; it never decides when you
-will get to it, and it raises no notifications. Deciding what today looks like is LifeOps' job, and a
-second app pushing tasks at you is a second answer to "what am I doing today" — which, in practice,
-means both stop being true.
+Maintenance also does **not** schedule anything, and raises no notifications of its own. It knows
+*what is due and when*; it never decides when you will get to it. Deciding what today looks like is
+LifeOps' job, and a second app pushing tasks at you is a second answer to "what am I doing today" —
+which, in practice, means both stop being true.
+
+What it does instead is hand the week planner the fact: an upkeep plan **publishes itself onto the
+LifeOps week** as a task dated the day it falls due, and the tick comes back. See
+[The LifeOps week](#the-lifeops-week).
 
 Like Project, it is **not on the suite's sync spine**. People replicates because two apps genuinely
 write the same person; nothing else in the suite writes into an asset, so there is nothing to
@@ -223,6 +227,84 @@ the most recent occurrence that isn't in the future, allowing a year of lead bec
 models are sold this year — and the answer is shown as *"2019 model year, by the VIN"* beside the
 year you typed. It never overwrites it.
 
+## The LifeOps week
+
+A schedule nobody is reminded of is a schedule nobody keeps. Maintenance could have grown a
+notification for that — and deliberately hasn't, because the suite already has an app whose whole
+job is *what am I doing this week*. So an upkeep plan puts itself **on the LifeOps week**, and the
+week gives the tick back.
+
+```
+Maintenance                                   LifeOps
+   plan "Oil change", due 30 May   ──────▶   task "Truck: Oil change", due 2026-05-30
+                                              (parked in Future Tasks until that week opens)
+
+   service logged, clock restarted ◀──────   ✓ ticked
+   next occurrence published        ──────▶   task "Truck: Oil change", due 2026-08-26
+```
+
+The dated task is the point. LifeOps already parks a task whose due date is beyond this week in its
+**Future Tasks** queue and wakes it into the week that contains that date — so publishing an oil
+change five months out lands it in the right week five months out, rather than sitting on today's
+list looking like something you chose to do now.
+
+### What gets published
+
+| | |
+|---|---|
+| Title | `Truck: Oil change` — the asset leads, because a week's list is read across a dozen unrelated things and "Oil change" on its own is a question |
+| Due date | The day the verdict falls due; **today** when a plan is overdue with no date behind it yet (a mileage interval with no rate) |
+| Note | Where it came from, its cadence, where it stands, and what ticking it will do |
+| Recurring | **Never.** LifeOps can repeat a task on its own cadence, and a plan using that would put two engines in charge of when the next oil change is. Maintenance owns the cadence; each occurrence is published as a one-off |
+| Hard deadline | **Never.** A hard deadline expires the task at week close, which would quietly bin a job that simply didn't get done that week |
+
+It is a **per-plan switch**, on by default. "Change the furnace filter" belongs on a week; "check the
+roof after a storm" does not.
+
+### The tick coming back
+
+LifeOps announces every completion on a small in-process bus (`connection/TaskCompletionBus` — the
+one thing in its connection layer that points *outward*), and Maintenance listens. When the ticked
+task is one of ours:
+
+- the service is **logged** — cost zero, no vendor, and the note says so, because a tick in a week
+  planner says *that* the job was done and nothing about what it involved;
+- the **clock restarts** from the completion time;
+- the **next occurrence is published** onto the week;
+- and for a plan with a mileage interval, the **last known reading becomes the new baseline** —
+  without it, the mileage leg would never move and the plan would be permanently overdue on one of
+  its two legs. It is written onto the record but *not* filed as a new reading, because nobody read
+  the dial.
+
+### It is a reconciliation, not an event handler
+
+This is the part worth insisting on. The announcement makes the tick land immediately, but the same
+**round** also runs when Maintenance comes to the foreground and after every edit to a schedule, and
+it reaches the same answer either way: read what is true, decide one thing per plan, do it. Nothing
+depends on having caught a particular moment — which is what makes the awkward cases ordinary:
+
+| What happened | What the round does |
+|---|---|
+| You **deleted** the task in LifeOps | Drops the link and does **not** put it back. An app that silently re-adds what you just deleted is one you delete from twice. The next occurrence publishes normally |
+| The week closed and **carried** it forward (a new row, a new id) | Follows the hop and re-points the link — no duplicate |
+| The week closed and left it **stranded** (not done, not carried) | Publishes it again on the current week. The stranded row is left where it is: that week has already been reviewed |
+| You **paused** the plan, switched publishing off, or **archived** the asset | Takes the task off the week |
+| You **deleted** the plan or the asset | Takes its task off the week first — a database cascade cannot reach into another app, and "Truck: Oil change" outliving the truck is exactly the orphan that teaches people to distrust a shared week |
+| A task with that **title already exists** in the week | LifeOps declines the duplicate and keeps the one you wrote by hand. The occurrence is recorded as published anyway, so the round stops arguing about it |
+| LifeOps **isn't installed** in the process | The round is a no-op. Maintenance keeps its schedules and its docket; it simply stops putting them on a week that isn't there |
+
+One thing the bus deliberately does not carry is an **un-completion**. Un-ticking a task in LifeOps
+is a correction to LifeOps' week; the service record Maintenance already wrote in response is *its*
+record to correct, and reaching back to delete somebody's service history from a checkbox would be
+worse than leaving it.
+
+### Which way the dependency points
+
+`:maintenance` depends on `:lifeops`, never the other way. LifeOps announces completions to a bus
+and knows nothing about who is listening — it behaves identically whether or not anybody is — and
+publishing a task is a call into LifeOps' own `TaskService`, the same seam Logistics uses for the
+food catalog. One week planner in the suite, with a door into it.
+
 ## The screens
 
 **Due** — the docket, pressing by default, everything one chip away.
@@ -249,11 +331,15 @@ are standing in the garage trying to get the car into the app at all.
 ```
 maintenance/src/main/java/com/maintenance/app/
 ├── logic/          Pure JVM, unit-tested: AssetKind · Vin · Meter · Upkeep · Coverage · Loan · Money · Costs · Docket
+│                   …and the LifeOps seam's brain: UpkeepTasks (what should happen to a plan's task)
+│                   and UpkeepRound (the reconciliation, over two interfaces)
 ├── data/
 │   ├── db/         Room database, seven entities, one DAO
 │   ├── model/      Asset, AssetCard, AssetDetail, PlanView, LoanView, CoverageView
 │   ├── prefs/      maintenance_prefs — which tab, which filters
 │   └── repository/ MaintenanceRepository — rows in, logic types out, every multi-row write
+│                   LifeOpsTasks — the bridge into LifeOps' task service
+│                   UpkeepPublisher — finds the week planner and runs a round against it
 ├── ui/             due · assets · asset (+ its dialogs) · common · theme
 └── backup/         MaintenanceBackupContributor
 ```
@@ -265,7 +351,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 63 JVM unit tests over `logic/`, no SDK or emulator needed:
+`gradle :maintenance:test` — 88 JVM unit tests over `logic/`, no SDK or emulator needed:
 
 - `VinTest` — the check digit on a real VIN, the two typos a VIN catches by itself, a failing check
   digit reported rather than rejected, and the thirty-year model-year cycle resolved against three
@@ -280,6 +366,17 @@ scale, nothing.
 - `CoverageTest`, `CostsTest`, `DocketTest`, `MoneyTest`, `AssetKindTest` — renewal windows and
   wording, the refusal to annualise a short history, docket ordering, cent parsing, and the
   kind-catalogue invariants (unique keys, blanks always allowed, VIN normalised on the way in).
+- `UpkeepTasksTest` — the decision behind the LifeOps seam: what to publish, when a moved date
+  reschedules rather than duplicates, the deleted task that isn't put back, the stranded one that
+  is, and the note the task carries.
+- `UpkeepRoundTest` — the seam driven end to end against a fake week planner and a fake store:
+  publish once and stay put; tick it and watch the service logged, the clock move and the *next*
+  occurrence go on; delete it and see it stay deleted until the plan moves on; carry it forward and
+  see the link follow rather than duplicate.
+
+LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
+one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the
+listener after it.
 
 ## What is not here
 
@@ -288,7 +385,11 @@ Named so it is a decision rather than an omission:
 - **No files.** Manuals, invoices and photos are the obvious next thing; they need a file store, a
   backup story for it and a viewer, which is a piece of work rather than a field. Notes hold the
   gist meanwhile.
-- **No reminders.** Deliberate, per above: LifeOps schedules.
+- **No reminders of its own.** Deliberate, per above: upkeep goes onto the LifeOps week and LifeOps
+  does the reminding. Nothing here posts a notification.
+- **No aspect on a published task.** A task Maintenance puts on the week carries no LifeOps aspect,
+  so it scores but doesn't fold into an aspect's ring. Picking a default aspect per plan (or per
+  app) is a small, obvious addition and is deliberately not guessed at here.
 - **No Advisor indexing.** Advisor can already read LifeOps, Citation, Logistics, Health and People
   under its permission gate; Maintenance would be a natural sixth source ("when did I last service
   the truck?") and is not wired in yet. It needs a knowledge source and a permission entry, both

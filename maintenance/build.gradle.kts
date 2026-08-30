@@ -7,7 +7,8 @@ plugins {
     // each one is (VIN, serial, parcel number), what is owed on it (the mortgage, the car loan),
     // what it costs to keep (services, premiums), and what it next needs done. What it deliberately
     // does not own is your day: it says a thing is due, never when you will get to it. Scheduling is
-    // LifeOps' job, and a second planner would be a second answer to "what am I doing today".
+    // LifeOps' job, and a second planner would be a second answer to "what am I doing today" — so
+    // upkeep is *handed* to that planner (a task dated the day it falls due) and the tick comes back.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -47,6 +48,11 @@ dependencies {
     // The Operations Sandbox backup format/engine (pure JVM). Maintenance supplies a
     // BackupContributor.
     implementation(project(":backupkit"))
+    // LifeOps, for the week. Maintenance knows *when* a thing is due; LifeOps is where a week is
+    // planned, so an upkeep plan publishes itself there as a task dated the day it falls due and
+    // takes the tick back (see data/repository/LifeOpsTasks). The dependency points one way only:
+    // LifeOps announces completions on a bus and knows nothing about who is listening.
+    implementation(project(":lifeops"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

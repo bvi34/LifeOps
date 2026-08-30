@@ -15,12 +15,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -62,6 +66,27 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Run a reconciliation round whenever Maintenance becomes visible.
+ *
+ * `ON_START` also fires the moment the observer is registered on an already-started lifecycle, so
+ * this covers the first composition as well as every later return to the foreground — one trigger
+ * rather than a `LaunchedEffect` for the first case and something else for all the others. (The
+ * same shape People uses for its sync round, for the same reason: seven other apps share this
+ * process, and walking to LifeOps and back does not recreate this activity.)
+ */
+@Composable
+private fun SyncOnStart(app: MaintenanceApp) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_START) app.syncNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+}
+
 private const val ROUTE_DUE = "due"
 private const val ROUTE_ASSETS = "assets"
 private const val ROUTE_ASSET = "asset/{assetId}"
@@ -78,6 +103,12 @@ private fun MaintenanceShell(app: MaintenanceApp) {
     var showArchived by rememberSaveable { mutableStateOf(prefs.showArchived) }
 
     val onList = route == ROUTE_DUE || route == ROUTE_ASSETS
+
+    // Reconcile with the LifeOps week whenever the app comes to the foreground. LifeOps announces a
+    // tick as it happens, so this is not the mechanism — it is the backstop, and the reason nothing
+    // depends on having caught a particular moment: a tick that landed while this app's database was
+    // being restored, or a task deleted over there, is picked up the next time you look at this one.
+    SyncOnStart(app)
 
     Scaffold(
         topBar = {
@@ -147,7 +178,7 @@ private fun MaintenanceShell(app: MaintenanceApp) {
             ) { backStackEntry ->
                 val assetId = backStackEntry.arguments?.getString("assetId").orEmpty()
                 val vm: AssetDetailViewModel = viewModel(
-                    factory = AssetDetailViewModel.Factory(app.repository, assetId)
+                    factory = AssetDetailViewModel.Factory(app.repository, app.publisher, assetId)
                 )
                 AssetDetailScreen(vm = vm, onBack = { nav.popBackStack() })
             }

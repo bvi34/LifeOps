@@ -36,10 +36,24 @@ class MaintenancePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_SHOW_ARCHIVED, false)
         set(value) = prefs.edit().putBoolean(KEY_SHOW_ARCHIVED, value).apply()
 
+    /**
+     * Whether this install has ever put a plan on the LifeOps week.
+     *
+     * It exists to keep a promise the app makes elsewhere: nothing of Maintenance's is loaded until
+     * somebody opens it. LifeOps announces *every* task completion in the process, and answering
+     * "is that one of mine?" from the database would open `maintenance.db` the first time anybody
+     * ticked anything, in an install that has never used Maintenance at all. A boolean in
+     * preferences answers it for free.
+     */
+    var hasPublishedTasks: Boolean
+        get() = prefs.getBoolean(KEY_HAS_PUBLISHED, false)
+        set(value) = prefs.edit().putBoolean(KEY_HAS_PUBLISHED, value).apply()
+
     companion object {
         const val FILE_NAME = "maintenance_prefs"
         private const val KEY_LAST_TAB = "last_tab"
         private const val KEY_DOCKET_ALL = "docket_shows_all"
         private const val KEY_SHOW_ARCHIVED = "show_archived"
+        private const val KEY_HAS_PUBLISHED = "has_published_tasks"
     }
 }
