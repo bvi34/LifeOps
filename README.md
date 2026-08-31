@@ -70,9 +70,12 @@ the receipts.
 > People's own tables and shown on their own screen. It is **never merged into your LifeOps** — not
 > your week, not your aspects, not your capacity. Exactly one thing crosses into a planner, and only
 > because somebody asked for it by name: a task you add *to their* week, which becomes a real task on
-> theirs (and is taken once, for good). Rounds run on app open, so what a partner changed is kept and
-> reported the next time you look. Sharing expires by itself — the seam only ever publishes the
-> current week.
+> theirs (and is taken once, for good). Rounds run on app open and on demand — People's roster has a
+> **Partner sync** card that sets the seam up on a household that has never paired (identity,
+> exchange folder, first envelope) and runs a round on request, and each person's page has the same
+> button for the moment mid-handshake when you need to know whether they have scanned yet — so what a
+> partner changed is kept and reported the next time you look. Sharing expires by itself — the seam
+> only ever publishes the current week.
 
 > **Health** (the household health tracker) is a peer module — see **[docs/HEALTH.md](docs/HEALTH.md)**.
 > It keeps a **profile per person** and, against each of them, the temperatures and other readings

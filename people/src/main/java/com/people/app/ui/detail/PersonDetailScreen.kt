@@ -104,6 +104,39 @@ class PersonDetailViewModel(
     private val _partnerMessage = MutableStateFlow<String?>(null)
     val partnerMessage: StateFlow<String?> = _partnerMessage.asStateFlow()
 
+    private val _partnerSyncing = MutableStateFlow(false)
+    val partnerSyncing: StateFlow<Boolean> = _partnerSyncing.asStateFlow()
+
+    /**
+     * Run a partner round from this screen, and say what it found.
+     *
+     * The seam otherwise only runs when the app comes to the foreground, which left the two moments
+     * people actually want it — "have they scanned my code yet?" and "have they seen what I added?" —
+     * answerable only by leaving the app and coming back. The round covers every pairing, not just
+     * this one: there is one envelope per install, and writing it is what publishes any of them.
+     */
+    fun syncPartnerNow() = viewModelScope.launch {
+        _partnerSyncing.value = true
+        val outcome = runCatching { partnerSync.sync() }
+        _partnerMessage.value = outcome.fold(
+            onSuccess = { result ->
+                when {
+                    result.error != null -> "Sync had trouble: ${result.error}"
+                    result.linksSynced == 0 ->
+                        "Nothing paired yet. This device is set up — swap codes to connect."
+
+                    result.changes > 0 ->
+                        "Synced. ${result.changes} change" +
+                            (if (result.changes == 1) "" else "s") + " came in."
+
+                    else -> "Synced. Nothing new from them."
+                }
+            },
+            onFailure = { "Sync failed: ${it.message ?: it::class.java.simpleName}" }
+        )
+        _partnerSyncing.value = false
+    }
+
     /**
      * Build this person's code, minting our half of the pairing secret if it does not exist yet.
      *
@@ -209,6 +242,7 @@ fun PersonDetailScreen(
     val myCode by vm.myCode.collectAsStateWithLifecycle()
     val myName by vm.partnerDisplayName.collectAsStateWithLifecycle()
     val partnerMessage by vm.partnerMessage.collectAsStateWithLifecycle()
+    val partnerSyncing by vm.partnerSyncing.collectAsStateWithLifecycle()
 
     var showEdit by remember { mutableStateOf(false) }
     var showDate by remember { mutableStateOf(false) }
@@ -267,9 +301,11 @@ fun PersonDetailScreen(
                 link = partnerLink,
                 myCode = myCode,
                 myDisplayName = myName,
-                message = partnerMessage
+                message = partnerMessage,
+                syncing = partnerSyncing
             ),
             onShowCode = vm::showMyCode,
+            onSyncNow = vm::syncPartnerNow,
             onDisplayNameChange = vm::setPartnerDisplayName,
             onCodeScanned = vm::onCodeScanned,
             onOpenWeek = onOpenPartnerWeek,

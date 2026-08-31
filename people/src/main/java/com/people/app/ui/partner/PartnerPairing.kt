@@ -5,12 +5,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -51,13 +53,16 @@ data class PartnerSectionState(
     val myCode: String?,
     /** The name a partner sees on our code. Empty until somebody sets it. */
     val myDisplayName: String,
-    val message: String? = null
+    val message: String? = null,
+    /** A round is in flight — the sync button is the one control it disables. */
+    val syncing: Boolean = false
 )
 
 @Composable
 fun PartnerSection(
     state: PartnerSectionState,
     onShowCode: () -> Unit,
+    onSyncNow: () -> Unit,
     onDisplayNameChange: (String) -> Unit,
     onCodeScanned: (String) -> Unit,
     onOpenWeek: () -> Unit,
@@ -180,6 +185,21 @@ fun PartnerSection(
             ) { Text("My code") }
             OutlinedButton(onClick = { scan() }) { Text("Scan theirs") }
             TextButton(onClick = { showManualEntry = true }) { Text("Enter code") }
+        }
+
+        // Its own row, and present whether or not a pairing exists yet.
+        //
+        // Halfway through a handshake is exactly when somebody needs it: they have scanned your code
+        // in the last ten seconds and the only other way to find out is to leave the app and come
+        // back, since that is the one moment a round otherwise runs.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedButton(onClick = onSyncNow, enabled = !state.syncing) { Text("Sync now") }
+            if (state.syncing) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            }
         }
 
         if (link != null) {

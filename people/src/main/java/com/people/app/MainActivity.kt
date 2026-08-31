@@ -10,7 +10,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -28,7 +27,6 @@ import com.people.app.ui.partner.PartnerWeekViewModel
 import com.people.app.ui.roster.RosterScreen
 import com.people.app.ui.roster.RosterViewModel
 import com.people.app.ui.theme.PeopleTheme
-import kotlinx.coroutines.launch
 
 /**
  * People's single entry point: the roster, and one person at a time.
@@ -65,10 +63,13 @@ class MainActivity : ComponentActivity() {
                                     app.repository,
                                     app.syncService,
                                     app.peers,
-                                    app.partnerRepository
+                                    app.partnerRepository,
+                                    app.partnerSyncService,
+                                    app.partnerPrefs,
+                                    app.partnerSyncDir
                                 )
                             )
-                            SyncOnStart(vm, app)
+                            SyncOnStart(vm)
                             RosterScreen(vm, onOpenPerson = { nav.navigate("person/${it.id}") })
                         }
                         composable(
@@ -123,22 +124,22 @@ class MainActivity : ComponentActivity() {
  * rather than a `LaunchedEffect` for the first case and something else for all the others.
  */
 @Composable
-private fun SyncOnStart(vm: RosterViewModel, app: PeopleApp) {
+private fun SyncOnStart(vm: RosterViewModel) {
     val lifecycleOwner = LocalLifecycleOwner.current
-    val scope = rememberCoroutineScope()
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_START) {
                 vm.sync()
-                // The partner round rides the same trigger, and for a sharper version of the same
-                // reason: this is the *only* moment it ever runs. There is no push and no service
-                // behind it, so "what did they change?" is answered by whatever arrived since the
-                // last time somebody opened the app — which is exactly what the change log on the
-                // person's page is for.
+                // The partner round rides the same trigger, because there is no push and no service
+                // behind that seam either: "what did they change?" is answered by whatever arrived
+                // since somebody last looked, which is what the change log on the person's page is
+                // for. It is no longer the *only* moment it runs — the roster's partner card and the
+                // person's page both have a button — but it is still the one nobody has to press.
                 //
-                // It is launched rather than awaited so a slow or absent partner folder cannot hold
-                // up the roster the user is already looking at.
-                scope.launch { runCatching { app.partnerSyncService.sync() } }
+                // Through the view model rather than straight at the service, so the card reporting
+                // when a round last ran is told about this one. Both calls launch rather than await,
+                // so a slow or absent partner folder cannot hold up the roster already on screen.
+                vm.syncPartners()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

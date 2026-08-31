@@ -46,6 +46,14 @@ class PartnerRepository(private val dao: PartnerDao) {
 
     suspend fun link(personId: String): PartnerLinkEntity? = dao.linkFor(personId)
 
+    /** Every pairing, for the roster's account of the seam as a whole. */
+    fun observeLinks(): Flow<List<PartnerLink>> =
+        dao.observeLinks().combine(dao.observeUnseenByLink()) { links, counts ->
+            links.map { link ->
+                link.toModel(counts.firstOrNull { it.linkId == link.id }?.unseen ?: 0)
+            }
+        }
+
     suspend fun scannedLinks(): List<PartnerLinkEntity> = dao.scannedLinks()
 
     /**

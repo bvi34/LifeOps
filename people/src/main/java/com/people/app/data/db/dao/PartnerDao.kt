@@ -36,6 +36,15 @@ interface PartnerDao {
     @Query("SELECT * FROM partner_links WHERE partnerInstanceId IS NOT NULL")
     suspend fun scannedLinks(): List<PartnerLinkEntity>
 
+    /**
+     * Every pairing, half-made ones included — what the roster's summary of the seam counts.
+     *
+     * Unlike [scannedLinks] this keeps the links nobody has scanned yet, because a code shown and
+     * not yet photographed is exactly the state somebody opening the roster needs to be reminded of.
+     */
+    @Query("SELECT * FROM partner_links ORDER BY createdAt")
+    fun observeLinks(): Flow<List<PartnerLinkEntity>>
+
     @Upsert
     suspend fun upsertLink(link: PartnerLinkEntity)
 

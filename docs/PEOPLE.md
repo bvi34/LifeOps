@@ -30,8 +30,8 @@ tombstone table); nothing was moved, dropped, or de-keyed.
 
 | Screen | Purpose |
 |---|---|
-| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Sync status and a **Sync now** button live at the bottom; a badge marks anyone whose paired partner has changed something. |
-| **Person** | One person: their details (shared over the seam), the dates that come round, the timeline notes (which stay in People), **Partner sync** — pairing with their LifeOps by QR code — and archive/restore. |
+| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Both seams' status and their **Sync now** buttons live at the bottom — the second card is where partner sync is set up at all; a badge marks anyone whose paired partner has changed something. |
+| **Person** | One person: their details (shared over the seam), the dates that come round, the timeline notes (which stay in People), **Partner sync** — pairing with their LifeOps by QR code, and a **Sync now** for the moment mid-handshake when you need to know whether they have scanned yet — and archive/restore. |
 | **Partner week** | A paired partner's current LifeOps week, mirrored here and shown on its own: their tasks, what they have changed since you last looked, and a box to add a task to *their* week. See **[Partner sync](#partner-sync--pairing-two-households)**. |
 
 A person's birth date doubles as a birthday automatically, so nobody enters the same date twice.
@@ -278,6 +278,28 @@ People → a person → Partner sync → View LifeOps
   next time somebody opens that partner's week — "Marta finished Book the van" — with an unread count
   on the roster, because the round happens while nobody is looking.
 
+### Setting it up, and running a round by hand
+
+The roster carries a **Partner sync** card for the seam as a whole, beside the one for the People
+seam: this install's identity and the name partners see, every pairing and which half of its
+handshake is outstanding, when a round last ran, and the folder envelopes are exchanged in.
+
+Its button is one action that reads two ways:
+
+- **Set up** — on a household that has never paired with anybody. A round with no links still mints
+  this install's instance id, creates `filesDir/partner-sync` and publishes an envelope naming us.
+  Before that there was nothing on disk to point a folder-sharing tool at and no identity to show,
+  and both were only obtainable by completing a pairing that needed them. It pairs you with nobody:
+  that still takes two people and two scans.
+- **Sync now** — afterwards, and also on each person's page. Rounds otherwise happen only when the
+  app comes to the foreground, which left the two questions people actually ask — *have they scanned
+  my code yet?* and *have they seen what I added?* — answerable only by leaving the app and coming
+  back.
+
+The identity is read without minting one (`PartnerPrefs.existingInstanceId`), so the card can say
+"not set up yet" without quietly making the sentence false: a household that never pairs with anybody
+still never acquires an identifier.
+
 ### Pairing: why two scans
 
 Each person's page mints **half a secret** and shows it in a QR code. Scanning the other person's code
@@ -370,6 +392,7 @@ a different problem from a pairing that never completed, and the screen says whi
 ├── backup/           PeopleBackupContributor (whole-file people.db + people_* prefs)
 ├── PeopleApp.kt      tiny runtime container (install/get)
 └── MainActivity.kt   roster → person → partner week, and both seams' rounds on every foreground
+                      (each also has a button, so neither seam waits on an app-open)
 ```
 
 `:people` depends on `:core` for `Mailbox` — the monotonic-version bookkeeping every peer syncs over
@@ -489,6 +512,11 @@ The partner seam's suites, same directory, same command:
   of a week mirrored *without* announcing every task as news, contributions accepted even when their
   own week is stale, a contribution never taken twice, and — the boundary itself — a mirrored week
   contributing nothing to what the caller may put on this household's planner.
+- `PartnerSyncServiceTest` — the service around the engine, against an in-memory `PartnerDao`: a
+  round with nobody paired still creating the exchange folder and publishing an envelope that names
+  this install and shares nothing (what the roster's **Set up** button is), a second one republishing
+  rather than accumulating files, and a paired round still addressing our week to them and mirroring
+  theirs.
 - `TwoInstanceRoundTest` — two whole instances over a real folder: pairing by scanning each other and
   each then seeing the *other's* week rather than a merger of both; a task added on one landing on the
   other's planner, coming back mirrored and stopping being resent; a contribution not re-offered after

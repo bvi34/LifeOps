@@ -61,12 +61,22 @@ class PartnerSyncService(
         val at = System.currentTimeMillis()
         markRoundAt(at)
 
+        // Built before the no-links case is answered, and that ordering is the point: constructing
+        // the store is what creates the exchange folder, and minting the engine is what mints this
+        // install's instance id. A household with nobody paired yet still needs both to exist —
+        // otherwise there is nothing on disk to point a folder-sharing tool at, and no identity to
+        // show, until after a pairing that cannot be made without them.
+        val store = PartnerEnvelopeStore(syncDir)
+        val engine = PartnerSyncEngine(instanceId(), displayName())
+
         if (links.isEmpty()) {
+            // An envelope with no shares: it names this instance and tells a partner's device
+            // nothing else. Published anyway, because "set up partner sync" has to leave something
+            // behind — a folder and our own file in it — for the person who has just pressed it.
+            store.write(engine.buildOutbound(emptyList(), at))
             return PartnerSyncStatus(ranAt = at, linksSynced = 0, changes = 0, takenOntoOurWeek = 0)
         }
 
-        val store = PartnerEnvelopeStore(syncDir)
-        val engine = PartnerSyncEngine(instanceId(), displayName())
         val week = householdWeek()
 
         // Read once, not once per link: it is the same week for every partner, and a round with

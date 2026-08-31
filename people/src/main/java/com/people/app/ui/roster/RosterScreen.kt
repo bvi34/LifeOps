@@ -18,9 +18,14 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.people.app.data.model.PartnerLink
+import com.people.app.data.model.PartnerLinkState
+import com.people.app.data.model.PartnerSyncStatus
 import com.people.app.data.model.Person
 import com.people.app.data.model.SyncStatus
+import com.people.app.data.prefs.PartnerPrefs
 import com.people.app.data.repository.PartnerRepository
+import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
 import com.people.app.logic.ImportantDates
@@ -35,12 +40,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 
 class RosterViewModel(
     private val repo: PeopleRepository,
     private val syncService: PeopleSyncService,
     private val peers: List<String>,
-    partnerRepo: PartnerRepository
+    partnerRepo: PartnerRepository,
+    private val partnerSync: PartnerSyncService,
+    private val partnerPrefs: PartnerPrefs,
+    /** Where partner envelopes are exchanged, shown so a person can find it from outside the app. */
+    private val partnerSyncDir: File
 ) : ViewModel() {
 
     /**
@@ -53,6 +63,16 @@ class RosterViewModel(
     val partnerBadges: StateFlow<Map<String, Int>> = partnerRepo.observeUnseenByPerson()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
+    /**
+     * Every pairing, whatever state it is in — the roster's account of the partner seam.
+     *
+     * The seam had no representation outside a person's page, which made it invisible until you
+     * already knew where to look and impossible to act on when nothing was paired yet. This is the
+     * one place that can say "set up" or "nothing arrived" about the seam as a whole.
+     */
+    val partnerLinks: StateFlow<List<PartnerLink>> = partnerRepo.observeLinks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val people: StateFlow<List<Person>> =
         repo.observeAllPeople().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -64,6 +84,65 @@ class RosterViewModel(
 
     private val _syncing = MutableStateFlow(false)
     val syncing: StateFlow<Boolean> = _syncing.asStateFlow()
+
+    // --- the partner seam ---
+
+    /**
+     * This install's identity on the partner seam, or null while it has none.
+     *
+     * Read through [PartnerPrefs.existingInstanceId] rather than [PartnerPrefs.instanceId], because
+     * the latter mints one: a screen that asked the minting question to decide whether to offer
+     * "set up" would have done the setting up itself, and every household that ever opened People
+     * would own a partner identity it never asked for.
+     */
+    private val _partnerInstanceId = MutableStateFlow(partnerPrefs.existingInstanceId)
+    val partnerInstanceId: StateFlow<String?> = _partnerInstanceId.asStateFlow()
+
+    private val _partnerName = MutableStateFlow(partnerPrefs.displayName)
+    val partnerName: StateFlow<String> = _partnerName.asStateFlow()
+
+    private val _partnerLastRoundAt = MutableStateFlow(partnerPrefs.lastRoundAt)
+    val partnerLastRoundAt: StateFlow<Long> = _partnerLastRoundAt.asStateFlow()
+
+    private val _partnerStatus = MutableStateFlow<PartnerSyncStatus?>(null)
+    val partnerStatus: StateFlow<PartnerSyncStatus?> = _partnerStatus.asStateFlow()
+
+    private val _partnerSyncing = MutableStateFlow(false)
+    val partnerSyncing: StateFlow<Boolean> = _partnerSyncing.asStateFlow()
+
+    /** The folder partner envelopes are exchanged in, for the person who wants to move them. */
+    val partnerFolder: String get() = partnerSyncDir.absolutePath
+
+    fun setPartnerName(name: String) {
+        _partnerName.value = name
+        partnerPrefs.displayName = name
+    }
+
+    /**
+     * Run a partner round now — and, on a household that has never paired with anybody, *be* the
+     * setting up: the round mints this install's identity, creates the exchange folder and publishes
+     * an envelope naming us, none of which existed before somebody pressed this.
+     *
+     * Worth having a button for even once pairing is done. Rounds otherwise happen only when the app
+     * comes to the foreground, so "they said they'd added it — has it arrived?" had no answer short
+     * of leaving the app and coming back.
+     */
+    fun syncPartners() = viewModelScope.launch {
+        _partnerSyncing.value = true
+        _partnerStatus.value = runCatching { partnerSync.sync() }
+            .getOrElse {
+                PartnerSyncStatus(
+                    ranAt = System.currentTimeMillis(),
+                    linksSynced = 0,
+                    changes = 0,
+                    takenOntoOurWeek = 0,
+                    error = it.message ?: it::class.java.simpleName
+                )
+            }
+        _partnerInstanceId.value = partnerPrefs.existingInstanceId
+        _partnerLastRoundAt.value = partnerPrefs.lastRoundAt
+        _partnerSyncing.value = false
+    }
 
     fun addPerson(
         name: String,
@@ -92,11 +171,16 @@ class RosterViewModel(
         private val repo: PeopleRepository,
         private val syncService: PeopleSyncService,
         private val peers: List<String>,
-        private val partnerRepo: PartnerRepository
+        private val partnerRepo: PartnerRepository,
+        private val partnerSync: PartnerSyncService,
+        private val partnerPrefs: PartnerPrefs,
+        private val partnerSyncDir: File
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            RosterViewModel(repo, syncService, peers, partnerRepo) as T
+            RosterViewModel(
+                repo, syncService, peers, partnerRepo, partnerSync, partnerPrefs, partnerSyncDir
+            ) as T
     }
 }
 
@@ -111,6 +195,12 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
     val status by vm.syncStatus.collectAsStateWithLifecycle()
     val syncing by vm.syncing.collectAsStateWithLifecycle()
     val partnerBadges by vm.partnerBadges.collectAsStateWithLifecycle()
+    val partnerLinks by vm.partnerLinks.collectAsStateWithLifecycle()
+    val partnerInstanceId by vm.partnerInstanceId.collectAsStateWithLifecycle()
+    val partnerName by vm.partnerName.collectAsStateWithLifecycle()
+    val partnerLastRoundAt by vm.partnerLastRoundAt.collectAsStateWithLifecycle()
+    val partnerStatus by vm.partnerStatus.collectAsStateWithLifecycle()
+    val partnerSyncing by vm.partnerSyncing.collectAsStateWithLifecycle()
 
     var showAdd by remember { mutableStateOf(false) }
 
@@ -240,6 +330,20 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
                     }
                 }
             }
+
+            item(key = "partner-sync") {
+                PartnerSeamCard(
+                    instanceId = partnerInstanceId,
+                    displayName = partnerName,
+                    links = partnerLinks,
+                    lastRoundAt = partnerLastRoundAt,
+                    status = partnerStatus,
+                    syncing = partnerSyncing,
+                    folder = vm.partnerFolder,
+                    onNameChange = vm::setPartnerName,
+                    onSync = vm::syncPartners
+                )
+            }
         }
     }
 
@@ -252,6 +356,131 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
             }
         )
     }
+}
+
+/**
+ * The partner seam, on the screen everybody opens first.
+ *
+ * It is here because the seam had nowhere else to be. Pairing lives on a person's page — correctly,
+ * since a pairing is with a person — but everything *about the seam itself* had no home: this
+ * install's identity, the name partners see, when a round last ran, and the folder envelopes are
+ * exchanged in. A household that had not paired with anybody had no way to set any of it up, and one
+ * that had could only make a round happen by leaving the app and coming back.
+ *
+ * The button is the same action either way, and says which it is: on a household with no identity
+ * yet, running a round *is* the setting up.
+ */
+@Composable
+private fun PartnerSeamCard(
+    instanceId: String?,
+    displayName: String,
+    links: List<PartnerLink>,
+    lastRoundAt: Long,
+    status: PartnerSyncStatus?,
+    syncing: Boolean,
+    folder: String,
+    onNameChange: (String) -> Unit,
+    onSync: () -> Unit
+) {
+    SectionCard(
+        title = "Partner sync",
+        trailing = {
+            TextButton(onClick = onSync, enabled = !syncing) {
+                Icon(Icons.Default.Sync, contentDescription = null)
+                Spacer(Modifier.width(4.dp))
+                Text(if (instanceId == null) "Set up" else "Sync now")
+            }
+        }
+    ) {
+        Text(
+            "A separate seam from the one above: it pairs this household with somebody else's " +
+                "LifeOps, by QR code, on that person's page. Their week is shown in People and " +
+                "never joins your own.",
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        if (instanceId == null) {
+            Text(
+                "Not set up on this device yet. Setting up gives this install its identity on the " +
+                    "seam and creates the folder envelopes are exchanged in. It pairs you with " +
+                    "nobody — that still takes two people and two scans.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        OutlinedTextField(
+            value = displayName,
+            onValueChange = onNameChange,
+            label = { Text("Your name, as partners see it") },
+            supportingText = { Text("Shown beside your week on their device.") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+
+        if (links.isEmpty()) {
+            Text(
+                "Nobody paired. Open a person and swap codes — you scan theirs, they scan yours.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        } else {
+            links.forEach { link ->
+                Text(
+                    "${link.partnerName.ifBlank { "Unnamed partner" }} · ${describePairing(link)}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+
+        if (syncing) LinearProgressIndicator(Modifier.fillMaxWidth())
+
+        // A round from this session, with what it found — or, in the frames before the one that runs
+        // on foreground has finished, the timestamp of the last round of all. The stamp is kept in
+        // prefs and the result is not, so after a restart the second line is the only one there is.
+        if (status != null) {
+            Text(
+                buildString {
+                    append("Last run ").append(formatDayTime(status.ranAt))
+                    append(" · ").append(status.linksSynced).append(" paired, ")
+                    append(status.changes).append(" change").append(if (status.changes == 1) "" else "s")
+                    if (status.takenOntoOurWeek > 0) {
+                        append(" · ").append(status.takenOntoOurWeek).append(" onto your week")
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall
+            )
+            status.error?.let { trouble ->
+                Text(
+                    "Trouble: $trouble",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        } else if (lastRoundAt > 0L) {
+            Text(
+                "Last partner round ${formatDayTime(lastRoundAt)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (instanceId != null) {
+            Text(
+                "Envelopes are exchanged in $folder",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/** Which half of the handshake a pairing is waiting on, in the words the person needs. */
+private fun describePairing(link: PartnerLink): String = when (link.state) {
+    PartnerLinkState.LINKED ->
+        if (link.unseenChanges > 0) "connected · ${link.unseenChanges} unread" else "connected"
+
+    PartnerLinkState.AWAITING_THEM -> "waiting for them to scan your code"
+    PartnerLinkState.AWAITING_SCAN -> "code shown; you have not scanned theirs"
 }
 
 @Composable
