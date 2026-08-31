@@ -8,6 +8,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathBuilder
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
+import com.operations.suitekit.SuiteIconColors
 
 /**
  * The suite's own icon set: one hand-drawn mark per hosted app.
@@ -28,31 +29,40 @@ import androidx.compose.ui.unit.dp
  * strokes are heavier and the ring less faint while the 1 : 1.6 : 2.6 weight ladder between ring,
  * ticks and needle is kept.
  *
- * Everything is drawn in a 24×24 viewport as line art with selective solid fills, and everything is
- * a single colour: [AppGlyph] tints the whole vector to whichever ink contrasts the app's accent,
- * so a mark can never rely on a second hue to be readable. What it can rely on is alpha — a stroke
- * at 0.5 survives tinting and is how the secondary detail (a book's text lines, a board's header
- * rule) stays subordinate to the shape that carries the identity.
+ * Everything is drawn in a 24×24 viewport as line art with selective solid fills, and every mark
+ * has to work in a single colour: the home screen tints the whole vector with the app's accent, so
+ * a mark can never rely on a second hue to be readable. What it can rely on is alpha — a stroke at
+ * 0.5 survives tinting and is how the secondary detail (a book's text lines, a board's header rule)
+ * stays subordinate to the shape that carries the identity.
+ *
+ * A mark whose app ships its own icon colours can *also* be built in them ([inColour]); that is an
+ * app keeping the colours it is recognised by, not a mark needing them to read.
  */
 object SuiteGlyphs {
 
     /** LifeOps — its own launcher mark: a dial with a checkmark for a needle. */
-    val Dial: ImageVector by lazy {
+    val Dial: ImageVector by lazy { dial() }
+
+    /**
+     * The dial, optionally in two colours. The split is the one the original launcher icon draws:
+     * ring and ticks in `icon_dial`, the checkmark needle in `icon_check`. Passing nothing leaves
+     * both as the placeholder ink every other mark uses, so [Dial] is the tintable form.
+     */
+    private fun dial(lineInk: Color? = null, highlightInk: Color? = null): ImageVector =
         glyph("SuiteDial") {
             // The ring, faint like the original, and the four quarter ticks a little heavier.
-            line(width = 1.4f, alpha = 0.55f) { circle(cx = 12f, cy = 12f, r = 7.6f) }
-            line(width = 2f) {
+            line(width = 1.4f, alpha = 0.55f, ink = lineInk) { circle(cx = 12f, cy = 12f, r = 7.6f) }
+            line(width = 2f, ink = lineInk) {
                 moveTo(12f, 4.4f); lineTo(12f, 6.5f)
                 moveTo(19.6f, 12f); lineTo(17.5f, 12f)
                 moveTo(12f, 19.6f); lineTo(12f, 17.5f)
                 moveTo(4.4f, 12f); lineTo(6.5f, 12f)
             }
             // The needle that is really a checkmark — the whole idea of the app in one stroke.
-            line(width = 2.4f) {
+            line(width = 2.4f, ink = highlightInk) {
                 moveTo(8.8f, 12.4f); lineTo(11.2f, 14.7f); lineTo(15.8f, 9.3f)
             }
         }
-    }
 
     /** Health — a clinical thermometer: temperatures, symptoms, medicines. */
     val Thermometer: ImageVector by lazy {
@@ -237,6 +247,25 @@ object SuiteGlyphs {
         }
     }
 
+    /**
+     * The marks that can be drawn in an app's own icon colours, keyed as [byKey] is. Only an app
+     * declaring [com.operations.suitekit.SuiteAppInfo.iconColors] ever needs an entry, which is why
+     * this map is one line long and [byKey] is eight: a coloured mark is the exception.
+     */
+    private val colouredMarks: Map<String, (SuiteIconColors) -> ImageVector> = mapOf(
+        "lifeops-dial" to { colours: SuiteIconColors ->
+            dial(lineInk = Color(colours.line), highlightInk = Color(colours.highlight))
+        }
+    )
+
+    /**
+     * The mark for [iconKey] built in [colours], or null when that mark is only ever one colour.
+     * The result is a fresh vector each call — the colours vary with the theme, so there is nothing
+     * stable to cache here; callers `remember` it against the colours they asked for.
+     */
+    fun inColour(iconKey: String, colours: SuiteIconColors): ImageVector? =
+        colouredMarks[iconKey]?.invoke(colours)
+
     /** Every mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it. */
     val byKey: Map<String, ImageVector> by lazy {
         mapOf(
@@ -267,15 +296,17 @@ private fun glyph(name: String, paths: ImageVector.Builder.() -> Unit): ImageVec
     ).apply(paths).build()
 
 /**
- * A stroked path. The colour is a placeholder: [AppGlyph] tints the finished vector, so only the
- * [alpha] survives to say "this line is secondary".
+ * A stroked path. With no [ink] the colour is a placeholder — the caller tints the finished vector,
+ * so only the [alpha] survives to say "this line is secondary". A mark drawn in an app's own icon
+ * colours passes one, and then the colour is the drawing's.
  */
 private fun ImageVector.Builder.line(
     width: Float = 1.7f,
     alpha: Float = 1f,
+    ink: Color? = null,
     body: PathBuilder.() -> Unit
 ) = path(
-    stroke = SolidColor(Color.Black),
+    stroke = SolidColor(ink ?: Color.Black),
     strokeAlpha = alpha,
     strokeLineWidth = width,
     strokeLineCap = StrokeCap.Round,

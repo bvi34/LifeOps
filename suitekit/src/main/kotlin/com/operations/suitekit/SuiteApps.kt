@@ -15,16 +15,35 @@ import com.operations.backupkit.AppId
  * [defaultAccent] is each app's shipped identity — the hue it wore when it carried its own theme —
  * and stays only a default: the sandbox settings can repaint any app, and that choice is what the
  * app actually renders (see [SuiteAppearance.accentFor]).
+ *
+ * [iconColors] is the exception to all of that: an app that already owns a coloured icon keeps it,
+ * rather than having its mark flattened to one hue. Almost none do — see [SuiteIconColors].
  */
 data class SuiteAppInfo(
     val appId: AppId,
     val label: String,
     val tagline: String,
     val iconKey: String,
-    val defaultAccent: Long
+    val defaultAccent: Long,
+    val iconColors: SuiteIconColors? = null
 ) {
     val key: String get() = appId.key
 }
+
+/**
+ * The colours an app draws its *own* icon in, for the apps that ship one.
+ *
+ * Most don't: their mark is a single-colour line drawing, and the home screen paints it in the
+ * app's accent. LifeOps does — its launcher icon has always been a purple dial with an amber
+ * checkmark ([line] and [highlight] here are LifeOps' `icon_dial` and `icon_check` colour tokens,
+ * `res/values/colors.xml` and `assets/icon-themes.css`) — and those two colours are how the app is
+ * recognised, so its tile is drawn with them instead of with the one accent.
+ *
+ * [line] is the structural drawing (a dial's ring and its ticks); [highlight] is the single stroke
+ * that carries the identity (the checkmark that stands in for the needle). Two roles, because the
+ * marks are line art: a mark needing a third colour is a mark that has stopped being one.
+ */
+data class SuiteIconColors(val line: Long, val highlight: Long)
 
 object SuiteApps {
 
@@ -35,7 +54,8 @@ object SuiteApps {
             label = "LifeOps",
             tagline = "Tasks, aspects, weather and the week",
             iconKey = "lifeops-dial",
-            defaultAccent = 0xFF6200EEL
+            defaultAccent = 0xFF6200EEL,
+            iconColors = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
         ),
         SuiteAppInfo(
             appId = AppId.HEALTH,

@@ -2,6 +2,7 @@ package com.operations.suitekit
 
 import com.operations.backupkit.AppId
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -62,6 +63,19 @@ class SuiteAppearanceTest {
         // The choice is remembered, just not applied — flipping the switch back restores it.
         assertEquals("#FF0000", appearance.accentHex(AppId.HEALTH))
         assertEquals(0xFFFF0000L, appearance.copy(appAccentsEnabled = true).accentFor(AppId.HEALTH))
+    }
+
+    @Test
+    fun `an app the user repainted is told apart from one still wearing what it shipped with`() {
+        // The distinction decides whose colours a tile is drawn in: an app's own icon colours are
+        // its own only until the user picks something else for it.
+        assertFalse(SuiteAppearance().hasCustomAccent(AppId.LIFEOPS))
+
+        val repainted = SuiteAppearance().withAccent(AppId.LIFEOPS, "#123456")
+        assertTrue(repainted.hasCustomAccent(AppId.LIFEOPS))
+        assertFalse("one app's choice is not another's", repainted.hasCustomAccent(AppId.HEALTH))
+
+        assertFalse(repainted.withDefaultAccent(AppId.LIFEOPS).hasCustomAccent(AppId.LIFEOPS))
     }
 
     @Test

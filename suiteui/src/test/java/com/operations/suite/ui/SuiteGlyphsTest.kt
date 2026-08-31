@@ -1,10 +1,15 @@
 package com.operations.suite.ui
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorGroup
 import androidx.compose.ui.graphics.vector.VectorPath
 import com.operations.suitekit.SuiteApps
+import com.operations.suitekit.SuiteIconColors
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,6 +73,38 @@ class SuiteGlyphsTest {
         val shapes = SuiteGlyphs.byKey.mapValues { (_, vector) -> paths(vector).map { it.pathData } }
         assertEquals(SuiteGlyphs.byKey.size, shapes.values.toSet().size)
         assertEquals(SuiteGlyphs.byKey.size, SuiteGlyphs.byKey.values.map { it.name }.toSet().size)
+    }
+
+    @Test
+    fun `a mark built in an app's own icon colours is the same drawing, wearing them`() {
+        val colours = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
+        val coloured = SuiteGlyphs.inColour("lifeops-dial", colours)
+        assertNotNull("LifeOps' mark can be drawn in its own colours", coloured)
+
+        // Same geometry as the tintable form — the colours are the only difference, so the two
+        // cannot drift into being different drawings.
+        val drawn = paths(coloured!!)
+        assertEquals(paths(SuiteGlyphs.Dial).map { it.pathData }, drawn.map { it.pathData })
+
+        // Ring and ticks in the dial colour, the checkmark needle in the check colour.
+        assertEquals(
+            listOf(Color(colours.line), Color(colours.line), Color(colours.highlight)),
+            drawn.map { (it.stroke as SolidColor).value }
+        )
+    }
+
+    @Test
+    fun `a mark whose app declares no icon colours is only ever tinted`() {
+        val colours = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
+        SuiteApps.all.forEach { info ->
+            val mark = SuiteGlyphs.inColour(info.iconKey, colours)
+            if (info.iconColors == null) {
+                assertNull("${info.label} declares no icon colours but can be drawn in some", mark)
+            } else {
+                assertNotNull("${info.label} declares icon colours nothing can draw", mark)
+            }
+        }
+        assertNull(SuiteGlyphs.inColour("not-an-icon", colours))
     }
 
     @Test

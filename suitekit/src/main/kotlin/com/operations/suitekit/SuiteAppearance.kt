@@ -70,6 +70,13 @@ data class SuiteAppearance(
         return SuiteColors.parseHex(accentHex(appId), SuiteApps.of(appId).defaultAccent)
     }
 
+    /**
+     * True when the user has repainted [appId] themselves rather than leaving the colour it
+     * shipped with. Their choice outranks anything the app declares about itself — a tile drawn in
+     * an app's own icon colours falls back to the accent once that accent is the user's.
+     */
+    fun hasCustomAccent(appId: AppId): Boolean = accents.containsKey(appId.key)
+
     fun withAccent(appId: AppId, hex: String): SuiteAppearance =
         copy(accents = accents + (appId.key to hex))
 

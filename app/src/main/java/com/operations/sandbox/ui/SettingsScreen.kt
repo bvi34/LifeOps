@@ -33,7 +33,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.operations.backupkit.AppId
 import com.operations.suite.ui.SuiteAppearanceStore
-import com.operations.suite.ui.SuiteIcons
 import com.operations.suite.ui.accentArgb
 import com.operations.suite.ui.suiteWallpaper
 import com.operations.suitekit.SuiteAppearance
@@ -482,7 +481,7 @@ private fun AppAccentRow(
                 .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            AppGlyph(icon = SuiteIcons.forApp(appId), argb = argb, size = 38.dp)
+            AppGlyph(appId = appId, argb = argb, size = 32.dp)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -500,7 +499,8 @@ private fun AppAccentRow(
         }
 
         if (expanded) {
-            Column(Modifier.padding(start = 50.dp, bottom = 8.dp)) {
+            // Line the swatches up under the label, not under the glyph: 32dp mark + 12dp gap.
+            Column(Modifier.padding(start = 44.dp, bottom = 8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SUGGESTED_ACCENTS.forEach { suggestion ->
                         Swatch(

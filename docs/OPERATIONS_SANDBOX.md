@@ -170,7 +170,8 @@ The sandbox opens on a **phone-style home screen**, because that is the honest p
 is: seven apps behind one icon.
 
 - A **tile per app**, laid out three to a row, each carrying that app's own mark and colour — so
-  "the thermometer" and "the green basket" mean something before you have read a word. Tapping a tile
+  "the thermometer" and "the green basket" mean something before you have read a word. The mark is
+  drawn straight onto the wallpaper, with no block behind it. Tapping a tile
   launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
   jumps straight to where that app's colour is chosen. The marks are the suite's own — see *Seven
   marks* below.
@@ -291,8 +292,8 @@ hosted apps share a process, so an edit in settings reaches every composed scree
 of the suite's types), so the two doors cannot disagree. On first read the store adopts LifeOps'
 existing preset, mode and palette, so nobody's theme resets.
 
-Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent) and
-one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
+Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent, and
+— for an app that has icon colours of its own — those) and one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
 than importing them.
 
 ### Eight marks
@@ -315,10 +316,34 @@ dial on a 120dp logo and disappears entirely at 18dp. The ring is heavier and le
 1 : 1.6 : 2.6 weight ladder from ring to ticks to needle is kept, and a test asserts it.
 
 Every mark is drawn in the same 24×24 viewport as line art with selective solid fills, and every one
-is a single colour: `AppGlyph` tints the whole vector to whichever ink contrasts the app's accent, so
-a mark can never lean on a second hue to be legible. What it *can* lean on is alpha — a stroke at 0.5
-survives tinting, and is how secondary detail (a book's text lines, a board's header rule) stays
-subordinate to the shape carrying the identity.
+has to work in a single colour, so a mark can never lean on a second hue to be legible. What it *can*
+lean on is alpha — a stroke at 0.5 survives tinting, and is how secondary detail (a book's text
+lines, a board's header rule) stays subordinate to the shape carrying the identity.
+
+### No tile behind them
+
+The mark *is* the icon: `AppGlyph` draws it straight onto the wallpaper (or, in settings, onto the
+surface), with nothing behind it. It used to sit on a rounded tile flooded with the app's colour,
+which made the grid a row of coloured boxes with a small glyph punched out of each — the tile was
+carrying the identity and the drawing was decoration on it. Without the tile the drawing carries it,
+which is what the silhouette rule above was for, and the wallpaper stays visible between the apps.
+
+Losing the tile means the mark itself is now the coloured thing, so it is drawn in the app's accent
+rather than in an ink contrasting it, nudged only as far as the backdrop demands
+(`SuiteColors.fitForMode`) — a near-black accent on a night wallpaper lifts until it reads, and no
+further.
+
+That is the default, and seven of the eight take it. An app that ships **its own icon colours** keeps
+them instead: `SuiteAppInfo.iconColors` names the two roles a mark can colour separately — its
+structural `line` and the one `highlight` stroke that carries the identity — and `SuiteGlyphs.inColour`
+builds the same geometry wearing them. LifeOps is the one that does, in the purple and amber its
+launcher icon has always used (`icon_dial` / `icon_check`), so the dial on the home screen is the
+icon on the launcher rather than a monochrome copy of it. The colours are fitted to the backdrop the
+same way, since a palette written for a dark launcher background is still asked to read on a light
+wallpaper.
+
+A colour the *user* picked outranks both: repaint LifeOps in the gear and its dial is that colour,
+because a setting that visibly does nothing is worse than a mark that loses its shipped hues.
 
 ---
 
