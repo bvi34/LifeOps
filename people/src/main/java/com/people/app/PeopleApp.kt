@@ -5,6 +5,7 @@ import android.content.Context
 import com.people.app.data.db.PeopleDatabase
 import com.people.app.data.prefs.PartnerPrefs
 import com.people.app.data.prefs.PeoplePrefs
+import com.people.app.data.repository.CheckInRepository
 import com.people.app.data.repository.PartnerRepository
 import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
@@ -26,6 +27,12 @@ class PeopleApp private constructor(private val app: Application) {
     val database by lazy { PeopleDatabase.getInstance(app) }
     val prefs by lazy { PeoplePrefs(app) }
     val repository by lazy { PeopleRepository(database.peopleDao()) }
+
+    /**
+     * The daily check-in's store. Local to People by design — a person's day is not a fact the
+     * directory seam carries, and nothing else in the suite reads these tables.
+     */
+    val checkInRepository by lazy { CheckInRepository(database.checkInDao()) }
 
     val partnerPrefs by lazy { PartnerPrefs(app) }
     val partnerRepository by lazy { PartnerRepository(database.partnerDao()) }

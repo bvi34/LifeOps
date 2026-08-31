@@ -47,8 +47,13 @@ the receipts.
 > `INTERNET`; nothing leaves the device.
 
 > **People** (the household directory) is a peer module — see **[docs/PEOPLE.md](docs/PEOPLE.md)**.
-> It owns *who*: the roster, how to reach someone, the dates that come round, and the notes you keep
-> about them — and it keeps **LifeOps in step over a two-way sync seam**, the same mailbox spine
+> It owns *who*: the roster, how to reach someone, the dates that come round, the notes you keep
+> about them, and a **daily check-in** — a small form you write for one person and answer once a day
+> ("Lunch", "Enjoyed", "How the day went"), with the questions, their kinds and their order all
+> yours. A question you rename is renamed on every day it already recorded; one you take off the form
+> keeps its answers rather than taking six months of lunches with it; and a day exists only if it
+> says something, so an untouched form records nothing. Check-ins stay in People — they ride neither
+> the sync seam nor a partner pairing — and it keeps **LifeOps in step over a two-way sync seam**, the same mailbox spine
 > Citation rides. Both apps can edit the same person (LifeOps mints them from calendar attendees;
 > you type birth dates into People), so the roster is **replicated rather than borrowed**: each peer
 > keeps its own rows and they reconcile. **Health is on the seam too**, and takes only the people

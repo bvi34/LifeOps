@@ -20,6 +20,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import androidx.navigation.NavType
+import com.people.app.ui.checkin.CheckInScreen
+import com.people.app.ui.checkin.CheckInViewModel
 import com.people.app.ui.detail.PersonDetailScreen
 import com.people.app.ui.detail.PersonDetailViewModel
 import com.people.app.ui.partner.PartnerWeekScreen
@@ -64,6 +66,7 @@ class MainActivity : ComponentActivity() {
                                     app.syncService,
                                     app.peers,
                                     app.partnerRepository,
+                                    app.checkInRepository,
                                     app.partnerSyncService,
                                     app.partnerPrefs,
                                     app.partnerSyncDir
@@ -85,14 +88,30 @@ class MainActivity : ComponentActivity() {
                                     personId,
                                     app.partnerRepository,
                                     app.partnerSyncService,
-                                    app.partnerPrefs
+                                    app.partnerPrefs,
+                                    app.checkInRepository
                                 )
                             )
                             PersonDetailScreen(
                                 vm,
                                 onBack = { nav.popBackStack() },
-                                onOpenPartnerWeek = { nav.navigate("partner/$personId") }
+                                onOpenPartnerWeek = { nav.navigate("partner/$personId") },
+                                onOpenCheckIn = { nav.navigate("checkin/$personId") }
                             )
+                        }
+                        composable(
+                            route = "checkin/{personId}",
+                            arguments = listOf(navArgument("personId") { type = NavType.StringType })
+                        ) { entry ->
+                            val personId = entry.arguments?.getString("personId").orEmpty()
+                            val vm: CheckInViewModel = viewModel(
+                                factory = CheckInViewModel.Factory(
+                                    app.checkInRepository,
+                                    app.repository,
+                                    personId
+                                )
+                            )
+                            CheckInScreen(vm, onBack = { nav.popBackStack() })
                         }
                         composable(
                             route = "partner/{personId}",

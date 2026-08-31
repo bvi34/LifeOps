@@ -24,6 +24,7 @@ import com.people.app.data.model.PartnerSyncStatus
 import com.people.app.data.model.Person
 import com.people.app.data.model.SyncStatus
 import com.people.app.data.prefs.PartnerPrefs
+import com.people.app.data.repository.CheckInRepository
 import com.people.app.data.repository.PartnerRepository
 import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
@@ -41,12 +42,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.LocalDate
 
 class RosterViewModel(
     private val repo: PeopleRepository,
     private val syncService: PeopleSyncService,
     private val peers: List<String>,
     partnerRepo: PartnerRepository,
+    checkInRepo: CheckInRepository,
     private val partnerSync: PartnerSyncService,
     private val partnerPrefs: PartnerPrefs,
     /** Where partner envelopes are exchanged, shown so a person can find it from outside the app. */
@@ -72,6 +75,16 @@ class RosterViewModel(
      */
     val partnerLinks: StateFlow<List<PartnerLink>> = partnerRepo.observeLinks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * Who has a check-in form and nothing recorded on it today.
+     *
+     * On the roster for the same reason the partner badge is: a daily thing that is only visible
+     * inside a person's page is a daily thing nobody does. It names the people, not a count, so the
+     * mark sits on the row somebody has to open anyway.
+     */
+    val checkInsDue: StateFlow<Set<String>> = checkInRepo.observeOutstanding(LocalDate.now())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
 
     val people: StateFlow<List<Person>> =
         repo.observeAllPeople().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -172,6 +185,7 @@ class RosterViewModel(
         private val syncService: PeopleSyncService,
         private val peers: List<String>,
         private val partnerRepo: PartnerRepository,
+        private val checkInRepo: CheckInRepository,
         private val partnerSync: PartnerSyncService,
         private val partnerPrefs: PartnerPrefs,
         private val partnerSyncDir: File
@@ -179,7 +193,8 @@ class RosterViewModel(
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             RosterViewModel(
-                repo, syncService, peers, partnerRepo, partnerSync, partnerPrefs, partnerSyncDir
+                repo, syncService, peers, partnerRepo, checkInRepo, partnerSync, partnerPrefs,
+                partnerSyncDir
             ) as T
     }
 }
@@ -195,6 +210,7 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
     val status by vm.syncStatus.collectAsStateWithLifecycle()
     val syncing by vm.syncing.collectAsStateWithLifecycle()
     val partnerBadges by vm.partnerBadges.collectAsStateWithLifecycle()
+    val checkInsDue by vm.checkInsDue.collectAsStateWithLifecycle()
     val partnerLinks by vm.partnerLinks.collectAsStateWithLifecycle()
     val partnerInstanceId by vm.partnerInstanceId.collectAsStateWithLifecycle()
     val partnerName by vm.partnerName.collectAsStateWithLifecycle()
@@ -269,6 +285,7 @@ fun RosterScreen(vm: RosterViewModel, onOpenPerson: (Person) -> Unit) {
                                 val details = listOfNotNull(
                                     person.relationship,
                                     person.email,
+                                    if (person.id in checkInsDue) "check-in due" else null,
                                     if (person.household) "in Health" else null,
                                     if (person.archived) "archived" else null
                                 )
