@@ -18,7 +18,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -27,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
@@ -37,9 +43,12 @@ import com.lifeops.app.data.model.NutritionTotals
 import com.lifeops.app.data.model.Recipe
 import com.logistics.app.data.model.IngredientRow
 import com.logistics.app.data.model.ParsedRecipe
+import com.logistics.app.data.model.RecipeNote
 import com.logistics.app.data.model.RecipeShot
 import com.logistics.app.data.repository.LifeOpsCatalog
+import com.logistics.app.data.repository.RecipeNoteRepository
 import com.logistics.app.data.repository.RecipeShotRepository
+import com.logistics.app.logic.RecipeNoteSummaries
 import com.logistics.app.net.RecipeFetcher
 import com.logistics.app.net.RecipeScreenshotReader
 import com.logistics.app.ui.pantry.formatQty
@@ -51,6 +60,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 sealed interface RecipeImportState {
     object Idle : RecipeImportState
@@ -76,6 +89,7 @@ data class RecipeDetail(
 class RecipeViewModel(
     private val catalog: LifeOpsCatalog,
     private val shotRepo: RecipeShotRepository,
+    private val noteRepo: RecipeNoteRepository,
     private val context: Context
 ) : ViewModel() {
 
@@ -85,6 +99,15 @@ class RecipeViewModel(
     /** Every recipe's screenshots, so a row can show what it was read out of without a query each. */
     val shots: StateFlow<Map<String, List<RecipeShot>>> =
         shotRepo.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * Every recipe's notes, grouped by recipe. They ride alongside the recipes rather than inside
+     * them: the recipe is LifeOps' — shared with the meal plan, the diary, the shopping list — and
+     * what somebody thought of it after cooking it is Logistics' own, editable without ever
+     * rewriting the method.
+     */
+    val notes: StateFlow<Map<String, List<RecipeNote>>> =
+        noteRepo.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     private val _import = MutableStateFlow<RecipeImportState>(RecipeImportState.Idle)
     val importState: StateFlow<RecipeImportState> = _import.asStateFlow()
@@ -137,6 +160,27 @@ class RecipeViewModel(
 
     fun removeShot(shotId: String) = viewModelScope.launch { shotRepo.remove(shotId) }
 
+    /**
+     * Keeps a note against a recipe — a new one, or a rewrite of [editing]. Nothing is written to
+     * the recipe itself. A note with neither words nor stars is refused by the repository rather
+     * than stored empty, and that refusal is said out loud instead of swallowed.
+     */
+    fun saveNote(recipe: Recipe, text: String, rating: Int?, editing: RecipeNote? = null) = viewModelScope.launch {
+        val saved =
+            if (editing == null) noteRepo.add(recipe.id, text, rating)
+            else noteRepo.update(editing.id, text, rating)
+        status = when {
+            saved == null -> "Write something, or leave a rating."
+            editing == null -> "Note added to \"${recipe.name}\"."
+            else -> "Note updated."
+        }
+    }
+
+    fun removeNote(note: RecipeNote) = viewModelScope.launch {
+        noteRepo.remove(note.id)
+        status = "Note deleted."
+    }
+
     fun toggleExpanded(recipe: Recipe) = viewModelScope.launch {
         if (_expanded.value?.recipeId == recipe.id) {
             _expanded.value = null
@@ -156,11 +200,12 @@ class RecipeViewModel(
     class Factory(
         private val catalog: LifeOpsCatalog,
         private val shotRepo: RecipeShotRepository,
+        private val noteRepo: RecipeNoteRepository,
         private val context: Context
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            RecipeViewModel(catalog, shotRepo, context) as T
+            RecipeViewModel(catalog, shotRepo, noteRepo, context) as T
     }
 }
 
@@ -172,10 +217,13 @@ fun RecipeScreen(
 ) {
     val recipes by vm.recipes.collectAsStateWithLifecycle()
     val shots by vm.shots.collectAsStateWithLifecycle()
+    val notes by vm.notes.collectAsStateWithLifecycle()
     val importState by vm.importState.collectAsStateWithLifecycle()
     val expanded by vm.expanded.collectAsStateWithLifecycle()
     var url by remember { mutableStateOf(initialUrl.orEmpty()) }
     var viewing by remember { mutableStateOf<RecipeShot?>(null) }
+    var editingNote by remember { mutableStateOf<NoteEditorTarget?>(null) }
+    var deletingNote by remember { mutableStateOf<RecipeNote?>(null) }
     val snackbar = remember { SnackbarHostState() }
 
     // A recipe shared into Logistics — a link, or screenshots — is imported the moment it arrives.
@@ -261,12 +309,16 @@ fun RecipeScreen(
                     RecipeCard(
                         recipe = recipe,
                         shots = shots[recipe.id].orEmpty(),
+                        notes = notes[recipe.id].orEmpty(),
                         detail = expanded?.takeIf { it.recipeId == recipe.id },
                         loadBitmap = { vm.bitmap(it) },
                         onToggle = { vm.toggleExpanded(recipe) },
                         onAttach = { uris -> vm.attachTo(recipe, uris) },
                         onOpenShot = { viewing = it },
-                        onRemoveShot = { vm.removeShot(it.id) }
+                        onRemoveShot = { vm.removeShot(it.id) },
+                        onAddNote = { editingNote = NoteEditorTarget(recipe) },
+                        onEditNote = { editingNote = NoteEditorTarget(recipe, it) },
+                        onRemoveNote = { deletingNote = it }
                     )
                 }
             }
@@ -276,7 +328,36 @@ fun RecipeScreen(
     viewing?.let { shot ->
         ShotViewer(shot = shot, loadBitmap = { vm.bitmap(it) }, onDismiss = { viewing = null })
     }
+
+    editingNote?.let { target ->
+        RecipeNoteDialog(
+            recipeName = target.recipe.name,
+            existing = target.note,
+            onDismiss = { editingNote = null },
+            onSave = { text, rating ->
+                vm.saveNote(target.recipe, text, rating, target.note)
+                editingNote = null
+            }
+        )
+    }
+
+    // A note is typed, not picked — deleting one by a mistap costs the words, so it asks first.
+    // (A screenshot doesn't: the picture is still in the gallery it came from.)
+    deletingNote?.let { note ->
+        AlertDialog(
+            onDismissRequest = { deletingNote = null },
+            title = { Text("Delete this note?") },
+            text = { Text("The recipe itself stays exactly as it is.") },
+            confirmButton = {
+                TextButton(onClick = { vm.removeNote(note); deletingNote = null }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deletingNote = null }) { Text("Keep") } }
+        )
+    }
 }
+
+/** Which recipe the note editor is open for, and the note it is rewriting (null for a new one). */
+private data class NoteEditorTarget(val recipe: Recipe, val note: RecipeNote? = null)
 
 @Composable
 private fun ImportButtons(onLink: () -> Unit, linkEnabled: Boolean, onScreenshots: () -> Unit) {
@@ -372,12 +453,16 @@ private fun RecipePreviewCard(
 private fun RecipeCard(
     recipe: Recipe,
     shots: List<RecipeShot>,
+    notes: List<RecipeNote>,
     detail: RecipeDetail?,
     loadBitmap: suspend (RecipeShot) -> Bitmap?,
     onToggle: () -> Unit,
     onAttach: (List<Uri>) -> Unit,
     onOpenShot: (RecipeShot) -> Unit,
-    onRemoveShot: (RecipeShot) -> Unit
+    onRemoveShot: (RecipeShot) -> Unit,
+    onAddNote: () -> Unit,
+    onEditNote: (RecipeNote) -> Unit,
+    onRemoveNote: (RecipeNote) -> Unit
 ) {
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_SHOTS)
@@ -390,6 +475,7 @@ private fun RecipeCard(
                 buildString {
                     append("${formatQty(recipe.servings)} serving(s)")
                     if (shots.isNotEmpty()) append(" · ${shots.size} screenshot${if (shots.size == 1) "" else "s"}")
+                    RecipeNoteSummaries.label(RecipeNoteSummaries.summarize(notes))?.let { append(" · $it") }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -454,6 +540,12 @@ private fun RecipeCard(
                     Spacer(Modifier.width(6.dp))
                     Text(if (shots.isEmpty()) "Add a screenshot" else "Add another screenshot")
                 }
+                NotesSection(
+                    notes = notes,
+                    onAdd = onAddNote,
+                    onEdit = onEditNote,
+                    onRemove = onRemoveNote
+                )
             }
         }
     }
@@ -515,6 +607,186 @@ private fun ShotViewer(shot: RecipeShot, loadBitmap: suspend (RecipeShot) -> Bit
         }
     }
 }
+
+/**
+ * What somebody thought of the recipe, kept **next to** it rather than in it.
+ *
+ * A recipe is LifeOps' and shared by the whole suite; "cut the sugar, it was cloying" is a reading
+ * of one cook's evening, not a step of the method — so it reads as its own section, and editing a
+ * note never touches the ingredients or the instructions above it.
+ */
+@Composable
+private fun NotesSection(
+    notes: List<RecipeNote>,
+    onAdd: () -> Unit,
+    onEdit: (RecipeNote) -> Unit,
+    onRemove: (RecipeNote) -> Unit
+) {
+    val summary = RecipeNoteSummaries.summarize(notes)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        HorizontalDivider()
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Notes & reviews", style = MaterialTheme.typography.labelLarge)
+            summary.averageRating?.let { average ->
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Default.Star,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(2.dp))
+                Text(
+                    // Say what the average is *of*: nine notes and one rating is a well-documented
+                    // recipe with a single opinion, and printing a bare "4" would hide that.
+                    "${RecipeNoteSummaries.formatRating(average)} from ${summary.ratedCount} " +
+                        "rating${if (summary.ratedCount == 1) "" else "s"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        if (notes.isEmpty()) {
+            Text(
+                "Nothing yet — how did it turn out?",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            notes.forEach { note ->
+                NoteRow(note = note, onEdit = { onEdit(note) }, onRemove = { onRemove(note) })
+            }
+        }
+        TextButton(onClick = onAdd) {
+            Icon(Icons.Default.RateReview, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (notes.isEmpty()) "Add a note" else "Add another note")
+        }
+    }
+}
+
+@Composable
+private fun NoteRow(note: RecipeNote, onEdit: () -> Unit, onRemove: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 10.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Column(Modifier.weight(1f)) {
+                note.rating?.let { StarRow(rating = it, size = 14.dp) }
+                if (note.text.isNotBlank()) {
+                    Text(note.text, style = MaterialTheme.typography.bodySmall)
+                }
+                Text(
+                    // An edited note says so: a cooking log read months later shouldn't imply the
+                    // words are the ones written on the night.
+                    friendlyDate(note.createdAt) + (if (note.updatedAt != note.createdAt) " · edited" else ""),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit note", modifier = Modifier.size(16.dp))
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, contentDescription = "Delete note", modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Five stars, filled up to [rating]. Read-only unless [onRate] is given, in which case tapping the
+ * star that is already the rating clears it — a verdict you can set but never take back is worse
+ * than none, and a note with no rating is a perfectly good note.
+ */
+@Composable
+private fun StarRow(rating: Int?, size: Dp, onRate: ((Int?) -> Unit)? = null) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        (RecipeNoteSummaries.MIN_STARS..RecipeNoteSummaries.MAX_STARS).forEach { star ->
+            val filled = rating != null && star <= rating
+            val icon = if (filled) Icons.Default.Star else Icons.Default.StarBorder
+            val description = "$star star${if (star == 1) "" else "s"}"
+            if (onRate == null) {
+                Icon(
+                    icon,
+                    contentDescription = if (star == rating) description else null,
+                    modifier = Modifier.size(size),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            } else {
+                IconButton(onClick = { onRate(if (rating == star) null else star) }) {
+                    Icon(
+                        icon,
+                        contentDescription = description,
+                        modifier = Modifier.size(size),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Writing or rewriting one note. Either half is optional on its own — stars with no words is a
+ * verdict, words with no stars is most cooking notes — but both empty saves nothing, so the button
+ * stays off until there is something to keep.
+ */
+@Composable
+private fun RecipeNoteDialog(
+    recipeName: String,
+    existing: RecipeNote?,
+    onDismiss: () -> Unit,
+    onSave: (String, Int?) -> Unit
+) {
+    var text by remember(existing) { mutableStateOf(existing?.text.orEmpty()) }
+    var rating by remember(existing) { mutableStateOf(existing?.rating) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "Note on \"$recipeName\"" else "Edit note") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Kept with the recipe, not in it — the ingredients and method stay as imported.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StarRow(rating = rating, size = 24.dp, onRate = { rating = it })
+                    if (rating != null) {
+                        TextButton(onClick = { rating = null }) { Text("Clear") }
+                    }
+                }
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("How did it go?") },
+                    placeholder = { Text("Halve the salt, and it needed 10 more minutes.") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 200.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(text, rating) },
+                enabled = text.isNotBlank() || rating != null
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private val noteDateFmt = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM)
+
+/** An ISO-8601 stamp as a local date; the raw string if it can't be parsed, which beats blank. */
+private fun friendlyDate(iso: String): String =
+    runCatching { Instant.parse(iso).atZone(ZoneId.systemDefault()).format(noteDateFmt) }.getOrDefault(iso)
 
 /** Enough for a recipe shot across several screens; more than that is a cookbook, not a recipe. */
 private const val MAX_SHOTS = 6

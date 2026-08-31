@@ -7,11 +7,13 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.logistics.app.data.db.dao.PantryDao
+import com.logistics.app.data.db.dao.RecipeNoteDao
 import com.logistics.app.data.db.dao.RecipeShotDao
 import com.logistics.app.data.db.entities.GroceryItemEntity
 import com.logistics.app.data.db.entities.ImportBatchEntity
 import com.logistics.app.data.db.entities.PantryItemEntity
 import com.logistics.app.data.db.entities.PantryTxnEntity
+import com.logistics.app.data.db.entities.RecipeNoteEntity
 import com.logistics.app.data.db.entities.RecipeShotEntity
 
 /**
@@ -28,7 +30,7 @@ import com.logistics.app.data.db.entities.RecipeShotEntity
  * from here rather than repeating the number — a hand-copied version drifts the moment a migration
  * lands, and a manifest that lies about its schema is worse than no manifest.
  */
-const val LOGISTICS_DB_VERSION = 4
+const val LOGISTICS_DB_VERSION = 5
 
 @Database(
     entities = [
@@ -36,7 +38,8 @@ const val LOGISTICS_DB_VERSION = 4
         PantryTxnEntity::class,
         ImportBatchEntity::class,
         GroceryItemEntity::class,
-        RecipeShotEntity::class
+        RecipeShotEntity::class,
+        RecipeNoteEntity::class
     ],
     version = LOGISTICS_DB_VERSION,
     exportSchema = true
@@ -46,6 +49,8 @@ abstract class LogisticsDatabase : RoomDatabase() {
     abstract fun pantryDao(): PantryDao
 
     abstract fun recipeShotDao(): RecipeShotDao
+
+    abstract fun recipeNoteDao(): RecipeNoteDao
 
     companion object {
         const val DB_NAME = "logistics.db"
@@ -108,6 +113,29 @@ abstract class LogisticsDatabase : RoomDatabase() {
             }
         }
 
+        /** v5 adds the recipe_notes table — what somebody thought of a recipe after cooking it, kept
+         *  beside the recipe rather than in it. The recipe belongs to LifeOps' book and is shared by
+         *  the whole suite; "halve the salt" is an opinion about it, not a step of it, so it lives
+         *  here on a soft recipeId like the screenshots do. `rating` is nullable on purpose: a note
+         *  with no verdict is the common case and must not average in as a zero. */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS recipe_notes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        recipeId TEXT NOT NULL,
+                        rating INTEGER,
+                        text TEXT NOT NULL,
+                        createdAt TEXT NOT NULL,
+                        updatedAt TEXT NOT NULL
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_recipe_notes_recipeId ON recipe_notes(recipeId)")
+            }
+        }
+
         @Volatile
         private var instance: LogisticsDatabase? = null
 
@@ -117,7 +145,7 @@ abstract class LogisticsDatabase : RoomDatabase() {
                     context.applicationContext,
                     LogisticsDatabase::class.java,
                     DB_NAME
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { instance = it }
             }
 
         /** Close and drop the singleton so a restore can swap the underlying file. */

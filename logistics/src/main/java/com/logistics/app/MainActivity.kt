@@ -155,7 +155,7 @@ class MainActivity : ComponentActivity() {
                         }
                         composable(Dest.Recipes.route) {
                             val vm: RecipeViewModel = viewModel(
-                                factory = RecipeViewModel.Factory(app.catalog, app.recipeShots, applicationContext)
+                                factory = RecipeViewModel.Factory(app.catalog, app.recipeShots, app.recipeNotes, applicationContext)
                             )
                             RecipeScreen(vm, initialUrl = sharedUrl, initialImages = sharedImages)
                         }
