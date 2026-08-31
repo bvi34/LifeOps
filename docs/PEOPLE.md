@@ -30,8 +30,9 @@ tombstone table); nothing was moved, dropped, or de-keyed.
 
 | Screen | Purpose |
 |---|---|
-| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Sync status and a **Sync now** button live at the bottom; a badge marks anyone whose paired partner has changed something. |
-| **Person** | One person: their details (shared over the seam), the dates that come round, the timeline notes (which stay in People), **Partner sync** — pairing with their LifeOps by QR code — and archive/restore. |
+| **Roster** | The household, plus **Coming up** — every birthday, anniversary and yearly appointment within the next two months, soonest first. Both seams' status and their **Sync now** buttons live at the bottom — the second card is where partner sync is set up at all; a badge marks anyone whose paired partner has changed something, and a **check-in due** line marks anyone whose daily form has not been filled in today. |
+| **Person** | One person: their details (shared over the seam), the dates that come round, the timeline notes (which stay in People), **Daily check-in** — whether today is recorded and how long the run is — **Partner sync** — pairing with their LifeOps by QR code, and a **Sync now** for the moment mid-handshake when you need to know whether they have scanned yet — and archive/restore. |
+| **Check-in** | One person's daily form: the day being filled in (today, or a step back), the questions, and the last fortnight of days. The same screen designs the form. See **[The daily check-in](#the-daily-check-in)**. |
 | **Partner week** | A paired partner's current LifeOps week, mirrored here and shown on its own: their tasks, what they have changed since you last looked, and a box to add a task to *their* week. See **[Partner sync](#partner-sync--pairing-two-households)**. |
 
 A person's birth date doubles as a birthday automatically, so nobody enters the same date twice.
@@ -243,6 +244,64 @@ anything that doesn't parse is kept out rather than written in. Storing `"Daught
 every reader parses as an enum wouldn't merely be lossy — `Relationship.from` returns null for it, so
 the person would silently drop out of the relationship-balance analytics that column exists to feed.
 
+## The daily check-in
+
+A check-in is a small form somebody writes **for one person** and answers once a day:
+
+```
+People → a person → Daily check-in → Check in
+```
+
+> *Lunch* — pasta and peas · *Enjoyed* — the assembly · *How the day went* — 4 of 5
+
+The form is per person, and that is the design rather than a limitation: the questions worth asking
+about a six-year-old are not the ones worth asking about a parent, and one household-wide form would
+be the union of everybody's, mostly blank. A person with no form has no check-in at all — nothing is
+asked of anybody by default.
+
+### The questions
+
+Six kinds, and deliberately no more: short answer, longer note, number, yes/no, a 1-to-5 scale, and
+one-of-a-list. Every extra kind is a control to build, a value to validate and a way to render it,
+and these six already cover the shape of a day; anything more specific is a text question with a good
+label. `logic/CheckIns` owns what each kind accepts, what it stores, and how it reads back, so the
+screen and the store cannot disagree about it.
+
+Editing a form is bounded by two rules, both in `CheckInRepository`:
+
+- **A question that has answers keeps its kind.** Renaming is free for ever — a typo fixed today is
+  fixed on every day it has already recorded, because the label is read live rather than copied onto
+  each answer. Retyping is not: three months of "Lunch" as text is still text, and reading it back as
+  a rating would render it as nonsense or hide it.
+- **Removing a question never removes its answers.** One that has been answered is *retired* — off
+  the form, still naming what it collected, and restorable. Only a question nobody ever answered is
+  deleted outright, since there is nothing to orphan.
+
+### The days
+
+A day is recorded once. `(personId, day)` is uniquely indexed, so opening a day again edits it rather
+than adding a second version — a log that let one evening be recorded twice would make every count
+off it a question about rows instead of about days. The day is an ISO `yyyy-MM-dd` string rather than
+an instant, so "was Tuesday recorded?" does not change answer in another timezone.
+
+**A day exists only if it says something.** An unanswered question stores no row at all — "they
+didn't say" and "they said nothing happened" are different facts — saving an untouched form records
+nothing, and clearing every answer removes the day rather than leaving a blank one behind to prop up
+a streak.
+
+The screen offers today and a step backwards, bounded at today. That is what an evening habit needs:
+"yesterday" is the one thing worth offering somebody who remembered at breakfast, and a check-in
+dated tomorrow cannot honestly exist. For the same reason a run of days that ends *yesterday* still
+counts as unbroken — a streak that reset at midnight would report a broken run before the day it was
+counting had happened.
+
+### Where it does and does not go
+
+Check-ins are **local to People**, like the timeline notes and unlike the directory itself. Nothing
+here rides the sync seam and nothing here is published to a partner: what somebody's day was like is
+not a fact LifeOps or Health has asked for, and the seam carries the household's identity, not its
+diary. It is in the backup, because the backup is the whole `people.db` file.
+
 ## Partner sync — pairing two households
 
 Everything above is one seam: People, LifeOps and Health reconciling **inside one install**. The
@@ -277,6 +336,28 @@ People → a person → Partner sync → View LifeOps
 - **What changed.** A round runs when the app opens. What it finds is stored as events and shown the
   next time somebody opens that partner's week — "Marta finished Book the van" — with an unread count
   on the roster, because the round happens while nobody is looking.
+
+### Setting it up, and running a round by hand
+
+The roster carries a **Partner sync** card for the seam as a whole, beside the one for the People
+seam: this install's identity and the name partners see, every pairing and which half of its
+handshake is outstanding, when a round last ran, and the folder envelopes are exchanged in.
+
+Its button is one action that reads two ways:
+
+- **Set up** — on a household that has never paired with anybody. A round with no links still mints
+  this install's instance id, creates `filesDir/partner-sync` and publishes an envelope naming us.
+  Before that there was nothing on disk to point a folder-sharing tool at and no identity to show,
+  and both were only obtainable by completing a pairing that needed them. It pairs you with nobody:
+  that still takes two people and two scans.
+- **Sync now** — afterwards, and also on each person's page. Rounds otherwise happen only when the
+  app comes to the foreground, which left the two questions people actually ask — *have they scanned
+  my code yet?* and *have they seen what I added?* — answerable only by leaving the app and coming
+  back.
+
+The identity is read without minting one (`PartnerPrefs.existingInstanceId`), so the card can say
+"not set up yet" without quietly making the sentence false: a household that never pairs with anybody
+still never acquires an identifier.
 
 ### Pairing: why two scans
 
@@ -364,12 +445,16 @@ a different problem from a pairing that never completed, and the screen says whi
 │   ├── HouseholdWeek     the port onto this household's own week — LifeOps registers the adapter
 │   └── QrMatrix          the code as a grid, tested against zxing's own decoder
 ├── logic/            pure JVM, unit-tested
-│   └── ImportantDates    recurring dates, incl. the 29 February case
-├── data/             Room (PeopleDatabase, entities, PeopleDao/PartnerDao) + repositories + prefs
-├── ui/               Compose: roster · person detail · partner week (+ common, theme)
+│   ├── ImportantDates    recurring dates, incl. the 29 February case
+│   └── CheckIns          the daily form's kinds, what each stores, and the streak rule
+├── data/             Room (PeopleDatabase, entities, PeopleDao/PartnerDao/CheckInDao)
+│                     + repositories + prefs
+├── ui/               Compose: roster · person detail · partner week · check-in (+ common, theme)
 ├── backup/           PeopleBackupContributor (whole-file people.db + people_* prefs)
 ├── PeopleApp.kt      tiny runtime container (install/get)
-└── MainActivity.kt   roster → person → partner week, and both seams' rounds on every foreground
+└── MainActivity.kt   roster → person → partner week / check-in, and both seams' rounds
+                      on every foreground
+                      (each also has a button, so neither seam waits on an app-open)
 ```
 
 `:people` depends on `:core` for `Mailbox` — the monotonic-version bookkeeping every peer syncs over
@@ -470,6 +555,15 @@ Pure-JVM suites under `people/src/test` (run with `gradle :people:testDebugUnitT
   everywhere, and a peer that has been away still receiving what it missed.
 - `PeopleSyncCodecTest` — envelope round-trip, unknown fields ignored, garbage decoding to null
   rather than throwing, and the file-per-peer store (including that no temp file is left behind).
+- `CheckInsTest` — what each kind of question accepts and stores (a yes arriving as `true`, a scale
+  refusing 6, a choice matched case-insensitively and stored as the option is written), an answer
+  that no longer fits a retyped question being dropped rather than thrown, the summary line, and the
+  streak — including the one that matters: today not being filled in yet does not break the run.
+- `CheckInRepositoryTest` — against an in-memory `CheckInDao`: a day recording only what was
+  answered, in form order; an untouched form recording no day; clearing every answer removing the
+  day; a re-save replacing rather than appending; a question with answers being retired (and still
+  naming them) where an unanswered one is deleted; a rename reaching the days it already recorded;
+  and a kind that will not change once anything has answered it.
 - `ImportantDatesTest` — next-occurrence rollover, today counting as next, the **29 February** case
   landing on the 28th in common years, rejecting invented dates like 31 April, the age being turned,
   and countdowns that read the way a person would say them.
@@ -489,6 +583,11 @@ The partner seam's suites, same directory, same command:
   of a week mirrored *without* announcing every task as news, contributions accepted even when their
   own week is stale, a contribution never taken twice, and — the boundary itself — a mirrored week
   contributing nothing to what the caller may put on this household's planner.
+- `PartnerSyncServiceTest` — the service around the engine, against an in-memory `PartnerDao`: a
+  round with nobody paired still creating the exchange folder and publishing an envelope that names
+  this install and shares nothing (what the roster's **Set up** button is), a second one republishing
+  rather than accumulating files, and a paired round still addressing our week to them and mirroring
+  theirs.
 - `TwoInstanceRoundTest` — two whole instances over a real folder: pairing by scanning each other and
   each then seeing the *other's* week rather than a merger of both; a task added on one landing on the
   other's planner, coming back mirrored and stopping being resent; a contribution not re-offered after

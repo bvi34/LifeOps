@@ -12,15 +12,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.people.app.data.model.CheckIn
 import com.people.app.data.model.ImportantDate
 import com.people.app.data.model.PartnerLink
 import com.people.app.data.model.Person
 import com.people.app.data.model.PersonNote
 import com.people.app.data.prefs.PartnerPrefs
+import com.people.app.data.repository.CheckInRepository
 import com.people.app.data.repository.PartnerRepository
 import com.people.app.data.repository.PartnerSyncService
 import com.people.app.data.repository.PeopleRepository
 import com.people.app.data.repository.PeopleSyncService
+import com.people.app.logic.CheckIns
 import com.people.app.logic.DateKind
 import com.people.app.logic.ImportantDates
 import com.people.app.partner.PartnerInvite
@@ -29,15 +32,19 @@ import com.people.app.ui.common.DetailRow
 import com.people.app.ui.common.HouseholdToggle
 import com.people.app.ui.common.PersonDot
 import com.people.app.ui.common.SectionCard
+import com.people.app.ui.checkin.CheckInSection
+import com.people.app.ui.checkin.CheckInSectionState
 import com.people.app.ui.common.formatDay
 import com.people.app.ui.partner.PartnerSection
 import com.people.app.ui.partner.PartnerSectionState
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 class PersonDetailViewModel(
     private val repo: PeopleRepository,
@@ -46,7 +53,8 @@ class PersonDetailViewModel(
     private val personId: String,
     private val partnerRepo: PartnerRepository,
     private val partnerSync: PartnerSyncService,
-    private val partnerPrefs: PartnerPrefs
+    private val partnerPrefs: PartnerPrefs,
+    checkInRepo: CheckInRepository
 ) : ViewModel() {
 
     val person: StateFlow<Person?> =
@@ -89,6 +97,30 @@ class PersonDetailViewModel(
         runCatching { syncService.sync(peers) }
     }
 
+    // --- the daily check-in ---
+
+    /**
+     * Today's check-in, the size of the form behind it, and the run of days — the three facts the
+     * card needs, combined here so it never shows "not recorded today" against a form that does not
+     * exist yet.
+     *
+     * `LocalDate.now()` is read on each emission rather than held: this view model outlives midnight
+     * on a phone left on the person's page, and a "today" captured at construction would quietly
+     * start reporting yesterday.
+     */
+    val checkInState: StateFlow<CheckInSummary> = combine(
+        checkInRepo.observeForm(personId),
+        checkInRepo.observeRecent(personId, limit = 1),
+        checkInRepo.observeDays(personId)
+    ) { form, recent, days ->
+        val today = LocalDate.now()
+        CheckInSummary(
+            questions = form.size,
+            today = recent.firstOrNull()?.takeIf { it.day == today },
+            streak = CheckIns.streak(days, today)
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CheckInSummary())
+
     // --- the partner seam ---
 
     val partnerLink: StateFlow<PartnerLink?> =
@@ -103,6 +135,39 @@ class PersonDetailViewModel(
 
     private val _partnerMessage = MutableStateFlow<String?>(null)
     val partnerMessage: StateFlow<String?> = _partnerMessage.asStateFlow()
+
+    private val _partnerSyncing = MutableStateFlow(false)
+    val partnerSyncing: StateFlow<Boolean> = _partnerSyncing.asStateFlow()
+
+    /**
+     * Run a partner round from this screen, and say what it found.
+     *
+     * The seam otherwise only runs when the app comes to the foreground, which left the two moments
+     * people actually want it — "have they scanned my code yet?" and "have they seen what I added?" —
+     * answerable only by leaving the app and coming back. The round covers every pairing, not just
+     * this one: there is one envelope per install, and writing it is what publishes any of them.
+     */
+    fun syncPartnerNow() = viewModelScope.launch {
+        _partnerSyncing.value = true
+        val outcome = runCatching { partnerSync.sync() }
+        _partnerMessage.value = outcome.fold(
+            onSuccess = { result ->
+                when {
+                    result.error != null -> "Sync had trouble: ${result.error}"
+                    result.linksSynced == 0 ->
+                        "Nothing paired yet. This device is set up — swap codes to connect."
+
+                    result.changes > 0 ->
+                        "Synced. ${result.changes} change" +
+                            (if (result.changes == 1) "" else "s") + " came in."
+
+                    else -> "Synced. Nothing new from them."
+                }
+            },
+            onFailure = { "Sync failed: ${it.message ?: it::class.java.simpleName}" }
+        )
+        _partnerSyncing.value = false
+    }
 
     /**
      * Build this person's code, minting our half of the pairing secret if it does not exist yet.
@@ -185,22 +250,32 @@ class PersonDetailViewModel(
         private val personId: String,
         private val partnerRepo: PartnerRepository,
         private val partnerSync: PartnerSyncService,
-        private val partnerPrefs: PartnerPrefs
+        private val partnerPrefs: PartnerPrefs,
+        private val checkInRepo: CheckInRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
             PersonDetailViewModel(
-                repo, syncService, peers, personId, partnerRepo, partnerSync, partnerPrefs
+                repo, syncService, peers, personId, partnerRepo, partnerSync, partnerPrefs,
+                checkInRepo
             ) as T
     }
 }
+
+/** What the person page shows of the check-in: is there a form, was today recorded, how long a run. */
+data class CheckInSummary(
+    val questions: Int = 0,
+    val today: CheckIn? = null,
+    val streak: Int = 0
+)
 
 /** One person: who they are, the dates that come round, the notes, and the pairing with their app. */
 @Composable
 fun PersonDetailScreen(
     vm: PersonDetailViewModel,
     onBack: () -> Unit,
-    onOpenPartnerWeek: () -> Unit
+    onOpenPartnerWeek: () -> Unit,
+    onOpenCheckIn: () -> Unit
 ) {
     val person by vm.person.collectAsStateWithLifecycle()
     val notes by vm.notes.collectAsStateWithLifecycle()
@@ -209,6 +284,8 @@ fun PersonDetailScreen(
     val myCode by vm.myCode.collectAsStateWithLifecycle()
     val myName by vm.partnerDisplayName.collectAsStateWithLifecycle()
     val partnerMessage by vm.partnerMessage.collectAsStateWithLifecycle()
+    val partnerSyncing by vm.partnerSyncing.collectAsStateWithLifecycle()
+    val checkIn by vm.checkInState.collectAsStateWithLifecycle()
 
     var showEdit by remember { mutableStateOf(false) }
     var showDate by remember { mutableStateOf(false) }
@@ -261,15 +338,27 @@ fun PersonDetailScreen(
             )
         }
 
+        CheckInSection(
+            state = CheckInSectionState(
+                personName = current.name,
+                questions = checkIn.questions,
+                today = checkIn.today,
+                streak = checkIn.streak
+            ),
+            onOpen = onOpenCheckIn
+        )
+
         PartnerSection(
             state = PartnerSectionState(
                 personName = current.name,
                 link = partnerLink,
                 myCode = myCode,
                 myDisplayName = myName,
-                message = partnerMessage
+                message = partnerMessage,
+                syncing = partnerSyncing
             ),
             onShowCode = vm::showMyCode,
+            onSyncNow = vm::syncPartnerNow,
             onDisplayNameChange = vm::setPartnerDisplayName,
             onCodeScanned = vm::onCodeScanned,
             onOpenWeek = onOpenPartnerWeek,

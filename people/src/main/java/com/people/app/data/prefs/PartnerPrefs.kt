@@ -28,6 +28,15 @@ class PartnerPrefs(context: Context) {
         }
 
     /**
+     * The identity we already have, or null — asked without minting one.
+     *
+     * The lazy mint above is deliberate, so anything that merely *reports* on the seam has to be
+     * able to look without setting it up. A screen that read [instanceId] to say "not set up yet"
+     * would have made that sentence false by asking the question.
+     */
+    val existingInstanceId: String? get() = prefs.getString(KEY_INSTANCE_ID, null)
+
+    /**
      * The name a partner sees on our code and our envelopes.
      *
      * Editable, unlike the id — this one is only ever shown to a human, so getting it wrong is a
