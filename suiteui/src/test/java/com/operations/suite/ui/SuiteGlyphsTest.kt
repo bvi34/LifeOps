@@ -94,15 +94,20 @@ class SuiteGlyphsTest {
     }
 
     @Test
-    fun `a mark whose app declares no icon colours is only ever tinted`() {
+    fun `every app's mark can be drawn in colours of its own, not just the ones that ship them`() {
+        // The sandbox settings can give any app an icon-colour pair, so a mark that only had a
+        // tintable form would let that setting silently do nothing for seven of the eight apps.
         val colours = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
         SuiteApps.all.forEach { info ->
             val mark = SuiteGlyphs.inColour(info.iconKey, colours)
-            if (info.iconColors == null) {
-                assertNull("${info.label} declares no icon colours but can be drawn in some", mark)
-            } else {
-                assertNotNull("${info.label} declares icon colours nothing can draw", mark)
-            }
+            assertNotNull("${info.label} has no two-colour form", mark)
+            // Both roles have to be used, or one of the two colours is a setting with no effect.
+            val inks = paths(mark!!).map { (it.stroke as? SolidColor ?: it.fill as SolidColor).value }
+            assertTrue("${info.label} draws nothing in its line colour", inks.contains(Color(colours.line)))
+            assertTrue(
+                "${info.label} draws nothing in its highlight colour",
+                inks.contains(Color(colours.highlight))
+            )
         }
         assertNull(SuiteGlyphs.inColour("not-an-icon", colours))
     }

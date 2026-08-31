@@ -4,6 +4,7 @@ import android.content.Context
 import com.operations.backupkit.AppId
 import com.operations.suitekit.SuiteAppearance
 import com.operations.suitekit.SuiteAppearanceCodec
+import com.operations.suitekit.SuiteIconPaint
 import com.operations.suitekit.SuitePalette
 import com.operations.suitekit.SuitePreset
 import com.operations.suitekit.SuiteWallpaper
@@ -62,6 +63,11 @@ class SuiteAppearanceStore private constructor(context: Context) {
         get() = appearance.appAccentsEnabled
         set(value) = update { it.copy(appAccentsEnabled = value) }
 
+    /** Whose colours win when an app ships icon colours and has also been repainted here. */
+    var sandboxWins: Boolean
+        get() = appearance.sandboxWins
+        set(value) = update { it.copy(sandboxWins = value) }
+
     /** The launcher's backdrop. Only the sandbox home screen reads it; no hosted app does. */
     var wallpaper: SuiteWallpaper
         get() = appearance.wallpaper
@@ -78,8 +84,17 @@ class SuiteAppearanceStore private constructor(context: Context) {
 
     fun resetAccent(appId: AppId) = update { it.withDefaultAccent(appId) }
 
-    /** Put every app back to its shipped identity colour, leaving the shared preset alone. */
-    fun resetAllAccents() = update { it.copy(accents = emptyMap()) }
+    /** Give [appId] icon colours of its own — the customization LifeOps has always shipped with. */
+    fun setIconPaint(appId: AppId, paint: SuiteIconPaint) = update { it.withIconPaint(appId, paint) }
+
+    /** Back to the icon colours [appId] ships with, or to being tinted when it ships none. */
+    fun resetIconPaint(appId: AppId) = update { it.withoutIconPaint(appId) }
+
+    /**
+     * Put every app back to its shipped identity — its colour and its icon colours alike — leaving
+     * the shared preset alone.
+     */
+    fun resetAllAppColors() = update { it.copy(accents = emptyMap(), iconPaints = emptyMap()) }
 
     private fun load(): SuiteAppearance {
         SuiteAppearanceCodec.fromJson(prefs.getString(KEY_DOCUMENT, null))?.let { return it }

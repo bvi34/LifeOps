@@ -49,6 +49,7 @@ import com.operations.suite.ui.inkColor
 import com.operations.suite.ui.rememberSuiteWallpaper
 import com.operations.suite.ui.suiteWallpaper
 import com.operations.suitekit.SuiteAppInfo
+import com.operations.suitekit.SuiteAppearance
 import com.operations.suitekit.SuiteApps
 import com.operations.suitekit.SuiteColors
 import kotlinx.coroutines.delay
@@ -245,10 +246,10 @@ private fun AppTile(
  * One hosted app's icon: the mark itself, drawn straight onto whatever is behind it. There is no
  * tile — the drawing is the icon, and the wallpaper (or the settings surface) shows through it.
  *
- * Which colours it is drawn in is the app's to say. Almost every mark is line art with no colour of
- * its own, so it is painted in the app's accent; LifeOps ships its own icon colours and keeps them
- * (see [com.operations.suitekit.SuiteIconColors]). A user who repaints an app in settings outranks
- * both — pick green for LifeOps and its dial is green, not the purple it shipped with.
+ * A mark is tinted with the app's accent unless that app has **icon colours** — a pair it ships
+ * with, as LifeOps does, or a pair chosen for it in the sandbox settings — in which case it is
+ * drawn in those. [SuiteAppearance.iconColorsFor] is where that is decided, the sandbox-wins
+ * setting included; nothing about it is settled here.
  */
 @Composable
 fun AppGlyph(
@@ -259,9 +260,9 @@ fun AppGlyph(
     modifier: Modifier = Modifier
 ) {
     val appearance = LocalSuiteAppearance.current
-    val repainted = appearance.hasCustomAccent(appId)
-    val own = remember(appId, onDark, repainted) {
-        if (repainted) null else SuiteIcons.ownColoursForApp(appId, onDark)
+    val colours = appearance.iconColorsFor(appId)
+    val own = remember(appId, onDark, colours) {
+        colours?.let { SuiteIcons.inColoursForApp(appId, it, onDark) }
     }
     if (own == null) {
         AppGlyph(
