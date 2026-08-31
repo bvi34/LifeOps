@@ -6,6 +6,7 @@ import com.logistics.app.data.db.LogisticsDatabase
 import com.logistics.app.data.prefs.LogisticsPrefs
 import com.logistics.app.data.repository.LifeOpsCatalog
 import com.logistics.app.data.repository.PantryRepository
+import com.logistics.app.data.repository.RecipeNoteRepository
 import com.logistics.app.data.repository.RecipeShotRepository
 import com.logistics.app.data.store.RecipeShotStore
 
@@ -13,7 +14,8 @@ import com.logistics.app.data.store.RecipeShotStore
  * Logistics' tiny runtime container, mirroring LifeOps/Citation: the hosting Operations Sandbox
  * [Application] calls [install] once, and the (single) activity resolves it with [get]. It owns the
  * Logistics database, the [LifeOpsCatalog] bridge, the [PantryRepository], the
- * [RecipeShotRepository] behind recipe screenshots, and the [LogisticsPrefs] display settings.
+ * [RecipeShotRepository] behind recipe screenshots, the [RecipeNoteRepository] behind recipe notes
+ * and reviews, and the [LogisticsPrefs] display settings.
  * Everything is lazy, so bringing Logistics up is essentially free until its screen is opened.
  */
 class LogisticsApp private constructor(private val app: Application) {
@@ -22,6 +24,7 @@ class LogisticsApp private constructor(private val app: Application) {
     val catalog by lazy { LifeOpsCatalog.create(app) }
     val pantryRepository by lazy { PantryRepository(database.pantryDao(), catalog) }
     val recipeShots by lazy { RecipeShotRepository(database.recipeShotDao(), RecipeShotStore(app)) }
+    val recipeNotes by lazy { RecipeNoteRepository(database.recipeNoteDao()) }
     val prefs by lazy { LogisticsPrefs(app) }
 
     companion object {

@@ -221,3 +221,24 @@ data class RecipeShot(
     val sortOrder: Int = 0,
     val createdAt: String
 )
+
+/**
+ * A note or review kept **against** a recipe rather than in it — how it actually turned out, what
+ * to change next time, and an optional 1–5 star verdict.
+ *
+ * The separation is deliberate. A recipe belongs to LifeOps' book and is shared by the whole suite:
+ * its ingredients and method are what the source said, and "halve the salt, it's brutal" is not a
+ * step of it. So the recipe stays as imported, the opinion lives here, and either can be edited
+ * without disturbing the other. [recipeId] is the same soft id [RecipeShot] uses.
+ *
+ * [rating] is null when a note carries no verdict — most cooking notes don't, and an absent rating
+ * must never be averaged in as a zero.
+ */
+data class RecipeNote(
+    val id: String,
+    val recipeId: String,
+    val rating: Int? = null,
+    val text: String,
+    val createdAt: String,
+    val updatedAt: String
+)

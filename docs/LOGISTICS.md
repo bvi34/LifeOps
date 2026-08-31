@@ -17,7 +17,7 @@ what's left, and what went into each meal is a **ledger**, not a vibe.
 | **Meal** | "For *X* meal, here's what I used." **Search** the shelf to grab specific items, name a meal (optionally from a LifeOps recipe), mark what you took, and Logistics deducts it from the pantry — and, when the recipe knows its macros, **logs the calories to the food diary in the same tap**. |
 | **Food** | The **food diary and its calories** — LifeOps' own, opened here. A day at a time: what's logged, what's planned, the day's kcal/macros against your 7-day average, Confirm/Adjust, ad-hoc entries, "save as a food", and planning a recipe onto a day. |
 | **History** | Every past meal, newest first, with the items it drew down — **Make again** re-deducts the same items in one tap. |
-| **Recipes** | Grab a recipe from any link (schema.org data) **or from screenshots of one** (on-device OCR), correct the parse, and keep it in **LifeOps'** recipe book — with the screenshots attached. Tap a recipe to see its calories per serving, its ingredient lines and the pictures it came from. |
+| **Recipes** | Grab a recipe from any link (schema.org data) **or from screenshots of one** (on-device OCR), correct the parse, and keep it in **LifeOps'** recipe book — with the screenshots attached. Tap a recipe to see its calories per serving, its ingredient lines and the pictures it came from — and to write **notes and reviews** against it: how it turned out, what to change next time, an optional 1–5 star verdict. The notes are Logistics', kept *beside* the recipe and never folded into it. |
 | **Import** | Fill the pantry from a **Walmart order** — pick the order's PDF, share it to Logistics, or paste its text, review the parsed lines, confirm. |
 
 ## How it relates to LifeOps
@@ -52,6 +52,10 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
   JPEG's **file name**, and a sort order (a recipe rarely fits on one screen). The bytes live in
   `filesDir/recipe-shots/`, not in the database — see below. *Schema v4 adds this table via
   `MIGRATION_3_4`.*
+- **`recipe_notes`** — what somebody thought of a recipe *after cooking it*: the same soft
+  `recipeId`, a nullable 1–5 `rating`, the note's `text`, and created/updated stamps. Kept beside the
+  recipe rather than in it — see [Notes and reviews](#notes-and-reviews--kept-beside-the-recipe).
+  *Schema v5 adds this table via `MIGRATION_4_5`.*
 
 ## Module layout
 
@@ -63,14 +67,16 @@ Logistics owns only what LifeOps doesn't, in its own `logistics.db`:
 │   ├── GroceryPlanner       restock-quantity + missing-ingredient rules for the list
 │   ├── IngredientLineParser "2 cups flour" → {qty, unit, name}
 │   ├── RecipeLinkParser     page HTML → schema.org Recipe (JSON-LD + microdata)
-│   └── RecipeTextParser     OCR'd screenshot text → the same ParsedRecipe, by layout
+│   ├── RecipeTextParser     OCR'd screenshot text → the same ParsedRecipe, by layout
+│   └── RecipeNoteSummaries  a recipe's notes → the count + average rating a row shows
 ├── net/              the only Android/IO shims
 │   ├── PdfTextExtractor      PDFBox-Android: PDF → text (feeds WalmartOrderParser)
 │   ├── RecipeFetcher         HttpURLConnection: URL → HTML (feeds RecipeLinkParser)
 │   └── RecipeScreenshotReader ML Kit (bundled, on-device): picture → text (feeds RecipeTextParser)
-├── data/             Room (LogisticsDatabase, entities, PantryDao, RecipeShotDao) + repositories
+├── data/             Room (LogisticsDatabase, entities, PantryDao, RecipeShotDao, RecipeNoteDao) + repositories
 │   ├── repository/   PantryRepository (pantry + ledger + import + consume + grocery) · LifeOpsCatalog
-│   │                 (bridge: foods, recipes, and LifeOps' food diary) · RecipeShotRepository
+│   │                 (bridge: foods, recipes, and LifeOps' food diary) · RecipeShotRepository ·
+│   │                 RecipeNoteRepository
 │   └── store/        RecipeShotStore — the screenshots on disk, downsampled, out of the database
 ├── ui/               Compose: pantry · grocery · importflow · meal · food · history · recipe (+ theme)
 ├── backup/           LogisticsBackupContributor (whole-file logistics.db copy + the screenshots)
@@ -190,6 +196,31 @@ it as a LifeOps recipe exactly like a link import does, and **attaches the scree
 original is always there to check the parse against. The same "Add a screenshot" action hangs off any
 recipe already in the book.
 
+## Notes and reviews — kept beside the recipe
+
+A recipe in LifeOps' book is shared by the whole suite: the meal planner schedules it, the diary logs
+its calories, the grocery list shops its ingredients. So what one cook thought of it on one evening —
+*"halve the salt", "needed 10 more minutes", four stars* — has no business being appended to the
+method. Logistics keeps that in its **own** table, `recipe_notes`, on the same soft `recipeId` the
+screenshots use, and the recipe is never written to.
+
+Tap a recipe open and the **Notes & reviews** section sits under its ingredients and pictures. A note
+is a paragraph, a 1–5 star rating, or both — either half alone is enough to keep, and one with
+neither is refused rather than stored empty. Notes read newest-first, since the last time you made
+something is the time that matters; each one can be rewritten in place (it keeps its position in the
+log and is marked *edited*) or deleted, which asks first because the words were typed rather than
+picked.
+
+**A rating is optional, and that is load-bearing.** Most cooking notes carry no verdict, so `rating`
+is nullable and `RecipeNoteSummaries` averages only the notes that have one — three notes and one
+five-star review reads as *★ 5 · 3 notes*, not 1.7 — and the section says what the average is *of*
+("5 from 1 rating"), so a well-documented recipe with a single opinion doesn't masquerade as a
+consensus. Ratings outside 1–5 are ignored rather than trusted, and a cleared rating means "no
+verdict", never one star.
+
+The notes travel with the rest of Logistics' data: they are rows in `logistics.db`, which the backup
+copies whole.
+
 ## The Food tab — the diary, in the app where the food is
 
 The **Food** tab is LifeOps' food-and-calorie surface, opened beside the shelf it came off: a day at a
@@ -242,6 +273,13 @@ Pure-JVM suites under `logistics/src/test` (run with `gradle :logistics:testDebu
   no threshold) and missing-ingredient matching (by id and by case-insensitive name, de-duplicated).
 - `IngredientLineParserTest` — quantities, fractions (`1/2`, `1 1/2`, `½`), unit vs. size words,
   free-form lines.
+- `RecipeNoteSummariesTest` — the notes summary: unrated notes never average in as zero, ratings
+  outside 1–5 are ignored, whole stars print without a decimal, and an unrated recipe reads as a
+  count rather than a score.
+- `RecipeNoteRepositoryTest` — notes against a recipe (over a fake DAO): text is trimmed, a note with
+  neither words nor stars is refused, stars alone are keepable, ratings clamp into 1–5 with zero
+  meaning "no verdict", an edit keeps `createdAt` and won't silently empty a note out, and sweeping
+  one recipe's notes leaves another's alone.
 - `RecipeLinkParserTest` — JSON-LD, `@graph`, HTML-entity decoding, the microdata fallback, and the
   four shapes `recipeInstructions` arrives in (steps, sections, one blob, none).
 - `RecipeTextParserTest` — the screenshot layout reader: title/servings/ingredients/method off a
