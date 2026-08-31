@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -28,8 +29,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -48,6 +49,7 @@ import com.operations.suite.ui.inkColor
 import com.operations.suite.ui.rememberSuiteWallpaper
 import com.operations.suite.ui.suiteWallpaper
 import com.operations.suitekit.SuiteAppInfo
+import com.operations.suitekit.SuiteAppearance
 import com.operations.suitekit.SuiteApps
 import com.operations.suitekit.SuiteColors
 import kotlinx.coroutines.delay
@@ -144,6 +146,7 @@ fun SandboxHomeScreen(
                                 onOpen = { onOpenApp(info.appId) },
                                 onCustomize = { onCustomizeApp(info.appId) },
                                 ink = ink,
+                                onDark = wallpaper.isDark,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -216,6 +219,7 @@ private fun AppTile(
     onOpen: () -> Unit,
     onCustomize: () -> Unit,
     ink: Color,
+    onDark: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -225,7 +229,7 @@ private fun AppTile(
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AppGlyph(icon = SuiteIcons.forApp(info.appId), argb = accent)
+        AppGlyph(appId = info.appId, argb = accent, onDark = onDark)
         Spacer(Modifier.height(8.dp))
         Text(
             info.label,
@@ -239,39 +243,63 @@ private fun AppTile(
 }
 
 /**
- * The icon itself: a rounded tile lit from the top-left in the app's colour, with a glyph in
- * whichever of ink/snow stays readable on it — so a user-chosen accent can never produce an
- * invisible icon.
+ * One hosted app's icon: the mark itself, drawn straight onto whatever is behind it. There is no
+ * tile — the drawing is the icon, and the wallpaper (or the settings surface) shows through it.
+ *
+ * A mark is tinted with the app's accent unless that app has **icon colours** — a pair it ships
+ * with, as LifeOps does, or a pair chosen for it in the sandbox settings — in which case it is
+ * drawn in those. [SuiteAppearance.iconColorsFor] is where that is decided, the sandbox-wins
+ * setting included; nothing about it is settled here.
+ */
+@Composable
+fun AppGlyph(
+    appId: AppId,
+    argb: Long,
+    size: Dp = 54.dp,
+    onDark: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
+    modifier: Modifier = Modifier
+) {
+    val appearance = LocalSuiteAppearance.current
+    val colours = appearance.iconColorsFor(appId)
+    val own = remember(appId, onDark, colours) {
+        colours?.let { SuiteIcons.inColoursForApp(appId, it, onDark) }
+    }
+    if (own == null) {
+        AppGlyph(
+            icon = SuiteIcons.forApp(appId),
+            argb = argb,
+            size = size,
+            onDark = onDark,
+            modifier = modifier
+        )
+    } else {
+        Image(
+            imageVector = own,
+            contentDescription = null,
+            modifier = modifier.size(size)
+        )
+    }
+}
+
+/**
+ * The single-colour form, and what a mark with no colours of its own gets: the whole vector tinted
+ * with [argb], nudged only as far as the backdrop demands ([SuiteColors.fitForMode]) so a dark
+ * accent on a dark wallpaper — or a pale one on a light theme — cannot disappear into it.
  */
 @Composable
 fun AppGlyph(
     icon: ImageVector,
     argb: Long,
-    size: Dp = 62.dp,
+    size: Dp = 54.dp,
+    onDark: Boolean = MaterialTheme.colorScheme.surface.luminance() < 0.5f,
     modifier: Modifier = Modifier
 ) {
-    val face = remember(argb) {
-        Brush.linearGradient(
-            listOf(
-                Color(SuiteColors.lighten(argb, 0.22f)),
-                Color(SuiteColors.darken(argb, 0.14f))
-            )
-        )
-    }
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(RoundedCornerShape(size / 3.2f))
-            .background(face),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = Color(SuiteColors.contrastOn(argb)),
-            modifier = Modifier.size(size / 2.1f)
-        )
-    }
+    Icon(
+        imageVector = icon,
+        contentDescription = null,
+        tint = Color(SuiteColors.fitForMode(argb, onDark)),
+        modifier = modifier.size(size)
+    )
 }
 
 /** The container's own two entries: everything here is about the suite, not about one app. */
@@ -316,7 +344,7 @@ private fun DockTile(
             .padding(horizontal = 20.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AppGlyph(icon = icon, argb = accent, size = 52.dp)
+        AppGlyph(icon = icon, argb = accent, size = 40.dp)
         Spacer(Modifier.height(6.dp))
         Text(
             label,

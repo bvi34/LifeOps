@@ -1,10 +1,15 @@
 package com.operations.suite.ui
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.VectorGroup
 import androidx.compose.ui.graphics.vector.VectorPath
 import com.operations.suitekit.SuiteApps
+import com.operations.suitekit.SuiteIconColors
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -68,6 +73,43 @@ class SuiteGlyphsTest {
         val shapes = SuiteGlyphs.byKey.mapValues { (_, vector) -> paths(vector).map { it.pathData } }
         assertEquals(SuiteGlyphs.byKey.size, shapes.values.toSet().size)
         assertEquals(SuiteGlyphs.byKey.size, SuiteGlyphs.byKey.values.map { it.name }.toSet().size)
+    }
+
+    @Test
+    fun `a mark built in an app's own icon colours is the same drawing, wearing them`() {
+        val colours = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
+        val coloured = SuiteGlyphs.inColour("lifeops-dial", colours)
+        assertNotNull("LifeOps' mark can be drawn in its own colours", coloured)
+
+        // Same geometry as the tintable form — the colours are the only difference, so the two
+        // cannot drift into being different drawings.
+        val drawn = paths(coloured!!)
+        assertEquals(paths(SuiteGlyphs.Dial).map { it.pathData }, drawn.map { it.pathData })
+
+        // Ring and ticks in the dial colour, the checkmark needle in the check colour.
+        assertEquals(
+            listOf(Color(colours.line), Color(colours.line), Color(colours.highlight)),
+            drawn.map { (it.stroke as SolidColor).value }
+        )
+    }
+
+    @Test
+    fun `every app's mark can be drawn in colours of its own, not just the ones that ship them`() {
+        // The sandbox settings can give any app an icon-colour pair, so a mark that only had a
+        // tintable form would let that setting silently do nothing for seven of the eight apps.
+        val colours = SuiteIconColors(line = 0xFF9B72CFL, highlight = 0xFFFFB74DL)
+        SuiteApps.all.forEach { info ->
+            val mark = SuiteGlyphs.inColour(info.iconKey, colours)
+            assertNotNull("${info.label} has no two-colour form", mark)
+            // Both roles have to be used, or one of the two colours is a setting with no effect.
+            val inks = paths(mark!!).map { (it.stroke as? SolidColor ?: it.fill as SolidColor).value }
+            assertTrue("${info.label} draws nothing in its line colour", inks.contains(Color(colours.line)))
+            assertTrue(
+                "${info.label} draws nothing in its highlight colour",
+                inks.contains(Color(colours.highlight))
+            )
+        }
+        assertNull(SuiteGlyphs.inColour("not-an-icon", colours))
     }
 
     @Test

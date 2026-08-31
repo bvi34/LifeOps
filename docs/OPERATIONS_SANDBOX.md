@@ -170,7 +170,8 @@ The sandbox opens on a **phone-style home screen**, because that is the honest p
 is: seven apps behind one icon.
 
 - A **tile per app**, laid out three to a row, each carrying that app's own mark and colour — so
-  "the thermometer" and "the green basket" mean something before you have read a word. Tapping a tile
+  "the thermometer" and "the green basket" mean something before you have read a word. The mark is
+  drawn straight onto the wallpaper, with no block behind it. Tapping a tile
   launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
   jumps straight to where that app's colour is chosen. The marks are the suite's own — see *Seven
   marks* below.
@@ -280,7 +281,8 @@ That is the whole of each app's `Theme.kt` now. `SuiteTheme` resolves two things
 An accent that would be illegible in the current mode is lifted or dropped to the nearest readable
 brightness (`SuiteColors.fitForMode`) — never further, so a chosen hue survives exactly when it can.
 Turning **"Tint each app with its colour"** off silences step 2 everywhere; home-screen icons keep
-their colours regardless, because that is how apps are told apart.
+their colours regardless, because that is how apps are told apart. An app's *icon* colours are a
+separate choice again — see *Icon colours, per app* below.
 
 ### One store, one write
 
@@ -291,8 +293,8 @@ hosted apps share a process, so an edit in settings reaches every composed scree
 of the suite's types), so the two doors cannot disagree. On first read the store adopts LifeOps'
 existing preset, mode and palette, so nobody's theme resets.
 
-Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent) and
-one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
+Adding an app's identity is one entry in `SuiteApps` (label, tagline, icon name, default accent, and
+— for an app that has icon colours of its own — those) and one mark in `SuiteGlyphs` under that name — `:suitekit` stays Android-free by naming glyphs rather
 than importing them.
 
 ### Eight marks
@@ -315,10 +317,69 @@ dial on a 120dp logo and disappears entirely at 18dp. The ring is heavier and le
 1 : 1.6 : 2.6 weight ladder from ring to ticks to needle is kept, and a test asserts it.
 
 Every mark is drawn in the same 24×24 viewport as line art with selective solid fills, and every one
-is a single colour: `AppGlyph` tints the whole vector to whichever ink contrasts the app's accent, so
-a mark can never lean on a second hue to be legible. What it *can* lean on is alpha — a stroke at 0.5
-survives tinting, and is how secondary detail (a book's text lines, a board's header rule) stays
-subordinate to the shape carrying the identity.
+has to *work* in a single colour, so a mark can never lean on a second hue to be legible. What it
+*can* lean on is alpha — a stroke at 0.5 survives tinting, and is how secondary detail (a book's text
+lines, a board's header rule) stays subordinate to the shape carrying the identity.
+
+Every mark can also be *built* in two colours, for an app given icon colours of its own. The split is
+the same in all eight and it is the one LifeOps' launcher icon already draws: `Ink.line` takes the
+structure that holds the mark up — a dial's ring, a thermometer's tube, a house's walls — and
+`Ink.highlight` takes the one element the mark exists to show: the checkmark standing in for a
+needle, the mercury in the tube, the figure under the roof, the cards on the board, the spark in the
+bubble, the jaws of the spanner, the text on the pages, the handle over the basket. A mark is a
+*function* of its ink (`marks: Map<String, (Ink) -> ImageVector>`) rather than a finished vector, so
+the tintable form and the two-colour one cannot drift into being different drawings — a test asserts
+they are the same geometry, and that both roles are actually used in each mark, since a role nothing
+is drawn in is a settings field with no effect.
+
+### No tile behind them
+
+The mark *is* the icon: `AppGlyph` draws it straight onto the wallpaper (or, in settings, onto the
+surface), with nothing behind it. It used to sit on a rounded tile flooded with the app's colour,
+which made the grid a row of coloured boxes with a small glyph punched out of each — the tile was
+carrying the identity and the drawing was decoration on it. Without the tile the drawing carries it,
+which is what the silhouette rule above was for, and the wallpaper stays visible between the apps.
+
+Losing the tile means the mark itself is now the coloured thing, so it is drawn in the app's accent
+rather than in an ink contrasting it, nudged only as far as the backdrop demands
+(`SuiteColors.fitForMode`) — a near-black accent on a night wallpaper lifts until it reads, and no
+further.
+
+That is the default, and it is what an app with no **icon colours** gets. An app that has a pair is
+drawn in it instead — `SuiteGlyphs.inColour` builds the same geometry wearing the two inks, fitted to
+the backdrop the same way, since a palette written for a dark launcher background is still asked to
+read on a light wallpaper.
+
+A pair comes from one of two places. LifeOps **ships** one (`SuiteAppInfo.iconColors`, the purple and
+amber of `icon_dial` / `icon_check`), so the dial on the home screen is the icon on the launcher
+rather than a monochrome copy of it. And any app can be **given** one in the sandbox settings — see
+*Icon colours, per app* below, which is also where the one rule about who wins lives.
+
+### Icon colours, per app
+
+What LifeOps arrived with, every app can be given: two colours for its mark instead of one tint. The
+gear's **App colours** card holds it, under each app's accent — a switch, and a `Line` and
+`Highlight` hex field behind it (`SuiteAppearance.iconPaints`, keyed by `AppId.key` exactly as the
+accents are).
+
+Switching it on for an app that ships nothing starts from the suite's own **secondary and tertiary
+for that app** rather than from a random pair. That mapping is not invented here: it is the one
+LifeOps' icon has always used — `icon_dial` is a secondary, `icon_check` a tertiary, in
+`assets/icon-themes.css` for every preset — so an app given icon colours starts out looking like it
+belongs to the same suite. A blank or half-typed field falls back to that seed too, so editing a hex
+code never blanks a mark mid-keystroke.
+
+Switching it *off* is remembered as a choice rather than as an absence: the pair stays stored with
+`enabled = false`, so switching back on returns the colours instead of re-seeding them, and an app
+that ships its own can be told to stop using them.
+
+**Sandbox always wins** (the card's second switch, on by default) settles the one place two
+deliberate choices can disagree: an app *ships* icon colours **and** has been repainted here. On, the
+colour picked in the gear wins and the mark is tinted with it — a setting that visibly does nothing
+is worse than a mark that loses its shipped hues. Off, the app keeps the colours it came with and the
+accent is left to tint its screens instead. It settles nothing else: colours chosen *here* for an app
+are the sandbox's own choice, so they are drawn either way, and an app nobody has repainted keeps its
+shipped pair under both settings.
 
 ---
 
