@@ -17,6 +17,7 @@ import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.data.model.PlanView
 import com.maintenance.app.data.model.RecallView
 import com.maintenance.app.data.model.ServiceRecord
+import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.Costs
 import com.maintenance.app.logic.Coverage
@@ -204,12 +205,20 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
 
     // ------------------------------------------------------------------ assets
 
+    /**
+     * Put a new asset on the register, with whatever of its kind's own fields were filled in.
+     *
+     * [attributes] arrives the way the form held it — every key the kind asks for, blanks included —
+     * and the blanks are simply not written, which is the same rule [updateAsset] follows: an absent
+     * row and an empty string must never both mean "no VIN".
+     */
     suspend fun addAsset(
         name: String,
         kind: AssetKind,
         make: String? = null,
         model: String? = null,
         year: Int? = null,
+        attributes: Map<String, String> = emptyMap(),
         colorArgb: Long = DEFAULT_COLOR
     ): String {
         val id = newId()
@@ -233,6 +242,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 updatedAt = stamp
             )
         )
+        val filled = attributes
+            .mapNotNull { (key, value) -> kind.spec(key)?.let { it to value } }
+            .mapNotNull { (spec, value) ->
+                AssetAttributes.normalise(spec, value).takeIf { it.isNotBlank() }?.let { spec.key to it }
+            }
+        if (filled.isNotEmpty()) {
+            dao.upsertAttributes(filled.map { (key, value) -> AssetAttributeEntity(id, key, value) })
+        }
         return id
     }
 
@@ -546,10 +563,24 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 updatedAt = now()
             )
         )
-        val trim = facts.trim
-        if (!trim.isNullOrBlank() && dao.attributesOf(assetId).none { it.key == ATTR_TRIM }) {
-            dao.upsertAttributes(listOf(AssetAttributeEntity(assetId, ATTR_TRIM, trim)))
+        // Everything the decode knows that the vehicle kind has a field for — not the trim alone.
+        // Each one is written only where the asset has nothing there already, because a decode is a
+        // claim about a model and what you typed is a fact about your vehicle.
+        val decoded = mapOf(
+            ATTR_TRIM to facts.trim,
+            ATTR_BODY_STYLE to facts.bodyClass,
+            ATTR_ENGINE to facts.engine,
+            ATTR_FUEL to facts.fuel,
+            ATTR_TRANSMISSION to facts.transmission,
+            ATTR_DRIVE_TYPE to facts.drive
+        )
+        val alreadyThere = dao.attributesOf(assetId).filter { it.value.isNotBlank() }.map { it.key }.toSet()
+        val rows = decoded.mapNotNull { (key, value) ->
+            value?.trim()
+                ?.takeIf { it.isNotBlank() && key !in alreadyThere }
+                ?.let { AssetAttributeEntity(assetId, key, it) }
         }
+        if (rows.isNotEmpty()) dao.upsertAttributes(rows)
     }
 
     // ------------------------------------------------------------------ recalls
@@ -893,8 +924,13 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         /** A neutral slate; an asset's colour is picked when it is added and edited any time. */
         const val DEFAULT_COLOR = 0xFF64748BL
 
-        /** The kind-specific attribute a decoded trim lands in; see `logic/AssetKind`. */
+        /** The kind-specific attributes a VIN decode lands in; see `logic/AssetKind`. */
         const val ATTR_TRIM = "trim"
+        const val ATTR_BODY_STYLE = "bodyStyle"
+        const val ATTR_ENGINE = "engine"
+        const val ATTR_FUEL = "fuel"
+        const val ATTR_TRANSMISSION = "transmission"
+        const val ATTR_DRIVE_TYPE = "driveType"
 
         const val READING_MANUAL = "manual"
         const val READING_FROM_SERVICE = "service"

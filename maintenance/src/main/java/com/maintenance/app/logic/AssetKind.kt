@@ -43,6 +43,14 @@ enum class AssetKind(
         )
     ),
 
+    /**
+     * The fields are, deliberately, the whole of what the paperwork and the door jamb say — and the
+     * first six of them are exactly what a VIN decode comes back with, so `applyVehicleFacts` can
+     * fill them in rather than leaving them for somebody to copy off a screen by hand.
+     *
+     * The last two are the pair nobody can ever remember and everybody needs at a counter: what size
+     * the tyres are and what oil goes in it.
+     */
     VEHICLE(
         key = "vehicle",
         label = "Vehicle",
@@ -53,9 +61,17 @@ enum class AssetKind(
                 "vin", "VIN", AttributeInput.TEXT, AttributeCheck.VIN,
                 hint = "17 characters, no I, O or Q"
             ),
-            AssetAttributeSpec("licensePlate", "License plate", AttributeInput.TEXT),
             AssetAttributeSpec("trim", "Trim", AttributeInput.TEXT),
-            AssetAttributeSpec("color", "Color", AttributeInput.TEXT)
+            AssetAttributeSpec("bodyStyle", "Body style", AttributeInput.TEXT, hint = "Sedan, pickup, SUV, …"),
+            AssetAttributeSpec("engine", "Engine", AttributeInput.TEXT, hint = "3.6L V6"),
+            AssetAttributeSpec("fuel", "Fuel", AttributeInput.TEXT, hint = "Gasoline, diesel, electric, …"),
+            AssetAttributeSpec("transmission", "Transmission", AttributeInput.TEXT, hint = "Automatic, manual, CVT"),
+            AssetAttributeSpec("driveType", "Drivetrain", AttributeInput.TEXT, hint = "FWD, RWD, AWD, 4WD"),
+            AssetAttributeSpec("color", "Color", AttributeInput.TEXT),
+            AssetAttributeSpec("licensePlate", "License plate", AttributeInput.TEXT),
+            AssetAttributeSpec("plateState", "Registered in", AttributeInput.TEXT, hint = "The state or province on the plate"),
+            AssetAttributeSpec("tireSize", "Tire size", AttributeInput.TEXT, hint = "As it reads on the sidewall — 245/70R17"),
+            AssetAttributeSpec("oilSpec", "Oil / fluid spec", AttributeInput.TEXT, hint = "5W-30 full synthetic")
         )
     ),
 

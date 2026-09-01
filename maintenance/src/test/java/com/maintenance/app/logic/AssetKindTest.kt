@@ -32,6 +32,43 @@ class AssetKindTest {
     }
 
     @Test
+    fun `a vehicle asks for everything on the paperwork, and asks for none of it twice`() {
+        val keys = AssetKind.VEHICLE.attributes.map { it.key }
+        assertEquals(
+            listOf(
+                "vin", "trim", "bodyStyle", "engine", "fuel", "transmission",
+                "driveType", "color", "licensePlate", "plateState", "tireSize", "oilSpec"
+            ),
+            keys
+        )
+        keys.forEach { key -> assertNotNull("$key has no spec", AssetKind.VEHICLE.spec(key)) }
+    }
+
+    @Test
+    fun `everything a VIN decode returns has a vehicle field to land in`() {
+        val facts = VehicleFacts(
+            make = "Jeep",
+            model = "Wrangler",
+            year = 2018,
+            trim = "Unlimited Sport",
+            bodyClass = "Sport Utility Vehicle (SUV)",
+            driveType = "4WD/4-Wheel Drive",
+            engineCylinders = 6,
+            displacementLitres = 3.6,
+            fuel = "Gasoline",
+            transmission = "Automatic"
+        )
+
+        // Make, model and year are columns on the asset; the rest are the kind's own fields, and
+        // every one of them has somewhere to go.
+        listOf("trim", "bodyStyle", "engine", "fuel", "transmission", "driveType").forEach { key ->
+            assertNotNull("a decoded $key has nowhere to land", AssetKind.VEHICLE.spec(key))
+        }
+        assertEquals("3.6L V6", facts.engine)
+        assertEquals("4WD", facts.drive)
+    }
+
+    @Test
     fun `only the kinds that wear a meter have one`() {
         assertNull(AssetKind.HOME.meter)
         assertNull(AssetKind.APPLIANCE.meter)

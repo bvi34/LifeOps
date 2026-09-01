@@ -66,15 +66,29 @@ VEHICLE(
     meter = MeterUnit.MILES,
     attributes = listOf(
         AssetAttributeSpec("vin", "VIN", AttributeInput.TEXT, AttributeCheck.VIN, hint = "17 characters, no I, O or Q"),
+        AssetAttributeSpec("trim", "Trim"),
+        AssetAttributeSpec("bodyStyle", "Body style", hint = "Sedan, pickup, SUV, …"),
+        AssetAttributeSpec("engine", "Engine", hint = "3.6L V6"),
         AssetAttributeSpec("licensePlate", "License plate"),
         …
     )
 )
 ```
 
-…and the values live in `asset_attributes` keyed by `(assetId, key)`. The edit dialog, the overview
-screen and the validation are all generated from that list, so adding a kind is **authoring**: one
-entry, and it grows its own fields everywhere, already checked, already stored. What stays a real
+A vehicle asks for twelve: the VIN, the six a decode can fill in (trim, body style, engine, fuel,
+transmission, drivetrain), the colour, the plate and where it is registered, and the two nobody can
+recall at a counter — tyre size and oil spec. The first seven are ordered the way the decode returns
+them, so a decoded vehicle reads top to bottom on the detail page.
+
+…and the values live in `asset_attributes` keyed by `(assetId, key)`. The **add** dialog, the **edit**
+dialog, the overview screen and the validation are all generated from that list, so adding a kind is
+**authoring**: one entry, and it grows its own fields everywhere, already checked, already stored.
+
+Both dialogs asking from the same list is what stops them drifting: whatever a vehicle is asked for
+when you first type it in is exactly what it is asked for afterwards. Adding an asset therefore
+offers **everything** its kind has — the moment somebody is typing the car in is the moment the title
+is in their other hand — while **requiring nothing but the name**: every kind-specific field may be
+left blank, the Add button watches the name alone, and the form scrolls. What stays a real
 column on the asset is only what every kind has — a name, a make, a model, a year, what it cost, what
 it is worth.
 
@@ -341,8 +355,11 @@ The rule lives in `logic/Vin.decodeQuery` and is unit-tested, because a privacy 
 on somebody remembering to truncate a string is not a promise. It is the same test Health applies to
 its drug lookup: *could this request tell anyone something about this household?*
 
-The decode is **offered, never applied**. It fills in only the fields you left blank, and the
-schedules it matches are listed for you to choose from rather than imported on your behalf.
+The decode is **offered, never applied**. It fills in only the fields you left blank — make, model
+and year on the asset itself, and the trim, body style, engine, fuel, transmission and drivetrain in
+the vehicle's own fields — and the schedules it matches are listed for you to choose from rather than
+imported on your behalf. Every field vPIC answers has somewhere to land, which is asserted in
+`AssetKindTest`: a decoded fact with no field to go in is a fact silently thrown away.
 
 ### Schedule packs
 

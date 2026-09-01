@@ -153,7 +153,10 @@ class AssetDetailViewModel(
             }
     }
 
-    /** Take the decoded make, model, year and trim — filling only what is still blank. */
+    /**
+     * Take everything the decode found — make, model, year, trim, body style, engine, fuel,
+     * transmission and drivetrain — filling only the fields that are still blank.
+     */
     fun useFacts(facts: VehicleFacts) = viewModelScope.launch {
         repo.applyVehicleFacts(assetId, facts)
     }

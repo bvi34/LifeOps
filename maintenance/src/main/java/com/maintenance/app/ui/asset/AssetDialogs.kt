@@ -27,6 +27,7 @@ import com.maintenance.app.data.model.Asset
 import com.maintenance.app.data.model.CoverageView
 import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.logic.AssetAttributes
+import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.AttributeInput
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.Loan
@@ -68,6 +69,45 @@ fun ConfirmDialog(
         confirmButton = { TextButton(onClick = onConfirm) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/**
+ * The fields this *kind* asks for, drawn from `logic/AssetKind` rather than written out.
+ *
+ * Shared by the add and the edit dialogs so the two never drift: whatever a vehicle is asked for
+ * when it is typed in is exactly what it is asked for afterwards, already validated, already
+ * hinted. Nothing here is required — every one of them is blank on the day you add the car, and a
+ * form that refused the row until you went and read the door jamb is a form that never gets the car
+ * into the app at all.
+ */
+@Composable
+fun KindAttributeFields(
+    kind: AssetKind,
+    values: Map<String, String>,
+    onChange: (key: String, value: String) -> Unit
+) {
+    kind.attributes.forEach { spec ->
+        val value = values[spec.key].orEmpty()
+        val problem = AssetAttributes.problem(spec, value)
+        when (spec.input) {
+            AttributeInput.NUMBER -> NumberField(
+                label = spec.label,
+                value = value,
+                onChange = { onChange(spec.key, it) },
+                supporting = problem ?: spec.hint,
+                isError = problem != null
+            )
+            else -> TextField(
+                label = spec.label,
+                value = value,
+                onChange = { onChange(spec.key, it) },
+                singleLine = spec.input != AttributeInput.MULTILINE,
+                supporting = problem ?: spec.hint,
+                isError = problem != null,
+                capitalise = KeyboardCapitalization.Words
+            )
+        }
+    }
 }
 
 /**
@@ -114,28 +154,11 @@ fun EditAssetDialog(
                 }
                 NumberField(label = "Year", value = year, onChange = { year = it.take(4) })
 
-                asset.kind.attributes.forEach { spec ->
-                    val value = attributes[spec.key].orEmpty()
-                    val problem = AssetAttributes.problem(spec, value)
-                    when (spec.input) {
-                        AttributeInput.NUMBER -> NumberField(
-                            label = spec.label,
-                            value = value,
-                            onChange = { attributes[spec.key] = it },
-                            supporting = problem ?: spec.hint,
-                            isError = problem != null
-                        )
-                        else -> TextField(
-                            label = spec.label,
-                            value = value,
-                            onChange = { attributes[spec.key] = it },
-                            singleLine = spec.input != AttributeInput.MULTILINE,
-                            supporting = problem ?: spec.hint,
-                            isError = problem != null,
-                            capitalise = KeyboardCapitalization.Words
-                        )
-                    }
-                }
+                KindAttributeFields(
+                    kind = asset.kind,
+                    values = attributes,
+                    onChange = { key, value -> attributes[key] = value }
+                )
 
                 DateField(label = "Bought", value = purchasedAt, onChange = { purchasedAt = it })
                 MoneyField(

@@ -47,8 +47,9 @@ fun VehicleSection(vm: AssetDetailViewModel, detail: AssetDetail) {
     SectionCard(title = "From the VIN") {
         if (vin.isNullOrBlank()) {
             Text(
-                "Add the VIN and this can fill in the make, model and year, offer the manufacturer's " +
-                    "service schedule, and check for open safety recalls.",
+                "Add the VIN and this can fill in the make, model, year, trim, body style, engine, " +
+                    "fuel, transmission and drivetrain, offer the manufacturer's service schedule, " +
+                    "and check for open safety recalls.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

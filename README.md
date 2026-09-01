@@ -195,10 +195,13 @@ the receipts.
 > no invitations, no object store — none of that is purpose-built for one person on one device inside
 > an app that already ships as a single install.
 >
-> Kind-specific fields are **declared as data, not as columns**: a vehicle asks for a VIN, a plate and
-> a trim; a home asks for an address, a year built and a parcel number; an appliance asks for a serial
-> number and where it lives. Adding a kind is authoring — one entry in `logic/AssetKind` grows its own
-> fields, already validated, everywhere they are shown. A **meter belongs to a kind** too, so mileage
+> Kind-specific fields are **declared as data, not as columns**: a vehicle asks for the whole of the
+> paperwork (VIN, trim, body style, engine, fuel, transmission, drivetrain, colour, plate, where it is
+> registered, tyre size and oil spec); a home asks for an address, a year built and a parcel number;
+> an appliance asks for a serial number and where it lives. Adding a kind is authoring — one entry in
+> `logic/AssetKind` grows its own fields, already validated, everywhere they are shown — and the add
+> dialog and the edit dialog draw from that one list, so **you are asked for everything the moment you
+> add the thing**, with nothing but the name required. A **meter belongs to a kind** too, so mileage
 > intervals are only offered where there is an odometer to measure them against.
 >
 > Schedules carry **either or both** intervals — *"every 5,000 miles or 6 months, whichever comes
