@@ -28,6 +28,7 @@ import com.maintenance.app.data.model.CoverageView
 import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AssetKind
+import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.AttributeInput
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.Loan
@@ -95,7 +96,8 @@ fun KindAttributeFields(
                 value = value,
                 onChange = { onChange(spec.key, it) },
                 supporting = problem ?: spec.hint,
-                isError = problem != null
+                isError = problem != null,
+                decimals = spec.check == AttributeCheck.DECIMAL
             )
             else -> TextField(
                 label = spec.label,
