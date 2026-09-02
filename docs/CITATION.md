@@ -80,8 +80,13 @@ Built on `:core`, following LifeOps' Screen → ViewModel → Repository shape:
     animated page turn — and a **chapter drawer** (TOC) plus a progress bar. In the default **paged**
     reading mode a page turn moves one *screenful* at a time **within** a chapter (the chapter text is
     measured against the live viewport + typography and split into pages by `core/reader/Paginator`, a
-    pure, unit-tested line-walker); only the last/first page crosses a chapter boundary. A **Scroll**
-    mode (one continuous column, chapter-at-a-time turns) stays one tap away in the format sheet.
+    pure, unit-tested line-walker); only the last/first page crosses a chapter boundary. A crossing is
+    still **one page**: turning back off a chapter's first page opens the chapter before it at its
+    *last* page (`core/reader/PageTurn`), so forward-then-back returns you where you were instead of
+    dropping you at a chapter start you left an hour ago — only an explicit jump (the Previous button,
+    the contents list) opens a chapter at its beginning. A **Scroll** mode (one continuous column,
+    chapter-at-a-time turns, backwards landing at the previous chapter's end for the same reason)
+    stays one tap away in the format sheet.
   - **Resume** actually restores: reopening lands on the saved chapter *and* position — a scroll offset
     in scroll mode, or the page's start **character offset** (font-size independent) in paged mode —
     persisted as you read.
@@ -411,6 +416,7 @@ one.
 | **Progress** | `reader/ReadingProgress` | Characters, not chapters. "Chapter 3 / 40" is a location: three chapters into a book whose first three are a foreword, a preface and a note on the text is not 7.5% read. Percent never rounds up to 100 before the end. |
 | **Time left** | `reader/ReadingPace`, `TimeLeft` | Every reader app either asks you for a words-per-minute or invents one. Citation already measures **engaged** time honestly (`ReadingMeter` voids the stretch where you walked away), so the pace is simply observed. It reports whether it is `confident` yet and callers show **nothing** rather than a guess — an invented "4 hours left" on the first page is worse than no number, because the reader cannot tell it was invented. Jumps and stalls are dropped rather than smoothed; old observations decay so a dense technical book after a novel is followed. |
 | **Bookmarks** | `reader/Bookmark`, `Bookmarks` | A **position, not a passage** — which is why the reader needed both. Conflating them means either highlighting a sentence you did not care about to mark your place, or scrolling a list of positions hunting for the one that was about something. But an offset alone is as fragile as an anchor-by-offset, so a bookmark freezes the line it was set on and re-resolves through `FuzzyAnchor`: an edit earlier in the chapter moves it with the words, a deleted passage degrades to the chapter rather than jumping somewhere wrong. Sovereign — it outlives its book like a note. |
+| **Page turns** | `reader/Paginator`, `reader/PageTurn` | `Paginator` decides *where* the pages break (it walks the laid-out lines, never stalls, and gives page 0 less room for the chapter title); `PageTurn` decides *which* page a gesture lands on. The whole point of the second one is the chapter boundary: a book is paginated per chapter, so a page back off a chapter's first page enters the chapter before it — and entering it at the *start* silently converts one page back into a jump over an entire chapter, which is not a turn any more. Backwards crossings land on the previous chapter's **last** page, so forward and back are inverses. Both are pure and unit tested; the Compose layer only measures and draws. |
 | **Lookup** | `reader/Lookup` | The hard part is deciding *what the word is*. A selection arrives as `“Whither,` or `mansions.` or a whole clause dragged by accident; handing that to a dictionary returns nothing, which reads as the feature being broken rather than the query being wrong. Ends are stripped, insides kept (`don't`, `well-being`), and a phrase is never offered a dictionary entry it cannot have. |
 
 **Android wiring:** search takes over the top of the reader rather than a separate screen — you want

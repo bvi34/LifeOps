@@ -783,6 +783,12 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     private var pendingScrollChapter = -1
     private var pendingScrollOffset = 0
 
+    // The chapter a *backward* page turn is entering, which must open at its end rather than its
+    // start. Only the reader knows where that chapter's last page begins — it depends on the live
+    // typography and viewport — so the intent is recorded here and the reader resolves it, exactly
+    // like pendingScroll above. Consumed once, so a later turn doesn't get pulled back to the end.
+    private var pendingEndChapter = -1
+
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
@@ -935,6 +941,7 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                     val savedChapter = (result?.chapterOrdinal ?: 0).coerceIn(0, lastIndex)
                     pendingScrollChapter = savedChapter
                     pendingScrollOffset = result?.charOffset ?: 0
+                    pendingEndChapter = -1
                     _chapterOrdinal.value = savedChapter
                     beginPositionTracking(bookKey, savedChapter, result?.charOffset ?: 0)
                     if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
@@ -1273,6 +1280,10 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
         endReadingSession()
         openRrFictionId = null
         _openBook.value = null
+        // A turn that never landed must not be inherited by the next book opened at that ordinal.
+        pendingScrollChapter = -1
+        pendingScrollOffset = 0
+        pendingEndChapter = -1
         closeSearch()
         _perBookSettings.value = false
         _position.value = 0 to 0
@@ -1298,6 +1309,9 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
     fun goToChapter(ordinal: Int) {
         val book = _openBook.value ?: return
         val target = ordinal.coerceIn(0, book.chapters.lastIndex)
+        // Read now, not from inside the coroutine below: by then the reader may already have
+        // consumed the intent, and the save it guards would fire on a chapter it no longer describes.
+        val landsElsewhere = hasLandingIntent(target)
         onReadingProgress() // a chapter advance is genuine reading progress
         _chapterOrdinal.value = target
         viewModelScope.launch {
@@ -1309,12 +1323,36 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
                 // dead-end at the initially-buffered window.
                 repository.royalRoad.advance(rr, target)
                 _openBook.value = repository.royalRoad.loadBook(rr).copy(key = book.key)
-            } else {
-                // Owned books (EPUB / PDF / AO3 snapshot) already hold every chapter inline.
+            } else if (!landsElsewhere) {
+                // Owned books (EPUB / PDF / AO3 snapshot) already hold every chapter inline. Skipped
+                // when the reader is about to land somewhere other than the chapter's first word:
+                // writing offset 0 here would be a lie for the moment before the reader saves the
+                // real one, and an app killed inside that moment would reopen at the wrong place.
                 book.key?.let { repository.savePosition(it.toString(), target, 0) }
             }
         }
     }
+
+    /**
+     * Turn back *into* [ordinal] from the first page of the chapter after it. Same navigation as
+     * [goToChapter], except the reader opens the chapter at its **last** page: a page back is one
+     * page, so crossing a chapter boundary backwards must not skip the chapter you are turning into.
+     * Explicit chapter jumps (the Previous button, the contents list) still use [goToChapter] and
+     * open at the beginning — that is what those mean.
+     */
+    fun goToChapterEnd(ordinal: Int) {
+        val book = _openBook.value ?: return
+        val target = ordinal.coerceIn(0, book.chapters.lastIndex)
+        // A landing at the end and a restored offset are mutually exclusive; the newer intent wins.
+        pendingScrollChapter = -1
+        pendingScrollOffset = 0
+        pendingEndChapter = target
+        goToChapter(target)
+    }
+
+    /** True when the reader is arriving somewhere other than [target]'s first word. */
+    private fun hasLandingIntent(target: Int): Boolean =
+        pendingEndChapter == target || (pendingScrollChapter == target && pendingScrollOffset > 0)
 
     val isRoyalRoadOpen: Boolean get() = openRrFictionId != null
 
@@ -1509,6 +1547,14 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
             pendingScrollChapter = -1
             pendingScrollOffset.also { pendingScrollOffset = 0 }
         } else 0
+
+    /**
+     * Whether [chapter] is being entered backwards and so should open at its last page (paged) or
+     * scrolled to its end (scroll). Cleared on read, like [consumePendingScroll], so turning forward
+     * again doesn't keep snapping to the end.
+     */
+    fun consumePendingEnd(chapter: Int): Boolean =
+        (chapter == pendingEndChapter).also { if (it) pendingEndChapter = -1 }
 
     /** Resolve a note's overall degradation state for the Notes list badge. */
     suspend fun overallState(note: Note): NoteResolver.State =
