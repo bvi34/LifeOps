@@ -54,6 +54,26 @@ data class ReaderSettings(
     val customBackground: Int? = null,
     /** The text colour, as ARGB, when [theme] is [ReaderTheme.CUSTOM]. See [customBackground]. */
     val customText: Int? = null,
+    /**
+     * The heading colour, as ARGB, when [theme] is [ReaderTheme.CUSTOM]; `null` sets headings in
+     * the body's own colour.
+     *
+     * Its own setting because a heading is not simply large text. It is the one thing on the page a
+     * reader navigates by, and readers who tint a page for visual stress routinely want the
+     * structure to stand off it in a second colour — while a reader who wants nothing of the kind
+     * leaves it alone and gets a heading that matches the prose, which is what a printed book does.
+     */
+    val customHeading: Int? = null,
+    /**
+     * The colour of links and note references, as ARGB, when [theme] is [ReaderTheme.CUSTOM];
+     * `null` derives one that is legible on the chosen page.
+     *
+     * Separated out because it was the colour doing the most damage: links used to be painted in the
+     * app's own accent, which is neither warmed with the page nor chosen by anybody reading, so a
+     * book with anchors through its prose came out in app-purple over whatever colours the reader
+     * had set.
+     */
+    val customLink: Int? = null,
     /** Pure black rather than near-black, so an OLED panel actually switches those pixels off. */
     val trueBlack: Boolean = false,
     /** 0 = untouched, 1 = strongly amber. Cuts blue light without dimming the panel. */
@@ -101,7 +121,9 @@ data class ReaderSettings(
         // A part-transparent page would let the app's own surface show through the book, which is
         // never what somebody choosing a colour means. Keep the hue, drop the transparency.
         customBackground = customBackground?.let { ReaderPalette.opaque(it) },
-        customText = customText?.let { ReaderPalette.opaque(it) }
+        customText = customText?.let { ReaderPalette.opaque(it) },
+        customHeading = customHeading?.let { ReaderPalette.opaque(it) },
+        customLink = customLink?.let { ReaderPalette.opaque(it) }
     )
 
     val followsSystemBrightness: Boolean get() = brightness < 0f
@@ -195,6 +217,20 @@ object ReaderPalette {
     }
 
     /**
+     * The heading colour for a theme, or `null` when it simply follows the body text.
+     *
+     * Only [ReaderTheme.CUSTOM] answers with anything: the presets set headings in the prose colour
+     * and let size and weight do the work, which is the printed convention and the one that never
+     * goes wrong on a page somebody else tinted.
+     */
+    fun heading(theme: ReaderTheme, custom: Int? = null): Int? =
+        if (theme == ReaderTheme.CUSTOM) custom?.let { opaque(it) } else null
+
+    /** The link colour for a theme, or `null` to derive one against the page. See [readable]. */
+    fun link(theme: ReaderTheme, custom: Int? = null): Int? =
+        if (theme == ReaderTheme.CUSTOM) custom?.let { opaque(it) } else null
+
+    /**
      * Warm a colour by cutting its blue.
      *
      * This is what a night-shift filter does, and doing it to the *colours* rather than by laying a
@@ -215,11 +251,74 @@ object ReaderPalette {
         return (a shl 24) or (r shl 16) or (warmedG shl 8) or warmedB
     }
 
-    /** Both of a theme's colours, warmed together so the page stays coherent. */
-    fun of(settings: ReaderSettings): Pair<Int, Int>? {
-        val bg = background(settings.theme, settings.trueBlack, settings.customBackground) ?: return null
-        val fg = foreground(settings.theme, settings.trueBlack, settings.customText) ?: return null
-        return warm(bg, settings.warmth) to warm(fg, settings.warmth)
+    /**
+     * Every colour the page is drawn in, for these settings, or `null` under [ReaderTheme.SYSTEM] —
+     * which means "the app's own colours" and is answered by the overload taking fallbacks.
+     */
+    fun colors(settings: ReaderSettings): ReaderColors? {
+        val page = background(settings.theme, settings.trueBlack, settings.customBackground) ?: return null
+        val text = foreground(settings.theme, settings.trueBlack, settings.customText) ?: return null
+        return derive(page, text, settings)
+    }
+
+    /**
+     * Every colour the page is drawn in, falling back to the colours the app itself is using where
+     * the theme has nothing to say.
+     *
+     * This is the call the reader screen makes, and the reason it exists is that under
+     * [ReaderTheme.SYSTEM] the page is the app's surface — but the *rest* of the palette still has
+     * to be derived from it rather than pulled out of the app's Material scheme. A link painted in
+     * the app's accent is a colour nobody reading chose, does not warm with the page, and is exactly
+     * how a book ends up set in the launcher's purple.
+     */
+    fun colors(settings: ReaderSettings, fallbackPage: Int, fallbackText: Int): ReaderColors {
+        val page = background(settings.theme, settings.trueBlack, settings.customBackground) ?: fallbackPage
+        val text = foreground(settings.theme, settings.trueBlack, settings.customText) ?: fallbackText
+        return derive(page, text, settings)
+    }
+
+    /**
+     * Build the full palette from a page and a text colour.
+     *
+     * Everything is warmed together — including a colour the reader typed in — so the page stays one
+     * coherent thing rather than warm prose with a cold heading sitting in it. The derived colours
+     * are computed *after* warming, against the colours that will actually be on screen, so a link
+     * or a caption cannot be legible in the settings sheet and unreadable on the page.
+     */
+    private fun derive(page: Int, text: Int, settings: ReaderSettings): ReaderColors {
+        val warmedPage = warm(page, settings.warmth)
+        val warmedText = warm(text, settings.warmth)
+        val heading = heading(settings.theme, settings.customHeading)
+            ?.let { warm(it, settings.warmth) }
+            ?: warmedText
+        val link = link(settings.theme, settings.customLink)
+            ?.let { warm(it, settings.warmth) }
+            ?: readable(LINK_TINT, warmedPage, warmedText)
+        return ReaderColors(
+            page = warmedPage,
+            text = warmedText,
+            heading = heading,
+            link = link,
+            secondary = mix(warmedPage, warmedText, SECONDARY_FADE)
+        )
+    }
+
+    /**
+     * [tint] if it can be read on [page], otherwise the nearest version of it that can — pulled
+     * toward [fallback], the colour the page's own text is set in, until there is enough contrast.
+     *
+     * This is what lets a link keep being recognisably a link on a black page, a cream one and a
+     * page somebody tinted deep green, without a table of per-theme accents that would still have
+     * nothing to say about a colour the reader chose themselves. A tint that cannot be rescued gives
+     * way to the text colour: a link the reader cannot read is worse than one they cannot spot.
+     */
+    fun readable(tint: Int, page: Int, fallback: Int): Int {
+        if (contrast(tint, page) >= MIN_CONTRAST) return opaque(tint)
+        READABLE_BLENDS.forEach { amount ->
+            val shade = mix(fallback, tint, amount)
+            if (contrast(shade, page) >= MIN_CONTRAST) return shade
+        }
+        return opaque(fallback)
     }
 
     /** Force a colour fully opaque, keeping its hue. */
@@ -324,6 +423,21 @@ object ReaderPalette {
      */
     private val HIGHLIGHT_STRENGTHS = listOf(0.60f, 0.50f, 0.40f, 0.32f, 0.25f, 0.18f)
 
+    /** Blends tried by [readable], nearest the original tint first. */
+    private val READABLE_BLENDS = listOf(0.2f, 0.4f, 0.6f, 0.8f)
+
+    /**
+     * How far a caption or a quote is faded toward the page. Enough to read as secondary, not enough
+     * to stop being prose — these are the author's words too.
+     */
+    private const val SECONDARY_FADE = 0.32f
+
+    /**
+     * The link colour before it is fitted to the page: the blue that has meant "link" since the web
+     * had links. It is a starting point, not a result — see [readable].
+     */
+    const val LINK_TINT = 0xFF1A5FB4.toInt()
+
     private const val GREEN_CUT = 0.10f
     private const val BLUE_CUT = 0.45f
     private const val ALPHA = 0xFF shl 24
@@ -368,7 +482,36 @@ object ReaderPalette {
         0xFF2E4A2E.toInt(), 0xFF5A2D4A.toInt(), 0xFF7A7A7A.toInt(),
         NIGHT_FG, 0xFFFFFFFF.toInt()
     )
+
+    /**
+     * Link colours offered as a starting point. Blues first, because that is what a link looks like,
+     * then the alternatives that stay distinguishable for the commonest colour-vision deficiencies.
+     */
+    val LINK_SWATCHES: List<Int> = listOf(
+        LINK_TINT, 0xFF0B7285.toInt(), 0xFF1F7A4D.toInt(), 0xFF8A5A00.toInt(),
+        0xFF9A3412.toInt(), 0xFF7C3AED.toInt(), 0xFF6B7280.toInt(),
+        0xFF7FB3FF.toInt(), 0xFF9ADCE8.toInt()
+    )
 }
+
+/**
+ * The colours a page is actually drawn in: the page itself, the prose, and the three roles that used
+ * to be taken from whatever the app's Material scheme happened to hold.
+ *
+ * Gathered into one value because they are only correct *together* — a link is chosen against the
+ * page it sits on and the text beside it, a caption is a fade of the prose toward the page, and all
+ * of them are warmed as a set. Handing the reader screen five loose colours is how they drift apart.
+ */
+data class ReaderColors(
+    val page: Int,
+    val text: Int,
+    /** Headings; equal to [text] unless the reader set one. */
+    val heading: Int,
+    /** Links and note references. */
+    val link: Int,
+    /** Captions, quotes and anything else set quieter than the prose. */
+    val secondary: Int
+)
 
 /**
  * What the volume keys do while reading.

@@ -318,7 +318,15 @@ internal object Structure {
         "s", "strike", "del" -> InlineStyle.STRIKETHROUGH
         "sup" -> InlineStyle.SUPERSCRIPT
         "sub" -> InlineStyle.SUBSCRIPT
-        "a" -> if (isNoteRef(open, ancestors)) InlineStyle.FOOTNOTE_REF else InlineStyle.LINK
+        // An anchor with no destination is a link *target* — `<a id="page17">`, which converted
+        // books scatter through their prose and sometimes leave wrapped around whole paragraphs.
+        // Painting those as links is how a chapter comes out entirely underlined and in the link
+        // colour, so an `a` earns link styling only by having somewhere to go.
+        "a" -> when {
+            attr(open.raw, "href").isNullOrBlank() -> null
+            isNoteRef(open, ancestors) -> InlineStyle.FOOTNOTE_REF
+            else -> InlineStyle.LINK
+        }
         "span" -> if (smallCaps(open.raw)) InlineStyle.SMALL_CAPS else null
         else -> null
     }

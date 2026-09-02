@@ -37,6 +37,16 @@ object ReaderWebStyle {
     private const val PROSE =
         "p, li, dd, dt, blockquote, td, th, figcaption, h1, h2, h3, h4, h5, h6"
 
+    /** The headings within [PROSE], for the reader's own heading colour. */
+    private const val HEADINGS = "h1, h2, h3, h4, h5, h6"
+
+    /**
+     * Links, in every state. `:visited` is named explicitly because a browser's own visited colour
+     * is not inherited from `a` and would otherwise be the one thing on the page still set in
+     * somebody else's palette.
+     */
+    private const val LINKS = "a, a:link, a:visited, a:hover"
+
     /**
      * Map a reader's text size onto a WebView text-zoom percentage.
      *
@@ -59,11 +69,19 @@ object ReaderWebStyle {
 
         // Null under the System theme, which means "use the app's own colours" — and inside somebody
         // else's reader the honest reading of that is to leave their colours alone.
-        ReaderPalette.of(settings)?.let { (background, foreground) ->
-            val bg = hex(background)
-            val fg = hex(foreground)
+        ReaderPalette.colors(settings)?.let { colours ->
+            val bg = hex(colours.page)
+            val fg = hex(colours.text)
             rules.append("html, body { background: $bg !important; color: $fg !important; }\n")
             rules.append("$PROSE { color: $fg !important; }\n")
+            // Headings and links are stated after the prose rule, so they win on the elements they
+            // name — and stated at all because a host reader paints both in *its* colours, which is
+            // how a reader who set a night page ends up with sky-blue links on it.
+            if (colours.heading != colours.text) {
+                rules.append("$HEADINGS { color: ${hex(colours.heading)} !important; }\n")
+            }
+            val link = hex(colours.link)
+            rules.append("$LINKS { color: $link !important; }\n")
         }
 
         val prose = mutableListOf<String>()
