@@ -24,6 +24,7 @@ import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
 import com.health.app.ui.common.*
+import com.operations.suite.ui.pickers.SuiteWhenField
 
 /**
  * The cockpit: who's ill, how they are right now, what's due, and four buttons that record the
@@ -314,7 +315,7 @@ private fun StartEpisodeDialog(onDismiss: () -> Unit, onConfirm: (String, Long) 
                 )
                 // Backdating this is how an illness nobody recorded at the time gets entered at all
                 // — and it is also what decides which records get adopted into it.
-                WhenField(value = startedAt, onValueChange = { startedAt = it }, label = "Started")
+                SuiteWhenField(value = startedAt, onValueChange = { startedAt = it }, label = "Started")
                 Text(
                     "Readings, doses and notes from the 12 hours before it started will be filed " +
                         "against it too — an illness is nearly always noticed after the first " +

@@ -24,11 +24,8 @@ import com.health.app.logic.Allergies
 import com.health.app.logic.AllergyWarning
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.operations.suite.ui.pickers.SuiteDates
 
 /**
  * The pieces every Health screen shares: who's on screen, how a care level looks, and how instants
@@ -37,15 +34,12 @@ import java.util.Locale
  * product, would be worse than duplicated code.
  */
 
-private val timeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
-private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
-private val dayTimeFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.getDefault())
+// How an instant is written is the suite's decision, not Health's — the when-picker that recorded
+// this temperature spells the same instant back in [SuiteDates]' words, and two vocabularies for the
+// same moment on one screen is how "14:20" and "2:20 PM" end up in the same list.
+fun formatTime(millis: Long): String = SuiteDates.formatTime(millis)
 
-fun formatTime(millis: Long): String =
-    timeFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
-
-fun formatDay(millis: Long): String =
-    dayFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+fun formatDay(millis: Long): String = SuiteDates.formatShortDay(SuiteDates.toLocalDate(millis))
 
 /**
  * The same, for a date that is already a date.
@@ -54,21 +48,13 @@ fun formatDay(millis: Long): String =
  * date, and deriving it from whichever row happens to be first breaks the moment the list is read
  * the other way round.
  */
-fun formatDay(date: LocalDate): String = dayFormat.format(date)
+fun formatDay(date: LocalDate): String = SuiteDates.formatShortDay(date)
 
-fun formatDayTime(millis: Long): String =
-    dayTimeFormat.format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))
+fun formatDayTime(millis: Long): String = SuiteDates.formatDayTime(millis)
 
 /** Today's entries read as a time; older ones need the date, because "14:20" alone lies about age. */
-fun formatStamp(millis: Long, nowMillis: Long = System.currentTimeMillis()): String {
-    val today = Instant.ofEpochMilli(nowMillis).atZone(ZoneId.systemDefault()).toLocalDate()
-    val then = Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
-    return when {
-        then == today -> formatTime(millis)
-        then == today.minusDays(1) -> "Yesterday ${formatTime(millis)}"
-        else -> formatDayTime(millis)
-    }
-}
+fun formatStamp(millis: Long, nowMillis: Long = System.currentTimeMillis()): String =
+    SuiteDates.formatStamp(millis, nowMillis)
 
 /** The colour a care level is allowed to be. Red is reserved; nothing else in Health uses it. */
 @Composable

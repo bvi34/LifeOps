@@ -13,6 +13,7 @@ import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
+import com.operations.suite.ui.pickers.SuiteWhenField
 
 /**
  * The four things Health is asked to record in a hurry: a temperature, a dose, a symptom, and what
@@ -89,7 +90,7 @@ fun LogTemperatureDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Taken")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Taken")
                 DisclaimerText()
             }
         },
@@ -187,7 +188,7 @@ fun LogDoseDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Given")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Given")
             }
         },
         confirmButton = {
@@ -242,7 +243,7 @@ fun AddSymptomDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Started")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Started")
             }
         },
         confirmButton = {
@@ -286,7 +287,7 @@ fun CareNoteDialog(
                     label = { Text("What happened?") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it })
+                SuiteWhenField(value = at, onValueChange = { at = it })
             }
         },
         confirmButton = {

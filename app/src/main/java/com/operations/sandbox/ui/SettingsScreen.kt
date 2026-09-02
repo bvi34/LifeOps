@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -29,7 +28,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.operations.backupkit.AppId
 import com.operations.suite.ui.SuiteAppearanceStore
@@ -49,6 +47,7 @@ import com.operations.suitekit.WallpaperAngle
 import com.operations.suitekit.WallpaperDesign
 import com.operations.suitekit.WallpaperStyle
 import kotlin.math.roundToInt
+import com.operations.suite.ui.pickers.SuiteColorField
 
 /** Which half of the gear is showing. */
 enum class SettingsTab(val label: String) { APPEARANCE("Appearance"), BACKUPS("Backups") }
@@ -426,26 +425,29 @@ private fun CustomWallpaperEditor(wallpaper: SuiteWallpaper, onChange: (SuiteWal
             }
         }
 
-        HexField(
+        SuiteColorField(
             label = when (wallpaper.style) {
                 WallpaperStyle.LINEAR -> "From"
                 else -> "Background"
             },
-            value = wallpaper.startColor
-        ) { hex -> onChange(wallpaper.copy(startColor = hex)) }
+            color = wallpaper.startColor,
+            onColorChange = { hex -> onChange(wallpaper.copy(startColor = hex)) }
+        )
 
         if (wallpaper.style == WallpaperStyle.LINEAR || wallpaper.style == WallpaperStyle.AURORA) {
-            HexField(
+            SuiteColorField(
                 label = if (wallpaper.style == WallpaperStyle.LINEAR) "To" else "Second light",
-                value = wallpaper.endColor
-            ) { hex -> onChange(wallpaper.copy(endColor = hex)) }
+                color = wallpaper.endColor,
+                onColorChange = { hex -> onChange(wallpaper.copy(endColor = hex)) }
+            )
         }
 
         if (wallpaper.style == WallpaperStyle.RADIAL || wallpaper.style == WallpaperStyle.AURORA) {
-            HexField(
+            SuiteColorField(
                 label = if (wallpaper.style == WallpaperStyle.RADIAL) "Glow" else "First light",
-                value = wallpaper.glowColor
-            ) { hex -> onChange(wallpaper.copy(glowColor = hex)) }
+                color = wallpaper.glowColor,
+                onColorChange = { hex -> onChange(wallpaper.copy(glowColor = hex)) }
+            )
         }
     }
 }
@@ -540,10 +542,10 @@ private fun AppAccentRow(
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    HexField(
-                        label = "Hex",
-                        value = SuiteColors.toHex(argb),
-                        onCommit = onPick,
+                    SuiteColorField(
+                        label = "Custom",
+                        color = SuiteColors.toHex(argb),
+                        onColorChange = onPick,
                         modifier = Modifier.weight(1f)
                     )
                     Spacer(Modifier.width(8.dp))
@@ -613,19 +615,16 @@ private fun IconColorsEditor(
 
         if (paint.enabled) {
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                HexField(
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SuiteColorField(
                     label = "Line",
-                    value = paint.line,
-                    onCommit = { hex -> onPaint(paint.copy(line = hex, enabled = true)) },
-                    modifier = Modifier.weight(1f)
+                    color = paint.line,
+                    onColorChange = { hex -> onPaint(paint.copy(line = hex, enabled = true)) }
                 )
-                Spacer(Modifier.width(8.dp))
-                HexField(
+                SuiteColorField(
                     label = "Highlight",
-                    value = paint.highlight,
-                    onCommit = { hex -> onPaint(paint.copy(highlight = hex, enabled = true)) },
-                    modifier = Modifier.weight(1f)
+                    color = paint.highlight,
+                    onColorChange = { hex -> onPaint(paint.copy(highlight = hex, enabled = true)) }
                 )
             }
         }
@@ -680,57 +679,12 @@ private fun Swatch(argb: Long, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun CustomPaletteEditor(palette: SuitePalette, onChange: (SuitePalette) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        HexField("Primary", palette.primary) { onChange(palette.copy(primary = it)) }
-        HexField("Secondary", palette.secondary) { onChange(palette.copy(secondary = it)) }
-        HexField("Tertiary", palette.tertiary) { onChange(palette.copy(tertiary = it)) }
-        HexField("Dark background", palette.darkBackground) { onChange(palette.copy(darkBackground = it)) }
-        HexField("Light background", palette.lightBackground) { onChange(palette.copy(lightBackground = it)) }
+        SuiteColorField("Primary", palette.primary) { onChange(palette.copy(primary = it)) }
+        SuiteColorField("Secondary", palette.secondary) { onChange(palette.copy(secondary = it)) }
+        SuiteColorField("Tertiary", palette.tertiary) { onChange(palette.copy(tertiary = it)) }
+        SuiteColorField("Dark background", palette.darkBackground) { onChange(palette.copy(darkBackground = it)) }
+        SuiteColorField("Light background", palette.lightBackground) { onChange(palette.copy(lightBackground = it)) }
     }
-}
-
-/**
- * A hex colour field that only reports a value the suite can actually paint with. Half-typed text
- * stays local to the field, so editing `#2C7A7B` never flashes the whole suite through the colours
- * `#2`, `#2C`, `#2C7` happen to parse as.
- */
-@Composable
-private fun HexField(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    onCommit: (String) -> Unit
-) {
-    var text by remember(value) { mutableStateOf(value) }
-    val parsed = remember(text) { normalizedHex(text) }
-
-    OutlinedTextField(
-        value = text,
-        onValueChange = { typed ->
-            text = typed
-            normalizedHex(typed)?.let(onCommit)
-        },
-        label = { Text(label) },
-        singleLine = true,
-        isError = parsed == null,
-        modifier = modifier,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        leadingIcon = {
-            Box(
-                Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(Color(SuiteColors.parseHex(parsed ?: value)))
-            )
-        }
-    )
-}
-
-/** `#RGB`/`#RRGGBB`/`#AARRGGBB` → a canonical hex string, or null while it is still being typed. */
-private fun normalizedHex(text: String): String? {
-    val raw = text.trim().removePrefix("#")
-    if (raw.length !in setOf(3, 6, 8)) return null
-    if (raw.any { it.digitToIntOrNull(16) == null }) return null
-    return SuiteColors.toHex(SuiteColors.parseHex(raw))
 }
 
 @Composable

@@ -30,7 +30,7 @@ import com.lifeops.app.data.model.Aspect
 import com.lifeops.app.data.model.CustomPalette
 import com.lifeops.app.data.model.ThemePreset
 import com.lifeops.app.ui.components.AppHeader
-import com.lifeops.app.ui.components.ColorPickerField
+import com.operations.suite.ui.pickers.SuiteColorField
 import com.lifeops.app.ui.theme.parseColor
 
 @Composable
@@ -568,7 +568,7 @@ private fun CustomPaletteEditor(palette: CustomPalette, onChange: (CustomPalette
 
 @Composable
 private fun ColorRow(label: String, hexValue: String, onValidHex: (String) -> Unit) {
-    ColorPickerField(label = label, color = hexValue, onColorChange = onValidHex)
+    SuiteColorField(label = label, color = hexValue, onColorChange = onValidHex)
 }
 
 @Composable
@@ -893,7 +893,7 @@ private fun NewAspectDialog(suggestedColor: String, onConfirm: (String, String, 
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
-                ColorPickerField(label = "Custom color", color = color, onColorChange = { color = it })
+                SuiteColorField(label = "Custom color", color = color, onColorChange = { color = it })
                 OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },
@@ -920,7 +920,7 @@ private fun EditAspectDialog(aspect: Aspect, onConfirm: (String, String, String)
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("Color", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 ColorSwatchPicker(selectedColor = color, onSelect = { color = it })
-                ColorPickerField(label = "Custom color", color = color, onColorChange = { color = it })
+                SuiteColorField(label = "Custom color", color = color, onColorChange = { color = it })
                 OutlinedTextField(value = icon, onValueChange = { icon = it }, label = { Text("Icon name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
         },

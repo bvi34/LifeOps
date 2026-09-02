@@ -37,13 +37,13 @@ import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Money
 import com.maintenance.app.logic.PremiumPeriod
 import com.maintenance.app.logic.UpkeepPlan
-import com.maintenance.app.ui.common.DateField
 import com.maintenance.app.ui.common.MoneyField
 import com.maintenance.app.ui.common.NumberField
 import com.maintenance.app.ui.common.TextField
 import com.maintenance.app.ui.common.toEpochMillis
 import com.maintenance.app.ui.common.toLocalDate
 import com.maintenance.app.ui.common.todayMillis
+import com.operations.suite.ui.pickers.SuiteDateField
 
 /**
  * The dialogs the asset page edits through.
@@ -163,7 +163,7 @@ fun EditAssetDialog(
                     onChange = { key, value -> attributes[key] = value }
                 )
 
-                DateField(label = "Bought", value = purchasedAt, onChange = { purchasedAt = it })
+                SuiteDateField(label = "Bought", millis = purchasedAt, onMillisChange = { purchasedAt = it })
                 MoneyField(
                     label = "Paid",
                     text = paidText,
@@ -353,7 +353,7 @@ fun LogServiceDialog(
                         }
                     }
                 }
-                DateField(label = "When", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
+                SuiteDateField(label = "When", millis = at, onMillisChange = { at = it ?: todayMillis() }, clearable = false)
                 MoneyField(
                     label = "Cost",
                     text = costText,
@@ -420,7 +420,7 @@ fun ReadingDialog(
                         latest?.let { "Last was ${unit.format(it)}" }
                     }
                 )
-                DateField(label = "Read on", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
+                SuiteDateField(label = "Read on", millis = at, onMillisChange = { at = it ?: todayMillis() }, clearable = false)
             }
         },
         confirmButton = {
@@ -505,7 +505,7 @@ fun LoanDialog(
                     )
                     NumberField(label = "Years", value = years, onChange = { years = it.take(2) }, modifier = Modifier.weight(1f))
                 }
-                DateField(label = "First payment", value = startAt, onChange = { startAt = it })
+                SuiteDateField(label = "First payment", millis = startAt, onMillisChange = { startAt = it })
                 MoneyField(
                     label = "Payment",
                     text = paymentText,
@@ -591,11 +591,11 @@ fun CoverageDialog(
                     selected = period,
                     onSelect = { period = it }
                 )
-                DateField(label = "Starts", value = startsAt, onChange = { startsAt = it })
-                DateField(
+                SuiteDateField(label = "Starts", millis = startsAt, onMillisChange = { startsAt = it })
+                SuiteDateField(
                     label = "Renews or expires",
-                    value = expiresAt,
-                    onChange = { expiresAt = it },
+                    millis = expiresAt,
+                    onMillisChange = { expiresAt = it },
                     placeholder = "No end date"
                 )
                 TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)

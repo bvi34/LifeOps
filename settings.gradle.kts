@@ -52,8 +52,10 @@ include(":maintenance")
 include(":repository")
 include(":core")
 include(":backupkit")
-// The suite's appearance: `:suitekit` is the pure-JVM contract (presets, palettes, each app's colour
-// identity and the maths that resolves them into a scheme); `:suiteui` is the Compose theme and the
-// store behind it that the sandbox settings edit and every hosted app reads.
+// The suite's appearance and its shared controls: `:suitekit` is the pure-JVM contract (presets,
+// palettes, each app's colour identity, the maths that resolves them into a scheme, and the swatch
+// palette); `:suiteui` is the Compose theme, the store behind it that the sandbox settings edit and
+// every hosted app reads, and `ui/pickers` — one colour picker, one date picker, one time picker and
+// one when-picker for the whole suite, so no app grows its own again.
 include(":suitekit")
 include(":suiteui")

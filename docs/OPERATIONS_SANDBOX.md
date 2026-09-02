@@ -253,11 +253,35 @@ itself rather than choosing colours.
 
 | Module | Kind | Holds |
 |---|---|---|
-| `:suitekit` | pure JVM, unit-tested | the presets, the custom palette, each app's colour identity, and the ARGB maths that resolves them into a full `SuiteScheme` |
-| `:suiteui` | Android library | `SuiteAppearanceStore` (the one preferences document) and `SuiteTheme`, the single Compose theme every app wraps itself in |
+| `:suitekit` | pure JVM, unit-tested | the presets, the custom palette, each app's colour identity, the ARGB and HSL maths that resolves them into a full `SuiteScheme`, and the swatch palette the picker offers |
+| `:suiteui` | Android library | `SuiteAppearanceStore` (the one preferences document), `SuiteTheme` (the single Compose theme every app wraps itself in), and `ui/pickers` — the suite's shared input controls |
 
 The split is the same discipline as `:core` and `:backupkit`: no colour decision is made in Android
 code, so all of it is testable on the JVM without an emulator.
+
+### One picker per question (`:suiteui/ui/pickers`)
+
+Appearance was the first thing the container took over; the **controls** are the second. Five apps
+had each grown their own colour picker, date picker and time picker, and they had drifted — one
+cleared a date with a button where another used the Cancel slot, one wrote `17:00` next to a dial
+that said `5:00 PM`, and three separately re-derived that Material's date picker hands back *UTC*
+midnight. There is now one of each, and the container owns them:
+
+| Control | What it is for | Value it speaks |
+|---|---|---|
+| `SuiteColorField` / `SuiteColorPickerDialog` | any colour a person chooses | `#RRGGBB` text |
+| `SuiteDateButton` / `SuiteDateField` | a calendar day | `LocalDate`, with overloads for ISO text and local-midnight millis |
+| `SuiteTimeButton` / `SuiteTimePickerDialog` | a time of day | minutes from midnight |
+| `SuiteWhenField` / `SuiteWhenPickerDialog` | a moment that has already happened | epoch millis |
+| `SuiteDates` / `SuiteClock` / `SuiteElapsed` | how a day, a clock time and a gap are *written* | — |
+
+Three rules they all keep. **Nothing is typed** — not a hex code, not a date: a hex code typed into
+a live palette flashes the whole suite through the colours `#2`, `#2C`, `#2C7` happen to parse as,
+and a date typed on a phone is how 2025 becomes 2205. **A picker never offers an impossible
+choice**, so `notBefore` / `notAfter` bound the calendar itself instead of an error message
+afterwards — Health's "you cannot record a temperature that hasn't been taken yet" is one
+`notAfter` and nothing else. And **the conversion happens at the edge**: callers hand over the type
+they store and the picker deals with UTC midnight, so the trap is handled once.
 
 ### How an app gets its colour
 

@@ -18,6 +18,7 @@ import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.RunbookWithSteps
 import java.util.UUID
+import com.operations.suite.ui.pickers.SuiteDateButton
 
 @Composable
 fun CreateTaskDialog(
@@ -253,10 +254,10 @@ fun CreateTaskDialog(
                     }
                 }
 
-                DatePickerButton(
+                SuiteDateButton(
                     label = "due date",
-                    selectedDateStr = dueDate.ifBlank { null },
-                    onDateSelected = { dueDate = it ?: "" },
+                    isoDate = dueDate.ifBlank { null },
+                    onIsoDateChange = { dueDate = it ?: "" },
                     modifier = Modifier.fillMaxWidth()
                 )
                 // ISO dates compare lexicographically, so a plain string compare is safe here.

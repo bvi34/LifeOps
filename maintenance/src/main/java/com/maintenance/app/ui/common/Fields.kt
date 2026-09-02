@@ -1,28 +1,15 @@
 package com.maintenance.app.ui.common
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import com.maintenance.app.logic.Money
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 
 /**
  * The form fields these screens are built from.
@@ -148,73 +135,6 @@ fun MoneyField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = modifier.fillMaxWidth()
     )
-}
-
-/**
- * A date, chosen from the platform picker rather than typed.
- *
- * The field is a read-only text box with the picker over the top of it: typing dates on a phone is
- * how you end up with 2025 written as 2205, and every date in this app is one somebody will later
- * do arithmetic against.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun DateField(
-    label: String,
-    value: Long?,
-    onChange: (Long?) -> Unit,
-    modifier: Modifier = Modifier,
-    clearable: Boolean = true,
-    placeholder: String = "Not set"
-) {
-    var picking by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier.fillMaxWidth()) {
-        OutlinedTextField(
-            value = value?.let { formatDay(it) } ?: placeholder,
-            onValueChange = {},
-            label = { Text(label) },
-            readOnly = true,
-            enabled = false,
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        // A disabled text field swallows nothing, so the tap target is a transparent overlay rather
-        // than the field itself — which keeps the disabled colours (and so the "not editable here"
-        // reading) while still being tappable.
-        Box(Modifier.matchParentSize().clickable { picking = true })
-    }
-
-    if (picking) {
-        val state = rememberDatePickerState(initialSelectedDateMillis = value)
-        DatePickerDialog(
-            onDismissRequest = { picking = false },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        // The picker works in UTC midnight; the calendar date is what was meant, so
-                        // it is re-anchored to local midnight before it goes anywhere near a due date.
-                        onChange(
-                            state.selectedDateMillis?.let { millis ->
-                                val date = Instant.ofEpochMilli(millis).atZone(ZoneId.of("UTC")).toLocalDate()
-                                toEpochMillis(date)
-                            }
-                        )
-                        picking = false
-                    }
-                ) { Text("Set") }
-            },
-            dismissButton = {
-                if (clearable && value != null) {
-                    TextButton(onClick = { onChange(null); picking = false }) { Text("Clear") }
-                } else {
-                    TextButton(onClick = { picking = false }) { Text("Cancel") }
-                }
-            }
-        ) {
-            DatePicker(state = state)
-        }
-    }
 }
 
 /** Today, as the millis these screens store. */

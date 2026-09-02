@@ -29,7 +29,7 @@ import com.lifeops.app.data.model.Category
 import com.lifeops.app.data.model.Counter
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
-import com.lifeops.app.ui.components.DatePickerButton
+import com.operations.suite.ui.pickers.SuiteDateButton
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -586,10 +586,10 @@ private fun BackdateDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Add to \"$counterName\" on a past day.", style = MaterialTheme.typography.bodySmall)
-                DatePickerButton(
+                SuiteDateButton(
                     label = "date",
-                    selectedDateStr = dateStr,
-                    onDateSelected = { dateStr = it },
+                    isoDate = dateStr,
+                    onIsoDateChange = { dateStr = it },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(

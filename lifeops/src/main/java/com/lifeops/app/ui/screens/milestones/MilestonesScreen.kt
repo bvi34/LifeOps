@@ -28,7 +28,7 @@ import com.lifeops.app.data.model.Milestone
 import com.lifeops.app.data.model.Person
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
-import com.lifeops.app.ui.components.DatePickerButton
+import com.operations.suite.ui.pickers.SuiteDateButton
 import com.lifeops.app.util.DateUtil
 
 /**
@@ -311,10 +311,10 @@ private fun MilestoneDialog(
                     }
                 }
 
-                DatePickerButton(
+                SuiteDateButton(
                     label = "date",
-                    selectedDateStr = achievedAt,
-                    onDateSelected = { achievedAt = it },
+                    isoDate = achievedAt,
+                    onIsoDateChange = { achievedAt = it },
                     modifier = Modifier.fillMaxWidth()
                 )
             }

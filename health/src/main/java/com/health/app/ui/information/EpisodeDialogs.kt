@@ -15,6 +15,7 @@ import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
 import com.health.app.logic.TimelineKind
 import com.health.app.ui.common.*
+import com.operations.suite.ui.pickers.SuiteWhenField
 
 /**
  * The two forms that write into an illness after the fact: moving its dates, and adding something
@@ -55,7 +56,7 @@ internal fun EpisodeDatesDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                WhenField(value = startedAt, onValueChange = { startedAt = it }, label = "Started")
+                SuiteWhenField(value = startedAt, onValueChange = { startedAt = it }, label = "Started")
 
                 Row(
                     Modifier.fillMaxWidth(),
@@ -67,7 +68,7 @@ internal fun EpisodeDatesDialog(
                 }
 
                 if (!stillGoing) {
-                    WhenField(value = endedAt, onValueChange = { endedAt = it }, label = "Over")
+                    SuiteWhenField(value = endedAt, onValueChange = { endedAt = it }, label = "Over")
                 }
 
                 if (backwards) {
