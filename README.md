@@ -195,10 +195,13 @@ the receipts.
 > no invitations, no object store — none of that is purpose-built for one person on one device inside
 > an app that already ships as a single install.
 >
-> Kind-specific fields are **declared as data, not as columns**: a vehicle asks for a VIN, a plate and
-> a trim; a home asks for an address, a year built and a parcel number; an appliance asks for a serial
-> number and where it lives. Adding a kind is authoring — one entry in `logic/AssetKind` grows its own
-> fields, already validated, everywhere they are shown. A **meter belongs to a kind** too, so mileage
+> Kind-specific fields are **declared as data, not as columns**: a vehicle asks for the whole of the
+> paperwork (VIN, trim, body style, engine, fuel, transmission, drivetrain, colour, plate, where it is
+> registered, tyre size and oil spec); a home asks for an address, a year built and a parcel number;
+> an appliance asks for a serial number and where it lives. Adding a kind is authoring — one entry in
+> `logic/AssetKind` grows its own fields, already validated, everywhere they are shown — and the add
+> dialog and the edit dialog draw from that one list, so **you are asked for everything the moment you
+> add the thing**, with nothing but the name required. A **meter belongs to a kind** too, so mileage
 > intervals are only offered where there is an odometer to measure them against.
 >
 > Schedules carry **either or both** intervals — *"every 5,000 miles or 6 months, whichever comes
@@ -207,6 +210,13 @@ the receipts.
 > guessed one. A mileage interval with no baseline says *"log one service to start the clock"* instead
 > of quietly granting itself a free 5,000 miles. **Logging the work is the only thing that moves a
 > clock** — there is no silent reset, which is why the history has no holes in it.
+>
+> Costs are asked **sideways as well as down**: a third tab totals what the whole register cost over
+> the last year or ever, ranks the things by what they ate, and says who has been paid — the question
+> "who did the brakes last time" only has an answer across assets. What you have sold still counts as
+> spend (history includes the truck you had until March) but not as worth or owed. And an asset's
+> history **leaves as CSV** through the system file picker, because a service history is worth money
+> on exactly one day and on that day a whole-suite backup is no use to the buyer.
 >
 > The **mortgage** is typed as the note reads (principal, rate, term, first payment) and everything
 > else is derived: balance today, principal and interest paid, payoff month — or *never*, when the
@@ -249,19 +259,46 @@ the receipts.
 > one turns its items into ordinary plans you own; applying it again adds only what is new. The third
 > thing is **safety recalls**, keyed by make/model/year with no VIN at all — NHTSA's *do not drive*
 > and *do not park indoors* flags arrive as overdue, everything else as scheduled, because fourteen
-> red lines on the day you add a used truck is a docket you stop reading.
+> red lines on the day you add a used truck is a docket you stop reading. That answer is the only one
+> here that **goes stale while the vehicle sits still** — campaigns open years after a car is built —
+> so every vehicle schedule carries a standing six-monthly *check recalls*, and running the check is
+> what ticks it off.
 >
 > Schedules understand **odometer milestones** as well as intervals — "spark plugs at 100,000 miles"
 > is not "100,000 miles from now", which on a car bought at 60,000 is four years of being wrong — and
 > milestones already behind you when a schedule is applied are taken as done, because nobody knows
 > what the last owner did. A vehicle also gets a weekly **odometer prompt**, which is the one thing in
 > the suite that completes a LifeOps task rather than reacting to one: a task can't carry a number, so
-> typing the reading here ticks it off there.
+> typing the reading here ticks it off there. The recall check is the only other thing shaped like
+> that, for the same reason — a task can't go and ask NHTSA anything either.
 >
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **120 JVM unit tests**. It holds `INTERNET` for those two keyless
+> `maintenance/logic/` under **159 JVM tests**. It holds `INTERNET` for those two keyless
 > government lookups and nothing else — the mortgage, the parcel number, the service history and the
 > odometer have no code path to the network at all.
+
+> **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
+> Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.
+> Solved once per app that becomes five stores, five backups, and a household that has to remember
+> where it filed something. So there is one shelf with **two doors onto the same documents** — its own
+> screen, where the mortgage statement is findable without opening Maintenance, and a section it
+> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace.
+>
+> A document knows what it is about by **carrying a label, not a foreign key**: Maintenance says "this
+> is about `a3f2`, which is called *2018 Jeep Wrangler*", and Repository understands none of it — the
+> dependency arrow points into this module and never out. That is what lets a search for "wrangler"
+> find the truck's manual in a module that has no idea what a Wrangler is.
+>
+> **It stores documents and does not read them.** No OCR, no extraction, no interpretation — which is
+> what makes it safe to keep a mortgage statement and a lab result in one drawer. It declares **no
+> permissions at all**. Pictures are downsampled; a PDF is copied byte for byte, because a re-encoded
+> PDF is not the file the bank sent. Documents leave by exactly one road — a copy made into
+> `cacheDir/exports` when somebody presses Open or Send — and the backup carries the **files as well as
+> the rows**, restoring them first, because here the rows are only captions.
+>
+> An app that already keeps its own paperwork **lends it read-only** rather than migrating: Health's
+> documents appear on the shelf beside everything else, while every change to one still happens in
+> Health, which is where the rules about deleting them live.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

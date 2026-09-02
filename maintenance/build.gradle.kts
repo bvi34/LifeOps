@@ -36,6 +36,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        // Robolectric needs the merged Android resources to stand a context up; the database tests
+        // (schema migrations and the repository's own rules) run on the JVM through it, so
+        // `gradle :maintenance:testDebugUnitTest` still covers the store without a device.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 ksp {
@@ -53,6 +60,11 @@ dependencies {
     // takes the tick back (see data/repository/LifeOpsTasks). The dependency points one way only:
     // LifeOps announces completions on a bus and knows nothing about who is listening.
     implementation(project(":lifeops"))
+    // Repository, for the paperwork. An asset is the thing in the suite most likely to arrive with
+    // a folder of it — the manual, the warranty, the title, the mortgage statement — and Maintenance
+    // deliberately does not keep a document store of its own: it files into the shelf and shows the
+    // same rows back on the asset. One line of dependency, one composable at the call site.
+    implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -77,4 +89,10 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // The store, on the JVM. Everything above this line is pure logic and needs nothing; the
+    // database is the one part that cannot be tested by reasoning about it, because what it is
+    // being tested for — that a migration produces the schema Room expects, that a cascade really
+    // cascades — is SQLite's behaviour and not Kotlin's.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

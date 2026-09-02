@@ -61,20 +61,41 @@ data class UpkeepPlan(
 )
 
 /**
- * Work, or a meter reading.
+ * Work, or a prompt.
  *
  * The distinction earns its place at exactly one moment: what "done" means. Finishing a job writes a
  * service record and restarts its clock. "Read the odometer" is not a job — there is nothing to
  * record and nothing to cost, and a service history full of weekly zero-pound entries called *Read
- * the odometer* would bury the eleven entries that matter.
+ * the odometer* would bury the eleven entries that matter. Nor is "check the recalls".
  *
- * It also gets satisfied differently. A LifeOps task cannot carry a number, so ticking one off over
- * there cannot be what captures a reading. Instead the **reading satisfies the prompt** — type it in
- * here and the task ticks itself off in LifeOps — and the task is what nudges you to do that.
+ * A prompt also gets satisfied differently. A LifeOps task cannot carry a number, so ticking one off
+ * over there cannot be what captures a reading. Instead the **thing itself satisfies the prompt** —
+ * type the reading in, or run the check, and the task ticks itself off in LifeOps — and the task is
+ * what nudges you to do that.
  */
 enum class PlanKind(val key: String, val label: String) {
     UPKEEP("upkeep", "Upkeep"),
-    METER_READING("meter_reading", "Meter reading");
+    METER_READING("meter_reading", "Meter reading"),
+
+    /**
+     * "Ask NHTSA what is open on this model" — the same shape as a meter prompt, for the same
+     * reason.
+     *
+     * A recall list is the one thing on the docket that goes stale on its own: nothing about your
+     * vehicle changes, and the answer does. Checking is a question this app can ask for you, so the
+     * prompt exists to *make it happen on a cadence* rather than to be work you do — and running the
+     * check is what satisfies it, the way typing a reading satisfies the odometer prompt.
+     */
+    RECALL_CHECK("recall_check", "Recall check");
+
+    /**
+     * Whether finishing this writes a service record and costs something.
+     *
+     * Only real upkeep does. A reading and a recall check are prompts: they move their own clock on
+     * and leave the history alone, because a service history full of weekly £0 entries called *Read
+     * the odometer* would bury the eleven entries that matter.
+     */
+    val isWork: Boolean get() = this == UPKEEP
 
     companion object {
         fun of(key: String?): PlanKind = entries.firstOrNull { it.key == key } ?: UPKEEP

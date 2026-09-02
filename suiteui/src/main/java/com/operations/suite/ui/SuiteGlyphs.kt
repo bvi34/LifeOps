@@ -274,6 +274,39 @@ object SuiteGlyphs {
         }
 
     /**
+     * Repository — a folder standing on a shelf.
+     *
+     * The two halves are the app: a document (the tab and the body, drawn as the structural line)
+     * sitting on a rule (the shelf, drawn as the highlight). It has to be told apart from Project's
+     * board and Citation's book at tile size, so the shelf runs the full width of the mark and the
+     * folder is deliberately narrower than a page — a folder among folders, not a page on its own.
+     */
+    private fun folderShelf(ink: Ink): ImageVector =
+        glyph("SuiteFolderShelf") {
+            // The shelf: one rule the whole mark stands on, with a lip at each end.
+            line(width = 1.9f, ink = ink.highlight) {
+                moveTo(3.2f, 19.4f); lineTo(20.8f, 19.4f)
+                moveTo(3.2f, 19.4f); lineTo(3.2f, 17.4f)
+                moveTo(20.8f, 19.4f); lineTo(20.8f, 17.4f)
+            }
+            // The folder: a tab along the top edge, then the body squared off onto the shelf.
+            line(width = 1.9f, ink = ink.line) {
+                moveTo(6.1f, 16.4f)
+                lineTo(6.1f, 5.6f)
+                lineTo(11.2f, 5.6f)
+                lineTo(12.6f, 7.6f)
+                lineTo(17.9f, 7.6f)
+                lineTo(17.9f, 16.4f)
+                close()
+            }
+            // A second folder behind it, secondary so it survives tinting without competing: the
+            // shelf holds more than one thing, which is the whole point of the app.
+            line(width = 1.3f, alpha = 0.5f, ink = ink.line) {
+                moveTo(8.6f, 10.6f); lineTo(15.4f, 10.6f)
+            }
+        }
+
+    /**
      * How to draw each mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it.
      * The drawing is a *function* of its ink rather than a finished vector, so the tintable form
      * and the two-colour one can never be different drawings.
@@ -286,7 +319,8 @@ object SuiteGlyphs {
         "basket" to ::basket,
         "open-book" to ::openBook,
         "answer-spark" to ::answerSpark,
-        "wrench" to ::wrench
+        "wrench" to ::wrench,
+        "folder-shelf" to ::folderShelf
     )
 
     /** Every mark in its tintable form, by icon key — what an app with no icon colours is drawn with. */

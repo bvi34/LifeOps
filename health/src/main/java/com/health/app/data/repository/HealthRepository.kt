@@ -1489,6 +1489,21 @@ class HealthRepository(
 
     suspend fun getDocument(id: String): Document? = dao.getDocument(id)?.toModel()
 
+    /**
+     * Every document in Health, with the name of whoever it is about attached.
+     *
+     * For the suite's shelf and nothing else — see `shelf/HealthDocumentSource`. The name is resolved
+     * here rather than there because a profile id means nothing outside this app, and "Sam" is the
+     * only part of a lab result the shelf has any business showing.
+     */
+    fun observeAllDocumentsWithOwner(): Flow<List<Pair<Document, String?>>> =
+        combine(dao.observeAllDocuments(), dao.observeAllProfiles()) { documents, profiles ->
+            val names = profiles.associate { it.id to it.name }
+            sortDocuments(documents.map { it.toModel() }).map { document ->
+                document to document.profileId?.let { names[it] }
+            }
+        }
+
     private fun sortDocuments(documents: List<Document>): List<Document> =
         Documents.sort(documents, date = { it.documentDate }, title = { it.title })
 

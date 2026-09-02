@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
@@ -27,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,10 +44,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.maintenance.app.data.model.AssetCard
 import com.maintenance.app.data.repository.MaintenanceRepository
+import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.DueStatus
+import com.maintenance.app.ui.asset.KindAttributeFields
 import com.maintenance.app.ui.common.AssetMark
 import com.maintenance.app.ui.common.EmptyState
+import com.maintenance.app.ui.common.NumberField
 import com.maintenance.app.ui.common.StatusPill
 import com.maintenance.app.ui.common.TextField
 import com.maintenance.app.ui.common.money
@@ -58,8 +64,15 @@ class AssetsViewModel(private val repo: MaintenanceRepository) : ViewModel() {
     val cards: StateFlow<List<AssetCard>> =
         repo.observeAssetCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun addAsset(name: String, kind: AssetKind, make: String?, model: String?, year: Int?, onAdded: (String) -> Unit) =
-        viewModelScope.launch { onAdded(repo.addAsset(name, kind, make, model, year)) }
+    fun addAsset(
+        name: String,
+        kind: AssetKind,
+        make: String?,
+        model: String?,
+        year: Int?,
+        attributes: Map<String, String>,
+        onAdded: (String) -> Unit
+    ) = viewModelScope.launch { onAdded(repo.addAsset(name, kind, make, model, year, attributes)) }
 
     class Factory(private val repo: MaintenanceRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -146,9 +159,9 @@ fun AssetsScreen(
     if (adding) {
         AddAssetDialog(
             onDismiss = { adding = false },
-            onAdd = { name, kind, make, model, year ->
+            onAdd = { name, kind, make, model, year, attributes ->
                 adding = false
-                vm.addAsset(name, kind, make, model, year) { onOpenAsset(it) }
+                vm.addAsset(name, kind, make, model, year, attributes) { onOpenAsset(it) }
             }
         )
     }
@@ -209,39 +222,67 @@ private fun AssetRow(card: AssetCard, onClick: () -> Unit) {
 }
 
 /**
- * Adding an asset asks for four things and no more.
+ * Adding an asset asks for everything the kind has — and insists on none of it but the name.
  *
- * The VIN, the parcel number, the mortgage and the service schedule all live one screen in — asked
- * for when you are sitting with the paperwork, not while you are standing in the garage trying to
- * get the car into the app at all. Anything this dialog demanded up front is a thing that would
- * stop somebody adding the car.
+ * Pick "Vehicle" and the VIN, the trim, the engine, the plate and the rest are right there, because
+ * the moment somebody is typing the car in is the moment they have the title or the insurance card
+ * in their other hand, and coming back for those fields later is a trip most people never make. The
+ * fields are generated from `logic/AssetKind`, so this dialog and the edit dialog ask for the same
+ * things by construction, and a new kind grows its own here for free.
+ *
+ * What keeps that from being a wall: **every one of them may be left blank**, the Add button
+ * watches the name alone, and the list scrolls. Nothing here can stop somebody standing in the
+ * garage from getting the car into the app — it just stops them having to come back.
+ *
+ * The values typed under one kind survive switching to another, so a serial number entered under
+ * "Appliance" is still there if it turns out to be "Equipment"; only the selected kind's fields are
+ * saved.
  */
 @Composable
 private fun AddAssetDialog(
     onDismiss: () -> Unit,
-    onAdd: (name: String, kind: AssetKind, make: String?, model: String?, year: Int?) -> Unit
+    onAdd: (
+        name: String,
+        kind: AssetKind,
+        make: String?,
+        model: String?,
+        year: Int?,
+        attributes: Map<String, String>
+    ) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf(AssetKind.VEHICLE) }
     var make by remember { mutableStateOf("") }
     var model by remember { mutableStateOf("") }
     var year by remember { mutableStateOf("") }
+    val attributes = remember { mutableStateMapOf<String, String>() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Add an asset") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 KindChips(selected = kind, onSelect = { kind = it })
                 TextField(label = "Name", value = name, onChange = { name = it })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextField(label = "Make", value = make, onChange = { make = it }, modifier = Modifier.weight(1f))
                     TextField(label = "Model", value = model, onChange = { model = it }, modifier = Modifier.weight(1f))
                 }
-                com.maintenance.app.ui.common.NumberField(
-                    label = "Year",
-                    value = year,
-                    onChange = { year = it.take(4) }
+                NumberField(label = "Year", value = year, onChange = { year = it.take(4) })
+
+                Text(
+                    "Everything below is optional — fill in what you have in front of you." +
+                        (if (kind == AssetKind.VEHICLE) " The VIN fills in most of the rest later." else ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                KindAttributeFields(
+                    kind = kind,
+                    values = attributes,
+                    onChange = { key, value -> attributes[key] = value }
                 )
             }
         },
@@ -254,7 +295,12 @@ private fun AddAssetDialog(
                         kind,
                         make.trim().takeIf { it.isNotBlank() },
                         model.trim().takeIf { it.isNotBlank() },
-                        year.toIntOrNull()
+                        year.toIntOrNull(),
+                        // Only the chosen kind's fields, normalised the way the edit dialog stores
+                        // them — a VIN typed in lower case is filed as it reads on the title.
+                        kind.attributes.associate { spec ->
+                            spec.key to AssetAttributes.normalise(spec, attributes[spec.key].orEmpty())
+                        }
                     )
                 }
             ) { Text("Add") }

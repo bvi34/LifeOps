@@ -676,6 +676,10 @@ interface HealthDao {
     @Query("SELECT * FROM documents ORDER BY documentDate DESC")
     suspend fun getAllDocuments(): List<DocumentEntity>
 
+    /** Every document, as it changes — what Health lends the suite's shelf. See `shelf/`. */
+    @Query("SELECT * FROM documents ORDER BY documentDate DESC")
+    fun observeAllDocuments(): Flow<List<DocumentEntity>>
+
     @Query("SELECT * FROM documents WHERE id = :id")
     suspend fun getDocument(id: String): DocumentEntity?
 

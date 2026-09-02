@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Where Repository writes a copy at the moment somebody asks to open or send a document
+         (cacheDir/exports). Deliberately only that directory: the documents themselves, in
+         filesDir/documents, are the household's records — not something every app on the device is
+         invited to read because it can guess a URI. A document leaves only when it is handed over.
+         Health draws the same line for the same reason. -->
+    <cache-path name="exports" path="exports/" />
+</paths>

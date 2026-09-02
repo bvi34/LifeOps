@@ -30,13 +30,16 @@ const val MAINTENANCE_DB_VERSION = 3
  * need this fortnight" — and none of those can be asked across two SQLite files without doing the
  * join in Kotlin.
  */
+// The migrations are `internal` rather than private so `MaintenanceMigrationTest` can run the very
+// objects that ship, rather than a copy of them that could drift.
+
 /**
  * An upkeep plan learns to put itself on the LifeOps week: whether it should, which task currently
  * stands for it, and which occurrence that task was published for. All three are additive and
  * nullable-or-defaulted, so an install made before the seam existed opens with every plan
  * publishing (the default) and nothing yet published.
  */
-private val MIGRATION_1_2 = object : Migration(1, 2) {
+internal val MIGRATION_1_2 = object : Migration(1, 2) {
     override fun migrate(db: SupportSQLiteDatabase) {
         // NOT NULL with a SQL DEFAULT matching @ColumnInfo(defaultValue), or Room's post-migration
         // schema validation refuses to open the database.
@@ -55,7 +58,7 @@ private val MIGRATION_1_2 = object : Migration(1, 2) {
  * All additive: an install made before any of this opens with plans that are ordinary upkeep, typed
  * by hand, with no milestones and no recalls — which is exactly what they were.
  */
-private val MIGRATION_2_3 = object : Migration(2, 3) {
+internal val MIGRATION_2_3 = object : Migration(2, 3) {
     override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE upkeep_plans ADD COLUMN atMeter TEXT")
         // NOT NULL with a SQL DEFAULT matching @ColumnInfo(defaultValue), or Room's post-migration

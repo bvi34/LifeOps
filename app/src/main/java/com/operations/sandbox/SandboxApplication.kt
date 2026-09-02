@@ -7,6 +7,7 @@ import com.health.app.HealthApp
 import com.lifeops.app.LifeOpsApp
 import com.maintenance.app.MaintenanceApp
 import com.people.app.PeopleApp
+import com.repository.app.RepositoryApp
 import com.project.app.ProjectApp
 import com.logistics.app.LogisticsApp
 
@@ -18,9 +19,13 @@ import com.logistics.app.LogisticsApp
  * Startup order is intentional but not coupled: LifeOps runs its heavy launch work (week rollover,
  * reminder scheduling, the WAL-checkpoint lifecycle callback, the sleep service); Citation builds
  * its repository asynchronously and registers its periodic jobs. Logistics, Advisor, Health, People,
- * Project and Maintenance are lazy containers that cost nothing until their screens are opened —
- * Maintenance in particular creates no database file until somebody looks at the docket. Each
- * installs exactly once.
+ * Project, Maintenance and Repository are lazy containers that cost nothing until their screens are
+ * opened — Maintenance creates no database file until somebody looks at the docket, and Repository
+ * none until something asks the shelf a question. Each installs exactly once.
+ *
+ * Repository is installed last and is the one every other app may reach into: it is where the
+ * household's documents live, and an app that files one (or lends the shelf its own) resolves it
+ * lazily rather than being handed it, so the order here cannot matter.
  *
  * People is installed late but is not late to matter: LifeOps' own startup runs a People sync round,
  * and both peers reconcile through a folder rather than through each other, so the order they come
@@ -37,5 +42,6 @@ class SandboxApplication : Application() {
         PeopleApp.install(this)
         ProjectApp.install(this)
         MaintenanceApp.install(this)
+        RepositoryApp.install(this)
     }
 }

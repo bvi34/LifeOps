@@ -23,6 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.data.model.RecallView
 import com.maintenance.app.logic.AssetKind
+import com.maintenance.app.logic.PlanKind
+import com.maintenance.app.logic.RecallChecks
 import com.maintenance.app.logic.SchedulePack
 import com.maintenance.app.ui.common.LabeledValue
 import com.maintenance.app.ui.common.SectionCard
@@ -47,8 +49,9 @@ fun VehicleSection(vm: AssetDetailViewModel, detail: AssetDetail) {
     SectionCard(title = "From the VIN") {
         if (vin.isNullOrBlank()) {
             Text(
-                "Add the VIN and this can fill in the make, model and year, offer the manufacturer's " +
-                    "service schedule, and check for open safety recalls.",
+                "Add the VIN and this can fill in the make, model, year, trim, body style, engine, " +
+                    "fuel, transmission and drivetrain, offer the manufacturer's service schedule, " +
+                    "and check for open safety recalls.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -82,12 +85,31 @@ fun VehicleSection(vm: AssetDetailViewModel, detail: AssetDetail) {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        detail.recallsCheckedAt?.let {
+        // A recall list is the one thing here that goes stale while the vehicle sits still, so the
+        // age of the answer is said out loud rather than left to be inferred from a date.
+        val checkedAt = detail.recallsCheckedAt
+        val stale = RecallChecks.isStale(checkedAt, System.currentTimeMillis())
+        Text(
+            when {
+                checkedAt == null -> "Never checked."
+                stale -> "Recalls last checked ${formatDay(checkedAt)} — worth asking again."
+                else -> "Recalls last checked ${formatDay(checkedAt)}"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (stale) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        // The standing prompt, offered where it is missing: a vehicle added before this existed, or
+        // one whose owner never applied a schedule. Applying a pack brings the same plan with it.
+        val hasPrompt = detail.plans.any { it.plan.kind == PlanKind.RECALL_CHECK && it.plan.active }
+        if (!hasPrompt) {
             Text(
-                "Recalls last checked ${formatDay(it)}",
-                style = MaterialTheme.typography.labelSmall,
+                "Nothing is asking you to check again. A standing check ${RecallChecks.CADENCE} goes " +
+                    "on the LifeOps week, and running it here ticks it off.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            OutlinedButton(onClick = vm::addRecallPrompt) { Text("Remind me ${RecallChecks.CADENCE}") }
         }
     }
 

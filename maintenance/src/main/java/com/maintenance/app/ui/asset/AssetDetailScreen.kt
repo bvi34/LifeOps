@@ -1,5 +1,7 @@
 package com.maintenance.app.ui.asset
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -30,20 +34,27 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.operations.backupkit.AppId
 import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.logic.AssetKind
+import com.maintenance.app.logic.Handover
+import com.maintenance.app.logic.HandoverRow
 import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Vin
+import com.repository.app.logic.DocumentKind
+import com.repository.app.ui.attach.DocumentsPanel
 import com.maintenance.app.ui.common.AssetMark
 import com.maintenance.app.ui.common.EmptyState
 import com.maintenance.app.ui.common.LabeledValue
@@ -51,6 +62,24 @@ import com.maintenance.app.ui.common.SectionCard
 import com.maintenance.app.ui.common.formatDay
 import com.maintenance.app.ui.common.money
 import java.time.LocalDate
+import kotlinx.coroutines.launch
+
+/**
+ * What an asset's paperwork usually is, offered first in the filing form.
+ *
+ * A guess at the common case, not a constraint: every kind on the shelf stays available, because the
+ * one document somebody cannot file is the one that makes them keep the folder in a drawer instead.
+ */
+private val MAINTENANCE_KINDS = listOf(
+    DocumentKind.MANUAL,
+    DocumentKind.WARRANTY,
+    DocumentKind.RECEIPT,
+    DocumentKind.POLICY,
+    DocumentKind.STATEMENT,
+    DocumentKind.TITLE,
+    DocumentKind.REPORT,
+    DocumentKind.OTHER
+)
 
 /** The four ways of looking at one asset. */
 enum class AssetTab(val label: String) {
@@ -87,6 +116,29 @@ fun AssetDetailScreen(
 
     val current = detail
 
+    // Handing the history to somebody else — see `logic/Handover`. The document is written where
+    // the person picking says, through the system picker, so this needs no storage permission, no
+    // FileProvider and no folder of its own: the file leaves the app and stops being its business.
+    val context = LocalContext.current
+    val shelf = remember { com.repository.app.RepositoryApp.get(context) }
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var pending by remember { mutableStateOf<String?>(null) }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val csv = pending
+        pending = null
+        // A cancelled picker is not a failure and says nothing; a failed write is not allowed to
+        // look like a success.
+        if (uri == null || csv == null) return@rememberLauncherForActivityResult
+        val wrote = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+                ?: error("no stream")
+        }.isSuccess
+        scope.launch {
+            snackbar.showSnackbar(if (wrote) "History saved." else "That didn't save. Try somewhere else.")
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -122,6 +174,33 @@ fun AssetDetailScreen(
                             onClick = { menuOpen = false; editing = true }
                         )
                         DropdownMenuItem(
+                            text = { Text("Export service history") },
+                            onClick = {
+                                menuOpen = false
+                                current?.let { detail ->
+                                    pending = Handover.csv(
+                                        rows = detail.records.map { record ->
+                                            HandoverRow(
+                                                performedAt = record.performedAt,
+                                                title = record.title,
+                                                vendor = record.vendor,
+                                                meterValue = record.meterValue,
+                                                costCents = record.costCents,
+                                                notes = record.notes
+                                            )
+                                        },
+                                        meterUnit = detail.meter?.unit
+                                    )
+                                    export.launch(
+                                        Handover.fileName(
+                                            detail.asset.descriptor.ifBlank { detail.asset.name },
+                                            LocalDate.now()
+                                        )
+                                    )
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text(if (current?.asset?.archived == true) "Own it again" else "No longer own it") },
                             onClick = {
                                 menuOpen = false
@@ -135,7 +214,8 @@ fun AssetDetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         if (current == null) {
             EmptyState(
@@ -183,12 +263,20 @@ fun AssetDetailScreen(
             title = { Text("Delete ${current.asset.name}?") },
             text = {
                 Text(
-                    "Its schedules, its service history, its loans and its policies go with it. " +
-                        "If you have only stopped owning it, mark it as no longer owned instead — the history is worth keeping."
+                    "Its schedules, its service history, its loans, its policies and its documents go " +
+                        "with it. If you have only stopped owning it, mark it as no longer owned " +
+                        "instead — the history is worth keeping."
                 )
             },
             confirmButton = {
-                TextButton(onClick = { confirmingDelete = false; vm.delete(onBack) }) { Text("Delete") }
+                TextButton(onClick = {
+                    val assetId = current.asset.id
+                    confirmingDelete = false
+                    // The shelf does not cascade on another app's rules — it cannot know what
+                    // deleting an asset means — so the app that filed the documents says so.
+                    scope.launch { shelf.documents.deleteFiledOn(AppId.MAINTENANCE.key, assetId) }
+                    vm.delete(onBack)
+                }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmingDelete = false }) { Text("Cancel") } }
         )
@@ -245,6 +333,22 @@ private fun OverviewTab(vm: AssetDetailViewModel, detail: AssetDetail, onEdit: (
                         }
                     }
                 }
+            }
+        }
+
+        item(key = "documents") {
+            SectionCard(title = "Documents") {
+                // Repository's section, lent to the app that owns the thing. The rows live on the
+                // shelf — findable from there without knowing they were filed here — and are worked
+                // on from both ends. See `com.repository.app.ui.attach.DocumentsPanel`.
+                DocumentsPanel(
+                    appKey = AppId.MAINTENANCE.key,
+                    recordKey = asset.id,
+                    recordLabel = asset.name,
+                    kinds = MAINTENANCE_KINDS,
+                    emptyLine = "The manual, the warranty, the title, the last statement — whatever " +
+                        "came with it. Filed here, findable in Repository."
+                )
             }
         }
 

@@ -58,7 +58,13 @@ fun TextField(
     )
 }
 
-/** A whole number — mileage, a year, an interval. Non-digits simply never arrive. */
+/**
+ * A number. Whole by default — mileage, a year, an interval — and non-digits simply never arrive.
+ *
+ * [decimals] lets a single point through, for the handful of fields that are genuinely fractional:
+ * a lot size is 0.34 acres and no amount of validation afterwards helps a field whose keyboard has
+ * already swallowed the dot.
+ */
 @Composable
 fun NumberField(
     label: String,
@@ -66,18 +72,46 @@ fun NumberField(
     onChange: (String) -> Unit,
     modifier: Modifier = Modifier,
     supporting: String? = null,
-    isError: Boolean = false
+    isError: Boolean = false,
+    decimals: Boolean = false
 ) {
     OutlinedTextField(
         value = value,
-        onValueChange = { text -> onChange(text.filter { it.isDigit() }) },
+        onValueChange = { text ->
+            onChange(if (decimals) digitsAndOnePoint(text) else text.filter { it.isDigit() })
+        },
         label = { Text(label) },
         singleLine = true,
         isError = isError,
         supportingText = supporting?.let { { Text(it) } },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(
+            keyboardType = if (decimals) KeyboardType.Decimal else KeyboardType.Number
+        ),
         modifier = modifier.fillMaxWidth()
     )
+}
+
+/**
+ * The digits, and the first separator typed, as a point.
+ *
+ * Two details it would be easy to get wrong. The point **survives with nothing after it**, because
+ * "0." is what "0.34" looks like halfway through typing and a filter that tidied it away would make
+ * the field impossible to type a decimal into. And a **comma counts as the separator**: half the
+ * world's keyboards offer one there, and dropping it would silently turn 0,34 acres into 34.
+ */
+internal fun digitsAndOnePoint(text: String): String {
+    var pointed = false
+    return buildString {
+        text.forEach { char ->
+            when {
+                char.isDigit() -> append(char)
+                (char == '.' || char == ',') && !pointed -> {
+                    pointed = true
+                    append('.')
+                }
+            }
+        }
+    }
 }
 
 /**

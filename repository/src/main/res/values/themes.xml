@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The activity's window theme only; the Compose theme is the suite's — see ui/theme/Theme.kt. -->
+    <style name="Theme.Repository" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

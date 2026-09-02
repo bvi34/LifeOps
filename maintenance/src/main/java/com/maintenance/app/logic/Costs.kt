@@ -2,13 +2,20 @@ package com.maintenance.app.logic
 
 import kotlin.math.roundToLong
 
-/** One thing that was done to an asset and what it cost. */
+/**
+ * One thing that was done to an asset and what it cost.
+ *
+ * [vendor] is carried for the ledger's sake rather than the arithmetic's — nothing here divides by
+ * it — because "who did the brakes last time" is a question the history can answer and nothing else
+ * can. It is free text, and `logic/Vendors` is where it is tidied into an answer.
+ */
 data class ServiceEntry(
     val id: String,
     val assetId: String,
     val performedAt: Long,
     val costCents: Long,
-    val meterValue: Long? = null
+    val meterValue: Long? = null,
+    val vendor: String? = null
 )
 
 /** What an asset cost over a window, and how that reads per year and per mile. */

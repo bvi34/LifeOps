@@ -11,6 +11,8 @@ import com.health.app.data.repository.HealthSyncService
 import com.health.app.data.store.CardImageStore
 import com.health.app.data.store.DocumentStore
 import com.health.app.reminder.MedicationReminderScheduler
+import com.health.app.shelf.HealthDocumentSource
+import com.repository.app.source.DocumentSources
 import com.people.app.PeopleApp
 import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.Peers
@@ -155,7 +157,14 @@ class HealthApp private constructor(private val app: Application) {
 
         fun install(app: Application): HealthApp =
             instance ?: synchronized(this) {
-                instance ?: HealthApp(app).also { instance = it }
+                instance ?: HealthApp(app).also {
+                    instance = it
+                    // Lend the suite's shelf what Health already holds — read-only, and lazily: the
+                    // source is registered now, but nothing it wraps is touched until somebody opens
+                    // Repository and the shelf asks. Health's database still costs nothing to a
+                    // household that never opens Health.
+                    DocumentSources.register(HealthDocumentSource(it))
+                }
             }
 
         fun get(context: Context): HealthApp =

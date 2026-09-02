@@ -53,6 +53,11 @@ dependencies {
     // read People's database. Health is a bind-only peer on that seam: it keeps the people it
     // already tracks in step and never grows a profile for one it doesn't. See docs/PEOPLE.md.
     implementation(project(":people"))
+    // Repository, for the suite's shelf. Health keeps its own documents — it kept them first, and
+    // moving them would be a migration of the most sensitive rows in the suite for a tidier diagram.
+    // What it does instead is *lend* them: `shelf/HealthDocumentSource` is read-only, so a lab result
+    // is findable beside the mortgage statement while everything that changes one still happens here.
+    implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

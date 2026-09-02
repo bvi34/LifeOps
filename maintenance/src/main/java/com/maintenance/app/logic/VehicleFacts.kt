@@ -38,16 +38,22 @@ data class VehicleFacts(
     val descriptor: String
         get() = listOfNotNull(year?.toString(), make?.titleCase(), model).joinToString(" ")
 
+    /** "3.6L V6" — the engine as one line, from the two numbers vPIC files it under. */
+    val engine: String?
+        get() = displacementLitres?.let { litres ->
+            val cylinders = engineCylinders?.let { " V$it" }.orEmpty()
+            "${trimZero(litres)}L$cylinders"
+        }
+
+    /**
+     * "4WD" — vPIC writes the drive type as "4WD/4-Wheel Drive", which is the same answer twice.
+     */
+    val drive: String?
+        get() = driveType?.substringBefore('/')?.trim()?.takeIf { it.isNotBlank() }
+
     /** "3.6L V6 · 4WD · Unlimited Sport" — the line under it. */
     val detail: String
-        get() = listOfNotNull(
-            displacementLitres?.let { litres ->
-                val cylinders = engineCylinders?.let { " V$it" }.orEmpty()
-                "${trimZero(litres)}L$cylinders"
-            },
-            driveType?.substringBefore('/')?.takeIf { it.isNotBlank() },
-            trim?.takeIf { it.isNotBlank() }
-        ).joinToString(" · ")
+        get() = listOfNotNull(engine, drive, trim?.takeIf { it.isNotBlank() }).joinToString(" · ")
 
     private fun trimZero(value: Double): String =
         if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()

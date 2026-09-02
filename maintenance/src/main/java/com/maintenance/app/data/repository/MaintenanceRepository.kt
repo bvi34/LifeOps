@@ -17,6 +17,7 @@ import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.data.model.PlanView
 import com.maintenance.app.data.model.RecallView
 import com.maintenance.app.data.model.ServiceRecord
+import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.Costs
 import com.maintenance.app.logic.Coverage
@@ -26,6 +27,10 @@ import com.maintenance.app.logic.Docket
 import com.maintenance.app.logic.DocketEntry
 import com.maintenance.app.logic.DocketSource
 import com.maintenance.app.logic.DueStatus
+import com.maintenance.app.logic.Ledger
+import com.maintenance.app.logic.LedgerAsset
+import com.maintenance.app.logic.Ledgers
+import com.maintenance.app.logic.ServiceEntry
 import com.maintenance.app.logic.Loan
 import com.maintenance.app.logic.LoanTerms
 import com.maintenance.app.logic.MeterReading
@@ -120,6 +125,57 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
     }
 
     /**
+     * The ledger: what the whole register costs, owes and is worth over a window.
+     *
+     * [since] null is everything ever. The window is the caller's because it is a question somebody
+     * asks two ways — "what has this year cost" and "what has this ever cost" — and the answer to
+     * both is the same fold over the same rows.
+     *
+     * Loan balances are worked out here rather than in `logic/Ledgers`, because the arithmetic is
+     * `logic/Loan`'s and doing it in two places is how two screens end up disagreeing about a
+     * balance.
+     */
+    fun observeLedger(since: Long?): Flow<Ledger> =
+        combine(
+            dao.observeAssets(),
+            dao.observeRecords(),
+            dao.observeCoverages(),
+            dao.observeLoans()
+        ) { assets, records, coverages, loans ->
+            val now = now()
+            val loansByAsset = loans.groupBy { it.assetId }
+            Ledgers.of(
+                assets = assets.map { row ->
+                    LedgerAsset(
+                        id = row.id,
+                        name = row.name,
+                        kind = AssetKind.of(row.kind),
+                        worthCents = row.currentValueCents,
+                        owedCents = loansByAsset[row.id].orEmpty()
+                            .sumOf { it.snapshotAt(now).balanceCents.coerceAtLeast(0L) },
+                        archived = row.archived,
+                        colorArgb = row.colorArgb
+                    )
+                },
+                entries = records.map { it.toRecord().asEntry() },
+                coverages = coverages.groupBy { it.assetId }
+                    .mapValues { (_, rows) -> rows.map { it.toCoverage() } },
+                since = since,
+                now = now
+            )
+        }
+
+    /**
+     * Every service ever logged, as bare entries.
+     *
+     * This exists for one question — *who did the brakes last time?* — which only has an answer
+     * across assets: the garage that did the truck is the one you would ring about the mower. See
+     * `logic/Vendors`.
+     */
+    fun observeServiceEntries(): Flow<List<ServiceEntry>> =
+        dao.observeRecords().map { rows -> rows.map { it.toRecord().asEntry() } }
+
+    /**
      * The docket: everything owed across every asset, ordered.
      *
      * Archived assets are left out. A truck you sold does not need its registration renewing, and a
@@ -204,12 +260,20 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
 
     // ------------------------------------------------------------------ assets
 
+    /**
+     * Put a new asset on the register, with whatever of its kind's own fields were filled in.
+     *
+     * [attributes] arrives the way the form held it — every key the kind asks for, blanks included —
+     * and the blanks are simply not written, which is the same rule [updateAsset] follows: an absent
+     * row and an empty string must never both mean "no VIN".
+     */
     suspend fun addAsset(
         name: String,
         kind: AssetKind,
         make: String? = null,
         model: String? = null,
         year: Int? = null,
+        attributes: Map<String, String> = emptyMap(),
         colorArgb: Long = DEFAULT_COLOR
     ): String {
         val id = newId()
@@ -233,6 +297,14 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 updatedAt = stamp
             )
         )
+        val filled = attributes
+            .mapNotNull { (key, value) -> kind.spec(key)?.let { it to value } }
+            .mapNotNull { (spec, value) ->
+                AssetAttributes.normalise(spec, value).takeIf { it.isNotBlank() }?.let { spec.key to it }
+            }
+        if (filled.isNotEmpty()) {
+            dao.upsertAttributes(filled.map { (key, value) -> AssetAttributeEntity(id, key, value) })
+        }
         return id
     }
 
@@ -295,7 +367,8 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         everyDays: Int?,
         everyMeter: Long?,
         notes: String? = null,
-        publishToLifeOps: Boolean = true
+        publishToLifeOps: Boolean = true,
+        kind: PlanKind = PlanKind.UPKEEP
     ): String {
         val id = newId()
         val stamp = now()
@@ -310,6 +383,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 lastDoneAt = null,
                 lastDoneMeter = null,
                 active = true,
+                kind = kind.key,
                 publishToLifeOps = publishToLifeOps,
                 sortOrder = dao.nextPlanSortOrder(assetId),
                 createdAt = stamp,
@@ -373,10 +447,11 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
     override suspend fun completeFromWeek(planId: String, completedAt: Long): Boolean {
         val plan = dao.getPlan(planId) ?: return false
 
-        // A meter prompt is not work: ticking "read the odometer" writes no service record and costs
-        // nothing. It just moves the prompt on — and if a reading arrived in the meantime, that
-        // reading has already moved it, which is why this is safe to run twice.
-        if (PlanKind.of(plan.kind) == PlanKind.METER_READING) {
+        // A prompt is not work: ticking "read the odometer" or "check recalls" writes no service
+        // record and costs nothing. It just moves the prompt on — and if a reading or a check
+        // arrived in the meantime, that has already moved it, which is why this is safe to run
+        // twice.
+        if (!PlanKind.of(plan.kind).isWork) {
             dao.upsertPlan(plan.copy(lastDoneAt = completedAt, updatedAt = now()))
             dao.setPlanLink(planId, null, null)
             return true
@@ -546,21 +621,45 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 updatedAt = now()
             )
         )
-        val trim = facts.trim
-        if (!trim.isNullOrBlank() && dao.attributesOf(assetId).none { it.key == ATTR_TRIM }) {
-            dao.upsertAttributes(listOf(AssetAttributeEntity(assetId, ATTR_TRIM, trim)))
+        // Everything the decode knows that the vehicle kind has a field for — not the trim alone.
+        // Each one is written only where the asset has nothing there already, because a decode is a
+        // claim about a model and what you typed is a fact about your vehicle.
+        val decoded = mapOf(
+            ATTR_TRIM to facts.trim,
+            ATTR_BODY_STYLE to facts.bodyClass,
+            ATTR_ENGINE to facts.engine,
+            ATTR_FUEL to facts.fuel,
+            ATTR_TRANSMISSION to facts.transmission,
+            ATTR_DRIVE_TYPE to facts.drive
+        )
+        val alreadyThere = dao.attributesOf(assetId).filter { it.value.isNotBlank() }.map { it.key }.toSet()
+        val rows = decoded.mapNotNull { (key, value) ->
+            value?.trim()
+                ?.takeIf { it.isNotBlank() && key !in alreadyThere }
+                ?.let { AssetAttributeEntity(assetId, key, it) }
         }
+        if (rows.isNotEmpty()) dao.upsertAttributes(rows)
     }
 
     // ------------------------------------------------------------------ recalls
 
     /**
-     * Store what NHTSA said, keeping what this household already decided about each one.
+     * Store what NHTSA said, keeping what this household already decided about each one — and
+     * satisfy any prompt that was asking for the check.
      *
      * A recall you have acknowledged stays acknowledged when the list is fetched again — the
      * campaign is the identity, and NHTSA re-sends every open campaign every time.
+     *
+     * Returns the LifeOps tasks the recall-check prompts had published, for the caller to tick off.
+     * This is the seam running backwards, exactly as [addReading] does it: a task in a week planner
+     * cannot go and ask NHTSA anything, so *running the check here* is what completes the task over
+     * there. The nudge is the task; the asking is the work.
+     *
+     * An **empty answer still counts as a check**. "No open recalls" is the result you most want to
+     * be able to trust, and a prompt that only moved on when something was wrong would ask you again
+     * next week for having had nothing wrong.
      */
-    suspend fun saveRecalls(assetId: String, recalls: List<Recall>, fetchedAt: Long = now()) {
+    suspend fun saveRecalls(assetId: String, recalls: List<Recall>, fetchedAt: Long = now()): List<String> {
         val rows = recalls.map { recall ->
             RecallEntity(
                 assetId = assetId,
@@ -579,6 +678,12 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         }
         if (rows.isNotEmpty()) dao.upsertRecalls(rows)
         dao.getAsset(assetId)?.let { dao.upsertAsset(it.copy(recallsCheckedAt = fetchedAt)) }
+
+        val satisfied = dao.recallPromptsOf(assetId)
+        satisfied.forEach { prompt ->
+            dao.upsertPlan(prompt.copy(lastDoneAt = fetchedAt, updatedAt = now()))
+        }
+        return satisfied.mapNotNull { it.lifeOpsTaskId }
     }
 
     /** "Dealt with" — off the docket, still on file. Passing null puts it back. */
@@ -893,8 +998,13 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         /** A neutral slate; an asset's colour is picked when it is added and edited any time. */
         const val DEFAULT_COLOR = 0xFF64748BL
 
-        /** The kind-specific attribute a decoded trim lands in; see `logic/AssetKind`. */
+        /** The kind-specific attributes a VIN decode lands in; see `logic/AssetKind`. */
         const val ATTR_TRIM = "trim"
+        const val ATTR_BODY_STYLE = "bodyStyle"
+        const val ATTR_ENGINE = "engine"
+        const val ATTR_FUEL = "fuel"
+        const val ATTR_TRANSMISSION = "transmission"
+        const val ATTR_DRIVE_TYPE = "driveType"
 
         const val READING_MANUAL = "manual"
         const val READING_FROM_SERVICE = "service"

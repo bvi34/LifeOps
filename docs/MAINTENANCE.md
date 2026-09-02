@@ -66,15 +66,29 @@ VEHICLE(
     meter = MeterUnit.MILES,
     attributes = listOf(
         AssetAttributeSpec("vin", "VIN", AttributeInput.TEXT, AttributeCheck.VIN, hint = "17 characters, no I, O or Q"),
+        AssetAttributeSpec("trim", "Trim"),
+        AssetAttributeSpec("bodyStyle", "Body style", hint = "Sedan, pickup, SUV, …"),
+        AssetAttributeSpec("engine", "Engine", hint = "3.6L V6"),
         AssetAttributeSpec("licensePlate", "License plate"),
         …
     )
 )
 ```
 
-…and the values live in `asset_attributes` keyed by `(assetId, key)`. The edit dialog, the overview
-screen and the validation are all generated from that list, so adding a kind is **authoring**: one
-entry, and it grows its own fields everywhere, already checked, already stored. What stays a real
+A vehicle asks for twelve: the VIN, the six a decode can fill in (trim, body style, engine, fuel,
+transmission, drivetrain), the colour, the plate and where it is registered, and the two nobody can
+recall at a counter — tyre size and oil spec. The first seven are ordered the way the decode returns
+them, so a decoded vehicle reads top to bottom on the detail page.
+
+…and the values live in `asset_attributes` keyed by `(assetId, key)`. The **add** dialog, the **edit**
+dialog, the overview screen and the validation are all generated from that list, so adding a kind is
+**authoring**: one entry, and it grows its own fields everywhere, already checked, already stored.
+
+Both dialogs asking from the same list is what stops them drifting: whatever a vehicle is asked for
+when you first type it in is exactly what it is asked for afterwards. Adding an asset therefore
+offers **everything** its kind has — the moment somebody is typing the car in is the moment the title
+is in their other hand — while **requiring nothing but the name**: every kind-specific field may be
+left blank, the Add button watches the name alone, and the form scrolls. What stays a real
 column on the asset is only what every kind has — a name, a make, a model, a year, what it cost, what
 it is worth.
 
@@ -341,8 +355,11 @@ The rule lives in `logic/Vin.decodeQuery` and is unit-tested, because a privacy 
 on somebody remembering to truncate a string is not a promise. It is the same test Health applies to
 its drug lookup: *could this request tell anyone something about this household?*
 
-The decode is **offered, never applied**. It fills in only the fields you left blank, and the
-schedules it matches are listed for you to choose from rather than imported on your behalf.
+The decode is **offered, never applied**. It fills in only the fields you left blank — make, model
+and year on the asset itself, and the trim, body style, engine, fuel, transmission and drivetrain in
+the vehicle's own fields — and the schedules it matches are listed for you to choose from rather than
+imported on your behalf. Every field vPIC answers has somewhere to land, which is asserted in
+`AssetKindTest`: a decoded fact with no field to go in is a fact silently thrown away.
 
 ### Schedule packs
 
@@ -384,6 +401,16 @@ list, on the asset's page, and counted — just not shouted.
 **Acknowledging** one is the only part of a recall this app owns: NHTSA says what is open for the
 model, you say whether it has been dealt with on yours. It comes off the docket and stays on file.
 
+And the answer **goes stale on its own**, which nothing else on the docket does. Every other line is
+owed because your vehicle changed — miles went on it, a policy ran out. A recall list changes while
+the vehicle sits still: campaigns are opened years after a car is built. So a check has a shelf life
+(`logic/RecallChecks.EVERY_DAYS`, six months), the vehicle page says out loud when the answer on file
+is older than that, and every vehicle schedule carries a standing **"Check recalls"** — a prompt, not
+work, in exactly the shape the odometer prompt has below: running the check is what satisfies it, so
+pressing *Check recalls* here ticks the task off in LifeOps. A vehicle that predates the prompt, or
+whose owner never applied a schedule, is offered it on the page rather than given it silently: a plan
+puts a task on somebody's week, and inventing those unasked is how an app stops being trusted.
+
 ### The odometer prompt
 
 Every mile-based interval in this app rests on readings, and nothing collects them on its own. So a
@@ -395,8 +422,11 @@ vehicle schedule includes a **weekly "Odometer reading"** — which is a plan, b
   reading in here is what completes the task over there. The task is the nudge; the reading is the
   work.
 
-That is the one call in the whole seam that runs the other way — Maintenance completing a LifeOps
-task rather than reacting to one — and it is why `logic/PlanKind` exists.
+That is the seam running the other way — Maintenance completing a LifeOps task rather than reacting
+to one — and it is why `logic/PlanKind` exists. The recall check is the second of exactly two things
+shaped like that, for the same reason: a task in a week planner cannot carry a number and cannot go
+and ask NHTSA anything, so in both cases *doing the thing here* is what completes the task there.
+`PlanKind.isWork` is the line between them and real upkeep — only work writes a service record.
 
 ## The screens
 
@@ -405,6 +435,21 @@ task rather than reacting to one — and it is why `logic/PlanKind` exists.
 **Assets** — the register, grouped by kind. Sold or scrapped things stay behind a filter rather than
 disappearing: a car's service history is the most useful thing you own about it right up until the
 day after you sell it, and "no longer mine" is not "gone".
+
+**Costs** — the same arithmetic asked sideways. Every figure on it exists on some asset's page; what
+does not exist anywhere else is the comparison, which is the part that changes what somebody does. An
+asset page says the truck cost $1,900 this year. Only this screen says that is most of everything.
+
+Two decisions in it. **Costs include what you have sold; worth and owed do not** — spend is history
+and history includes the truck you had until March, while what a thing is worth and what is owed on
+it are claims about now. And a total worth **says how complete it is** ("3 of 5 have a value typed
+in"), because a net-worth figure assembled from two filled-in fields is worse than no figure at all.
+
+It also answers *who did the brakes last time*, which only has an answer across assets: the garage
+that did the truck is the one you would ring about the mower. Vendors are free text — a household
+will not maintain a directory — so the names are folded together case-insensitively for counting
+(`logic/Vendors`) and offered back as chips while you type in the log dialog, which fixes the
+spelling where it is introduced rather than afterwards.
 
 **One asset**, in four tabs, because they are four views of one thing rather than four screens:
 
@@ -415,15 +460,31 @@ day after you sell it, and "no longer mine" is not "gone".
 | History | What has been *done* — every service, newest first, with the readings alongside |
 | Money | What it *owes and costs* — the loan, the cover, the running totals |
 
-Adding an asset asks for four things: kind, name, make/model, year. The VIN, the mortgage and the
-schedule all live one screen in — asked for when you are sitting with the paperwork, not while you
-are standing in the garage trying to get the car into the app at all.
+Adding an asset asks for the kind, the name, make/model and year — and then for everything that kind
+has: pick "Vehicle" and the VIN, the trim, the engine and the plate are right there, because the
+moment somebody is typing the car in is the moment the title is in their other hand. None of it is
+required. The mortgage and the schedule still live one screen in.
+
+### The day you sell it
+
+A car's history is worth money on exactly one day, and on that day the app's backup is no use: it is
+a whole-suite restore into an app the buyer does not have. So an asset's history leaves as **CSV**
+through the system file picker — no storage permission, no folder of its own, and the file stops
+being this app's business the moment it is written.
+
+`logic/Handover` builds it, and everything it does is about being read by something that is not this
+app: money written plain (`1234.56`, so a column of it adds up), ISO dates (which sort as text and
+mean the same thing in every country), the meter column named for what it counts, and RFC 4180
+quoting — the field that makes that matter is the notes, where *"replaced belt, cheaper than the
+dealer"* would otherwise silently shift every later column by one in a file somebody is reading to
+decide what your car is worth.
 
 ## Layout
 
 ```
 maintenance/src/main/java/com/maintenance/app/
 ├── logic/          Pure JVM, unit-tested: AssetKind · Vin · Meter · Upkeep · Coverage · Loan · Money · Costs · Docket
+│                   Ledger/Ledgers/Vendors (the register's money, sideways) · Handover (the CSV you sell with)
 │                   VehicleFacts · VpicParser · Recalls · SchedulePack/SchedulePacks · SchedulePlans
 │                   …and the LifeOps seam's brain: UpkeepTasks (what should happen to a plan's task)
 │                   and UpkeepRound (the reconciliation, over two interfaces)
@@ -435,7 +496,7 @@ maintenance/src/main/java/com/maintenance/app/
 │   └── repository/ MaintenanceRepository — rows in, logic types out, every multi-row write
 │                   LifeOpsTasks — the bridge into LifeOps' task service
 │                   UpkeepPublisher — finds the week planner and runs a round against it
-├── ui/             due · assets · asset (+ its dialogs) · common · theme
+├── ui/             due · assets · costs · asset (+ its dialogs) · common · theme
 └── backup/         MaintenanceBackupContributor
 ```
 
@@ -446,7 +507,9 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 120 JVM unit tests over `logic/`, no SDK or emulator needed:
+`gradle :maintenance:test` — 159 JVM tests, no emulator needed. Almost all of them are over `logic/`
+and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
+the only reason this module has a test dependency beyond JUnit at all.
 
 - `VinTest` — the check digit on a real VIN, the two typos a VIN catches by itself, a failing check
   digit reported rather than rejected, and the thirty-year model-year cycle resolved against three
@@ -482,6 +545,25 @@ scale, nothing.
 - `VpicParserTest` and `RecallsParserTest` — both against fixtures trimmed from **real** responses,
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.
+
+- `LedgerTest` — the register's money: biggest spender first, the window really being a window,
+  premiums pro-rated the same way one asset's page does it, a sold car still counting as spend but
+  not as worth, equity refusing to be a bare minus sign, and one garage typed three ways being one
+  garage.
+- `HandoverTest` — the CSV a buyer opens: newest first, plain money, a note with a comma in it
+  staying one column, a quote doubled, and an empty history exporting a header rather than a file
+  that looks like a failure.
+- `RecallChecksTest` — the shelf life on a recall answer (never asked counts as stale), the standing
+  check every vehicle schedule carries, and the line between a prompt and work.
+- `MaintenanceMigrationTest` — a database written at **version 1** opened through the production
+  builder: the rows survive, the columns added since arrive with the defaults their migrations
+  promise, and Room's own post-migration validation is what proves the schema is right. Removing a
+  single `ALTER TABLE` from a migration fails it, which was checked rather than assumed.
+- `MaintenanceRepositoryTest` — the rules only SQLite can be asked about: a cleared field *deleted*
+  rather than stored as an empty string, a decode filling what is blank and arguing with nothing you
+  typed, both writes that run back into the LifeOps week handing over the right task ids, an
+  acknowledged recall surviving the next fetch, and deleting a truck really taking its plans,
+  attributes, readings and recalls with it.
 
 LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
 one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the

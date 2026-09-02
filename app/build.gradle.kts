@@ -57,6 +57,7 @@ dependencies {
     implementation(project(":people"))
     implementation(project(":project"))
     implementation(project(":maintenance"))
+    implementation(project(":repository"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

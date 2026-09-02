@@ -168,6 +168,14 @@ interface MaintenanceDao {
     @Query("SELECT * FROM upkeep_plans WHERE assetId = :assetId AND kind = 'meter_reading' AND active = 1")
     suspend fun meterPromptsOf(assetId: String): List<UpkeepPlanEntity>
 
+    /**
+     * Recall-check prompts on an asset, active ones only — what asking NHTSA satisfies.
+     * The same shape as [meterPromptsOf], for the same reason; see `logic/PlanKind`.
+     */
+    // The literal is `PlanKind.RECALL_CHECK.key`.
+    @Query("SELECT * FROM upkeep_plans WHERE assetId = :assetId AND kind = 'recall_check' AND active = 1")
+    suspend fun recallPromptsOf(assetId: String): List<UpkeepPlanEntity>
+
     // --- recalls ---
 
     @Query("SELECT * FROM recalls ORDER BY parkIt DESC, parkOutside DESC, reportedOnEpochDay DESC")

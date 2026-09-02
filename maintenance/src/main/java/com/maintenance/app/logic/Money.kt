@@ -28,6 +28,19 @@ object Money {
     }
 
     /**
+     * 123456 → "1234.56" — no symbol, no grouping, always two decimals.
+     *
+     * For machines rather than people: a figure written into an exported file, where a thousands
+     * comma is a broken column and a currency symbol is a cell that will not add up.
+     */
+    fun plain(amountCents: Long): String {
+        val negative = amountCents < 0
+        val magnitude = abs(amountCents)
+        val body = "${magnitude / 100}.${(magnitude % 100).toString().padStart(2, '0')}"
+        return if (negative) "-$body" else body
+    }
+
+    /**
      * "1,234.56", "$1,234.56", "1234" → cents; anything else → null.
      *
      * Deliberately forgiving about what people paste out of a bank app (symbols, spaces, grouping

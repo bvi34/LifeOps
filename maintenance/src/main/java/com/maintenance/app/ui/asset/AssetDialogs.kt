@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -27,6 +28,8 @@ import com.maintenance.app.data.model.Asset
 import com.maintenance.app.data.model.CoverageView
 import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.logic.AssetAttributes
+import com.maintenance.app.logic.AssetKind
+import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.AttributeInput
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.Loan
@@ -68,6 +71,46 @@ fun ConfirmDialog(
         confirmButton = { TextButton(onClick = onConfirm) { Text(confirm) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/**
+ * The fields this *kind* asks for, drawn from `logic/AssetKind` rather than written out.
+ *
+ * Shared by the add and the edit dialogs so the two never drift: whatever a vehicle is asked for
+ * when it is typed in is exactly what it is asked for afterwards, already validated, already
+ * hinted. Nothing here is required — every one of them is blank on the day you add the car, and a
+ * form that refused the row until you went and read the door jamb is a form that never gets the car
+ * into the app at all.
+ */
+@Composable
+fun KindAttributeFields(
+    kind: AssetKind,
+    values: Map<String, String>,
+    onChange: (key: String, value: String) -> Unit
+) {
+    kind.attributes.forEach { spec ->
+        val value = values[spec.key].orEmpty()
+        val problem = AssetAttributes.problem(spec, value)
+        when (spec.input) {
+            AttributeInput.NUMBER -> NumberField(
+                label = spec.label,
+                value = value,
+                onChange = { onChange(spec.key, it) },
+                supporting = problem ?: spec.hint,
+                isError = problem != null,
+                decimals = spec.check == AttributeCheck.DECIMAL
+            )
+            else -> TextField(
+                label = spec.label,
+                value = value,
+                onChange = { onChange(spec.key, it) },
+                singleLine = spec.input != AttributeInput.MULTILINE,
+                supporting = problem ?: spec.hint,
+                isError = problem != null,
+                capitalise = KeyboardCapitalization.Words
+            )
+        }
+    }
 }
 
 /**
@@ -114,28 +157,11 @@ fun EditAssetDialog(
                 }
                 NumberField(label = "Year", value = year, onChange = { year = it.take(4) })
 
-                asset.kind.attributes.forEach { spec ->
-                    val value = attributes[spec.key].orEmpty()
-                    val problem = AssetAttributes.problem(spec, value)
-                    when (spec.input) {
-                        AttributeInput.NUMBER -> NumberField(
-                            label = spec.label,
-                            value = value,
-                            onChange = { attributes[spec.key] = it },
-                            supporting = problem ?: spec.hint,
-                            isError = problem != null
-                        )
-                        else -> TextField(
-                            label = spec.label,
-                            value = value,
-                            onChange = { attributes[spec.key] = it },
-                            singleLine = spec.input != AttributeInput.MULTILINE,
-                            supporting = problem ?: spec.hint,
-                            isError = problem != null,
-                            capitalise = KeyboardCapitalization.Words
-                        )
-                    }
-                }
+                KindAttributeFields(
+                    kind = asset.kind,
+                    values = attributes,
+                    onChange = { key, value -> attributes[key] = value }
+                )
 
                 DateField(label = "Bought", value = purchasedAt, onChange = { purchasedAt = it })
                 MoneyField(
@@ -279,6 +305,11 @@ fun PlanDialog(
  * The meter box is pre-filled with the last known reading rather than left empty: the mileage at a
  * service is almost always "about what it is now", and a pre-filled number gets corrected while an
  * empty one gets skipped — and a skipped one is what leaves a mileage interval undatable.
+ *
+ * [suggestVendors] offers back names already used **on any asset**, because the garage that did the
+ * truck is the one you would ring about the mower. They are chips rather than a picker: a name still
+ * gets typed, and the suggestion only saves you from spelling it a third way — which is what makes
+ * "who did the brakes last time" answerable later.
  */
 @Composable
 fun LogServiceDialog(
@@ -286,6 +317,7 @@ fun LogServiceDialog(
     planId: String?,
     meterUnit: MeterUnit?,
     suggestedMeter: Long?,
+    suggestVendors: (String) -> List<String> = { emptyList() },
     onDismiss: () -> Unit,
     onSave: (planId: String?, title: String, vendor: String?, at: Long, costCents: Long, meter: Long?, notes: String?) -> Unit
 ) {
@@ -307,6 +339,20 @@ fun LogServiceDialog(
             ) {
                 TextField(label = "What was done", value = what, onChange = { what = it })
                 TextField(label = "Who did it", value = vendor, onChange = { vendor = it }, capitalise = KeyboardCapitalization.Words)
+                val known = suggestVendors(vendor)
+                if (known.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        known.forEach { name ->
+                            AssistChip(
+                                onClick = { vendor = name },
+                                label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
                 DateField(label = "When", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
                 MoneyField(
                     label = "Cost",

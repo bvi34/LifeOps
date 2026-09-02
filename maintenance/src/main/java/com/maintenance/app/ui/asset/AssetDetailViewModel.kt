@@ -9,6 +9,8 @@ import com.maintenance.app.data.repository.MaintenanceRepository
 import com.maintenance.app.data.repository.UpkeepPublisher
 import com.maintenance.app.data.net.VehicleLookupClient
 import com.maintenance.app.logic.SchedulePack
+import com.maintenance.app.logic.ServiceEntry
+import com.maintenance.app.logic.Vendors
 import com.maintenance.app.logic.SchedulePacks
 import com.maintenance.app.logic.SchedulePlans
 import com.maintenance.app.logic.VehicleFacts
@@ -41,6 +43,16 @@ class AssetDetailViewModel(
 
     val detail: StateFlow<AssetDetail?> =
         repo.observeAssetDetail(assetId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Every service ever logged, on **every** asset — held only so the log dialog can offer back a
+     * vendor you have already used. The garage that did the truck is the one you would ring about
+     * the mower, so this deliberately reaches past the asset this page is about.
+     */
+    private val serviceEntries: StateFlow<List<ServiceEntry>> =
+        repo.observeServiceEntries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun suggestVendors(typed: String): List<String> = Vendors.suggestions(serviceEntries.value, typed)
 
     // --- the asset itself ---
 
@@ -153,7 +165,10 @@ class AssetDetailViewModel(
             }
     }
 
-    /** Take the decoded make, model, year and trim — filling only what is still blank. */
+    /**
+     * Take everything the decode found — make, model, year, trim, body style, engine, fuel,
+     * transmission and drivetrain — filling only the fields that are still blank.
+     */
     fun useFacts(facts: VehicleFacts) = viewModelScope.launch {
         repo.applyVehicleFacts(assetId, facts)
     }
@@ -175,7 +190,11 @@ class AssetDetailViewModel(
         _lookup.update { it.copy(busy = true, message = null) }
         runCatching { lookups.recalls(make, model, year) }
             .onSuccess { recalls ->
-                repo.saveRecalls(assetId, recalls)
+                // The check is what satisfies the prompt that asked for it, so the task it put on
+                // the week ticks itself off — the same way a meter reading ticks off the odometer
+                // prompt. The round then dates the next check.
+                publisher.completeTasks(repo.saveRecalls(assetId, recalls))
+                publisher.round()
                 _lookup.update {
                     it.copy(
                         busy = false,
@@ -190,6 +209,28 @@ class AssetDetailViewModel(
 
     fun setRecallAcknowledged(campaign: String, acknowledged: Boolean) = viewModelScope.launch {
         repo.setRecallAcknowledged(assetId, campaign, acknowledged)
+    }
+
+    /**
+     * Start checking this vehicle's recalls on a cadence.
+     *
+     * The prompt normally arrives with a schedule pack, which is where a vehicle picks up everything
+     * else it should be doing regularly. This is the same plan, offered on its own — for a vehicle
+     * that predates the prompt, or one whose owner never applied a pack. It is a button rather than
+     * something the app does on your behalf, because a plan is a thing that puts a task on your week
+     * and inventing those unasked is how an app stops being trusted.
+     */
+    fun addRecallPrompt() = viewModelScope.launch {
+        val item = SchedulePacks.RECALL_CHECK_ITEM
+        repo.addPlan(
+            assetId = assetId,
+            title = item.title,
+            everyDays = item.everyDays,
+            everyMeter = null,
+            notes = item.notes,
+            kind = item.kind
+        )
+        publisher.round()
     }
 
     // --- money ---

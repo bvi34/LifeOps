@@ -134,6 +134,7 @@ fun UpkeepTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             planId = view.plan.id,
             meterUnit = detail.meter?.unit,
             suggestedMeter = detail.meter?.current,
+            suggestVendors = vm::suggestVendors,
             onDismiss = { logging = null },
             onSave = { planId, title, vendor, at, cost, meter, notes ->
                 logging = null
@@ -178,9 +179,17 @@ private fun PlanCard(
         weekLine(view)?.let {
             Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
-        if (plan.kind == PlanKind.METER_READING) {
+        // Both prompts say the same thing in their own words: you don't tick this, you do the thing
+        // and it ticks itself. See `logic/PlanKind`.
+        when (plan.kind) {
+            PlanKind.METER_READING ->
+                "Type the reading in and this ticks itself off — here and on the week."
+            PlanKind.RECALL_CHECK ->
+                "Press Check recalls above and this ticks itself off — here and on the week."
+            PlanKind.UPKEEP -> null
+        }?.let {
             Text(
-                "Type the reading in and this ticks itself off — here and on the week.",
+                it,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -342,6 +351,7 @@ fun HistoryTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             planId = null,
             meterUnit = detail.meter?.unit,
             suggestedMeter = detail.meter?.current,
+            suggestVendors = vm::suggestVendors,
             onDismiss = { logging = false },
             onSave = { planId, title, vendor, at, cost, meter, notes ->
                 logging = false

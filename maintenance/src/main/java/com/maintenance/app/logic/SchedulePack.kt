@@ -104,6 +104,24 @@ data class PackMatch(
 object SchedulePacks {
 
     /**
+     * The recall check, on every vehicle schedule.
+     *
+     * It is in the packs rather than created behind your back when a vehicle is added, because a
+     * plan is a thing this app puts on your week and inventing those unasked is how an app stops
+     * being trusted. It is in *both* packs because it has nothing to do with the manufacturer's
+     * schedule: no owner's manual tells you to ask NHTSA anything. It is here because the packs are
+     * where a vehicle picks up what it should be doing regularly, and this is one of those things.
+     */
+    val RECALL_CHECK_ITEM = ScheduleItem(
+        key = "recall-check",
+        title = "Check recalls",
+        notes = "Open the vehicle and press Check recalls. Campaigns are opened years after a car " +
+            "is built, and the letter goes to whatever address the DMV last had.",
+        everyDays = RecallChecks.EVERY_DAYS,
+        kind = PlanKind.RECALL_CHECK
+    )
+
+    /**
      * Jeep Wrangler JL, 3.6L Pentastar — Schedule A (normal duty).
      *
      * **Transcribed by hand and not yet checked against a manual.** The intervals below are the
@@ -190,7 +208,8 @@ object SchedulePacks {
                     "and a rate turns \"every 10,000 miles\" into a date.",
                 everyDays = 7,
                 kind = PlanKind.METER_READING
-            )
+            ),
+            RECALL_CHECK_ITEM
         )
     )
 
@@ -219,7 +238,8 @@ object SchedulePacks {
                 notes = "Everything measured in miles depends on this.",
                 everyDays = 7,
                 kind = PlanKind.METER_READING
-            )
+            ),
+            RECALL_CHECK_ITEM
         )
     )
 
