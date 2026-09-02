@@ -155,6 +155,6 @@ data class ServiceRecord(
     val meterValue: Long?,
     val notes: String?
 ) {
-    fun asEntry(): ServiceEntry = ServiceEntry(id, assetId, performedAt, costCents, meterValue)
+    fun asEntry(): ServiceEntry = ServiceEntry(id, assetId, performedAt, costCents, meterValue, vendor)
 }
 

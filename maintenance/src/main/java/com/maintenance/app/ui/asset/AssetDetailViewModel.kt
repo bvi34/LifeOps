@@ -9,6 +9,8 @@ import com.maintenance.app.data.repository.MaintenanceRepository
 import com.maintenance.app.data.repository.UpkeepPublisher
 import com.maintenance.app.data.net.VehicleLookupClient
 import com.maintenance.app.logic.SchedulePack
+import com.maintenance.app.logic.ServiceEntry
+import com.maintenance.app.logic.Vendors
 import com.maintenance.app.logic.SchedulePacks
 import com.maintenance.app.logic.SchedulePlans
 import com.maintenance.app.logic.VehicleFacts
@@ -41,6 +43,16 @@ class AssetDetailViewModel(
 
     val detail: StateFlow<AssetDetail?> =
         repo.observeAssetDetail(assetId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * Every service ever logged, on **every** asset — held only so the log dialog can offer back a
+     * vendor you have already used. The garage that did the truck is the one you would ring about
+     * the mower, so this deliberately reaches past the asset this page is about.
+     */
+    private val serviceEntries: StateFlow<List<ServiceEntry>> =
+        repo.observeServiceEntries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun suggestVendors(typed: String): List<String> = Vendors.suggestions(serviceEntries.value, typed)
 
     // --- the asset itself ---
 

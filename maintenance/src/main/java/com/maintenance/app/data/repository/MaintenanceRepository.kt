@@ -27,6 +27,10 @@ import com.maintenance.app.logic.Docket
 import com.maintenance.app.logic.DocketEntry
 import com.maintenance.app.logic.DocketSource
 import com.maintenance.app.logic.DueStatus
+import com.maintenance.app.logic.Ledger
+import com.maintenance.app.logic.LedgerAsset
+import com.maintenance.app.logic.Ledgers
+import com.maintenance.app.logic.ServiceEntry
 import com.maintenance.app.logic.Loan
 import com.maintenance.app.logic.LoanTerms
 import com.maintenance.app.logic.MeterReading
@@ -119,6 +123,57 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
             }
         }
     }
+
+    /**
+     * The ledger: what the whole register costs, owes and is worth over a window.
+     *
+     * [since] null is everything ever. The window is the caller's because it is a question somebody
+     * asks two ways — "what has this year cost" and "what has this ever cost" — and the answer to
+     * both is the same fold over the same rows.
+     *
+     * Loan balances are worked out here rather than in `logic/Ledgers`, because the arithmetic is
+     * `logic/Loan`'s and doing it in two places is how two screens end up disagreeing about a
+     * balance.
+     */
+    fun observeLedger(since: Long?): Flow<Ledger> =
+        combine(
+            dao.observeAssets(),
+            dao.observeRecords(),
+            dao.observeCoverages(),
+            dao.observeLoans()
+        ) { assets, records, coverages, loans ->
+            val now = now()
+            val loansByAsset = loans.groupBy { it.assetId }
+            Ledgers.of(
+                assets = assets.map { row ->
+                    LedgerAsset(
+                        id = row.id,
+                        name = row.name,
+                        kind = AssetKind.of(row.kind),
+                        worthCents = row.currentValueCents,
+                        owedCents = loansByAsset[row.id].orEmpty()
+                            .sumOf { it.snapshotAt(now).balanceCents.coerceAtLeast(0L) },
+                        archived = row.archived,
+                        colorArgb = row.colorArgb
+                    )
+                },
+                entries = records.map { it.toRecord().asEntry() },
+                coverages = coverages.groupBy { it.assetId }
+                    .mapValues { (_, rows) -> rows.map { it.toCoverage() } },
+                since = since,
+                now = now
+            )
+        }
+
+    /**
+     * Every service ever logged, as bare entries.
+     *
+     * This exists for one question — *who did the brakes last time?* — which only has an answer
+     * across assets: the garage that did the truck is the one you would ring about the mower. See
+     * `logic/Vendors`.
+     */
+    fun observeServiceEntries(): Flow<List<ServiceEntry>> =
+        dao.observeRecords().map { rows -> rows.map { it.toRecord().asEntry() } }
 
     /**
      * The docket: everything owed across every asset, ordered.

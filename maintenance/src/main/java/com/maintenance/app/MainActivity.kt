@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -37,19 +38,22 @@ import com.maintenance.app.ui.asset.AssetDetailScreen
 import com.maintenance.app.ui.asset.AssetDetailViewModel
 import com.maintenance.app.ui.assets.AssetsScreen
 import com.maintenance.app.ui.assets.AssetsViewModel
+import com.maintenance.app.ui.costs.CostsScreen
+import com.maintenance.app.ui.costs.CostsViewModel
 import com.maintenance.app.ui.due.DueScreen
 import com.maintenance.app.ui.due.DueViewModel
 import com.maintenance.app.ui.theme.MaintenanceTheme
 
 /**
- * Maintenance's entry point: two lists and one thing at a time.
+ * Maintenance's entry point: three lists and one thing at a time.
  *
- * The bottom bar has exactly two entries because the app answers exactly two questions — *what
- * needs doing?* and *what do I own?* — and a third destination would be a place to put things
- * rather than a place anybody goes. Which of the two you were last on is remembered, since somebody
- * who uses this as a register should not walk past the docket on every open.
+ * The bottom bar has one entry per question the app answers — *what needs doing?*, *what do I own?*
+ * and *what is it costing me?* — and no more. Costs earns its place by being the one view that
+ * crosses assets: every figure on it exists on some asset's page, but only here can you see that
+ * the truck is most of the money. Which tab you were last on is remembered, since somebody who uses
+ * this as a register should not walk past the docket on every open.
  *
- * An asset's page is a route rather than a third tab: it is one thing rather than a list, and the
+ * An asset's page is a route rather than a fourth tab: it is one thing rather than a list, and the
  * back gesture should return you to the list you came from, whichever it was.
  */
 class MainActivity : ComponentActivity() {
@@ -89,6 +93,7 @@ private fun SyncOnStart(app: MaintenanceApp) {
 
 private const val ROUTE_DUE = "due"
 private const val ROUTE_ASSETS = "assets"
+private const val ROUTE_COSTS = "costs"
 private const val ROUTE_ASSET = "asset/{assetId}"
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -102,7 +107,7 @@ private fun MaintenanceShell(app: MaintenanceApp) {
     var showAll by rememberSaveable { mutableStateOf(prefs.docketShowsAll) }
     var showArchived by rememberSaveable { mutableStateOf(prefs.showArchived) }
 
-    val onList = route == ROUTE_DUE || route == ROUTE_ASSETS
+    val onList = route == ROUTE_DUE || route == ROUTE_ASSETS || route == ROUTE_COSTS
 
     // Reconcile with the LifeOps week whenever the app comes to the foreground. LifeOps announces a
     // tick as it happens, so this is not the mechanism — it is the backstop, and the reason nothing
@@ -115,7 +120,17 @@ private fun MaintenanceShell(app: MaintenanceApp) {
             // The asset page carries its own bar (it has a back arrow and a menu); the two lists
             // share this one.
             if (onList) {
-                TopAppBar(title = { Text(if (route == ROUTE_ASSETS) "What you own" else "Maintenance") })
+                TopAppBar(
+                    title = {
+                        Text(
+                            when (route) {
+                                ROUTE_ASSETS -> "What you own"
+                                ROUTE_COSTS -> "What it costs"
+                                else -> "Maintenance"
+                            }
+                        )
+                    }
+                )
             }
         },
         bottomBar = {
@@ -145,13 +160,23 @@ private fun MaintenanceShell(app: MaintenanceApp) {
                         icon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
                         label = { Text("Assets") }
                     )
+                    NavigationBarItem(
+                        selected = route == ROUTE_COSTS,
+                        onClick = { switchTo(ROUTE_COSTS) },
+                        icon = { Icon(Icons.Filled.Payments, contentDescription = null) },
+                        label = { Text("Costs") }
+                    )
                 }
             }
         }
     ) { padding ->
         NavHost(
             navController = nav,
-            startDestination = if (prefs.lastTab == ROUTE_ASSETS) ROUTE_ASSETS else ROUTE_DUE,
+            startDestination = when (prefs.lastTab) {
+                ROUTE_ASSETS -> ROUTE_ASSETS
+                ROUTE_COSTS -> ROUTE_COSTS
+                else -> ROUTE_DUE
+            },
             modifier = Modifier.padding(padding)
         ) {
             composable(ROUTE_DUE) {
@@ -171,6 +196,10 @@ private fun MaintenanceShell(app: MaintenanceApp) {
                     onShowArchivedChange = { showArchived = it; prefs.showArchived = it },
                     onOpenAsset = { nav.navigate("asset/$it") }
                 )
+            }
+            composable(ROUTE_COSTS) {
+                val vm: CostsViewModel = viewModel(factory = CostsViewModel.Factory(app.repository))
+                CostsScreen(vm = vm, onOpenAsset = { nav.navigate("asset/$it") })
             }
             composable(
                 route = ROUTE_ASSET,

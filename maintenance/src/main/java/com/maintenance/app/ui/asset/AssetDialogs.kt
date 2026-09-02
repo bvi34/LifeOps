@@ -9,6 +9,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
@@ -304,6 +305,11 @@ fun PlanDialog(
  * The meter box is pre-filled with the last known reading rather than left empty: the mileage at a
  * service is almost always "about what it is now", and a pre-filled number gets corrected while an
  * empty one gets skipped — and a skipped one is what leaves a mileage interval undatable.
+ *
+ * [suggestVendors] offers back names already used **on any asset**, because the garage that did the
+ * truck is the one you would ring about the mower. They are chips rather than a picker: a name still
+ * gets typed, and the suggestion only saves you from spelling it a third way — which is what makes
+ * "who did the brakes last time" answerable later.
  */
 @Composable
 fun LogServiceDialog(
@@ -311,6 +317,7 @@ fun LogServiceDialog(
     planId: String?,
     meterUnit: MeterUnit?,
     suggestedMeter: Long?,
+    suggestVendors: (String) -> List<String> = { emptyList() },
     onDismiss: () -> Unit,
     onSave: (planId: String?, title: String, vendor: String?, at: Long, costCents: Long, meter: Long?, notes: String?) -> Unit
 ) {
@@ -332,6 +339,20 @@ fun LogServiceDialog(
             ) {
                 TextField(label = "What was done", value = what, onChange = { what = it })
                 TextField(label = "Who did it", value = vendor, onChange = { vendor = it }, capitalise = KeyboardCapitalization.Words)
+                val known = suggestVendors(vendor)
+                if (known.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        known.forEach { name ->
+                            AssistChip(
+                                onClick = { vendor = name },
+                                label = { Text(name, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
                 DateField(label = "When", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
                 MoneyField(
                     label = "Cost",

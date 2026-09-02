@@ -134,6 +134,7 @@ fun UpkeepTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             planId = view.plan.id,
             meterUnit = detail.meter?.unit,
             suggestedMeter = detail.meter?.current,
+            suggestVendors = vm::suggestVendors,
             onDismiss = { logging = null },
             onSave = { planId, title, vendor, at, cost, meter, notes ->
                 logging = null
@@ -350,6 +351,7 @@ fun HistoryTab(vm: AssetDetailViewModel, detail: AssetDetail) {
             planId = null,
             meterUnit = detail.meter?.unit,
             suggestedMeter = detail.meter?.current,
+            suggestVendors = vm::suggestVendors,
             onDismiss = { logging = false },
             onSave = { planId, title, vendor, at, cost, meter, notes ->
                 logging = false
