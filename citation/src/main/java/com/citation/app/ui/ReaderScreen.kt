@@ -106,6 +106,7 @@ import com.citation.app.ui.reader.ReaderWindowEffects
 import com.citation.app.ui.reader.rememberReaderFontFamily
 import com.citation.app.ui.reader.RenderedChapter
 import com.citation.app.ui.reader.rememberChapterImages
+import com.citation.core.reader.PageTurn
 import com.citation.core.reader.Paginator
 import com.citation.core.reader.Lookup
 import com.citation.core.note.HighlightColor
@@ -621,8 +622,9 @@ private fun ChapterPage(
 
 /**
  * The scrolling reader body: one continuous column, a horizontal swipe (or edge tap) turning to the
- * next/previous *chapter*. Scroll position is restored on the first paint of a reopened book and saved
- * as you read.
+ * next/previous *chapter*. Turning back enters the previous chapter at its **end**, so reading
+ * backwards is continuous rather than skipping over the chapter you just turned into. Scroll position
+ * is restored on the first paint of a reopened book and saved as you read.
  */
 @Composable
 private fun ScrollChapterBody(
@@ -647,9 +649,14 @@ private fun ScrollChapterBody(
     // scroll as you read, debounced so a flick doesn't hammer the DB.
     LaunchedEffect(ord) {
         val restore = vm.consumePendingScroll(ord)
-        if (restore > 0) {
+        // Turned back into from the chapter after this one: continue reading backwards from its end
+        // rather than being thrown to its first line, which is nowhere near where the turn came from.
+        val landAtEnd = vm.consumePendingEnd(ord)
+        if (restore > 0 || landAtEnd) {
             withTimeoutOrNull(2000) { snapshotFlow { scroll.maxValue }.first { it > 0 } }
-            if (scroll.maxValue > 0) scroll.scrollTo(restore.coerceAtMost(scroll.maxValue))
+            if (scroll.maxValue > 0) {
+                scroll.scrollTo(if (landAtEnd) scroll.maxValue else restore.coerceAtMost(scroll.maxValue))
+            }
         }
         snapshotFlow { scroll.value }.collectLatest { v ->
             delay(400)
@@ -689,7 +696,7 @@ private fun ScrollChapterBody(
                     onDragEnd = {
                         when {
                             total <= -turnThreshold && ord < lastIndex -> vm.goToChapter(ord + 1)
-                            total >= turnThreshold && ord > 0 -> vm.goToChapter(ord - 1)
+                            total >= turnThreshold && ord > 0 -> vm.goToChapterEnd(ord - 1)
                         }
                     }
                 ) { change, dragAmount ->
@@ -724,7 +731,7 @@ private fun ScrollChapterBody(
                                 // Edge tap-zones page too, for readers who never swipe.
                                 val w = size.width.toFloat()
                                 when {
-                                    pos.x < w * 0.22f && ord > 0 -> vm.goToChapter(ord - 1)
+                                    pos.x < w * 0.22f && ord > 0 -> vm.goToChapterEnd(ord - 1)
                                     pos.x > w * 0.78f && ord < lastIndex -> vm.goToChapter(ord + 1)
                                 }
                             }
@@ -738,8 +745,9 @@ private fun ScrollChapterBody(
 /**
  * The **paged** reader body. The chapter text is measured against the live viewport and typography and
  * split into screen-pages ([Paginator]); you turn them one at a time with a swipe or an edge tap, and
- * only the last/first page of a chapter crosses into the next/previous chapter. Turns animate like the
- * chapter-level ones so a within-chapter turn and a chapter turn feel the same.
+ * only the last/first page of a chapter crosses into the next/previous chapter — a backward crossing
+ * landing on the previous chapter's *last* page, so a page back is always one page ([PageTurn]).
+ * Turns animate like the chapter-level ones so a within-chapter turn and a chapter turn feel the same.
  *
  * Position is persisted as the current page's start **character offset** (font-size independent), so a
  * reopened book lands on the same page. That offset shares the same stored slot as scroll mode's pixel
@@ -806,21 +814,41 @@ private fun PagedChapterBody(
             }
         }
 
+        // Entering this chapter *backwards* (a page back off the next chapter's first page) opens it
+        // at its end. Read during composition rather than from an effect so the last page is the
+        // first thing drawn — landing on page 0 and then animating to the end would show the reader
+        // a page they didn't ask for. Int.MAX_VALUE means "the end": the clamp below resolves it
+        // once the chapter has been measured, so it survives the first frame, when there is exactly
+        // one known page, and re-resolves if typography changes the page count.
+        val landAtEnd = remember(ord) { vm.consumePendingEnd(ord) }
+
         // Page index survives font/margin changes (re-clamped below); it only resets per chapter.
-        var page by rememberSaveable(ord) { mutableStateOf(0) }
+        var page by rememberSaveable(ord) { mutableStateOf(if (landAtEnd) Int.MAX_VALUE else 0) }
         val safePage = page.coerceIn(0, pageStarts.lastIndex)
         var turnDir by remember { mutableStateOf(1) }
         val pageStartsState = rememberUpdatedState(pageStarts)
 
+        // Both turns read the live page and page breaks rather than the values captured when the
+        // gesture was wired up: a stale index here would read as a page back skipping the chapter.
+        fun turn(move: PageTurn.Move) {
+            when (move) {
+                is PageTurn.Move.Page -> page = move.page
+                is PageTurn.Move.Chapter -> when (move.landing) {
+                    PageTurn.Landing.FIRST_PAGE -> vm.goToChapter(move.chapter)
+                    PageTurn.Landing.LAST_PAGE -> vm.goToChapterEnd(move.chapter)
+                }
+                PageTurn.Move.Edge -> {}
+            }
+        }
         fun turnNext() {
             turnDir = 1
-            if (safePage < pageStarts.lastIndex) page = safePage + 1
-            else if (ord < lastIndex) vm.goToChapter(ord + 1)
+            val starts = pageStartsState.value
+            turn(PageTurn.next(page.coerceIn(0, starts.lastIndex), starts.lastIndex, ord, lastIndex))
         }
         fun turnPrev() {
             turnDir = -1
-            if (safePage > 0) page = safePage - 1
-            else if (ord > 0) vm.goToChapter(ord - 1)
+            val starts = pageStartsState.value
+            turn(PageTurn.previous(page.coerceIn(0, starts.lastIndex), starts.lastIndex, ord, lastIndex))
         }
 
         // A volume key press is handled where the page boundaries are known — the paginator's page
