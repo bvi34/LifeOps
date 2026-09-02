@@ -477,7 +477,9 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 120 JVM unit tests over `logic/`, no SDK or emulator needed:
+`gradle :maintenance:test` — 143 JVM tests, no emulator needed. Almost all of them are over `logic/`
+and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
+the only reason this module has a test dependency beyond JUnit at all.
 
 - `VinTest` — the check digit on a real VIN, the two typos a VIN catches by itself, a failing check
   digit reported rather than rejected, and the thirty-year model-year cycle resolved against three
@@ -516,6 +518,16 @@ scale, nothing.
 
 - `RecallChecksTest` — the shelf life on a recall answer (never asked counts as stale), the standing
   check every vehicle schedule carries, and the line between a prompt and work.
+- `MaintenanceMigrationTest` — a database written at **version 1** opened through the production
+  builder: the rows survive, the columns added since arrive with the defaults their migrations
+  promise, and Room's own post-migration validation is what proves the schema is right. Removing a
+  single `ALTER TABLE` from a migration fails it, which was checked rather than assumed.
+- `MaintenanceRepositoryTest` — the rules only SQLite can be asked about: a cleared field *deleted*
+  rather than stored as an empty string, a decode filling what is blank and arguing with nothing you
+  typed, both writes that run back into the LifeOps week handing over the right task ids, an
+  acknowledged recall surviving the next fetch, and deleting a truck really taking its plans,
+  attributes, readings and recalls with it.
+
 LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
 one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the
 listener after it.
