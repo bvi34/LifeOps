@@ -436,6 +436,21 @@ and ask NHTSA anything, so in both cases *doing the thing here* is what complete
 disappearing: a car's service history is the most useful thing you own about it right up until the
 day after you sell it, and "no longer mine" is not "gone".
 
+**Costs** — the same arithmetic asked sideways. Every figure on it exists on some asset's page; what
+does not exist anywhere else is the comparison, which is the part that changes what somebody does. An
+asset page says the truck cost $1,900 this year. Only this screen says that is most of everything.
+
+Two decisions in it. **Costs include what you have sold; worth and owed do not** — spend is history
+and history includes the truck you had until March, while what a thing is worth and what is owed on
+it are claims about now. And a total worth **says how complete it is** ("3 of 5 have a value typed
+in"), because a net-worth figure assembled from two filled-in fields is worse than no figure at all.
+
+It also answers *who did the brakes last time*, which only has an answer across assets: the garage
+that did the truck is the one you would ring about the mower. Vendors are free text — a household
+will not maintain a directory — so the names are folded together case-insensitively for counting
+(`logic/Vendors`) and offered back as chips while you type in the log dialog, which fixes the
+spelling where it is introduced rather than afterwards.
+
 **One asset**, in four tabs, because they are four views of one thing rather than four screens:
 
 | Tab | Answers |
@@ -450,11 +465,26 @@ has: pick "Vehicle" and the VIN, the trim, the engine and the plate are right th
 moment somebody is typing the car in is the moment the title is in their other hand. None of it is
 required. The mortgage and the schedule still live one screen in.
 
+### The day you sell it
+
+A car's history is worth money on exactly one day, and on that day the app's backup is no use: it is
+a whole-suite restore into an app the buyer does not have. So an asset's history leaves as **CSV**
+through the system file picker — no storage permission, no folder of its own, and the file stops
+being this app's business the moment it is written.
+
+`logic/Handover` builds it, and everything it does is about being read by something that is not this
+app: money written plain (`1234.56`, so a column of it adds up), ISO dates (which sort as text and
+mean the same thing in every country), the meter column named for what it counts, and RFC 4180
+quoting — the field that makes that matter is the notes, where *"replaced belt, cheaper than the
+dealer"* would otherwise silently shift every later column by one in a file somebody is reading to
+decide what your car is worth.
+
 ## Layout
 
 ```
 maintenance/src/main/java/com/maintenance/app/
 ├── logic/          Pure JVM, unit-tested: AssetKind · Vin · Meter · Upkeep · Coverage · Loan · Money · Costs · Docket
+│                   Ledger/Ledgers/Vendors (the register's money, sideways) · Handover (the CSV you sell with)
 │                   VehicleFacts · VpicParser · Recalls · SchedulePack/SchedulePacks · SchedulePlans
 │                   …and the LifeOps seam's brain: UpkeepTasks (what should happen to a plan's task)
 │                   and UpkeepRound (the reconciliation, over two interfaces)
@@ -466,7 +496,7 @@ maintenance/src/main/java/com/maintenance/app/
 │   └── repository/ MaintenanceRepository — rows in, logic types out, every multi-row write
 │                   LifeOpsTasks — the bridge into LifeOps' task service
 │                   UpkeepPublisher — finds the week planner and runs a round against it
-├── ui/             due · assets · asset (+ its dialogs) · common · theme
+├── ui/             due · assets · costs · asset (+ its dialogs) · common · theme
 └── backup/         MaintenanceBackupContributor
 ```
 
@@ -477,7 +507,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 143 JVM tests, no emulator needed. Almost all of them are over `logic/`
+`gradle :maintenance:test` — 159 JVM tests, no emulator needed. Almost all of them are over `logic/`
 and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
 the only reason this module has a test dependency beyond JUnit at all.
 
@@ -516,6 +546,13 @@ the only reason this module has a test dependency beyond JUnit at all.
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.
 
+- `LedgerTest` — the register's money: biggest spender first, the window really being a window,
+  premiums pro-rated the same way one asset's page does it, a sold car still counting as spend but
+  not as worth, equity refusing to be a bare minus sign, and one garage typed three ways being one
+  garage.
+- `HandoverTest` — the CSV a buyer opens: newest first, plain money, a note with a comma in it
+  staying one column, a quote doubled, and an empty history exporting a header rather than a file
+  that looks like a failure.
 - `RecallChecksTest` — the shelf life on a recall answer (never asked counts as stale), the standing
   check every vehicle schedule carries, and the line between a prompt and work.
 - `MaintenanceMigrationTest` — a database written at **version 1** opened through the production

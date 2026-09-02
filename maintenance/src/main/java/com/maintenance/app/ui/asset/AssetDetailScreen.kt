@@ -1,5 +1,7 @@
 package com.maintenance.app.ui.asset
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -21,6 +23,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -30,17 +34,21 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.logic.AssetKind
+import com.maintenance.app.logic.Handover
+import com.maintenance.app.logic.HandoverRow
 import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Vin
@@ -51,6 +59,7 @@ import com.maintenance.app.ui.common.SectionCard
 import com.maintenance.app.ui.common.formatDay
 import com.maintenance.app.ui.common.money
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 /** The four ways of looking at one asset. */
 enum class AssetTab(val label: String) {
@@ -87,6 +96,28 @@ fun AssetDetailScreen(
 
     val current = detail
 
+    // Handing the history to somebody else — see `logic/Handover`. The document is written where
+    // the person picking says, through the system picker, so this needs no storage permission, no
+    // FileProvider and no folder of its own: the file leaves the app and stops being its business.
+    val context = LocalContext.current
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    var pending by remember { mutableStateOf<String?>(null) }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        val csv = pending
+        pending = null
+        // A cancelled picker is not a failure and says nothing; a failed write is not allowed to
+        // look like a success.
+        if (uri == null || csv == null) return@rememberLauncherForActivityResult
+        val wrote = runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { it.write(csv.toByteArray()) }
+                ?: error("no stream")
+        }.isSuccess
+        scope.launch {
+            snackbar.showSnackbar(if (wrote) "History saved." else "That didn't save. Try somewhere else.")
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -122,6 +153,33 @@ fun AssetDetailScreen(
                             onClick = { menuOpen = false; editing = true }
                         )
                         DropdownMenuItem(
+                            text = { Text("Export service history") },
+                            onClick = {
+                                menuOpen = false
+                                current?.let { detail ->
+                                    pending = Handover.csv(
+                                        rows = detail.records.map { record ->
+                                            HandoverRow(
+                                                performedAt = record.performedAt,
+                                                title = record.title,
+                                                vendor = record.vendor,
+                                                meterValue = record.meterValue,
+                                                costCents = record.costCents,
+                                                notes = record.notes
+                                            )
+                                        },
+                                        meterUnit = detail.meter?.unit
+                                    )
+                                    export.launch(
+                                        Handover.fileName(
+                                            detail.asset.descriptor.ifBlank { detail.asset.name },
+                                            LocalDate.now()
+                                        )
+                                    )
+                                }
+                            }
+                        )
+                        DropdownMenuItem(
                             text = { Text(if (current?.asset?.archived == true) "Own it again" else "No longer own it") },
                             onClick = {
                                 menuOpen = false
@@ -135,7 +193,8 @@ fun AssetDetailScreen(
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         if (current == null) {
             EmptyState(

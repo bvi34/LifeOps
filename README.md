@@ -211,6 +211,13 @@ the receipts.
 > of quietly granting itself a free 5,000 miles. **Logging the work is the only thing that moves a
 > clock** — there is no silent reset, which is why the history has no holes in it.
 >
+> Costs are asked **sideways as well as down**: a third tab totals what the whole register cost over
+> the last year or ever, ranks the things by what they ate, and says who has been paid — the question
+> "who did the brakes last time" only has an answer across assets. What you have sold still counts as
+> spend (history includes the truck you had until March) but not as worth or owed. And an asset's
+> history **leaves as CSV** through the system file picker, because a service history is worth money
+> on exactly one day and on that day a whole-suite backup is no use to the buyer.
+>
 > The **mortgage** is typed as the note reads (principal, rate, term, first payment) and everything
 > else is derived: balance today, principal and interest paid, payoff month — or *never*, when the
 > payment doesn't cover the interest — and equity, negative when it is. There is deliberately **no
