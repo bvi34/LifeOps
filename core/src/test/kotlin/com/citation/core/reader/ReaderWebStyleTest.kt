@@ -41,6 +41,46 @@ class ReaderWebStyleTest {
         assertFalse("a px size would flatten a reader that sets type in em", css.contains("font-size"))
     }
 
+    // --- Colour -----------------------------------------------------------------------------
+
+    @Test
+    fun `links are restated, because a host reader paints them in its own colours`() {
+        val css = ReaderWebStyle.stylesheet(ReaderSettings(theme = ReaderTheme.NIGHT))
+        assertTrue(css.contains("a, a:link, a:visited, a:hover"))
+        // Visited is named separately or a browser's own purple survives the night page.
+        assertTrue(css.contains("a:visited"))
+    }
+
+    @Test
+    fun `a heading colour is carried across only when the reader set one`() {
+        // Matched on whole rules: the prose selector ends in the headings, so a substring search
+        // for them finds the rule that colours everything and proves nothing.
+        val plain = ReaderWebStyle.stylesheet(ReaderSettings(theme = ReaderTheme.SEPIA))
+        assertFalse(
+            "nothing to say about headings that follow the prose",
+            plain.lines().any { it.startsWith("h1,") }
+        )
+        val chosen = ReaderWebStyle.stylesheet(
+            ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = 0xFF8B0000.toInt())
+        )
+        assertTrue(chosen.lines().any { it.startsWith("h1, h2, h3, h4, h5, h6 { color: #8B0000") })
+    }
+
+    @Test
+    fun `the reader's link colour reaches the page`() {
+        val css = ReaderWebStyle.stylesheet(
+            ReaderSettings(theme = ReaderTheme.CUSTOM, customLink = 0xFF00695C.toInt())
+        )
+        assertTrue(css.contains("color: #00695C !important"))
+    }
+
+    @Test
+    fun `the system theme still leaves somebody else's colours alone`() {
+        val css = ReaderWebStyle.stylesheet(ReaderSettings(theme = ReaderTheme.SYSTEM))
+        assertFalse(css.contains("a:visited"))
+        assertFalse(css.contains("background:"))
+    }
+
     // --- Restraint --------------------------------------------------------------------------
 
     @Test

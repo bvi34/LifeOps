@@ -109,6 +109,7 @@ import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.reader.Paginator
 import com.citation.core.reader.Lookup
 import com.citation.core.note.HighlightColor
+import com.citation.core.reader.ReaderColors
 import com.citation.core.reader.ReaderPalette
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.VolumeKeys
@@ -248,11 +249,17 @@ private fun FlowingReader(vm: ReaderViewModel) {
     // Warmth is applied to the colours themselves rather than by laying a translucent orange sheet
     // over the page: an overlay dims everything it covers, flattening contrast exactly when a reader
     // has turned to warm colours because it is late and their eyes are tired.
-    val palette = ReaderPalette.of(settings)
-    val background = palette?.let { Color(it.first) }
-        ?: ReaderPalette.warm(MaterialTheme.colorScheme.background.toArgb(), settings.warmth).let { Color(it) }
-    val foreground = palette?.let { Color(it.second) }
-        ?: ReaderPalette.warm(MaterialTheme.colorScheme.onBackground.toArgb(), settings.warmth).let { Color(it) }
+    // Every colour on the page comes from here, including the ones for headings and links. They used
+    // to be read straight out of the app's Material scheme, which meant a book was partly set in
+    // whatever accent the launcher's wallpaper had produced — it ignored the reader's own colours and
+    // never warmed with them.
+    val colours = ReaderPalette.colors(
+        settings,
+        fallbackPage = MaterialTheme.colorScheme.background.toArgb(),
+        fallbackText = MaterialTheme.colorScheme.onBackground.toArgb()
+    )
+    val background = Color(colours.page)
+    val foreground = Color(colours.text)
 
     // A font the reader picks is read once and copied into the sovereign store — a book set in a
     // face whose file later moves or is deleted would otherwise change appearance for no visible
@@ -424,8 +431,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         searchRanges = searchRanges,
                         settings = settings,
                         family = family,
-                        foreground = foreground,
-                        background = background,
+                        colours = colours,
                         turnThreshold = turnThreshold,
                         onOpenNote = { openNote = it },
                         onProvideHint = { hintProvider.value = it }
@@ -504,13 +510,14 @@ private fun ChapterPage(
     searchRanges: List<IntRange>,
     settings: ReaderSettings,
     family: FontFamily,
-    foreground: Color,
-    /** The page these highlights will be drawn on; a mark's colour is derived against it. */
-    background: Color,
+    /** Every colour the page is drawn in — the page itself included, since a mark is derived against it. */
+    colours: ReaderColors,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
     onProvideHint: (() -> Int) -> Unit
 ) {
+    val foreground = Color(colours.text)
+    val background = Color(colours.page)
     val chapter = book.chapterAt(ord)
     val text = chapter?.text ?: "(chapter unavailable)"
     val title = chapter?.title ?: ""
@@ -526,8 +533,6 @@ private fun ChapterPage(
     }
     // A different colour from a highlight on purpose: a search match is transient and not yours.
     val searchColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f)
-    val accent = MaterialTheme.colorScheme.primary
-    val secondary = MaterialTheme.colorScheme.secondary
     val bookKey = book.key?.toString()
 
     // Size illustrations to the text column. sp rather than dp because the placeholder the renderer
@@ -548,7 +553,7 @@ private fun ChapterPage(
     // The drawable form of the chapter, and the map back to the canonical offsets everything is
     // stored and anchored against. Rebuilt only when the text, its structure, the typography or the
     // loaded plates change — never on a page turn.
-    val rendered = remember(text, blocks, settings, family, foreground, images, imageWidthSp) {
+    val rendered = remember(text, blocks, settings, family, colours, images, imageWidthSp) {
         ChapterRender.build(
             text = text,
             blocks = blocks,
@@ -557,8 +562,9 @@ private fun ChapterPage(
                 lineSpacing = settings.lineSpacing,
                 family = family,
                 foreground = foreground,
-                accent = accent,
-                secondary = secondary,
+                heading = Color(colours.heading),
+                accent = Color(colours.link),
+                secondary = Color(colours.secondary),
                 letterSpacing = settings.letterSpacing,
                 justify = settings.justify,
                 hyphenate = settings.hyphenate,

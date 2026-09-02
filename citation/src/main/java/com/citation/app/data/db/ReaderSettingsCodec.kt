@@ -32,6 +32,8 @@ object ReaderSettingsCodec {
         put("theme", settings.theme.name)
         settings.customBackground?.let { put("customBackground", it) }
         settings.customText?.let { put("customText", it) }
+        settings.customHeading?.let { put("customHeading", it) }
+        settings.customLink?.let { put("customLink", it) }
         put("trueBlack", settings.trueBlack)
         put("warmth", settings.warmth.toDouble())
         put("styleReadInPlace", settings.styleReadInPlace)
@@ -63,6 +65,8 @@ object ReaderSettingsCodec {
             theme = obj.enum("theme", defaults.theme) { ReaderTheme.valueOf(it) },
             customBackground = obj.colour("customBackground"),
             customText = obj.colour("customText"),
+            customHeading = obj.colour("customHeading"),
+            customLink = obj.colour("customLink"),
             trueBlack = obj.optBoolean("trueBlack", defaults.trueBlack),
             warmth = obj.float("warmth", defaults.warmth),
             styleReadInPlace = obj.optBoolean("styleReadInPlace", defaults.styleReadInPlace),

@@ -57,6 +57,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -271,19 +272,58 @@ fun DisplaySheet(
                 ) { on -> onSettings { it.copy(trueBlack = on) } }
             }
             if (settings.theme == ReaderTheme.CUSTOM) {
+                // Four roles rather than two. Page and text are what a reader asks for first, but a
+                // book is not one colour of text: headings and links were being painted in the app's
+                // own accent, which is a colour nobody reading chose and the reason a chapter full of
+                // anchors came out purple over a page somebody had carefully set.
+                //
+                // Heading and link default to *derived* values rather than stored ones — headings
+                // follow the prose, a link is fitted to the page — so the rows always show what is
+                // actually on screen, and a reader who only wants two colours sets two.
                 val page = settings.customBackground ?: ReaderPalette.CUSTOM_BG
                 val ink = settings.customText ?: ReaderPalette.CUSTOM_FG
+                // Derived with warmth taken out, because every row and the preview below warm what
+                // they are given. The rows show the colours as chosen — the preview is where warmth
+                // is seen, and it is the only place it should be applied twice over.
+                val derived = ReaderPalette.colors(settings.copy(warmth = 0f), page, ink)
+                val clearHeading: (() -> Unit)? = settings.customHeading?.let {
+                    { onSettings { s -> s.copy(customHeading = null) } }
+                }
+                val clearLink: (() -> Unit)? = settings.customLink?.let {
+                    { onSettings { s -> s.copy(customLink = null) } }
+                }
                 ColourRow(
                     label = "Page",
                     colour = page,
                     swatches = ReaderPalette.PAGE_SWATCHES
                 ) { picked -> onSettings { it.copy(customBackground = picked) } }
                 ColourRow(
+                    label = "Heading",
+                    colour = settings.customHeading ?: ink,
+                    swatches = ReaderPalette.TEXT_SWATCHES,
+                    // Offered only once it is set, because "follow the text" is the printed
+                    // convention and the state a reader who never wanted this should be able to
+                    // get back to without matching two hex codes by hand.
+                    onClear = clearHeading
+                ) { picked -> onSettings { it.copy(customHeading = picked) } }
+                ColourRow(
                     label = "Text",
                     colour = ink,
                     swatches = ReaderPalette.TEXT_SWATCHES
                 ) { picked -> onSettings { it.copy(customText = picked) } }
-                ColourPreview(page = page, ink = ink, warmth = settings.warmth)
+                ColourRow(
+                    label = "Links",
+                    colour = settings.customLink ?: derived.link,
+                    swatches = ReaderPalette.LINK_SWATCHES,
+                    onClear = clearLink
+                ) { picked -> onSettings { it.copy(customLink = picked) } }
+                ColourPreview(
+                    page = page,
+                    ink = ink,
+                    heading = settings.customHeading ?: ink,
+                    link = settings.customLink ?: derived.link,
+                    warmth = settings.warmth
+                )
             }
             LabeledSlider("Warmth", settings.warmth, 0f..1f) { v ->
                 onSettings { it.copy(warmth = v) }
@@ -510,6 +550,8 @@ private fun ColourRow(
     label: String,
     colour: Int,
     swatches: List<Int>,
+    /** Offered only where the colour has a sensible derived default to fall back to. */
+    onClear: (() -> Unit)? = null,
     onPick: (Int) -> Unit
 ) {
     // The field holds what has been typed, not the current colour, so a half-finished code like "#3f"
@@ -531,6 +573,9 @@ private fun ColourRow(
                     .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
             )
             Text(label, Modifier.weight(1f).padding(start = 12.dp), fontSize = 14.sp)
+            if (onClear != null) {
+                TextButton(onClick = onClear) { Text("Auto", fontSize = 13.sp) }
+            }
             OutlinedTextField(
                 value = typed,
                 onValueChange = { entry ->
@@ -585,9 +630,11 @@ private fun ColourRow(
  * closes over a page of text that has gone.
  */
 @Composable
-private fun ColourPreview(page: Int, ink: Int, warmth: Float) {
+private fun ColourPreview(page: Int, ink: Int, heading: Int, link: Int, warmth: Float) {
     val shownPage = ReaderPalette.warm(page, warmth)
     val shownInk = ReaderPalette.warm(ink, warmth)
+    val shownHeading = ReaderPalette.warm(heading, warmth)
+    val shownLink = ReaderPalette.warm(link, warmth)
     Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
         Box(
             Modifier
@@ -597,11 +644,28 @@ private fun ColourPreview(page: Int, ink: Int, warmth: Float) {
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
                 .padding(14.dp)
         ) {
-            Text(
-                "This is how a page will read in the colours you have chosen.",
-                color = Color(shownInk),
-                fontSize = 15.sp
-            )
+            // A heading over prose over a link, because that is the arrangement the colours have to
+            // work in — three swatches side by side would look fine and still read badly as a page.
+            Column {
+                Text(
+                    "A chapter heading",
+                    color = Color(shownHeading),
+                    fontSize = 19.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "This is how a page will read in the colours you have chosen.",
+                    color = Color(shownInk),
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+                Text(
+                    "and this is a link",
+                    color = Color(shownLink),
+                    fontSize = 15.sp,
+                    textDecoration = TextDecoration.Underline
+                )
+            }
         }
         if (!ReaderPalette.isLegible(shownInk, shownPage)) {
             Text(

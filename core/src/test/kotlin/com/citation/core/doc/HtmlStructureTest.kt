@@ -150,6 +150,29 @@ class HtmlStructureTest {
     }
 
     @Test
+    fun `an anchor with no destination is a link target, not a link`() {
+        // Converted books scatter `<a id="page17">` through their prose as page markers, and some
+        // leave one wrapped around a whole paragraph. Styled as a link, that came out as a chapter
+        // of underlined, accent-coloured prose.
+        val parsed = parse("<p><a id=\"page17\">A whole paragraph of ordinary prose.</a></p>")
+        assertTrue(parsed.texts().single().spans.none { it.style == InlineStyle.LINK })
+        assertTrue(parsed.text.contains("A whole paragraph of ordinary prose."))
+    }
+
+    @Test
+    fun `an anchor named but not linked is still indexed as a destination`() {
+        // Nothing is styled, but the id must still be reachable — that is what the anchor is for.
+        val parsed = parse("<p>One.</p><p><a id=\"page17\"></a>Page seventeen begins.</p>")
+        assertNotNull(parsed.anchors["page17"])
+    }
+
+    @Test
+    fun `an empty href earns no styling either`() {
+        val parsed = parse("<p>Text <a href=\"\">not really a link</a>.</p>")
+        assertTrue(parsed.texts().single().spans.none { it.style == InlineStyle.LINK })
+    }
+
+    @Test
     fun `a superscripted internal link counts as a note reference without any markup hint`() {
         val parsed = parse("<p>Claim<sup><a href=\"#n7\">7</a></sup>.</p>")
         assertTrue(parsed.texts().single().spans.any { it.style == InlineStyle.FOOTNOTE_REF })

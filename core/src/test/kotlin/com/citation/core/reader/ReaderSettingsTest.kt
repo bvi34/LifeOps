@@ -16,6 +16,10 @@ class ReaderSettingsTest {
 
     private fun rgb(argb: Int) = Triple((argb ushr 16) and 0xFF, (argb ushr 8) and 0xFF, argb and 0xFF)
 
+    /** The page and its ink, warmed — the pair most of these assertions are about. */
+    private fun pageAndInk(settings: ReaderSettings): Pair<Int, Int>? =
+        ReaderPalette.colors(settings)?.let { it.page to it.text }
+
     @Test
     fun `defaults are what a book should open as`() {
         val s = ReaderSettings()
@@ -83,7 +87,7 @@ class ReaderSettingsTest {
 
     @Test
     fun `both of a theme's colours warm together`() {
-        val (bg, fg) = ReaderPalette.of(ReaderSettings(theme = ReaderTheme.PAPER, warmth = 0.8f))!!
+        val (bg, fg) = pageAndInk(ReaderSettings(theme = ReaderTheme.PAPER, warmth = 0.8f))!!
         assertNotEquals(ReaderPalette.PAPER_BG, bg)
         assertNotEquals(ReaderPalette.PAPER_FG, fg)
         // Warming must not invert the page: paper stays lighter than its ink.
@@ -96,7 +100,7 @@ class ReaderSettingsTest {
     fun `the system theme defers rather than inventing colours`() {
         assertNull(ReaderPalette.background(ReaderTheme.SYSTEM, trueBlack = false))
         assertNull(ReaderPalette.foreground(ReaderTheme.SYSTEM, trueBlack = false))
-        assertNull(ReaderPalette.of(ReaderSettings(theme = ReaderTheme.SYSTEM)))
+        assertNull(ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.SYSTEM)))
     }
 
     @Test
@@ -125,14 +129,14 @@ class ReaderSettingsTest {
         )
         assertEquals(0xFF102030.toInt(), ReaderPalette.background(s.theme, s.trueBlack, s.customBackground))
         assertEquals(0xFFEEDDCC.toInt(), ReaderPalette.foreground(s.theme, s.trueBlack, s.customText))
-        val (bg, fg) = ReaderPalette.of(s)!!
+        val (bg, fg) = pageAndInk(s)!!
         assertEquals(0xFF102030.toInt(), bg)
         assertEquals(0xFFEEDDCC.toInt(), fg)
     }
 
     @Test
     fun `a custom theme with nothing chosen yet is a readable page rather than nothing`() {
-        val (bg, fg) = ReaderPalette.of(ReaderSettings(theme = ReaderTheme.CUSTOM))!!
+        val (bg, fg) = pageAndInk(ReaderSettings(theme = ReaderTheme.CUSTOM))!!
         assertEquals(ReaderPalette.CUSTOM_BG, bg)
         assertEquals(ReaderPalette.CUSTOM_FG, fg)
         assertTrue("the starting point must be legible", ReaderPalette.isLegible(fg, bg))
@@ -146,7 +150,7 @@ class ReaderSettingsTest {
             customBackground = 0xFF102030.toInt(),
             customText = 0xFFEEDDCC.toInt()
         )
-        val (bg, fg) = ReaderPalette.of(s)!!
+        val (bg, fg) = pageAndInk(s)!!
         assertEquals(ReaderPalette.SEPIA_BG, bg)
         assertEquals(ReaderPalette.SEPIA_FG, fg)
         assertEquals(0xFF102030.toInt(), s.customBackground)
@@ -157,6 +161,119 @@ class ReaderSettingsTest {
         val s = ReaderSettings(customBackground = 0x40FF0000, customText = 0x00112233).sanitized()
         assertEquals(0xFFFF0000.toInt(), s.customBackground)
         assertEquals(0xFF112233.toInt(), s.customText)
+    }
+
+    @Test
+    fun `a part-transparent heading or link choice is made opaque too`() {
+        val s = ReaderSettings(customHeading = 0x20AABBCC, customLink = 0x00445566).sanitized()
+        assertEquals(0xFFAABBCC.toInt(), s.customHeading)
+        assertEquals(0xFF445566.toInt(), s.customLink)
+    }
+
+    // --- The rest of the page's colours ---------------------------------------------------------
+
+    @Test
+    fun `headings follow the prose until the reader says otherwise`() {
+        val paper = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.PAPER))!!
+        assertEquals(paper.text, paper.heading)
+        assertNull(ReaderPalette.heading(ReaderTheme.PAPER))
+    }
+
+    @Test
+    fun `a heading colour is the reader's own, and only under the custom theme`() {
+        val chosen = 0xFF8B0000.toInt()
+        val custom = ReaderPalette.colors(
+            ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = chosen)
+        )!!
+        assertEquals(chosen, custom.heading)
+        // Held across a switch, like the page and text colours, but not applied to a preset.
+        val sepia = ReaderPalette.colors(
+            ReaderSettings(theme = ReaderTheme.SEPIA, customHeading = chosen)
+        )!!
+        assertEquals(ReaderPalette.SEPIA_FG, sepia.heading)
+    }
+
+    @Test
+    fun `every derived colour is legible on the page it was derived for`() {
+        // The failure this rules out is the one that made the whole feature necessary: a colour
+        // chosen against some other page — the app's accent — landing on this one.
+        val pages = listOf(
+            ReaderSettings(theme = ReaderTheme.PAPER),
+            ReaderSettings(theme = ReaderTheme.SEPIA),
+            ReaderSettings(theme = ReaderTheme.NIGHT),
+            ReaderSettings(theme = ReaderTheme.NIGHT, trueBlack = true),
+            ReaderSettings(theme = ReaderTheme.CUSTOM, customBackground = 0xFF102030.toInt(), customText = 0xFFEEDDCC.toInt()),
+            ReaderSettings(theme = ReaderTheme.CUSTOM, customBackground = 0xFFFFF3C4.toInt(), customText = 0xFF1A3A5C.toInt()),
+            ReaderSettings(theme = ReaderTheme.PAPER, warmth = 1f),
+            ReaderSettings(theme = ReaderTheme.NIGHT, warmth = 1f)
+        )
+        pages.forEach { settings ->
+            val c = ReaderPalette.colors(settings)!!
+            assertTrue("link unreadable on ${'$'}{settings.theme}", ReaderPalette.isLegible(c.link, c.page))
+            assertTrue("heading unreadable on ${'$'}{settings.theme}", ReaderPalette.isLegible(c.heading, c.page))
+        }
+    }
+
+    @Test
+    fun `a link keeps its own colour where the page can carry it`() {
+        val onPaper = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.PAPER))!!
+        assertEquals(ReaderPalette.LINK_TINT, onPaper.link)
+        // A dark page cannot: the same blue would be a smudge, so it is pulled toward the text.
+        val onNight = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.NIGHT))!!
+        assertNotEquals(ReaderPalette.LINK_TINT, onNight.link)
+        assertNotEquals(onNight.text, onNight.link)
+    }
+
+    @Test
+    fun `a link colour the reader typed is used as typed`() {
+        val chosen = 0xFF00695C.toInt()
+        val c = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.CUSTOM, customLink = chosen))!!
+        assertEquals(chosen, c.link)
+    }
+
+    @Test
+    fun `a tint that cannot be rescued gives way to the text colour`() {
+        // A reader is entitled to a low-contrast page of their own — grey on grey, for a reason
+        // that is theirs. Where even the prose colour does not clear the bar, there is no blend of
+        // a link tint that will, so the link is simply set in the prose colour: invisible as a
+        // link, readable as words, which is the right way round.
+        val page = 0xFF808080.toInt()
+        val text = 0xFF8A8A8A.toInt()
+        assertFalse(ReaderPalette.isLegible(text, page))
+        assertEquals(text, ReaderPalette.readable(0xFF7F7F7F.toInt(), page, text))
+    }
+
+    @Test
+    fun `captions are quieter than the prose without leaving the page`() {
+        val c = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.PAPER))!!
+        assertNotEquals(c.text, c.secondary)
+        assertTrue(ReaderPalette.contrast(c.secondary, c.page) < ReaderPalette.contrast(c.text, c.page))
+        assertTrue("a caption is still prose", ReaderPalette.contrast(c.secondary, c.page) > 3.0)
+    }
+
+    @Test
+    fun `every colour warms with the page`() {
+        val warm = ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = 0xFF3366FF.toInt(), warmth = 1f)
+        val cold = warm.copy(warmth = 0f)
+        val heated = ReaderPalette.colors(warm)!!
+        val plain = ReaderPalette.colors(cold)!!
+        // Blue is the channel warmth cuts; a heading that ignored it would sit cold on a warm page.
+        assertTrue((heated.heading and 0xFF) < (plain.heading and 0xFF))
+        assertTrue((heated.link and 0xFF) < 0xFF)
+    }
+
+    @Test
+    fun `the system theme still yields a full palette once the app's colours are supplied`() {
+        assertNull(ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.SYSTEM)))
+        val c = ReaderPalette.colors(
+            ReaderSettings(theme = ReaderTheme.SYSTEM),
+            fallbackPage = 0xFF111827.toInt(),
+            fallbackText = 0xFFF9FAFB.toInt()
+        )
+        assertEquals(0xFF111827.toInt(), c.page)
+        assertEquals(0xFFF9FAFB.toInt(), c.text)
+        assertEquals(c.text, c.heading)
+        assertTrue(ReaderPalette.isLegible(c.link, c.page))
     }
 
     @Test
@@ -174,7 +291,7 @@ class ReaderSettingsTest {
             customText = 0xFF3366CC.toInt(),
             warmth = 1f
         )
-        val (bg, fg) = ReaderPalette.of(s)!!
+        val (bg, fg) = pageAndInk(s)!!
         assertTrue("a warmed page loses blue like any other", (bg and 0xFF) < 0xFF)
         assertTrue((fg and 0xFF) < 0xCC)
     }

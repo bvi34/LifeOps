@@ -95,7 +95,11 @@ data class ReaderTypography(
     val lineSpacing: Float,
     val family: FontFamily,
     val foreground: Color,
+    /** Headings; equal to [foreground] unless the reader set a colour of their own. */
+    val heading: Color,
+    /** Links and note references — derived against the page, never the app's accent. */
     val accent: Color,
+    /** Captions and quotes, set quieter than the prose. */
     val secondary: Color,
     val letterSpacing: Float = 0f,
     val justify: Boolean = false,
@@ -262,7 +266,8 @@ object ChapterRender {
                     emitter.builder.addStyle(
                         SpanStyle(
                             fontSize = (typography.fontSize * headingScale(block.level)).sp,
-                            fontWeight = FontWeight.SemiBold
+                            fontWeight = FontWeight.SemiBold,
+                            color = typography.heading
                         ),
                         from, emitter.displayLength
                     )
