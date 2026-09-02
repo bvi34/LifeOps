@@ -60,6 +60,11 @@ dependencies {
     // takes the tick back (see data/repository/LifeOpsTasks). The dependency points one way only:
     // LifeOps announces completions on a bus and knows nothing about who is listening.
     implementation(project(":lifeops"))
+    // Repository, for the paperwork. An asset is the thing in the suite most likely to arrive with
+    // a folder of it — the manual, the warranty, the title, the mortgage statement — and Maintenance
+    // deliberately does not keep a document store of its own: it files into the shelf and shows the
+    // same rows back on the asset. One line of dependency, one composable at the call site.
+    implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
