@@ -43,6 +43,13 @@ include(":project")
 // dated the day it falls due, and takes the tick back. That is a one-way module dependency
 // (:maintenance -> :lifeops) plus a bus LifeOps announces completions on, not a second planner.
 include(":maintenance")
+// Repository is the suite's shelf: every document the household has been handed — the mortgage
+// statement, the manual, the warranty, the title — filed once and reachable two ways. Its own screen
+// lists everything without needing to know which app it arrived through; the app that owns the thing
+// shows the same documents in place, on the asset or the person they belong to. The dependency arrow
+// points into it (:maintenance -> :repository), and an app that already stores its own paperwork
+// lends it to the shelf read-only rather than moving it.
+include(":repository")
 include(":core")
 include(":backupkit")
 // The suite's appearance: `:suitekit` is the pure-JVM contract (presets, palettes, each app's colour

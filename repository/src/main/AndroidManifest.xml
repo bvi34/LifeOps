@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- THE PROMISE: nothing here goes anywhere. Repository declares no permissions at all, and
+         unlike the apps that do, it has no lookup that could earn one: it takes a stream of bytes
+         and gives the same bytes back. There is no OCR, no extraction, no "we noticed your rate went
+         up" — every fact it holds about a document is one a person typed. A mortgage statement and a
+         lab result are the most sensitive things in the suite, and the only way that stays true is
+         if nothing in this module can read them.
+
+         A document leaves this device exactly once: when somebody presses Open or Send and picks the
+         app it goes to. That is a copy made on request into cacheDir/exports (see
+         res/xml/repository_file_paths.xml), not a directory anything else can browse. -->
+
+    <!-- Repository is a library module: no app-level attributes here (name/icon/theme/label live on
+         the :app host). Only its own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Repository"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- A distinctly-named FileProvider subclass so this and the other apps' providers are
+             separate <provider> nodes when the library manifests merge; the merger keys on class
+             name, not authority. See LifeOpsFileProvider for the same note. -->
+        <provider
+            android:name=".RepositoryFileProvider"
+            android:authorities="${applicationId}.repository.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/repository_file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

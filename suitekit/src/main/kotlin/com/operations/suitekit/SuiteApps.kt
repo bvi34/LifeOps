@@ -86,6 +86,13 @@ object SuiteApps {
             defaultAccent = 0xFFB91C1CL
         ),
         SuiteAppInfo(
+            appId = AppId.REPOSITORY,
+            label = "Repository",
+            tagline = "Every document, filed once and findable",
+            iconKey = "folder-shelf",
+            defaultAccent = 0xFF7B5E3BL
+        ),
+        SuiteAppInfo(
             appId = AppId.LOGISTICS,
             label = "Logistics",
             tagline = "Pantry, groceries and recipes",

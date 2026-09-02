@@ -273,9 +273,32 @@ the receipts.
 > that, for the same reason — a task can't go and ask NHTSA anything either.
 >
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **120 JVM unit tests**. It holds `INTERNET` for those two keyless
+> `maintenance/logic/` under **159 JVM tests**. It holds `INTERNET` for those two keyless
 > government lookups and nothing else — the mortgage, the parcel number, the service history and the
 > odometer have no code path to the network at all.
+
+> **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
+> Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.
+> Solved once per app that becomes five stores, five backups, and a household that has to remember
+> where it filed something. So there is one shelf with **two doors onto the same documents** — its own
+> screen, where the mortgage statement is findable without opening Maintenance, and a section it
+> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace.
+>
+> A document knows what it is about by **carrying a label, not a foreign key**: Maintenance says "this
+> is about `a3f2`, which is called *2018 Jeep Wrangler*", and Repository understands none of it — the
+> dependency arrow points into this module and never out. That is what lets a search for "wrangler"
+> find the truck's manual in a module that has no idea what a Wrangler is.
+>
+> **It stores documents and does not read them.** No OCR, no extraction, no interpretation — which is
+> what makes it safe to keep a mortgage statement and a lab result in one drawer. It declares **no
+> permissions at all**. Pictures are downsampled; a PDF is copied byte for byte, because a re-encoded
+> PDF is not the file the bank sent. Documents leave by exactly one road — a copy made into
+> `cacheDir/exports` when somebody presses Open or Send — and the backup carries the **files as well as
+> the rows**, restoring them first, because here the rows are only captions.
+>
+> An app that already keeps its own paperwork **lends it read-only** rather than migrating: Health's
+> documents appear on the shelf beside everything else, while every change to one still happens in
+> Health, which is where the rules about deleting them live.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the
