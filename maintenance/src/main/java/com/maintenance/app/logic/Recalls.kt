@@ -41,6 +41,40 @@ data class Recall(
 }
 
 /**
+ * How often a vehicle's recall list is worth asking about again, and when the last answer has aged
+ * out.
+ *
+ * Every other line on the docket is owed because *your* vehicle changed — miles went on it, a policy
+ * ran out. A recall list is the one that goes stale while the vehicle sits still: the manufacturer
+ * admits to a defect years after the car was built, and nobody tells you, because the letter goes to
+ * whatever address the DMV last had. So the answer has a shelf life, and this is where its length is
+ * written down — once, read both by the schedule packs (which turn it into a recurring prompt) and
+ * by the vehicle screen (which says out loud when the answer on file is old).
+ *
+ * Six months is a compromise with nothing clever behind it: campaigns are opened continuously, and a
+ * check costs one keyless request to a public API. Twice a year is often enough that nothing sits
+ * unknown for long and rare enough that the prompt never becomes wallpaper.
+ */
+object RecallChecks {
+
+    const val EVERY_DAYS = 180
+
+    /** The same cadence in the words a person uses. Keep it saying what [EVERY_DAYS] counts. */
+    const val CADENCE = "every 6 months"
+
+    private const val DAY_MILLIS = 86_400_000L
+
+    /**
+     * Whether the answer on file is old enough to be worth asking again.
+     *
+     * **Never asked counts as stale**, which is the case that matters most: a vehicle nobody has
+     * ever checked is exactly the one carrying a decade of open campaigns.
+     */
+    fun isStale(checkedAt: Long?, now: Long): Boolean =
+        checkedAt == null || now - checkedAt >= EVERY_DAYS * DAY_MILLIS
+}
+
+/**
  * Pure parsing of `api.nhtsa.gov/recalls/recallsByVehicle`. No network, no Android.
  *
  * The query is make, model and year — **no VIN** — so this whole feature costs nothing in privacy:

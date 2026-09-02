@@ -178,7 +178,11 @@ class AssetDetailViewModel(
         _lookup.update { it.copy(busy = true, message = null) }
         runCatching { lookups.recalls(make, model, year) }
             .onSuccess { recalls ->
-                repo.saveRecalls(assetId, recalls)
+                // The check is what satisfies the prompt that asked for it, so the task it put on
+                // the week ticks itself off — the same way a meter reading ticks off the odometer
+                // prompt. The round then dates the next check.
+                publisher.completeTasks(repo.saveRecalls(assetId, recalls))
+                publisher.round()
                 _lookup.update {
                     it.copy(
                         busy = false,
@@ -193,6 +197,28 @@ class AssetDetailViewModel(
 
     fun setRecallAcknowledged(campaign: String, acknowledged: Boolean) = viewModelScope.launch {
         repo.setRecallAcknowledged(assetId, campaign, acknowledged)
+    }
+
+    /**
+     * Start checking this vehicle's recalls on a cadence.
+     *
+     * The prompt normally arrives with a schedule pack, which is where a vehicle picks up everything
+     * else it should be doing regularly. This is the same plan, offered on its own — for a vehicle
+     * that predates the prompt, or one whose owner never applied a pack. It is a button rather than
+     * something the app does on your behalf, because a plan is a thing that puts a task on your week
+     * and inventing those unasked is how an app stops being trusted.
+     */
+    fun addRecallPrompt() = viewModelScope.launch {
+        val item = SchedulePacks.RECALL_CHECK_ITEM
+        repo.addPlan(
+            assetId = assetId,
+            title = item.title,
+            everyDays = item.everyDays,
+            everyMeter = null,
+            notes = item.notes,
+            kind = item.kind
+        )
+        publisher.round()
     }
 
     // --- money ---

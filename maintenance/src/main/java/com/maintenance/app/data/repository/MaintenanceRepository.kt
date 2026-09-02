@@ -312,7 +312,8 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         everyDays: Int?,
         everyMeter: Long?,
         notes: String? = null,
-        publishToLifeOps: Boolean = true
+        publishToLifeOps: Boolean = true,
+        kind: PlanKind = PlanKind.UPKEEP
     ): String {
         val id = newId()
         val stamp = now()
@@ -327,6 +328,7 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
                 lastDoneAt = null,
                 lastDoneMeter = null,
                 active = true,
+                kind = kind.key,
                 publishToLifeOps = publishToLifeOps,
                 sortOrder = dao.nextPlanSortOrder(assetId),
                 createdAt = stamp,
@@ -390,10 +392,11 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
     override suspend fun completeFromWeek(planId: String, completedAt: Long): Boolean {
         val plan = dao.getPlan(planId) ?: return false
 
-        // A meter prompt is not work: ticking "read the odometer" writes no service record and costs
-        // nothing. It just moves the prompt on — and if a reading arrived in the meantime, that
-        // reading has already moved it, which is why this is safe to run twice.
-        if (PlanKind.of(plan.kind) == PlanKind.METER_READING) {
+        // A prompt is not work: ticking "read the odometer" or "check recalls" writes no service
+        // record and costs nothing. It just moves the prompt on — and if a reading or a check
+        // arrived in the meantime, that has already moved it, which is why this is safe to run
+        // twice.
+        if (!PlanKind.of(plan.kind).isWork) {
             dao.upsertPlan(plan.copy(lastDoneAt = completedAt, updatedAt = now()))
             dao.setPlanLink(planId, null, null)
             return true
@@ -586,12 +589,22 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
     // ------------------------------------------------------------------ recalls
 
     /**
-     * Store what NHTSA said, keeping what this household already decided about each one.
+     * Store what NHTSA said, keeping what this household already decided about each one — and
+     * satisfy any prompt that was asking for the check.
      *
      * A recall you have acknowledged stays acknowledged when the list is fetched again — the
      * campaign is the identity, and NHTSA re-sends every open campaign every time.
+     *
+     * Returns the LifeOps tasks the recall-check prompts had published, for the caller to tick off.
+     * This is the seam running backwards, exactly as [addReading] does it: a task in a week planner
+     * cannot go and ask NHTSA anything, so *running the check here* is what completes the task over
+     * there. The nudge is the task; the asking is the work.
+     *
+     * An **empty answer still counts as a check**. "No open recalls" is the result you most want to
+     * be able to trust, and a prompt that only moved on when something was wrong would ask you again
+     * next week for having had nothing wrong.
      */
-    suspend fun saveRecalls(assetId: String, recalls: List<Recall>, fetchedAt: Long = now()) {
+    suspend fun saveRecalls(assetId: String, recalls: List<Recall>, fetchedAt: Long = now()): List<String> {
         val rows = recalls.map { recall ->
             RecallEntity(
                 assetId = assetId,
@@ -610,6 +623,12 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         }
         if (rows.isNotEmpty()) dao.upsertRecalls(rows)
         dao.getAsset(assetId)?.let { dao.upsertAsset(it.copy(recallsCheckedAt = fetchedAt)) }
+
+        val satisfied = dao.recallPromptsOf(assetId)
+        satisfied.forEach { prompt ->
+            dao.upsertPlan(prompt.copy(lastDoneAt = fetchedAt, updatedAt = now()))
+        }
+        return satisfied.mapNotNull { it.lifeOpsTaskId }
     }
 
     /** "Dealt with" — off the docket, still on file. Passing null puts it back. */

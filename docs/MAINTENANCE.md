@@ -401,6 +401,16 @@ list, on the asset's page, and counted — just not shouted.
 **Acknowledging** one is the only part of a recall this app owns: NHTSA says what is open for the
 model, you say whether it has been dealt with on yours. It comes off the docket and stays on file.
 
+And the answer **goes stale on its own**, which nothing else on the docket does. Every other line is
+owed because your vehicle changed — miles went on it, a policy ran out. A recall list changes while
+the vehicle sits still: campaigns are opened years after a car is built. So a check has a shelf life
+(`logic/RecallChecks.EVERY_DAYS`, six months), the vehicle page says out loud when the answer on file
+is older than that, and every vehicle schedule carries a standing **"Check recalls"** — a prompt, not
+work, in exactly the shape the odometer prompt has below: running the check is what satisfies it, so
+pressing *Check recalls* here ticks the task off in LifeOps. A vehicle that predates the prompt, or
+whose owner never applied a schedule, is offered it on the page rather than given it silently: a plan
+puts a task on somebody's week, and inventing those unasked is how an app stops being trusted.
+
 ### The odometer prompt
 
 Every mile-based interval in this app rests on readings, and nothing collects them on its own. So a
@@ -412,8 +422,11 @@ vehicle schedule includes a **weekly "Odometer reading"** — which is a plan, b
   reading in here is what completes the task over there. The task is the nudge; the reading is the
   work.
 
-That is the one call in the whole seam that runs the other way — Maintenance completing a LifeOps
-task rather than reacting to one — and it is why `logic/PlanKind` exists.
+That is the seam running the other way — Maintenance completing a LifeOps task rather than reacting
+to one — and it is why `logic/PlanKind` exists. The recall check is the second of exactly two things
+shaped like that, for the same reason: a task in a week planner cannot carry a number and cannot go
+and ask NHTSA anything, so in both cases *doing the thing here* is what completes the task there.
+`PlanKind.isWork` is the line between them and real upkeep — only work writes a service record.
 
 ## The screens
 
@@ -432,9 +445,10 @@ day after you sell it, and "no longer mine" is not "gone".
 | History | What has been *done* — every service, newest first, with the readings alongside |
 | Money | What it *owes and costs* — the loan, the cover, the running totals |
 
-Adding an asset asks for four things: kind, name, make/model, year. The VIN, the mortgage and the
-schedule all live one screen in — asked for when you are sitting with the paperwork, not while you
-are standing in the garage trying to get the car into the app at all.
+Adding an asset asks for the kind, the name, make/model and year — and then for everything that kind
+has: pick "Vehicle" and the VIN, the trim, the engine and the plate are right there, because the
+moment somebody is typing the car in is the moment the title is in their other hand. None of it is
+required. The mortgage and the schedule still live one screen in.
 
 ## Layout
 
@@ -500,6 +514,8 @@ scale, nothing.
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.
 
+- `RecallChecksTest` — the shelf life on a recall answer (never asked counts as stale), the standing
+  check every vehicle schedule carries, and the line between a prompt and work.
 LifeOps' half has its own: `TaskCompletionBusTest` (`gradle :lifeops:testDebugUnitTest`) holds the
 one promise that makes the bus safe to have — a listener that throws cannot break a tick, or the
 listener after it.

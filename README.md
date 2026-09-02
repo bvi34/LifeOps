@@ -252,14 +252,18 @@ the receipts.
 > one turns its items into ordinary plans you own; applying it again adds only what is new. The third
 > thing is **safety recalls**, keyed by make/model/year with no VIN at all — NHTSA's *do not drive*
 > and *do not park indoors* flags arrive as overdue, everything else as scheduled, because fourteen
-> red lines on the day you add a used truck is a docket you stop reading.
+> red lines on the day you add a used truck is a docket you stop reading. That answer is the only one
+> here that **goes stale while the vehicle sits still** — campaigns open years after a car is built —
+> so every vehicle schedule carries a standing six-monthly *check recalls*, and running the check is
+> what ticks it off.
 >
 > Schedules understand **odometer milestones** as well as intervals — "spark plugs at 100,000 miles"
 > is not "100,000 miles from now", which on a car bought at 60,000 is four years of being wrong — and
 > milestones already behind you when a schedule is applied are taken as done, because nobody knows
 > what the last owner did. A vehicle also gets a weekly **odometer prompt**, which is the one thing in
 > the suite that completes a LifeOps task rather than reacting to one: a task can't carry a number, so
-> typing the reading here ticks it off there.
+> typing the reading here ticks it off there. The recall check is the only other thing shaped like
+> that, for the same reason — a task can't go and ask NHTSA anything either.
 >
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
 > `maintenance/logic/` under **120 JVM unit tests**. It holds `INTERNET` for those two keyless
