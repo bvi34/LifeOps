@@ -17,13 +17,14 @@ class HomePacksTest {
 
     private fun home(
         zip: String? = null,
+        region: Region? = null,
         structure: HomeStructure? = null,
         yearBuilt: Int? = null,
         features: Set<HomeFeature> = emptySet(),
         mortgage: Boolean = false
     ) = HomeFacts(
         zip = zip,
-        climate = HomeLookup.climateOf(zip),
+        region = region ?: HomeLookup.regionOf(zip),
         structure = structure,
         yearBuilt = yearBuilt,
         features = features,
@@ -93,10 +94,94 @@ class HomePacksTest {
     }
 
     @Test
-    fun `an unknown climate is offered no climate schedule rather than the wrong one`() {
+    fun `an unknown region is offered no weather schedule rather than the wrong one`() {
         val ids = idsFor(home(zip = null))
 
         assertTrue(ids.none { it in setOf("home-cold", "home-hot", "home-damp") })
+        assertTrue(
+            ids.none { it in setOf("home-hurricane", "home-wildfire", "home-severe-storm", "home-earthquake") }
+        )
+    }
+
+    // --- what the weather does at its worst ---
+
+    @Test
+    fun `every hazard a region can carry brings exactly one schedule`() {
+        val expected = mapOf(
+            Hazard.HURRICANE to "home-hurricane",
+            Hazard.WILDFIRE to "home-wildfire",
+            Hazard.SEVERE_STORM to "home-severe-storm",
+            Hazard.EARTHQUAKE to "home-earthquake"
+        )
+        assertEquals("a hazard was added without a schedule", Hazard.entries.toSet(), expected.keys)
+
+        expected.forEach { (hazard, packId) ->
+            val carriers = Region.entries.filter { hazard in it.hazards }
+            assertTrue("no region carries ${hazard.key}", carriers.isNotEmpty())
+            carriers.forEach { region ->
+                assertTrue(
+                    "${region.key} did not bring $packId",
+                    idsFor(home(region = region)).contains(packId)
+                )
+            }
+            Region.entries.filter { hazard !in it.hazards }.forEach { region ->
+                assertTrue(
+                    "${region.key} was offered $packId",
+                    idsFor(home(region = region)).none { it == packId }
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `the hazards follow the ZIP the same way the climate does`() {
+        assertTrue(idsFor(home(zip = "33101")).contains("home-hurricane"))   // Miami
+        assertTrue(idsFor(home(zip = "85001")).contains("home-wildfire"))    // Phoenix
+        assertTrue(idsFor(home(zip = "73101")).contains("home-severe-storm")) // Oklahoma City
+        assertTrue(idsFor(home(zip = "94110")).contains("home-earthquake"))  // San Francisco
+
+        // Vermont has a hard winter and none of the four, which is the ordinary case.
+        val vermont = idsFor(home(zip = "05401"))
+        assertTrue(vermont.contains("home-cold"))
+        assertTrue(vermont.none { it.startsWith("home-hurricane") || it.startsWith("home-wildfire") })
+    }
+
+    @Test
+    fun `a picked region overrules the ZIP all the way through to the schedules`() {
+        // Truckee: the ZIP prefix says California, and the house is in the snow behind it.
+        val guessed = idsFor(home(zip = "96161"))
+        assertTrue(guessed.contains("home-earthquake"))
+        assertTrue(guessed.none { it == "home-cold" })
+
+        val picked = idsFor(home(zip = "96161", region = Region.MOUNTAIN_WEST))
+        assertTrue(picked.contains("home-cold"))
+        assertTrue(picked.contains("home-wildfire"))
+        assertTrue(picked.none { it == "home-earthquake" })
+    }
+
+    @Test
+    fun `the jobs two hazard packs agree on are not scheduled twice`() {
+        // A gas house in earthquake country, and a hurricane house that already photographs its
+        // rooms for the ownership pack: both are one job with two reasons, written under one title.
+        val gas = SchedulePlans.plan(HomePacks.GAS, emptyList()).toCreate.mapIndexed { index, item ->
+            SchedulePlans.toPlan(item, HomePacks.GAS, "asset-1", "gas-$index", NOW)
+        }
+        val quake = SchedulePlans.plan(HomePacks.EARTHQUAKE, gas)
+        assertEquals(
+            "the shut-off was scheduled twice",
+            HomePacks.EARTHQUAKE.items.size - 1,
+            quake.toCreate.size
+        )
+
+        val owned = SchedulePlans.plan(HomePacks.OWNERSHIP, emptyList()).toCreate.mapIndexed { index, item ->
+            SchedulePlans.toPlan(item, HomePacks.OWNERSHIP, "asset-2", "own-$index", NOW)
+        }
+        val hurricane = SchedulePlans.plan(HomePacks.HURRICANE, owned)
+        assertEquals(
+            "the room photographs were scheduled twice",
+            HomePacks.HURRICANE.items.size - 1,
+            hurricane.toCreate.size
+        )
     }
 
     // --- what the household announced it has ---

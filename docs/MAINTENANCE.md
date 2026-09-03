@@ -80,11 +80,11 @@ transmission, drivetrain), the colour, the plate and where it is registered, and
 recall at a counter — tyre size and oil spec. The first seven are ordered the way the decode returns
 them, so a decoded vehicle reads top to bottom on the detail page.
 
-A home asks for seven, and two of them are **pickers** rather than text — which is the other half of
+A home asks for eight, and three of them are **pickers** rather than text — which is the other half of
 what declaring fields as data buys, because `AttributeInput.CHOICE` and `CHOICES` were added once and
-every dialog, the overview and the validation grew them for free. "Type of home" is one choice and
-decides what the *building* owes; "What it has" is a multiple choice of twelve, each of which brings
-its own schedule. See *What the address opens* below.
+every dialog, the overview and the validation grew them for free. "Region" says what the weather
+does here and is normally filled in from the ZIP; "Type of home" decides what the *building* owes;
+"What it has" is a multiple choice of twelve, each of which brings its own schedule. See *What the address opens* below.
 
 …and the values live in `asset_attributes` keyed by `(assetId, key)`. The **add** dialog, the **edit**
 dialog, the overview screen and the validation are all generated from that list, so adding a kind is
@@ -439,11 +439,12 @@ and ask NHTSA anything, so in both cases *doing the thing here* is what complete
 A house is the other half of this module and it does not work like the car at all.
 
 ```
-address ──ZIP──▶ climate ──┐
-"type of home" ────────────┤
-year built ────────────────┼──▶ HomeFacts ──▶ the schedules that fit ──▶ plans ──▶ the LifeOps week
-"what it has" ──features───┤
-a loan on the asset ───────┘
+address ──ZIP──▶ region ─┬─▶ climate
+      "region" ──────────┘   └─ hazards
+"type of home" ──────────────┐
+year built ──────────────────┼──▶ HomeFacts ──▶ the schedules that fit ──▶ plans ──▶ the LifeOps week
+"what it has" ──features─────┤
+a loan on the asset ─────────┘
 ```
 
 Every arrow in that diagram is inside the phone.
@@ -466,7 +467,7 @@ What is left is better than it sounds, because the household has **already typed
 
 | Read from | What it gives |
 |---|---|
-| The ZIP in the address | `Climate` — cold, four seasons, hot and humid, hot and dry, mild and wet |
+| **"Region"**, or the ZIP in the address | `Region` — one of eighteen, carrying a `Climate` and any `Hazard`s |
 | **"Type of home"** (one choice) | `HomeStructure` — site-built, manufactured, townhouse, condo |
 | Year built | Whether the jobs peculiar to pre-1980 housing stock apply |
 | **"What it has"** (multiple choice) | `HomeFeature` — twelve, each of which brings a schedule |
@@ -513,20 +514,55 @@ when the field was free text. The free-text reader is still there as the fallbac
 feature when it names one and does not deny it, so *"septic tank, no sprinklers"* still finds the
 tank and not the sprinklers, and *"stairwell"* is still not a well.
 
-The climate is the one guess left in the file and it is **shown as one**. `HomeLookup.climateOf` is a
-table of ZIP prefixes — the first three digits, which run in geographic order — assigned to five
-climates by the region they cover. It gets Vermont and Florida right and it cannot get California
-right, because California is four climates and one of them is a desert forty miles from a beach. The
-screen says so, and one press lists the whole catalogue so a wrong guess costs a tap rather than a
-wrong schedule.
+### The region lookup
+
+**"Region"** is the third picker and the only one with a lookup behind it. `HomeLookup.regionOf` is a
+table of ZIP prefixes — the first three digits, which run in geographic order — each pointing at one
+of eighteen `Region`s, and a region carries two things:
+
+- a **`Climate`** — cold, four seasons, hot and humid, hot and dry, mild and wet — which is what the
+  weather does on an ordinary Tuesday, and
+- any **`Hazard`s** — hurricanes, wildfire, hail and tornadoes, earthquakes — which is what it does
+  at its worst, and a completely different list of jobs.
+
+That second axis is the reason a region exists rather than a bare climate. Miami and Houston are both
+hot and humid; only one of them is somewhere the shutters and the roof straps want finding before
+June. Boulder and Burlington are both cold; only one has thirty feet of ground round the house that
+has to stay clear of anything that burns.
+
+All four hazard packs are **preparation on a clock**, which is the only reason weather this sudden
+can be scheduled at all: the moment any of it matters is the moment it is far too late to start.
+Nothing here watches a forecast. Maintenance says what is owed and LifeOps says when, and neither of
+them knows what the sky is doing.
+
+#### The guess, and the field that overrules it
+
+The table is coarse and it is drawn roughly — "the dry Southwest" contains California's Central
+Valley, and Texas is filed with the Gulf Coast although most of it is nowhere near the water. Any
+line drawn on a country this wide is wrong for somebody, and the answer is not a finer table:
+
+- with the field **empty**, the region is worked out from the ZIP, and `RegionSource.ZIP` makes the
+  screen draw it as a guess — *"a guess from the ZIP code 96161"* — with a **Use the Mountain West**
+  button beside it;
+- pressing that writes the key into the field, which is what stops it being a guess. Nothing
+  re-derives a picked region, and the ZIP is consulted only while the field is empty;
+- picking a different one in Edit does the same thing directly.
+
+Truckee is the case: the ZIP prefix says California, so the guess offers earthquake preparation and
+no winterising, and the house is in the snow behind it. One tap fixes it, permanently, and
+`HomePacksTest` asserts that the correction runs all the way through to the schedules.
+
+Accepting a region **applies nothing**. It is the same gesture as *Use these details* on a VIN
+decode — what the app worked out is an offer until somebody accepts it, and a plan still only reaches
+anybody's week when a pack is applied on purpose.
 
 ### One house, several schedules
 
 A vehicle gets **one** pack because a manufacturer wrote one. Nobody writes one for a house, and what
 a house owes is a sum: what living in any building owes, plus what *this* building owes, plus what
-winter does to it here, plus its age, plus one pack per thing the household announced it has, plus
-the paperwork of owning it. So `HomePacks` ships twenty-one small packs and a house is normally
-offered five or six:
+the weather does here and what it does here at its worst, plus its age, plus one pack per thing the
+household announced it has, plus the paperwork of owning it. So `HomePacks` ships twenty-five small
+packs and a house is normally offered five to eight:
 
 | Pack | Offered when | Items |
 |---|---|---|
@@ -536,10 +572,21 @@ offered five or six:
 | `home-cold` | Cold or four-season climate | 4 |
 | `home-hot` | Hot and humid, or hot and dry | 3 |
 | `home-damp` | Hot and humid, or mild and wet | 3 |
+| `home-hurricane` | The region carries that hazard | 3 |
+| `home-wildfire` | " | 4 |
+| `home-severe-storm` | " | 3 |
+| `home-earthquake` | " | 4 |
 | `home-older` | Built before 1980 | 3 |
 | `home-septic` · `home-well` · `home-gas` · `home-electric` · `home-solar` · `home-cooling` · `home-fireplace` · `home-sump` · `home-irrigation` · `home-pool` · `home-deck` · `home-generator` | That feature was ticked | 2–3 each |
 | `home-ownership` | Always | 4 |
 | `home-mortgage` | There is a loan against it | 4 |
+
+Three pairs of packs deliberately share an item **title** so the overlap costs nothing: the two AC
+jobs in `home-cooling` and `home-hot`, the gas shut-off in `home-gas` and `home-earthquake`, and
+photographing the rooms in `home-ownership` and `home-hurricane`. Each is one job with two reasons
+behind it, and `SchedulePlans` adopts a plan that is already there by title rather than adding a
+second beside it — which is also how a cooling schedule reaches a house in Vermont with ducted air
+and a climate that never suggested one.
 
 Small packs rather than one composed list is what makes the ordinary case work: you type the house in
 on the day you buy it, and six months later you finally tick *"septic system"* in the field that
@@ -644,7 +691,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 196 JVM tests, no emulator needed. Almost all of them are over `logic/`
+`gradle :maintenance:test` — 206 JVM tests, no emulator needed. Almost all of them are over `logic/`
 and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
 the only reason this module has a test dependency beyond JUnit at all.
 
@@ -681,20 +728,23 @@ the only reason this module has a test dependency beyond JUnit at all.
 - `SchedulePlansTest` — which pack a VIN's facts choose and which they don't, the fallback always
   offered beneath, applying twice adding nothing, and a plan you typed by hand being adopted.
 - `HomeFactsTest` — a house read off its own fields: the ZIP found at the bottom of an address rather
-  than in the house number, ZIP+4 accepted and the +4 dropped, the climate a prefix lands in, a
-  prefix the table doesn't cover answered with *null* rather than a guess, a picker's keys read back,
-  a key from a later build kept rather than dropped, keys and prose in the same value both read, and
-  the join between the two enums and the two field specs — every option offered is a key the reader
-  knows.
+  than in the house number, ZIP+4 accepted and the +4 dropped, the region a prefix lands in and the
+  climate and hazards it carries, a prefix the table doesn't cover answered with *null* rather than a
+  guess, a picked region winning over the ZIP and reporting itself as picked, a region key from a
+  later build falling back to the ZIP rather than blanking the answer, a picker's keys read back,
+  keys and prose in the same value both read, and the join between the three enums and the three
+  field specs — every option offered is a key the reader knows.
 - `HomePacksTest` — which schedules a house is offered, and mostly which it isn't: no septic list for
   a house on mains drainage, no winterising list in Miami, no manufactured-home list for a condo *or*
   for a type nobody picked, no gutters for a condo but gutters for a house whose type is still blank,
-  no older-house list for a year nobody typed, no mortgage list without a loan. The feature-to-pack
-  map is asserted in both directions, so a feature added without a schedule fails rather than
-  becoming a checkbox that does nothing. Plus the catalogue's own invariants — every item has a date
-  interval, none is measured in miles, ids unique across every pack of every kind because provenance
-  is keyed on them — the two AC packs deliberately overlapping without adding the job twice, and the
-  case the shape exists for: the septic schedule arriving six months late and adding only itself.
+  no hazard list for a region nobody knows, no older-house list for a year nobody typed, no mortgage
+  list without a loan. Both the feature-to-pack and hazard-to-pack maps are asserted in both
+  directions, so either kind added without a schedule fails rather than becoming a tick that does
+  nothing. Plus Truckee — a picked region overruling the ZIP all the way through to the schedules —
+  the three deliberately-overlapping pairs not scheduling their shared job twice, the catalogue's own
+  invariants (every item has a date interval, none is measured in miles, ids unique across every pack
+  of every kind because provenance is keyed on them), and the case the shape exists for: the septic
+  schedule arriving six months late and adding only itself.
 - `VpicParserTest` and `RecallsParserTest` — both against fixtures trimmed from **real** responses,
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.

@@ -33,6 +33,7 @@ class HomeFactsTest {
         val facts = HomeLookup.read(address = "The cottage, up the lane")
 
         assertNull(facts.zip)
+        assertNull(facts.region)
         assertNull(facts.climate)
         assertNotNull(facts.note)
         assertTrue(facts.note!!.contains("ZIP"))
@@ -42,38 +43,112 @@ class HomeFactsTest {
     fun `no address at all says so rather than saying nothing`() {
         val facts = HomeLookup.read(yearBuilt = "1974")
 
+        assertNull(facts.region)
         assertNull(facts.climate)
         assertEquals(1974, facts.yearBuilt)
         assertNotNull(facts.note)
     }
 
-    // --- the climate the ZIP implies ---
+    // --- the region the ZIP implies, and the climate and hazards it carries ---
 
     @Test
-    fun `a ZIP lands in the climate its part of the country has`() {
-        assertEquals(Climate.COLD, HomeLookup.climateOf("05401"))       // Burlington, Vermont
-        assertEquals(Climate.TEMPERATE, HomeLookup.climateOf("07001"))  // New Jersey
-        assertEquals(Climate.HOT_HUMID, HomeLookup.climateOf("33101"))  // Miami
-        assertEquals(Climate.HOT_DRY, HomeLookup.climateOf("85001"))    // Phoenix
-        assertEquals(Climate.MARINE, HomeLookup.climateOf("98101"))     // Seattle
-        assertEquals(Climate.COLD, HomeLookup.climateOf("99501"))       // Anchorage
+    fun `a ZIP lands in the region its part of the country is in`() {
+        assertEquals(Region.NEW_ENGLAND, HomeLookup.regionOf("05401"))        // Burlington, Vermont
+        assertEquals(Region.MID_ATLANTIC, HomeLookup.regionOf("07001"))       // New Jersey
+        assertEquals(Region.SOUTHEAST, HomeLookup.regionOf("33101"))          // Miami
+        assertEquals(Region.DRY_SOUTHWEST, HomeLookup.regionOf("85001"))      // Phoenix
+        assertEquals(Region.PACIFIC_NORTHWEST, HomeLookup.regionOf("98101"))  // Seattle
+        assertEquals(Region.MOUNTAIN_WEST, HomeLookup.regionOf("99206"))      // Spokane
+        assertEquals(Region.ALASKA, HomeLookup.regionOf("99501"))             // Anchorage
+        assertEquals(Region.GULF_COAST, HomeLookup.regionOf("70112"))         // New Orleans
+        assertEquals(Region.CALIFORNIA, HomeLookup.regionOf("94110"))         // San Francisco
+    }
+
+    @Test
+    fun `the climate a ZIP falls in is the region's, and never stored beside it`() {
+        assertEquals(Climate.COLD, HomeLookup.climateOf("05401"))
+        assertEquals(Climate.TEMPERATE, HomeLookup.climateOf("07001"))
+        assertEquals(Climate.HOT_HUMID, HomeLookup.climateOf("33101"))
+        assertEquals(Climate.HOT_DRY, HomeLookup.climateOf("85001"))
+        assertEquals(Climate.MARINE, HomeLookup.climateOf("98101"))
+        assertEquals(Climate.COLD, HomeLookup.climateOf("99501"))
+    }
+
+    @Test
+    fun `a region carries what the weather does at its worst, not only day to day`() {
+        assertEquals(setOf(Hazard.HURRICANE), HomeLookup.read(address = "Miami FL 33101").hazards)
+        assertEquals(setOf(Hazard.WILDFIRE), HomeLookup.read(address = "Phoenix AZ 85001").hazards)
+        assertEquals(
+            setOf(Hazard.EARTHQUAKE, Hazard.WILDFIRE),
+            HomeLookup.read(address = "Seattle WA 98101").hazards
+        )
+        assertEquals(
+            setOf(Hazard.HURRICANE, Hazard.SEVERE_STORM),
+            HomeLookup.read(address = "New Orleans LA 70112").hazards
+        )
+        // Most of the country has none of them, and that is a real answer.
+        assertTrue(HomeLookup.read(address = "Burlington VT 05401").hazards.isEmpty())
     }
 
     @Test
     fun `a ZIP the table does not cover is null rather than a guess`() {
         // 09xxx is military mail with no geography behind it.
+        assertNull(HomeLookup.regionOf("09014"))
         assertNull(HomeLookup.climateOf("09014"))
-        assertNull(HomeLookup.climateOf(null))
-        assertNull(HomeLookup.climateOf("not a zip"))
+        assertNull(HomeLookup.regionOf(null))
+        assertNull(HomeLookup.regionOf("not a zip"))
     }
 
     @Test
-    fun `an unknown ZIP says the schedules are there to pick from`() {
+    fun `an unknown ZIP says a region is there to pick`() {
         val facts = HomeLookup.read(address = "Unit 4, APO AE 09014")
 
         assertEquals("09014", facts.zip)
+        assertNull(facts.region)
         assertNull(facts.climate)
-        assertTrue(facts.note!!.contains("pick"))
+        assertEquals(RegionSource.NONE, facts.regionSource)
+        assertTrue(facts.note!!.contains("Pick a region"))
+    }
+
+    @Test
+    fun `a region worked out from a ZIP says it was worked out`() {
+        val facts = HomeLookup.read(address = "128 Main Street\nBurlington, VT 05401")
+
+        assertEquals(Region.NEW_ENGLAND, facts.region)
+        assertEquals(RegionSource.ZIP, facts.regionSource)
+        assertNull("a guess that worked is not something to apologise for", facts.note)
+    }
+
+    @Test
+    fun `a picked region wins over the ZIP, and stops being a guess`() {
+        // The case the field exists for: a ZIP prefix says California and this house is in the
+        // mountains behind it. Nothing re-derives what somebody picked.
+        val facts = HomeLookup.read(
+            address = "Truckee, CA 96161",
+            region = "mountain_west"
+        )
+
+        assertEquals(Region.MOUNTAIN_WEST, facts.region)
+        assertEquals(RegionSource.PICKED, facts.regionSource)
+        assertEquals(Climate.COLD, facts.climate)
+        assertEquals("96161", facts.zip)
+    }
+
+    @Test
+    fun `a picked region carries a house with no address at all`() {
+        val facts = HomeLookup.read(region = "gulf_coast")
+
+        assertEquals(Region.GULF_COAST, facts.region)
+        assertEquals(RegionSource.PICKED, facts.regionSource)
+        assertNull("nothing was missing, so there is nothing to say", facts.note)
+    }
+
+    @Test
+    fun `a region key this build does not know falls back to the ZIP`() {
+        val facts = HomeLookup.read(address = "Miami FL 33101", region = "atlantis")
+
+        assertEquals(Region.SOUTHEAST, facts.region)
+        assertEquals(RegionSource.ZIP, facts.regionSource)
     }
 
     // --- the pickers, which are the ordinary input ---
@@ -110,6 +185,13 @@ class HomeFactsTest {
     @Test
     fun `every option a picker offers is a key the reader knows`() {
         // The two enums and the two field specs are one thing said twice; this is the join.
+        val region = AssetKind.HOME.spec("region")!!
+        assertEquals(
+            Region.entries.map { it.key },
+            region.options.map { it.key }
+        )
+        region.options.forEach { assertNotNull(it.key, Region.of(it.key)) }
+
         val structure = AssetKind.HOME.spec("structure")!!
         assertEquals(
             HomeStructure.entries.map { it.key },
@@ -189,6 +271,7 @@ class HomeFactsTest {
         )
 
         assertEquals("05602", facts.zip)
+        assertEquals(Region.NEW_ENGLAND, facts.region)
         assertEquals(Climate.COLD, facts.climate)
         assertEquals(HomeStructure.MANUFACTURED, facts.structure)
         assertEquals(1948, facts.yearBuilt)
@@ -196,7 +279,7 @@ class HomeFactsTest {
         assertTrue(facts.hasMortgage)
         assertNull("nothing was missing, so there is nothing to say", facts.note)
         assertFalse(facts.isEmpty)
-        assertEquals("Manufactured or mobile home · Built 1948 · Cold winters", facts.descriptor)
+        assertEquals("Manufactured or mobile home · Built 1948 · New England", facts.descriptor)
         assertEquals("Septic system · Fireplace or wood stove", facts.detail)
     }
 

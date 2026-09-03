@@ -32,7 +32,9 @@ enum class AssetKind(
      * instead is an address with a ZIP in it, a year, and a household that knows perfectly well
      * what the place is made of and what is bolted to it.
      *
-     * So the two fields upkeep actually reads are **pickers, not prose**. "Type of home" is one
+     * So the three fields upkeep actually reads are **pickers, not prose**. "Region" says what the
+     * weather does here — ordinarily worked out from the ZIP in the address, and picked only when
+     * that guess is wrong, which on a country the width of this one it regularly is. "Type of home" is one
      * choice and changes what the house structurally owes — a manufactured home has piers to
      * re-level and skirting to check, and no condo owner cleans the gutters. "What it has" is a
      * multiple choice, and each thing ticked is a schedule the house picks up: a septic tank, a
@@ -48,6 +50,11 @@ enum class AssetKind(
             AssetAttributeSpec(
                 "address", "Address", AttributeInput.MULTILINE,
                 hint = "The ZIP is the part upkeep reads — it is what says whether the taps need draining"
+            ),
+            AssetAttributeSpec(
+                "region", "Region", AttributeInput.CHOICE,
+                hint = "Filled in from the ZIP when you leave it blank — pick one to overrule that",
+                options = Region.entries.map { AssetAttributeOption(it.key, it.label, it.detail) }
             ),
             AssetAttributeSpec(
                 "structure", "Type of home", AttributeInput.CHOICE,

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.PremiumPeriod
+import com.maintenance.app.logic.Region
 import com.maintenance.app.logic.UpkeepPlan
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -237,6 +238,23 @@ class AssetDetailViewModel(
         publisher.round()
     }
 
+    // ------------------------------------------------------------------ the address, and what it opens
+
+    /**
+     * Take the region the ZIP worked out, and make it the household's own.
+     *
+     * Until this is pressed the region is a *guess* the screen re-derives every time it draws, and
+     * it says so. Pressing it writes the answer into the field, which is what stops it being a
+     * guess: nothing re-derives a picked region, and the ZIP is consulted only while the field is
+     * empty. It is the same gesture as *Use these details* on a VIN decode, for the same reason —
+     * what an app worked out is an offer until somebody accepts it.
+     */
+    fun useRegion(region: Region) = viewModelScope.launch {
+        repo.setAttribute(assetId, ATTR_REGION, region.key)
+        // The region decides which climate and hazard schedules fit, but applying one is still a
+        // separate press: nothing goes onto anybody's week for having agreed with a guess.
+    }
+
     // --- money ---
 
     fun saveLoan(
@@ -275,6 +293,10 @@ class AssetDetailViewModel(
     }
 
     fun deleteCoverage(coverageId: String) = viewModelScope.launch { repo.deleteCoverage(coverageId) }
+
+    private companion object {
+        const val ATTR_REGION = "region"
+    }
 
     class Factory(
         private val repo: MaintenanceRepository,

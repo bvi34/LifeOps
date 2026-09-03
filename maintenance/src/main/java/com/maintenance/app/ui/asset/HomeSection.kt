@@ -3,6 +3,7 @@ package com.maintenance.app.ui.asset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -14,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.logic.HomeLookup
+import com.maintenance.app.logic.RegionSource
 import com.maintenance.app.logic.SchedulePacks
 import com.maintenance.app.ui.common.SectionCard
 
@@ -45,6 +47,7 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
     val facts = remember(asset.attributes, detail.loans.size) {
         HomeLookup.read(
             address = asset.attribute("address"),
+            region = asset.attribute("region"),
             structure = asset.attribute("structure"),
             yearBuilt = asset.attribute("yearBuilt"),
             features = asset.attribute("features"),
@@ -59,9 +62,9 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
 
     SectionCard(title = "What this house needs doing") {
         Text(
-            "Worked out on this device, from the address, the type of home, the year and what you " +
+            "Worked out on this device, from the region, the type of home, the year and what you " +
                 "ticked that it has. A house has no VIN to look up and its address is not a model " +
-                "number, so nothing here is asked of anybody.",
+                "number, so nothing here is asked of anybody — the ZIP is read where it already is.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -76,14 +79,30 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        // The climate is a guess from a ZIP code and says so — see `logic/HomeLookup.climateOf`.
-        facts.climate?.let { climate ->
+        // A region worked out from a ZIP prefix is a guess and is drawn as one, with the button that
+        // turns it into an answer. A region somebody picked never says any of this.
+        facts.region?.let { region ->
             Text(
-                "${climate.detail} — by the ZIP code, which is a coarse guess. If it is wrong, the " +
-                    "whole catalogue is below.",
-                style = MaterialTheme.typography.labelSmall,
+                buildString {
+                    append(region.climate.detail)
+                    if (facts.hazards.isNotEmpty()) {
+                        append(" · ")
+                        append(facts.hazards.sortedBy { it.ordinal }.joinToString(", ") { it.label })
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (facts.regionSource == RegionSource.ZIP) {
+                Text(
+                    "That region is a guess from the ZIP code ${facts.zip.orEmpty()} — a coarse one, " +
+                        "because a ZIP prefix is a wide thing. Take it and it becomes the answer; " +
+                        "pick a different one in Edit, or see every schedule below.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(onClick = { vm.useRegion(region) }) { Text("Use ${region.label}") }
+            }
         }
         facts.note?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

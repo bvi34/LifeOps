@@ -22,8 +22,10 @@ package com.maintenance.app.logic
 data class HomeFacts(
     /** The five digits found in the address, when there were any. */
     val zip: String? = null,
-    /** What winter and summer do here, as far as the ZIP can say. A guess, and shown as one. */
-    val climate: Climate? = null,
+    /** Where in the country this is — what winter does here, and what the weather does at its worst. */
+    val region: Region? = null,
+    /** Whether [region] was picked or worked out. The screen says which; a guess should look like one. */
+    val regionSource: RegionSource = RegionSource.NONE,
     /** What kind of building it is, which is what decides what it structurally owes. */
     val structure: HomeStructure? = null,
     val yearBuilt: Int? = null,
@@ -34,21 +36,45 @@ data class HomeFacts(
     /** What could not be worked out, as a sentence to show. Never a refusal. */
     val note: String? = null
 ) {
+    /** What the weather does here day to day. A property of the region, never stored beside it. */
+    val climate: Climate? get() = region?.climate
+
+    /** What the weather does here at its worst, which is a different list of jobs. */
+    val hazards: Set<Hazard> get() = region?.hazards.orEmpty()
+
     val isEmpty: Boolean
-        get() = climate == null && structure == null && yearBuilt == null &&
+        get() = region == null && structure == null && yearBuilt == null &&
             features.isEmpty() && !hasMortgage
 
-    /** "Manufactured home · Built 1974 · Cold winters" — the line a heading uses. */
+    /** "Manufactured or mobile home · Built 1974 · New England" — the line a heading uses. */
     val descriptor: String
         get() = listOfNotNull(
             structure?.label,
             yearBuilt?.let { "Built $it" },
-            climate?.label
+            region?.label
         ).joinToString(" · ")
 
     /** "Septic system · Private well · Solar panels" — what it was announced to have. */
     val detail: String
         get() = features.sortedBy { it.ordinal }.joinToString(" · ") { it.label }
+}
+
+/**
+ * Where a region came from, which the screen says out loud.
+ *
+ * The distinction is the whole reason the region is a field at all. A ZIP prefix is a coarse guess
+ * and a household should be able to see that it is one and overrule it in a tap; an answer somebody
+ * picked is theirs and nothing re-derives it afterwards.
+ */
+enum class RegionSource {
+    /** Somebody chose it. Nothing overrides this. */
+    PICKED,
+
+    /** Worked out from the ZIP in the address, and shown as a guess. */
+    ZIP,
+
+    /** Neither — no region, and no climate or hazard schedules offered. */
+    NONE
 }
 
 /**
@@ -170,28 +196,42 @@ object HomeLookup {
      */
     fun read(
         address: String? = null,
+        region: String? = null,
         structure: String? = null,
         yearBuilt: String? = null,
         features: String? = null,
         hasMortgage: Boolean = false
     ): HomeFacts {
         val zip = zipIn(address)
-        val climate = climateOf(zip)
+        // A region somebody picked wins outright, and the ZIP is only consulted when nobody has.
+        // The alternative — re-deriving it every read and treating the picked value as a hint —
+        // is the shape that argues with people about where they live.
+        val picked = Region.of(region)
+        val fromZip = regionOf(zip)
+        val resolved = picked ?: fromZip
         return HomeFacts(
             zip = zip,
-            climate = climate,
+            region = resolved,
+            regionSource = when {
+                picked != null -> RegionSource.PICKED
+                fromZip != null -> RegionSource.ZIP
+                else -> RegionSource.NONE
+            },
             structure = HomeStructure.of(structure?.trim()),
             yearBuilt = yearOf(yearBuilt),
             features = featuresIn(features),
             hasMortgage = hasMortgage,
             note = when {
+                picked != null -> null
                 address.isNullOrBlank() ->
-                    "No address yet, so nothing here knows what winter does at this house."
+                    "No region, and no address to guess one from — so nothing here knows whether the " +
+                        "outside taps want draining in October or the shutters want finding before " +
+                        "June. Pick one in Edit and the seasonal schedules follow."
                 zip == null ->
-                    "No ZIP code in the address, so the climate is the one thing this can't work out."
-                climate == null ->
-                    "That ZIP code isn't one this knows — the climate schedules are all listed below " +
-                        "so you can pick the right one yourself."
+                    "No ZIP code in the address to guess a region from — pick one and the climate " +
+                        "schedules follow."
+                fromZip == null ->
+                    "That ZIP code isn't one this knows. Pick a region and the climate schedules follow."
                 else -> null
             }
         )
@@ -210,22 +250,21 @@ object HomeLookup {
     }
 
     /**
-     * A ZIP code's climate, or null when it falls outside the table.
+     * The region a ZIP code falls in, or null when it falls outside the table.
      *
-     * **This is coarse and it is meant to be.** The table below is ZIP prefixes — the first three
-     * digits, which run in geographic order — assigned to the five climates by the state or the part
-     * of a state they cover. It gets Vermont and Florida right and it cannot get California right,
-     * because California is four climates and one of them is a desert forty miles from a beach.
-     *
-     * That is survivable because of what the answer is *for*: it puts a schedule at the top of a
-     * list of schedules, all of which can be applied by hand, and the screen says out loud that it
-     * is a guess from the ZIP. The alternative — asking every household to classify its own climate
-     * from a menu of five before it can be offered anything — is one more question nobody answers.
+     * This is the lookup, and it is the whole of it: a table of ZIP prefixes — the first three
+     * digits, which run in geographic order — each pointing at a [Region], which carries the climate
+     * and whatever hazards are worth preparing for. Military mail (090–098) and anything the table
+     * does not cover answer null rather than guessing, because a wrong region is worse than none:
+     * none shows the whole catalogue, and wrong shows a confident short list.
      */
-    fun climateOf(zip: String?): Climate? {
+    fun regionOf(zip: String?): Region? {
         val prefix = zip?.take(3)?.toIntOrNull() ?: return null
         return ZIP_PREFIXES.firstOrNull { prefix in it.first }?.second
     }
+
+    /** The climate a ZIP falls in — the region's, since a climate is never stored on its own. */
+    fun climateOf(zip: String?): Climate? = regionOf(zip)?.climate
 
     /**
      * The features a stored value announces.
@@ -302,49 +341,48 @@ object HomeLookup {
      * The comment on each line is the state or region the range covers, so the table can be checked
      * against a postal reference rather than believed.
      */
-    private val ZIP_PREFIXES: List<Pair<IntRange, Climate>> = listOf(
-        6..9 to Climate.HOT_HUMID,        // Puerto Rico, US Virgin Islands
-        10..69 to Climate.COLD,           // New England: MA RI NH ME VT CT
-        70..89 to Climate.TEMPERATE,      // New Jersey
-        100..196 to Climate.COLD,         // New York, Pennsylvania
-        197..219 to Climate.TEMPERATE,    // Delaware, DC, Maryland
-        220..268 to Climate.TEMPERATE,    // Virginia, West Virginia
-        270..289 to Climate.TEMPERATE,    // North Carolina
-        290..299 to Climate.HOT_HUMID,    // South Carolina
-        300..349 to Climate.HOT_HUMID,    // Georgia, Florida
-        350..399 to Climate.HOT_HUMID,    // Alabama, Tennessee, Mississippi
-        400..427 to Climate.TEMPERATE,    // Kentucky
-        430..479 to Climate.COLD,         // Ohio, Indiana
-        480..499 to Climate.COLD,         // Michigan
-        500..528 to Climate.COLD,         // Iowa
-        530..567 to Climate.COLD,         // Wisconsin, Minnesota
-        570..599 to Climate.COLD,         // Dakotas, Montana
-        600..629 to Climate.COLD,         // Illinois
-        630..658 to Climate.TEMPERATE,    // Missouri
-        660..679 to Climate.TEMPERATE,    // Kansas
-        680..693 to Climate.COLD,         // Nebraska
-        700..729 to Climate.HOT_HUMID,    // Louisiana, Arkansas
-        730..749 to Climate.HOT_HUMID,    // Oklahoma
-        750..794 to Climate.HOT_HUMID,    // Texas, east of the dry line
-        795..799 to Climate.HOT_DRY,      // West Texas, El Paso
-        800..816 to Climate.COLD,         // Colorado
-        820..838 to Climate.COLD,         // Wyoming, Idaho
-        840..847 to Climate.COLD,         // Utah — cold and dry; the freeze is what changes the jobs
-        850..865 to Climate.HOT_DRY,      // Arizona
-        870..884 to Climate.HOT_DRY,      // New Mexico
-        889..898 to Climate.HOT_DRY,      // Nevada
-        900..931 to Climate.MARINE,       // Southern and coastal California
-        932..935 to Climate.HOT_DRY,      // The Central Valley and the desert
-        936..961 to Climate.MARINE,       // Central and northern California
-        967..968 to Climate.HOT_HUMID,    // Hawaii
-        970..989 to Climate.MARINE,       // Oregon, western Washington
-        990..994 to Climate.COLD,         // Eastern Washington
-        995..999 to Climate.COLD          // Alaska
+    private val ZIP_PREFIXES: List<Pair<IntRange, Region>> = listOf(
+        6..9 to Region.CARIBBEAN,           // Puerto Rico, US Virgin Islands
+        10..69 to Region.NEW_ENGLAND,       // MA RI NH ME VT CT
+        70..89 to Region.MID_ATLANTIC,      // New Jersey
+        100..196 to Region.NORTHEAST,       // New York, Pennsylvania
+        197..219 to Region.MID_ATLANTIC,    // Delaware, DC, Maryland
+        220..268 to Region.MID_ATLANTIC,    // Virginia, West Virginia
+        270..289 to Region.MID_ATLANTIC,    // North Carolina
+        290..299 to Region.SOUTHEAST,       // South Carolina
+        300..349 to Region.SOUTHEAST,       // Georgia, Florida
+        350..399 to Region.DEEP_SOUTH,      // Alabama, Tennessee, Mississippi
+        400..427 to Region.OHIO_VALLEY,     // Kentucky
+        430..479 to Region.GREAT_LAKES,     // Ohio, Indiana
+        480..499 to Region.GREAT_LAKES,     // Michigan
+        500..528 to Region.UPPER_MIDWEST,   // Iowa
+        530..567 to Region.UPPER_MIDWEST,   // Wisconsin, Minnesota
+        570..588 to Region.UPPER_MIDWEST,   // The Dakotas
+        590..599 to Region.MOUNTAIN_WEST,   // Montana
+        600..629 to Region.UPPER_MIDWEST,   // Illinois
+        630..679 to Region.GREAT_PLAINS,    // Missouri, Kansas
+        680..693 to Region.UPPER_MIDWEST,   // Nebraska
+        700..714 to Region.GULF_COAST,      // Louisiana
+        716..749 to Region.SOUTH_CENTRAL,   // Arkansas, Oklahoma
+        750..794 to Region.GULF_COAST,      // Texas, east of the dry line
+        795..799 to Region.DRY_SOUTHWEST,   // West Texas, El Paso
+        800..816 to Region.MOUNTAIN_WEST,   // Colorado
+        820..847 to Region.MOUNTAIN_WEST,   // Wyoming, Idaho, Utah
+        850..865 to Region.DRY_SOUTHWEST,   // Arizona
+        870..884 to Region.DRY_SOUTHWEST,   // New Mexico
+        889..898 to Region.DRY_SOUTHWEST,   // Nevada
+        900..931 to Region.CALIFORNIA,      // Southern and coastal California
+        932..935 to Region.DRY_SOUTHWEST,   // The Central Valley and the desert
+        936..961 to Region.CALIFORNIA,      // Central and northern California
+        967..968 to Region.HAWAII,          // Hawaii
+        970..989 to Region.PACIFIC_NORTHWEST, // Oregon, western Washington
+        990..994 to Region.MOUNTAIN_WEST,   // Eastern Washington
+        995..999 to Region.ALASKA           // Alaska
     )
 }
 
 /**
- * What the weather does to a building here.
+ * What the weather does to a building here, day to day.
  *
  * Five, because five is what changes the jobs. A house that freezes has taps to drain and a heating
  * system to service; a house that is hot and wet has an air conditioner, termites and moss; a house
@@ -360,5 +398,116 @@ enum class Climate(val key: String, val label: String, val detail: String) {
 
     companion object {
         fun of(key: String?): Climate? = entries.firstOrNull { it.key == key }
+    }
+}
+
+/**
+ * What the weather does here **at its worst** — which is a different list of jobs from what it does
+ * on an ordinary Tuesday.
+ *
+ * This is the half of a region that a climate cannot carry. Miami and Houston are both hot and
+ * humid; only one of them is a place where the roof straps and the shutters want checking before
+ * June. Boulder and Burlington are both cold; only one of them has thirty feet of ground round the
+ * house that has to stay clear of anything that burns.
+ *
+ * All four are **seasonal preparation** rather than reaction: the jobs are worth having on a
+ * schedule precisely because the moment they matter is the moment it is too late to start. Nothing
+ * here reacts to a forecast — Maintenance says what is owed and LifeOps says when, and neither of
+ * them watches the weather.
+ */
+enum class Hazard(val key: String, val label: String, val detail: String) {
+    HURRICANE("hurricane", "Hurricanes", "A season with a start date, which is what makes it schedulable"),
+    WILDFIRE("wildfire", "Wildfire", "Embers rather than flames are what take houses, and they arrive early"),
+    SEVERE_STORM("severe_storm", "Hail and tornadoes", "Sudden, local, and insured on a deadline"),
+    EARTHQUAKE("earthquake", "Earthquakes", "No season at all, which is why the preparation has to be on a clock");
+
+    companion object {
+        fun of(key: String?): Hazard? = entries.firstOrNull { it.key == key }
+    }
+}
+
+/**
+ * Where in the country a house is, in the only terms upkeep cares about.
+ *
+ * A region is the join between a ZIP code and a schedule: it carries **one** [climate] and whatever
+ * [hazards] are worth preparing for on a clock, and the packs are keyed on those rather than on the
+ * region itself — so a hurricane list is written once and reaches Florida, the Gulf, the Carolinas,
+ * Hawaii and Puerto Rico without any of them being named in it.
+ *
+ * ### It is coarse, and the field exists so it can be corrected
+ *
+ * These eighteen are drawn on ZIP prefixes, which run in geographic order, and they are drawn
+ * roughly. "The dry Southwest" contains California's Central Valley, which is not in the Southwest;
+ * Texas is filed with the Gulf Coast although most of it is nowhere near the water. Any line drawn
+ * here is wrong for somebody, and the answer to that is not a finer table — it is that **the region
+ * is a field somebody can pick**, and the ZIP only fills it in. See [RegionSource].
+ */
+enum class Region(
+    val key: String,
+    val label: String,
+    val detail: String,
+    val climate: Climate,
+    val hazards: Set<Hazard> = emptySet()
+) {
+    NEW_ENGLAND("new_england", "New England", "Maine down to Connecticut", Climate.COLD),
+    NORTHEAST("northeast", "New York and Pennsylvania", "The rest of the cold Northeast", Climate.COLD),
+    MID_ATLANTIC(
+        "mid_atlantic", "The Mid-Atlantic",
+        "New Jersey to North Carolina, and the Virginias", Climate.TEMPERATE
+    ),
+    SOUTHEAST(
+        "southeast", "The Southeast",
+        "South Carolina, Georgia and Florida", Climate.HOT_HUMID, setOf(Hazard.HURRICANE)
+    ),
+    DEEP_SOUTH(
+        "deep_south", "The Deep South",
+        "Alabama, Mississippi and Tennessee", Climate.HOT_HUMID, setOf(Hazard.SEVERE_STORM)
+    ),
+    OHIO_VALLEY("ohio_valley", "The Ohio Valley", "Kentucky", Climate.TEMPERATE),
+    GREAT_LAKES("great_lakes", "The Great Lakes", "Ohio, Indiana and Michigan", Climate.COLD),
+    UPPER_MIDWEST(
+        "upper_midwest", "The Upper Midwest",
+        "Iowa, Wisconsin, Minnesota, the Dakotas, Illinois and Nebraska",
+        Climate.COLD, setOf(Hazard.SEVERE_STORM)
+    ),
+    GREAT_PLAINS(
+        "great_plains", "The Plains", "Missouri and Kansas",
+        Climate.TEMPERATE, setOf(Hazard.SEVERE_STORM)
+    ),
+    SOUTH_CENTRAL(
+        "south_central", "Arkansas and Oklahoma", "Tornado alley's southern end",
+        Climate.HOT_HUMID, setOf(Hazard.SEVERE_STORM)
+    ),
+    GULF_COAST(
+        "gulf_coast", "The Gulf Coast and Texas", "Louisiana and Texas east of the dry line",
+        Climate.HOT_HUMID, setOf(Hazard.HURRICANE, Hazard.SEVERE_STORM)
+    ),
+    MOUNTAIN_WEST(
+        "mountain_west", "The Mountain West",
+        "Montana, Idaho, Wyoming, Colorado, Utah and eastern Washington",
+        Climate.COLD, setOf(Hazard.WILDFIRE)
+    ),
+    DRY_SOUTHWEST(
+        "dry_southwest", "The dry Southwest",
+        "Arizona, New Mexico, Nevada, West Texas and California's Central Valley",
+        Climate.HOT_DRY, setOf(Hazard.WILDFIRE)
+    ),
+    CALIFORNIA(
+        "california", "California", "The coast and the valleys either side of it",
+        Climate.MARINE, setOf(Hazard.EARTHQUAKE, Hazard.WILDFIRE)
+    ),
+    PACIFIC_NORTHWEST(
+        "pacific_northwest", "The Pacific Northwest", "Oregon and western Washington",
+        Climate.MARINE, setOf(Hazard.EARTHQUAKE, Hazard.WILDFIRE)
+    ),
+    ALASKA("alaska", "Alaska", "Its own thing entirely", Climate.COLD),
+    HAWAII("hawaii", "Hawaii", "Warm, wet and in the path of things", Climate.HOT_HUMID, setOf(Hazard.HURRICANE)),
+    CARIBBEAN(
+        "caribbean", "Puerto Rico and the Virgin Islands", "Warm, wet and in the path of things",
+        Climate.HOT_HUMID, setOf(Hazard.HURRICANE)
+    );
+
+    companion object {
+        fun of(key: String?): Region? = entries.firstOrNull { it.key == key?.trim() }
     }
 }

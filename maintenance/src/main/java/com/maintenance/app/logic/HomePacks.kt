@@ -328,6 +328,147 @@ object HomePacks {
         )
     )
 
+    // ------------------------------------------------------------------ what the weather does at its worst
+    //
+    // Four packs keyed on `Hazard` rather than on a region, so each is written once and reaches
+    // everywhere it applies. All four are *preparation*, which is the only reason weather this
+    // sudden can be put on a schedule at all: the moment any of it matters is the moment it is far
+    // too late to start. Nothing here watches a forecast — Maintenance says what is owed and LifeOps
+    // says when, and neither of them knows what the sky is doing.
+
+    val HURRICANE = SchedulePack(
+        id = "home-hurricane",
+        label = "Hurricane season",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(hazards = setOf(Hazard.HURRICANE)),
+        items = listOf(
+            ScheduleItem(
+                key = "hurricane-prep",
+                title = "Get the house ready before the season",
+                notes = "Shutters or panels found, fitted once and labelled by window; the straps and " +
+                    "the garage door looked at; fuel, water and batteries in. The season has a start " +
+                    "date, which is the whole reason this can be a schedule rather than a scramble.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "hurricane-trees",
+                title = "Cut the trees back off the roof and the lines",
+                notes = "The limb over the bedroom is the one that comes through it.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                // Deliberately the same title as the ownership pack's, so a house that applies both
+                // ends up doing this once. It is the same job with two reasons behind it.
+                key = "hurricane-inventory",
+                title = "Photograph the rooms for the insurer",
+                notes = "Before the season, and kept somewhere that is not the house. A claim is " +
+                    "settled on what you can show you had.",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    val WILDFIRE = SchedulePack(
+        id = "home-wildfire",
+        label = "Wildfire country",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(hazards = setOf(Hazard.WILDFIRE)),
+        items = listOf(
+            ScheduleItem(
+                key = "defensible-space",
+                title = "Clear the defensible space",
+                notes = "Nothing that burns in the first five feet from the walls, and thinned out to " +
+                    "thirty. Twice a year where things grow and then dry.",
+                everyDays = HALF_YEAR
+            ),
+            ScheduleItem(
+                key = "ember-clearing",
+                title = "Clear the roof, the gutters and under the deck",
+                notes = "Embers rather than flames are what take most houses, and they land in dry " +
+                    "needles hours ahead of anything anybody can see.",
+                everyDays = HALF_YEAR
+            ),
+            ScheduleItem(
+                key = "vent-screens",
+                title = "Check the vent screens and the eaves",
+                notes = "An eighth-inch mesh over every vent is the difference between an ember " +
+                    "bouncing off and an ember getting into the attic.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "evacuation-plan",
+                title = "Refresh the go-bag and the evacuation plan",
+                notes = "Two ways out, where everybody meets, and what leaves with you.",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    val SEVERE_STORM = SchedulePack(
+        id = "home-severe-storm",
+        label = "Hail and tornadoes",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(hazards = setOf(Hazard.SEVERE_STORM)),
+        items = listOf(
+            ScheduleItem(
+                key = "storm-shelter",
+                title = "Check the shelter and run the drill",
+                notes = "Where everybody goes, and that it can still be got into. A basement corner " +
+                    "counts; not knowing which corner does not.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "hail-check",
+                title = "Look the roof, siding and AC fins over for hail damage",
+                notes = "Hail damage is nearly invisible from the ground and policies put a deadline " +
+                    "on reporting it — often a year from the storm. A look each spring is what finds " +
+                    "it inside that window.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "wind-loose-items",
+                title = "Put away or tie down what a wind would pick up",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    val EARTHQUAKE = SchedulePack(
+        id = "home-earthquake",
+        label = "Earthquake country",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(hazards = setOf(Hazard.EARTHQUAKE)),
+        items = listOf(
+            ScheduleItem(
+                key = "water-heater-strap",
+                title = "Check the water heater's straps",
+                notes = "A tipped heater is a gas leak, a flood, and the loss of forty gallons of " +
+                    "drinking water you were about to need.",
+                everyDays = 2 * YEAR
+            ),
+            ScheduleItem(
+                // The same title the gas pack uses: a gas house in earthquake country does this once.
+                key = "quake-gas-shutoff",
+                title = "Find and label the gas shut-off",
+                notes = "With whatever it takes to turn it kept beside it. Nobody looks this up " +
+                    "during an earthquake.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "secure-furniture",
+                title = "Anchor the tall furniture and clear what hangs over the beds",
+                everyDays = 2 * YEAR
+            ),
+            ScheduleItem(
+                key = "quake-kit",
+                title = "Refresh the water and the kit",
+                notes = "The one hazard with no season at all, which is exactly why the preparation " +
+                    "has to sit on a clock instead.",
+                everyDays = YEAR
+            )
+        )
+    )
+
     /**
      * Older housing stock.
      *
@@ -767,7 +908,8 @@ object HomePacks {
      * Every home pack, the standing lists first.
      *
      * The order is the order they are offered in, and it is deliberate: what every home owes, then
-     * what this *building* owes, then what its weather and age add, then one pack per thing the
+     * what this *building* owes, then what its weather does day to day, then what it does at its
+     * worst, then what the age adds, then one pack per thing the
      * household announced it has, then the paperwork. A screen that led with the mortgage would be a
      * different app.
      */
@@ -778,6 +920,10 @@ object HomePacks {
         COLD_WINTERS,
         HOT_SUMMERS,
         DAMP,
+        HURRICANE,
+        WILDFIRE,
+        SEVERE_STORM,
+        EARTHQUAKE,
         OLDER_HOUSE,
         SEPTIC,
         WELL,

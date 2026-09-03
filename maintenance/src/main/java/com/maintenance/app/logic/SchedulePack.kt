@@ -121,8 +121,9 @@ sealed interface PackFit {
     }
 
     /**
-     * A home: the climates it is for, the kinds of building it is for, the features it needs
-     * announced, how old the house has to be, and whether there is a loan against it.
+     * A home: the climates it is for, the kinds of building it is for, the weather it is worth
+     * preparing for, the features it needs announced, how old the house has to be, and whether
+     * there is a loan against it.
      *
      * Every clause that is set has to hold, and an unset clause matches anything — so the pack with
      * no clauses at all is the standing list every house gets, and the one with
@@ -142,6 +143,8 @@ sealed interface PackFit {
         val structures: Set<HomeStructure> = emptySet(),
         /** Any kind of building but these. An unpicked type is not excluded. */
         val excludeStructures: Set<HomeStructure> = emptySet(),
+        /** Weather worth preparing for on a clock. A region with none of them matches no clause here. */
+        val hazards: Set<Hazard> = emptySet(),
         val needs: Set<HomeFeature> = emptySet(),
         /** For the jobs that only older housing stock has. Compared against the year built. */
         val builtBefore: Int? = null,
@@ -154,6 +157,7 @@ sealed interface PackFit {
             if (climates.isNotEmpty() && (facts.climate == null || facts.climate !in climates)) return false
             if (structures.isNotEmpty() && (facts.structure == null || facts.structure !in structures)) return false
             if (facts.structure != null && facts.structure in excludeStructures) return false
+            if (!facts.hazards.containsAll(hazards)) return false
             if (!facts.features.containsAll(needs)) return false
             if (builtBefore != null && (facts.yearBuilt == null || facts.yearBuilt >= builtBefore)) return false
             if (needsMortgage && !facts.hasMortgage) return false
