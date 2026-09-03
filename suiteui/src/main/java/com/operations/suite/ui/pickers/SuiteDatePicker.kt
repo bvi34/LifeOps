@@ -100,7 +100,7 @@ fun SuiteDatePickerDialog(
     ) {
         Column {
             DatePicker(state = state)
-            SuiteVerdictText(verdict, Modifier.padding(horizontal = 24.dp, bottom = 12.dp))
+            SuiteVerdictText(verdict, Modifier.padding(start = 24.dp, end = 24.dp, bottom = 12.dp))
         }
     }
 }
@@ -136,8 +136,10 @@ fun SuiteDateButton(
 ) {
     var picking by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier) {
-        OutlinedButton(onClick = { picking = true }) {
+    // The Column exists only to hang the remark under the button; the caller's modifier still lands
+    // on the button itself, which is what every call site sizes.
+    Column {
+        OutlinedButton(onClick = { picking = true }, modifier = modifier) {
             Icon(Icons.Default.CalendarToday, contentDescription = null, modifier = Modifier.width(16.dp))
             Spacer(Modifier.width(6.dp))
             Text(date?.let(display) ?: "Set $label")
