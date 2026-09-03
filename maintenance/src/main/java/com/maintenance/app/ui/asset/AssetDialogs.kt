@@ -1,7 +1,10 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.maintenance.app.ui.asset
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +33,7 @@ import com.maintenance.app.data.model.LoanView
 import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.AttributeCheck
+import com.maintenance.app.logic.AssetAttributeSpec
 import com.maintenance.app.logic.AttributeInput
 import com.maintenance.app.logic.CoverageKind
 import com.maintenance.app.logic.Loan
@@ -100,6 +104,11 @@ fun KindAttributeFields(
                 isError = problem != null,
                 decimals = spec.check == AttributeCheck.DECIMAL
             )
+            AttributeInput.CHOICE, AttributeInput.CHOICES -> OptionField(
+                spec = spec,
+                value = value,
+                onToggle = { key -> onChange(spec.key, AssetAttributes.toggle(spec, value, key)) }
+            )
             else -> SuiteTextField(
                 label = spec.label,
                 value = value,
@@ -109,6 +118,42 @@ fun KindAttributeFields(
                 isError = problem != null,
                 capitalise = KeyboardCapitalization.Words
             )
+        }
+    }
+}
+
+/**
+ * A field that is picked rather than typed.
+ *
+ * One composable for both kinds of picker, because from here they differ only in what a tap does —
+ * which is [AssetAttributes.toggle]'s business, not this file's. The chips wrap rather than scroll:
+ * a row you have to swipe hides options, and hidden options on a field whose whole purpose is
+ * *announcing what you have* is the failure mode worth avoiding.
+ *
+ * The detail under a chip is shown for the selected ones only. Twelve two-line chips is a wall; the
+ * one you have just chosen explaining itself is a confirmation.
+ */
+@Composable
+private fun OptionField(
+    spec: AssetAttributeSpec,
+    value: String,
+    onToggle: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(spec.label, style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            spec.options.forEach { option ->
+                FilterChip(
+                    selected = AssetAttributes.isChosen(spec, value, option.key),
+                    onClick = { onToggle(option.key) },
+                    label = { Text(option.label, style = MaterialTheme.typography.labelSmall) }
+                )
+            }
+        }
+        val chosen = AssetAttributes.chosen(spec, value).mapNotNull { spec.option(it)?.detail }
+        val supporting = chosen.takeIf { it.isNotEmpty() }?.joinToString(" · ") ?: spec.hint
+        supporting?.let {
+            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

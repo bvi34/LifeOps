@@ -276,7 +276,14 @@ private fun AddAssetDialog(
 
                 Text(
                     "Everything below is optional — fill in what you have in front of you." +
-                        (if (kind == AssetKind.VEHICLE) " The VIN fills in most of the rest later." else ""),
+                        when (kind) {
+                            AssetKind.VEHICLE -> " The VIN fills in most of the rest later."
+                            // The two pickers are what choose a home's schedules, so they are worth
+                            // a sentence here: this is the one screen where somebody is looking at
+                            // the house while they think about it.
+                            AssetKind.HOME -> " The type of home and what it has are what choose its upkeep."
+                            else -> ""
+                        },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

@@ -272,10 +272,35 @@ the receipts.
 > typing the reading here ticks it off there. The recall check is the only other thing shaped like
 > that, for the same reason — a task can't go and ask NHTSA anything either.
 >
+> A **house** gets the same treatment and **sends nothing anywhere to get it**, which is a finding
+> rather than a gap: eleven characters of a VIN are a question about a *model*, and there is no half
+> of an address that is anything but the household. So the reading happens on the device, out of
+> fields somebody already filled in — and two of those are **pickers**, because the set of right
+> answers is short and closed and "septic" spelled three ways is three answers to a question that has
+> one. **Region** is the one with a lookup behind it — a table of ZIP prefixes pointing at eighteen
+> regions, each carrying a **climate** (what the weather does on an ordinary Tuesday) and any
+> **hazards** (what it does at its worst, which is a different list of jobs: Miami and Houston are
+> both hot and humid, and only one of them is somewhere the shutters want finding before June). The
+> table is coarse on a country this wide, so it is drawn as the guess it is — *"a guess from the ZIP
+> code 96161"* — with a button that turns it into the answer, and nothing re-derives a region once
+> somebody has picked one. **Type of home** decides what the *building* owes: a manufactured home is set on piers that
+> settle, skirted rather than walled, with a roof that is coated rather than shingled — none of it on
+> any site-built checklist — while a condo owner never owns the roof anybody would otherwise tell them
+> twice a year to go and clear the gutters of. **What it has** is twelve tick-boxes and there is
+> exactly one schedule per entry: tick solar and a solar schedule appears, tick gas and the flue and
+> shut-off checks do. The **ZIP** in the address adds what winter does here, the year built adds the
+> jobs peculiar to pre-1980 stock, and a loan against the asset means paperwork is owed as well as
+> work — the annual escrow analysis, the statement checked against the balance this app computes, and
+> the twice-yearly *can the mortgage insurance come off yet*, which a US lender must honour at 78% of
+> the original value and will never ring to tell you about. Where a car gets one pack, a house is
+> offered **five to eight of twenty-five**, and small packs rather than one composed list is what makes
+> the ordinary case work: tick the septic tank six months late and its schedule simply appears as one
+> more thing to apply, with everything you had already re-timed untouched.
+>
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **159 JVM tests**. It holds `INTERNET` for those two keyless
-> government lookups and nothing else — the mortgage, the parcel number, the service history and the
-> odometer have no code path to the network at all.
+> `maintenance/logic/` under **206 JVM tests**. It holds `INTERNET` for those two keyless
+> government lookups and nothing else — the mortgage, the address, the parcel number, the service
+> history and the odometer have no code path to the network at all.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

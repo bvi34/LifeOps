@@ -342,6 +342,26 @@ class MaintenanceRepository(private val dao: MaintenanceDao) : UpkeepStore {
         }
     }
 
+    /**
+     * One kind-specific field, written on its own.
+     *
+     * The whole-asset [updateAsset] is what a dialog uses, because a dialog is holding every field.
+     * This exists for the one-tap writes a *screen* makes — accepting the region the ZIP worked out,
+     * where making somebody open the edit dialog to agree with an answer already on the page would
+     * be the wrong shape of gesture. The clearing rule is the same one: a blank value deletes the
+     * row rather than storing an empty string.
+     */
+    suspend fun setAttribute(assetId: String, key: String, value: String) {
+        val asset = dao.getAsset(assetId) ?: return
+        val trimmed = value.trim()
+        if (trimmed.isBlank()) {
+            dao.deleteAttributes(assetId, listOf(key))
+        } else {
+            dao.upsertAttributes(listOf(AssetAttributeEntity(assetId, key, trimmed)))
+        }
+        dao.upsertAsset(asset.copy(updatedAt = now()))
+    }
+
     suspend fun setArchived(assetId: String, archived: Boolean) {
         val existing = dao.getAsset(assetId) ?: return
         dao.upsertAsset(existing.copy(archived = archived, updatedAt = now()))

@@ -26,16 +26,49 @@ enum class AssetKind(
     val attributes: List<AssetAttributeSpec>
 ) {
 
+    /**
+     * A house has no VIN, so nothing outside this app can be asked what it is — see
+     * `logic/HomeFacts` for why that is a privacy fact rather than a missing feature. What it has
+     * instead is an address with a ZIP in it, a year, and a household that knows perfectly well
+     * what the place is made of and what is bolted to it.
+     *
+     * So the three fields upkeep actually reads are **pickers, not prose**. "Region" says what the
+     * weather does here — ordinarily worked out from the ZIP in the address, and picked only when
+     * that guess is wrong, which on a country the width of this one it regularly is. "Type of home" is one
+     * choice and changes what the house structurally owes — a manufactured home has piers to
+     * re-level and skirting to check, and no condo owner cleans the gutters. "What it has" is a
+     * multiple choice, and each thing ticked is a schedule the house picks up: a septic tank, a
+     * well, gas, solar, a pool. Announcing what you have is the whole of the input, and the
+     * schedules follow from it.
+     */
     HOME(
         key = "home",
         label = "Home",
         plural = "Homes",
         meter = null,
         attributes = listOf(
-            AssetAttributeSpec("address", "Address", AttributeInput.MULTILINE),
+            AssetAttributeSpec(
+                "address", "Address", AttributeInput.MULTILINE,
+                hint = "The ZIP is the part upkeep reads — it is what says whether the taps need draining"
+            ),
+            AssetAttributeSpec(
+                "region", "Region", AttributeInput.CHOICE,
+                hint = "Filled in from the ZIP when you leave it blank — pick one to overrule that",
+                options = Region.entries.map { AssetAttributeOption(it.key, it.label, it.detail) }
+            ),
+            AssetAttributeSpec(
+                "structure", "Type of home", AttributeInput.CHOICE,
+                hint = "What the building is, which decides what it structurally owes",
+                options = HomeStructure.entries.map { AssetAttributeOption(it.key, it.label, it.detail) }
+            ),
             AssetAttributeSpec("yearBuilt", "Year built", AttributeInput.NUMBER, AttributeCheck.YEAR),
             AssetAttributeSpec("squareFeet", "Living area (sq ft)", AttributeInput.NUMBER, AttributeCheck.WHOLE_NUMBER),
             AssetAttributeSpec("lotSize", "Lot size (acres)", AttributeInput.NUMBER, AttributeCheck.DECIMAL),
+            AssetAttributeSpec(
+                "features", "What it has", AttributeInput.CHOICES,
+                hint = "Each one ticked brings its own schedule",
+                options = HomeFeature.entries.map { AssetAttributeOption(it.key, it.label, it.detail) }
+            ),
             AssetAttributeSpec(
                 "parcelNumber", "Parcel number (APN)", AttributeInput.TEXT,
                 hint = "As it reads on the tax bill"
@@ -140,8 +173,35 @@ enum class MeterUnit(val key: String, val reading: String, val short: String, va
     }
 }
 
-/** How a kind-specific field is typed in. */
-enum class AttributeInput { TEXT, NUMBER, MULTILINE }
+/**
+ * How a kind-specific field is filled in.
+ *
+ * The last two are not typed at all: they are picked from a list the spec carries, which is what a
+ * field wants when the set of right answers is short, closed and known to the app. "Septic" spelled
+ * three ways is three answers to a question that has one, and a schedule that only appears when
+ * somebody happens to write the word the parser was hoping for is a schedule that mostly does not
+ * appear.
+ */
+enum class AttributeInput {
+    TEXT,
+    NUMBER,
+    MULTILINE,
+
+    /** One of the spec's options, stored as that option's key. */
+    CHOICE,
+
+    /** Any number of the spec's options, stored as their keys joined by commas. */
+    CHOICES
+}
+
+/**
+ * One option on a [AttributeInput.CHOICE] or [AttributeInput.CHOICES] field.
+ *
+ * [key] is what is stored and is permanent: it is what a schedule is matched on, so renaming one
+ * silently unticks it on every asset already carrying it. [label] is what a person reads and may be
+ * reworded freely.
+ */
+data class AssetAttributeOption(val key: String, val label: String, val detail: String? = null)
 
 /** What, if anything, is checked about the value that comes back. */
 enum class AttributeCheck { NONE, VIN, YEAR, WHOLE_NUMBER, DECIMAL }
@@ -157,8 +217,14 @@ data class AssetAttributeSpec(
     val label: String,
     val input: AttributeInput = AttributeInput.TEXT,
     val check: AttributeCheck = AttributeCheck.NONE,
-    val hint: String? = null
-)
+    val hint: String? = null,
+    /** What a picker picks from. Empty on every field that is typed rather than chosen. */
+    val options: List<AssetAttributeOption> = emptyList()
+) {
+    val isPicker: Boolean get() = input == AttributeInput.CHOICE || input == AttributeInput.CHOICES
+
+    fun option(key: String): AssetAttributeOption? = options.firstOrNull { it.key == key }
+}
 
 /**
  * The values themselves: tidied on the way in, and complained about only when they are genuinely
@@ -175,11 +241,67 @@ object AssetAttributes {
     /** Trim, and uppercase the fields that are conventionally written in capitals. */
     fun normalise(spec: AssetAttributeSpec, raw: String): String {
         val trimmed = raw.trim()
+        if (spec.isPicker) return store(chosen(spec, trimmed))
         return when (spec.check) {
             AttributeCheck.VIN -> Vin.normalise(trimmed)
             else -> trimmed
         }
     }
+
+    /**
+     * The option keys held in a picker's stored value.
+     *
+     * **An unrecognised key is kept, not dropped.** A row can arrive from a backup written by a
+     * later build, or from a field that used to be free text, and quietly deleting what this build
+     * does not understand is how a restore loses data it was trusted with. What this build does not
+     * recognise it simply does not act on.
+     *
+     * A single [AttributeInput.CHOICE] is the same shape holding one key, so both read the same way
+     * and neither has to know which it is.
+     */
+    fun chosen(spec: AssetAttributeSpec, raw: String?): List<String> {
+        if (raw.isNullOrBlank() || !spec.isPicker) return emptyList()
+        val keys = raw.split(SEPARATOR).map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        return if (spec.input == AttributeInput.CHOICE) keys.take(1) else keys
+    }
+
+    /** The way a picker's keys are written into the one column they share with every other field. */
+    fun store(keys: List<String>): String = keys.filter { it.isNotBlank() }.distinct().joinToString(SEPARATOR)
+
+    /** Whether [key] is currently ticked. */
+    fun isChosen(spec: AssetAttributeSpec, raw: String?, key: String): Boolean = key in chosen(spec, raw)
+
+    /**
+     * The stored value with [key] ticked or unticked — the whole of what a picker's UI has to do.
+     *
+     * On a single choice, ticking replaces and ticking the ticked one clears it: a field that could
+     * be set but never unset is a field somebody has to delete the asset to correct.
+     */
+    fun toggle(spec: AssetAttributeSpec, raw: String?, key: String): String {
+        val current = chosen(spec, raw)
+        return when {
+            spec.input == AttributeInput.CHOICE -> store(if (key in current) emptyList() else listOf(key))
+            key in current -> store(current - key)
+            else -> store(current + key)
+        }
+    }
+
+    /**
+     * What a picker's value reads as — "Septic system · Private well · Solar panels".
+     *
+     * Options are listed in the spec's own order rather than the order they were ticked, so the same
+     * set of answers always reads the same way. A key with no option is shown verbatim, for the same
+     * reason [chosen] keeps it.
+     */
+    fun display(spec: AssetAttributeSpec, raw: String?): String {
+        if (!spec.isPicker) return raw.orEmpty()
+        val keys = chosen(spec, raw)
+        val known = spec.options.filter { it.key in keys }.map { it.label }
+        val unknown = keys.filter { spec.option(it) == null }
+        return (known + unknown).joinToString(" · ")
+    }
+
+    private const val SEPARATOR = ","
 
     /**
      * What is wrong with [raw] for [spec], as a sentence to put under the field — or null when
@@ -188,6 +310,9 @@ object AssetAttributes {
     fun problem(spec: AssetAttributeSpec, raw: String): String? {
         val value = normalise(spec, raw)
         if (value.isBlank()) return null
+        // A picker cannot be typed wrong, and a key this build does not know is a row from another
+        // build rather than a mistake somebody made.
+        if (spec.isPicker) return null
         return when (spec.check) {
             AttributeCheck.NONE -> null
             AttributeCheck.VIN -> Vin.problem(value)?.message

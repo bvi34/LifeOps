@@ -118,6 +118,54 @@ class AssetKindTest {
     }
 
     @Test
+    fun `a picker is chosen from, not typed into`() {
+        val features = AssetKind.HOME.spec("features")!!
+        val structure = AssetKind.HOME.spec("structure")!!
+
+        assertEquals(AttributeInput.CHOICES, features.input)
+        assertTrue(features.isPicker)
+        assertTrue(features.options.isNotEmpty())
+        features.options.forEach { assertTrue(it.label.isNotBlank()) }
+        assertEquals(features.options.size, features.options.map { it.key }.toSet().size)
+
+        // Ticking, unticking, and the fact that a single choice replaces rather than accumulates.
+        assertEquals("septic", AssetAttributes.toggle(features, "", "septic"))
+        assertEquals("septic,solar", AssetAttributes.toggle(features, "septic", "solar"))
+        assertEquals("solar", AssetAttributes.toggle(features, "septic,solar", "septic"))
+        assertEquals("condo", AssetAttributes.toggle(structure, "conventional", "condo"))
+        assertEquals("", AssetAttributes.toggle(structure, "condo", "condo"))
+    }
+
+    @Test
+    fun `a picker reads as labels and stores as keys`() {
+        val features = AssetKind.HOME.spec("features")!!
+
+        assertEquals("Septic system · Solar panels", AssetAttributes.display(features, "solar,septic"))
+        assertEquals("", AssetAttributes.display(features, ""))
+        // Order is the spec's, not the order things were ticked, so one answer reads one way.
+        assertEquals(
+            AssetAttributes.display(features, "septic,solar"),
+            AssetAttributes.display(features, "solar,septic")
+        )
+    }
+
+    @Test
+    fun `a picker never complains, and keeps a key it does not know`() {
+        val features = AssetKind.HOME.spec("features")!!
+
+        assertNull(AssetAttributes.problem(features, "septic,invented_by_a_later_build"))
+        assertEquals(
+            listOf("septic", "invented_by_a_later_build"),
+            AssetAttributes.chosen(features, "septic, invented_by_a_later_build")
+        )
+        // And it survives being normalised on the way back in, rather than being dropped.
+        assertEquals(
+            "septic,invented_by_a_later_build",
+            AssetAttributes.normalise(features, " septic , invented_by_a_later_build ")
+        )
+    }
+
+    @Test
     fun `meter readings are written the way they are read`() {
         assertEquals("12,400 mi", MeterUnit.MILES.format(12_400))
         assertEquals("340 hr", MeterUnit.HOURS.format(340))
