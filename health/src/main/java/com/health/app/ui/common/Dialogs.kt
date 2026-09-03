@@ -13,6 +13,9 @@ import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
+import com.operations.suite.ui.pickers.SuiteWhenField
+import com.health.app.logic.HealthWhen
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * The four things Health is asked to record in a hurry: a temperature, a dose, a symptom, and what
@@ -57,13 +60,14 @@ fun LogTemperatureDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                DecimalField(
+                SuiteNumberField(
+                    label = "Reading (${unit.symbol})",
                     value = text,
                     onValueChange = { text = it },
-                    label = "Reading (${unit.symbol})",
-                    isError = invalid,
-                    supportingText = if (invalid) "That isn't a body temperature — check the number." else null,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    decimals = true,
+                    supporting = if (invalid) "That isn't a body temperature — check the number." else null,
+                    isError = invalid
                 )
                 Text("Taken", style = MaterialTheme.typography.labelMedium)
                 ChoiceRow(
@@ -89,7 +93,7 @@ fun LogTemperatureDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Taken")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Taken", check = { HealthWhen.check(it) })
                 DisclaimerText()
             }
         },
@@ -167,11 +171,12 @@ fun LogDoseDialog(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecimalField(
+                    SuiteNumberField(
+                        label = "Amount",
                         value = amountText,
                         onValueChange = { amountText = it },
-                        label = "Amount",
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        decimals = true
                     )
                     OutlinedTextField(
                         value = unitText,
@@ -187,7 +192,7 @@ fun LogDoseDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Given")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Given", check = { HealthWhen.check(it) })
             }
         },
         confirmButton = {
@@ -242,7 +247,7 @@ fun AddSymptomDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it }, label = "Started")
+                SuiteWhenField(value = at, onValueChange = { at = it }, label = "Started", check = { HealthWhen.check(it) })
             }
         },
         confirmButton = {
@@ -286,7 +291,7 @@ fun CareNoteDialog(
                     label = { Text("What happened?") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                WhenField(value = at, onValueChange = { at = it })
+                SuiteWhenField(value = at, onValueChange = { at = it }, check = { HealthWhen.check(it) })
             }
         },
         confirmButton = {

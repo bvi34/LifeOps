@@ -37,13 +37,13 @@ import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Money
 import com.maintenance.app.logic.PremiumPeriod
 import com.maintenance.app.logic.UpkeepPlan
-import com.maintenance.app.ui.common.DateField
-import com.maintenance.app.ui.common.MoneyField
-import com.maintenance.app.ui.common.NumberField
-import com.maintenance.app.ui.common.TextField
 import com.maintenance.app.ui.common.toEpochMillis
 import com.maintenance.app.ui.common.toLocalDate
 import com.maintenance.app.ui.common.todayMillis
+import com.operations.suite.ui.pickers.SuiteDateField
+import com.operations.suite.ui.fields.SuiteMoneyField
+import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.fields.SuiteTextField
 
 /**
  * The dialogs the asset page edits through.
@@ -92,18 +92,18 @@ fun KindAttributeFields(
         val value = values[spec.key].orEmpty()
         val problem = AssetAttributes.problem(spec, value)
         when (spec.input) {
-            AttributeInput.NUMBER -> NumberField(
+            AttributeInput.NUMBER -> SuiteNumberField(
                 label = spec.label,
                 value = value,
-                onChange = { onChange(spec.key, it) },
+                onValueChange = { onChange(spec.key, it) },
                 supporting = problem ?: spec.hint,
                 isError = problem != null,
                 decimals = spec.check == AttributeCheck.DECIMAL
             )
-            else -> TextField(
+            else -> SuiteTextField(
                 label = spec.label,
                 value = value,
-                onChange = { onChange(spec.key, it) },
+                onValueChange = { onChange(spec.key, it) },
                 singleLine = spec.input != AttributeInput.MULTILINE,
                 supporting = problem ?: spec.hint,
                 isError = problem != null,
@@ -150,12 +150,12 @@ fun EditAssetDialog(
                 modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                TextField(label = "Name", value = name, onChange = { name = it })
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(label = "Make", value = make, onChange = { make = it }, modifier = Modifier.weight(1f))
-                    TextField(label = "Model", value = model, onChange = { model = it }, modifier = Modifier.weight(1f))
+                    SuiteTextField(label = "Make", value = make, onValueChange = { make = it }, modifier = Modifier.weight(1f))
+                    SuiteTextField(label = "Model", value = model, onValueChange = { model = it }, modifier = Modifier.weight(1f))
                 }
-                NumberField(label = "Year", value = year, onChange = { year = it.take(4) })
+                SuiteNumberField(label = "Year", value = year, onValueChange = { year = it.take(4) })
 
                 KindAttributeFields(
                     kind = asset.kind,
@@ -163,19 +163,19 @@ fun EditAssetDialog(
                     onChange = { key, value -> attributes[key] = value }
                 )
 
-                DateField(label = "Bought", value = purchasedAt, onChange = { purchasedAt = it })
-                MoneyField(
+                SuiteDateField(label = "Bought", millis = purchasedAt, onMillisChange = { purchasedAt = it })
+                SuiteMoneyField(
                     label = "Paid",
                     text = paidText,
                     onChange = { text, cents -> paidText = text; paidCents = cents }
                 )
-                MoneyField(
+                SuiteMoneyField(
                     label = "Worth now",
                     text = worthText,
                     onChange = { text, cents -> worthText = text; worthCents = cents },
                     supporting = "Whatever you last looked up. Nothing here updates it for you."
                 )
-                TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+                SuiteTextField(label = "Notes", value = notes, onValueChange = { notes = it }, singleLine = false)
             }
         },
         confirmButton = {
@@ -234,7 +234,7 @@ fun PlanDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                TextField(label = "What", value = title, onChange = { title = it })
+                SuiteTextField(label = "What", value = title, onValueChange = { title = it })
 
                 // Milestones come from a schedule pack and are shown rather than edited: they are a
                 // list, not a number, and a text box that turned "60,000, 120,000" into one wrong
@@ -250,12 +250,12 @@ fun PlanDialog(
                     )
                 }
 
-                NumberField(label = "Every … days", value = days, onChange = { days = it })
+                SuiteNumberField(label = "Every … days", value = days, onValueChange = { days = it })
                 if (meterUnit != null) {
-                    NumberField(
+                    SuiteNumberField(
                         label = "Every … ${meterUnit.noun}",
                         value = meter,
-                        onChange = { meter = it }
+                        onValueChange = { meter = it }
                     )
                     Text(
                         "Set both and whichever comes first wins — the way a service schedule is actually written.",
@@ -263,7 +263,7 @@ fun PlanDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+                SuiteTextField(label = "Notes", value = notes, onValueChange = { notes = it }, singleLine = false)
 
                 // The seam, said plainly and switchable per plan. "Change the furnace filter"
                 // belongs on a week; "check the roof after a storm" does not.
@@ -337,8 +337,8 @@ fun LogServiceDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                TextField(label = "What was done", value = what, onChange = { what = it })
-                TextField(label = "Who did it", value = vendor, onChange = { vendor = it }, capitalise = KeyboardCapitalization.Words)
+                SuiteTextField(label = "What was done", value = what, onValueChange = { what = it })
+                SuiteTextField(label = "Who did it", value = vendor, onValueChange = { vendor = it }, capitalise = KeyboardCapitalization.Words)
                 val known = suggestVendors(vendor)
                 if (known.isNotEmpty()) {
                     Row(
@@ -353,22 +353,22 @@ fun LogServiceDialog(
                         }
                     }
                 }
-                DateField(label = "When", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
-                MoneyField(
+                SuiteDateField(label = "When", millis = at, onMillisChange = { at = it ?: todayMillis() }, clearable = false)
+                SuiteMoneyField(
                     label = "Cost",
                     text = costText,
                     onChange = { text, cents -> costText = text; costCents = cents },
                     supporting = "Leave it blank if it was free or you did it yourself."
                 )
                 if (meterUnit != null) {
-                    NumberField(
+                    SuiteNumberField(
                         label = meterUnit.reading,
                         value = meter,
-                        onChange = { meter = it },
+                        onValueChange = { meter = it },
                         supporting = "Filed as a reading too — it's what dates the next one."
                     )
                 }
-                TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+                SuiteTextField(label = "Notes", value = notes, onValueChange = { notes = it }, singleLine = false)
             }
         },
         confirmButton = {
@@ -409,10 +409,10 @@ fun ReadingDialog(
         title = { Text(unit.reading) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                NumberField(
+                SuiteNumberField(
                     label = "Reading",
                     value = value,
-                    onChange = { value = it },
+                    onValueChange = { value = it },
                     supporting = if (backwards) {
                         // Not refused: meters do get replaced, and the rate simply restarts from here.
                         "Lower than the last one — the rate will be measured from here on."
@@ -420,7 +420,7 @@ fun ReadingDialog(
                         latest?.let { "Last was ${unit.format(it)}" }
                     }
                 )
-                DateField(label = "Read on", value = at, onChange = { at = it ?: todayMillis() }, clearable = false)
+                SuiteDateField(label = "Read on", millis = at, onMillisChange = { at = it ?: todayMillis() }, clearable = false)
             }
         },
         confirmButton = {
@@ -481,44 +481,44 @@ fun LoanDialog(
                 modifier = Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                TextField(label = "What it is", value = label, onChange = { label = it })
-                TextField(label = "Lender", value = lender, onChange = { lender = it }, capitalise = KeyboardCapitalization.Words)
-                NumberField(
+                SuiteTextField(label = "What it is", value = label, onValueChange = { label = it })
+                SuiteTextField(label = "Lender", value = lender, onValueChange = { lender = it }, capitalise = KeyboardCapitalization.Words)
+                SuiteNumberField(
                     label = "Account (last 4)",
                     value = accountRef,
-                    onChange = { accountRef = it.take(4) },
+                    onValueChange = { accountRef = it.take(4) },
                     supporting = "Four digits is enough to recognise it. Nothing here needs the whole number."
                 )
-                MoneyField(
+                SuiteMoneyField(
                     label = "Amount borrowed",
                     text = principalText,
                     onChange = { text, cents -> principalText = text; principalCents = cents }
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(
+                    SuiteTextField(
                         label = "Rate %",
                         value = rate,
-                        onChange = { rate = it },
+                        onValueChange = { rate = it },
                         supporting = if (rate.isNotBlank() && rateBps == null) "A percentage, like 6.25" else null,
                         isError = rate.isNotBlank() && rateBps == null,
                         modifier = Modifier.weight(1f)
                     )
-                    NumberField(label = "Years", value = years, onChange = { years = it.take(2) }, modifier = Modifier.weight(1f))
+                    SuiteNumberField(label = "Years", value = years, onValueChange = { years = it.take(2) }, modifier = Modifier.weight(1f))
                 }
-                DateField(label = "First payment", value = startAt, onChange = { startAt = it })
-                MoneyField(
+                SuiteDateField(label = "First payment", millis = startAt, onMillisChange = { startAt = it })
+                SuiteMoneyField(
                     label = "Payment",
                     text = paymentText,
                     onChange = { text, cents -> paymentText = text; paymentCents = cents },
                     supporting = scheduled?.let { "The note works out to ${Money.format(it)} — leave blank unless you pay more." }
                 )
-                MoneyField(
+                SuiteMoneyField(
                     label = "Escrow",
                     text = escrowText,
                     onChange = { text, cents -> escrowText = text; escrowCents = cents },
                     supporting = "Taxes and insurance collected with the payment. Never treated as debt."
                 )
-                TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+                SuiteTextField(label = "Notes", value = notes, onValueChange = { notes = it }, singleLine = false)
             }
         },
         confirmButton = {
@@ -579,9 +579,9 @@ fun CoverageDialog(
                     selected = kind,
                     onSelect = { kind = it }
                 )
-                TextField(label = "Provider", value = provider, onChange = { provider = it }, capitalise = KeyboardCapitalization.Words)
-                TextField(label = "Policy number", value = policy, onChange = { policy = it })
-                MoneyField(
+                SuiteTextField(label = "Provider", value = provider, onValueChange = { provider = it }, capitalise = KeyboardCapitalization.Words)
+                SuiteTextField(label = "Policy number", value = policy, onValueChange = { policy = it })
+                SuiteMoneyField(
                     label = "Premium",
                     text = premiumText,
                     onChange = { text, cents -> premiumText = text; premiumCents = cents }
@@ -591,14 +591,14 @@ fun CoverageDialog(
                     selected = period,
                     onSelect = { period = it }
                 )
-                DateField(label = "Starts", value = startsAt, onChange = { startsAt = it })
-                DateField(
+                SuiteDateField(label = "Starts", millis = startsAt, onMillisChange = { startsAt = it })
+                SuiteDateField(
                     label = "Renews or expires",
-                    value = expiresAt,
-                    onChange = { expiresAt = it },
+                    millis = expiresAt,
+                    onMillisChange = { expiresAt = it },
                     placeholder = "No end date"
                 )
-                TextField(label = "Notes", value = notes, onChange = { notes = it }, singleLine = false)
+                SuiteTextField(label = "Notes", value = notes, onValueChange = { notes = it }, singleLine = false)
             }
         },
         confirmButton = {

@@ -2,6 +2,7 @@ package com.health.app.logic
 
 import kotlin.math.max
 import kotlin.math.roundToLong
+import com.operations.suitekit.SuiteElapsed
 
 /**
  * The rules a medicine is given under. All three limits are optional because real bottles differ:
@@ -153,21 +154,10 @@ object DoseSchedule {
      * "in 3h 20m" style spacing, rounded to the minute. Under a minute reads as "less than a minute"
      * rather than "0m", because a countdown that sits on zero looks broken.
      */
-    fun formatDuration(millis: Long): String {
-        if (millis <= 0) return "now"
-        val totalMinutes = (millis + 59_999) / 60_000
-        if (totalMinutes < 1) return "less than a minute"
-        val hours = totalMinutes / 60
-        val minutes = totalMinutes % 60
-        return when {
-            hours == 0L -> "${minutes}m"
-            minutes == 0L -> "${hours}h"
-            else -> "${hours}h ${minutes}m"
-        }
-    }
+    fun formatDuration(millis: Long): String = SuiteElapsed.formatDuration(millis)
 
     /** "since" spacing for a past instant: how long ago a dose was given. */
-    fun formatAgo(millis: Long): String = if (millis < 60_000) "just now" else "${formatDuration(millis)} ago"
+    fun formatAgo(millis: Long): String = SuiteElapsed.formatAgo(millis)
 
     private const val AMOUNT_EPSILON = 1e-9
 

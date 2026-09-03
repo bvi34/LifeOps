@@ -18,6 +18,7 @@ import com.lifeops.app.data.model.Priority
 import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.Task
 import java.util.UUID
+import com.operations.suite.ui.pickers.SuiteDateButton
 
 @Composable
 fun TaskEditDialog(
@@ -211,10 +212,10 @@ fun TaskEditDialog(
                     }
                 }
 
-                DatePickerButton(
+                SuiteDateButton(
                     label = "due date",
-                    selectedDateStr = dueDate,
-                    onDateSelected = { dueDate = it },
+                    isoDate = dueDate,
+                    onIsoDateChange = { dueDate = it },
                     modifier = Modifier.fillMaxWidth()
                 )
 

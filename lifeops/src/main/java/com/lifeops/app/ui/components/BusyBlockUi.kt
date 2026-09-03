@@ -44,18 +44,14 @@ import com.lifeops.app.util.DateUtil
 import com.lifeops.app.util.RelationshipImbalance
 import java.time.LocalDate
 import java.util.UUID
+import com.operations.suite.ui.pickers.rememberClockFormatter
+import com.operations.suite.ui.pickers.SuiteTimeButton
+import com.operations.suite.ui.pickers.SuiteDateButton
 
 // Index 0..6 maps to bit 0..6 = Monday..Sunday, matching BusyBlocks.occursOn.
 private val DAY_LABELS = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 private const val WEEKDAYS_MASK = 0b0011111  // Mon–Fri
 private const val EVERYDAY_MASK = 0b1111111
-
-/** minutes-from-midnight → "HH:mm". */
-fun formatClock(minutes: Int): String {
-    val h = (minutes / 60).coerceIn(0, 23)
-    val m = (minutes % 60).coerceIn(0, 59)
-    return "%02d:%02d".format(h, m)
-}
 
 /** Human recurrence summary: "Weekdays", "Every day", "Mon, Wed, Fri", or a one-off's date. */
 fun busyRecurrenceSummary(block: BusyBlock): String {
@@ -76,13 +72,16 @@ fun BusyBlockRow(
     onDelete: () -> Unit,
     allPeople: List<Person> = emptyList()
 ) {
+    // The same 12h/24h convention the time picker below will open in.
+    val clock = rememberClockFormatter()
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "${formatClock12h(block.startMinutes)}–${formatClock12h(block.endMinutes)}  ${block.title}",
+                "${clock(block.startMinutes)}–${clock(block.endMinutes)}  ${block.title}",
                 style = MaterialTheme.typography.bodyMedium
             )
             val peopleNames = allPeople.filter { it.id in block.peopleIds }.map { it.name }
@@ -165,16 +164,16 @@ fun BusyBlockEditorDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    TimePickerButton(
+                    SuiteTimeButton(
                         label = "Start",
                         minutes = startMinutes,
-                        onMinutesSelected = { startMinutes = it }
+                        onMinutesChange = { startMinutes = it }
                     )
                     Spacer(Modifier.width(8.dp))
-                    TimePickerButton(
+                    SuiteTimeButton(
                         label = "End",
                         minutes = endMinutes,
-                        onMinutesSelected = { endMinutes = it },
+                        onMinutesChange = { endMinutes = it },
                         isError = !timesValid
                     )
                 }
@@ -199,10 +198,10 @@ fun BusyBlockEditorDialog(
                         }
                     }
                 } else {
-                    DatePickerButton(
+                    SuiteDateButton(
                         label = "date",
-                        selectedDateStr = dateText.ifBlank { null },
-                        onDateSelected = { dateText = it ?: "" },
+                        isoDate = dateText.ifBlank { null },
+                        onIsoDateChange = { dateText = it ?: "" },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

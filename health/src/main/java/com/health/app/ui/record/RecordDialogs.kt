@@ -33,7 +33,7 @@ import com.health.app.ui.common.ChoiceRow
  * household that gave up halfway through an allergy form has recorded nothing at all — which is the
  * outcome this whole feature exists to prevent. "Penicillin" on its own is already worth having.
  *
- * The date fields take text rather than a picker, deliberately. [com.health.app.ui.common.WhenField]
+ * The date fields take text rather than a picker, deliberately. [com.operations.suite.ui.pickers.SuiteWhenField]
  * is right for a temperature, which was taken at a moment somebody can point at on a clock; an onset
  * is a year somebody half-remembers, and a picker would force them to invent a day and a month to
  * get past it, and a vaccination card handed over at a new practice very often carries only a month.

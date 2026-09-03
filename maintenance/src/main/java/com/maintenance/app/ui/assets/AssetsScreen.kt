@@ -50,14 +50,15 @@ import com.maintenance.app.logic.DueStatus
 import com.maintenance.app.ui.asset.KindAttributeFields
 import com.maintenance.app.ui.common.AssetMark
 import com.maintenance.app.ui.common.EmptyState
-import com.maintenance.app.ui.common.NumberField
 import com.maintenance.app.ui.common.StatusPill
-import com.maintenance.app.ui.common.TextField
 import com.maintenance.app.ui.common.money
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.operations.suite.ui.fields.SuiteMoneyField
+import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.fields.SuiteTextField
 
 class AssetsViewModel(private val repo: MaintenanceRepository) : ViewModel() {
 
@@ -266,12 +267,12 @@ private fun AddAssetDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 KindChips(selected = kind, onSelect = { kind = it })
-                TextField(label = "Name", value = name, onChange = { name = it })
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextField(label = "Make", value = make, onChange = { make = it }, modifier = Modifier.weight(1f))
-                    TextField(label = "Model", value = model, onChange = { model = it }, modifier = Modifier.weight(1f))
+                    SuiteTextField(label = "Make", value = make, onValueChange = { make = it }, modifier = Modifier.weight(1f))
+                    SuiteTextField(label = "Model", value = model, onValueChange = { model = it }, modifier = Modifier.weight(1f))
                 }
-                NumberField(label = "Year", value = year, onChange = { year = it.take(4) })
+                SuiteNumberField(label = "Year", value = year, onValueChange = { year = it.take(4) })
 
                 Text(
                     "Everything below is optional — fill in what you have in front of you." +

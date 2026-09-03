@@ -253,11 +253,66 @@ itself rather than choosing colours.
 
 | Module | Kind | Holds |
 |---|---|---|
-| `:suitekit` | pure JVM, unit-tested | the presets, the custom palette, each app's colour identity, and the ARGB maths that resolves them into a full `SuiteScheme` |
-| `:suiteui` | Android library | `SuiteAppearanceStore` (the one preferences document) and `SuiteTheme`, the single Compose theme every app wraps itself in |
+| `:suitekit` | pure JVM, unit-tested | the presets, the custom palette, each app's colour identity, the ARGB and HSL maths that resolves them into a full `SuiteScheme`, and the swatch palette the picker offers |
+| `:suiteui` | Android library | `SuiteAppearanceStore` (the one preferences document), `SuiteTheme` (the single Compose theme every app wraps itself in), and `ui/pickers` — the suite's shared input controls |
 
 The split is the same discipline as `:core` and `:backupkit`: no colour decision is made in Android
 code, so all of it is testable on the JVM without an emulator.
+
+### One picker per question (`:suiteui/ui/pickers`)
+
+Appearance was the first thing the container took over; the **controls** are the second. Five apps
+had each grown their own colour picker, date picker and time picker, and they had drifted — one
+cleared a date with a button where another used the Cancel slot, one wrote `17:00` next to a dial
+that said `5:00 PM`, and three separately re-derived that Material's date picker hands back *UTC*
+midnight. There is now one of each, and the container owns them:
+
+| Control | What it is for | Value it speaks |
+|---|---|---|
+| `SuiteColorField` / `SuiteColorPickerDialog` | any colour a person chooses | `#RRGGBB` text |
+| `SuiteDateButton` / `SuiteDateField` | a calendar day | `LocalDate`, with overloads for ISO text and local-midnight millis |
+| `SuiteTimeButton` / `SuiteTimePickerDialog` | a time of day | minutes from midnight |
+| `SuiteWhenField` / `SuiteWhenPickerDialog` | a moment | epoch millis |
+| `SuiteTextField` / `SuiteNoteField` | words | `String` |
+| `SuiteNumberField` | a number, whole or `decimals`, optionally `signed` | `String`, filtered per keystroke |
+| `SuiteMoneyField` | an amount | text in, cents out |
+| `SuiteDates` / `SuiteClock` / `SuiteElapsed` / `SuiteMoney` | how a day, a clock, a gap and an amount are *written* | — |
+
+Rules they all keep. **Nothing is typed that can be picked** — not a hex code, not a date: a hex
+code typed into a live palette flashes the whole suite through the colours `#2`, `#2C`, `#2C7`
+happen to parse as, and a date typed on a phone is how 2025 becomes 2205. **The conversion happens
+at the edge**: callers hand over the type they store and the picker deals with UTC midnight, so the
+trap is handled once. **What you typed is what is held** — the number fields take and return a
+`String`, because a field that parsed on every keystroke rewrites `"12."` under the cursor halfway
+through `"12.5"`, and one holding a `Double` cannot tell "nothing entered" from "zero". And **a
+filter is not a validator**: `SuiteNumberField` runs between keystrokes, so it accepts every
+*prefix* of a number — a lone `-`, a trailing `.` — and leaves what the finished text means to the
+caller.
+
+### The app owns the rule, the picker owns the asking
+
+The pickers first shipped with `notBefore` / `notAfter` bounds and a greyed-out calendar. That was
+wrong twice. It assumed every app answers the same question the same way — and they plainly do not:
+
+| The tap | Health | LifeOps |
+|---|---|---|
+| next Tuesday | *refused* — a reading dated ahead would move a dose window | fine, that is what a planner is for |
+| last Tuesday | fine, **and said so**: "Filed late — this happened 6d ago." | *refused* if that week is closed — the task would not be filed at all |
+
+And bounds only have two answers, when the interesting one is the third. So the calendar now offers
+every day and asks the app, which replies with a `SuiteVerdict`:
+
+- **`Fine`** — nothing to say.
+- **`Note(message)`** — allowed, and worth saying out loud. Shown in the ordinary voice, inside the
+  dialog *and* under the field afterwards, because "recorded as added late" is a fact about the
+  value now sitting there, not a message to flash once and take away.
+- **`Refused(reason)`** — confirm is disabled and **the reason is required**. A greyed-out square
+  the person is left to guess about is a bug report waiting to be filed.
+
+The rules live in the apps, as plain JVM objects with tests: `health/logic/HealthWhen`,
+`lifeops/util/DueDates`. LifeOps' closed-week refusal is the case that shows why this matters —
+`TaskRepository.addTask` returns without writing when the week is closed, so the task was typed,
+confirmed, and silently gone. Nothing on the way in had ever mentioned the week's state.
 
 ### How an app gets its colour
 

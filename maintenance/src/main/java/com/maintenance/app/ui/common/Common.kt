@@ -32,13 +32,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.DueStatus
-import com.maintenance.app.logic.Money
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Currency
-import java.util.Locale
+import com.operations.suite.ui.fields.suiteMoney
 
 private val dayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.getDefault())
 private val shortDayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.getDefault())
@@ -61,22 +59,15 @@ fun toLocalDate(millis: Long): LocalDate =
     Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()).toLocalDate()
 
 /**
- * The currency symbol this phone uses.
+ * Money for a screen: cents in, the phone's own symbol on the front.
  *
- * `logic/Money` deliberately takes the symbol as a parameter so its arithmetic and its tests do not
- * change meaning by locale; resolving it is a job for the edge, and this is the edge. An unknown
- * locale falls back to `$` rather than to an empty string, because a bare `1,234.56` in a column of
- * money reads as a mileage.
+ * Resolving the symbol is the suite's job now — the money *field* had to agree with the money
+ * *label*, and two locale lookups would eventually disagree. Maintenance keeps the short name
+ * because twenty read-only rows say `money(...)` and that reads better in a table than the
+ * qualified one.
  */
 @Composable
-fun currencySymbol(): String = remember {
-    runCatching { Currency.getInstance(Locale.getDefault()).symbol }.getOrNull()?.takeIf { it.isNotBlank() } ?: "$"
-}
-
-/** Money for a screen: cents in, the phone's own symbol on the front. */
-@Composable
-fun money(cents: Long, withCents: Boolean = true): String =
-    Money.format(cents, symbol = currencySymbol(), cents = withCents)
+fun money(cents: Long, withCents: Boolean = true): String = suiteMoney(cents, withCents)
 
 /** A titled block of content — the layout unit these screens are built from. */
 @Composable

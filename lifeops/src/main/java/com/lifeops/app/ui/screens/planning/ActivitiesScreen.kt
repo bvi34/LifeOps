@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -17,13 +16,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.util.PreferenceSuggestion
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * Saved activities (Phase 4): the library of reusable weather profiles. Built-ins are seeded but
@@ -204,10 +203,10 @@ private fun ActivityEditorDialog(
                 )
                 SwitchRow("Outdoor preferred", outdoor) { outdoor = it }
                 SwitchRow("Avoid rain", avoidRain) { avoidRain = it }
-                NumField("Max temperature (°F)", maxTemp) { maxTemp = it }
-                NumField("Min temperature (°F)", minTemp) { minTemp = it }
-                NumField("Max wind (mph)", maxWind) { maxWind = it }
-                NumField("Duration (minutes)", duration) { duration = it }
+                SuiteNumberField(label = "Max temperature (°F)", value = maxTemp, signed = true, onValueChange = { maxTemp = it })
+                SuiteNumberField(label = "Min temperature (°F)", value = minTemp, signed = true, onValueChange = { minTemp = it })
+                SuiteNumberField(label = "Max wind (mph)", value = maxWind, signed = true, onValueChange = { maxWind = it })
+                SuiteNumberField(label = "Duration (minutes)", value = duration, signed = true, onValueChange = { duration = it })
             }
         },
         confirmButton = {
@@ -233,14 +232,3 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     }
 }
 
-@Composable
-private fun NumField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { v -> onChange(v.filter { it.isDigit() || it == '-' }) },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth()
-    )
-}
