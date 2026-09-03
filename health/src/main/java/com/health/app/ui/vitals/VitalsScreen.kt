@@ -21,6 +21,7 @@ import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
 import com.health.app.ui.common.*
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * The measurement history for one person: the temperature curve first, because it is the one people
@@ -253,18 +254,20 @@ private fun LogOtherReadingDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChoiceRow(options, type, { type = it }, { it.label })
-                DecimalField(
+                SuiteNumberField(
+                    label = if (needsSecond) "Systolic (mmHg)" else "${type.label} (${type.unit})",
                     value = primary,
                     onValueChange = { primary = it },
-                    label = if (needsSecond) "Systolic (mmHg)" else "${type.label} (${type.unit})",
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    decimals = true
                 )
                 if (needsSecond) {
-                    DecimalField(
+                    SuiteNumberField(
+                        label = "Diastolic (mmHg)",
                         value = secondary,
                         onValueChange = { secondary = it },
-                        label = "Diastolic (mmHg)",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        decimals = true
                     )
                 }
                 OutlinedTextField(

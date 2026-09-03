@@ -27,8 +27,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import android.text.format.DateFormat
 import com.operations.suitekit.SuiteElapsed
+import com.operations.suitekit.SuiteVerdict
 import java.time.Instant
-import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 
@@ -41,11 +41,15 @@ import java.time.ZoneId
  * this morning, last night — and anything the chips don't cover falls through to the suite's date
  * and time pickers, in that order, because that is the order the question gets answered.
  *
- * [allowFuture] is off by default. A record of something that has not happened yet is a typo, and
- * the apps that reason over these instants (Health's dose windows, for one) would take it seriously.
- * Refuse it at the point of entry: the calendar will not offer a future day, and the time step will
- * not confirm one.
+ * **What counts as an acceptable moment is the app's call, not this control's.** Pass a [check]
+ * returning a [SuiteVerdict] and it is asked about the instant currently on the table — at the chip
+ * row, at the calendar, and at the dial — so the same tap can be a plan in one app, a late entry
+ * worth remarking on in another, and a refusal in a third. See [SuiteVerdict] for why "allowed, but
+ * say so" is the answer that matters and the one that bounds could never express.
  */
+
+/** An app's opinion of a picked instant. */
+typealias SuiteWhenCheck = (Long) -> SuiteVerdict
 
 /** One of the quick answers, as an offset back from now. */
 private data class Shortcut(val label: String, val millisAgo: Long)
@@ -65,7 +69,7 @@ fun SuiteWhenField(
     onValueChange: (Long) -> Unit,
     modifier: Modifier = Modifier,
     label: String = "When",
-    allowFuture: Boolean = false
+    check: SuiteWhenCheck = { SuiteVerdict.Fine }
 ) {
     var showPicker by remember { mutableStateOf(false) }
     val now = remember { System.currentTimeMillis() }
@@ -96,12 +100,15 @@ fun SuiteWhenField(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // Whatever the app has to say about the moment currently chosen, said where the moment is —
+        // including after the dialog has closed, and including for a value the chips set.
+        SuiteVerdictText(check(value))
     }
 
     if (showPicker) {
         SuiteWhenPickerDialog(
             initial = value,
-            allowFuture = allowFuture,
+            check = check,
             onDismiss = { showPicker = false },
             onConfirm = { onValueChange(it); showPicker = false }
         )
@@ -128,16 +135,18 @@ fun describeWhen(millis: Long, nowMillis: Long = System.currentTimeMillis()): St
  * A date and then a time, in two steps — "which day was that?" then "roughly when?".
  *
  * Two dialogs rather than one crowded screen because that is the order the question is answered, and
- * because Material's date and time pickers are separate components. When the future is refused the
- * date step will not offer a later day at all, so the only way to reach one is a time later today —
- * which is what the confirm button here is watching for.
+ * because Material's date and time pickers are separate components. [check] is asked at **both**
+ * steps, against the whole instant each step implies — the day you are looking at combined with the
+ * time already on the dial. That matters: a rule about "not in the future" is answerable on the
+ * calendar for next week and only on the dial for later today, and asking once would miss one of
+ * them.
  */
 @Composable
 fun SuiteWhenPickerDialog(
     initial: Long,
     onConfirm: (Long) -> Unit,
     onDismiss: () -> Unit,
-    allowFuture: Boolean = false
+    check: SuiteWhenCheck = { SuiteVerdict.Fine }
 ) {
     val zone = remember { ZoneId.systemDefault() }
     val initialDateTime = remember(initial) { Instant.ofEpochMilli(initial).atZone(zone) }
@@ -154,21 +163,25 @@ fun SuiteWhenPickerDialog(
         is24Hour = remember(context) { DateFormat.is24HourFormat(context) }
     )
 
+    val time = LocalTime.of(timeState.hour, timeState.minute)
+
     if (!showTime) {
         SuiteDatePickerDialog(
             initial = pickedDate,
             onPick = { picked -> picked?.let { pickedDate = it }; showTime = true },
             onDismiss = onDismiss,
             confirmLabel = "Next",
-            notAfter = if (allowFuture) null else LocalDate.now(zone)
+            // The day, carrying the time already on the dial — the instant this step would commit to
+            // if the person changed nothing else.
+            check = { day -> check(SuiteDates.toEpochMillis(day, time, zone)) }
         )
         return
     }
 
     val chosen = remember(pickedDate, timeState.hour, timeState.minute) {
-        SuiteDates.toEpochMillis(pickedDate, LocalTime.of(timeState.hour, timeState.minute), zone)
+        SuiteDates.toEpochMillis(pickedDate, time, zone)
     }
-    val inFuture = !allowFuture && chosen > System.currentTimeMillis()
+    val verdict = check(chosen)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -176,17 +189,11 @@ fun SuiteWhenPickerDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 TimePicker(state = timeState)
-                if (inFuture) {
-                    Text(
-                        "That's still to come — pick a time that has already passed.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
-                    )
-                }
+                SuiteVerdictText(verdict)
             }
         },
         confirmButton = {
-            TextButton(enabled = !inFuture, onClick = { onConfirm(chosen) }) { Text("Set") }
+            TextButton(enabled = verdict.allowed, onClick = { onConfirm(chosen) }) { Text("Set") }
         },
         dismissButton = { TextButton(onClick = { showTime = false }) { Text("Back") } }
     )

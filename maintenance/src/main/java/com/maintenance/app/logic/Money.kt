@@ -1,72 +1,22 @@
 package com.maintenance.app.logic
 
-import kotlin.math.abs
-import kotlin.math.roundToLong
+import com.operations.suitekit.SuiteMoney
 
 /**
- * Money, in whole cents, formatted and parsed without a locale doing anything surprising.
+ * Maintenance's name for the suite's money arithmetic.
  *
- * Everything monetary in Maintenance is a `Long` of cents. A mortgage balance in floating point is
- * a mortgage balance that drifts, and the app's whole claim is that these numbers are the ones on
- * your statement.
- *
- * The currency *symbol* is a parameter rather than something this file decides. Resolving it from
- * the device locale is the screen's job (`Locale`-aware, done once); doing it in here would make
- * every one of these functions answer differently on a French phone and every test a small lie.
+ * The rules — cents as a `Long`, a symbol passed in rather than decided here, a third decimal place
+ * refused as the typo it usually is — now live in [SuiteMoney], because the field that collects
+ * these amounts is the suite's and had to agree with them. Nothing about the behaviour moved.
  */
 object Money {
 
-    /** 123456 → "$1,234.56". [cents] false drops the decimals for a figure read at a glance. */
-    fun format(amountCents: Long, symbol: String = "$", cents: Boolean = true): String {
-        val negative = amountCents < 0
-        val magnitude = abs(amountCents)
-        val whole = magnitude / 100
-        val remainder = magnitude % 100
-        val grouped = whole.toString().reversed().chunked(3).joinToString(",").reversed()
-        val body = if (cents) "$symbol$grouped.${remainder.toString().padStart(2, '0')}" else "$symbol$grouped"
-        return if (negative) "-$body" else body
-    }
+    fun format(amountCents: Long, symbol: String = "$", cents: Boolean = true): String =
+        SuiteMoney.format(amountCents, symbol, cents)
 
-    /**
-     * 123456 → "1234.56" — no symbol, no grouping, always two decimals.
-     *
-     * For machines rather than people: a figure written into an exported file, where a thousands
-     * comma is a broken column and a currency symbol is a cell that will not add up.
-     */
-    fun plain(amountCents: Long): String {
-        val negative = amountCents < 0
-        val magnitude = abs(amountCents)
-        val body = "${magnitude / 100}.${(magnitude % 100).toString().padStart(2, '0')}"
-        return if (negative) "-$body" else body
-    }
+    fun plain(amountCents: Long): String = SuiteMoney.plain(amountCents)
 
-    /**
-     * "1,234.56", "$1,234.56", "1234" → cents; anything else → null.
-     *
-     * Deliberately forgiving about what people paste out of a bank app (symbols, spaces, grouping
-     * commas) and deliberately unforgiving about a third decimal place, which is a typo far more
-     * often than it is a fraction of a cent.
-     */
-    fun parse(raw: String): Long? {
-        val cleaned = raw.trim().filterNot { it == ',' || it == ' ' || it == '$' || it == '_' }
-        if (cleaned.isEmpty()) return null
-        val negative = cleaned.startsWith("-")
-        val body = cleaned.removePrefix("-").removePrefix("+")
-        if (body.isEmpty() || body.any { !it.isDigit() && it != '.' }) return null
-        val parts = body.split(".")
-        if (parts.size > 2) return null
-        val whole = parts[0].ifEmpty { "0" }.toLongOrNull() ?: return null
-        val fraction = if (parts.size == 2) parts[1] else ""
-        if (fraction.length > 2) return null
-        val cents = when (fraction.length) {
-            0 -> 0L
-            1 -> fraction.toLong() * 10
-            else -> fraction.toLong()
-        }
-        val total = whole * 100 + cents
-        return if (negative) -total else total
-    }
+    fun parse(raw: String): Long? = SuiteMoney.parse(raw)
 
-    /** Scale an amount without letting the rounding out of this file. */
-    fun scale(amountCents: Long, factor: Double): Long = (amountCents * factor).roundToLong()
+    fun scale(amountCents: Long, factor: Double): Long = SuiteMoney.scale(amountCents, factor)
 }

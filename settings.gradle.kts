@@ -55,7 +55,10 @@ include(":backupkit")
 // The suite's appearance and its shared controls: `:suitekit` is the pure-JVM contract (presets,
 // palettes, each app's colour identity, the maths that resolves them into a scheme, and the swatch
 // palette); `:suiteui` is the Compose theme, the store behind it that the sandbox settings edit and
-// every hosted app reads, and `ui/pickers` — one colour picker, one date picker, one time picker and
-// one when-picker for the whole suite, so no app grows its own again.
+// every hosted app reads, `ui/pickers` — one colour picker, one date picker, one time picker and one
+// when-picker — and `ui/fields` — one text field, one number field, one money field. No app grows
+// its own again. What the apps keep is the *rules*: a picker offers everything and asks the app what
+// it makes of the choice (see SuiteVerdict), so Health and LifeOps can disagree about the same
+// Tuesday without either forking the control.
 include(":suitekit")
 include(":suiteui")

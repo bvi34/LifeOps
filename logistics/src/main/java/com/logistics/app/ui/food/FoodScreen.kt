@@ -44,6 +44,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /** The per-day average over the trailing window, so a day reads against your own normal. */
 data class NutritionAverage(
@@ -560,10 +561,10 @@ private fun AddFoodDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    MacroField("Calories", calories) { calories = it }
-                    MacroField("Carbs (g)", carbs) { carbs = it }
-                    MacroField("Protein (g)", protein) { protein = it }
-                    MacroField("Fat (g)", fat) { fat = it }
+                    SuiteNumberField(label = "Calories", value = calories, decimals = true, onValueChange = { calories = it })
+                    SuiteNumberField(label = "Carbs (g)", value = carbs, decimals = true, onValueChange = { carbs = it })
+                    SuiteNumberField(label = "Protein (g)", value = protein, decimals = true, onValueChange = { protein = it })
+                    SuiteNumberField(label = "Fat (g)", value = fat, decimals = true, onValueChange = { fat = it })
                     TextButton(onClick = { adHoc = false }) { Text("Back to search") }
                 }
             }
@@ -592,17 +593,6 @@ private fun AddFoodDialog(
     )
 }
 
-@Composable
-private fun MacroField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-        modifier = Modifier.fillMaxWidth()
-    )
-}
 
 /**
  * Plans a recipe onto the selected day. The recipe book is the only source here — a meal you can't

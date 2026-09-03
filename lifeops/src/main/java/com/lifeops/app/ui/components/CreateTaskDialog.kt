@@ -19,6 +19,7 @@ import com.lifeops.app.data.model.Operation
 import com.lifeops.app.data.model.RunbookWithSteps
 import java.util.UUID
 import com.operations.suite.ui.pickers.SuiteDateButton
+import com.lifeops.app.util.DueDates
 
 @Composable
 fun CreateTaskDialog(
@@ -27,7 +28,9 @@ fun CreateTaskDialog(
     operations: List<Operation> = emptyList(),
     runbooks: List<RunbookWithSteps> = emptyList(),
     counters: List<Counter> = emptyList(),
+    currentWeekStartDate: String? = null,
     currentWeekEndDate: String? = null,
+    currentWeekClosed: Boolean = false,
     onCreateOperation: (id: String, title: String, aspectId: String?) -> Unit = { _, _, _ -> },
     onConfirm: (
         title: String,
@@ -258,16 +261,13 @@ fun CreateTaskDialog(
                     label = "due date",
                     isoDate = dueDate.ifBlank { null },
                     onIsoDateChange = { dueDate = it ?: "" },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    // What LifeOps makes of the day — said in the calendar as it is tapped, and kept
+                    // under the button afterwards. See `util/DueDates`.
+                    check = { day ->
+                        DueDates.check(day, currentWeekStartDate, currentWeekEndDate, currentWeekClosed)
+                    }
                 )
-                // ISO dates compare lexicographically, so a plain string compare is safe here.
-                if (currentWeekEndDate != null && dueDate.isNotBlank() && dueDate > currentWeekEndDate) {
-                    Text(
-                        "Due after this week — it will wait in Future Tasks (Planning tab) until its week arrives.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                }
 
                 OutlinedTextField(
                     value = estimatedMinutes,

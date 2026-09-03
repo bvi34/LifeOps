@@ -36,6 +36,7 @@ import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.util.OutdoorRating
 import com.lifeops.app.util.WeatherCard
+import com.operations.suite.ui.fields.SuiteNumberField
 
 @Composable
 fun WeatherScreen(
@@ -451,10 +452,10 @@ private fun RequirementDialog(
                 }
                 SwitchRow("Outdoor preferred", outdoor) { outdoor = it }
                 SwitchRow("Avoid rain", avoidRain) { avoidRain = it }
-                NumField("Max temperature (°F)", maxTemp) { maxTemp = it }
-                NumField("Min temperature (°F)", minTemp) { minTemp = it }
-                NumField("Max wind (mph)", maxWind) { maxWind = it }
-                NumField("Duration (minutes)", duration) { duration = it }
+                SuiteNumberField(label = "Max temperature (°F)", value = maxTemp, signed = true, onValueChange = { maxTemp = it })
+                SuiteNumberField(label = "Min temperature (°F)", value = minTemp, signed = true, onValueChange = { minTemp = it })
+                SuiteNumberField(label = "Max wind (mph)", value = maxWind, signed = true, onValueChange = { maxWind = it })
+                SuiteNumberField(label = "Duration (minutes)", value = duration, signed = true, onValueChange = { duration = it })
             }
         },
         confirmButton = {
@@ -485,14 +486,3 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
     }
 }
 
-@Composable
-private fun NumField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { v -> onChange(v.filter { it.isDigit() || it == '-' }) },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth()
-    )
-}

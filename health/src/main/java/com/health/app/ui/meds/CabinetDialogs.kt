@@ -15,9 +15,9 @@ import com.health.app.logic.DoseReminder
 import com.health.app.logic.OpenFdaParser
 import com.health.app.logic.ReminderMode
 import com.health.app.ui.common.ChoiceRow
-import com.health.app.ui.common.DecimalField
 import com.health.app.ui.common.DisclaimerText
 import com.health.app.ui.common.formatStamp
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * The cabinet's own dialogs: editing a bottle, restocking one, setting a reminder, and reading the
@@ -77,7 +77,7 @@ fun CabinetItemDialog(
                     )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecimalField(quantity, { quantity = it }, "Amount left", Modifier.weight(1f))
+                    SuiteNumberField(label = "Amount left", value = quantity, onValueChange = { quantity = it }, modifier = Modifier.weight(1f), decimals = true)
                     OutlinedTextField(
                         value = quantityUnit,
                         onValueChange = { quantityUnit = it },
@@ -100,11 +100,12 @@ fun CabinetItemDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                DecimalField(
+                SuiteNumberField(
+                    label = "Tell me it's low at",
                     value = lowStock,
                     onValueChange = { lowStock = it },
-                    label = "Tell me it's low at",
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    decimals = true
                 )
                 OutlinedTextField(
                     value = note,
@@ -165,7 +166,7 @@ fun RestockDialog(
                     style = MaterialTheme.typography.bodySmall
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    DecimalField(quantity, { quantity = it }, "Amount", Modifier.weight(1f))
+                    SuiteNumberField(label = "Amount", value = quantity, onValueChange = { quantity = it }, modifier = Modifier.weight(1f), decimals = true)
                     Text(
                         item.quantityUnit,
                         style = MaterialTheme.typography.bodyMedium,

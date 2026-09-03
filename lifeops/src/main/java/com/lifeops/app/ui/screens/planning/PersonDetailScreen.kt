@@ -33,6 +33,7 @@ import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.components.BusyBlockEditorDialog
 import com.lifeops.app.ui.components.BusyBlockRow
 import com.lifeops.app.util.DateUtil
+import com.operations.suite.ui.fields.SuiteNumberField
 
 @Composable
 fun PersonDetailScreen(
@@ -403,11 +404,11 @@ private fun ProfileEditorDialog(
                 )
 
                 Text("Weather comfort (leave blank for no limit)", style = MaterialTheme.typography.labelMedium)
-                NumberField("Max feels-like (°F)", heat) { heat = it }
-                NumberField("Min feels-like (°F)", cold) { cold = it }
-                NumberField("Max UV index", uv) { uv = it }
-                NumberField("Max wind (mph)", wind) { wind = it }
-                NumberField("Max rain chance (%)", rain) { rain = it }
+                SuiteNumberField(label = "Max feels-like (°F)", value = heat, signed = true, onValueChange = { heat = it })
+                SuiteNumberField(label = "Min feels-like (°F)", value = cold, signed = true, onValueChange = { cold = it })
+                SuiteNumberField(label = "Max UV index", value = uv, onValueChange = { uv = it })
+                SuiteNumberField(label = "Max wind (mph)", value = wind, onValueChange = { wind = it })
+                SuiteNumberField(label = "Max rain chance (%)", value = rain, onValueChange = { rain = it })
 
                 Text("Sun sensitivity", style = MaterialTheme.typography.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -455,14 +456,3 @@ private fun ProfileEditorDialog(
     )
 }
 
-@Composable
-private fun NumberField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = { v -> onChange(v.filter { it.isDigit() }) },
-        label = { Text(label) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth()
-    )
-}

@@ -17,8 +17,8 @@ import com.health.app.logic.OpenFdaParser
 import com.health.app.logic.ReminderMode
 import com.health.app.ui.common.AllergyWarningBanner
 import com.health.app.ui.common.ChoiceRow
-import com.health.app.ui.common.DecimalField
 import com.health.app.ui.common.DisclaimerText
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * Adding a medicine, in one dialog with three optional halves.
@@ -161,7 +161,7 @@ fun AddMedicineDialog(
                 )
                 if (toCabinet) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DecimalField(quantity, { quantity = it }, "Amount in the pack", Modifier.weight(1f))
+                        SuiteNumberField(label = "Amount in the pack", value = quantity, onValueChange = { quantity = it }, modifier = Modifier.weight(1f), decimals = true)
                         OutlinedTextField(
                             value = quantityUnit,
                             onValueChange = { quantityUnit = it },
@@ -185,12 +185,13 @@ fun AddMedicineDialog(
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    DecimalField(
+                    SuiteNumberField(
+                        label = "Tell me it's low at (optional)",
                         value = lowStock,
                         onValueChange = { lowStock = it },
-                        label = "Tell me it's low at (optional)",
                         modifier = Modifier.fillMaxWidth(),
-                        supportingText = "Left blank, Health says so when there isn't enough for a dose."
+                        decimals = true,
+                        supporting = "Left blank, Health says so when there isn't enough for a dose."
                     )
                 }
 
@@ -208,7 +209,7 @@ fun AddMedicineDialog(
                         LabelDirectionsCard(directions)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DecimalField(doseAmount, { doseAmount = it }, "Usual dose", Modifier.weight(1f))
+                        SuiteNumberField(label = "Usual dose", value = doseAmount, onValueChange = { doseAmount = it }, modifier = Modifier.weight(1f), decimals = true)
                         OutlinedTextField(
                             value = doseUnit,
                             onValueChange = { doseUnit = it },
@@ -217,15 +218,16 @@ fun AddMedicineDialog(
                             modifier = Modifier.weight(1f)
                         )
                     }
-                    DecimalField(
+                    SuiteNumberField(
+                        label = "Minimum hours between doses",
                         value = interval,
                         onValueChange = { interval = it },
-                        label = "Minimum hours between doses",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        decimals = true
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DecimalField(maxDoses, { maxDoses = it }, "Max doses / 24h", Modifier.weight(1f))
-                        DecimalField(maxAmount, { maxAmount = it }, "Max amount / 24h", Modifier.weight(1f))
+                        SuiteNumberField(label = "Max doses / 24h", value = maxDoses, onValueChange = { maxDoses = it }, modifier = Modifier.weight(1f), decimals = true)
+                        SuiteNumberField(label = "Max amount / 24h", value = maxAmount, onValueChange = { maxAmount = it }, modifier = Modifier.weight(1f), decimals = true)
                     }
                     Text(
                         "Leave a limit blank and Health won't enforce it — it tracks what the label " +

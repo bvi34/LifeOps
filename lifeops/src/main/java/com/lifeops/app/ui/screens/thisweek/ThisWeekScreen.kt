@@ -317,7 +317,9 @@ fun ThisWeekScreen(
             operations = state.operations,
             runbooks = state.runbooks,
             counters = state.counters,
+            currentWeekStartDate = state.week?.startDate,
             currentWeekEndDate = state.week?.endDate,
+            currentWeekClosed = state.week?.isClosed == true,
             onCreateOperation = viewModel::onCreateOperation,
             onConfirm = { title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, operationId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth ->
                 viewModel.createTask(title, note, aspectId, categoryId, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, operationId, runbookId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)

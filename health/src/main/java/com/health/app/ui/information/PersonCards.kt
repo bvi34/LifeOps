@@ -11,6 +11,7 @@ import com.health.app.data.model.Profile
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
 import com.health.app.ui.common.*
+import com.operations.suite.ui.fields.SuiteNumberField
 
 /**
  * The top of the Information tab: who this person is, what is normal for them, and how temperatures
@@ -181,14 +182,15 @@ internal fun HealthDetailsDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                DecimalField(
+                SuiteNumberField(
+                    label = "Their usual temperature (${unit.symbol})",
                     value = baseline,
                     onValueChange = { baseline = it },
-                    label = "Their usual temperature (${unit.symbol})",
-                    isError = baselineInvalid,
-                    supportingText = if (baselineInvalid) "That isn't a temperature Health can read"
+                    modifier = Modifier.fillMaxWidth(),
+                    decimals = true,
+                    supporting = if (baselineInvalid) "That isn't a temperature Health can read"
                     else "Optional. Leave it empty and readings are banded against the published thresholds.",
-                    modifier = Modifier.fillMaxWidth()
+                    isError = baselineInvalid
                 )
 
                 OutlinedTextField(
