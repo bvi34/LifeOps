@@ -118,6 +118,18 @@ rather than five. Link a doc to a scene and the scene's word count becomes the s
 written for it, kept in step on every edit. The outline stops being a plan you maintain beside the
 writing and becomes a view of it.
 
+**Files are not writing, and are not kept here.** A brief that arrived as a PDF, the signed contract,
+the reference images somebody was sent — none of them are documents this app should be re-typing into
+blocks, and all of them are things a household later goes looking for without remembering which app
+they came in through. So the Docs screen opens with a **Files** card that is Repository's section,
+lent in place (`com.repository.app.ui.attach.DocumentsPanel`): the same rows appear on the suite's
+shelf, searchable there, while sitting on the project here. Files can be added from this phone,
+**grabbed off Google Drive, OneDrive or Dropbox** in one batch, or **attached from the shelf** —
+attaching re-files a document rather than copying it, so a brief that is already filed does not become
+a second copy that then disagrees with the first. Deleting a project takes its attached files with it,
+because Repository does not cascade on somebody else's rules and this app has said what deleting one
+of its records means.
+
 ### Lore — what it has to stay consistent with
 
 A wiki: characters, places, factions, items, events, concepts. Entries link with `[[double
@@ -294,3 +306,8 @@ chapter.
 Project requests **no permissions** and has no `INTERNET`. Nothing it holds leaves the device. There
 is no cloud workspace, no collaborator, and no share sheet — the way writing leaves is that you copy
 the Markdown out, or you take a sandbox backup.
+
+That is still true with the Files card in the Docs section. Getting a file off Google Drive or
+OneDrive is **Android's own picker** — those drives publish themselves as document providers — so
+there is no client, no credential and no permission behind it, and nothing is fetched that somebody
+did not point at. See [REPOSITORY.md](REPOSITORY.md).

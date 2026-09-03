@@ -155,13 +155,7 @@ class DocumentFiles(private val context: Context) {
     suspend fun exportCopyOf(stored: File, title: String): File? = withContext(Dispatchers.IO) {
         runCatching {
             val exports = File(context.cacheDir, EXPORT_DIR).apply { mkdirs() }
-            val extension = stored.extension.ifBlank { "bin" }
-            val safeTitle = title.map { if (it.isLetterOrDigit() || it == ' ') it else '-' }
-                .joinToString("")
-                .replace(Regex("\\s+"), " ")
-                .trim()
-                .ifBlank { "document" }
-            val target = File(exports, "$safeTitle.$extension")
+            val target = File(exports, Documents.exportFileName(title, stored.extension))
             stored.copyTo(target, overwrite = true)
             target
         }.getOrNull()

@@ -184,6 +184,28 @@ object Documents {
     }
 
     /**
+     * The name a document leaves under: its title, made safe for a file system, plus [extension].
+     *
+     * Used by both roads out — the copy handed to a share sheet and the copy written into a folder
+     * on a drive — so that a statement arrives called "Mortgage statement March 2026.pdf" in an
+     * email and under exactly the same name in OneDrive. One rule, because two would drift and the
+     * household would end up with two names for one document.
+     *
+     * Everything that is not a letter, a digit or a space becomes a hyphen. That is blunter than the
+     * set of characters any one file system actually forbids, and deliberately so: this name is
+     * about to be handed to a file system nobody here can see, which may be FAT on an SD card or a
+     * cloud provider with rules of its own.
+     */
+    fun exportFileName(title: String, extension: String): String {
+        val safeTitle = title.map { if (it.isLetterOrDigit() || it == ' ') it else '-' }
+            .joinToString("")
+            .replace(WHITESPACE, " ")
+            .trim()
+            .ifBlank { "document" }
+        return "$safeTitle.${extension.ifBlank { "bin" }}"
+    }
+
+    /**
      * Whether a stored name is a bare file name and nothing else.
      *
      * A row should only ever hold one. Anything with a separator in it, or the two dots that climb a

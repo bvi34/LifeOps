@@ -9,14 +9,19 @@ import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
 import com.repository.app.logic.Shelf
+import com.repository.app.logic.Transfer
+import com.repository.app.logic.TransferChoice
+import com.repository.app.logic.TransferOutcome
 import com.repository.app.source.DocumentSource
 import com.repository.app.source.DocumentSources
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -105,6 +110,69 @@ class DocumentRepository(
             )
         )
         return id
+    }
+
+    /**
+     * File a whole reviewed batch — the four project docs somebody just picked off a drive.
+     *
+     * One at a time, and each independently: a file that cannot be read takes its own row down and
+     * nothing else. That is the difference between a batch import and a transaction, and it is the
+     * right one here — three of four documents filed is three documents the household has, whereas
+     * an all-or-nothing import throws away three good copies because a Google Doc had no bytes to
+     * export.
+     *
+     * Failures come back **named**, because "one of these couldn't be read" is a sentence that makes
+     * somebody re-import all four.
+     */
+    suspend fun fileAll(
+        choices: List<TransferChoice>,
+        kind: DocumentKind,
+        owner: DocumentOwner = DocumentOwner.HOUSEHOLD,
+        note: String? = null
+    ): TransferOutcome = withContext(Dispatchers.IO) {
+        var filed = 0
+        val failed = mutableListOf<String>()
+        Transfer.included(choices).forEach { choice ->
+            val id = runCatching {
+                file(
+                    source = Uri.parse(choice.item.uri),
+                    title = choice.title,
+                    kind = kind,
+                    owner = owner,
+                    note = note
+                )
+            }.getOrNull()
+            if (id == null) {
+                failed += choice.title.trim().ifBlank { choice.item.displayName.orEmpty() }
+                    .ifBlank { "One file" }
+            } else {
+                filed++
+            }
+        }
+        TransferOutcome(filed, failed)
+    }
+
+    /**
+     * Move a document into another drawer — or back out to the household's.
+     *
+     * This is the other half of a targeted import: a document grabbed onto the shelf can be attached
+     * to a project afterwards, without being copied again. [update] deliberately treats a null owner
+     * as "leave it where it is", which is right for a rename dialog and useless here, so re-filing
+     * is its own call and sets all three owner fields including to null.
+     *
+     * A document another app is only lending cannot be re-filed and is not here: `sourceKey` rows
+     * never reach this class's writes. See `source/DocumentSource`.
+     */
+    suspend fun refile(id: String, owner: DocumentOwner) {
+        val existing = dao.getDocument(id) ?: return
+        dao.upsertDocument(
+            existing.copy(
+                ownerApp = owner.appKey,
+                ownerKey = owner.recordKey,
+                ownerLabel = owner.label,
+                updatedAt = System.currentTimeMillis()
+            )
+        )
     }
 
     /** Rename a document, change what kind it is, or move it to another drawer. */

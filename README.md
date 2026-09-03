@@ -324,6 +324,16 @@ the receipts.
 > An app that already keeps its own paperwork **lends it read-only** rather than migrating: Health's
 > documents appear on the shelf beside everything else, while every change to one still happens in
 > Health, which is where the rules about deleting them live.
+>
+> Documents also come **off a drive and go back onto one, targeted**: pick Google Drive, OneDrive or
+> Dropbox, choose the four files you actually want, review the list — untick the two dead drafts,
+> rename the third — and file the lot in one press; send one back, or everything a search has
+> narrowed to, into a folder chosen once and remembered per drive. There is **no Drive API, no
+> OneDrive API and no credential**: each of those drives already publishes itself to Android as a
+> document provider, so this is the system picker with a starting point, and the module still holds
+> no permissions. What lands is a copy taken at a moment, never a link that syncs — see
+> `repository/logic/Drives.kt` for the argument. Something on the shelf is **attached** to a project
+> or an asset afterwards without being copied again, which is how one document stops becoming three.
 
 > **Logistics** (the pantry/inventory app) is a peer module — see **[docs/LOGISTICS.md](docs/LOGISTICS.md)**.
 > It fills a virtual pantry from a Walmart order (PDF or pasted text), draws it down as you log the

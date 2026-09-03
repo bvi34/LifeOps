@@ -3,8 +3,10 @@ package com.repository.app
 import android.app.Application
 import android.content.Context
 import com.repository.app.data.db.RepositoryDatabase
+import com.repository.app.data.prefs.RepositoryPrefs
 import com.repository.app.data.repository.DocumentRepository
 import com.repository.app.data.store.DocumentFiles
+import com.repository.app.data.store.DriveTransfer
 
 /**
  * Repository's tiny runtime container, mirroring the other hosted apps: the Operations Sandbox
@@ -24,6 +26,12 @@ class RepositoryApp private constructor(private val app: Application) {
     val database by lazy { RepositoryDatabase.getInstance(app) }
     val files by lazy { DocumentFiles(app) }
     val documents by lazy { DocumentRepository(database.repositoryDao(), files) }
+
+    /** The picker's side of a drive: describing what was picked, and writing a copy back out. */
+    val drives by lazy { DriveTransfer(app, files) }
+
+    /** Which drive, and where on it — a starting point, never a store of anything. */
+    val prefs by lazy { RepositoryPrefs(app) }
 
     companion object {
 

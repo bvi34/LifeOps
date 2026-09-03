@@ -36,15 +36,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.backupkit.AppId
 import com.project.app.data.model.Project
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectKind
@@ -93,6 +96,8 @@ class ShelfViewModel(private val repo: ProjectRepository) : ViewModel() {
 @Composable
 fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
     val shelf by vm.shelf.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var showArchived by remember { mutableStateOf(false) }
     var showAdd by remember { mutableStateOf(false) }
@@ -166,12 +171,21 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
             text = {
                 Text(
                     "This deletes the project and everything in it — outline, documents, lore, " +
-                        "timeline and board. It cannot be undone. Archiving keeps it instead."
+                        "timeline, board and the files attached to it. It cannot be undone. " +
+                        "Archiving keeps it instead."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.deleteProject(project.id)
+                    val going = project
+                    vm.deleteProject(going.id)
+                    // The files attached to it go too, and Repository does not cascade on somebody
+                    // else's rules — the owning app says what deleting one of its records means.
+                    // Saying it here, beside the sentence that promises "everything in it".
+                    scope.launch {
+                        com.repository.app.RepositoryApp.get(context).documents
+                            .deleteFiledOn(AppId.PROJECT.key, going.id)
+                    }
                     confirmDelete = null
                 }) { Text("Delete") }
             },
