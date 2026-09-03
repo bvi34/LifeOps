@@ -35,7 +35,7 @@ class RecallChecksTest {
     fun `every vehicle schedule carries the check, on that same cadence`() {
         // It is in the packs rather than invented behind somebody's back when a vehicle is added —
         // and in *both*, because no owner's manual tells you to ask NHTSA anything.
-        SchedulePacks.all.forEach { pack ->
+        SchedulePacks.vehiclePacks.forEach { pack ->
             val item = pack.items.singleOrNull { it.kind == PlanKind.RECALL_CHECK }
             assertTrue("${pack.id} has no recall check", item != null)
             assertEquals(RecallChecks.EVERY_DAYS, item!!.everyDays)

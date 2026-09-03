@@ -80,6 +80,11 @@ transmission, drivetrain), the colour, the plate and where it is registered, and
 recall at a counter — tyre size and oil spec. The first seven are ordered the way the decode returns
 them, so a decoded vehicle reads top to bottom on the detail page.
 
+A home asks for six, and the two that look like filler are the ones upkeep actually reads: the
+**address**, because the ZIP in it is what says whether the outside taps need draining in October,
+and **"what it has"** — a sentence, not six checkboxes — because a septic tank, a well, a fireplace, a
+sump pump, sprinklers and a pool each bring a schedule with them. See *What the address opens* below.
+
 …and the values live in `asset_attributes` keyed by `(assetId, key)`. The **add** dialog, the **edit**
 dialog, the overview screen and the validation are all generated from that list, so adding a kind is
 **authoring**: one entry, and it grows its own fields everywhere, already checked, already stored.
@@ -428,6 +433,99 @@ shaped like that, for the same reason: a task in a week planner cannot carry a n
 and ask NHTSA anything, so in both cases *doing the thing here* is what completes the task there.
 `PlanKind.isWork` is the line between them and real upkeep — only work writes a service record.
 
+## What the address opens
+
+A house is the other half of this module and it does not work like the car at all.
+
+```
+address ──ZIP──▶ climate ─┐
+year built ───────────────┼──▶ HomeFacts ──▶ the schedules that fit ──▶ plans ──▶ the LifeOps week
+"what it has" ──systems───┤
+a loan on the asset ──────┘
+```
+
+Every arrow in that diagram is inside the phone.
+
+### Why a house sends nothing anywhere
+
+The vehicle side asks a public decoder *"what is a 2018 Wrangler Unlimited Sport?"* — a question
+about a product, of the kind anyone could type into a search engine, which is why eleven characters
+of a VIN are allowed to leave the device at all. **There is no equivalent question about a house.**
+An address is not a model number; it is where these people live. Every property API worth having —
+the Census geocoder included — is keyed on the street line, and there is no half of an address that
+describes a *type* of house rather than a particular one. The ZIP comes closest, and even it buys
+only a climate.
+
+So `logic/HomeFacts` runs entirely offline, and that is a finding rather than a missing feature. The
+test this module already applies to going online — *could this request tell anyone something about a
+member of this household?* — is failed by the very first request, so none is made.
+
+What is left is better than it sounds, because the household has **already typed the answers in**:
+
+| Read from | What it gives |
+|---|---|
+| The ZIP in the address | `Climate` — cold, four seasons, hot and humid, hot and dry, mild and wet |
+| Year built | Whether the jobs peculiar to pre-1980 housing stock apply |
+| "What it has" | `HomeSystem` — septic, well, fireplace, sump pump, sprinklers, pool |
+| A loan row against the asset | Whether there is a mortgage's paperwork owed as well as work |
+
+### Reading a sentence rather than ticking six boxes
+
+"What it has" is a **free-text field**, and the systems are read out of it: the text is cut into
+phrases on the punctuation people separate things with, and a phrase claims a system when it names
+one and does not deny it. *"Septic tank, no sprinklers"* finds the tank and not the sprinklers;
+*"stairwell"* is not a well and *"spare room"* is not a spa. Six checkboxes would be more precise
+and would get half filled in.
+
+The climate is the one guess in the file and it is **shown as one**. `HomeLookup.climateOf` is a
+table of ZIP prefixes — the first three digits, which run in geographic order — assigned to five
+climates by the region they cover. It gets Vermont and Florida right and it cannot get California
+right, because California is four climates and one of them is a desert forty miles from a beach. The
+screen says so, and one press lists the whole catalogue so a wrong guess costs a tap rather than a
+wrong schedule.
+
+### One house, several schedules
+
+A vehicle gets **one** pack because a manufacturer wrote one. Nobody writes one for a house, and what
+a house owes is a sum: the list every building has, plus what winter does to it here, plus what its
+age brings, plus whichever systems are bolted to it, plus the paperwork of owning it. So `HomePacks`
+ships thirteen small packs and a house is normally offered four or five:
+
+| Pack | Offered when | Items |
+|---|---|---|
+| `home-core` | Always | 15 |
+| `home-cold` | Cold or four-season climate | 4 |
+| `home-hot` | Hot and humid, or hot and dry | 3 |
+| `home-damp` | Hot and humid, or mild and wet | 3 |
+| `home-older` | Built before 1980 | 3 |
+| `home-septic` · `home-well` · `home-fireplace` · `home-sump` · `home-irrigation` · `home-pool` | That system was written down | 2–3 each |
+| `home-ownership` | Always | 4 |
+| `home-mortgage` | There is a loan against it | 4 |
+
+Small packs rather than one composed list is what makes the ordinary case work: you type the house in
+on the day you buy it, and six months later you finally write *"septic tank"* into the field that
+asks what it has — at which point the septic schedule simply appears as one more thing to apply, and
+nothing you had already re-timed is touched. A single list regenerated from the facts would either
+re-impose intervals you had edited or refuse to grow. It is also what keeps provenance honest: a plan
+created two years ago can still say which schedule it came from, because pack ids are permanent.
+
+The numbers come from trade and fire-service practice transcribed by hand, not from a manual, so
+every home pack is `provisional` and says so on the row. Several are genuinely contested — how often
+a septic tank wants pumping depends on how many people live over it — and they are meant to be
+corrected: the moment a pack is applied its items are ordinary plans, yours to re-time or delete.
+
+### The mortgage is upkeep too
+
+`home-mortgage` is the answer to *what does a loan actually need doing to it*, and every item on it is
+**reading something that arrives on its own**: the annual escrow analysis, the statement checked
+against the balance this app computes, the twice-yearly *can the mortgage insurance come off yet*, and
+the interest statement that arrives in January alone and is needed in April. None of them advises
+anything. `logic/Loan` already takes the line that this is not a payoff optimiser, and scheduling the
+opening of an envelope is a different thing from telling somebody whether to refinance.
+
+The PMI item is the one that pays for the rest. A US lender must drop mortgage insurance at 78% of
+the original value and will normally consider a written request at 80% — and nobody rings to tell you.
+
 ## The screens
 
 **Due** — the docket, pressing by default, everything one chip away.
@@ -507,7 +605,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 159 JVM tests, no emulator needed. Almost all of them are over `logic/`
+`gradle :maintenance:test` — 185 JVM tests, no emulator needed. Almost all of them are over `logic/`
 and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
 the only reason this module has a test dependency beyond JUnit at all.
 
@@ -542,6 +640,17 @@ the only reason this module has a test dependency beyond JUnit at all.
   already behind you taken as done; the one you have driven past; a milestone racing a time interval.
 - `SchedulePlansTest` — which pack a VIN's facts choose and which they don't, the fallback always
   offered beneath, applying twice adding nothing, and a plan you typed by hand being adopted.
+- `HomeFactsTest` — a house read off its own fields: the ZIP found at the bottom of an address rather
+  than in the house number, ZIP+4 accepted and the +4 dropped, the climate a prefix lands in, a
+  prefix the table doesn't cover answered with *null* rather than a guess, systems read out of the
+  words people write, a phrase that denies a system not claiming it, and a denial in one phrase not
+  cancelling a claim in another.
+- `HomePacksTest` — which schedules a house is offered, and mostly which it isn't: no septic list for
+  a house on mains drainage, no winterising list in Miami, no older-house list for a year nobody
+  typed, no mortgage list without a loan. Plus the catalogue's own invariants — every item has a
+  date interval, none is measured in miles, ids are unique across every pack of every kind because
+  provenance is keyed on them — and the case the shape exists for: the septic schedule arriving six
+  months late and adding only itself.
 - `VpicParserTest` and `RecallsParserTest` — both against fixtures trimmed from **real** responses,
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.

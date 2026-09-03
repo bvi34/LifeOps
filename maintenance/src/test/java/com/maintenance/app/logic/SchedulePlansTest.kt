@@ -122,12 +122,22 @@ class SchedulePlansTest {
                 assertTrue("${pack.id}/${item.key} is unscheduled", item.everyDays != null || item.everyMeter != null || item.atMeter.isNotEmpty())
                 assertEquals("${pack.id}/${item.key} milestones out of order", item.atMeter.sorted(), item.atMeter)
             }
-            // Every vehicle pack asks for the reading everything else is measured against.
+        }
+        assertEquals(SchedulePacks.all.size, SchedulePacks.all.map { it.id }.toSet().size)
+
+        // Only the packs for a kind that wears a meter ask for a reading — and every one of those
+        // does, because every mileage interval in the app rests on one. A house has no odometer.
+        SchedulePacks.vehiclePacks.forEach { pack ->
             assertTrue(
                 "${pack.id} has no odometer prompt",
                 pack.items.any { it.kind == PlanKind.METER_READING }
             )
         }
-        assertEquals(SchedulePacks.all.size, SchedulePacks.all.map { it.id }.toSet().size)
+        SchedulePacks.homePacks.forEach { pack ->
+            assertTrue(
+                "${pack.id} asks for a reading off a meter a house does not have",
+                pack.items.none { it.kind == PlanKind.METER_READING }
+            )
+        }
     }
 }

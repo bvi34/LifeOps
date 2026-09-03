@@ -29,12 +29,21 @@ data class SchedulePack(
     val label: String,
     /** Where the numbers came from, verbatim enough to go and check. */
     val source: String,
-    val duty: Duty,
-    val match: PackMatch,
+    /** Which assets this pack is for, and which ones of them. */
+    val fit: PackFit,
     val items: List<ScheduleItem>,
+    /**
+     * Normal or severe service, on the kinds that publish two schedules. Null on the kinds that do
+     * not — nobody prints a Schedule B for a house.
+     */
+    val duty: Duty? = null,
     /** True until a human has checked these numbers against the manual. Shown, not hidden. */
     val provisional: Boolean = true
-)
+) {
+    /** "12 items · Schedule A" — the line under a pack's name, wherever one is offered. */
+    val summary: String
+        get() = listOfNotNull("${items.size} items", duty?.label).joinToString(" · ")
+}
 
 /**
  * Normal or severe service. Manufacturers publish two schedules and most people are on the first
@@ -68,38 +77,90 @@ data class ScheduleItem(
 )
 
 /**
- * What a pack is for. Every field that is set has to match; a null field matches anything.
+ * What a pack is for.
  *
- * Matching is deliberately loose — make and a substring of the model, a year range, an engine size —
- * because vPIC's model names carry trim and punctuation that varies by year, and a pack that only
- * matched an exact string would silently stop matching in a model year nobody was watching.
+ * A pack fits a *kind* of asset before it fits a particular one, which is why this is a sealed
+ * hierarchy rather than a bag of nullable fields: a home schedule and a vehicle schedule are matched
+ * against different facts entirely, and the compiler should be the thing that knows it. It is the
+ * same call `logic/AssetKind` makes about a house having no odometer — a shape nobody else's kind
+ * can use does not become a null column on everybody.
  */
-data class PackMatch(
-    val make: String? = null,
-    val modelContains: String? = null,
-    val years: IntRange? = null,
-    val displacementLitres: Double? = null
-) {
-    fun matches(facts: VehicleFacts): Boolean {
-        if (make != null && !facts.make.equals(make, ignoreCase = true)) return false
-        if (modelContains != null && facts.model?.contains(modelContains, ignoreCase = true) != true) return false
-        if (years != null && (facts.year == null || facts.year !in years)) return false
-        if (displacementLitres != null) {
-            val engine = facts.displacementLitres ?: return false
-            // vPIC reports 3.6 and 3.6000000000000001 alike; compare like a person would.
-            if (kotlin.math.abs(engine - displacementLitres) > 0.05) return false
+sealed interface PackFit {
+
+    /** The kind of asset this pack can ever apply to. */
+    val kind: AssetKind
+
+    /**
+     * A vehicle: make, a substring of the model, a year range, an engine size. Every field that is
+     * set has to match; a null field matches anything.
+     *
+     * Matching is deliberately loose because vPIC's model names carry trim and punctuation that
+     * varies by year, and a pack that only matched an exact string would silently stop matching in a
+     * model year nobody was watching.
+     */
+    data class Vehicle(
+        val make: String? = null,
+        val modelContains: String? = null,
+        val years: IntRange? = null,
+        val displacementLitres: Double? = null
+    ) : PackFit {
+
+        override val kind: AssetKind get() = AssetKind.VEHICLE
+
+        fun matches(facts: VehicleFacts): Boolean {
+            if (make != null && !facts.make.equals(make, ignoreCase = true)) return false
+            if (modelContains != null && facts.model?.contains(modelContains, ignoreCase = true) != true) return false
+            if (years != null && (facts.year == null || facts.year !in years)) return false
+            if (displacementLitres != null) {
+                val engine = facts.displacementLitres ?: return false
+                // vPIC reports 3.6 and 3.6000000000000001 alike; compare like a person would.
+                if (kotlin.math.abs(engine - displacementLitres) > 0.05) return false
+            }
+            return true
         }
-        return true
+    }
+
+    /**
+     * A home: the climates it is for, the systems it needs to be present, how old the house has to
+     * be, and whether there is a loan against it.
+     *
+     * Every clause that is set has to hold, and an unset clause matches anything — so the pack with
+     * no clauses at all is the standing list every house gets, and the one with
+     * `needs = setOf(SEPTIC)` never appears for a house on mains drainage. A **missing** fact never
+     * matches a clause that asks for one: a house whose ZIP nobody typed is not quietly given a
+     * winter schedule, because the honest answer there is "this doesn't know", and the screen offers
+     * the whole catalogue instead.
+     */
+    data class Home(
+        val climates: Set<Climate> = emptySet(),
+        val needs: Set<HomeSystem> = emptySet(),
+        /** For the jobs that only older housing stock has. Compared against the year built. */
+        val builtBefore: Int? = null,
+        val needsMortgage: Boolean = false
+    ) : PackFit {
+
+        override val kind: AssetKind get() = AssetKind.HOME
+
+        fun matches(facts: HomeFacts): Boolean {
+            if (climates.isNotEmpty() && (facts.climate == null || facts.climate !in climates)) return false
+            if (!facts.systems.containsAll(needs)) return false
+            if (builtBefore != null && (facts.yearBuilt == null || facts.yearBuilt >= builtBefore)) return false
+            if (needsMortgage && !facts.hasMortgage) return false
+            return true
+        }
     }
 }
 
 /**
  * The packs this build ships.
  *
- * Two of them, on purpose. A specific one for the vehicle this was built for, and a **generic**
+ * Two for vehicles, on purpose. A specific one for the vehicle this was built for, and a **generic**
  * fallback so that a car nothing matches still gets a sensible starting point rather than an empty
  * screen — because an empty screen is where people give up, and "oil every 5,000 miles" is right
  * often enough to be worth offering as something to correct.
+ *
+ * The home packs are in [HomePacks] and are shaped differently for a reason the file explains: a
+ * house is not one schedule but a standing list plus whatever the climate and the plumbing add.
  */
 object SchedulePacks {
 
@@ -134,8 +195,8 @@ object SchedulePacks {
         id = "jeep-jl-36-a",
         label = "Jeep Wrangler JL 3.6L — Schedule A",
         source = "Jeep Wrangler (JL) owner's manual, Maintenance Schedule A — transcribed by hand",
+        fit = PackFit.Vehicle(make = "JEEP", modelContains = "Wrangler", years = 2018..2026, displacementLitres = 3.6),
         duty = Duty.NORMAL,
-        match = PackMatch(make = "JEEP", modelContains = "Wrangler", years = 2018..2026, displacementLitres = 3.6),
         items = listOf(
             ScheduleItem(
                 key = "engine-oil",
@@ -224,8 +285,8 @@ object SchedulePacks {
         id = "generic-vehicle",
         label = "Any vehicle — a starting point",
         source = "Common practice, not a manufacturer schedule",
+        fit = PackFit.Vehicle(),
         duty = Duty.NORMAL,
-        match = PackMatch(),
         items = listOf(
             ScheduleItem("engine-oil", "Engine oil & filter", everyMeter = 5_000, everyDays = 365),
             ScheduleItem("tire-rotation", "Rotate tires", everyMeter = 7_500),
@@ -243,10 +304,34 @@ object SchedulePacks {
         )
     )
 
-    /** Every pack, specific ones first — [forVehicle] relies on that order. */
-    val all: List<SchedulePack> = listOf(JEEP_JL_36_NORMAL, GENERIC_VEHICLE)
+    /** Every vehicle pack, specific ones first — [forVehicle] relies on that order. */
+    val vehiclePacks: List<SchedulePack> = listOf(JEEP_JL_36_NORMAL, GENERIC_VEHICLE)
+
+    /** Every home pack, the standing list first — [forHome] relies on that order. */
+    val homePacks: List<SchedulePack> = HomePacks.all
+
+    /**
+     * Every pack this build ships, of every kind.
+     *
+     * This is what [byId] reads, and [byId] is what lets a plan created two years ago still say
+     * which schedule it came from. So a pack id is permanent: renaming one orphans the provenance on
+     * every plan already carrying it.
+     */
+    val all: List<SchedulePack> = vehiclePacks + homePacks
 
     fun byId(id: String?): SchedulePack? = all.firstOrNull { it.id == id }
+
+    /**
+     * The home schedules that fit, the standing list first.
+     *
+     * Unlike a vehicle, a home gets *several* of these and is meant to: the standing list every
+     * house has, plus whatever its climate, its age, its plumbing and its mortgage add on top. They
+     * are separate packs rather than one composed list because a plan has to be able to say where it
+     * came from years later, and because facts arrive late — you type the septic tank in six months
+     * after the house, and the septic schedule is then simply one more thing to apply.
+     */
+    fun forHome(facts: HomeFacts): List<SchedulePack> =
+        homePacks.filter { pack -> (pack.fit as? PackFit.Home)?.matches(facts) == true }
 
     /**
      * The packs that fit, best first.
@@ -255,5 +340,6 @@ object SchedulePacks {
      * shows the match it found *and* the fallback, and lets the person choose. A wrong-but-specific
      * pack silently applied would be the worst outcome here.
      */
-    fun forVehicle(facts: VehicleFacts): List<SchedulePack> = all.filter { it.match.matches(facts) }
+    fun forVehicle(facts: VehicleFacts): List<SchedulePack> =
+        vehiclePacks.filter { pack -> (pack.fit as? PackFit.Vehicle)?.matches(facts) == true }
 }

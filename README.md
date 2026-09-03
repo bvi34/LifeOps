@@ -272,10 +272,26 @@ the receipts.
 > typing the reading here ticks it off there. The recall check is the only other thing shaped like
 > that, for the same reason — a task can't go and ask NHTSA anything either.
 >
+> A **house** gets the same treatment and **sends nothing anywhere to get it**, which is a finding
+> rather than a gap: eleven characters of a VIN are a question about a *model*, and there is no half
+> of an address that is anything but the household. So the reading happens on the device, out of
+> fields somebody already filled in — the **ZIP** in the address says what winter does here, the year
+> built says whether the jobs peculiar to pre-1980 housing stock apply, a **sentence** about what the
+> place has ("septic tank, no sprinklers") is read for the six systems that carry schedules of their
+> own, and a loan against the asset means paperwork is owed as well as work. Where a car gets one
+> pack, a house is offered **four or five of thirteen**: the standing list every building has, plus
+> its climate, its age, its plumbing, and the mortgage's own — the annual escrow analysis, the
+> statement checked against the balance this app computes, and the twice-yearly *can the mortgage
+> insurance come off yet*, which a US lender must honour at 78% of the original value and will never
+> ring to tell you about. Small packs rather than one composed list is what makes the ordinary case
+> work: write the septic tank in six months late and its schedule simply appears as one more thing to
+> apply, with everything you had already re-timed untouched. The climate is a coarse guess from a ZIP
+> prefix and **says so**, with the whole catalogue one press away for when it is wrong.
+>
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **159 JVM tests**. It holds `INTERNET` for those two keyless
-> government lookups and nothing else — the mortgage, the parcel number, the service history and the
-> odometer have no code path to the network at all.
+> `maintenance/logic/` under **185 JVM tests**. It holds `INTERNET` for those two keyless
+> government lookups and nothing else — the mortgage, the address, the parcel number, the service
+> history and the odometer have no code path to the network at all.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

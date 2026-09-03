@@ -26,16 +26,33 @@ enum class AssetKind(
     val attributes: List<AssetAttributeSpec>
 ) {
 
+    /**
+     * The address is the first three of these and the last one is the interesting one.
+     *
+     * A house has no VIN, so nothing outside this app can be asked what it is — see `logic/HomeFacts`
+     * for why that is a privacy fact rather than a missing feature. What it does have is an address
+     * with a ZIP in it, a year, and a household that knows perfectly well whether there is a septic
+     * tank in the garden. So "what it has" is a sentence rather than a row of checkboxes: it is read for
+     * the systems that bring schedules with them, and a form with six boxes on it is a form that gets
+     * half filled in.
+     */
     HOME(
         key = "home",
         label = "Home",
         plural = "Homes",
         meter = null,
         attributes = listOf(
-            AssetAttributeSpec("address", "Address", AttributeInput.MULTILINE),
+            AssetAttributeSpec(
+                "address", "Address", AttributeInput.MULTILINE,
+                hint = "The ZIP is the part upkeep reads — it is what says whether the taps need draining"
+            ),
             AssetAttributeSpec("yearBuilt", "Year built", AttributeInput.NUMBER, AttributeCheck.YEAR),
             AssetAttributeSpec("squareFeet", "Living area (sq ft)", AttributeInput.NUMBER, AttributeCheck.WHOLE_NUMBER),
             AssetAttributeSpec("lotSize", "Lot size (acres)", AttributeInput.NUMBER, AttributeCheck.DECIMAL),
+            AssetAttributeSpec(
+                "systems", "What it has", AttributeInput.MULTILINE,
+                hint = "In your own words — septic tank, private well, fireplace, sump pump, sprinklers, pool"
+            ),
             AssetAttributeSpec(
                 "parcelNumber", "Parcel number (APN)", AttributeInput.TEXT,
                 hint = "As it reads on the tax bill"

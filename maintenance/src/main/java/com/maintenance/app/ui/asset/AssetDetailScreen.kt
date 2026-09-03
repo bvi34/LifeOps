@@ -404,6 +404,11 @@ private fun OverviewTab(vm: AssetDetailViewModel, detail: AssetDetail, onEdit: (
                 item(key = "recalls") { RecallsSection(vm = vm, detail = detail) }
             }
         }
+        // A house is read rather than decoded — the whole of it happens on the device. See
+        // `ui/asset/HomeSection` for why that is a fact about addresses rather than a missing API.
+        if (asset.kind == AssetKind.HOME) {
+            item(key = "home-schedules") { HomeSection(vm = vm, detail = detail) }
+        }
 
         if (!notes.isNullOrBlank()) {
             item(key = "notes") {

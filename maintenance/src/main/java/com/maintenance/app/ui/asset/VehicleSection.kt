@@ -25,7 +25,6 @@ import com.maintenance.app.data.model.RecallView
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.PlanKind
 import com.maintenance.app.logic.RecallChecks
-import com.maintenance.app.logic.SchedulePack
 import com.maintenance.app.ui.common.LabeledValue
 import com.maintenance.app.ui.common.SectionCard
 import com.maintenance.app.ui.common.formatDay
@@ -159,32 +158,6 @@ private fun DecodeDialog(vm: AssetDetailViewModel, detail: AssetDetail, onDismis
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
-}
-
-/**
- * One schedule on offer, with where its numbers came from.
- *
- * The source line is not decoration. A transcribed schedule is a claim about somebody's vehicle, and
- * the honest thing is to say where it came from and that nobody has checked it — an interval you can
- * see the provenance of is one you might correct, and every item becomes an ordinary editable plan
- * the moment it is applied.
- */
-@Composable
-private fun PackRow(pack: SchedulePack, onApply: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(pack.label, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-            "${pack.items.size} items · ${pack.duty.label}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Text(
-            if (pack.provisional) "${pack.source} — not yet checked against a manual" else pack.source,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        TextButton(onClick = onApply) { Text("Apply") }
-    }
 }
 
 /**

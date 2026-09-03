@@ -128,11 +128,15 @@ class AssetDetailViewModel(
     // ------------------------------------------------------------------ the VIN, and what it opens
 
     /**
-     * What the two lookups are doing and what they last said.
+     * What the lookups are doing and what they last said.
      *
      * Held here rather than in the database because none of it is a fact about the asset — it is the
      * state of a button somebody pressed. What the lookups *find* gets written down (the decoded
      * make and model, the recalls); the asking does not.
+     *
+     * [busy], [facts] and [packs] belong to the VIN decode, which is the only one of these that
+     * leaves the device. [applied] is shared with the home section, because applying a schedule is
+     * the same act whatever chose it and the confirmation reads the same either way.
      */
     data class LookupState(
         val busy: Boolean = false,
