@@ -50,6 +50,7 @@ import com.maintenance.app.data.model.AssetDetail
 import com.maintenance.app.logic.AssetKind
 import com.maintenance.app.logic.Handover
 import com.maintenance.app.logic.HandoverRow
+import com.maintenance.app.logic.AssetAttributes
 import com.maintenance.app.logic.AttributeCheck
 import com.maintenance.app.logic.MeterUnit
 import com.maintenance.app.logic.Vin
@@ -327,7 +328,9 @@ private fun OverviewTab(vm: AssetDetailViewModel, detail: AssetDetail, onEdit: (
                 } else {
                     filled.forEach { spec ->
                         val value = asset.attribute(spec.key).orEmpty()
-                        LabeledValue(label = spec.label, value = value)
+                        // A picker stores keys and reads as labels: "septic,solar" is a column
+                        // value, not a sentence anybody should be shown.
+                        LabeledValue(label = spec.label, value = AssetAttributes.display(spec, value))
                         if (spec.check == AttributeCheck.VIN) {
                             VinFootnotes(value)
                         }

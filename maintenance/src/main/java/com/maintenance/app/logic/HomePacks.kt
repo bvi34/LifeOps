@@ -12,11 +12,20 @@ package com.maintenance.app.logic
  * handful of systems happen to be attached to it.
  *
  * So the home catalogue is deliberately many small packs rather than one big one, and a house is
- * normally offered three or four. That shape is what makes the awkward case work: you type the house
- * in on the day you buy it, and six months later you finally write "septic tank" in the field that
+ * normally offered five or six. That shape is what makes the awkward case work: you type the house
+ * in on the day you buy it, and six months later you finally tick "septic system" in the field that
  * asks what it has — at which point the septic schedule appears as one more thing to apply, and
  * nothing you already tuned is touched. The alternative, one composed list regenerated from the
  * facts, would either re-impose intervals you had edited or quietly refuse to grow.
+ *
+ * ### Announcing rather than describing
+ *
+ * Two fields drive nearly all of this and both are **pickers**. "Type of home" is one choice and
+ * decides what the *building* owes — a manufactured home has piers that settle and skirting to
+ * check, and a condo owner does not own the roof anybody would tell them to go and look at. "What
+ * it has" is a multiple choice, and there is one pack below per thing on it: tick solar and a solar
+ * schedule appears, tick gas and the flue check does. Announcing what you have is the whole of the
+ * input, which is why the packs are keyed on those keys and not on prose.
  *
  * ### Where the numbers come from
  *
@@ -44,13 +53,14 @@ object HomePacks {
     private const val COMMON_PRACTICE = "Common practice — trade and fire-service guidance, transcribed by hand"
 
     /**
-     * Every house, whatever and wherever it is.
+     * Every house, whatever and wherever it is, and whoever owns the roof.
      *
-     * The test for being on this list is that the job is owed by a building rather than by a system
-     * somebody chose to put in it, and that skipping it costs more than doing it. Three of these are
-     * fire (alarms, the dryer vent, the extinguisher), three are water finding its way in (gutters,
-     * the roof, the grading), and one — turning the main shut-off — is the single job on the list
-     * most likely to be worth more than everything else put together on one particular night.
+     * The test for being on this list is that the job is owed by *living in a building* rather than
+     * by owning its outside or by a system somebody chose to put in. Three of these are fire (the
+     * alarms, the dryer vent, the extinguisher) and one — turning the main shut-off — is the single
+     * job on the list most likely to be worth more than everything else put together on one
+     * particular night. All of it is as true in a fourth-floor apartment as in a farmhouse, which is
+     * why the outside of the building is a separate pack.
      */
     val CORE = SchedulePack(
         id = "home-core",
@@ -85,19 +95,6 @@ object HomePacks {
                 everyDays = YEAR
             ),
             ScheduleItem(
-                key = "gutters",
-                title = "Clear the gutters and downspouts",
-                notes = "Spring and autumn. Trees over the roof make it more than that.",
-                everyDays = HALF_YEAR
-            ),
-            ScheduleItem(
-                key = "roof-look",
-                title = "Look over the roof",
-                notes = "From the ground with binoculars is a real inspection: lifted shingles, " +
-                    "cracked boots round the vents, anything growing in a valley.",
-                everyDays = YEAR
-            ),
-            ScheduleItem(
                 key = "dryer-vent",
                 title = "Clear the dryer vent",
                 notes = "The lint trap is not the vent. This one is a fire, not a chore.",
@@ -123,25 +120,6 @@ object HomePacks {
                 everyDays = YEAR
             ),
             ScheduleItem(
-                key = "caulk-seals",
-                title = "Walk the caulk, seals and weather-stripping",
-                notes = "Round the tub and the windows, and the door seals you can see daylight through.",
-                everyDays = YEAR
-            ),
-            ScheduleItem(
-                key = "garage-door",
-                title = "Test the garage door's auto-reverse",
-                notes = "A length of timber under the door. It should stop and go back up.",
-                everyDays = YEAR
-            ),
-            ScheduleItem(
-                key = "drainage",
-                title = "Walk the grading and the downspout run-offs",
-                notes = "Water should leave the house, not pool against it. Nearly every wet basement " +
-                    "starts as a downspout emptying at the wall.",
-                everyDays = YEAR
-            ),
-            ScheduleItem(
                 key = "radon-test",
                 title = "Test for radon",
                 notes = "The EPA's advice is to test every home and to test again every couple of " +
@@ -152,6 +130,108 @@ object HomePacks {
                 key = "appliance-coils",
                 title = "Vacuum the fridge coils",
                 everyDays = YEAR
+            )
+        )
+    )
+
+    /**
+     * The outside of the building — offered to everybody **except** a condo.
+     *
+     * This is the clearest thing "Type of home" buys. Gutters, the roof, where the water goes and
+     * what the caulk is doing are jobs for whoever owns the envelope, and in a condo that is the
+     * association. Telling an apartment owner twice a year to go and clear their gutters is how a
+     * docket stops being read. A household that has not picked a type still gets this: most homes
+     * are houses, and silence should cost you the schedule that is usually wrong rather than the one
+     * that is usually right.
+     */
+    val ENVELOPE = SchedulePack(
+        id = "home-envelope",
+        label = "The outside of it",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(excludeStructures = setOf(HomeStructure.CONDO)),
+        items = listOf(
+            ScheduleItem(
+                key = "gutters",
+                title = "Clear the gutters and downspouts",
+                notes = "Spring and autumn. Trees over the roof make it more than that.",
+                everyDays = HALF_YEAR
+            ),
+            ScheduleItem(
+                key = "roof-look",
+                title = "Look over the roof",
+                notes = "From the ground with binoculars is a real inspection: lifted shingles, " +
+                    "cracked boots round the vents, anything growing in a valley.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "drainage",
+                title = "Walk the grading and the downspout run-offs",
+                notes = "Water should leave the house, not pool against it. Nearly every wet basement " +
+                    "starts as a downspout emptying at the wall.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "caulk-seals",
+                title = "Walk the caulk, seals and weather-stripping",
+                notes = "Round the tub and the windows, and the door seals you can see daylight through.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "garage-door",
+                title = "Test the garage door's auto-reverse",
+                notes = "A length of timber under the door. It should stop and go back up.",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    /**
+     * A manufactured home, which is a different building and owes different things.
+     *
+     * This is the other half of what "Type of home" buys, and it is the half a generic house
+     * checklist gets flatly wrong. A manufactured home is not founded, it is **set**: on piers that
+     * settle, held by anchors that loosen, skirted rather than walled, with its plumbing in a wrapped
+     * belly under the floor and a roof that is coated rather than shingled. None of that appears on
+     * any site-built list, and all of it is what actually goes wrong.
+     */
+    val MANUFACTURED = SchedulePack(
+        id = "home-manufactured",
+        label = "A manufactured home",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(structures = setOf(HomeStructure.MANUFACTURED)),
+        items = listOf(
+            ScheduleItem(
+                key = "releveling",
+                title = "Have it re-levelled",
+                notes = "Piers settle. Doors that stick, windows that will not latch and cracks at " +
+                    "the marriage line are the symptom, and levelling is the fix — not the drywall.",
+                everyDays = 5 * YEAR
+            ),
+            ScheduleItem(
+                key = "tie-downs",
+                title = "Check the anchors and tie-downs",
+                notes = "And again after any serious wind. Straps loosen and ground anchors lift.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "skirting",
+                title = "Check the skirting and its vents",
+                notes = "Intact skirting keeps the animals out; open vents keep the underside dry. " +
+                    "Doing one without the other is how the belly rots.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "belly-wrap",
+                title = "Check the underbelly wrap and the pipe insulation",
+                notes = "A torn belly board is a freeze risk and a nest in the same week.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "roof-coating",
+                title = "Recoat the roof",
+                notes = "Metal and rubber roofs are coated rather than replaced, and the coating is " +
+                    "the roof. Three years is the usual interval; a hot climate makes it less.",
+                everyDays = 3 * YEAR
             )
         )
     )
@@ -289,7 +369,7 @@ object HomePacks {
         id = "home-septic",
         label = "Septic system",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.SEPTIC)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.SEPTIC)),
         items = listOf(
             ScheduleItem(
                 key = "septic-pump",
@@ -316,7 +396,7 @@ object HomePacks {
         id = "home-well",
         label = "Private well",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.WELL)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.WELL)),
         items = listOf(
             ScheduleItem(
                 key = "well-water-test",
@@ -343,7 +423,7 @@ object HomePacks {
         id = "home-fireplace",
         label = "Fireplace or wood stove",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.FIREPLACE)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.FIREPLACE)),
         items = listOf(
             ScheduleItem(
                 key = "chimney-sweep",
@@ -364,7 +444,7 @@ object HomePacks {
         id = "home-sump",
         label = "Sump pump",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.SUMP_PUMP)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.SUMP_PUMP)),
         items = listOf(
             ScheduleItem(
                 key = "sump-test",
@@ -387,7 +467,7 @@ object HomePacks {
         id = "home-irrigation",
         label = "Sprinklers",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.IRRIGATION)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.IRRIGATION)),
         items = listOf(
             ScheduleItem(
                 key = "irrigation-start",
@@ -414,7 +494,7 @@ object HomePacks {
         id = "home-pool",
         label = "Pool or hot tub",
         source = COMMON_PRACTICE,
-        fit = PackFit.Home(needs = setOf(HomeSystem.POOL)),
+        fit = PackFit.Home(needs = setOf(HomeFeature.POOL)),
         items = listOf(
             ScheduleItem(
                 key = "pool-water-test",
@@ -432,6 +512,163 @@ object HomePacks {
                 key = "pool-season",
                 title = "Open or close for the season",
                 everyDays = HALF_YEAR
+            )
+        )
+    )
+
+    val COOLING = SchedulePack(
+        id = "home-cooling",
+        label = "Central air conditioning",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.AIR_CONDITIONING)),
+        items = listOf(
+            // Deliberately the same titles as the hot-climate pack's. A house in Phoenix that also
+            // ticked "central air" matches both, and `SchedulePlans` adopts a plan that is already
+            // there by title rather than adding a second beside it. The overlap is how a cooling
+            // schedule reaches a house in Vermont that has ducted air and a climate that never
+            // suggested one.
+            ScheduleItem(
+                key = "ac-service",
+                title = "Have the air conditioning serviced",
+                notes = "In spring. A system that is low on refrigerant in June is a system that was " +
+                    "low on refrigerant in April.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "condensate-line",
+                title = "Clear the AC condensate line",
+                notes = "A cup of vinegar down the clean-out. A blocked line is how an air handler " +
+                    "floods a ceiling.",
+                everyDays = QUARTER
+            )
+        )
+    )
+
+    val GAS = SchedulePack(
+        id = "home-gas",
+        label = "Gas or propane",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.FUEL_GAS)),
+        items = listOf(
+            ScheduleItem(
+                key = "gas-appliance-check",
+                title = "Have the gas appliances and their venting checked",
+                notes = "The furnace, the water heater, the range and the dryer. A cracked heat " +
+                    "exchanger and a blocked flue are the two that kill people, and neither smells " +
+                    "of anything.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "gas-shutoff",
+                title = "Find and label the gas shut-off",
+                notes = "At the meter or the tank, with whatever it takes to turn it kept beside it. " +
+                    "Nobody looks this up during an earthquake.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "propane-tank",
+                title = "Check the tank, regulator and lines",
+                notes = "Propane only — the tank has a recertification date stamped on the collar.",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    val ALL_ELECTRIC = SchedulePack(
+        id = "home-electric",
+        label = "All-electric",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.ALL_ELECTRIC)),
+        items = listOf(
+            ScheduleItem(
+                key = "heat-pump-service",
+                title = "Have the heat pump serviced",
+                notes = "It is the heating *and* the cooling, so it runs most of the year and wants " +
+                    "looking at more than a furnace does, not less.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "anode-rod",
+                title = "Check the water heater's anode rod",
+                notes = "The rod is what corrodes so the tank does not. Replacing one costs a " +
+                    "fraction of the tank it saves.",
+                everyDays = 3 * YEAR
+            )
+        )
+    )
+
+    val SOLAR = SchedulePack(
+        id = "home-solar",
+        label = "Solar panels",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.SOLAR)),
+        items = listOf(
+            ScheduleItem(
+                key = "solar-production",
+                title = "Read the year's production against last year's",
+                notes = "The only way a quietly failing string or a dead optimiser is ever noticed: " +
+                    "the system keeps working, just less. Nothing raises an alarm.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "solar-clean",
+                title = "Clean and look over the panels",
+                notes = "Dust, pollen and whatever nests under them. More often where it does not rain.",
+                everyDays = HALF_YEAR
+            ),
+            ScheduleItem(
+                key = "solar-inverter",
+                title = "Check the inverter and its warranty date",
+                notes = "The inverter is the part that fails first and is warranted for less time " +
+                    "than the panels. Worth knowing which side of that date you are on.",
+                everyDays = YEAR
+            )
+        )
+    )
+
+    val DECK = SchedulePack(
+        id = "home-deck",
+        label = "Deck or porch",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.DECK)),
+        items = listOf(
+            ScheduleItem(
+                key = "deck-inspect",
+                title = "Check the deck's rails, fixings and ledger",
+                notes = "The ledger board where it meets the house is what fails, and it fails all " +
+                    "at once with people standing on it.",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "deck-seal",
+                title = "Clean and reseal the deck",
+                everyDays = 2 * YEAR
+            )
+        )
+    )
+
+    val GENERATOR = SchedulePack(
+        id = "home-generator",
+        label = "Standby generator",
+        source = COMMON_PRACTICE,
+        fit = PackFit.Home(needs = setOf(HomeFeature.GENERATOR)),
+        items = listOf(
+            ScheduleItem(
+                key = "generator-exercise",
+                title = "Run the generator under load",
+                notes = "Monthly. A standby set that has not run is a standby set that will not run, " +
+                    "and the night it is needed is not when you find out.",
+                everyDays = 30
+            ),
+            ScheduleItem(
+                key = "generator-service",
+                title = "Service the generator — oil, filter, plugs",
+                everyDays = YEAR
+            ),
+            ScheduleItem(
+                key = "generator-transfer",
+                title = "Test the transfer switch",
+                everyDays = YEAR
             )
         )
     )
@@ -529,22 +766,31 @@ object HomePacks {
     /**
      * Every home pack, the standing lists first.
      *
-     * The order is the order they are offered in, and it is deliberate: what every house owes, then
-     * what this house's weather and age add, then its systems, then the paperwork. A screen that led
-     * with the mortgage would be a different app.
+     * The order is the order they are offered in, and it is deliberate: what every home owes, then
+     * what this *building* owes, then what its weather and age add, then one pack per thing the
+     * household announced it has, then the paperwork. A screen that led with the mortgage would be a
+     * different app.
      */
     val all: List<SchedulePack> = listOf(
         CORE,
+        ENVELOPE,
+        MANUFACTURED,
         COLD_WINTERS,
         HOT_SUMMERS,
         DAMP,
         OLDER_HOUSE,
         SEPTIC,
         WELL,
+        GAS,
+        ALL_ELECTRIC,
+        SOLAR,
+        COOLING,
         FIREPLACE,
         SUMP_PUMP,
         IRRIGATION,
         POOL,
+        DECK,
+        GENERATOR,
         OWNERSHIP,
         MORTGAGE
     )

@@ -121,19 +121,28 @@ sealed interface PackFit {
     }
 
     /**
-     * A home: the climates it is for, the systems it needs to be present, how old the house has to
-     * be, and whether there is a loan against it.
+     * A home: the climates it is for, the kinds of building it is for, the features it needs
+     * announced, how old the house has to be, and whether there is a loan against it.
      *
      * Every clause that is set has to hold, and an unset clause matches anything — so the pack with
      * no clauses at all is the standing list every house gets, and the one with
-     * `needs = setOf(SEPTIC)` never appears for a house on mains drainage. A **missing** fact never
-     * matches a clause that asks for one: a house whose ZIP nobody typed is not quietly given a
-     * winter schedule, because the honest answer there is "this doesn't know", and the screen offers
-     * the whole catalogue instead.
+     * `needs = setOf(SEPTIC)` never appears for a house on mains drainage.
+     *
+     * The two structure clauses pull in opposite directions on purpose, and the difference is what
+     * a **missing** fact does. [structures] asks for a kind of building and a house whose type
+     * nobody has picked does not match it — that is right for the manufactured-home list, which
+     * would be nonsense on a condo. [excludeStructures] rules one out, and an unpicked type is *not*
+     * ruled out — that is right for the list of jobs on the outside of the building, which almost
+     * every home owes and only a condo does not. Silence should cost a household the schedule that
+     * is usually wrong, never the schedule that is usually right.
      */
     data class Home(
         val climates: Set<Climate> = emptySet(),
-        val needs: Set<HomeSystem> = emptySet(),
+        /** Only these kinds of building. An unpicked type matches nothing here. */
+        val structures: Set<HomeStructure> = emptySet(),
+        /** Any kind of building but these. An unpicked type is not excluded. */
+        val excludeStructures: Set<HomeStructure> = emptySet(),
+        val needs: Set<HomeFeature> = emptySet(),
         /** For the jobs that only older housing stock has. Compared against the year built. */
         val builtBefore: Int? = null,
         val needsMortgage: Boolean = false
@@ -143,7 +152,9 @@ sealed interface PackFit {
 
         fun matches(facts: HomeFacts): Boolean {
             if (climates.isNotEmpty() && (facts.climate == null || facts.climate !in climates)) return false
-            if (!facts.systems.containsAll(needs)) return false
+            if (structures.isNotEmpty() && (facts.structure == null || facts.structure !in structures)) return false
+            if (facts.structure != null && facts.structure in excludeStructures) return false
+            if (!facts.features.containsAll(needs)) return false
             if (builtBefore != null && (facts.yearBuilt == null || facts.yearBuilt >= builtBefore)) return false
             if (needsMortgage && !facts.hasMortgage) return false
             return true

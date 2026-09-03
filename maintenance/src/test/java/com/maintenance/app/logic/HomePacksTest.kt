@@ -17,14 +17,16 @@ class HomePacksTest {
 
     private fun home(
         zip: String? = null,
+        structure: HomeStructure? = null,
         yearBuilt: Int? = null,
-        systems: Set<HomeSystem> = emptySet(),
+        features: Set<HomeFeature> = emptySet(),
         mortgage: Boolean = false
     ) = HomeFacts(
         zip = zip,
         climate = HomeLookup.climateOf(zip),
+        structure = structure,
         yearBuilt = yearBuilt,
-        systems = systems,
+        features = features,
         hasMortgage = mortgage
     )
 
@@ -32,7 +34,43 @@ class HomePacksTest {
 
     @Test
     fun `a house nobody has said anything about still gets the standing lists`() {
-        assertEquals(listOf("home-core", "home-ownership"), idsFor(home()))
+        // Including the outside of the building: an unpicked type of home is not a condo, and
+        // silence should cost a household the schedule that is usually wrong, not the usual one.
+        assertEquals(listOf("home-core", "home-envelope", "home-ownership"), idsFor(home()))
+    }
+
+    // --- the type of home, which is what a building structurally owes ---
+
+    @Test
+    fun `a manufactured home gets the list a site-built one has never heard of`() {
+        val ids = idsFor(home(structure = HomeStructure.MANUFACTURED))
+
+        assertTrue(ids.contains("home-manufactured"))
+        // It still owns its own outside.
+        assertTrue(ids.contains("home-envelope"))
+
+        listOf(HomeStructure.CONVENTIONAL, HomeStructure.TOWNHOUSE, HomeStructure.CONDO).forEach { other ->
+            assertTrue(
+                "$other was offered the manufactured list",
+                idsFor(home(structure = other)).none { it == "home-manufactured" }
+            )
+        }
+        // And a type nobody picked is not quietly treated as one: piers under a condo is nonsense.
+        assertTrue(idsFor(home()).none { it == "home-manufactured" })
+    }
+
+    @Test
+    fun `a condo owner is not told twice a year to go and clear their gutters`() {
+        val condo = idsFor(home(structure = HomeStructure.CONDO))
+
+        assertTrue(condo.none { it == "home-envelope" })
+        // What is still theirs: the alarms, the filter, the water heater, the dryer vent.
+        assertTrue(condo.contains("home-core"))
+        assertTrue(condo.contains("home-ownership"))
+
+        listOf(HomeStructure.CONVENTIONAL, HomeStructure.MANUFACTURED, HomeStructure.TOWNHOUSE).forEach { owns ->
+            assertTrue("$owns lost the outside of its own building", idsFor(home(structure = owns)).contains("home-envelope"))
+        }
     }
 
     @Test
@@ -61,17 +99,65 @@ class HomePacksTest {
         assertTrue(ids.none { it in setOf("home-cold", "home-hot", "home-damp") })
     }
 
-    @Test
-    fun `a system brings its own schedule and nothing else does`() {
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.SEPTIC))).contains("home-septic"))
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.WELL))).contains("home-well"))
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.FIREPLACE))).contains("home-fireplace"))
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.SUMP_PUMP))).contains("home-sump"))
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.IRRIGATION))).contains("home-irrigation"))
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.POOL))).contains("home-pool"))
+    // --- what the household announced it has ---
 
-        // And a house on mains drainage is never offered the septic list.
-        assertTrue(idsFor(home(systems = setOf(HomeSystem.WELL))).none { it == "home-septic" })
+    @Test
+    fun `every feature on the picker brings exactly one schedule, and only when ticked`() {
+        // The promise the picker makes: tick a thing, its schedule appears. Nothing on that list is
+        // decoration, and nothing appears for a house that did not tick it.
+        val expected = mapOf(
+            HomeFeature.SEPTIC to "home-septic",
+            HomeFeature.WELL to "home-well",
+            HomeFeature.FUEL_GAS to "home-gas",
+            HomeFeature.ALL_ELECTRIC to "home-electric",
+            HomeFeature.SOLAR to "home-solar",
+            HomeFeature.AIR_CONDITIONING to "home-cooling",
+            HomeFeature.FIREPLACE to "home-fireplace",
+            HomeFeature.SUMP_PUMP to "home-sump",
+            HomeFeature.IRRIGATION to "home-irrigation",
+            HomeFeature.POOL to "home-pool",
+            HomeFeature.DECK to "home-deck",
+            HomeFeature.GENERATOR to "home-generator"
+        )
+        assertEquals("a feature was added without a schedule", HomeFeature.entries.toSet(), expected.keys)
+
+        expected.forEach { (feature, packId) ->
+            assertTrue(
+                "${feature.key} did not bring $packId",
+                idsFor(home(features = setOf(feature))).contains(packId)
+            )
+            // Nothing else on the picker drags it in.
+            HomeFeature.entries.filter { it != feature }.forEach { other ->
+                assertTrue(
+                    "${other.key} was offered $packId",
+                    idsFor(home(features = setOf(other))).none { it == packId }
+                )
+            }
+            assertTrue("$packId was offered to a house that ticked nothing", idsFor(home()).none { it == packId })
+        }
+    }
+
+    @Test
+    fun `ducted cooling reaches a cold house that has it, without the hot-climate list`() {
+        // A house in Vermont with central air: the climate never suggests one, the tick does.
+        val vermont = idsFor(home(zip = "05401", features = setOf(HomeFeature.AIR_CONDITIONING)))
+
+        assertTrue(vermont.contains("home-cooling"))
+        assertTrue(vermont.contains("home-cold"))
+        assertTrue(vermont.none { it == "home-hot" })
+    }
+
+    @Test
+    fun `the two packs that both service the air conditioning do not add it twice`() {
+        // Phoenix with central air ticked matches both. The titles are deliberately identical, so
+        // the second apply adopts the plan the first made rather than adding one beside it.
+        val hot = SchedulePlans.plan(HomePacks.HOT_SUMMERS, emptyList()).toCreate.mapIndexed { index, item ->
+            SchedulePlans.toPlan(item, HomePacks.HOT_SUMMERS, "asset-1", "plan-$index", NOW)
+        }
+
+        val cooling = SchedulePlans.plan(HomePacks.COOLING, hot)
+
+        assertTrue("the cooling pack duplicated the hot pack's jobs", cooling.isNoOp)
     }
 
     @Test
@@ -93,13 +179,20 @@ class HomePacksTest {
     @Test
     fun `a real house is offered several, in the order they are worth doing`() {
         val ids = idsFor(
-            home(zip = "05602", yearBuilt = 1948, systems = setOf(HomeSystem.SEPTIC, HomeSystem.FIREPLACE), mortgage = true)
+            home(
+                zip = "05602",
+                structure = HomeStructure.CONVENTIONAL,
+                yearBuilt = 1948,
+                features = setOf(HomeFeature.SEPTIC, HomeFeature.FUEL_GAS, HomeFeature.FIREPLACE),
+                mortgage = true
+            )
         )
 
         assertEquals(
             listOf(
-                "home-core", "home-cold", "home-older", "home-septic",
-                "home-fireplace", "home-ownership", "home-mortgage"
+                "home-core", "home-envelope", "home-cold", "home-older",
+                "home-septic", "home-gas", "home-fireplace",
+                "home-ownership", "home-mortgage"
             ),
             ids
         )

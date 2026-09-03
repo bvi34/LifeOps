@@ -80,10 +80,11 @@ transmission, drivetrain), the colour, the plate and where it is registered, and
 recall at a counter — tyre size and oil spec. The first seven are ordered the way the decode returns
 them, so a decoded vehicle reads top to bottom on the detail page.
 
-A home asks for six, and the two that look like filler are the ones upkeep actually reads: the
-**address**, because the ZIP in it is what says whether the outside taps need draining in October,
-and **"what it has"** — a sentence, not six checkboxes — because a septic tank, a well, a fireplace, a
-sump pump, sprinklers and a pool each bring a schedule with them. See *What the address opens* below.
+A home asks for seven, and two of them are **pickers** rather than text — which is the other half of
+what declaring fields as data buys, because `AttributeInput.CHOICE` and `CHOICES` were added once and
+every dialog, the overview and the validation grew them for free. "Type of home" is one choice and
+decides what the *building* owes; "What it has" is a multiple choice of twelve, each of which brings
+its own schedule. See *What the address opens* below.
 
 …and the values live in `asset_attributes` keyed by `(assetId, key)`. The **add** dialog, the **edit**
 dialog, the overview screen and the validation are all generated from that list, so adding a kind is
@@ -438,10 +439,11 @@ and ask NHTSA anything, so in both cases *doing the thing here* is what complete
 A house is the other half of this module and it does not work like the car at all.
 
 ```
-address ──ZIP──▶ climate ─┐
-year built ───────────────┼──▶ HomeFacts ──▶ the schedules that fit ──▶ plans ──▶ the LifeOps week
-"what it has" ──systems───┤
-a loan on the asset ──────┘
+address ──ZIP──▶ climate ──┐
+"type of home" ────────────┤
+year built ────────────────┼──▶ HomeFacts ──▶ the schedules that fit ──▶ plans ──▶ the LifeOps week
+"what it has" ──features───┤
+a loan on the asset ───────┘
 ```
 
 Every arrow in that diagram is inside the phone.
@@ -465,19 +467,53 @@ What is left is better than it sounds, because the household has **already typed
 | Read from | What it gives |
 |---|---|
 | The ZIP in the address | `Climate` — cold, four seasons, hot and humid, hot and dry, mild and wet |
+| **"Type of home"** (one choice) | `HomeStructure` — site-built, manufactured, townhouse, condo |
 | Year built | Whether the jobs peculiar to pre-1980 housing stock apply |
-| "What it has" | `HomeSystem` — septic, well, fireplace, sump pump, sprinklers, pool |
+| **"What it has"** (multiple choice) | `HomeFeature` — twelve, each of which brings a schedule |
 | A loan row against the asset | Whether there is a mortgage's paperwork owed as well as work |
 
-### Reading a sentence rather than ticking six boxes
+### Announcing rather than describing
 
-"What it has" is a **free-text field**, and the systems are read out of it: the text is cut into
-phrases on the punctuation people separate things with, and a phrase claims a system when it names
-one and does not deny it. *"Septic tank, no sprinklers"* finds the tank and not the sprinklers;
-*"stairwell"* is not a well and *"spare room"* is not a spa. Six checkboxes would be more precise
-and would get half filled in.
+The two fields that drive nearly all of this are **pickers**, not prose, and that is the point: the
+set of right answers is short, closed, and known to the app. "Septic" spelled three ways is three
+answers to a question that has one, and a schedule that only appears when somebody happens to write
+the word the parser was hoping for is a schedule that mostly does not appear.
 
-The climate is the one guess in the file and it is **shown as one**. `HomeLookup.climateOf` is a
+**"Type of home"** is one choice and it is the field that decides what the *building* owes:
+
+- a **manufactured home** is not founded, it is *set* — on piers that settle, held by anchors that
+  loosen, skirted rather than walled, with its plumbing in a wrapped belly under the floor and a roof
+  that is coated rather than shingled. None of that is on any site-built checklist and all of it is
+  what actually goes wrong, so `home-manufactured` exists and is offered to nothing else.
+- a **condo** owner does not own the roof anybody would otherwise tell them to go and look at, so the
+  jobs on the outside of the building are a pack of their own (`home-envelope`) that a condo is
+  excluded from. They keep the alarms, the filter, the water heater and the dryer vent.
+
+The two structure clauses in `PackFit.Home` pull in opposite directions on purpose, and the
+difference is what a **missing** answer does. `structures` asks for a kind of building and an
+unpicked type matches nothing — right for the manufactured list, which would be nonsense on a condo.
+`excludeStructures` rules one out and an unpicked type is *not* ruled out — right for the outside of
+the building, which almost every home owes. Silence should cost a household the schedule that is
+usually wrong, never the one that is usually right.
+
+**"What it has"** is a multiple choice of twelve, and there is exactly one pack per entry — septic,
+well, gas or propane, all-electric, solar, central air, fireplace, sump pump, sprinklers, pool, deck,
+standby generator. Tick solar and a solar schedule appears; tick gas and the flue and shut-off checks
+do. `HomePacksTest` asserts that map in both directions, so a feature added without a schedule fails
+the build rather than becoming a checkbox that does nothing.
+
+Two of those overlap with the climate packs on purpose. `home-cooling` and `home-hot` carry the same
+two AC jobs under the same titles, so a house in Phoenix matches both and `SchedulePlans` adopts the
+plan that is already there rather than adding a second beside it — which is how a cooling schedule
+reaches a house in Vermont that has ducted air and a climate that never suggested one.
+
+Values are stored as the option **keys**, comma-joined, and a key this build does not recognise is
+kept rather than dropped: a row can arrive from a backup written by a later build, or from the days
+when the field was free text. The free-text reader is still there as the fallback — a phrase claims a
+feature when it names one and does not deny it, so *"septic tank, no sprinklers"* still finds the
+tank and not the sprinklers, and *"stairwell"* is still not a well.
+
+The climate is the one guess left in the file and it is **shown as one**. `HomeLookup.climateOf` is a
 table of ZIP prefixes — the first three digits, which run in geographic order — assigned to five
 climates by the region they cover. It gets Vermont and Florida right and it cannot get California
 right, because California is four climates and one of them is a desert forty miles from a beach. The
@@ -487,23 +523,26 @@ wrong schedule.
 ### One house, several schedules
 
 A vehicle gets **one** pack because a manufacturer wrote one. Nobody writes one for a house, and what
-a house owes is a sum: the list every building has, plus what winter does to it here, plus what its
-age brings, plus whichever systems are bolted to it, plus the paperwork of owning it. So `HomePacks`
-ships thirteen small packs and a house is normally offered four or five:
+a house owes is a sum: what living in any building owes, plus what *this* building owes, plus what
+winter does to it here, plus its age, plus one pack per thing the household announced it has, plus
+the paperwork of owning it. So `HomePacks` ships twenty-one small packs and a house is normally
+offered five or six:
 
 | Pack | Offered when | Items |
 |---|---|---|
-| `home-core` | Always | 15 |
+| `home-core` | Always — as true in an apartment as on a farm | 10 |
+| `home-envelope` | Any type of home but a condo, and when none is picked | 5 |
+| `home-manufactured` | Type of home is *manufactured* | 5 |
 | `home-cold` | Cold or four-season climate | 4 |
 | `home-hot` | Hot and humid, or hot and dry | 3 |
 | `home-damp` | Hot and humid, or mild and wet | 3 |
 | `home-older` | Built before 1980 | 3 |
-| `home-septic` · `home-well` · `home-fireplace` · `home-sump` · `home-irrigation` · `home-pool` | That system was written down | 2–3 each |
+| `home-septic` · `home-well` · `home-gas` · `home-electric` · `home-solar` · `home-cooling` · `home-fireplace` · `home-sump` · `home-irrigation` · `home-pool` · `home-deck` · `home-generator` | That feature was ticked | 2–3 each |
 | `home-ownership` | Always | 4 |
 | `home-mortgage` | There is a loan against it | 4 |
 
 Small packs rather than one composed list is what makes the ordinary case work: you type the house in
-on the day you buy it, and six months later you finally write *"septic tank"* into the field that
+on the day you buy it, and six months later you finally tick *"septic system"* in the field that
 asks what it has — at which point the septic schedule simply appears as one more thing to apply, and
 nothing you had already re-timed is touched. A single list regenerated from the facts would either
 re-impose intervals you had edited or refuse to grow. It is also what keeps provenance honest: a plan
@@ -605,7 +644,7 @@ scale, nothing.
 
 ## Tests
 
-`gradle :maintenance:test` — 185 JVM tests, no emulator needed. Almost all of them are over `logic/`
+`gradle :maintenance:test` — 196 JVM tests, no emulator needed. Almost all of them are over `logic/`
 and need nothing but a JVM; the handful that exercise the database run through Robolectric, which is
 the only reason this module has a test dependency beyond JUnit at all.
 
@@ -621,7 +660,8 @@ the only reason this module has a test dependency beyond JUnit at all.
   extra, a payment that never clears, and equity going negative.
 - `CoverageTest`, `CostsTest`, `DocketTest`, `MoneyTest`, `AssetKindTest` — renewal windows and
   wording, the refusal to annualise a short history, docket ordering, cent parsing, and the
-  kind-catalogue invariants (unique keys, blanks always allowed, VIN normalised on the way in).
+  kind-catalogue invariants (unique keys, blanks always allowed, VIN normalised on the way in, a
+  picker toggled and read back as labels rather than keys).
 - `UpkeepTasksTest` — the decision behind the LifeOps seam: what to publish, when a moved date
   reschedules rather than duplicates, the deleted task that isn't put back, the stranded one that
   is, and the note the task carries.
@@ -642,15 +682,19 @@ the only reason this module has a test dependency beyond JUnit at all.
   offered beneath, applying twice adding nothing, and a plan you typed by hand being adopted.
 - `HomeFactsTest` — a house read off its own fields: the ZIP found at the bottom of an address rather
   than in the house number, ZIP+4 accepted and the +4 dropped, the climate a prefix lands in, a
-  prefix the table doesn't cover answered with *null* rather than a guess, systems read out of the
-  words people write, a phrase that denies a system not claiming it, and a denial in one phrase not
-  cancelling a claim in another.
+  prefix the table doesn't cover answered with *null* rather than a guess, a picker's keys read back,
+  a key from a later build kept rather than dropped, keys and prose in the same value both read, and
+  the join between the two enums and the two field specs — every option offered is a key the reader
+  knows.
 - `HomePacksTest` — which schedules a house is offered, and mostly which it isn't: no septic list for
-  a house on mains drainage, no winterising list in Miami, no older-house list for a year nobody
-  typed, no mortgage list without a loan. Plus the catalogue's own invariants — every item has a
-  date interval, none is measured in miles, ids are unique across every pack of every kind because
-  provenance is keyed on them — and the case the shape exists for: the septic schedule arriving six
-  months late and adding only itself.
+  a house on mains drainage, no winterising list in Miami, no manufactured-home list for a condo *or*
+  for a type nobody picked, no gutters for a condo but gutters for a house whose type is still blank,
+  no older-house list for a year nobody typed, no mortgage list without a loan. The feature-to-pack
+  map is asserted in both directions, so a feature added without a schedule fails rather than
+  becoming a checkbox that does nothing. Plus the catalogue's own invariants — every item has a date
+  interval, none is measured in miles, ids unique across every pack of every kind because provenance
+  is keyed on them — the two AC packs deliberately overlapping without adding the job twice, and the
+  case the shape exists for: the septic schedule arriving six months late and adding only itself.
 - `VpicParserTest` and `RecallsParserTest` — both against fixtures trimmed from **real** responses,
   because a hand-written ideal payload proves only that a parser can read itself. Including the rule
   that the serial never leaves the device.

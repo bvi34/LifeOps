@@ -45,8 +45,9 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
     val facts = remember(asset.attributes, detail.loans.size) {
         HomeLookup.read(
             address = asset.attribute("address"),
+            structure = asset.attribute("structure"),
             yearBuilt = asset.attribute("yearBuilt"),
-            systems = asset.attribute("systems"),
+            features = asset.attribute("features"),
             hasMortgage = detail.loans.isNotEmpty()
         )
     }
@@ -58,9 +59,9 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
 
     SectionCard(title = "What this house needs doing") {
         Text(
-            "Worked out on this device, from the address, the year and what you wrote that it has. " +
-                "A house has no VIN to look up and its address is not a model number, so nothing " +
-                "here is asked of anybody.",
+            "Worked out on this device, from the address, the type of home, the year and what you " +
+                "ticked that it has. A house has no VIN to look up and its address is not a model " +
+                "number, so nothing here is asked of anybody.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -88,11 +89,20 @@ fun HomeSection(vm: AssetDetailViewModel, detail: AssetDetail) {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
-        if (facts.systems.isEmpty()) {
+        if (facts.structure == null) {
             Text(
-                "Nothing yet says whether there is a septic tank, a well, a fireplace, a sump pump, " +
-                    "sprinklers or a pool. Each of those brings a schedule with it — write them into " +
-                    "\"What it has\" and they turn up here.",
+                "No type of home picked yet. It is what says whether the gutters are yours to clear " +
+                    "and whether there are piers under this that settle — pick one in Edit and the " +
+                    "list below changes.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (facts.features.isEmpty()) {
+            Text(
+                "Nothing ticked in \"What it has\" yet — septic, a well, gas, solar, a pool and the " +
+                    "rest. Each one brings a schedule with it, and they turn up here the moment it " +
+                    "is ticked.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -275,21 +275,26 @@ the receipts.
 > A **house** gets the same treatment and **sends nothing anywhere to get it**, which is a finding
 > rather than a gap: eleven characters of a VIN are a question about a *model*, and there is no half
 > of an address that is anything but the household. So the reading happens on the device, out of
-> fields somebody already filled in — the **ZIP** in the address says what winter does here, the year
-> built says whether the jobs peculiar to pre-1980 housing stock apply, a **sentence** about what the
-> place has ("septic tank, no sprinklers") is read for the six systems that carry schedules of their
-> own, and a loan against the asset means paperwork is owed as well as work. Where a car gets one
-> pack, a house is offered **four or five of thirteen**: the standing list every building has, plus
-> its climate, its age, its plumbing, and the mortgage's own — the annual escrow analysis, the
-> statement checked against the balance this app computes, and the twice-yearly *can the mortgage
-> insurance come off yet*, which a US lender must honour at 78% of the original value and will never
-> ring to tell you about. Small packs rather than one composed list is what makes the ordinary case
-> work: write the septic tank in six months late and its schedule simply appears as one more thing to
-> apply, with everything you had already re-timed untouched. The climate is a coarse guess from a ZIP
-> prefix and **says so**, with the whole catalogue one press away for when it is wrong.
+> fields somebody already filled in — and two of those are **pickers**, because the set of right
+> answers is short and closed and "septic" spelled three ways is three answers to a question that has
+> one. **Type of home** decides what the *building* owes: a manufactured home is set on piers that
+> settle, skirted rather than walled, with a roof that is coated rather than shingled — none of it on
+> any site-built checklist — while a condo owner never owns the roof anybody would otherwise tell them
+> twice a year to go and clear the gutters of. **What it has** is twelve tick-boxes and there is
+> exactly one schedule per entry: tick solar and a solar schedule appears, tick gas and the flue and
+> shut-off checks do. The **ZIP** in the address adds what winter does here, the year built adds the
+> jobs peculiar to pre-1980 stock, and a loan against the asset means paperwork is owed as well as
+> work — the annual escrow analysis, the statement checked against the balance this app computes, and
+> the twice-yearly *can the mortgage insurance come off yet*, which a US lender must honour at 78% of
+> the original value and will never ring to tell you about. Where a car gets one pack, a house is
+> offered **five or six of twenty-one**, and small packs rather than one composed list is what makes
+> the ordinary case work: tick the septic tank six months late and its schedule simply appears as one
+> more thing to apply, with everything you had already re-timed untouched. The climate is a coarse
+> guess from a ZIP prefix and **says so**, with the whole catalogue one press away for when it is
+> wrong.
 >
 > Nothing derived is stored, so nothing goes stale in a drawer. Its logic lives in
-> `maintenance/logic/` under **185 JVM tests**. It holds `INTERNET` for those two keyless
+> `maintenance/logic/` under **196 JVM tests**. It holds `INTERNET` for those two keyless
 > government lookups and nothing else — the mortgage, the address, the parcel number, the service
 > history and the odometer have no code path to the network at all.
 
