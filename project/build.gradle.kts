@@ -47,6 +47,11 @@ dependencies {
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). Project supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The suite's shelf. A project's *files* — the brief, the contract, the reference PDFs somebody
+    // was sent — are documents the household filed, not writing the project is made of, and they
+    // belong in the one place the suite keeps documents. The arrow points into Repository and never
+    // back: it has no idea what a project is, and is told the name each time the panel is shown.
+    implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

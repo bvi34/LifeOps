@@ -23,12 +23,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -37,10 +39,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.operations.backupkit.AppId
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
+import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Shelf
+import com.repository.app.logic.Transfer
 import com.repository.app.ui.attach.DocumentRow
 import com.repository.app.ui.attach.openDocument
 import com.repository.app.ui.attach.sendDocument
+import com.repository.app.ui.drive.DriveGrabDialog
+import com.repository.app.ui.drive.DriveSaveDialog
 import kotlinx.coroutines.launch
 
 /**
@@ -67,6 +73,9 @@ fun ShelfScreen(onFile: () -> Unit) {
 
     var query by remember { mutableStateOf("") }
     var drawer by remember { mutableStateOf<String?>(null) }
+    var grabbing by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf<List<DocumentFacts>>(emptyList()) }
+    var said by remember { mutableStateOf<String?>(null) }
 
     val drawers = remember(documents) { Shelf.drawers(documents) { key -> AppId.fromKey(key)?.defaultDisplayName } }
     val visible = remember(documents, query, drawer) {
@@ -103,11 +112,34 @@ fun ShelfScreen(onFile: () -> Unit) {
             }
 
             item(key = "headline") {
-                Text(
-                    Shelf.headline(visible),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        Shelf.headline(visible),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // The other way documents arrive. The button sits here rather than behind the
+                    // FAB because "file this file I am holding" and "go and get those six off
+                    // OneDrive" are different errands, and one of them is a whole afternoon of the
+                    // other done one at a time.
+                    TextButton(onClick = { said = null; grabbing = true }) {
+                        Text("Get from a drive…", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+
+            said?.let { line ->
+                item(key = "said") {
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // One chip per drawer that has something in it. They are a filter rather than a
@@ -148,7 +180,8 @@ fun ShelfScreen(onFile: () -> Unit) {
                             if (documents.isEmpty()) {
                                 "The mortgage statement, the title, the warranty — anything you would " +
                                     "otherwise go looking through a drawer for. Documents filed from " +
-                                    "another app land here too."
+                                    "another app land here too, and a folder's worth can come " +
+                                    "straight off Google Drive or OneDrive."
                             } else {
                                 "Search covers what a document is called, what it is about and any note on it."
                             },
@@ -163,12 +196,43 @@ fun ShelfScreen(onFile: () -> Unit) {
                 ShelfRow(
                     document = document,
                     onOpen = { scope.launch { openDocument(context, document) } },
-                    onSend = { scope.launch { sendDocument(context, document) } }
+                    onSend = { scope.launch { sendDocument(context, document) } },
+                    onSaveToDrive = { saving = listOf(document) }
                 )
+            }
+
+            // Saving what you are *looking at* — a search or a drawer — is the bulk export that a
+            // household actually asks for: "put the project's documents on OneDrive", which is a
+            // search for the project and one press. Offered only when the list has been narrowed,
+            // because "save all 240" is not an errand anybody has.
+            if (visible.size > 1 && (query.isNotBlank() || drawer != null)) {
+                item(key = "save-these") {
+                    TextButton(onClick = { saving = visible }) {
+                        Text("Save these ${visible.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
 
             item(key = "tail") { Spacer(Modifier.height(72.dp)) }
         }
+    }
+
+    if (grabbing) {
+        DriveGrabDialog(
+            // Filed here means filed against nothing — the household's own drawer. What was grabbed
+            // is attached to a project or an asset afterwards, from that app's own documents section.
+            owner = DocumentOwner.HOUSEHOLD,
+            onDismiss = { grabbing = false },
+            onFiled = { outcome -> said = Transfer.outcomeLine(outcome) }
+        )
+    }
+
+    if (saving.isNotEmpty()) {
+        DriveSaveDialog(
+            documents = saving,
+            onDismiss = { saving = emptyList() },
+            onSaved = { said = it }
+        )
     }
 }
 
@@ -180,7 +244,12 @@ fun ShelfScreen(onFile: () -> Unit) {
  * a second writer would either duplicate those rules or break them.
  */
 @Composable
-private fun ShelfRow(document: DocumentFacts, onOpen: () -> Unit, onSend: () -> Unit) {
+private fun ShelfRow(
+    document: DocumentFacts,
+    onOpen: () -> Unit,
+    onSend: () -> Unit,
+    onSaveToDrive: () -> Unit
+) {
     val context = LocalContext.current
     val shelf = remember { RepositoryApp.get(context) }
     val scope = rememberCoroutineScope()
@@ -193,6 +262,7 @@ private fun ShelfRow(document: DocumentFacts, onOpen: () -> Unit, onSend: () -> 
                 document = document,
                 onOpen = onOpen,
                 onSend = onSend,
+                onSaveToDrive = onSaveToDrive,
                 onRename = if (document.isForeign) null else ({ editing = true }),
                 onDelete = if (document.isForeign) null else ({ deleting = true }),
                 subtitle = document.owner.label

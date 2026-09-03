@@ -33,7 +33,9 @@ include(":people")
 // Project is the document and planning repository: a shelf of projects, each with an outline, its
 // documents, its lore, its timeline and the board the work gets done on. Unlike People it is not a
 // peer on the sync spine — nothing else in the suite writes to a project, so there is nothing to
-// reconcile.
+// reconcile. It does depend on :repository, one way: a project's *files* — the brief, the contract,
+// the reference PDFs — are documents the household filed rather than writing the project is made of,
+// so they live on the suite's shelf and are shown on the Docs screen in place.
 include(":project")
 // Maintenance is the register of what the household owns and what those things need: assets (a
 // home, a car, the furnace), the identity each kind is known by (VIN, parcel number, serial), the

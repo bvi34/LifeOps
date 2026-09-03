@@ -216,7 +216,7 @@ fun ProjectWorkspace(
                         key = "docs-$projectId",
                         factory = DocsViewModel.Factory(repo, projectId)
                     )
-                    DocsScreen(docsVm, current.kind, onOpenDoc = onOpenDoc)
+                    DocsScreen(docsVm, current, onOpenDoc = onOpenDoc)
                 }
 
                 ProjectSection.LORE -> {

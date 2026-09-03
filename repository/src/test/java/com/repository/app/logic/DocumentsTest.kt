@@ -42,6 +42,18 @@ class DocumentsTest {
     }
 
     @Test
+    fun `a document leaves under its title, made safe for a file system it cannot see`() {
+        // One rule for both roads out — the share sheet's copy and the copy written into a folder on
+        // a drive — so a document has one name wherever it lands.
+        assertEquals("Mortgage statement March 2026.pdf", Documents.exportFileName("Mortgage statement March 2026", "pdf"))
+        assertEquals("Deed- 2026-03-11.pdf", Documents.exportFileName("Deed: 2026/03/11", "pdf"))
+        assertEquals("document.bin", Documents.exportFileName("   ", ""))
+        // Blunter than any one file system requires, deliberately: the destination may be FAT on an
+        // SD card or a cloud provider with rules of its own.
+        assertEquals("Q3 budget.xlsx", Documents.exportFileName("Q3  budget", "xlsx"))
+    }
+
+    @Test
     fun `a suspicious extension is not taken from a name`() {
         // Long or punctuated tails are not extensions; they are the rest of a sentence.
         assertEquals("bin", Documents.extensionFor("notes.this-is-not-an-extension", null))

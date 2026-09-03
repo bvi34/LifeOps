@@ -40,6 +40,9 @@ import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
+import com.repository.app.logic.Transfer
+import com.repository.app.ui.drive.DriveGrabDialog
+import com.repository.app.ui.drive.DriveSaveDialog
 import kotlinx.coroutines.launch
 
 /**
@@ -83,7 +86,15 @@ fun DocumentsPanel(
     var pending by remember { mutableStateOf<PendingFile?>(null) }
     var editing by remember { mutableStateOf<DocumentFacts?>(null) }
     var deleting by remember { mutableStateOf<DocumentFacts?>(null) }
+    var grabbing by remember { mutableStateOf(false) }
+    var attaching by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf<List<DocumentFacts>>(emptyList()) }
     var failed by remember { mutableStateOf(false) }
+
+    // The one line under the buttons that says what just happened — "4 documents filed", "Saved to
+    // OneDrive · Project docs". It is state rather than a snackbar because this is a *section* of
+    // somebody else's screen and a panel cannot assume it has a Scaffold to hang one on.
+    var said by remember { mutableStateOf<String?>(null) }
 
     // Any file at all: a household is handed PDFs, photographs, spreadsheets and the occasional
     // .docx, and an app that only accepted PDFs would be an app people keep documents outside of.
@@ -118,13 +129,50 @@ fun DocumentsPanel(
                     onOpen = { scope.launch { openDocument(context, document) } },
                     onSend = { scope.launch { sendDocument(context, document) } },
                     onRename = { editing = document },
-                    onDelete = { deleting = document }
+                    onDelete = { deleting = document },
+                    onSaveToDrive = { saving = listOf(document) },
+                    // Detaching is not deleting and the wording has to carry that: the document goes
+                    // back to the household's drawer on the shelf, where it is still findable.
+                    onDetach = {
+                        said = null
+                        scope.launch {
+                            shelf.documents.refile(document.id, DocumentOwner.HOUSEHOLD)
+                            said = "“${document.title}” is back in the household's drawer."
+                        }
+                    }
                 )
             }
         }
 
-        OutlinedButton(onClick = { runCatching { picker.launch(arrayOf("*/*")) } }) {
-            Text("Add a document")
+        // Three ways in, because a document arrives three ways: off this phone, off a drive, or
+        // already on the shelf from an earlier import. They are one row of buttons rather than a
+        // menu — a panel is a few lines on somebody else's screen, and a menu here is a tap spent
+        // finding out what the options are.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            // Scrolls rather than wraps: three buttons fit on most phones and not on the narrowest,
+            // and a row that changes height moves everything under it on somebody else's screen.
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+        ) {
+            OutlinedButton(onClick = { runCatching { picker.launch(arrayOf("*/*")) } }) {
+                Text("Add")
+            }
+            OutlinedButton(onClick = { said = null; grabbing = true }) {
+                Text("From a drive")
+            }
+            OutlinedButton(onClick = { said = null; attaching = true }) {
+                Text("From the shelf")
+            }
+        }
+
+        if (documents.size > 1) {
+            TextButton(onClick = { saving = documents }) {
+                Text("Save all ${documents.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        said?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         if (failed) {
@@ -156,6 +204,35 @@ fun DocumentsPanel(
                     failed = id == null
                 }
             }
+        )
+    }
+
+    if (grabbing) {
+        DriveGrabDialog(
+            owner = DocumentOwner(appKey, recordKey, recordLabel),
+            kinds = kinds,
+            onDismiss = { grabbing = false },
+            onFiled = { outcome -> said = Transfer.outcomeLine(outcome) }
+        )
+    }
+
+    if (attaching) {
+        AttachFromShelfDialog(
+            appKey = appKey,
+            recordKey = recordKey,
+            recordLabel = recordLabel,
+            onDismiss = { attaching = false },
+            onAttached = { count ->
+                said = if (count == 1) "Attached 1 document." else "Attached $count documents."
+            }
+        )
+    }
+
+    if (saving.isNotEmpty()) {
+        DriveSaveDialog(
+            documents = saving,
+            onDismiss = { saving = emptyList() },
+            onSaved = { said = it }
         )
     }
 
@@ -199,6 +276,9 @@ internal fun DocumentRow(
     onSend: () -> Unit,
     onRename: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    onSaveToDrive: (() -> Unit)? = null,
+    /** Back to the household's drawer. Offered only where a document is *on* something. */
+    onDetach: (() -> Unit)? = null,
     subtitle: String? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -224,10 +304,22 @@ internal fun DocumentRow(
         TextButton(onClick = { menuOpen = true }) { Text("…") }
         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             DropdownMenuItem(text = { Text("Send a copy") }, onClick = { menuOpen = false; onSend() })
+            onSaveToDrive?.let { save ->
+                DropdownMenuItem(
+                    text = { Text("Save to a drive…") },
+                    onClick = { menuOpen = false; save() }
+                )
+            }
             // A document another app is only lending cannot be renamed or deleted from here; the app
             // that owns it has rules about both. See `source/DocumentSource`.
             onRename?.let { rename ->
                 DropdownMenuItem(text = { Text("Rename") }, onClick = { menuOpen = false; rename() })
+            }
+            onDetach?.let { detach ->
+                DropdownMenuItem(
+                    text = { Text("Remove from here") },
+                    onClick = { menuOpen = false; detach() }
+                )
             }
             onDelete?.let { delete ->
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; delete() })

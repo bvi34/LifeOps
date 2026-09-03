@@ -40,17 +40,20 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.backupkit.AppId
 import com.project.app.data.model.Doc
+import com.project.app.data.model.Project
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Outline
 import com.project.app.logic.Tree
 import com.project.app.logic.OutlineNode
-import com.project.app.logic.ProjectKind
 import com.project.app.logic.ProjectPulse
 import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
 import com.project.app.ui.common.OutlinePickerDialog
 import com.project.app.ui.common.formatDayTime
+import com.repository.app.logic.DocumentKind
+import com.repository.app.ui.attach.DocumentsPanel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -109,9 +112,10 @@ class DocsViewModel(
 @Composable
 fun DocsScreen(
     vm: DocsViewModel,
-    kind: ProjectKind,
+    project: Project,
     onOpenDoc: (Doc) -> Unit
 ) {
+    val kind = project.kind
     val docs by vm.docs.collectAsStateWithLifecycle()
     val outline by vm.outline.collectAsStateWithLifecycle()
 
@@ -140,6 +144,34 @@ fun DocsScreen(
             contentPadding = PaddingValues(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // The project's *files*, as against its writing. A brief that arrived as a PDF, the
+            // signed contract, the reference images somebody was sent — none of them are documents
+            // this app should be re-typing into blocks, and all of them are things the household
+            // will later look for from the shelf rather than from here. So they are Repository's
+            // rows, shown in place: `com.repository.app.ui.attach.DocumentsPanel`.
+            item(key = "files") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("Files", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Attached to the project, filed on the suite's shelf.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        DocumentsPanel(
+                            appKey = AppId.PROJECT.key,
+                            recordKey = project.id,
+                            recordLabel = project.name,
+                            modifier = Modifier.padding(top = 8.dp),
+                            kinds = PROJECT_KINDS,
+                            emptyLine = "The brief, the contract, the reference PDFs — add them from " +
+                                "this phone, get them off Google Drive or OneDrive, or attach " +
+                                "something already on the shelf."
+                        )
+                    }
+                }
+            }
+
             if (docs.isEmpty()) {
                 item(key = "empty") {
                     EmptyState(
@@ -317,3 +349,20 @@ private fun DocRow(
         }
     }
 }
+
+/**
+ * What a project is usually handed, offered first when filing.
+ *
+ * A brief is a contract-shaped thing, a signed agreement is a contract, and everything else a
+ * project accumulates is correspondence or reference. The list is only the *order the chips come
+ * in* — every kind is still reachable — and Repository behaves identically whichever is chosen,
+ * because it does not read documents.
+ */
+private val PROJECT_KINDS = listOf(
+    DocumentKind.CONTRACT,
+    DocumentKind.CORRESPONDENCE,
+    DocumentKind.REPORT,
+    DocumentKind.RECEIPT,
+    DocumentKind.RECORD,
+    DocumentKind.OTHER
+)

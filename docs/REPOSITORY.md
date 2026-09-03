@@ -85,6 +85,51 @@ Registration is a registry rather than a dependency list, for the same reason Li
 completions on a bus: a build without Health simply has one fewer drawer. Nothing to stub, nothing to
 keep in sync.
 
+### Grabbed off a drive
+
+The third way in, and the one that stops the shelf being a place you *would* file things if it were
+not four taps per document. *"Get those project docs out of OneDrive so I can attach them to the
+project"* is one flow: choose a drive, pick as many files as you like, **review what you picked**,
+file the lot.
+
+> **There is no Google Drive API here and no OneDrive API here.**
+
+That is the decision the whole feature rests on. Both drives — and Dropbox, and the phone itself —
+already publish themselves to Android as **document providers**; asking for a file from one is a
+picker with a starting point, not a network client. The alternative was an OAuth flow per drive, two
+SDKs, API keys in the apk, a token store, a refresh path and a sync loop, all to end up holding the
+same bytes the picker hands over for free — and it would break the promise the app makes about
+itself, because a client that can list your whole Drive has read a great deal more than the four
+files you asked for. Repository still declares **no permissions at all**.
+
+Three things follow, and each is deliberate:
+
+- **The drive chips are a starting point, not a filter.** `EXTRA_INITIAL_URI` opens the picker where
+  that drive was last used; the picker will let you walk anywhere from there, and it should. So the
+  app never claims a file came from the chip that was lit — it reads the authority off the URI and
+  says what is true (`logic/Drives`).
+- **The review list is the point.** A folder on a drive is organised for the drive —
+  `docs-final-v3-REAL.docx` next to two dead drafts — and the shelf is organised for the household.
+  Between the picker closing and anything being copied there is one screen to untick the drafts and
+  call the third one what it is. Afterwards is too late: that is three documents filed and three
+  dialogs to fix them.
+- **A copy, not a link.** What lands is a copy taken at a moment, exactly like a document
+  photographed off a kitchen table. Nothing is watched, polled or written back, and the drive is not
+  consulted again. A copy the household can see is a copy is honest; a sync that goes wrong is a
+  document that quietly changed.
+
+Filing a batch is one row at a time and each row independently: a file that cannot be read takes its
+own row down and nothing else. Three of four documents filed is three documents the household has,
+and failures come back **named** — "Q3 budget couldn't be read" is a sentence somebody can act on.
+
+### Attached afterwards, not imported twice
+
+A document already on the shelf is **attached** to a project or an asset from that app's own
+documents section. Nothing is copied: attaching re-files the row into another drawer, and *Remove
+from here* puts it back in the household's. That is what makes the grab-then-attach flow the right
+one — importing into the project directly, then importing the same file again for the other thing it
+also belongs to, is how one document becomes three copies that then disagree.
+
 ## Leaving the device
 
 Exactly one road out: somebody presses **Open** or **Send a copy**.
@@ -96,6 +141,19 @@ the house readable by anything that could guess a URI.
 
 Lent documents leave the same way: the owning app supplies its file, the copy is made here. One road,
 however the document got onto the shelf.
+
+**Save to a drive** is that same road with a destination attached. The share sheet is right for one
+document going to one person; what it cannot do is *this folder, these six documents, again next
+month*, because every send is a fresh chooser and a fresh walk through somebody's folder tree. So the
+folder is chosen once, per drive, and remembered — "OneDrive · Project docs" is a place the household
+named and granted, not one the app guessed at. Each document is written under its own title as a new
+file; if one of that name is already there the provider makes "Statement (1).pdf", and that is left
+alone deliberately. An export that silently overwrote a file on somebody's drive would be this app
+destroying data it does not own to save a rename.
+
+The remembered folder is **not** carried by the backup. It is a URI granted by a provider on this
+device to this install; restored onto a new phone it names a folder nothing has permission to open.
+Forgetting is honest — the first export after a restore asks once, and remembers again.
 
 ## The backup
 
@@ -110,15 +168,19 @@ on restore they are written **before** the rows that name them.
 
 ```
 repository/src/main/java/com/repository/app/
-├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents · Shelf
+├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents ·
+│                   Shelf · Drive/Drives · Transfer
 ├── data/
 │   ├── db/         Room, one table: rows that name files
+│   ├── prefs/      RepositoryPrefs — which drive, and where on it. Never backed up; see below
 │   ├── store/      DocumentFiles — filesDir/documents, and the one road out through cacheDir/exports
+│   │               DriveTransfer — the picker's side of a drive: describing, granting, writing
 │   └── repository/ DocumentRepository — the shelf as the rest of the suite sees it
 ├── source/         DocumentSource + DocumentSources — the read-only seam for apps that keep their own
 ├── ui/
 │   ├── shelf/      ShelfScreen — one list, one search box, no folders
-│   └── attach/     DocumentsPanel — the section lent to an owning app
+│   ├── drive/      DriveGrabDialog · DriveSaveDialog — off a drive and back onto one, targeted
+│   └── attach/     DocumentsPanel — the section lent to an owning app, and Attach from the shelf
 └── backup/         RepositoryBackupContributor — the database and the files
 ```
 
@@ -150,15 +212,21 @@ its `install`, which is what Health does.
 
 ## Tests
 
-`gradle :repository:test` — 18 JVM tests over `logic/`, no SDK or emulator needed.
+`gradle :repository:test` — 32 JVM tests over `logic/`, no SDK or emulator needed.
 
 - `ShelfTest` — newest filed first (the only date this app has, because it does not read documents),
   a search that finds the truck's manual by the word "wrangler" while the module still has no idea
   what a Wrangler is, the household's drawer leading, a drawer from an app this build does not have
   still being a drawer, and the two-key match that keeps two apps' record numbering apart.
 - `DocumentsTest` — the file's own extension winning, an unknown type being honestly `bin` rather
-  than a guess, a title cleaned up but never guessed at, and the path-climbing names that are refused
-  rather than resolved.
+  than a guess, a title cleaned up but never guessed at, the path-climbing names that are refused
+  rather than resolved, and the one name a document leaves under whichever road it takes.
+- `DrivesTest` — a drive recognised by the authority on the URI rather than by the chip somebody
+  pressed, an old authority still being that drive, and a provider nobody has named importing exactly
+  the same way.
+- `TransferTest` — what the review list says you are about to file, a total that counts only the
+  sizes it was told (a cloud file often reports none), two files that would land under one name being
+  *reported* rather than renamed, and failures coming back named.
 
 ## What is not here
 
@@ -170,9 +238,12 @@ Named so it is a decision rather than an omission:
   what the two doors already do.
 - **No migration of what already exists.** LifeOps' task attachments, Citation's books and Project's
   documents stay where they are. Health's are *lent* rather than moved.
-- **Six apps not wired.** Maintenance files into the shelf and Health lends to it. The rest is one
-  dependency and one composable each, per the section above — deliberately left until somebody
-  decides where documents belong in those domains.
+- **Five apps not wired.** Maintenance and Project file into the shelf and Health lends to it. The
+  rest is one dependency and one composable each, per the section above — deliberately left until
+  somebody decides where documents belong in those domains.
+- **No sync with a drive.** Import and export are targeted and one-shot on purpose: these files,
+  now. Watching a folder would mean a credential, a poll, and documents changing under a household
+  that believes it filed them. The copy on the shelf is a copy, and the app says so.
 - **No versions.** Filing a newer statement adds a document; it does not supersede one. A household
   keeping both is the normal case, and a version chain nobody asked for is a feature that makes the
   list harder to read.
