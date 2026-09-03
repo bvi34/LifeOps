@@ -679,11 +679,11 @@ private fun Swatch(argb: Long, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun CustomPaletteEditor(palette: SuitePalette, onChange: (SuitePalette) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SuiteColorField("Primary", palette.primary) { onChange(palette.copy(primary = it)) }
-        SuiteColorField("Secondary", palette.secondary) { onChange(palette.copy(secondary = it)) }
-        SuiteColorField("Tertiary", palette.tertiary) { onChange(palette.copy(tertiary = it)) }
-        SuiteColorField("Dark background", palette.darkBackground) { onChange(palette.copy(darkBackground = it)) }
-        SuiteColorField("Light background", palette.lightBackground) { onChange(palette.copy(lightBackground = it)) }
+        SuiteColorField("Primary", palette.primary, { onChange(palette.copy(primary = it)) })
+        SuiteColorField("Secondary", palette.secondary, { onChange(palette.copy(secondary = it)) })
+        SuiteColorField("Tertiary", palette.tertiary, { onChange(palette.copy(tertiary = it)) })
+        SuiteColorField("Dark background", palette.darkBackground, { onChange(palette.copy(darkBackground = it)) })
+        SuiteColorField("Light background", palette.lightBackground, { onChange(palette.copy(lightBackground = it)) })
     }
 }
 
