@@ -23,6 +23,18 @@ enum class ObjectType(val label: String) {
     HEALTH_RECORD("health record"),
     MEDICATION("medication"),
     DATE("date"),
+    PROJECT("project"),
+    OUTLINE_PIECE("outline piece"),
+    LORE_ENTRY("lore entry"),
+    TIMELINE_EVENT("timeline event"),
+    BOARD_CARD("board card"),
+    DOCUMENT("document"),
+    ASSET("asset"),
+    UPKEEP_PLAN("upkeep job"),
+    SERVICE_RECORD("service record"),
+    COVERAGE("policy"),
+    LOAN("loan"),
+    RECALL("recall"),
     UNKNOWN("item")
 }
 
@@ -40,6 +52,14 @@ enum class ObjectType(val label: String) {
  *    split is a shelf, not a state a question ever asks to match
  *  - health records, medications, people and their dates: none — a temperature reading or a birthday
  *    is a fact with a timestamp, not something that moves through states
+ *  - board cards: `done`, `todo` — a card's column is its status
+ *  - outline pieces: `todo`, `doing`, `drafted`, `done`, `cut` — the drafting ladder, which is not
+ *    the task ladder: a *drafted* scene is not a finished one, and *cut* material is kept
+ *  - upkeep jobs and policies: `overdue`, `due_soon`, `scheduled`, `needs_baseline`, `dormant` —
+ *    Maintenance's own verdict, read back rather than recomputed
+ *  - recalls: `outstanding`, `acknowledged`
+ *  - projects, lore, timeline events, assets, service records, loans and documents: none — a deed
+ *    filed in March and a house are facts, not things that move through states
  *
  * A record with no meaningful state (an aspect, a note) reports `null`, which the engine treats as "no
  * state to disagree about" — it never manufactures a state mismatch out of thin air.
@@ -70,14 +90,40 @@ object KnowledgeFacets {
             "grocery" -> ObjectType.GROCERY_ITEM
             else -> ObjectType.UNKNOWN
         }
-        // Health and People have no facet vocabulary of their own yet: a temperature, a dose or a
-        // directory entry is not a book, a task or a pantry item, and inventing an object type for
-        // them here would put the *engine* in the business of guessing what a health record is.
-        // UNKNOWN is the honest answer — the relevance engine reads it as "no facet to disagree
-        // about" and falls back to the text, rather than manufacturing a mismatch. A note is the
-        // exception: it is the same kind of thing wherever it was written.
+        // Health and People describe the same household from two sides, so they share a branch: a
+        // person is a person whichever app holds them, and a note is the same kind of thing
+        // wherever it was written. What is *not* shared is a state — see [stateOf].
         SourceApp.HEALTH, SourceApp.PEOPLE -> when (doc.kind) {
-            "person-note" -> ObjectType.NOTE
+            "person" -> ObjectType.PROFILE
+            "temperature", "temperature-history", "reading", "symptom", "illness" -> ObjectType.HEALTH_RECORD
+            "medication", "dose" -> ObjectType.MEDICATION
+            "date" -> ObjectType.DATE
+            "care", "person-note" -> ObjectType.NOTE
+            else -> ObjectType.UNKNOWN
+        }
+        SourceApp.PROJECT -> when (doc.kind) {
+            "project" -> ObjectType.PROJECT
+            "outline" -> ObjectType.OUTLINE_PIECE
+            // A project's own writing and a document filed on Repository's shelf are the same kind
+            // of thing to ask about ("which document says…"), so they share a facet even though
+            // one is written here and the other was handed to the household.
+            "project-doc" -> ObjectType.DOCUMENT
+            "lore" -> ObjectType.LORE_ENTRY
+            "timeline" -> ObjectType.TIMELINE_EVENT
+            "card" -> ObjectType.BOARD_CARD
+            else -> ObjectType.UNKNOWN
+        }
+        SourceApp.MAINTENANCE -> when (doc.kind) {
+            "asset" -> ObjectType.ASSET
+            "upkeep" -> ObjectType.UPKEEP_PLAN
+            "service" -> ObjectType.SERVICE_RECORD
+            "coverage" -> ObjectType.COVERAGE
+            "loan" -> ObjectType.LOAN
+            "recall" -> ObjectType.RECALL
+            else -> ObjectType.UNKNOWN
+        }
+        SourceApp.REPOSITORY -> when (doc.kind) {
+            "document" -> ObjectType.DOCUMENT
             else -> ObjectType.UNKNOWN
         }
     }
@@ -93,7 +139,55 @@ object KnowledgeFacets {
         ObjectType.TASK, ObjectType.OPERATION -> normalizeTaskState(DocumentFacts.status(doc))
         ObjectType.PANTRY_ITEM -> if (DocumentFacts.isLowStock(doc)) LOW else STOCKED
         ObjectType.GROCERY_ITEM -> if (DocumentFacts.groceryNeeded(doc)) NEEDED else BOUGHT
+        // A board card is a task by another name, and its source writes the same `Status:` line.
+        ObjectType.BOARD_CARD -> normalizeTaskState(DocumentFacts.status(doc))
+        // The drafting ladder is its own vocabulary — a *drafted* scene is not a *done* one — so it
+        // is normalized separately rather than squeezed into the task states.
+        ObjectType.OUTLINE_PIECE -> normalizeDraftState(DocumentFacts.status(doc))
+        // Upkeep and cover share one due vocabulary, which is Maintenance's own: the source writes
+        // the verdict the app itself computed, and this only reads it back.
+        ObjectType.UPKEEP_PLAN, ObjectType.COVERAGE -> normalizeDueState(DocumentFacts.status(doc))
+        ObjectType.RECALL -> normalizeRecallState(DocumentFacts.status(doc))
         else -> null
+    }
+
+    /**
+     * The drafting ladder, normalized. `revised` and `done` both mean *finished* and `cut` is its
+     * own answer — cut material is still in the outline and is deliberately not "done".
+     */
+    private fun normalizeDraftState(status: String?): String? {
+        val s = status?.lowercase()?.trim() ?: return null
+        return when (s) {
+            "done", "revised" -> DONE
+            "drafting" -> DOING
+            "idea", "outlined" -> TODO
+            "drafted" -> DRAFTED
+            "cut" -> CUT
+            else -> s
+        }
+    }
+
+    /** The due vocabulary shared by an upkeep plan and a policy, as its source phrased it. */
+    private fun normalizeDueState(status: String?): String? {
+        val s = status?.lowercase()?.trim() ?: return null
+        return when (s) {
+            "overdue" -> OVERDUE
+            "due soon" -> DUE_SOON
+            "scheduled" -> SCHEDULED
+            "needs baseline" -> NEEDS_BASELINE
+            "dormant" -> DORMANT
+            else -> s
+        }
+    }
+
+    /** A recall is owed until it is marked dealt with. Two states, and no ladder between them. */
+    private fun normalizeRecallState(status: String?): String? {
+        val s = status?.lowercase()?.trim() ?: return null
+        return when (s) {
+            "acknowledged" -> ACKNOWLEDGED
+            "outstanding" -> OUTSTANDING
+            else -> s
+        }
     }
 
     private fun normalizeTaskState(status: String?): String? {
@@ -117,4 +211,13 @@ object KnowledgeFacets {
     const val STOCKED = "stocked"
     const val NEEDED = "needed"
     const val BOUGHT = "bought"
+    const val DRAFTED = "drafted"
+    const val CUT = "cut"
+    const val OVERDUE = "overdue"
+    const val DUE_SOON = "due_soon"
+    const val SCHEDULED = "scheduled"
+    const val NEEDS_BASELINE = "needs_baseline"
+    const val DORMANT = "dormant"
+    const val OUTSTANDING = "outstanding"
+    const val ACKNOWLEDGED = "acknowledged"
 }

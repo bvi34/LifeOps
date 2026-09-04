@@ -107,6 +107,9 @@ dependencies {
     implementation(project(":logistics"))
     implementation(project(":health"))
     implementation(project(":people"))
+    implementation(project(":project"))
+    implementation(project(":maintenance"))
+    implementation(project(":repository"))
     // The Operations Sandbox backup format/engine (pure JVM). Advisor supplies a BackupContributor
     // for its own store (granted permissions + saved conversations).
     implementation(project(":backupkit"))

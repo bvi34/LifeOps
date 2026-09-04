@@ -82,4 +82,49 @@ class QueryFacetsTest {
         assertTrue(ObjectType.OPERATION in QueryFacets.infer("which projects are still open?").objectTypes)
         assertTrue(ObjectType.IDEA in QueryFacets.infer("what future projects have I written down?").objectTypes)
     }
+
+    @Test
+    fun the_word_project_wants_both_kinds_of_project() {
+        // LifeOps calls it an Operation and the Project app calls its own thing a project. A
+        // question asked in that word must accept whichever of them the user actually has.
+        val f = QueryFacets.infer("how are my projects going?")
+        assertTrue(ObjectType.OPERATION in f.objectTypes)
+        assertTrue(ObjectType.PROJECT in f.objectTypes)
+    }
+
+    @Test
+    fun project_words_infer_the_shelf_types() {
+        assertTrue(ObjectType.OUTLINE_PIECE in QueryFacets.infer("which scenes are still to write?").objectTypes)
+        assertTrue(ObjectType.LORE_ENTRY in QueryFacets.infer("what lore have I written?").objectTypes)
+        assertTrue(ObjectType.TIMELINE_EVENT in QueryFacets.infer("what's on the timeline?").objectTypes)
+        assertTrue(ObjectType.BOARD_CARD in QueryFacets.infer("what cards are on the board?").objectTypes)
+    }
+
+    @Test
+    fun the_drafting_ladder_is_inferred_apart_from_the_task_one() {
+        assertEquals(KnowledgeFacets.DRAFTED, QueryFacets.infer("which chapters are drafted?").state)
+        assertEquals(KnowledgeFacets.DOING, QueryFacets.infer("what scene am I drafting?").state)
+        assertEquals(KnowledgeFacets.CUT, QueryFacets.infer("which scenes did I cut?").state)
+    }
+
+    @Test
+    fun maintenance_words_infer_the_register_types() {
+        assertTrue(ObjectType.ASSET in QueryFacets.infer("what's the mileage on the car?").objectTypes)
+        assertTrue(ObjectType.UPKEEP_PLAN in QueryFacets.infer("what upkeep is coming up?").objectTypes)
+        assertTrue(ObjectType.COVERAGE in QueryFacets.infer("when does the insurance renew?").objectTypes)
+        assertTrue(ObjectType.LOAN in QueryFacets.infer("how much is left on the mortgage?").objectTypes)
+        assertTrue(ObjectType.RECALL in QueryFacets.infer("any open recalls?").objectTypes)
+    }
+
+    @Test
+    fun the_due_states_are_inferred_for_what_the_house_owes() {
+        assertEquals(KnowledgeFacets.OVERDUE, QueryFacets.infer("what upkeep is overdue?").state)
+        assertEquals(KnowledgeFacets.DUE_SOON, QueryFacets.infer("what upkeep is coming up?").state)
+    }
+
+    @Test
+    fun document_words_infer_the_document_type() {
+        assertTrue(ObjectType.DOCUMENT in QueryFacets.infer("do we have the furnace manual?").objectTypes)
+        assertTrue(ObjectType.DOCUMENT in QueryFacets.infer("which documents did we file this year?").objectTypes)
+    }
 }

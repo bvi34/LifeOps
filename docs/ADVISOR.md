@@ -269,6 +269,9 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
 | **People** | the household directory: who is in it, how to reach them, the dates that come round (a birth date doubles as a birthday), and the notes kept about them |
 | **Health** | the household's people, their recent temperatures (each carrying Health's own fever assessment) and other readings, symptoms, medicines with their dose limits, doses given, illnesses, care notes, and the **medicine cabinet** — what the house actually has, whether it's in date and whether it's running low |
+| **Project** | the shelf of projects (each with its kind's own nouns and how far its outline has got), the outline itself, the documents written under it — the **opening** of each, not the whole text — the lore with its aliases, the timeline, and the board with each card's column and state |
+| **Maintenance** | the register of what the household owns: assets and the identity each is known by (VIN, parcel number, serial), the upkeep that comes round — carrying Maintenance's own due verdict, not a second opinion — the service history and what it cost, meters and the rate they move at, the money (mortgages and loans, with today's balance; policies, warranties and registrations with their renewal), and any open recalls |
+| **Repository** | the shelf of filed documents: what each is, what it is about (the owning app's own label), when it arrived, its size and any note. The **rows, never the bytes** — nothing here opens a file |
 
 People is the one source whose rows are *replicated* rather than owned outright — LifeOps holds its
 own copy of the same humans and the two reconcile over the sync seam. Advisor indexes **People's**
@@ -287,11 +290,39 @@ unnamed "38.4 at 21:00" is a document that can be retrieved into an answer about
 error of a different kind from a stale pantry count. For the same reason its readings are summarised
 rather than enumerated: a year of temperatures would otherwise drown every other source. See **[HEALTH.md](HEALTH.md)**.
 
+**Three registers, one shelf, and no document indexed twice.** A project's *files* — the brief, the
+contract, the reference PDFs — are documents the household filed and live on Repository's shelf, so
+Project's source keeps to the writing and Repository indexes the paperwork once. The same holds for
+an asset's manual or a policy's PDF: Maintenance indexes the policy, Repository indexes the piece of
+paper, and the document already carries the asset's own label so the two read as one thing without
+either app having to know the other's model.
+
+Maintenance is the source that repeats the app's arithmetic rather than the raw columns. Whether a
+job is overdue, what a policy costs a year, where a mortgage stands today — all of it comes from
+Maintenance's own `logic/` (`Upkeep.evaluate`, `Coverages`, `Loan.snapshot`), for the same reason
+Health's temperatures carry Health's fever assessment: two answers to "is this overdue" is one answer
+too many. Project's documents are the source that *excerpts*: a drafted chapter is thousands of words
+that would drown every other source in the corpus, so the opening of each document is indexed and the
+row says when there is more.
+
 The Collection is indexed because that's where a whole class of question lives — "what can I make
 with the beef", "didn't I have an idea about X", "how long have I spent on this book" — and until it
 was, Advisor could only answer from the week's machinery. Recipes and future operations have no
 lifecycle state, so `KnowledgeFacets` reports none for them rather than inventing one; a LifeOps book
 uses the same `Reading state:` phrasing as a Citation one, so a reading question judges both alike.
+
+**Every source is judged, not just retrieved.** `logic/KnowledgeFacets` reads two comparable facets
+off each record — what kind of thing it is, and what state it is in — and `logic/QueryFacets` infers
+the same two from the question, so the grounding step can say *why* a candidate does or does not
+answer it. Each app brings its own vocabulary rather than borrowing one: a board card moves through
+the task states, an outline piece moves through the **drafting** ladder (a *drafted* scene is not a
+*done* one, and *cut* material is kept and is neither), an upkeep job and a policy share the due
+vocabulary Maintenance itself computes (`overdue`, `due_soon`, `scheduled`, `needs_baseline`,
+`dormant`), and a recall is `outstanding` until it is `acknowledged`. Things that are simply facts —
+an asset, a filed document, a loan, a temperature, a birthday — report no state at all, so nothing
+can manufacture a state mismatch out of them. The one word that means two things is *project*:
+LifeOps calls its own thing an Operation and Project calls its thing a project, so the question word
+claims **both** types and either grounds the answer.
 
 **One thing, one record.** A book read in Citation is also a row in LifeOps' Collection, and a
 highlight captured in Citation is synced onto that row's notes — so with both apps granted the corpus
