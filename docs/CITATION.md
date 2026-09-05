@@ -473,6 +473,71 @@ the settings by the question they answer — how the type is set, how the page i
 screen does — rather than as one long list.
 
 
+## Reading aloud (core built + verified; UI not built)
+
+The reader could set a book any way you liked and could not say a word of it. The speech track adds
+the voice, and it is built the same way everything else here is: the part that decides how a book
+*sounds* is framework-independent and unit-tested, and the part that can only exist on a phone is
+kept as thin as it can be.
+
+The substrate was already there. A `Book` is an ordered list of chapters of flowing text with
+structure as ranges over it, so one implementation covers EPUB, PDF reflow, Royal Road and AO3 at
+once — nothing in the speech package knows what a spine or a serial is. And **canonical character
+offsets are already the app's universal position**, which is what makes the voice and the page the
+same reader: the narrator's position is an offset, so listening advances progress, resumes in the
+reader, and can be annotated, with no second notion of "where I am".
+
+| Area | Type(s) | What it does |
+|---|---|---|
+| **Units** | `speech/Utterance`, `SpokenRun` | One speakable unit carries both the string handed to an engine and the canonical range it came from, plus the mapping between them. The two differ on purpose — a sentence wrapped over three source lines is spoken as one line, a footnote marker is not read aloud as a stray number, a table row gets commas the reduction never had — and the mapping is what turns an engine's "I am on characters 40..46 of what you gave me" back into offsets the reader can light up. |
+| **Sentences** | `speech/SentenceSplitter` | Hand-rolled rather than `BreakIterator`: the platform iterator is locale data, differs between the JVM and Android's ICU (so a test here would prove nothing about the device), and cannot be told that a 900-character sentence has to break *somewhere sensible* because a neural voice cannot hold it. Titles, initials, decimals and a lowercase continuation all keep their sentence together; a runaway one is cut at a clause boundary, then a space, and only ever mid-word as a last resort. |
+| **Planning** | `speech/SpeechPlanner`, `SpeechPlan`, `SpeechOptions` | Turns a chapter into ordered units with the pauses between them. Headings are spoken whole and rest longer; verse goes a line at a time because its line breaks are the meaning; a scene break becomes the longest silence in the chapter; code and tables are silent by default and comprehensible when turned on. Text a source left uncovered by any block is still spoken — degrade, don't crash. Plans are **derived data**: never stored, recovered by re-planning, so better pacing later migrates nothing and invalidates no note. |
+| **Decisions** | `speech/Narration`, `NarrationState` | What happens *between* sentences — the end of a chapter, skipping back off the top of one, whether the sleep timer stops you now or lets the chapter finish. All ordinals and indices, no audio, so all of it is tested without a device. |
+| **Sleep timer** | `speech/SleepTimer` | The one control only ever used by somebody who will not be awake to correct it: it fades out over the last twenty seconds rather than cutting off mid-word, offers *end of chapter* as well as a duration, and gives a reader who reaches for "still awake" a minute late the whole extension rather than what was left. |
+| **Voices** | `speech/VoiceModel`, `VoiceCatalog`, `VoiceSelection` | A short curated list of open-licence Piper voices with their real sizes and checksums, and the rules for choosing between what is installed — including falling back to the best remaining voice when the chosen one has been deleted, rather than leaving a reader with silence and no explanation. |
+
+**Why on-device neural, and what it costs.** The interesting options were the platform engine (free,
+offline, ships with the phone, sounds like a phone), a cloud voice (excellent, and it means paying
+per sentence and shipping the book off the device), and a downloaded neural voice run locally. The
+third is the one that fits: good enough to listen to for hours, no account, no per-use cost, nothing
+leaves the phone, and it works on a plane — which is the same trade Citation already makes
+everywhere else. What it costs is a download the reader consents to with the size in front of them,
+and the memory and CPU to run it, which is why the catalogue states the quality tier honestly: a
+high voice on an old phone can take longer to say a sentence than the sentence takes.
+
+**Android wiring:** `audio/SpeechEngine` is the whole seam — say this unit, tell me when you are
+done, tell me the words as you pass them if you can. `SystemSpeechEngine` implements it over the
+platform's own engine and is the one that always works; it is also the only one that reports word
+boundaries (`onRangeStart`, API 26 — exactly Citation's minimum), so it is the way to get a
+word-by-word read-along rather than a sentence one. `NeuralSpeechEngine` runs a downloaded voice and
+plays the samples through a plain `AudioTrack`, with the native runtime kept *outside* the module
+behind `NeuralSynthesizer`/`NeuralSynthesizers` — an ONNX runtime ships tens of megabytes of native
+code per ABI, and a reader module should not carry that in its dependency graph. With nothing
+registered the narrator falls back to the platform voice and the app reads books exactly as before.
+
+`Narrator` is the process-wide coordinator — plan, engine, position, audio focus — because listening
+outlives the screen, and `NarrationService` is the media-playback foreground service and
+`MediaSession` that keep the process alive and put the controls on the lock screen, the headset
+button and the car. Both are written against the platform's own session and notification rather than
+a playback library: there is no file, no container and nothing seekable here, just an engine and a
+position. Voices live in a store of their own — not the disposable cache, which eviction walks and
+which would take a voice the reader is offline with, and not sovereign content, which is the
+reader's own and belongs in the backup. Downloads land on a `.part` file and are renamed only after
+their checksum verifies, because the failure that actually happens is a download cut short at forty
+megabytes, and a runtime handed half a model does not fail politely.
+
+**One deliberate refusal:** listening does not teach the reading-pace estimate. `ReadingPace` answers
+"how long will this take *you* to read", learnt from how fast this reader reads; time spent listening
+measures the speaking rate of an engine instead, and a listener at 1.5× would drag every "12 min
+left" in the app toward a number about nobody. The position still advances and is still saved; only
+the pace measurement declines to learn from it, and a reader who disagrees can turn it on.
+
+**Not built yet:** the player UI, the voice picker, and the read-along highlight. `ChapterRender`
+already maps canonical offsets to display offsets and `ReaderScreen` already shades ranges, so
+lighting up the sentence being spoken is a new range through machinery that exists — but nothing on
+screen calls any of it yet. `ReaderViewModel` exposes the whole surface (`narration`,
+`speechSettings`, `readAloud`, `skipAloud`, voice install/delete) ready for it.
+
 ## Storage visibility (milestone 7 — core built + verified)
 
 The core aggregator `manifest/StorageInventory` (unit-tested) builds the storage picture and **does
@@ -569,7 +634,8 @@ what turns Citation from an app you put files into, into an app connected to lib
 The framework-independent spine — internal model, structured document model, keys, dedup,
 EPUB/RR/PDF/O'Reilly ingestion, OPDS catalogs, the library query layer, notes + degradation +
 retrieval, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
-logic + Kindle notebook parser — lives in `:core` and is fully JVM-tested (**420 tests**); the
+logic + Kindle notebook parser + the speech planner — lives in `:core` and is fully JVM-tested
+(**578 tests**); the
 Android reader (`:citation`) adds Room storage, the Compose readers and shelves, the capture entry
 points, WorkManager jobs, the catalog client, and the sync transport on top (buildable with the
 Android SDK).
@@ -581,7 +647,9 @@ and reads the walled gardens **in place**, capturing annotations only — the O'
 pattern. It does not implement Adobe ADEPT or Readium LCP, so a DRM'd library loan cannot be
 rendered by Citation's own reader; a lending catalog's borrow links are shown honestly rather than
 offered as downloads. Fixed-layout EPUB, audiobooks, RTL and vertical writing modes, and comic
-formats are each a separate track, not a feature — none is started.
+formats are each a separate track, not a feature — none is started. **Audiobook files** are among
+them and are not the same thing as reading aloud: a book with no text has no anchors, no character
+positions and nothing to annotate, so an `.m4b` needs its own model and a real player, not a voice.
 
 ## Cross-cutting principles (already encoded in `:core`)
 

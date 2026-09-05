@@ -5,6 +5,14 @@ import androidx.lifecycle.viewModelScope
 import com.citation.app.data.CitationRepository
 import com.citation.app.data.opds.OpdsClient
 import com.citation.app.data.OreillyAccess
+import com.citation.app.audio.Narrator
+import com.citation.core.speech.NarrationState
+import com.citation.core.speech.NarrationStatus
+import com.citation.core.speech.SkipGranularity
+import com.citation.core.speech.SleepMode
+import com.citation.core.speech.SpeechSettings
+import com.citation.core.speech.VoiceCatalog
+import com.citation.core.speech.VoiceModel
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.library.BookCollection
@@ -56,7 +64,18 @@ import kotlin.math.abs
  * reader consumes the format-blind [Book] model, so nothing here knows or cares that the source was
  * an EPUB.
  */
-class ReaderViewModel(private val repository: CitationRepository) : ViewModel() {
+class ReaderViewModel(
+    private val repository: CitationRepository,
+    /**
+     * The read-aloud narrator, when the host supplied one.
+     *
+     * Nullable because listening needs a `Context` and the ViewModel deliberately has none: the
+     * activity builds the narrator and hands it over. A null one leaves every control below inert
+     * and the reader exactly as it was before speech existed, which is also what makes the rest of
+     * this class testable without an Android runtime.
+     */
+    private val narrator: Narrator? = null
+) : ViewModel() {
 
     val books: StateFlow<List<CitationRepository.BookSummary>> =
         repository.books.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -1612,4 +1631,139 @@ class ReaderViewModel(private val repository: CitationRepository) : ViewModel() 
      * on screen instead.
      */
     fun reportImportProblem(message: String) { _importAlert.value = message }
+
+    // --- Reading aloud ----------------------------------------------------------------------------
+    //
+    // The narrator is the same book, in the same position, spoken instead of set. Everything here is
+    // a thin pass-through: what to say and where the voice is live in `:core` and in the narrator,
+    // and duplicating any of it here is how the page and the voice would come to disagree about
+    // where the reader is.
+
+    private val idleNarration = MutableStateFlow(NarrationState())
+
+    /** What the voice is doing, and which sentence it is on — the read-along highlight's source. */
+    val narration: StateFlow<NarrationState> = narrator?.state ?: idleNarration.asStateFlow()
+
+    /** Voice, speed and what gets spoken. */
+    val speechSettings: StateFlow<SpeechSettings> =
+        narrator?.speechSettings ?: MutableStateFlow(SpeechSettings()).asStateFlow()
+
+    /** Whether this build can speak at all — false only when no narrator was supplied. */
+    val canReadAloud: Boolean get() = narrator != null
+
+    /** Whether a downloadable neural voice can be run here, as opposed to the platform's own. */
+    val neuralVoicesSupported: Boolean get() = narrator?.neuralAvailable == true
+
+    /** The voices already downloaded, for the picker. */
+    fun installedVoices() = narrator?.installedVoices().orEmpty()
+
+    /** The voices offered for the open book, its own language first. */
+    fun voiceCatalog(): List<VoiceModel> =
+        VoiceCatalog.suggestedFor(_openBook.value?.metadata?.language)
+
+    /** Bytes the downloaded voices occupy, for the storage screen. */
+    fun voiceStorageBytes(): Long = narrator?.voiceStorageBytes() ?: 0L
+
+    private val _voiceProgress = MutableStateFlow<Pair<String, Float>?>(null)
+
+    /** The voice being downloaded and how far along it is, or null when none is. */
+    val voiceProgress: StateFlow<Pair<String, Float>?> = _voiceProgress.asStateFlow()
+
+    /**
+     * Download a voice, reporting progress and reporting the outcome on the status line.
+     *
+     * Runs in the ViewModel's own scope rather than a composition's, so leaving the picker part-way
+     * through a sixty-megabyte download does not cancel it.
+     */
+    fun installVoice(model: VoiceModel) {
+        val narrator = narrator ?: return
+        if (_voiceProgress.value != null) return
+        viewModelScope.launch {
+            _voiceProgress.value = model.id to 0f
+            val result = narrator.installVoice(model) { _voiceProgress.value = model.id to it }
+            _voiceProgress.value = null
+            _status.value = when (result) {
+                is com.citation.app.audio.VoiceStore.InstallResult.Installed -> "${model.name} is ready to read aloud."
+                is com.citation.app.audio.VoiceStore.InstallResult.Failed -> result.reason
+            }
+        }
+    }
+
+    /** Delete a downloaded voice. */
+    fun deleteVoice(model: VoiceModel) {
+        if (narrator?.deleteVoice(model) == true) _status.value = "${model.name} removed."
+    }
+
+    /**
+     * Start reading the open book aloud from where the reader is.
+     *
+     * The voice picks up the *live* position rather than the last saved one, so pressing play after
+     * scrolling starts at the sentence on screen rather than wherever the last save landed.
+     */
+    fun readAloud() {
+        val narrator = narrator ?: return
+        val book = _openBook.value ?: return
+        narrator.onPosition = ::onNarratedPosition
+        val (chapter, offset) = _position.value
+        narrator.play(book, chapter, offset)
+    }
+
+    /** Pause the voice, keeping the book and the position. */
+    fun pauseAloud() = narrator?.pause() ?: Unit
+
+    /** Stop reading aloud and give the engine back. */
+    fun stopAloud() = narrator?.stop() ?: Unit
+
+    /** Play or pause, for a single button. */
+    fun toggleAloud() {
+        val narrator = narrator ?: return
+        if (narration.value.status == NarrationStatus.IDLE) readAloud() else narrator.toggle()
+    }
+
+    /** Move the voice by a sentence or a paragraph. */
+    fun skipAloud(granularity: SkipGranularity, forward: Boolean) {
+        narrator?.skip(granularity, forward)
+    }
+
+    /** Change the speaking speed; takes effect at the next sentence. */
+    fun setSpeechRate(rate: Float) = configureSpeech { it.withRate(rate) }
+
+    /** Choose a downloaded voice, or `null` to let the narrator pick the best one installed. */
+    fun setVoice(voiceId: String?) = configureSpeech { it.copy(voiceId = voiceId) }
+
+    /** Change what gets spoken — footnote markers, captions, tables, code. */
+    fun setSpeechContent(transform: (SpeechSettings) -> SpeechSettings) = configureSpeech(transform)
+
+    /** Arm, change or cancel the sleep timer. */
+    fun setSleepTimer(mode: SleepMode) = narrator?.setSleep(mode) ?: Unit
+
+    /** Push an armed sleep timer out — the "still awake" gesture. */
+    fun extendSleepTimer(millis: Long) = narrator?.extendSleep(millis) ?: Unit
+
+    private fun configureSpeech(transform: (SpeechSettings) -> SpeechSettings) {
+        val narrator = narrator ?: return
+        narrator.configure(transform(narrator.speechSettings.value))
+    }
+
+    /**
+     * The voice moved: follow it with the reader's own position, and save it.
+     *
+     * Position, yes; pace, no. [com.citation.core.reader.ReadingPace] answers "how long will this
+     * take *you* to read", learnt from how fast this reader reads — and a voice at 1.5x would teach
+     * it the speaking rate of an engine instead, dragging every "12 min left" in the app toward a
+     * number about nobody. A reader who disagrees can turn
+     * [SpeechSettings.bankListeningTowardPace] on and have listening measured like reading.
+     */
+    private fun onNarratedPosition(chapterOrdinal: Int, charOffset: Int) {
+        if (speechSettings.value.bankListeningTowardPace) {
+            onPositionChanged(chapterOrdinal, charOffset)
+            onReadingProgress()
+        } else {
+            _position.value = chapterOrdinal to charOffset
+        }
+        val book = _openBook.value ?: return
+        val key = book.key?.toString() ?: return
+        val fraction = ReadingProgress.at(book, chapterOrdinal, charOffset).fraction
+        viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset, fraction) }
+    }
 }
