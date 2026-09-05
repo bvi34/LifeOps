@@ -82,6 +82,37 @@ interface ProjectDao {
     @Query("SELECT projectId, COUNT(*) AS total FROM timeline_events GROUP BY projectId")
     fun observeEventCounts(): Flow<List<CountByProject>>
 
+    // --- the whole shelf, once ---
+    //
+    // One-shot reads of every row of a section, across every project. They exist for readers that
+    // want the shelf entire rather than one project at a time — Advisor's knowledge source flattens
+    // the lot into its retrieval corpus on each question — and they are suspend rather than Flow
+    // because such a reader takes a snapshot and is done, with nothing to keep observing.
+
+    @Query("SELECT * FROM projects ORDER BY archived, sortOrder, name COLLATE NOCASE")
+    suspend fun allProjects(): List<ProjectEntity>
+
+    @Query("SELECT * FROM outline_nodes ORDER BY projectId, sortOrder, title COLLATE NOCASE")
+    suspend fun allOutlineNodes(): List<OutlineNodeEntity>
+
+    @Query("SELECT * FROM docs ORDER BY projectId, sortOrder, title COLLATE NOCASE")
+    suspend fun allDocs(): List<DocEntity>
+
+    @Query("SELECT * FROM doc_blocks ORDER BY docId, sortOrder")
+    suspend fun allBlocks(): List<DocBlockEntity>
+
+    @Query("SELECT * FROM lore_entries ORDER BY projectId, sortOrder, name COLLATE NOCASE")
+    suspend fun allLoreEntries(): List<LoreEntryEntity>
+
+    @Query("SELECT * FROM timeline_events ORDER BY projectId, sortOrder, title COLLATE NOCASE")
+    suspend fun allTimelineEvents(): List<TimelineEventEntity>
+
+    @Query("SELECT * FROM board_columns ORDER BY projectId, sortOrder, name COLLATE NOCASE")
+    suspend fun allColumns(): List<BoardColumnEntity>
+
+    @Query("SELECT * FROM board_cards ORDER BY projectId, sortOrder, title COLLATE NOCASE")
+    suspend fun allCards(): List<BoardCardEntity>
+
     // --- outline ---
 
     @Query("SELECT * FROM outline_nodes WHERE projectId = :projectId ORDER BY sortOrder, title COLLATE NOCASE")

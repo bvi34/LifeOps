@@ -129,8 +129,8 @@ object SmallTalk {
 
     private fun identityText(ctx: Context): String =
         "I'm ${ctx.assistantName}, your private on-device assistant. I run entirely on this device — " +
-            "no cloud, nothing leaves it — and I answer from your own LifeOps, Citation, and Logistics " +
-            "data, plus anything you ask me to remember. What can I help you with?"
+            "no cloud, nothing leaves it — and I answer from your own data in the apps you've turned " +
+            "on, plus anything you ask me to remember. What can I help you with?"
 
     private fun capabilityText(ctx: Context): String = buildString {
         append("I'm ${ctx.assistantName} — a private assistant that runs entirely on this device, so ")
@@ -138,12 +138,14 @@ object SmallTalk {
         val apps = SourceApp.entries.filter { it in ctx.grantedApps }
         if (apps.isEmpty()) {
             append("You haven't switched on any apps yet. Open Permissions and grant me read access to ")
-            append("LifeOps, Citation, or Logistics, and I'll answer from your own tasks, reading notes, ")
-            append("and pantry.")
+            append("any of the apps in the suite, and I'll answer from your own tasks, reading notes, ")
+            append("pantry, projects, upkeep and filed documents.")
         } else {
             append("Right now I can see your ${humanJoin(apps.map { it.displayName })} data, so you can ")
             append("ask me things like:")
-            for (app in apps) append("\n").append(EXAMPLES.getValue(app))
+            // Looked up rather than demanded: an app added to SourceApp before it has an example
+            // here should read as one fewer suggestion, never as a crash mid-sentence.
+            for (app in apps) EXAMPLES[app]?.let { append("\n").append(it) }
         }
         append("\n\nI also keep long-term memory and standing profiles, so tell me things like ")
         append("\"remember that …\" and I'll hold onto them — and I'll bring them (and our recent chat) ")
@@ -285,7 +287,10 @@ object SmallTalk {
         SourceApp.CITATION to "• \"What am I reading?\" or \"Show me my notes on a book.\"",
         SourceApp.LOGISTICS to "• \"What's running low in the pantry?\" or \"What can I cook tonight?\"",
         SourceApp.HEALTH to "• \"When did she last have paracetamol?\" or \"How long was his fever?\"",
-        SourceApp.PEOPLE to "• \"Whose birthday is next?\" or \"What's my sister's email?\""
+        SourceApp.PEOPLE to "• \"Whose birthday is next?\" or \"How has her check-in gone this week?\"",
+        SourceApp.PROJECT to "• \"What's left to draft in the novel?\" or \"What's on the board?\"",
+        SourceApp.MAINTENANCE to "• \"What's overdue on the car?\" or \"What's left on the mortgage?\"",
+        SourceApp.REPOSITORY to "• \"Do we have the furnace manual?\" or \"What did we file about the house?\""
     )
 
     // Social openers/closers to peel off before meta-matching, so "hey, what can you do?" still lands.

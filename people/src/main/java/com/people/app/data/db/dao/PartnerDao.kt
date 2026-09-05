@@ -45,6 +45,21 @@ interface PartnerDao {
     @Query("SELECT * FROM partner_links ORDER BY createdAt")
     fun observeLinks(): Flow<List<PartnerLinkEntity>>
 
+    /**
+     * Every link, every mirrored week and every unlanded contribution, in one shot each — for a
+     * reader that wants the whole seam rather than one partner's screen. The secrets on a link are
+     * columns like any other here; it is the *reader's* job not to carry them anywhere (see
+     * Advisor's `PeopleKnowledgeSource`, which reads the pairing and never the halves of it).
+     */
+    @Query("SELECT * FROM partner_links ORDER BY createdAt")
+    suspend fun allLinks(): List<PartnerLinkEntity>
+
+    @Query("SELECT * FROM partner_week_tasks ORDER BY linkId, weekStart, title COLLATE NOCASE")
+    suspend fun allWeekTasks(): List<PartnerWeekTaskEntity>
+
+    @Query("SELECT * FROM partner_outbox ORDER BY linkId, createdAt")
+    suspend fun allOutbox(): List<PartnerOutboxEntity>
+
     @Upsert
     suspend fun upsertLink(link: PartnerLinkEntity)
 

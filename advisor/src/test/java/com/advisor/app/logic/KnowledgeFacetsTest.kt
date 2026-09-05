@@ -96,4 +96,128 @@ class KnowledgeFacetsTest {
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.HEALTH, "temperature", "Temperature: 38.2C")))
         assertNull(KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "date", "Birthday: 3 March")))
     }
+
+    @Test
+    fun classifies_the_check_in_log_and_the_partner_seam() {
+        // The form, one day and the shape of the rest all answer "what does the check-in say".
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in", "")))
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in-form", "")))
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in-history", "")))
+        assertEquals(ObjectType.PARTNER_TASK, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "partner-task", "")))
+        // The pairing itself is not a task, and is left untyped so a question about what a partner
+        // has finished cannot throw it away as a state mismatch.
+        assertEquals(ObjectType.UNKNOWN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "partner", "")))
+    }
+
+    @Test
+    fun a_partners_task_uses_the_task_states_and_a_recorded_day_has_none() {
+        assertEquals(
+            KnowledgeFacets.DONE,
+            KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "partner-task", "On Sam's week: X. Status: done. Week of 2026-09-01"))
+        )
+        assertEquals(
+            KnowledgeFacets.TODO,
+            KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "partner-task", "On Sam's week: X. Status: todo. Week of 2026-09-01"))
+        )
+        // A day that was recorded is a fact about that day, not a state it moves through.
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "check-in", "Check-in for Ellie on 2026-09-01. Slept: 8")))
+    }
+
+    @Test
+    fun classifies_the_project_shelf() {
+        assertEquals(ObjectType.PROJECT, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "project", "")))
+        assertEquals(ObjectType.OUTLINE_PIECE, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "outline", "")))
+        assertEquals(ObjectType.LORE_ENTRY, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "lore", "")))
+        assertEquals(ObjectType.TIMELINE_EVENT, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "timeline", "")))
+        assertEquals(ObjectType.BOARD_CARD, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "card", "")))
+    }
+
+    @Test
+    fun a_written_document_is_the_same_kind_of_thing_wherever_it_lives() {
+        // A project's own doc and a document filed on Repository's shelf answer the same question
+        // ("which document says…"), so a question about documents must accept both.
+        assertEquals(ObjectType.DOCUMENT, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "project-doc", "")))
+        assertEquals(ObjectType.DOCUMENT, KnowledgeFacets.objectTypeOf(doc(SourceApp.REPOSITORY, "document", "")))
+    }
+
+    @Test
+    fun classifies_the_maintenance_register() {
+        assertEquals(ObjectType.ASSET, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "asset", "")))
+        assertEquals(ObjectType.UPKEEP_PLAN, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "upkeep", "")))
+        assertEquals(ObjectType.SERVICE_RECORD, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "service", "")))
+        assertEquals(ObjectType.COVERAGE, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "coverage", "")))
+        assertEquals(ObjectType.LOAN, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "loan", "")))
+        assertEquals(ObjectType.RECALL, KnowledgeFacets.objectTypeOf(doc(SourceApp.MAINTENANCE, "recall", "")))
+    }
+
+    @Test
+    fun a_board_card_uses_the_task_states() {
+        assertEquals(
+            KnowledgeFacets.DONE,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "card", "Board card in N: X. Status: done. Column: Shipped"))
+        )
+        assertEquals(
+            KnowledgeFacets.TODO,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "card", "Board card in N: X. Status: todo. Column: Next"))
+        )
+    }
+
+    @Test
+    fun the_drafting_ladder_is_not_the_task_ladder() {
+        // "Drafted" is its own answer: a drafted scene is written, and is not a finished one.
+        assertEquals(
+            KnowledgeFacets.DRAFTED,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "outline", "Scene in N: X. Status: drafted"))
+        )
+        assertEquals(
+            KnowledgeFacets.DONE,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "outline", "Scene in N: X. Status: revised"))
+        )
+        assertEquals(
+            KnowledgeFacets.TODO,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "outline", "Scene in N: X. Status: outlined"))
+        )
+        // Cut material is kept in the outline and is deliberately neither done nor to-do.
+        assertEquals(
+            KnowledgeFacets.CUT,
+            KnowledgeFacets.stateOf(doc(SourceApp.PROJECT, "outline", "Scene in N: X. Status: cut. Cut — kept"))
+        )
+    }
+
+    @Test
+    fun upkeep_and_cover_report_maintenances_own_verdict() {
+        assertEquals(
+            KnowledgeFacets.OVERDUE,
+            KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "upkeep", "Upkeep for Jeep: Oil. Status: overdue. Due 3 weeks ago"))
+        )
+        assertEquals(
+            KnowledgeFacets.DUE_SOON,
+            KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "coverage", "Insurance on Jeep with X. Status: due soon. Renews in 2 weeks"))
+        )
+        assertEquals(
+            KnowledgeFacets.DORMANT,
+            KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "upkeep", "Upkeep for Jeep: Shutters. Status: dormant. Paused"))
+        )
+    }
+
+    @Test
+    fun a_recall_is_owed_until_it_is_acknowledged() {
+        assertEquals(
+            KnowledgeFacets.OUTSTANDING,
+            KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "recall", "Recall on Jeep (19V680000): Seat belts. Status: outstanding"))
+        )
+        assertEquals(
+            KnowledgeFacets.ACKNOWLEDGED,
+            KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "recall", "Recall on Jeep (19V680000): Seat belts. Status: acknowledged"))
+        )
+    }
+
+    @Test
+    fun an_asset_a_document_and_a_loan_have_no_state_to_disagree_about() {
+        // A house, a filed deed and a mortgage are facts about what the household has; none of them
+        // moves through a lifecycle a question could ask to match.
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "asset", "Asset: Jeep (vehicle). Status: nonsense")))
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.REPOSITORY, "document", "Filed document: Deed (title or deed)")))
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.MAINTENANCE, "loan", "Loan on Home: Mortgage. Balance: 180,000.00")))
+    }
 }

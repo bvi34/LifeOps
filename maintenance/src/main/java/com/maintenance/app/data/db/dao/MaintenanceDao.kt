@@ -74,6 +74,10 @@ interface MaintenanceDao {
     @Query("SELECT * FROM asset_attributes WHERE assetId = :assetId")
     suspend fun attributesOf(assetId: String): List<AssetAttributeEntity>
 
+    /** Every asset's identity fields at once — for a reader that wants the register entire. */
+    @Query("SELECT * FROM asset_attributes")
+    suspend fun allAttributes(): List<AssetAttributeEntity>
+
     @Upsert
     suspend fun upsertAttributes(attributes: List<AssetAttributeEntity>)
 
@@ -136,6 +140,9 @@ interface MaintenanceDao {
     @Query("DELETE FROM service_records WHERE id = :id")
     suspend fun deleteRecord(id: String)
 
+    @Query("SELECT * FROM service_records ORDER BY performedAt DESC, title COLLATE NOCASE")
+    suspend fun allRecords(): List<ServiceRecordEntity>
+
     // --- meter readings ---
 
     @Query("SELECT * FROM meter_readings ORDER BY readAt")
@@ -193,6 +200,9 @@ interface MaintenanceDao {
     @Query("UPDATE recalls SET acknowledgedAt = :at WHERE assetId = :assetId AND campaignNumber = :campaign")
     suspend fun setRecallAcknowledged(assetId: String, campaign: String, at: Long?)
 
+    @Query("SELECT * FROM recalls ORDER BY parkIt DESC, parkOutside DESC, reportedOnEpochDay DESC")
+    suspend fun allRecalls(): List<RecallEntity>
+
     // --- loans ---
 
     @Query("SELECT * FROM loans ORDER BY label COLLATE NOCASE")
@@ -207,6 +217,9 @@ interface MaintenanceDao {
     @Query("DELETE FROM loans WHERE id = :id")
     suspend fun deleteLoan(id: String)
 
+    @Query("SELECT * FROM loans ORDER BY label COLLATE NOCASE")
+    suspend fun allLoans(): List<LoanEntity>
+
     // --- coverages ---
 
     @Query("SELECT * FROM coverages ORDER BY expiresAt, provider COLLATE NOCASE")
@@ -220,4 +233,7 @@ interface MaintenanceDao {
 
     @Query("DELETE FROM coverages WHERE id = :id")
     suspend fun deleteCoverage(id: String)
+
+    @Query("SELECT * FROM coverages ORDER BY expiresAt, provider COLLATE NOCASE")
+    suspend fun allCoverages(): List<CoverageEntity>
 }

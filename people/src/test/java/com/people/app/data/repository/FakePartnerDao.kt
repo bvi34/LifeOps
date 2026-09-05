@@ -150,4 +150,14 @@ class FakePartnerDao : PartnerDao {
         val kept = mine.sortedByDescending { it.at }.take(keep).map { it.id }.toSet()
         events.value = events.value.filterNot { it.linkId == linkId && it.seen && it.id !in kept }
     }
+
+    // --- the whole seam, once ---
+
+    override suspend fun allLinks(): List<PartnerLinkEntity> = links.value.sortedBy { it.createdAt }
+
+    override suspend fun allWeekTasks(): List<PartnerWeekTaskEntity> =
+        weekTasks.value.sortedWith(compareBy({ it.linkId }, { it.weekStart }, { it.title.lowercase() }))
+
+    override suspend fun allOutbox(): List<PartnerOutboxEntity> =
+        outbox.value.sortedWith(compareBy({ it.linkId }, { it.createdAt }))
 }

@@ -18,7 +18,10 @@ import com.advisor.app.data.source.HealthKnowledgeSource
 import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.data.source.LifeOpsKnowledgeSource
 import com.advisor.app.data.source.LogisticsKnowledgeSource
+import com.advisor.app.data.source.MaintenanceKnowledgeSource
 import com.advisor.app.data.source.PeopleKnowledgeSource
+import com.advisor.app.data.source.ProjectKnowledgeSource
+import com.advisor.app.data.source.RepositoryKnowledgeSource
 import com.advisor.app.data.source.RoomChangeFeed
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
@@ -34,7 +37,10 @@ import com.citation.app.data.db.CitationDatabase
 import com.health.app.data.db.HealthDatabase
 import com.lifeops.app.data.db.LifeOpsDatabase
 import com.logistics.app.data.db.LogisticsDatabase
+import com.maintenance.app.data.db.MaintenanceDatabase
 import com.people.app.data.db.PeopleDatabase
+import com.project.app.data.db.ProjectDatabase
+import com.repository.app.data.db.RepositoryDatabase
 import java.io.File
 
 /**
@@ -88,8 +94,27 @@ class AdvisorApp private constructor(private val app: Application) {
             ) {
                 HealthDatabase.getInstance(app)
             },
-            PeopleKnowledgeSource(app).cachedOn("people", "person_notes", "important_dates") {
+            PeopleKnowledgeSource(app).cachedOn(
+                "people", "person_notes", "important_dates",
+                "check_in_fields", "check_ins", "check_in_answers",
+                "partner_links", "partner_week_tasks", "partner_outbox"
+            ) {
                 PeopleDatabase.getInstance(app)
+            },
+            ProjectKnowledgeSource(app).cachedOn(
+                "projects", "outline_nodes", "docs", "doc_blocks", "lore_entries",
+                "timeline_events", "board_columns", "board_cards"
+            ) {
+                ProjectDatabase.getInstance(app)
+            },
+            MaintenanceKnowledgeSource(app).cachedOn(
+                "assets", "asset_attributes", "upkeep_plans", "service_records", "meter_readings",
+                "loans", "coverages", "recalls"
+            ) {
+                MaintenanceDatabase.getInstance(app)
+            },
+            RepositoryKnowledgeSource(app).cachedOn("documents") {
+                RepositoryDatabase.getInstance(app)
             }
         )
     }

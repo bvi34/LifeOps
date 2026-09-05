@@ -239,7 +239,13 @@ class C3AEngine(
             SourceApp.CITATION to setOf("book", "books", "read", "reading", "note", "notes", "author", "library", "highlight", "highlights"),
             SourceApp.LOGISTICS to setOf("pantry", "grocery", "groceries", "food", "stock", "ingredient", "ingredients", "recipe", "recipes", "meal", "meals"),
             SourceApp.HEALTH to setOf("temperature", "temperatures", "fever", "temp", "sick", "ill", "illness", "symptom", "symptoms", "medicine", "medicines", "dose", "doses", "medication", "paracetamol", "ibuprofen", "cough", "poorly", "doctor", "cabinet", "expired", "expiry", "pharmacy"),
-            SourceApp.PEOPLE to setOf("who", "person", "people", "birthday", "birthdays", "anniversary", "household", "family", "contact", "email", "phone", "age")
+            SourceApp.PEOPLE to setOf("who", "person", "people", "birthday", "birthdays", "anniversary", "household", "family", "contact", "email", "phone", "age", "checkin", "streak", "partner", "partners", "journal"),
+            // The three registers. Where a word belongs to two apps ("warranty" to both the policy
+            // and the piece of paper), the earlier entry wins, which is the order of SourceApp
+            // itself — and either way the reply names *an* app that would answer, not the wrong one.
+            SourceApp.PROJECT to setOf("outline", "chapter", "chapters", "scene", "scenes", "draft", "drafts", "drafting", "manuscript", "lore", "worldbuilding", "character", "characters", "timeline", "board", "card", "cards", "synopsis", "wordcount"),
+            SourceApp.MAINTENANCE to setOf("asset", "assets", "car", "cars", "vehicle", "vehicles", "truck", "furnace", "mower", "mileage", "odometer", "upkeep", "maintenance", "service", "serviced", "repair", "repairs", "oil", "filter", "mortgage", "mortgages", "loan", "loans", "escrow", "insurance", "policy", "policies", "warranty", "registration", "recall", "recalls", "vin"),
+            SourceApp.REPOSITORY to setOf("document", "documents", "paperwork", "statement", "statements", "receipt", "receipts", "manual", "manuals", "deed", "deeds", "contract", "contracts", "invoice", "invoices", "scan", "scans", "filed", "shelf", "pdf")
         )
     }
 }

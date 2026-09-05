@@ -42,12 +42,40 @@ data class QueryFacets(
                         return KnowledgeFacets.READING
                 }
             }
-            // Task/operation lifecycle.
-            if (types.contains(ObjectType.TASK) || types.contains(ObjectType.OPERATION)) {
+            // Task/operation lifecycle — and a board card and a partner's task, which move through
+            // the same three.
+            if (types.contains(ObjectType.TASK) || types.contains(ObjectType.OPERATION) ||
+                types.contains(ObjectType.BOARD_CARD) || types.contains(ObjectType.PARTNER_TASK)
+            ) {
                 when {
                     DONE_CUE.containsMatchIn(q) -> return KnowledgeFacets.DONE
                     DOING_CUE.containsMatchIn(q) -> return KnowledgeFacets.DOING
                     TODO_CUE.containsMatchIn(q) -> return KnowledgeFacets.TODO
+                }
+            }
+            // The drafting ladder. "Drafted" is checked before the generic finished cues, because a
+            // drafted scene is exactly the thing a question about drafting is asking for and is not
+            // the same as a done one.
+            if (types.contains(ObjectType.OUTLINE_PIECE)) {
+                when {
+                    CUT_CUE.containsMatchIn(q) -> return KnowledgeFacets.CUT
+                    DRAFTED_CUE.containsMatchIn(q) -> return KnowledgeFacets.DRAFTED
+                    DRAFTING_CUE.containsMatchIn(q) -> return KnowledgeFacets.DOING
+                    DONE_CUE.containsMatchIn(q) -> return KnowledgeFacets.DONE
+                    TODO_CUE.containsMatchIn(q) -> return KnowledgeFacets.TODO
+                }
+            }
+            // What the house owes. "Overdue" is its own word and beats the softer "coming up".
+            if (types.contains(ObjectType.UPKEEP_PLAN) || types.contains(ObjectType.COVERAGE)) {
+                when {
+                    OVERDUE_CUE.containsMatchIn(q) -> return KnowledgeFacets.OVERDUE
+                    DUE_SOON_CUE.containsMatchIn(q) -> return KnowledgeFacets.DUE_SOON
+                }
+            }
+            if (types.contains(ObjectType.RECALL)) {
+                when {
+                    ACKNOWLEDGED_CUE.containsMatchIn(q) -> return KnowledgeFacets.ACKNOWLEDGED
+                    OUTSTANDING_CUE.containsMatchIn(q) -> return KnowledgeFacets.OUTSTANDING
                 }
             }
             return null
@@ -66,7 +94,43 @@ data class QueryFacets(
             Regex("""\b(recipe|recipes|cook|cooking|dish|dishes|bake|baking)\b""") to ObjectType.RECIPE,
             Regex("""\b(idea|ideas|someday|future operation|future operations|future project|future projects|backlog|shelved)\b""") to ObjectType.IDEA,
             Regex("""\b(pantry|ingredient|ingredients|in stock|restock|fridge)\b""") to ObjectType.PANTRY_ITEM,
-            Regex("""\b(grocery|groceries|shopping list|to buy)\b""") to ObjectType.GROCERY_ITEM
+            Regex("""\b(grocery|groceries|shopping list|to buy)\b""") to ObjectType.GROCERY_ITEM,
+            // Health and People. "Reading" is deliberately absent from the health cue: it is already
+            // the book cue, and a question about what you are reading must not start expecting
+            // blood-pressure readings.
+            Regex("""\b(temperature|temperatures|fever|fevers|symptom|symptoms|illness|illnesses|poorly|sick)\b""")
+                to ObjectType.HEALTH_RECORD,
+            Regex("""\b(medicine|medicines|medication|medications|dose|doses|paracetamol|ibuprofen|antibiotic|antibiotics)\b""")
+                to ObjectType.MEDICATION,
+            Regex("""\b(birthday|birthdays|anniversary|anniversaries)\b""") to ObjectType.DATE,
+            Regex("""\b(check[- ]?in|check[- ]?ins|checked in|streak|streaks|daily log|journal)\b""")
+                to ObjectType.CHECK_IN,
+            Regex("""\b(partner|partner'?s|partners)\b""") to ObjectType.PARTNER_TASK,
+            // Project. "Project" is deliberately two cues: LifeOps calls the thing an Operation and
+            // the Project app calls its own thing a project, and a question asked in that word wants
+            // whichever of them the user has. Both types are accepted; neither is a mismatch.
+            Regex("""\b(project|projects)\b""") to ObjectType.PROJECT,
+            Regex("""\b(outline|outlines|chapter|chapters|scene|scenes|act|acts|draft|drafts|drafted|drafting|manuscript)\b""")
+                to ObjectType.OUTLINE_PIECE,
+            Regex("""\b(lore|wiki|worldbuilding|character|characters|faction|factions)\b""") to ObjectType.LORE_ENTRY,
+            Regex("""\b(timeline|timelines|chronology|era|eras)\b""") to ObjectType.TIMELINE_EVENT,
+            Regex("""\b(board|kanban|card|cards|column|columns)\b""") to ObjectType.BOARD_CARD,
+            // Repository (and a project's own documents, which share the facet).
+            Regex("""\b(document|documents|paperwork|statement|statements|receipt|receipts|manual|manuals|""" +
+                """deed|deeds|contract|contracts|invoice|invoices|policy document|filed|shelf|scan|scans)\b""")
+                to ObjectType.DOCUMENT,
+            // Maintenance.
+            Regex("""\b(asset|assets|car|cars|vehicle|vehicles|truck|trucks|house|home|appliance|appliances|""" +
+                """furnace|mower|motorcycle|motorbike|odometer|mileage)\b""") to ObjectType.ASSET,
+            Regex("""\b(upkeep|maintenance|servicing|oil change|filter|tune-up|schedule|scheduled)\b""")
+                to ObjectType.UPKEEP_PLAN,
+            Regex("""\b(service history|service record|service records|serviced|repair|repairs|repaired|garage|mechanic)\b""")
+                to ObjectType.SERVICE_RECORD,
+            Regex("""\b(insurance|insured|policy|policies|warranty|warranties|registration|coverage|premium|premiums)\b""")
+                to ObjectType.COVERAGE,
+            Regex("""\b(loan|loans|mortgage|mortgages|payoff|paid off|principal|escrow|amortisation|amortization)\b""")
+                to ObjectType.LOAN,
+            Regex("""\b(recall|recalls|recalled)\b""") to ObjectType.RECALL
         )
 
         // Explicit state names ("to_read", "to-read status") as well as conversational phrasings.
@@ -91,5 +155,19 @@ data class QueryFacets(
         private val TODO_CUE = Regex(
             """\b(to do|to-do|todo|pending|open|outstanding|unfinished|not done|still (?:need|have)|left to do)\b"""
         )
+
+        // The drafting ladder's own words, kept apart from the task ones for the same reason the
+        // states are: "drafted" and "done" are two different answers about the same scene.
+        private val DRAFTED_CUE = Regex("""\b(drafted|first draft|rough draft|written)\b""")
+        private val DRAFTING_CUE = Regex("""\b(drafting|being written|mid-draft|part.?written)\b""")
+        private val CUT_CUE = Regex("""\b(cut|cut material|deleted scene|deleted scenes)\b""")
+
+        // What is owed, and how soon.
+        private val OVERDUE_CUE = Regex("""\b(overdue|late|past due|missed|behind on|lapsed|expired)\b""")
+        private val DUE_SOON_CUE = Regex(
+            """\b(due|due soon|coming up|upcoming|this month|next month|soon|renew|renewing|renewal)\b"""
+        )
+        private val OUTSTANDING_CUE = Regex("""\b(open|outstanding|unfixed|not fixed|still owed|owed)\b""")
+        private val ACKNOWLEDGED_CUE = Regex("""\b(acknowledged|dealt with|handled|sorted|done)\b""")
     }
 }
