@@ -123,6 +123,18 @@ class QueryFacetsTest {
     }
 
     @Test
+    fun check_in_and_partner_words_infer_their_types() {
+        assertTrue(ObjectType.CHECK_IN in QueryFacets.infer("what did her check-in say?").objectTypes)
+        assertTrue(ObjectType.CHECK_IN in QueryFacets.infer("how long is his streak?").objectTypes)
+        assertTrue(ObjectType.PARTNER_TASK in QueryFacets.infer("what's on my partner's week?").objectTypes)
+    }
+
+    @Test
+    fun a_partners_task_takes_the_task_states() {
+        assertEquals(KnowledgeFacets.DONE, QueryFacets.infer("what has my partner finished?").state)
+    }
+
+    @Test
     fun document_words_infer_the_document_type() {
         assertTrue(ObjectType.DOCUMENT in QueryFacets.infer("do we have the furnace manual?").objectTypes)
         assertTrue(ObjectType.DOCUMENT in QueryFacets.infer("which documents did we file this year?").objectTypes)

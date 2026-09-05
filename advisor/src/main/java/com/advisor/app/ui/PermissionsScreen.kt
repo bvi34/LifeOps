@@ -98,7 +98,9 @@ private fun describe(app: SourceApp): String = when (app) {
         "symptoms, medicines and doses, and past illnesses. The most sensitive data in the suite — " +
         "and, like every other source here, read only after you grant it."
     SourceApp.PEOPLE -> "The household directory: who is in it, how to reach them, the dates that " +
-        "come round, and the notes kept about them."
+        "come round, and the notes kept about them — plus the daily check-in log (recent days in " +
+        "full, older ones counted) and the partner seam: who you're paired with and the week they " +
+        "publish. Never the pairing secrets."
     SourceApp.PROJECT -> "Your projects: their outlines, the documents written under them (the " +
         "opening of each, not the whole text), the lore, the timeline and the board."
     SourceApp.MAINTENANCE -> "What the household owns and what it needs: assets and the identity " +

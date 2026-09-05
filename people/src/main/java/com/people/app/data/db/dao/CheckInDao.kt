@@ -102,6 +102,22 @@ interface CheckInDao {
 
     @Query("DELETE FROM check_in_answers WHERE checkInId = :checkInId")
     suspend fun clearAnswers(checkInId: String)
+
+    // --- the whole log, once ---
+    //
+    // One-shot reads across every person, for a reader that wants the log entire rather than one
+    // person's screen: Advisor's knowledge source flattens it into its retrieval corpus on each
+    // question. They are suspend rather than Flow because such a reader takes a snapshot and is
+    // done, with nothing left to observe.
+
+    @Query("SELECT * FROM check_in_fields ORDER BY personId, retired, position")
+    suspend fun allFields(): List<CheckInFieldEntity>
+
+    @Query("SELECT * FROM check_ins ORDER BY personId, day DESC")
+    suspend fun allCheckIns(): List<CheckInEntity>
+
+    @Query("SELECT * FROM check_in_answers")
+    suspend fun allAnswers(): List<CheckInAnswerEntity>
 }
 
 /** How many days one person has recorded, for the roster. */

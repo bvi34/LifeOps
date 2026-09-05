@@ -267,11 +267,18 @@ Logistics' `LifeOpsCatalog` reads LifeOps' catalog in the same process.
 | **LifeOps** | tasks (title, status, priority, aspect, due/estimate/completion), aspects, operations, milestones — and the **Collection**: books (reading state, logged minutes, category) with their notes, recipes (servings, ingredient names, method, source link), and the someday backlog of future operations with their notes |
 | **Citation** | library books (title, author, reading state) and reading notes |
 | **Logistics** | pantry stock (with low-stock flags) and the grocery list |
-| **People** | the household directory: who is in it, how to reach them, the dates that come round (a birth date doubles as a birthday), and the notes kept about them |
+| **People** | the household directory: who is in it, whether they live here, how to reach them, the dates that come round (a birth date doubles as a birthday), and the notes kept about them — plus the **daily check-in**: each person's form (retired questions named as retired, since they are why the old answers are readable), the last 30 days in full, and everything older as a shape (days recorded, the range, the current streak) — and the **partner seam**: who the household is paired with and whether the link works, the week that partner published, and contributions sent and not landed. **Never the pairing secrets** |
 | **Health** | the household's people, their recent temperatures (each carrying Health's own fever assessment) and other readings, symptoms, medicines with their dose limits, doses given, illnesses, care notes, and the **medicine cabinet** — what the house actually has, whether it's in date and whether it's running low |
 | **Project** | the shelf of projects (each with its kind's own nouns and how far its outline has got), the outline itself, the documents written under it — the **opening** of each, not the whole text — the lore with its aliases, the timeline, and the board with each card's column and state |
 | **Maintenance** | the register of what the household owns: assets and the identity each is known by (VIN, parcel number, serial), the upkeep that comes round — carrying Maintenance's own due verdict, not a second opinion — the service history and what it cost, meters and the rate they move at, the money (mortgages and loans, with today's balance; policies, warranties and registrations with their renewal), and any open recalls |
 | **Repository** | the shelf of filed documents: what each is, what it is about (the owning app's own label), when it arrived, its size and any note. The **rows, never the bytes** — nothing here opens a file |
+
+A pairing is indexed; its secrets never are. `partner_links` holds the two halves that make the
+seam's token, and Advisor's source reads the row only to leave them behind: what reaches the corpus
+is who the partner is and whether the link is working. A secret in a retrieval corpus is a secret one
+badly-grounded answer away from being read out loud. The partner's week is indexed as **theirs** —
+every document says whose it is, because a mirror of somebody else's week phrased as the user's own
+is the one mistake that seam exists to avoid (see **[PEOPLE.md](PEOPLE.md)**).
 
 People is the one source whose rows are *replicated* rather than owned outright — LifeOps holds its
 own copy of the same humans and the two reconcile over the sync seam. Advisor indexes **People's**

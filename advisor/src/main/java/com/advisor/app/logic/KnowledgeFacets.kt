@@ -23,6 +23,8 @@ enum class ObjectType(val label: String) {
     HEALTH_RECORD("health record"),
     MEDICATION("medication"),
     DATE("date"),
+    CHECK_IN("check-in"),
+    PARTNER_TASK("partner's task"),
     PROJECT("project"),
     OUTLINE_PIECE("outline piece"),
     LORE_ENTRY("lore entry"),
@@ -52,7 +54,8 @@ enum class ObjectType(val label: String) {
  *    split is a shelf, not a state a question ever asks to match
  *  - health records, medications, people and their dates: none — a temperature reading or a birthday
  *    is a fact with a timestamp, not something that moves through states
- *  - board cards: `done`, `todo` — a card's column is its status
+ *  - board cards and a partner's tasks: `done`, `todo`
+ *  - check-ins: none — a day that was recorded is a fact about that day, not a state it is in
  *  - outline pieces: `todo`, `doing`, `drafted`, `done`, `cut` — the drafting ladder, which is not
  *    the task ladder: a *drafted* scene is not a finished one, and *cut* material is kept
  *  - upkeep jobs and policies: `overdue`, `due_soon`, `scheduled`, `needs_baseline`, `dormant` —
@@ -99,6 +102,14 @@ object KnowledgeFacets {
             "medication", "dose" -> ObjectType.MEDICATION
             "date" -> ObjectType.DATE
             "care", "person-note" -> ObjectType.NOTE
+            // The daily log: the form, one day, and the shape of the rest are all the same kind of
+            // thing to ask about ("what does the check-in say"), so they share one facet.
+            "check-in", "check-in-form", "check-in-history" -> ObjectType.CHECK_IN
+            // A partner's week is a task — but somebody else's, which is the whole point of the
+            // seam and the reason it does not answer to "what are *my* tasks". The pairing itself
+            // is left UNKNOWN: it is not a task, and typing it would let a question about what a
+            // partner has finished throw the link away as a state mismatch.
+            "partner-task" -> ObjectType.PARTNER_TASK
             else -> ObjectType.UNKNOWN
         }
         SourceApp.PROJECT -> when (doc.kind) {
@@ -139,6 +150,8 @@ object KnowledgeFacets {
         ObjectType.TASK, ObjectType.OPERATION -> normalizeTaskState(DocumentFacts.status(doc))
         ObjectType.PANTRY_ITEM -> if (DocumentFacts.isLowStock(doc)) LOW else STOCKED
         ObjectType.GROCERY_ITEM -> if (DocumentFacts.groceryNeeded(doc)) NEEDED else BOUGHT
+        // A partner's task is still a task, and its source writes the same `Status:` line.
+        ObjectType.PARTNER_TASK -> normalizeTaskState(DocumentFacts.status(doc))
         // A board card is a task by another name, and its source writes the same `Status:` line.
         ObjectType.BOARD_CARD -> normalizeTaskState(DocumentFacts.status(doc))
         // The drafting ladder is its own vocabulary — a *drafted* scene is not a *done* one — so it

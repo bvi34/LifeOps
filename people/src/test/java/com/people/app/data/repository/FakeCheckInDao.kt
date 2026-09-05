@@ -126,4 +126,14 @@ class FakeCheckInDao : CheckInDao {
     override suspend fun clearAnswers(checkInId: String) {
         answers.value = answers.value.filterNot { it.checkInId == checkInId }
     }
+
+    // --- the whole log, once ---
+
+    override suspend fun allFields(): List<CheckInFieldEntity> =
+        fields.value.sortedWith(compareBy({ it.personId }, { it.retired }, { it.position }))
+
+    override suspend fun allCheckIns(): List<CheckInEntity> =
+        checkIns.value.sortedWith(compareBy<CheckInEntity> { it.personId }.thenByDescending { it.day })
+
+    override suspend fun allAnswers(): List<CheckInAnswerEntity> = answers.value
 }

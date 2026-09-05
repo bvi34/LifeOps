@@ -287,7 +287,7 @@ object SmallTalk {
         SourceApp.CITATION to "• \"What am I reading?\" or \"Show me my notes on a book.\"",
         SourceApp.LOGISTICS to "• \"What's running low in the pantry?\" or \"What can I cook tonight?\"",
         SourceApp.HEALTH to "• \"When did she last have paracetamol?\" or \"How long was his fever?\"",
-        SourceApp.PEOPLE to "• \"Whose birthday is next?\" or \"What's my sister's email?\"",
+        SourceApp.PEOPLE to "• \"Whose birthday is next?\" or \"How has her check-in gone this week?\"",
         SourceApp.PROJECT to "• \"What's left to draft in the novel?\" or \"What's on the board?\"",
         SourceApp.MAINTENANCE to "• \"What's overdue on the car?\" or \"What's left on the mortgage?\"",
         SourceApp.REPOSITORY to "• \"Do we have the furnace manual?\" or \"What did we file about the house?\""

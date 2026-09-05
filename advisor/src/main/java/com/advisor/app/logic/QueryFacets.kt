@@ -42,9 +42,10 @@ data class QueryFacets(
                         return KnowledgeFacets.READING
                 }
             }
-            // Task/operation lifecycle — and a board card, which moves through the same three.
+            // Task/operation lifecycle — and a board card and a partner's task, which move through
+            // the same three.
             if (types.contains(ObjectType.TASK) || types.contains(ObjectType.OPERATION) ||
-                types.contains(ObjectType.BOARD_CARD)
+                types.contains(ObjectType.BOARD_CARD) || types.contains(ObjectType.PARTNER_TASK)
             ) {
                 when {
                     DONE_CUE.containsMatchIn(q) -> return KnowledgeFacets.DONE
@@ -102,6 +103,9 @@ data class QueryFacets(
             Regex("""\b(medicine|medicines|medication|medications|dose|doses|paracetamol|ibuprofen|antibiotic|antibiotics)\b""")
                 to ObjectType.MEDICATION,
             Regex("""\b(birthday|birthdays|anniversary|anniversaries)\b""") to ObjectType.DATE,
+            Regex("""\b(check[- ]?in|check[- ]?ins|checked in|streak|streaks|daily log|journal)\b""")
+                to ObjectType.CHECK_IN,
+            Regex("""\b(partner|partner'?s|partners)\b""") to ObjectType.PARTNER_TASK,
             // Project. "Project" is deliberately two cues: LifeOps calls the thing an Operation and
             // the Project app calls its own thing a project, and a question asked in that word wants
             // whichever of them the user has. Both types are accepted; neither is a mismatch.

@@ -94,7 +94,11 @@ class AdvisorApp private constructor(private val app: Application) {
             ) {
                 HealthDatabase.getInstance(app)
             },
-            PeopleKnowledgeSource(app).cachedOn("people", "person_notes", "important_dates") {
+            PeopleKnowledgeSource(app).cachedOn(
+                "people", "person_notes", "important_dates",
+                "check_in_fields", "check_ins", "check_in_answers",
+                "partner_links", "partner_week_tasks", "partner_outbox"
+            ) {
                 PeopleDatabase.getInstance(app)
             },
             ProjectKnowledgeSource(app).cachedOn(

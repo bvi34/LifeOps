@@ -98,6 +98,32 @@ class KnowledgeFacetsTest {
     }
 
     @Test
+    fun classifies_the_check_in_log_and_the_partner_seam() {
+        // The form, one day and the shape of the rest all answer "what does the check-in say".
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in", "")))
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in-form", "")))
+        assertEquals(ObjectType.CHECK_IN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "check-in-history", "")))
+        assertEquals(ObjectType.PARTNER_TASK, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "partner-task", "")))
+        // The pairing itself is not a task, and is left untyped so a question about what a partner
+        // has finished cannot throw it away as a state mismatch.
+        assertEquals(ObjectType.UNKNOWN, KnowledgeFacets.objectTypeOf(doc(SourceApp.PEOPLE, "partner", "")))
+    }
+
+    @Test
+    fun a_partners_task_uses_the_task_states_and_a_recorded_day_has_none() {
+        assertEquals(
+            KnowledgeFacets.DONE,
+            KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "partner-task", "On Sam's week: X. Status: done. Week of 2026-09-01"))
+        )
+        assertEquals(
+            KnowledgeFacets.TODO,
+            KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "partner-task", "On Sam's week: X. Status: todo. Week of 2026-09-01"))
+        )
+        // A day that was recorded is a fact about that day, not a state it moves through.
+        assertNull(KnowledgeFacets.stateOf(doc(SourceApp.PEOPLE, "check-in", "Check-in for Ellie on 2026-09-01. Slept: 8")))
+    }
+
+    @Test
     fun classifies_the_project_shelf() {
         assertEquals(ObjectType.PROJECT, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "project", "")))
         assertEquals(ObjectType.OUTLINE_PIECE, KnowledgeFacets.objectTypeOf(doc(SourceApp.PROJECT, "outline", "")))
