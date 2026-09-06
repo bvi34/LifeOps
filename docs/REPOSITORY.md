@@ -212,8 +212,30 @@ its `install`, which is what Health does.
 
 ## Tests
 
-`gradle :repository:test` — 32 JVM tests over `logic/`, no SDK or emulator needed.
+`gradle :repository:test` — 58 JVM tests, no emulator needed.
 
+Thirty-two of them are over `logic/` and need no SDK at all. The other twenty-six are the store's,
+and they are the ones that matter most here, because **the rows in this app are captions**: every
+other module's rows could at worst be typed in again, whereas a row that outlives its file is a
+document the household believes it has and cannot open, and a file that outlives its row is a
+mortgage statement nothing will ever delete.
+
+- `DocumentRepositoryTest` — the store, against a real Room database and a real folder of files. That
+  a file which cannot be read leaves *nothing* behind — no row and no half-written file; that
+  deleting takes the bytes with the row, through the single delete and through the cascade an owning
+  app calls when one of its records goes; that the cascade is keyed on the app **and** the record,
+  because two apps number their records from one; that a document another app is only lending cannot
+  be renamed, re-filed or deleted from here however it is addressed; that a drawer appears the moment
+  its app registers, without the shelf being closed and reopened; that a lender which cannot answer
+  costs a drawer and never the list; and that a document leaves by one road under its own title
+  whether this app holds it or a lender does.
+
+  Its fixtures are the two things the store is actually wired to and neither is a stub:
+  `FakePicker` is a real `ContentProvider` registered with the real `ContentResolver`, so what a
+  document is called, what it is stored as and whether a row is written at all are decided the way
+  they are decided on a phone — including the file that describes itself happily and then fails to
+  open, which is a Google Doc with no exportable bytes and not a contrived case. `FakeSource` is a
+  real `DocumentSource`, which is all Repository has ever known about any lender.
 - `ShelfTest` — newest filed first (the only date this app has, because it does not read documents),
   a search that finds the truck's manual by the word "wrangler" while the module still has no idea
   what a Wrangler is, the household's drawer leading, a drawer from an app this build does not have
