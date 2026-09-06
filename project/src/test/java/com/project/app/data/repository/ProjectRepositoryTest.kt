@@ -25,6 +25,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import java.time.LocalDate
 
 /**
  * The store's own rules, against a real database.
@@ -458,6 +459,50 @@ class ProjectRepositoryTest {
         repo.moveCard(mine, cardId, theirColumn, 0)
 
         assertEquals("a card crossed into another project's board", myColumn, dao.getCard(cardId)?.columnId)
+    }
+
+    // ------------------------------------------------------------------ due dates
+
+    @Test
+    fun `a card keeps its due date, and can have it taken away`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val columnId = dao.getColumns(projectId).first().id
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+
+        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        assertEquals(due, dao.getCard(cardId)?.dueOn)
+
+        // Droppable in the same breath as settable: without this the only way to lose a deadline
+        // that has been called off is to delete the card it was on.
+        repo.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(dueOn = null))
+        assertNull(dao.getCard(cardId)?.dueOn)
+    }
+
+    @Test
+    fun `most cards have no due date, and that is stored as no date rather than as a zero`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val columnId = dao.getColumns(projectId).first().id
+
+        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene")
+
+        // Epoch day zero is a real date (1 Jan 1970), so "no deadline" has to be null — a zero here
+        // would put every undated card fifty years overdue.
+        assertNull(dao.getCard(cardId)?.dueOn)
+    }
+
+    @Test
+    fun `moving a card between columns leaves its deadline alone`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
+
+        repo.moveCard(projectId, cardId, columns.last().id, 0)
+
+        // When a thing is due is a fact about the work; which lane it is in is a fact about your
+        // progress through it. Finishing something early does not move its deadline.
+        assertEquals(due, dao.getCard(cardId)?.dueOn)
+        assertNotNull("the card was not marked finished", dao.getCard(cardId)?.doneAt)
     }
 
     // ------------------------------------------------------------------ opening at an address

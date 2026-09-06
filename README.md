@@ -198,14 +198,21 @@ the receipts.
 > suite shares a process, and an app holding writing that never leaves the device has no reason to
 > let every app on the phone address its rows.
 >
-> Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
-> like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
+> A board card can carry a **due date**, and that is the only date in the app. The line Project holds
+> is finer than "no dates": when a thing is *due* is a fact about the work, and Maintenance keeps the
+> same kind of fact about a furnace; when you will *do* it is a decision about your time, and that is
+> LifeOps' to make. So there is no agenda here, no calendar, no today screen and no lane that sorts
+> itself by date — a dated card looks like any other but for the chip saying when it is due. A
+> finished card is never late however late it was, and a date that has already gone is remarked on
+> rather than refused, because people write down deadlines they have missed.
+>
+> Project is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
 > the timeline reading, the board moves, the compile, the search, the rules about which versions of a
 > document are worth keeping and the addresses that say where in Project to open are pure JVM in
-> `project/logic/` and covered by 152 unit tests. The store beneath them — the cascades, the soft
+> `project/logic/` and covered by 164 unit tests. The store beneath them — the cascades, the soft
 > links, the word-count roll-up, the versions, a linked address checked against what is actually
-> there, and the schema's upgrade path — has 30 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
+> there, and the schema's upgrade path — has 33 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.

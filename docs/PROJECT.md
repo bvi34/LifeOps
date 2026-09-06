@@ -23,9 +23,20 @@ Three tools got stirred together here, and it is worth naming which part came fr
 | **Reedsy** | An *outline* whose rows are parts of the work itself: they nest, they carry a status through drafting and revision, and they carry a **length** against a target. |
 | **Kanban** | A board of columns and cards, with limits that warn, for what is actually being done this week. |
 
-What it is **not** is a scheduler. Project never says when you will do something, and there is no
-date on a card. Deciding what today looks like is LifeOps' job, and a second planner would be a
-second answer to "what am I doing today" — which, in practice, means both of them stop being true.
+What it is **not** is a scheduler, and the line is finer than "no dates" — which is where this
+started and is no longer quite right. A card can carry a **due date**: the competition closes on the
+14th, the draft is promised on the 30th. What Project will never hold is **when you will do it**.
+
+That distinction is the whole of it. A due date is a *fact about the work* and belongs with the
+work; a plan is a *decision about your time* and belongs to LifeOps, which is where a week is
+planned. It is exactly the line Maintenance already draws — it knows the furnace is due a service
+and says nothing about which evening you will spend on it — and holding it is what stops there
+being a second answer to "what am I doing today", which in practice means both stop being true.
+
+Concretely, that rule shows up as things Project does not have: no agenda, no calendar, no today
+screen, no lane that reorders itself by date, no card hidden for being far off. A dated card looks
+exactly like an undated one but for the chip saying when it is due, coloured because a board is read
+at a glance and "overdue" has to survive that glance. Nothing else on the board changes.
 
 Project is also **not on the suite's sync spine**. People replicates because two apps genuinely
 write the same person; nothing else in the suite writes into a project, so there is nothing to
@@ -193,6 +204,41 @@ Moving a card is a menu of destinations rather than a drag, for the same reason 
 arrows: dragging between two columns that are half off-screen is a guess, and the one thing a board
 must never be is unsure where it just put your work.
 
+## Due dates — the only date here
+
+A board card, and nothing else, can be given a day it is due. Not an outline node: a chapter is a
+*part of the thing being made*, and giving structure a deadline is how an outline quietly turns into
+a schedule. Not a project either — you do not put "The Kestrel" on Tuesday's list.
+
+It is stored as an **epoch day**, nullable, and null is what almost every card holds. A day rather
+than an instant because a deadline is a date on a calendar, not a moment; nullable rather than zero
+because epoch day zero is a real date, and a zero here would file every undated card fifty years
+overdue.
+
+`logic/Due` reads a date against a `today` that is **passed in**, never taken from the clock inside
+itself. That is what makes "overdue by 3 days" testable at all, and on the screen it is why a lane
+reads the day once rather than per card — a list that asks the clock per row can disagree with
+itself as it scrolls past midnight.
+
+Three rules it holds:
+
+- **A finished card is never late**, however late it was. Leaving it red would have the board carry
+  a permanent accusation about work that is already behind you, which is not what anybody keeps a
+  board to be told. It says *"Was due 12 Feb"* instead.
+- **Nothing is ever refused.** A date that has already gone is remarked on and accepted, because
+  people write down deadlines they have missed and that is how a board comes to reflect reality
+  rather than the plan somebody had in January. The remark comes through the suite's own
+  `SuiteVerdict`, which is the mechanism by which a shared picker offers every date and asks the app
+  what it makes of the one chosen.
+- **Near dates are counted in days, far ones given as a date.** "In 3 days" lands where "17 Mar" has
+  to be worked out; past a week, "in 74 days" is a number nobody converts back into a day of the
+  year. The month names are spelled out in `logic/` rather than taken from a formatter, so a test
+  that passes in London passes in Berlin.
+
+This is also what makes a **hand-off to the LifeOps week** possible, which was not before: a card
+with no date is nothing a planner can place. That hand-off does not exist yet — see
+[MAINTENANCE.md](MAINTENANCE.md#the-lifeops-week) for the shape it will take.
+
 ## Versions — the way back
 
 Two edits in this app can throw a whole document away in one tap: **replacing it with pasted
@@ -341,8 +387,9 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
 | `Revisions.kt` | Which versions of a document are worth keeping, which are copies of each other, and which fall off the end of the cap. |
 | `DeepLink.kt` | The addresses that say where in Project to open, and what is not a valid one. |
+| `Due.kt` | How a due date stands against a day, what to call it, and what Project makes of one being picked. |
 
-That is 152 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 164 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |

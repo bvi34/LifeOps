@@ -165,6 +165,10 @@ class ProjectMigrationTest {
             assertEquals("n2", card?.outlineNodeId)
             assertEquals("d1", card?.docId)
             assertNull("a card that was never finished came back done", card?.doneAt)
+            // Version 3 added the due date. A card written before it existed has no deadline, and
+            // null is the only honest answer — inventing one from `createdAt` would fill a restored
+            // board with dates nobody chose.
+            assertNull("a card from version 1 came back with a deadline", card?.dueOn)
         } finally {
             db.close()
         }
@@ -383,7 +387,9 @@ class ProjectMigrationTest {
         val SCHEMA_FINGERPRINTS = mapOf(
             1 to "c062a39ad76bcfb66ae604325fa6da8d",
             // 2 added the two tables that keep versions of a document. Purely additive.
-            2 to "d5c1f5fc309f019f2ec00621bec8a41f"
+            2 to "d5c1f5fc309f019f2ec00621bec8a41f",
+            // 3 put a nullable due date on a board card — one ALTER TABLE, no data touched.
+            3 to "b63a408af7a4c01ed6018ff8c4cf4b33"
         )
     }
 

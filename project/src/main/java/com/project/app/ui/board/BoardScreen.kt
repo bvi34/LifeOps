@@ -49,12 +49,19 @@ import androidx.lifecycle.viewModelScope
 import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteNumberField
 import com.operations.suite.ui.fields.SuiteTextField
+import com.operations.suite.ui.pickers.SuiteDateButton
+import com.operations.suite.ui.pickers.SuiteDates
+import com.operations.suitekit.SuiteVerdict
 import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
 import com.project.app.logic.BoardColumn
 import com.project.app.logic.BoardLane
+import com.project.app.logic.Due
+import com.project.app.logic.DueOpinion
+import com.project.app.logic.DueStanding
+import com.project.app.logic.DueState
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineRow
 import com.project.app.logic.ProjectKind
@@ -62,6 +69,7 @@ import com.project.app.logic.Tree
 import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
 import com.project.app.ui.common.OutlinePickerDialog
+import java.time.LocalDate
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -372,6 +380,11 @@ private fun Lane(
             }
         }
 
+        // Read once for the whole lane rather than per card: "today" is one fact, and asking the
+        // clock inside a list item lets the same list disagree with itself as it scrolls past
+        // midnight.
+        val today = remember { LocalDate.now() }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 80.dp),
@@ -416,6 +429,13 @@ private fun Lane(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        Due.standing(
+                            dueOn = Due.dateOf(card.dueOn),
+                            today = today,
+                            // A card in the finished column is not late, however late it was: see
+                            // `logic/Due.DueState.DONE`.
+                            done = lane.column.isDone
+                        )?.let { DueChip(it) }
                     }
                 }
             }
@@ -428,6 +448,30 @@ private fun Lane(
             }
         }
     }
+}
+
+/**
+ * When a card is due, in one line, coloured by how much that now matters.
+ *
+ * Colour is the whole reason this is a chip rather than another grey caption: a board is read at a
+ * glance and "overdue" has to survive that glance. It is also the *only* thing a due date does to
+ * the board — nothing reorders, nothing is hidden, no lane sorts itself. Project says when the work
+ * is due and never when you will do it; that decision belongs to LifeOps.
+ */
+@Composable
+private fun DueChip(standing: DueStanding) {
+    val colour = when (standing.state) {
+        DueState.OVERDUE -> MaterialTheme.colorScheme.error
+        DueState.TODAY -> MaterialTheme.colorScheme.tertiary
+        DueState.SOON -> MaterialTheme.colorScheme.secondary
+        DueState.LATER, DueState.DONE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        standing.label,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = if (standing.state == DueState.OVERDUE) FontWeight.SemiBold else null,
+        color = colour
+    )
 }
 
 @Composable
@@ -475,6 +519,7 @@ private fun CardDialog(
     var notes by remember(card.id) { mutableStateOf(card.notes.orEmpty()) }
     var outlineNodeId by remember(card.id) { mutableStateOf(card.outlineNodeId) }
     var docId by remember(card.id) { mutableStateOf(card.docId) }
+    var dueOn by remember(card.id) { mutableStateOf(Due.dateOf(card.dueOn)) }
     var pickingOutline by remember { mutableStateOf(false) }
     var pickingDoc by remember { mutableStateOf(false) }
 
@@ -510,6 +555,22 @@ private fun CardDialog(
                     )
                 }
 
+                // The suite's one date picker, told what this app makes of a choice rather than
+                // deciding for itself — Project refuses no date and remarks on one that has gone
+                // (see `logic/Due`), where another app might well refuse the same Tuesday.
+                SuiteDateButton(
+                    label = "due date",
+                    date = dueOn,
+                    onDateChange = { dueOn = it },
+                    check = { picked ->
+                        when (val opinion = Due.opinionOf(picked, LocalDate.now())) {
+                            is DueOpinion.Fine -> SuiteVerdict.Fine
+                            is DueOpinion.Remark -> SuiteVerdict.Note(opinion.message)
+                        }
+                    },
+                    display = { Due.standing(it, LocalDate.now())?.label ?: SuiteDates.toIso(it) }
+                )
+
                 TextButton(onClick = onDelete) { Text("Delete card") }
             }
         },
@@ -520,7 +581,8 @@ private fun CardDialog(
                         title = title,
                         notes = notes.ifBlank { null },
                         outlineNodeId = outlineNodeId,
-                        docId = docId
+                        docId = docId,
+                        dueOn = dueOn?.toEpochDay()
                     )
                 )
             }) { Text("Save") }

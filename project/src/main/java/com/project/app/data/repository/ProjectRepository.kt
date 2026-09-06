@@ -863,7 +863,8 @@ class ProjectRepository(private val dao: ProjectDao) {
         title: String,
         notes: String? = null,
         outlineNodeId: String? = null,
-        docId: String? = null
+        docId: String? = null,
+        dueOn: Long? = null
     ): String {
         val id = newId()
         val cards = dao.getCards(projectId).map { it.toLogic() }
@@ -877,6 +878,7 @@ class ProjectRepository(private val dao: ProjectDao) {
                 sortOrder = Board.nextSortOrder(cards, columnId),
                 outlineNodeId = outlineNodeId,
                 docId = docId,
+                dueOn = dueOn,
                 createdAt = now(),
                 doneAt = null
             )
@@ -892,7 +894,10 @@ class ProjectRepository(private val dao: ProjectDao) {
                 title = card.title.trim().ifEmpty { "Untitled" },
                 notes = card.notes.clean(),
                 outlineNodeId = card.outlineNodeId,
-                docId = card.docId
+                docId = card.docId,
+                // Settable and clearable in the same breath: a deadline that has been dropped has
+                // to be droppable, or the only way to lose one is to delete the card.
+                dueOn = card.dueOn
             )
         )
         touchProject(projectId)
@@ -1158,6 +1163,7 @@ fun BoardCardEntity.toLogic() = BoardCard(
     sortOrder = sortOrder,
     outlineNodeId = outlineNodeId,
     docId = docId,
+    dueOn = dueOn,
     createdAt = createdAt,
     doneAt = doneAt
 )

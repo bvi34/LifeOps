@@ -28,6 +28,14 @@ data class BoardCard(
     val outlineNodeId: String? = null,
     /** The document this card is about, when it is about one. */
     val docId: String? = null,
+    /**
+     * The day this is due, as an epoch day — or null, which is most cards.
+     *
+     * A day rather than an instant, because a deadline is a date on a calendar and not a moment;
+     * and a fact about the work rather than a plan for your time, which is the distinction that
+     * keeps this from being a second planner. See `logic/Due`.
+     */
+    val dueOn: Long? = null,
     val createdAt: Long = 0L,
     val doneAt: Long? = null
 )

@@ -265,6 +265,8 @@ data class BoardCardEntity(
     /** Soft links into the other sections. Either may dangle; neither cascades. */
     val outlineNodeId: String?,
     val docId: String?,
+    /** Epoch day this card is due, or null. See `logic/Due` for the line this sits on. */
+    val dueOn: Long?,
     val createdAt: Long,
     val doneAt: Long?
 )

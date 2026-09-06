@@ -7,8 +7,10 @@ plugins {
     // written in, the lore it is consistent with, the timeline it happens on, and the board it gets
     // built through. Those five are not five apps — they are five views of one project, which is why
     // they share a database and a workspace rather than living in separate modules. What Project
-    // deliberately does not own is *when you will do it*: scheduling a day's work is LifeOps' job,
-    // and a second planner would be a second answer to "what am I doing today".
+    // deliberately does not own is *when you will do it*. A card can carry a due date — that is a
+    // fact about the work, the same one Maintenance keeps about a furnace — but scheduling a day's
+    // work is LifeOps' job, and a second planner would be a second answer to "what am I doing
+    // today". See logic/Due.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)

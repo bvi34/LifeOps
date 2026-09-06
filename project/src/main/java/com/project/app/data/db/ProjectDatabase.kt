@@ -22,7 +22,7 @@ import com.project.app.data.db.entities.TimelineEventEntity
  * The schema version, in one place — the backup manifest reads it from here rather than repeating
  * the number, so it can't drift from the schema the copied file was written at.
  */
-const val PROJECT_DB_VERSION = 2
+const val PROJECT_DB_VERSION = 3
 
 /**
  * Project's own store: the shelf, and the five sections of everything on it.
@@ -72,6 +72,23 @@ internal val MIGRATION_1_2 = object : Migration(1, 2) {
             "CREATE INDEX IF NOT EXISTS `index_doc_revision_blocks_sortOrder` " +
                 "ON `doc_revision_blocks` (`sortOrder`)"
         )
+    }
+}
+
+/**
+ * Version 3 puts a due date on a board card.
+ *
+ * One nullable column, and null is the honest default: no card written before this existed had a
+ * deadline, and inventing one from `createdAt` would fill a board with dates nobody chose.
+ *
+ * This is the first date anywhere in Project, and it deliberately arrives on the *card* rather than
+ * on the outline or the project. A card is the work being done; a chapter is a part of the thing
+ * being made, and giving structure a deadline is how an outline turns into a schedule. See
+ * `logic/Due` for the rest of that argument.
+ */
+internal val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `board_cards` ADD COLUMN `dueOn` INTEGER")
     }
 }
 
@@ -125,7 +142,7 @@ abstract class ProjectDatabase : RoomDatabase() {
             name: String = DB_NAME
         ): RoomDatabase.Builder<ProjectDatabase> =
             Room.databaseBuilder(context.applicationContext, ProjectDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
 
         /** Close and drop the singleton so a restore can swap the underlying file. */
         fun closeInstance() {
