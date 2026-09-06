@@ -8,9 +8,13 @@ import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.LoreCategory
 import com.project.app.logic.ProjectKind
+import com.project.app.logic.RevisionReason
+import com.project.app.logic.Revisions
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -33,7 +37,9 @@ import org.robolectric.RobolectricTestRunner
  * - that a **soft link** is cut rather than followed — deleting a scene must not delete the document
  *   written for it, and must not leave a card pointing at a scene that no longer exists;
  * - that the **stored word counts** and the blocks they were counted from cannot drift, through
- *   every path that can change them.
+ *   every path that can change them;
+ * - that the **versions kept before a destructive edit** really hold what the document said, and
+ *   really put it back.
  *
  * A fake DAO would answer all of those with whatever this file assumed, which is why there isn't
  * one: the database below is in memory, but it is a real Room database — the same entities, the
@@ -228,6 +234,168 @@ class ProjectRepositoryTest {
         assertEquals("The harbour", dao.getOutlineNode(scene)?.title)
         assertEquals(1200, dao.getOutlineNode(scene)?.targetWords)
         assertEquals(5, dao.getOutlineNode(scene)?.actualWords)
+    }
+
+    // ------------------------------------------------------------------ versions of a document
+
+    @Test
+    fun `pasting over a document keeps what it said, and the version restores it exactly`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Scene — the docks")
+        repo.replaceDocFromMarkdown(
+            docId,
+            "# The docks\n\nShe did not knock.\n\n- [x] Ticked\n- [ ] Not ticked"
+        )
+        val before = dao.getBlocks(docId).map { Triple(it.type, it.text, it.checked) }
+
+        // The edit this whole feature exists for: one tap, and the morning's writing is gone.
+        repo.replaceDocFromMarkdown(docId, "Something else entirely.")
+        assertEquals(listOf("Something else entirely."), dao.getBlocks(docId).map { it.text })
+
+        val kept = repo.observeRevisions(docId).first()
+        assertEquals(1, kept.size)
+        assertEquals(RevisionReason.IMPORT, kept.single().reason)
+
+        assertTrue(repo.restoreRevision(docId, kept.single().id))
+
+        // Restored exactly: the types, the text and the ticked states, in order. This is why a
+        // version stores blocks rather than rendered Markdown — the round trip would have dropped
+        // nothing here but would not have been *guaranteed* to.
+        assertEquals(before, dao.getBlocks(docId).map { Triple(it.type, it.text, it.checked) })
+        assertEquals(9, dao.getDoc(docId)?.wordCount)
+    }
+
+    @Test
+    fun `restoring keeps the text it is about to replace, so going back is undoable`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Draft")
+        repo.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.replaceDocFromMarkdown(docId, "The second draft.")
+
+        val toFirst = repo.observeRevisions(docId).first().single()
+        repo.restoreRevision(docId, toFirst.id)
+        assertEquals(listOf("The first draft."), dao.getBlocks(docId).map { it.text })
+
+        // The restore filed the second draft on its way past, so the history is not a one-way door.
+        val after = repo.observeRevisions(docId).first()
+        assertEquals(RevisionReason.RESTORE, after.first().reason)
+        assertEquals(listOf("The second draft."), repo.revisionBlocks(after.first().id).map { it.text })
+
+        repo.restoreRevision(docId, after.first().id)
+        assertEquals(listOf("The second draft."), dao.getBlocks(docId).map { it.text })
+    }
+
+    @Test
+    fun `a version is not consumed by being restored`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Draft")
+        repo.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.replaceDocFromMarkdown(docId, "The second draft.")
+        val original = repo.observeRevisions(docId).first().single()
+
+        repo.restoreRevision(docId, original.id)
+        repo.replaceDocFromMarkdown(docId, "A third thing.")
+        // The same version, a second time. Restoring reads a version rather than moving it.
+        assertTrue(repo.restoreRevision(docId, original.id))
+        assertEquals(listOf("The first draft."), dao.getBlocks(docId).map { it.text })
+    }
+
+    @Test
+    fun `an empty document files no version, and neither does one that has not changed`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Draft")
+
+        // A new document is one empty paragraph. Pasting into it must not file a version of nothing
+        // and put it at the top of the list.
+        repo.replaceDocFromMarkdown(docId, "The first draft.")
+        assertTrue(repo.observeRevisions(docId).first().isEmpty())
+
+        assertNotNull(repo.saveRevision(docId, RevisionReason.MANUAL))
+        // Asked for twice with nothing typed in between: the second is a copy of the first, and
+        // twenty copies of the same paragraph would push the versions that matter off the end.
+        assertNull(repo.saveRevision(docId, RevisionReason.MANUAL))
+        assertEquals(1, repo.observeRevisions(docId).first().size)
+
+        // Pasting now files nothing either, and that is the same rule rather than a hole in it: the
+        // version at the top already holds exactly what is about to be replaced, which is the whole
+        // reason to file one. A second copy of it would buy nothing and cost a slot.
+        repo.replaceDocFromMarkdown(docId, "Now it says something else.")
+        assertEquals(1, repo.observeRevisions(docId).first().size)
+
+        // Once the document says something no version holds, the next destructive edit files it.
+        repo.replaceDocFromMarkdown(docId, "And now something else again.")
+        val kept = repo.observeRevisions(docId).first()
+        assertEquals(2, kept.size)
+        assertEquals(
+            listOf("Now it says something else."),
+            repo.revisionBlocks(kept.first().id).map { it.text }
+        )
+    }
+
+    @Test
+    fun `rebuilding tables keeps a version first`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Stats")
+        // A table that lost its line breaks — one paragraph of pipes, which `repairTables` rewrites
+        // in bulk. Recoverable in principle; a version makes it recoverable in practice.
+        repo.replaceDocFromMarkdown(docId, "| a | b | | --- | --- | | 1 | 2 |")
+
+        val repaired = repo.repairTables(docId)
+        if (repaired == 0) return@runTest
+
+        val kept = repo.observeRevisions(docId).first()
+        assertEquals(RevisionReason.REPAIR, kept.first().reason)
+    }
+
+    @Test
+    fun `only the last few versions are kept, and the oldest are the ones that go`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Draft")
+
+        repeat(Revisions.KEEP + 5) { round -> repo.replaceDocFromMarkdown(docId, "Draft number $round.") }
+
+        val kept = repo.observeRevisions(docId).first()
+        assertEquals(Revisions.KEEP, kept.size)
+        // Newest first, and the oldest drafts are the ones gone: the version filed before the last
+        // paste holds the paste before it.
+        assertEquals(
+            listOf("Draft number ${Revisions.KEEP + 3}."),
+            repo.revisionBlocks(kept.first().id).map { it.text }
+        )
+        val texts = kept.flatMap { repo.revisionBlocks(it.id).map { block -> block.text } }
+        assertTrue("an early draft survived the cap", texts.none { it == "Draft number 0." })
+    }
+
+    @Test
+    fun `a version cannot be restored into another document`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val mine = repo.addDoc(projectId, "Mine")
+        val theirs = repo.addDoc(projectId, "Theirs")
+        repo.replaceDocFromMarkdown(mine, "Mine, first.")
+        repo.replaceDocFromMarkdown(mine, "Mine, second.")
+        repo.replaceDocFromMarkdown(theirs, "Theirs.")
+
+        val mineRevision = repo.observeRevisions(mine).first().single()
+
+        // A safety feature that can overwrite the wrong document is a data-loss bug in disguise.
+        assertFalse(repo.restoreRevision(theirs, mineRevision.id))
+        assertEquals(listOf("Theirs."), dao.getBlocks(theirs).map { it.text })
+    }
+
+    @Test
+    fun `versions go with the document they are versions of`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Draft")
+        repo.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.replaceDocFromMarkdown(docId, "The second draft.")
+        val revisionId = repo.observeRevisions(docId).first().single().id
+
+        repo.deleteDoc(docId)
+
+        // These are versions *of a document*, not a wastebasket for deleted ones — so they cascade,
+        // and their blocks cascade with them rather than being left with nothing to belong to.
+        assertTrue(repo.observeRevisions(docId).first().isEmpty())
+        assertTrue(repo.revisionBlocks(revisionId).isEmpty())
     }
 
     // ------------------------------------------------------------------ the board

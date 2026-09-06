@@ -75,6 +75,7 @@ import com.project.app.logic.DocBlocks
 import com.project.app.logic.DocHeading
 import com.project.app.logic.MarkdownTables
 import com.project.app.logic.ProjectPulse
+import com.project.app.logic.RevisionReason
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -120,6 +121,24 @@ class DocEditorViewModel(
         val next = !_tableCards.value
         _tableCards.value = next
         prefs.docTableCards = next
+    }
+
+    /**
+     * How many versions this document has, so the menu can offer the history only when there is
+     * one — an empty history screen is a worse answer than no way to reach it.
+     */
+    val revisionCount: StateFlow<Int> =
+        repo.observeRevisionCount(docId)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /**
+     * Keep the document as it stands, by hand.
+     *
+     * The automatic versions cover the edits the app knows are destructive. This covers the ones it
+     * cannot know about — the rewrite you are about to do yourself, a paragraph at a time.
+     */
+    fun saveRevision(onDone: (Boolean) -> Unit) = viewModelScope.launch {
+        onDone(repo.saveRevision(docId, RevisionReason.MANUAL) != null)
     }
 
     fun updateBlock(block: DocBlock) = viewModelScope.launch { repo.updateBlock(docId, block) }
@@ -187,10 +206,11 @@ class DocEditorViewModel(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
+fun DocEditorScreen(vm: DocEditorViewModel, onHistory: () -> Unit, onBack: () -> Unit) {
     val content by vm.content.collectAsStateWithLifecycle()
     val reading by vm.readingMode.collectAsStateWithLifecycle()
     val tableCards by vm.tableCards.collectAsStateWithLifecycle()
+    val revisionCount by vm.revisionCount.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -294,6 +314,38 @@ fun DocEditorScreen(vm: DocEditorViewModel, onBack: () -> Unit) {
                                     importing = true
                                 }
                             )
+                            // Beneath the one destructive item in this menu, which is where the way
+                            // back belongs: the moment somebody reads "Replace" is the moment to
+                            // see that replacing is not final.
+                            DropdownMenuItem(
+                                text = { Text("Keep this version") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.saveRevision { kept ->
+                                        scope.launch {
+                                            snackbars.showSnackbar(
+                                                if (kept) "Version kept"
+                                                // The two cases that file nothing, said rather than
+                                                // silently doing nothing and looking broken.
+                                                else "Nothing to keep — this is already the latest version"
+                                            )
+                                        }
+                                    }
+                                }
+                            )
+                            if (revisionCount > 0) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            "Version history ($revisionCount)"
+                                        )
+                                    },
+                                    onClick = {
+                                        menuOpen = false
+                                        onHistory()
+                                    }
+                                )
+                            }
                         }
                     }
                 }

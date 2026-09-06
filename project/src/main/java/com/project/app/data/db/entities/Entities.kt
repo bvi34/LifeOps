@@ -268,3 +268,70 @@ data class BoardCardEntity(
     val createdAt: Long,
     val doneAt: Long?
 )
+
+/**
+ * One kept version of a document.
+ *
+ * Versions exist because a document's blocks can be replaced wholesale — pasting a chapter in
+ * throws away everything that was there — and what this app holds may be the only copy of that
+ * writing. A confirmation dialog is not a safety net; a copy is.
+ *
+ * It cascades with the document, which is the honest scope: these are versions *of* a document, not
+ * a wastebasket for deleted ones. Undeleting a document would be a different feature with a
+ * different lifetime, and pretending this one covers it would be worse than not offering it.
+ */
+@Entity(
+    tableName = "doc_revisions",
+    foreignKeys = [
+        ForeignKey(
+            entity = DocEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["docId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("docId"), Index("savedAt")]
+)
+data class DocRevisionEntity(
+    @PrimaryKey val id: String,
+    val docId: String,
+    /** `logic/RevisionReason.key` — why this version was kept. */
+    val reason: String,
+    /**
+     * Words of prose in the snapshot, stored for the same reason a document's count is: the list
+     * draws every version at once and cannot load every block to say how long each one was.
+     */
+    val wordCount: Int,
+    val savedAt: Long
+)
+
+/**
+ * The blocks of one kept version — a copy of `doc_blocks` as it stood.
+ *
+ * Stored as rows rather than as rendered Markdown, and that is the whole point of the table. The
+ * Markdown round trip is the app's *interchange* format and is lossy in the ways interchange
+ * formats are: an empty paragraph does not survive it, a paragraph that happens to begin "- " comes
+ * back as a list item, and a numbered run is renumbered. Every one of those is acceptable when
+ * exporting and none of them is acceptable when the copy is the thing you are restoring from.
+ */
+@Entity(
+    tableName = "doc_revision_blocks",
+    foreignKeys = [
+        ForeignKey(
+            entity = DocRevisionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["revisionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("revisionId"), Index("sortOrder")]
+)
+data class DocRevisionBlockEntity(
+    @PrimaryKey val id: String,
+    val revisionId: String,
+    /** `logic/BlockType.key`. */
+    val type: String,
+    val text: String,
+    val checked: Boolean,
+    val sortOrder: Int
+)

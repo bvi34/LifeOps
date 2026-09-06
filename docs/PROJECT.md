@@ -193,6 +193,43 @@ Moving a card is a menu of destinations rather than a drag, for the same reason 
 arrows: dragging between two columns that are half off-screen is a guess, and the one thing a board
 must never be is unsure where it just put your work.
 
+## Versions — the way back
+
+Two edits in this app can throw a whole document away in one tap: **replacing it with pasted
+Markdown**, and **rebuilding its flattened tables**. What a project holds may be the only copy of
+that writing anywhere, and a confirmation dialog is not a safety net — it asks somebody who has
+already decided.
+
+So a version is kept first, automatically, and the document's menu offers **Keep this version** for
+the rewrites the app cannot see coming — the ones you do yourself, a paragraph at a time. The
+history lists them newest-first, each saying **why** it was kept rather than only when, because a
+column of timestamps is not something anybody can choose from. Open one to read what the document
+said; restore it to go back.
+
+Four rules make it a safety net rather than a log:
+
+- **A restore keeps the current text first.** The moment you most want what you just replaced is
+  the moment after replacing it, so going back is itself undoable and the history is not a one-way
+  door. A version is also not consumed by being restored — the same one can be returned to twice.
+- **Nothing empty is filed.** A new document holds one empty paragraph; without this, opening one
+  and pasting into it would file a version of nothing and put it at the top of the list.
+- **Nothing identical is filed.** If the version at the top already holds exactly what is about to
+  be replaced, a second copy buys nothing and costs a slot — so restoring twice, or pasting back
+  what was already there, does not push four real versions off the end.
+- **The last twenty are kept**, oldest dropped, and the screen says so rather than leaving it to be
+  discovered when a version somebody wanted has quietly gone.
+
+A version stores its **blocks**, not rendered Markdown, and that is the whole reason the table has
+the shape it does. Markdown is this app's *interchange* format and is lossy in the ways interchange
+formats are: an empty paragraph does not survive the round trip, a paragraph that happens to begin
+`- ` comes back as a list item, and a numbered run is renumbered. Every one of those is fine when
+exporting and none of them is acceptable when the copy is the thing you are restoring from.
+
+Versions belong to a document and **cascade with it**. That is the honest scope: this is a history
+of a document, not a wastebasket for deleted ones. Undeleting a document would be a different
+feature with a different lifetime, and pretending this one covers it would be worse than not
+offering it.
+
 ## Compile — the whole thing as one document
 
 The operation the app exists to make possible, and the reason the outline↔document link is worth
@@ -261,8 +298,9 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Timeline.kt` | Reading a "when" label, era bands, gaps, and order contradictions. |
 | `Board.kt` | Lanes, WIP-limit state, moving a card between columns, orphans, default columns. |
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
+| `Revisions.kt` | Which versions of a document are worth keeping, which are copies of each other, and which fall off the end of the cap. |
 
-That is 137 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 145 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |
@@ -273,9 +311,12 @@ job is to write exactly those.
 
 ## Storage
 
-One Room database, `project.db`, with eight tables and one project id threaded through all of them.
+One Room database, `project.db`, with ten tables and one project id threaded through all of them.
 That column is the architecture: every section is scoped to a project and cascades with it, so
-deleting a project cannot leave a doc or a card behind for a query that forgot to filter.
+deleting a project cannot leave a doc or a card behind for a query that forgot to filter. The two
+exceptions are `doc_revisions` and `doc_revision_blocks`, which hang off a *document* rather than a
+project — they are versions of one document and go with it, and the project cascade reaches them
+through it.
 
 The **cross-section links are soft** — a card's outline node and document, a doc's outline node, an
 event's scene — declared without a foreign key so deleting a scene does not delete the notes written
@@ -329,7 +370,13 @@ the only copy of somebody's writing.
 ## Backup
 
 `ProjectBackupContributor` contributes the whole `project.db` plus Project's own `project_*`
-preferences to the Operations Sandbox archive, keyed under `project/`.
+preferences to the Operations Sandbox archive, keyed under `project/`. Because it is the whole file,
+the versions kept for each document come with it and need no handling of their own.
+
+Restoring an archive written by an **older** version of the app puts that older database on disk, so
+the restore path and the upgrade path are the same path: the file is swapped in, Project reopens it,
+and the migration runs. That is why `ProjectMigrationTest` opening a version 1 file through the
+production builder is not an abstract exercise — it is the restore.
 
 The database is copied as **bytes**, not re-serialised as JSON, and that matters more here than
 anywhere else in the suite: a project's documents may be the only copy of that writing that exists —

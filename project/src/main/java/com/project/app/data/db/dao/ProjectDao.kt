@@ -8,6 +8,8 @@ import com.project.app.data.db.entities.BoardCardEntity
 import com.project.app.data.db.entities.BoardColumnEntity
 import com.project.app.data.db.entities.DocBlockEntity
 import com.project.app.data.db.entities.DocEntity
+import com.project.app.data.db.entities.DocRevisionBlockEntity
+import com.project.app.data.db.entities.DocRevisionEntity
 import com.project.app.data.db.entities.LoreEntryEntity
 import com.project.app.data.db.entities.OutlineNodeEntity
 import com.project.app.data.db.entities.ProjectEntity
@@ -238,6 +240,55 @@ interface ProjectDao {
     suspend fun replaceBlocks(docId: String, blocks: List<DocBlockEntity>) {
         deleteBlocksOf(docId)
         upsertBlocks(blocks)
+    }
+
+    // --- doc revisions ---
+    //
+    // A version is a header plus its blocks, and the two are only ever written or read together, so
+    // both writes below are transactions. Nothing here reorders or edits a version: a version is
+    // what the document was, and the only things that ever happen to one are being written, being
+    // read back, and being dropped when it falls off the end of the cap.
+
+    @Query("SELECT * FROM doc_revisions WHERE docId = :docId ORDER BY savedAt DESC, id DESC")
+    fun observeRevisions(docId: String): Flow<List<DocRevisionEntity>>
+
+    @Query("SELECT * FROM doc_revisions WHERE docId = :docId ORDER BY savedAt DESC, id DESC")
+    suspend fun getRevisions(docId: String): List<DocRevisionEntity>
+
+    @Query("SELECT * FROM doc_revisions WHERE id = :id")
+    suspend fun getRevision(id: String): DocRevisionEntity?
+
+    @Query("SELECT * FROM doc_revision_blocks WHERE revisionId = :revisionId ORDER BY sortOrder")
+    suspend fun getRevisionBlocks(revisionId: String): List<DocRevisionBlockEntity>
+
+    @Query("SELECT COUNT(*) FROM doc_revisions WHERE docId = :docId")
+    fun observeRevisionCount(docId: String): Flow<Int>
+
+    @Upsert
+    suspend fun upsertRevision(revision: DocRevisionEntity)
+
+    @Upsert
+    suspend fun upsertRevisionBlocks(blocks: List<DocRevisionBlockEntity>)
+
+    @Query("DELETE FROM doc_revisions WHERE id IN (:ids)")
+    suspend fun deleteRevisions(ids: List<String>)
+
+    /**
+     * File a version, and drop whatever the cap pushed off the end, in one go.
+     *
+     * One transaction because a half-written version is worse than no version: a header with no
+     * blocks reads as an empty document, and restoring it would delete the writing this table
+     * exists to protect.
+     */
+    @Transaction
+    suspend fun writeRevision(
+        revision: DocRevisionEntity,
+        blocks: List<DocRevisionBlockEntity>,
+        pruned: List<String>
+    ) {
+        upsertRevision(revision)
+        if (blocks.isNotEmpty()) upsertRevisionBlocks(blocks)
+        if (pruned.isNotEmpty()) deleteRevisions(pruned)
     }
 
     // --- lore ---

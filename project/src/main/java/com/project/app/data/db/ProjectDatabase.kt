@@ -4,11 +4,15 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.project.app.data.db.dao.ProjectDao
 import com.project.app.data.db.entities.BoardCardEntity
 import com.project.app.data.db.entities.BoardColumnEntity
 import com.project.app.data.db.entities.DocBlockEntity
 import com.project.app.data.db.entities.DocEntity
+import com.project.app.data.db.entities.DocRevisionBlockEntity
+import com.project.app.data.db.entities.DocRevisionEntity
 import com.project.app.data.db.entities.LoreEntryEntity
 import com.project.app.data.db.entities.OutlineNodeEntity
 import com.project.app.data.db.entities.ProjectEntity
@@ -18,7 +22,7 @@ import com.project.app.data.db.entities.TimelineEventEntity
  * The schema version, in one place — the backup manifest reads it from here rather than repeating
  * the number, so it can't drift from the schema the copied file was written at.
  */
-const val PROJECT_DB_VERSION = 1
+const val PROJECT_DB_VERSION = 2
 
 /**
  * Project's own store: the shelf, and the five sections of everything on it.
@@ -33,12 +37,52 @@ const val PROJECT_DB_VERSION = 1
  * That is why this file has no `syncVersion` column anywhere in it, and why adding one later would
  * be a change worth thinking about rather than a migration.
  */
+/**
+ * Version 2 keeps versions of a document.
+ *
+ * Purely additive: two new tables and nothing touched on the eight that were already there, because
+ * what version 1 held is the writing itself and a migration is the last place to be rearranging it.
+ * A phone that upgrades has no history for its existing documents, which is the truthful answer —
+ * the versions start from the first destructive edit made after the upgrade, not from an invented
+ * snapshot of the present dressed up as the past.
+ */
+internal val MIGRATION_1_2 = object : Migration(1, 2) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `doc_revisions` (" +
+                "`id` TEXT NOT NULL, `docId` TEXT NOT NULL, `reason` TEXT NOT NULL, " +
+                "`wordCount` INTEGER NOT NULL, `savedAt` INTEGER NOT NULL, PRIMARY KEY(`id`), " +
+                "FOREIGN KEY(`docId`) REFERENCES `docs`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_doc_revisions_docId` ON `doc_revisions` (`docId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_doc_revisions_savedAt` ON `doc_revisions` (`savedAt`)")
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `doc_revision_blocks` (" +
+                "`id` TEXT NOT NULL, `revisionId` TEXT NOT NULL, `type` TEXT NOT NULL, " +
+                "`text` TEXT NOT NULL, `checked` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, " +
+                "PRIMARY KEY(`id`), FOREIGN KEY(`revisionId`) REFERENCES `doc_revisions`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE CASCADE )"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_doc_revision_blocks_revisionId` " +
+                "ON `doc_revision_blocks` (`revisionId`)"
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_doc_revision_blocks_sortOrder` " +
+                "ON `doc_revision_blocks` (`sortOrder`)"
+        )
+    }
+}
+
 @Database(
     entities = [
         ProjectEntity::class,
         OutlineNodeEntity::class,
         DocEntity::class,
         DocBlockEntity::class,
+        DocRevisionEntity::class,
+        DocRevisionBlockEntity::class,
         LoreEntryEntity::class,
         TimelineEventEntity::class,
         BoardColumnEntity::class,
@@ -81,6 +125,7 @@ abstract class ProjectDatabase : RoomDatabase() {
             name: String = DB_NAME
         ): RoomDatabase.Builder<ProjectDatabase> =
             Room.databaseBuilder(context.applicationContext, ProjectDatabase::class.java, name)
+                .addMigrations(MIGRATION_1_2)
 
         /** Close and drop the singleton so a restore can swap the underlying file. */
         fun closeInstance() {

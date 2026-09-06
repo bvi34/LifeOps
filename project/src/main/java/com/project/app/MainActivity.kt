@@ -22,6 +22,8 @@ import com.project.app.ui.compile.CompileScreen
 import com.project.app.ui.compile.CompileViewModel
 import com.project.app.ui.docs.DocEditorScreen
 import com.project.app.ui.docs.DocEditorViewModel
+import com.project.app.ui.docs.DocHistoryScreen
+import com.project.app.ui.docs.DocHistoryViewModel
 import com.project.app.ui.search.SearchScreen
 import com.project.app.ui.search.SearchViewModel
 import com.project.app.ui.shelf.ShelfScreen
@@ -131,12 +133,35 @@ private fun ProjectNavGraph(
                 navArgument("docId") { type = NavType.StringType }
             )
         ) { entry ->
+            val projectId = entry.arguments?.getString("projectId").orEmpty()
             val docId = entry.arguments?.getString("docId").orEmpty()
             val vm: DocEditorViewModel = viewModel(
                 key = "doc-$docId",
                 factory = DocEditorViewModel.Factory(repo, prefs, docId)
             )
-            DocEditorScreen(vm, onBack = { nav.popBackStack() })
+            DocEditorScreen(
+                vm,
+                // The history is a route rather than a sheet over the editor: reading a version is
+                // reading a document, and Back from it should mean "back to the document" rather
+                // than dismissing something that was covering it.
+                onHistory = { nav.navigate("project/$projectId/doc/$docId/history") },
+                onBack = { nav.popBackStack() }
+            )
+        }
+
+        composable(
+            route = "project/{projectId}/doc/{docId}/history",
+            arguments = listOf(
+                navArgument("projectId") { type = NavType.StringType },
+                navArgument("docId") { type = NavType.StringType }
+            )
+        ) { entry ->
+            val docId = entry.arguments?.getString("docId").orEmpty()
+            val vm: DocHistoryViewModel = viewModel(
+                key = "history-$docId",
+                factory = DocHistoryViewModel.Factory(repo, docId)
+            )
+            DocHistoryScreen(vm, onBack = { nav.popBackStack() })
         }
 
         composable(

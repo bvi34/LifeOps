@@ -173,6 +173,16 @@ the receipts.
 > that rejects the card in your hand teaches you to lie to it), and deleting a column **keeps its
 > cards**, stranded on purpose, with a banner to re-file them.
 >
+> Two edits can throw a whole document away in one tap — pasting Markdown over it, and rebuilding
+> its flattened tables — and what a project holds may be the only copy of that writing anywhere. So
+> a **version is kept first**, automatically, and the menu offers to keep one by hand before a
+> rewrite the app cannot see coming. The history says *why* each was kept rather than only when,
+> because a column of timestamps is not something anybody can choose from; **restoring keeps the
+> current text first**, so going back is itself undoable. A version stores its **blocks**, not
+> rendered Markdown — the Markdown round trip is the export format and drops an empty paragraph,
+> renumbers a list and reads a paragraph beginning `- ` as a list item, all of which are fine when
+> exporting and none of which are acceptable in the copy you restore from. The last twenty are kept.
+>
 > Two things tie the sections into one app rather than five. **Compile** walks the whole outline,
 > pulls in every document linked to it, and hands you the manuscript — and it reports the holes
 > rather than hiding them: pieces with nothing written are listed by name, and documents belonging to
@@ -184,8 +194,10 @@ the receipts.
 > Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
 > like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
-> the timeline reading, the board moves, the compile and the search are pure JVM in `project/logic/`
-> and covered by 102 unit tests. It requests no permissions and has no `INTERNET`; nothing it holds
+> the timeline reading, the board moves, the compile, the search and the rules about which versions
+> of a document are worth keeping are pure JVM in `project/logic/` and covered by 145 unit tests. The
+> store beneath them — the cascades, the soft links, the word-count roll-up, the versions and the
+> schema's upgrade path — has 26 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.

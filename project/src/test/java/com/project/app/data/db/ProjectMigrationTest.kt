@@ -3,6 +3,8 @@ package com.project.app.data.db
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import androidx.test.core.app.ApplicationProvider
+import com.project.app.data.db.entities.DocRevisionBlockEntity
+import com.project.app.data.db.entities.DocRevisionEntity
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.After
@@ -163,6 +165,49 @@ class ProjectMigrationTest {
             assertEquals("n2", card?.outlineNodeId)
             assertEquals("d1", card?.docId)
             assertNull("a card that was never finished came back done", card?.doneAt)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun `after the upgrade, a version 1 document can keep and read back a version of itself`() = runTest {
+        writeDatabaseAt(1)
+        seedVersionOne()
+
+        val db = openThroughProduction()
+        try {
+            val dao = db.projectDao()
+
+            // A phone that upgrades has no history for the writing it already holds — there is no
+            // honest way to invent one — but the first destructive edit after the upgrade has to be
+            // covered, and that means the tables MIGRATION_1_2 creates have to really be there,
+            // foreign key and all, rather than merely satisfying Room's schema check.
+            dao.writeRevision(
+                revision = DocRevisionEntity(
+                    id = "rev1",
+                    docId = "d1",
+                    reason = "import",
+                    wordCount = 9,
+                    savedAt = 1_700_000_000_000L
+                ),
+                blocks = listOf(
+                    DocRevisionBlockEntity("rb1", "rev1", "paragraph", "The docks smelled of tar.", false, 0)
+                ),
+                pruned = emptyList()
+            )
+
+            assertEquals("import", dao.getRevision("rev1")?.reason)
+            assertEquals(
+                listOf("The docks smelled of tar."),
+                dao.getRevisionBlocks("rev1").map { it.text }
+            )
+
+            // And the cascade the entity declares is the cascade SQLite enforces: versions belong
+            // to a document and go with it.
+            dao.deleteDoc("d1")
+            assertNull(dao.getRevision("rev1"))
+            assertTrue(dao.getRevisionBlocks("rev1").isEmpty())
         } finally {
             db.close()
         }
@@ -336,7 +381,9 @@ class ProjectMigrationTest {
          * is not true.
          */
         val SCHEMA_FINGERPRINTS = mapOf(
-            1 to "c062a39ad76bcfb66ae604325fa6da8d"
+            1 to "c062a39ad76bcfb66ae604325fa6da8d",
+            // 2 added the two tables that keep versions of a document. Purely additive.
+            2 to "d5c1f5fc309f019f2ec00621bec8a41f"
         )
     }
 
