@@ -473,7 +473,7 @@ the settings by the question they answer — how the type is set, how the page i
 screen does — rather than as one long list.
 
 
-## Reading aloud (core built + verified; UI not built)
+## Reading aloud (core built + verified; UI built)
 
 The reader could set a book any way you liked and could not say a word of it. The speech track adds
 the voice, and it is built the same way everything else here is: the part that decides how a book
@@ -494,6 +494,7 @@ reader, and can be annotated, with no second notion of "where I am".
 | **Planning** | `speech/SpeechPlanner`, `SpeechPlan`, `SpeechOptions` | Turns a chapter into ordered units with the pauses between them. Headings are spoken whole and rest longer; verse goes a line at a time because its line breaks are the meaning; a scene break becomes the longest silence in the chapter; code and tables are silent by default and comprehensible when turned on. Text a source left uncovered by any block is still spoken — degrade, don't crash. Plans are **derived data**: never stored, recovered by re-planning, so better pacing later migrates nothing and invalidates no note. |
 | **Decisions** | `speech/Narration`, `NarrationState` | What happens *between* sentences — the end of a chapter, skipping back off the top of one, whether the sleep timer stops you now or lets the chapter finish. All ordinals and indices, no audio, so all of it is tested without a device. |
 | **Sleep timer** | `speech/SleepTimer` | The one control only ever used by somebody who will not be awake to correct it: it fades out over the last twenty seconds rather than cutting off mid-word, offers *end of chapter* as well as a duration, and gives a reader who reaches for "still awake" a minute late the whole extension rather than what was left. |
+| **Resuming** | `speech/Resume`, `SavedPlace`, `ResumePoint` | Which of the two recorded places a book opens at — where the eye left off, or where the voice got to — and in which unit the winner is expressed. |
 | **Voices** | `speech/VoiceModel`, `VoiceCatalog`, `VoiceSelection` | A short curated list of open-licence Piper voices with their real sizes and checksums, and the rules for choosing between what is installed — including falling back to the best remaining voice when the chosen one has been deleted, rather than leaving a reader with silence and no explanation. |
 
 **Why on-device neural, and what it costs.** The interesting options were the platform engine (free,
@@ -532,11 +533,40 @@ measures the speaking rate of an engine instead, and a listener at 1.5× would d
 left" in the app toward a number about nobody. The position still advances and is still saved; only
 the pace measurement declines to learn from it, and a reader who disagrees can turn it on.
 
-**Not built yet:** the player UI, the voice picker, and the read-along highlight. `ChapterRender`
-already maps canonical offsets to display offsets and `ReaderScreen` already shades ranges, so
-lighting up the sentence being spoken is a new range through machinery that exists — but nothing on
-screen calls any of it yet. `ReaderViewModel` exposes the whole surface (`narration`,
-`speechSettings`, `readAloud`, `skipAloud`, voice install/delete) ready for it.
+**Where it is in the app.** One play button and one tab, and the split between them is the point:
+
+- **In the reader**, a play button in the chapter bar, beside Previous/Next. It starts at the **top
+  of the page you are looking at** — both reading modes already keep the live position pointed at
+  the first line on screen, so the voice picks up where your eyes are rather than at some other
+  place the book remembers. While it runs, the bar says so, with the sleep timer's countdown where
+  the reading estimate usually sits. Pressing it in a book the voice does *not* have open starts
+  that book rather than silently resuming the other one.
+- **The Listen tab** holds the player, the voice picker (installed voices, the catalogue with sizes
+  and download progress, delete), speed, the sleep timer, and every toggle — including **continue in
+  the background**, which is the one thing that decides whether the voice is a feature of the page
+  or of the app. It is a tab and not a sheet in the reader because listening is not a property of
+  the page you have open: it keeps going with the app closed, and the person reaching for the speed
+  or a sleep timer is usually not looking at the book when they do.
+
+Chapter titles are announced when a chapter actually begins — once, and never when the chapter's own
+first heading already says the same words, which most EPUBs' do.
+
+**Where the voice got to is its own record.** Listening produces a second "where I was", and it is
+kept in its own columns rather than overwriting the reading position (`books.listenChapterOrdinal` /
+`listenCharOffset` / `listenedAt`, DB v10). Two reasons, both load-bearing. It is a different *fact*
+— recorded with the app in a pocket, routinely hours ahead of the last page anybody looked at, the
+way a note records the origin it was captured from. And it is a different *unit*: the voice only
+ever knows canonical characters, while `lastCharOffset` holds pixels when the scroll reader saved it
+and characters when the paged one did. Both places are timestamped, and `speech/Resume` picks
+whichever was reached last when the book is opened — so a chapter listened to on a walk is where you
+land, in the reader and in the voice alike. A canonical place is staged on its own restore channel
+so the scrolling reader resolves it through the layout (find the line holding that character) rather
+than scrolling to a character count as though it were a pixel count.
+
+**Not built yet:** the read-along highlight. `ChapterRender` already maps canonical offsets to
+display offsets and `ReaderScreen` already shades ranges, and `NarrationState` already publishes the
+canonical range of the sentence being spoken (and the word, on the platform engine) — so lighting it
+up is a new range through machinery that exists on both sides.
 
 ## Storage visibility (milestone 7 — core built + verified)
 
@@ -635,7 +665,7 @@ The framework-independent spine — internal model, structured document model, k
 EPUB/RR/PDF/O'Reilly ingestion, OPDS catalogs, the library query layer, notes + degradation +
 retrieval, the sync seam, storage visibility, and the capture provenance/clustering/promotion/triage
 logic + Kindle notebook parser + the speech planner — lives in `:core` and is fully JVM-tested
-(**578 tests**); the
+(**585 tests**); the
 Android reader (`:citation`) adds Room storage, the Compose readers and shelves, the capture entry
 points, WorkManager jobs, the catalog client, and the sync transport on top (buildable with the
 Android SDK).

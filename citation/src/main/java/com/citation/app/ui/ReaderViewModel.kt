@@ -6,7 +6,10 @@ import com.citation.app.data.CitationRepository
 import com.citation.app.data.opds.OpdsClient
 import com.citation.app.data.OreillyAccess
 import com.citation.app.audio.Narrator
+import com.citation.core.speech.InstalledVoice
 import com.citation.core.speech.NarrationState
+import com.citation.core.speech.Resume
+import com.citation.core.speech.SavedPlace
 import com.citation.core.speech.NarrationStatus
 import com.citation.core.speech.SkipGranularity
 import com.citation.core.speech.SleepMode
@@ -802,6 +805,14 @@ class ReaderViewModel(
     private var pendingScrollChapter = -1
     private var pendingScrollOffset = 0
 
+    // A pending restore whose offset is *canonical text*, not whatever the open reading mode stores.
+    // It exists because the voice only ever knows characters: resuming where listening left off has
+    // to be resolved against the rendered chapter (to a page, or to a line's y) rather than handed
+    // to `scrollTo` as though it were pixels. Kept beside the older channel rather than replacing
+    // it, so an ordinary reading resume behaves exactly as it did.
+    private var pendingCanonicalChapter = -1
+    private var pendingCanonicalOffset = 0
+
     // The chapter a *backward* page turn is entering, which must open at its end rather than its
     // start. Only the reader knows where that chapter's last page begins — it depends on the live
     // typography and viewport — so the intent is recorded here and the reader resolves it, exactly
@@ -854,8 +865,17 @@ class ReaderViewModel(
         if (readingBookKey != null) readingMeter.resume()
     }
 
-    /** Reader went to the background (lifecycle stop): bank + report engaged time, keep the session. */
-    fun onReaderHidden() = reportReading()
+    /**
+     * Reader went to the background (lifecycle stop): bank + report engaged time, keep the session.
+     *
+     * Also the one place [SpeechSettings.continueInBackground] is enforced. Off, the voice is a
+     * feature of the page and stops when you leave it; on — the default, and the whole point of
+     * listening — it carries on with the screen locked, held up by the foreground service.
+     */
+    fun onReaderHidden() {
+        reportReading()
+        if (!speechSettings.value.continueInBackground && narration.value.isActive) pauseAloud()
+    }
 
     /** End the current reading session (book closed): report, then clear and drop the sub-minute tail. */
     private fun endReadingSession() {
@@ -957,12 +977,31 @@ class ReaderViewModel(
                     // for the reader to apply on first paint. Royal Road needs its buffer slid to the
                     // resumed chapter, so route through goToChapter for that side.
                     val lastIndex = (result?.book?.chapters?.lastIndex ?: 0).coerceAtLeast(0)
-                    val savedChapter = (result?.chapterOrdinal ?: 0).coerceIn(0, lastIndex)
-                    pendingScrollChapter = savedChapter
-                    pendingScrollOffset = result?.charOffset ?: 0
+                    // Two places may have been recorded — where you last read, and where the voice
+                    // got to while the app was in your pocket. Open at whichever is more recent.
+                    val place = Resume.choose(
+                        reading = result?.let { SavedPlace(it.chapterOrdinal, it.charOffset, it.positionSavedAt) },
+                        listening = result?.listening
+                    )
+                    val savedChapter = (place?.chapterOrdinal ?: 0).coerceIn(0, lastIndex)
+                    val savedOffset = place?.charOffset ?: 0
+                    pendingScrollChapter = -1
+                    pendingScrollOffset = 0
+                    pendingCanonicalChapter = -1
+                    pendingCanonicalOffset = 0
+                    // A listened place is *always* a canonical character offset, so it is staged on
+                    // the channel the reader resolves rather than the one the scroll reader treats
+                    // as pixels. A read place is staged exactly as it always was.
+                    if (place?.canonical == true) {
+                        pendingCanonicalChapter = savedChapter
+                        pendingCanonicalOffset = savedOffset
+                    } else {
+                        pendingScrollChapter = savedChapter
+                        pendingScrollOffset = savedOffset
+                    }
                     pendingEndChapter = -1
                     _chapterOrdinal.value = savedChapter
-                    beginPositionTracking(bookKey, savedChapter, result?.charOffset ?: 0)
+                    beginPositionTracking(bookKey, savedChapter, savedOffset)
                     if (result?.rrFictionId != null && savedChapter > 0) goToChapter(savedChapter)
                 }
             }
@@ -1302,6 +1341,8 @@ class ReaderViewModel(
         // A turn that never landed must not be inherited by the next book opened at that ordinal.
         pendingScrollChapter = -1
         pendingScrollOffset = 0
+        pendingCanonicalChapter = -1
+        pendingCanonicalOffset = 0
         pendingEndChapter = -1
         closeSearch()
         _perBookSettings.value = false
@@ -1365,6 +1406,8 @@ class ReaderViewModel(
         // A landing at the end and a restored offset are mutually exclusive; the newer intent wins.
         pendingScrollChapter = -1
         pendingScrollOffset = 0
+        pendingCanonicalChapter = -1
+        pendingCanonicalOffset = 0
         pendingEndChapter = target
         goToChapter(target)
     }
@@ -1561,6 +1604,19 @@ class ReaderViewModel(
      * The one-time scroll offset to restore for [chapter], or 0 if there is none for it. Cleared on
      * read so turning the page doesn't snap you back to the resumed spot.
      */
+    /**
+     * The one-time **canonical** offset to restore for [chapter], or -1 when there is none.
+     *
+     * Separate from [consumePendingScroll] because the unit is different and only the reader can
+     * resolve it: the paged body turns it into a page, the scrolling body into a line's position.
+     * Cleared on read, like the others.
+     */
+    fun consumePendingCanonical(chapter: Int): Int =
+        if (chapter == pendingCanonicalChapter) {
+            pendingCanonicalChapter = -1
+            pendingCanonicalOffset.also { pendingCanonicalOffset = 0 }
+        } else -1
+
     fun consumePendingScroll(chapter: Int): Int =
         if (chapter == pendingScrollChapter && pendingScrollOffset > 0) {
             pendingScrollChapter = -1
@@ -1654,8 +1710,20 @@ class ReaderViewModel(
     /** Whether a downloadable neural voice can be run here, as opposed to the platform's own. */
     val neuralVoicesSupported: Boolean get() = narrator?.neuralAvailable == true
 
-    /** The voices already downloaded, for the picker. */
-    fun installedVoices() = narrator?.installedVoices().orEmpty()
+    private val _installedVoices = MutableStateFlow(narrator?.installedVoices().orEmpty())
+
+    /**
+     * The voices already downloaded, for the picker.
+     *
+     * A flow rather than a call, because the set changes underneath the screen showing it — a
+     * download finishing, a deletion — and a list that only refreshed when something else happened
+     * to recompose is how a deleted voice stays on screen.
+     */
+    val installedVoices: StateFlow<List<InstalledVoice>> = _installedVoices.asStateFlow()
+
+    private fun refreshInstalledVoices() {
+        _installedVoices.value = narrator?.installedVoices().orEmpty()
+    }
 
     /** The voices offered for the open book, its own language first. */
     fun voiceCatalog(): List<VoiceModel> =
@@ -1663,6 +1731,18 @@ class ReaderViewModel(
 
     /** Bytes the downloaded voices occupy, for the storage screen. */
     fun voiceStorageBytes(): Long = narrator?.voiceStorageBytes() ?: 0L
+
+    /** The book the voice has open — which need not be the book on screen. */
+    val nowPlayingBook: String? get() = narrator?.bookTitle
+
+    /** Its author, for the same card. */
+    val nowPlayingAuthor: String? get() = narrator?.bookAuthor
+
+    /** The chapter the voice is in, by its own title where the source gave one. */
+    fun nowPlayingChapter(ordinal: Int): String? = narrator?.chapterTitle(ordinal)
+
+    /** Why the voice stopped, when it stopped badly. */
+    val speechFailure: String? get() = narrator?.lastFailure
 
     private val _voiceProgress = MutableStateFlow<Pair<String, Float>?>(null)
 
@@ -1682,6 +1762,7 @@ class ReaderViewModel(
             _voiceProgress.value = model.id to 0f
             val result = narrator.installVoice(model) { _voiceProgress.value = model.id to it }
             _voiceProgress.value = null
+            refreshInstalledVoices()
             _status.value = when (result) {
                 is com.citation.app.audio.VoiceStore.InstallResult.Installed -> "${model.name} is ready to read aloud."
                 is com.citation.app.audio.VoiceStore.InstallResult.Failed -> result.reason
@@ -1692,6 +1773,7 @@ class ReaderViewModel(
     /** Delete a downloaded voice. */
     fun deleteVoice(model: VoiceModel) {
         if (narrator?.deleteVoice(model) == true) _status.value = "${model.name} removed."
+        refreshInstalledVoices()
     }
 
     /**
@@ -1709,15 +1791,31 @@ class ReaderViewModel(
     }
 
     /** Pause the voice, keeping the book and the position. */
-    fun pauseAloud() = narrator?.pause() ?: Unit
+    fun pauseAloud() {
+        narrator?.pause() ?: return
+        flushListeningPosition()
+    }
 
     /** Stop reading aloud and give the engine back. */
-    fun stopAloud() = narrator?.stop() ?: Unit
+    fun stopAloud() {
+        narrator ?: return
+        // Written before the narrator forgets which book it had.
+        flushListeningPosition()
+        narrator.stop()
+    }
 
-    /** Play or pause, for a single button. */
+    /**
+     * Play or pause, for the reader's single button.
+     *
+     * Pausing and resuming only means anything for the book the voice actually has open. Pressing
+     * play in a *different* book starts that one from the page on screen — otherwise the button
+     * under one book would silently resume another, which is the sort of thing nobody debugs.
+     */
     fun toggleAloud() {
         val narrator = narrator ?: return
-        if (narration.value.status == NarrationStatus.IDLE) readAloud() else narrator.toggle()
+        val onScreen = _openBook.value?.key?.toString()
+        val sameBook = onScreen != null && narrator.openBookKey == onScreen
+        if (narration.value.status == NarrationStatus.IDLE || !sameBook) readAloud() else narrator.toggle()
     }
 
     /** Move the voice by a sentence or a paragraph. */
@@ -1731,8 +1829,8 @@ class ReaderViewModel(
     /** Choose a downloaded voice, or `null` to let the narrator pick the best one installed. */
     fun setVoice(voiceId: String?) = configureSpeech { it.copy(voiceId = voiceId) }
 
-    /** Change what gets spoken — footnote markers, captions, tables, code. */
-    fun setSpeechContent(transform: (SpeechSettings) -> SpeechSettings) = configureSpeech(transform)
+    /** Change any speech setting — the engine, the voice, what gets spoken, how it behaves. */
+    fun updateSpeech(transform: (SpeechSettings) -> SpeechSettings) = configureSpeech(transform)
 
     /** Arm, change or cancel the sleep timer. */
     fun setSleepTimer(mode: SleepMode) = narrator?.setSleep(mode) ?: Unit
@@ -1754,16 +1852,61 @@ class ReaderViewModel(
      * number about nobody. A reader who disagrees can turn
      * [SpeechSettings.bankListeningTowardPace] on and have listening measured like reading.
      */
-    private fun onNarratedPosition(chapterOrdinal: Int, charOffset: Int) {
-        if (speechSettings.value.bankListeningTowardPace) {
-            onPositionChanged(chapterOrdinal, charOffset)
-            onReadingProgress()
-        } else {
-            _position.value = chapterOrdinal to charOffset
+    private fun onNarratedPosition(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
+        // The voice keeps reading a book the reader may have closed and walked away from, so the
+        // page only follows it while the two are the same book. The *saving* below always uses the
+        // narrator's own key, never whatever happens to be open.
+        val onScreen = bookKey != null && bookKey == _openBook.value?.key?.toString()
+        var chapterChanged = false
+        if (onScreen) {
+            if (speechSettings.value.bankListeningTowardPace) {
+                onPositionChanged(chapterOrdinal, charOffset)
+                onReadingProgress()
+            } else {
+                _position.value = chapterOrdinal to charOffset
+            }
+            chapterChanged = _chapterOrdinal.value != chapterOrdinal
+            _chapterOrdinal.value = chapterOrdinal
         }
-        val book = _openBook.value ?: return
-        val key = book.key?.toString() ?: return
-        val fraction = ReadingProgress.at(book, chapterOrdinal, charOffset).fraction
-        viewModelScope.launch { repository.savePosition(key, chapterOrdinal, charOffset, fraction) }
+        // In memory every sentence; on disk far less often. The voice moves every few seconds and
+        // may do so for hours in a pocket, and a write per sentence would be a write per sentence
+        // for the whole of it. Being a sentence or two stale costs a listener nothing — the worst
+        // case on resume is hearing one line twice — but a crossed chapter is written at once,
+        // because that is the jump somebody would notice losing.
+        val now = System.currentTimeMillis()
+        if (!chapterChanged && now - lastListeningSaveAt < LISTENING_SAVE_INTERVAL_MILLIS) return
+        lastListeningSaveAt = now
+        saveListeningPosition(bookKey, chapterOrdinal, charOffset)
+    }
+
+    /**
+     * Write where the voice is right now, whatever the throttle above would have said.
+     *
+     * A no-op when the voice has no place — pressing pause in a book nobody has listened to must
+     * not invent a listening position and have the book resume from it.
+     */
+    private fun flushListeningPosition() {
+        val state = narration.value
+        val offset = state.charOffset ?: return
+        lastListeningSaveAt = System.currentTimeMillis()
+        saveListeningPosition(narrator?.openBookKey, state.chapterOrdinal, offset)
+    }
+
+    private fun saveListeningPosition(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
+        val key = bookKey ?: return
+        // Measured against the narrator's book, which is the one these characters are counted in.
+        val fraction = narrator?.progressFraction(chapterOrdinal, charOffset)
+        // Written to the *listening* place, not the reading one: it is a different fact, recorded
+        // while the app may be in a pocket, and it is always canonical characters — where the
+        // reading position is whatever the open reading mode stores. `Resume.choose` picks between
+        // them when the book is next opened.
+        viewModelScope.launch { repository.saveListeningPosition(key, chapterOrdinal, charOffset, fraction) }
+    }
+
+    private var lastListeningSaveAt = 0L
+
+    private companion object {
+        /** How often the listening position reaches the database while the voice runs. */
+        const val LISTENING_SAVE_INTERVAL_MILLIS = 10_000L
     }
 }

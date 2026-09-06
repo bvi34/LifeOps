@@ -21,8 +21,21 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE key = :key")
     suspend fun get(key: String): BookEntity?
 
-    @Query("UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset WHERE key = :key")
-    suspend fun savePosition(key: String, ordinal: Int, offset: Int)
+    @Query(
+        "UPDATE books SET lastChapterOrdinal = :ordinal, lastCharOffset = :offset, " +
+            "positionSavedAt = :savedAt WHERE key = :key"
+    )
+    suspend fun savePosition(key: String, ordinal: Int, offset: Int, savedAt: Long)
+
+    /**
+     * Record where the voice got to — a canonical character offset, always, and stamped so the
+     * reader can open at whichever of the two places was reached more recently.
+     */
+    @Query(
+        "UPDATE books SET listenChapterOrdinal = :ordinal, listenCharOffset = :offset, " +
+            "listenedAt = :listenedAt WHERE key = :key"
+    )
+    suspend fun saveListeningPosition(key: String, ordinal: Int, offset: Int, listenedAt: Long)
 
     /**
      * Record how far through the book the reader measured itself to be. Written alongside the

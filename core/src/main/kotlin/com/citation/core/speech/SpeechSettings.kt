@@ -32,6 +32,16 @@ data class SpeechSettings(
     val autoAdvanceChapter: Boolean = true,
 
     /**
+     * Keep reading when the app is no longer on screen.
+     *
+     * On, because that is the entire point of listening: the phone goes in a pocket, the screen
+     * locks, and the book carries on. Off makes the voice a feature of the page — it stops when you
+     * leave the reader and picks up where it stopped — which is what someone who only uses it to be
+     * read a paragraph at their desk actually wants, and it costs no battery in the background.
+     */
+    val continueInBackground: Boolean = true,
+
+    /**
      * Say the chapter's title when one starts.
      *
      * On, because a listener has no page to glance at: without it, chapters run together into an

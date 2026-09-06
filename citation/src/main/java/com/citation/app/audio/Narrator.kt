@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import com.citation.core.model.Book
+import com.citation.core.reader.ReadingProgress
 import com.citation.core.speech.EnginePreference
 import com.citation.core.speech.Narration
 import com.citation.core.speech.NarrationState
@@ -17,6 +18,8 @@ import com.citation.core.speech.SleepTimerState
 import com.citation.core.speech.SpeechPlan
 import com.citation.core.speech.SpeechPlanner
 import com.citation.core.speech.SpeechSettings
+import com.citation.core.speech.Utterance
+import com.citation.core.speech.UtteranceKind
 import com.citation.core.speech.VoiceModel
 import com.citation.core.speech.VoiceSelection
 import kotlinx.coroutines.CoroutineScope
@@ -79,6 +82,9 @@ class Narrator private constructor(private val context: Context) {
     /** Where to resume from after a pause, or after another app takes the audio and gives it back. */
     private var resumeIndex = 0
     private var pausedByFocusLoss = false
+
+    /** The chapter whose title has already been read out, so resuming does not say it again. */
+    private var announcedChapter = -1
     private var focusRequest: AudioFocusRequest? = null
 
     /**
@@ -89,7 +95,19 @@ class Narrator private constructor(private val context: Context) {
      * that a listener should decline to bank this toward the reading pace — see
      * [SpeechSettings.bankListeningTowardPace] for why.
      */
-    var onPosition: ((chapterOrdinal: Int, charOffset: Int) -> Unit)? = null
+    var onPosition: ((bookKey: String?, chapterOrdinal: Int, charOffset: Int) -> Unit)? = null
+
+    /**
+     * How far through *its own* book a place is.
+     *
+     * Offered because the narrator keeps reading a book the reader may have since closed and moved
+     * away from, so a caller saving progress cannot measure it against whatever is on screen.
+     */
+    fun progressFraction(chapterOrdinal: Int, charOffset: Int): Float? =
+        book?.let { ReadingProgress.at(it, chapterOrdinal, charOffset).fraction }
+
+    /** The book the voice has open, which need not be the one on screen. */
+    val openBookKey: String? get() = book?.key?.toString()
 
     /** The open book's title, for the lock screen and the notification. */
     val bookTitle: String? get() = book?.metadata?.title
@@ -158,6 +176,7 @@ class Narrator private constructor(private val context: Context) {
         plan = SpeechPlan.empty(0)
         resumeIndex = 0
         pausedByFocusLoss = false
+        announcedChapter = -1
         sleep = SleepTimer.cancel()
         _state.value = NarrationState()
     }
@@ -249,8 +268,21 @@ class Narrator private constructor(private val context: Context) {
                 // engine can be resumed mid-utterance, and a sentence heard twice from its start is
                 // what a person listening actually wants after an interruption.
                 resumeIndex = at
+
+                // Say which chapter this is, once, when one actually begins. A listener has no page
+                // to glance at, so without it chapters run together into an undifferentiated hour —
+                // and equally, someone who pressed play half way down a page has not started a
+                // chapter and should not be told they have.
+                announcement(at)?.let { announcement ->
+                    announcedChapter = plan.chapterOrdinal
+                    publishSpeaking(at, null)
+                    val said = speaker.speak(announcement, settings.rate, settings.pitch,
+                        SleepTimer.volumeScale(sleep)) {}
+                    if (said is SpeechResult.Stopped) return@launch
+                }
+
                 publishSpeaking(at, utterance.range.takeIf { !utterance.isMarker })
-                onPosition?.invoke(plan.chapterOrdinal, utterance.start)
+                onPosition?.invoke(openBookKey, plan.chapterOrdinal, utterance.start)
 
                 val result = speaker.speak(
                     utterance = utterance,
@@ -295,6 +327,37 @@ class Narrator private constructor(private val context: Context) {
                 }
             }
         }
+    }
+
+    /**
+     * The chapter announcement to speak before unit [index], if any.
+     *
+     * Only at the top of a chapter, only once per chapter, and never when the chapter's own first
+     * heading already says the same words — which most EPUBs' do, and hearing the title twice is
+     * worse than not hearing it at all. Zero-width, so it highlights nothing and moves no position.
+     */
+    private fun announcement(index: Int): Utterance? {
+        if (!settings.announceChapterTitle || index != 0) return null
+        if (announcedChapter == plan.chapterOrdinal) return null
+        val title = book?.chapterAt(plan.chapterOrdinal)?.title?.trim().orEmpty()
+        if (title.isBlank()) return null
+        val first = plan.utterances.firstOrNull()
+        if (first != null && first.kind == UtteranceKind.HEADING &&
+            first.spoken.trim().equals(title, ignoreCase = true)
+        ) {
+            // The chapter says its own name; let it.
+            announcedChapter = plan.chapterOrdinal
+            return null
+        }
+        val at = first?.start ?: 0
+        return Utterance(
+            start = at,
+            end = at,
+            spoken = title,
+            kind = UtteranceKind.HEADING,
+            pauseAfterMillis = settings.content.pauses.afterHeading,
+            runs = emptyList()
+        )
     }
 
     /** Walk forward over chapters that plan to nothing; false when the book runs out. */

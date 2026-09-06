@@ -39,6 +39,7 @@ class SpeechSettingsStore(context: Context) {
             rate = json.optDouble("rate", defaults.rate.toDouble()).toFloat(),
             pitch = json.optDouble("pitch", defaults.pitch.toDouble()).toFloat(),
             autoAdvanceChapter = json.optBoolean("autoAdvanceChapter", defaults.autoAdvanceChapter),
+            continueInBackground = json.optBoolean("continueInBackground", defaults.continueInBackground),
             announceChapterTitle = json.optBoolean("announceChapterTitle", defaults.announceChapterTitle),
             bankListeningTowardPace = json.optBoolean("bankListeningTowardPace", defaults.bankListeningTowardPace),
             sleepMode = json.enum("sleepMode", defaults.sleepMode) { SleepMode.valueOf(it) },
@@ -56,6 +57,7 @@ class SpeechSettingsStore(context: Context) {
                     put("rate", settings.rate.toDouble())
                     put("pitch", settings.pitch.toDouble())
                     put("autoAdvanceChapter", settings.autoAdvanceChapter)
+                    put("continueInBackground", settings.continueInBackground)
                     put("announceChapterTitle", settings.announceChapterTitle)
                     put("bankListeningTowardPace", settings.bankListeningTowardPace)
                     put("sleepMode", settings.sleepMode.name)
