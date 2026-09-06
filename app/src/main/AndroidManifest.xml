@@ -2,7 +2,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- LifeOps and Citation contribute their own <uses-permission> entries via the manifest
-         merger (they're library dependencies), so they are not repeated here. -->
+         merger (they're library dependencies), so they are not repeated here. That includes
+         INTERNET, which the updater below relies on. -->
+
+    <!-- The suite is sideloaded — built from a git tag by GitHub Actions and published as a
+         release — so the container has to be able to install its own successor. This permission
+         does not grant the install; since Android 8 it only makes the app *eligible* to ask, and
+         the user still has to allow it per-app in Settings and then confirm the install itself. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".SandboxApplication"
@@ -26,6 +33,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Hands the downloaded APK to the system installer. A content:// URI is required: a
+             file:// one has thrown FileUriExposedException since Android 7. Named distinctly from
+             the hosted apps' providers for the reason LifeOpsFileProvider explains — they all live
+             in this one process. -->
+        <provider
+            android:name=".update.UpdateFileProvider"
+            android:authorities="${applicationId}.updates.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
 
     </application>
 

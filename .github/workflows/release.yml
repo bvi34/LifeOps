@@ -1,0 +1,176 @@
+# Tag -> test -> build -> sign -> GitHub Release -> the phone.
+#
+# Pushing a `v*` tag is the whole release process; nothing here needs a version bumped in a file
+# first. The tag *is* the version: `app/build.gradle.kts` reads it through `-Plifeops.versionName`
+# and derives the Android versionCode from it, so the APK reports the tag it was built from and the
+# in-app updater can compare the two.
+#
+# Unlike CI, this builds Advisor's native llama.cpp backend for real, so the APK that lands on a
+# phone runs the on-device model rather than the placeholder. That is the slow part of the job.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build and release (e.g. v1.4.2). It must already exist.'
+        required: true
+        type: string
+      native_llm:
+        description: "Build Advisor's native llama.cpp backend"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  # Everything here is one repository's own contents: reading the tag, and creating the release the
+  # APK is attached to. Nothing else is granted.
+  contents: write
+
+concurrency:
+  # Never two releases at once, and never cancel one — a half-published release is worse than a
+  # slow one, since the tag is already public by the time this runs.
+  group: release
+  cancel-in-progress: false
+
+env:
+  NDK_VERSION: '27.0.12077973'
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Work out what we are releasing
+        id: version
+        # A tag push carries the ref; a manual run carries an input. Both end up as one tag and one
+        # bare version, and the tag must look like a version or the whole scheme falls apart
+        # silently — an unparseable tag would build an APK the updater then refuses to offer.
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH. The APK's version and the in-app updater both read it, so it has to parse."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          # Build the tag, not the branch head — on a manual run those are different commits.
+          ref: ${{ steps.version.outputs.tag }}
+          # The release notes are generated from the log since the previous tag, which needs history.
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the pinned NDK and CMake
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.native_llm }}
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "ndk;$NDK_VERSION" "cmake;3.22.1"
+
+      - name: Unit tests
+        # The gate. A tag that does not pass the suite's own tests does not become a release — the
+        # steps below never run, and no APK is published.
+        run: ./gradlew test -Padvisor.buildNativeLlm=false --stacktrace
+
+      - name: Decode the signing keystore
+        # Written outside the workspace so it cannot be swept into an artifact or a build output by
+        # accident. The runner is destroyed with it.
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::RELEASE_KEYSTORE_BASE64 is not set. See docs/RELEASING.md — an unsigned APK cannot be installed or upgraded."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+
+      - name: Build the signed release APK
+        env:
+          LIFEOPS_KEYSTORE_FILE: ${{ runner.temp }}/release.jks
+          LIFEOPS_KEYSTORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          LIFEOPS_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          LIFEOPS_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          NATIVE_LLM: ${{ github.event_name != 'workflow_dispatch' || inputs.native_llm }}
+        run: >-
+          ./gradlew :app:assembleRelease
+          -Plifeops.versionName=${{ steps.version.outputs.version }}
+          -Padvisor.buildNativeLlm=$NATIVE_LLM
+          -Padvisor.ndkVersion=$NDK_VERSION
+          --stacktrace
+
+      - name: Check the APK really is signed
+        # `assembleRelease` succeeds and emits an *unsigned* APK if the signing config didn't
+        # materialise — a typo'd secret name is enough. That APK installs on nothing, and the
+        # failure would only show up on the phone, so it is caught here instead.
+        run: |
+          set -euo pipefail
+          APK=app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$APK" ]; then
+            echo "::error::No signed APK at $APK — the build produced app-release-unsigned.apk, which means the keystore secrets did not reach Gradle."
+            ls -l app/build/outputs/apk/release/ || true
+            exit 1
+          fi
+          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK"
+          cp "$APK" release.apk
+          sha256sum release.apk | tee release.apk.sha256
+
+      - name: Write the release notes
+        id: notes
+        # Every commit since the previous tag. Plain, generated, and good enough — the point is that
+        # a release always says what is in it without anyone having to remember to write it down.
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          PREV="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          {
+            if [ -n "$PREV" ]; then
+              echo "### Changes since $PREV"
+              echo
+              git log --no-merges --pretty='- %s' "$PREV..$TAG"
+            else
+              echo "### First release"
+              echo
+              echo "- Operations Sandbox $TAG"
+            fi
+            echo
+            echo "---"
+            echo
+            echo "**Install:** open this page on your phone and tap \`release.apk\`, or use *Settings → Updates* in the app."
+            echo
+            echo "\`\`\`"
+            cat release.apk.sha256
+            echo "\`\`\`"
+          } > notes.md
+
+      - name: Publish the release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body_path: notes.md
+          # `release.apk` is the name the in-app updater looks for first. The checksum rides along
+          # so a download can be verified by hand.
+          files: |
+            release.apk
+            release.apk.sha256
+          fail_on_unmatched_files: true

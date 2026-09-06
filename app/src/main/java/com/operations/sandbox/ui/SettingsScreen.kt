@@ -50,7 +50,11 @@ import kotlin.math.roundToInt
 import com.operations.suite.ui.pickers.SuiteColorField
 
 /** Which half of the gear is showing. */
-enum class SettingsTab(val label: String) { APPEARANCE("Appearance"), BACKUPS("Backups") }
+enum class SettingsTab(val label: String) {
+    APPEARANCE("Appearance"),
+    BACKUPS("Backups"),
+    UPDATES("Updates")
+}
 
 /**
  * The sandbox's gear: the two things that belong to the container rather than to any one app.
@@ -62,10 +66,15 @@ enum class SettingsTab(val label: String) { APPEARANCE("Appearance"), BACKUPS("B
  * chosen here too: it belongs to the container's home screen, so no hosted app is affected by it.
  *
  * **Backups** is the archive the sandbox has always driven: pick apps, write one zip, read it back.
+ *
+ * **Updates** is the third thing that belongs to the container rather than to any app: the suite
+ * ships as one sideloaded APK built from a git tag, so this is where it asks GitHub whether a newer
+ * release exists and installs it. See [UpdatesTab].
  */
 @Composable
 fun SandboxSettingsScreen(
     backup: BackupController,
+    updates: UpdateController,
     tab: SettingsTab,
     onTabChange: (SettingsTab) -> Unit,
     focusedApp: AppId?,
@@ -119,6 +128,7 @@ fun SandboxSettingsScreen(
                         onBackup = { createBackup.launch(defaultBackupName()) },
                         onRestore = { pickRestore.launch(RESTORE_MIME_TYPES) }
                     )
+                    SettingsTab.UPDATES -> UpdatesTab(updates)
                 }
             }
         }
@@ -818,7 +828,7 @@ private fun BackupsTab(
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun SectionCard(
+internal fun SectionCard(
     title: String,
     subtitle: String? = null,
     content: @Composable ColumnScope.() -> Unit

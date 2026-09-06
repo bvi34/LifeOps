@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one directory the update provider will share: the downloaded APK, in the app's own cache.
+
+  Cache rather than files/ so the OS can reclaim a 90 MB install that was never completed, and a
+  single narrow path rather than a broad root so the provider cannot be talked into handing out
+  anything else this app stores. `Updater` writes only here.
+-->
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>

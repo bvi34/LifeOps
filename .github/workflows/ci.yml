@@ -1,0 +1,102 @@
+# The fast gate: does the suite still compile, and do its JVM tests still pass?
+#
+# Deliberately *not* the same build as a release. This runs on every push and every pull request, so
+# it trades fidelity for speed in the one place that costs the most: Advisor's native llama.cpp
+# backend is switched off, which is a 10-20 minute arm64 cross-compile that no Kotlin change can
+# break. The release workflow builds it for real, and the `native` job below still proves it *can*
+# be built — just not on every commit.
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    # A tag push is a release; release.yml runs the same tests as part of it, so running them here
+    # too would just be two identical builds racing each other for a runner.
+    tags-ignore: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A second push to the same branch makes the first one's result irrelevant.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Pinned rather than "whatever the runner image ships": the image's default NDK changes without
+  # warning, and llama.cpp is exactly the kind of code that notices. Bump deliberately, and bump it
+  # in release.yml at the same time so a release builds what CI tested.
+  NDK_VERSION: '27.0.12077973'
+  # The suite is thirteen modules; the default heap makes Kotlin compilation thrash.
+  GRADLE_OPTS: -Dorg.gradle.jvmargs=-Xmx4g
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        # Every module's JVM tests. The framework-free logic layers in :core, :lifeops, :advisor,
+        # :backupkit and the rest are the point of the suite's testing discipline, so all of them
+        # run here, not only :app's.
+        run: ./gradlew test -Padvisor.buildNativeLlm=false --stacktrace
+
+      - name: Assemble debug APK
+        run: ./gradlew :app:assembleDebug -Padvisor.buildNativeLlm=false --stacktrace
+
+      - name: Upload test reports
+        # The HTML reports are the only way to read a failure without re-running the job locally.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/'
+          retention-days: 7
+
+  native:
+    name: Native LLM backend
+    # The expensive half, kept off the critical path. A release *will* build this, so a change that
+    # breaks it has to be caught before a tag is pushed — but it depends on CMake and NDK sources
+    # rather than on Kotlin, so it does not need to gate every commit's feedback. Runs on pull
+    # requests and on the default branch; ask for it by hand on a feature branch.
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'pull_request' ||
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install the pinned NDK and CMake
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "ndk;$NDK_VERSION" "cmake;3.22.1"
+
+      - name: Build Advisor's native backend
+        # Only :advisor, not the whole app: this job is asking exactly one question.
+        run: >-
+          ./gradlew :advisor:assembleRelease
+          -Padvisor.buildNativeLlm=true
+          -Padvisor.ndkVersion=$NDK_VERSION
+          --stacktrace

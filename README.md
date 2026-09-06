@@ -675,20 +675,26 @@ The project targets the standard Android toolchain.
 (the only runnable app), and LifeOps and Citation open from its home screen.
 
 **Command line:** you need an Android SDK. Point the build at it via a `local.properties`
-with `sdk.dir=/path/to/Android/Sdk` (the checked-in value is a placeholder), or set
-`ANDROID_HOME`. Then:
+with `sdk.dir=/path/to/Android/Sdk`, or set `ANDROID_HOME`. `local.properties` is not tracked —
+Android Studio writes it on first open — because a committed `sdk.dir` names one machine's
+directory and fails everywhere else, CI above all. Then:
 
 ```bash
-gradle :app:assembleDebug        # build the Operations Sandbox container APK
-gradle :lifeops:testDebugUnitTest # run LifeOps' JVM unit tests
-gradle :backupkit:test           # run the backup format/engine tests (pure JVM, no SDK needed)
-gradle :suitekit:test            # run the suite appearance tests (pure JVM, no SDK needed)
-gradle :maintenance:test         # run Maintenance's logic tests (VIN, due dates, amortisation)
+./gradlew :app:assembleDebug        # build the Operations Sandbox container APK
+./gradlew :lifeops:testDebugUnitTest # run LifeOps' JVM unit tests
+./gradlew :backupkit:test           # run the backup format/engine tests (pure JVM, no SDK needed)
+./gradlew :suitekit:test            # run the suite appearance tests (pure JVM, no SDK needed)
+./gradlew :maintenance:test         # run Maintenance's logic tests (VIN, due dates, amortisation)
+./gradlew test                      # every module's JVM tests — what CI runs
 ```
 
-> Note: the Gradle wrapper jar/scripts are not committed, so use a locally installed
-> `gradle` (8.7+) or Android Studio's bundled Gradle. Running `gradle wrapper` once will
-> generate `./gradlew` if you want it.
+> The Gradle wrapper is committed, so `./gradlew` needs no Gradle installed; it fetches the
+> version the project pins. A locally installed `gradle` (8.7+) or Android Studio's bundled one
+> works too.
+
+**Releasing.** Pushing a `v*` tag builds, signs and publishes a GitHub Release carrying
+`release.apk`, which the app installs on itself from *Settings → Updates*. The keystore, the
+repository secrets and the one-time phone setup are in **[docs/RELEASING.md](docs/RELEASING.md)**.
 
 ---
 

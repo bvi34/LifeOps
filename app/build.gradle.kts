@@ -10,6 +10,49 @@ plugins {
 // (:project) and Maintenance (:maintenance) as library modules in one process with shared storage, which is what makes a true cross-app
 // "back up everything into one zip / restore from it" possible without any inter-process plumbing.
 // The home screen picks an app to open and drives backup/restore. New suite apps plug in here.
+// ---------------------------------------------------------------------------------------------
+// Version and signing — both come from *outside* this file, so a release is a git tag and nothing
+// else. See docs/RELEASING.md.
+//
+// `lifeops.versionName` is passed by the release workflow as the tag with its leading "v" stripped
+// (v1.4.2 -> "1.4.2"). Locally nobody passes it, so a developer build is "0.0.0-dev" / code 1 —
+// deliberately *lower* than any real release, so a hand-built debug APK never looks newer than the
+// release it was built from and the in-app updater still offers the upgrade.
+val releaseVersionName = providers.gradleProperty("lifeops.versionName").orNull ?: "0.0.0-dev"
+
+/**
+ * Android's versionCode is a single monotonically increasing int and it is what the OS compares
+ * when deciding whether an APK is an upgrade or a downgrade. Deriving it from the semver tag —
+ * major*1_000_000 + minor*1_000 + patch — keeps it monotonic without any state kept between builds
+ * (a CI run number is not: re-running a job, or tagging an older commit, hands out the wrong order).
+ * Room for 999 minors and 999 patches, and the whole int stays well under 2_100_000_000.
+ *
+ * Anything that isn't a plain x.y.z is code 1, and so is the "0.0.0-dev" default — the arithmetic
+ * gives it 0, which AGP rejects outright, and 1 is the right answer anyway: lower than every real
+ * release, so a hand-built APK is always upgradeable by one.
+ */
+fun versionCodeOf(name: String): Int {
+    val core = name.substringBefore('-').substringBefore('+')
+    val parts = core.split('.')
+    if (parts.size != 3) return 1
+    val (major, minor, patch) = parts.map { it.toIntOrNull() ?: return 1 }
+    if (major < 0 || minor !in 0..999 || patch !in 0..999) return 1
+    return (major * 1_000_000 + minor * 1_000 + patch).coerceAtLeast(1)
+}
+
+/**
+ * The release keystore, supplied by the workflow through the environment (never committed). All
+ * four values must be present or there is no release signing config at all — a half-configured
+ * signing block fails deep inside the packaging task with a message that says nothing useful, and
+ * an unsigned release APK is a far clearer symptom than a mysterious build failure.
+ */
+val keystorePath: String? = System.getenv("LIFEOPS_KEYSTORE_FILE")
+val keystorePassword: String? = System.getenv("LIFEOPS_KEYSTORE_PASSWORD")
+val keystoreAlias: String? = System.getenv("LIFEOPS_KEY_ALIAS")
+val keystoreAliasPassword: String? = System.getenv("LIFEOPS_KEY_PASSWORD")
+val hasReleaseKeystore = listOf(keystorePath, keystorePassword, keystoreAlias, keystoreAliasPassword)
+    .all { !it.isNullOrBlank() } && file(keystorePath!!).exists()
+
 android {
     namespace = "com.operations.sandbox"
     compileSdk = 35
@@ -18,12 +61,36 @@ android {
         applicationId = "com.operations.sandbox"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = versionCodeOf(releaseVersionName)
+        versionName = releaseVersionName
+
+        // The updater asks GitHub which release is newest. Baked in rather than hardcoded in Kotlin
+        // so a fork changes one line here and nothing in the app's source.
+        buildConfigField("String", "UPDATE_REPO", "\"bvi34/LifeOps\"")
+    }
+
+    signingConfigs {
+        // Only declared when the environment actually carries a keystore. On a developer machine
+        // this block is empty and `assembleRelease` produces an unsigned APK, exactly as before.
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keystoreAlias
+                keyPassword = keystoreAliasPassword
+                // v1 is what lets the APK install on API 26-27 phones; v2/v3 are what modern
+                // Android verifies quickly. minSdk here is 26, so all three stay on.
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
+
             // Code shrinking is off for now: the merged LifeOps+Citation code needs a vetted
             // keep-rule set (Room/Gson/Glance/WorkManager reflection) before minify can be trusted.
             // Left as a deliberate follow-up so the first container build is verifiable end-to-end.
@@ -42,6 +109,8 @@ android {
 
     buildFeatures {
         compose = true
+        // The updater reads BuildConfig.VERSION_NAME and BuildConfig.UPDATE_REPO.
+        buildConfig = true
     }
 }
 
@@ -71,7 +140,14 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
+    // Keystore-backed storage for the updater's GitHub token — a credential, so not left in a
+    // plain app-private file. Already used elsewhere in the suite for the same reason.
+    implementation(libs.androidx.security.crypto)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")
+    // org.json ships *in* Android, but the JVM unit-test classpath only has the stub android.jar,
+    // whose methods all throw. The real implementation here is what lets ReleaseFeed's parsing be
+    // tested off-device, the way the suite tests the rest of its logic.
+    testImplementation("org.json:json:20240303")
 }
