@@ -43,6 +43,13 @@ android {
     namespace = "com.advisor.app"
     compileSdk = 35
 
+    // Pin the NDK only when someone asks for a specific one. Left unset — the normal case on a
+    // developer machine — AGP uses whatever NDK it defaults to and installs it if it has to, so a
+    // local build is unaffected by this line. CI *does* pin it (`-Padvisor.ndkVersion=...`), because
+    // a runner image's default NDK changes without warning and llama.cpp is exactly the kind of
+    // code that notices: a release has to be built with the toolchain that was tested.
+    providers.gradleProperty("advisor.ndkVersion").orNull?.let { ndkVersion = it }
+
     defaultConfig {
         minSdk = 26
         // Code shrinking is the consuming app's (:app) responsibility — but two things in this module

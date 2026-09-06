@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -72,6 +73,10 @@ import java.util.Locale
  * for wherever the phone is, on the theory that "is it raining?" is asked more often than any app
  * on this screen is opened. It reads LifeOps' weather cache, so it costs nothing to show.
  *
+ * When a launch check has found a newer release, a single line appears under the clock saying so —
+ * the whole of the update's presence on this screen. Tapping it opens the Updates tab, which is
+ * where anything actually happens; nothing downloads or installs from here.
+ *
  * The backdrop is the user's: a shipped design, their own gradient, or the suite's own colours (the
  * default). Whichever it is, the text on top is written in the ink that wallpaper resolved to, so a
  * bright wallpaper cannot swallow the clock.
@@ -83,7 +88,10 @@ fun SandboxHomeScreen(
     onOpenSettings: () -> Unit,
     onOpenBackups: () -> Unit,
     onCustomizeApp: (AppId) -> Unit,
-    onOpenWeather: () -> Unit
+    onOpenWeather: () -> Unit,
+    /** The tag of a release newer than this build, or null when there is nothing to say. */
+    availableUpdateTag: String? = null,
+    onOpenUpdates: () -> Unit = {}
 ) {
     val appearance = LocalSuiteAppearance.current
 
@@ -121,6 +129,11 @@ fun SandboxHomeScreen(
                 .padding(horizontal = 20.dp, vertical = 12.dp)
         ) {
             StatusHeader(ink = ink)
+
+            if (availableUpdateTag != null) {
+                Spacer(Modifier.height(12.dp))
+                UpdateBanner(tag = availableUpdateTag, ink = ink, onClick = onOpenUpdates)
+            }
 
             if (weather != null) {
                 LaunchedEffect(weather) { weather.start() }
@@ -163,6 +176,43 @@ fun SandboxHomeScreen(
 }
 
 private const val COLUMNS = 3
+
+/**
+ * "v1.4.2 is available — tap to update", written on the wallpaper.
+ *
+ * A line rather than a card or a dialog. This is a home screen, and the update is the least urgent
+ * thing on it: it must be noticeable on the way past and ignorable indefinitely, so it takes one
+ * row, carries no dismiss button (the next release replaces it; installing removes it), and is
+ * drawn in the wallpaper's own ink over a faint wash of it so it reads on a light or a dark
+ * backdrop without introducing a colour of its own.
+ */
+@Composable
+private fun UpdateBanner(tag: String, ink: Color, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(ink.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            Icons.Filled.SystemUpdateAlt,
+            contentDescription = null,
+            tint = ink,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(10.dp))
+        Text(
+            "$tag is available — tap to update",
+            style = MaterialTheme.typography.bodyMedium,
+            color = ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
 
 /** The clock strip, so the shell reads as a home screen rather than a menu. */
 @Composable

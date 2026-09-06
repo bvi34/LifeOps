@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -18,8 +19,10 @@ import com.operations.sandbox.ui.BackupController
 import com.operations.sandbox.ui.SandboxHomeScreen
 import com.operations.sandbox.ui.SandboxSettingsScreen
 import com.operations.sandbox.ui.SettingsTab
+import com.operations.sandbox.ui.UpdateController
 import com.operations.sandbox.ui.WeatherWidgetController
 import com.operations.sandbox.ui.rememberBackupController
+import com.operations.sandbox.ui.rememberUpdateController
 import com.operations.sandbox.ui.rememberWeatherWidgetController
 import com.operations.sandbox.ui.theme.SandboxTheme
 
@@ -29,15 +32,20 @@ import com.operations.sandbox.ui.theme.SandboxTheme
  *
  * It opens on a phone-style home screen — a tile per hosted app, in that app's colour and glyph —
  * with a dock holding the two things the container owns: the settings that paint every app, and the
- * cross-app backup. There are exactly two destinations here, so this is a `when` over one route
- * rather than a navigation graph; the settings screen's own state (which tab, which app is being
- * recoloured) is hoisted here so returning to it is predictable.
+ * cross-app backup. The suite is sideloaded, so the shell also owns keeping itself current: it asks
+ * GitHub at launch whether a newer release exists and, if so, says so on the home screen.
+ *
+ * There are exactly two destinations here, so this is a `when` over one route rather than a
+ * navigation graph; the settings screen's own state (which tab, which app is being recoloured) is
+ * hoisted here so returning to it is predictable.
  */
 class SandboxActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val center = BackupCenter(this, sandboxVersion = "1.0")
+        // The archive records the build that wrote it; now that the version is the release tag
+        // rather than a hardcoded "1.0", a restore can say what it came from.
+        val center = BackupCenter(this, sandboxVersion = BuildConfig.VERSION_NAME)
         setContent {
             SandboxTheme {
                 SandboxShell(center)
@@ -57,6 +65,14 @@ private fun SandboxShell(center: BackupCenter) {
     // shouldn't cancel a location fix or a forecast fetch that's already in flight. Null only if
     // LifeOps somehow isn't installed in this process, in which case the home screen omits the tile.
     val weather: WeatherWidgetController? = rememberWeatherWidgetController()
+    // Hoisted for the strongest version of the same reason: a download is tens of megabytes and
+    // must not be cancelled by walking from Settings back to the home screen.
+    val updates: UpdateController = rememberUpdateController()
+
+    // The one thing the shell does on the network by itself, and only if the switch is on and the
+    // six-hour throttle has expired. Keyed on the controller so it runs once per process, not once
+    // per recomposition: a check on every navigation would be both wasteful and rate-limited.
+    LaunchedEffect(updates) { updates.checkOnLaunch() }
 
     var route by rememberSaveable { mutableStateOf(ROUTE_HOME) }
     var tabName by rememberSaveable { mutableStateOf(SettingsTab.APPEARANCE.name) }
@@ -74,6 +90,7 @@ private fun SandboxShell(center: BackupCenter) {
     when (route) {
         ROUTE_SETTINGS -> SandboxSettingsScreen(
             backup = backup,
+            updates = updates,
             tab = SettingsTab.entries.firstOrNull { it.name == tabName } ?: SettingsTab.APPEARANCE,
             onTabChange = { tabName = it.name },
             focusedApp = focusedAppKey?.let { AppId.fromKey(it) },
@@ -86,7 +103,9 @@ private fun SandboxShell(center: BackupCenter) {
             onOpenSettings = { openSettings(SettingsTab.APPEARANCE) },
             onOpenBackups = { openSettings(SettingsTab.BACKUPS) },
             onCustomizeApp = { appId -> openSettings(SettingsTab.APPEARANCE, appId.key) },
-            onOpenWeather = { openWeather(context) }
+            onOpenWeather = { openWeather(context) },
+            availableUpdateTag = updates.pendingRelease?.tag,
+            onOpenUpdates = { openSettings(SettingsTab.UPDATES) }
         )
     }
 }

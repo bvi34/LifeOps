@@ -162,3 +162,8 @@ Makefile
 /advisor/.cxx/Debug/6m1p141u/arm64-v8a/.cmake/api/v1/reply/target-ggml-Debug-e96b6c62b5c7a8d81458.json
 /advisor/.cxx/Debug/6m1p141u/arm64-v8a/.cmake/api/v1/reply/target-llama-Debug-1eda72da5b16527eec75.json
 /advisor/.cxx/Debug/1v242a91/arm64-v8a/.cmake/api/v1/reply/target-llama-Debug-f38035e89051085c655d.json
+
+# Machine-specific SDK location. This was committed once, pointing at one Windows install, which
+# makes every build on any other machine — a CI runner above all — fail with "SDK location not
+# found". Android Studio writes it fresh on first open, so nothing is lost by leaving it out.
+local.properties
