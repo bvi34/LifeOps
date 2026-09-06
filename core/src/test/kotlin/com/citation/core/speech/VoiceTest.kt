@@ -14,10 +14,10 @@ class VoiceTest {
         InstalledVoice(
             model = VoiceCatalog.modelFor(id) ?: VoiceModel(
                 id = id, name = id, language = language, quality = quality,
-                sampleRate = 22_050, sizeBytes = 1_000, modelUrl = "", configUrl = ""
+                sampleRate = 22_050, sizeBytes = 1_000, modelUrl = "", tokensUrl = ""
             ).copy(quality = quality),
             modelPath = "/voices/$id.onnx",
-            configPath = "/voices/$id.onnx.json"
+            tokensPath = "/voices/$id.tokens.txt"
         )
 
     @Test
@@ -74,10 +74,14 @@ class VoiceTest {
         VoiceCatalog.VOICES.forEach { voice ->
             assertTrue(voice.modelUrl.startsWith("https://"))
             assertTrue(voice.modelUrl.endsWith("/${voice.id}.onnx"))
-            assertTrue(voice.configUrl.endsWith("/${voice.id}.onnx.json"))
+            assertTrue(voice.tokensUrl.endsWith("/tokens.txt"))
+            assertTrue(voice.tokensUrl.contains(voice.id))
             assertEquals("${voice.id}.onnx", voice.modelFileName)
-            assertEquals("${voice.id}.onnx.json", voice.configFileName)
-            assertNotNull(voice.md5)
+            assertEquals("${voice.id}.tokens.txt", voice.tokensFileName)
+            // Both halves are checksummed: a voice is only as sound as its weaker file.
+            assertNotNull(voice.sha256)
+            assertNotNull(voice.tokensSha256)
+            assertEquals(64, voice.sha256!!.length)
             assertTrue(voice.sizeBytes > 0)
             assertFalse(voice.name.isBlank())
         }

@@ -2,6 +2,8 @@ package com.citation.app
 
 import android.app.Application
 import android.content.Context
+import com.citation.app.audio.NeuralSynthesizers
+import com.citation.app.audio.SherpaNeuralSynthesizer
 import com.citation.app.data.CitationRepository
 import com.citation.app.data.OreillyAccess
 import com.citation.app.data.db.CitationDatabase
@@ -14,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 
 /**
  * Citation's runtime. It used to *be* the `Application`, but under the Operations Sandbox container
@@ -43,6 +46,17 @@ class CitationApplication private constructor(private val app: Application) {
         // is built here and handed to the repository as a seam.
         val pdfText = PdfPageText(app)
         repository = appScope.async { CitationRepository.create(db, files, oreillyAccess, pdfText, catalogCredentials) }
+        // The on-device neural voice's runtime, registered only once the linker confirms this build
+        // actually carries it — the native libraries are fetched at build time and may legitimately
+        // be absent. Off the main thread, because confirming it maps tens of megabytes. Nothing is
+        // constructed here either way: a synthesizer is made when a reader first asks to be read to,
+        // and a build without the libraries simply never registers one, which the narrator answers
+        // by using the platform voice.
+        appScope.launch {
+            if (SherpaNeuralSynthesizer.isRuntimePresent()) {
+                NeuralSynthesizers.register { SherpaNeuralSynthesizer(app) }
+            }
+        }
         // Register the periodic RR jobs (poll favourites, advance backfill, evict stale cache).
         RoyalRoadScheduler.schedule(app)
         // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).

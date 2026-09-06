@@ -47,10 +47,16 @@ interface NeuralSynthesizer {
     /** Unload the model and free what it holds. */
     fun release()
 
-    /** Where synthesized samples go: 16-bit mono PCM at [sampleRate]. */
+    /**
+     * Where synthesized samples go: mono float PCM in `-1f..1f` at [sampleRate].
+     *
+     * Float rather than 16-bit because that is what these models produce; converting on the way out
+     * and back again would cost a rounding pass per sentence for nothing, and Android has played
+     * float PCM directly since long before this app's minimum.
+     */
     fun interface AudioSink {
         /** Returns `false` to cancel synthesis — the reader pressed pause or skipped. */
-        fun onSamples(samples: ShortArray, count: Int): Boolean
+        fun onSamples(samples: FloatArray, count: Int): Boolean
     }
 }
 
