@@ -289,6 +289,43 @@ document and a scene's on the scene, because the shelf draws hundreds of them at
 that could change a count updates it in the same breath, in one place, so the stored number and the
 blocks cannot drift.
 
+### The three claims above, tested
+
+Every promise on this page so far is a promise about SQLite rather than about Kotlin, and none of
+them can be reached by reasoning the way `logic/` can. `ProjectRepositoryTest` asks the database
+directly, against a real in-memory Room instance rather than a fake DAO — a fake would answer each
+question with whatever the test assumed:
+
+- **the cascade**, including the two-step one: blocks belong to a document, which belongs to a
+  project, so deleting a project has to reach through two foreign keys — and has to leave the
+  project sitting next to it entirely alone;
+- **the soft links**, from both ends: deleting a scene keeps the document written for it, the event
+  dated to it and the card about it, each with its link cut rather than left to dangle; deleting a
+  document leaves the card that was about it;
+- **the word counts**, through every path that can move them — typing, adding, deleting and
+  reordering a block, pasting a chapter in, filing a document under a different scene, deleting the
+  last document a scene had, and renaming a scene, which must *not* move them.
+
+It also holds the two board decisions that look like bugs until you know them: deleting a column
+strands its cards instead of deleting them, and a card cannot be moved onto another project's board.
+
+### The upgrade path
+
+`ProjectMigrationTest` is the one this app's backup story rests on. It reads `project/schemas/`,
+builds a real database from **each version that has ever shipped**, and opens it through the same
+builder the app uses (`ProjectDatabase.builder`) — so a migration added to the app is a migration
+the test is already running. Opening is the assertion: Room compares every table, column, index and
+foreign key it finds against what the entities describe, and throws with the difference.
+
+The subtle part is what stops that test agreeing with itself. Change an entity without raising
+`PROJECT_DB_VERSION` and Room does not complain — it silently **rewrites** the exported schema for
+the version already on disk, so the test would build a database from the new shape and cheerfully
+confirm it. The phone that has had the app since release still holds the old shape. So the test
+pins each released version's **identity hash** as a constant of its own, where regenerating a schema
+cannot reach it, and fails naming the version that moved. There is deliberately no destructive
+fallback in the builder: for most of the suite that would cost a re-sync, and here it would delete
+the only copy of somebody's writing.
+
 ## Backup
 
 `ProjectBackupContributor` contributes the whole `project.db` plus Project's own `project_*`

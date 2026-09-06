@@ -59,12 +59,28 @@ abstract class ProjectDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): ProjectDatabase =
             instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    ProjectDatabase::class.java,
-                    DB_NAME
-                ).build().also { instance = it }
+                instance ?: builder(context).build().also { instance = it }
             }
+
+        /**
+         * The one place this database is configured — and therefore the one place a migration is
+         * ever added.
+         *
+         * [getInstance] opens the real file through it, and so does `ProjectMigrationTest`, which
+         * builds a database from each exported schema and opens it here. That is the point of the
+         * seam: a migration added below is a migration the upgrade test is already running, rather
+         * than one it has to be told about separately and might not be.
+         *
+         * There is deliberately **no destructive fallback**. For most of the suite falling back
+         * would cost a re-sync; here it would delete the only copy of somebody's writing, so a
+         * missing migration must fail loudly on a developer's machine — which is what the test is
+         * for — rather than quietly on a phone.
+         */
+        internal fun builder(
+            context: Context,
+            name: String = DB_NAME
+        ): RoomDatabase.Builder<ProjectDatabase> =
+            Room.databaseBuilder(context.applicationContext, ProjectDatabase::class.java, name)
 
         /** Close and drop the singleton so a restore can swap the underlying file. */
         fun closeInstance() {
