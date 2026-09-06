@@ -254,6 +254,47 @@ The rule that shapes the screen: **a hole is reported, never hidden.**
 
 The result goes out to the clipboard or the share sheet as Markdown, like everything else here.
 
+## Opening at a place
+
+Until recently the only thing anything outside Project could do was *start* it. Advisor could quote
+a scene and never take you to it; the sandbox could open the app but not a project; a notification
+would have had nowhere to land. `MainActivity` now takes one intent extra —
+`com.project.app.extra.OPEN_DESTINATION` — holding an address in the vocabulary of
+`logic/ProjectLinks`:
+
+| Address | Opens |
+|---|---|
+| `shelf` | The shelf, explicitly — "open Project and do *not* reopen what I had last time". |
+| `project/<id>` | That project, on whichever section you last used. |
+| `project/<id>/<section>` | That project, on `outline`, `docs`, `lore`, `timeline` or `board`. |
+| `project/<id>/doc/<id>` | That document in the editor, with its project underneath it on the back stack, so Back means what it means everywhere else here. |
+
+The addresses are deliberately the app's own nav routes, so there is one vocabulary for "where in
+Project" rather than a private one for callers and another for the nav graph. Build the intent with
+`MainActivity.intentFor(context, destination)`; it carries `CLEAR_TOP | SINGLE_TOP`, so a second
+link reaches the instance already running rather than stacking another copy of the app on it.
+
+Three rules keep a link from being a way to break the app:
+
+- **A stale address opens the shelf.** Every one names rows by id, and by the time it is followed
+  the row may be gone — Advisor answers from a snapshot and can quote a document thrown away since.
+  So `ProjectRepository.resolve` checks it first, and a document is checked *against its project*
+  rather than merely for existing: an address pairing a real document with a different real project
+  would open the editor with a back stack leading somewhere it was never filed.
+- **Nonsense opens the app.** Parsing is total and returns `null` for anything unrecognised,
+  including an address written by an older or newer build. An unknown *section*, though, is refused
+  rather than read as the outline: landing somewhere plausible is how a caller's typo survives to
+  ship, appearing to work while showing the wrong screen every time.
+- **There is no URL scheme and no exported filter beyond the activity.** Project requests no
+  permissions and holds writing that never leaves the device; a `project://` scheme would let any
+  app on the phone address its rows, which is a surface it has no reason to offer inside a suite
+  that shares one process.
+
+The app's own **"reopen the project you left"** goes through the same path rather than being a
+special case in the nav graph — it is a destination like any other. That is the point of the shape:
+the remembered place is exercised on every single launch and a link is exercised rarely, so sharing
+one implementation means the rare one is not the untested one.
+
 ## Search — across all five sections
 
 Until this existed only Lore could be searched, which meant that past about forty documents the
@@ -299,8 +340,9 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Board.kt` | Lanes, WIP-limit state, moving a card between columns, orphans, default columns. |
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
 | `Revisions.kt` | Which versions of a document are worth keeping, which are copies of each other, and which fall off the end of the cap. |
+| `DeepLink.kt` | The addresses that say where in Project to open, and what is not a valid one. |
 
-That is 145 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 152 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |

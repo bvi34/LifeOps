@@ -16,6 +16,7 @@ import com.project.app.data.model.Doc
 import com.project.app.data.model.DocContent
 import com.project.app.data.model.LoreEntryView
 import com.project.app.logic.DocRevision
+import com.project.app.logic.ProjectDestination
 import com.project.app.logic.RevisionReason
 import com.project.app.logic.Revisions
 import com.project.app.data.model.Project
@@ -80,6 +81,32 @@ class ProjectRepository(private val dao: ProjectDao) {
 
     /** One project, read once — what the "reopen where I left off" check asks before navigating. */
     suspend fun getProject(id: String): Project? = dao.getProject(id)?.toModel()
+
+    /**
+     * A destination somebody asked to open at, or `null` if it is not there any more.
+     *
+     * Every way into this app from outside — an intent from another app in the suite, and the app's
+     * own memory of where you were — names rows by id, and by the time it is opened a row may have
+     * been deleted. Advisor can quote a document from a snapshot taken before it was thrown away;
+     * "reopen the project I had last time" can name one archived on another screen a minute ago.
+     *
+     * So the address is checked before it is navigated to, and a stale one falls back to the shelf
+     * rather than to a workspace for something that does not exist. A document is checked against
+     * *its project*, not merely for existing: an address pairing a real document with a different
+     * real project would otherwise open the editor with a back stack leading somewhere it was never
+     * filed.
+     */
+    suspend fun resolve(destination: ProjectDestination): ProjectDestination? = when (destination) {
+        is ProjectDestination.Shelf -> destination
+
+        is ProjectDestination.Workspace ->
+            destination.takeIf { dao.getProject(it.projectId) != null }
+
+        is ProjectDestination.Document -> {
+            val doc = dao.getDoc(destination.docId)
+            if (doc != null && doc.projectId == destination.projectId) destination else null
+        }
+    }
 
     /**
      * Every project with the line that says where it has got to.

@@ -7,6 +7,8 @@ import com.project.app.data.db.ProjectDatabase
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.LoreCategory
+import com.project.app.logic.ProjectDestination
+import com.project.app.logic.SearchSection
 import com.project.app.logic.ProjectKind
 import com.project.app.logic.RevisionReason
 import com.project.app.logic.Revisions
@@ -39,7 +41,9 @@ import org.robolectric.RobolectricTestRunner
  * - that the **stored word counts** and the blocks they were counted from cannot drift, through
  *   every path that can change them;
  * - that the **versions kept before a destructive edit** really hold what the document said, and
- *   really put it back.
+ *   really put it back;
+ * - that an **address somebody was linked with** is checked against what is actually there before
+ *   the app navigates to it.
  *
  * A fake DAO would answer all of those with whatever this file assumed, which is why there isn't
  * one: the database below is in memory, but it is a real Room database — the same entities, the
@@ -454,6 +458,70 @@ class ProjectRepositoryTest {
         repo.moveCard(mine, cardId, theirColumn, 0)
 
         assertEquals("a card crossed into another project's board", myColumn, dao.getCard(cardId)?.columnId)
+    }
+
+    // ------------------------------------------------------------------ opening at an address
+
+    @Test
+    fun `an address for something that is still there resolves to itself`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Scene — the docks")
+
+        val workspace = ProjectDestination.Workspace(projectId)
+        val section = ProjectDestination.Workspace(projectId, SearchSection.LORE)
+        val document = ProjectDestination.Document(projectId, docId)
+
+        assertEquals(workspace, repo.resolve(workspace))
+        assertEquals(section, repo.resolve(section))
+        assertEquals(document, repo.resolve(document))
+        // The shelf is always there — it is the fallback, so it cannot itself go stale.
+        assertEquals(ProjectDestination.Shelf, repo.resolve(ProjectDestination.Shelf))
+    }
+
+    @Test
+    fun `an address for something that has been deleted resolves to nothing`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(projectId, "Scene — the docks")
+
+        repo.deleteDoc(docId)
+        // Advisor answers from a snapshot of the data, so a document it quotes can be gone by the
+        // time somebody taps through to it. Landing on an editor for nothing is worse than the
+        // shelf.
+        assertNull(repo.resolve(ProjectDestination.Document(projectId, docId)))
+
+        repo.deleteProject(projectId)
+        assertNull(repo.resolve(ProjectDestination.Workspace(projectId)))
+        assertNull(repo.resolve(ProjectDestination.Workspace(projectId, SearchSection.BOARD)))
+        assertNull(repo.resolve(ProjectDestination.Document(projectId, docId)))
+    }
+
+    @Test
+    fun `a real document paired with the wrong project resolves to nothing`() = runTest {
+        val mine = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val theirs = repo.addProject("The other one", ProjectKind.WRITING, null)
+        val docId = repo.addDoc(mine, "Scene — the docks")
+
+        // Both halves exist, so checking them separately would let this through — and it would open
+        // the editor with a back stack leading to a project the document was never filed in.
+        assertNull(repo.resolve(ProjectDestination.Document(theirs, docId)))
+        assertEquals(
+            ProjectDestination.Document(mine, docId),
+            repo.resolve(ProjectDestination.Document(mine, docId))
+        )
+    }
+
+    @Test
+    fun `an archived project can still be opened at`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.setArchived(projectId, true)
+
+        // Archiving takes a project off the shelf, not out of the app. A link to one still works,
+        // and so does reopening it — otherwise archiving something would silently break every
+        // reference to it rather than tidying it away.
+        assertEquals(
+            ProjectDestination.Workspace(projectId),
+            repo.resolve(ProjectDestination.Workspace(projectId))
+        )
     }
 
     // ------------------------------------------------------------------ what the shelf reads

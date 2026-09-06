@@ -191,13 +191,21 @@ the receipts.
 > the whole record rather than title-and-body separately (so "kestrel smuggler" finds the entry whose
 > name is in one and description in the other), ranked title-before-body and fully deterministic.
 >
+> Anything in the suite can **open Project at a place** rather than merely starting it — a project, a
+> named section of one, or a document in the editor with its project underneath it on the back stack
+> — through one intent extra whose addresses are the app's own routes. A link naming something since
+> deleted lands on the shelf rather than on an editor for nothing, and there is no URL scheme: the
+> suite shares a process, and an app holding writing that never leaves the device has no reason to
+> let every app on the phone address its rows.
+>
 > Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
 > like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
-> the timeline reading, the board moves, the compile, the search and the rules about which versions
-> of a document are worth keeping are pure JVM in `project/logic/` and covered by 145 unit tests. The
-> store beneath them — the cascades, the soft links, the word-count roll-up, the versions and the
-> schema's upgrade path — has 26 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
+> the timeline reading, the board moves, the compile, the search, the rules about which versions of a
+> document are worth keeping and the addresses that say where in Project to open are pure JVM in
+> `project/logic/` and covered by 152 unit tests. The store beneath them — the cascades, the soft
+> links, the word-count roll-up, the versions, a linked address checked against what is actually
+> there, and the schema's upgrade path — has 30 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.
