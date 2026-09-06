@@ -27,7 +27,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,6 +43,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineRow
@@ -360,39 +361,26 @@ private fun EventDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("What happens") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "What happens", value = name, onValueChange = { name = it })
+                SuiteTextField(
+                    label = "When (anything you like)",
                     value = whenLabel,
                     onValueChange = { whenLabel = it },
-                    label = { Text("When (anything you like)") },
-                    singleLine = true,
-                    supportingText = {
-                        // Say what was understood, rather than rejecting what wasn't.
-                        Text(
-                            parsed?.let { "Read as ${it.scale.label.lowercase()} ${it.value}" }
-                                ?: "Not read as a date — it still keeps its place in the order."
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                    // Say what was understood, rather than rejecting what wasn't.
+                    supporting = parsed?.let { "Read as ${it.scale.label.lowercase()} ${it.value}" }
+                        ?: "Not read as a date — it still keeps its place in the order."
                 )
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "Era or arc (optional)",
                     value = era,
-                    onValueChange = { era = it },
-                    label = { Text("Era or arc (optional)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { era = it }
                 )
-                OutlinedTextField(
+                SuiteNoteField(
+                    label = "Detail (optional)",
                     value = detail,
                     onValueChange = { detail = it },
-                    label = { Text("Detail (optional)") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 1,
+                    maxLines = 4
                 )
                 // Which scene this happens in. The timeline is what the story does; the outline is
                 // where it is told — and they are not the same order, which is the whole point of

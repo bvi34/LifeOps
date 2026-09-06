@@ -30,7 +30,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +46,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Board
@@ -55,8 +57,8 @@ import com.project.app.logic.BoardColumn
 import com.project.app.logic.BoardLane
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineRow
-import com.project.app.logic.Tree
 import com.project.app.logic.ProjectKind
+import com.project.app.logic.Tree
 import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
 import com.project.app.ui.common.OutlinePickerDialog
@@ -440,13 +442,7 @@ private fun TextPromptDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text(label) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            SuiteTextField(label = label, value = text, onValueChange = { text = it })
         },
         confirmButton = {
             TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) { Text("Add") }
@@ -491,18 +487,13 @@ private fun CardDialog(
         title = { Text("Card") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Title", value = title, onValueChange = { title = it })
+                SuiteNoteField(
+                    label = "Notes",
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 1,
+                    maxLines = 4
                 )
 
                 TextButton(onClick = { pickingOutline = true }) {
@@ -579,21 +570,16 @@ private fun ColumnDialog(
         title = { Text("Column") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
+                SuiteNumberField(
+                    // A limit is a count, so the field is one: a WIP limit of "3 or 4" was never going to be
+                    // stored, and a keyboard that cannot type it is kinder than an error afterwards.
+                    label = "Limit at a time (blank for none)",
                     value = limit,
-                    onValueChange = { entry -> limit = entry.filter { it.isDigit() } },
-                    label = { Text("Limit at a time (blank for none)") },
-                    singleLine = true,
-                    supportingText = { Text("A limit warns. It never stops you putting a card here.") },
-                    enabled = !isDone,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { limit = it },
+                    supporting = "A limit warns. It never stops you putting a card here.",
+                    // The finished column has no limit to set — work is allowed to pile up in Done.
+                    enabled = !isDone
                 )
                 TextButton(onClick = { isDone = !isDone }) {
                     Text(if (isDone) "This is the finished column ✓" else "Mark as the finished column")

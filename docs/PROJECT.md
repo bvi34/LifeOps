@@ -351,6 +351,36 @@ The Android side (`data/`, `ui/`) adds Room storage and the Compose screens and 
 every structural edit is a pure function that returns *the rows that changed*, and the repository's
 job is to write exactly those.
 
+## The controls it does not own
+
+Every field on every screen here is the suite's — `SuiteTextField`, `SuiteNoteField`,
+`SuiteNumberField` from `:suiteui`. Project used to write `OutlinedTextField` out longhand
+twenty-five times, which is how the rest of the suite got the way it was before `:suiteui` existed:
+one screen's field filtered non-digits and the one beside it did not, one filled its row and another
+did not, and each had a private opinion about supporting text. None of that is a decision worth an
+app making twice.
+
+Three things changed by adopting them rather than merely tidying up:
+
+- **The two count fields are counts.** A WIP limit and a word target now take digits and nothing
+  else. The board had hand-rolled that filter; the outline had not, so "about 2000" typed into a
+  word target went through `toIntOrNull()` and quietly became no target at all. The filter that
+  replaces both is `SuiteInput`, which is pure JVM in `:suitekit` and unit-tested there — coverage
+  this app now inherits instead of duplicating.
+- **Fields capitalise sentences; search boxes do not.** A raw `OutlinedTextField` capitalises
+  nothing, so every name and title here used to start lowercase unless you reached for shift. The
+  shared field has the suite's opinion instead — and the two search boxes opt out of it, because a
+  query is not a sentence.
+- **Prose fields have a ceiling.** They grew without limit before, which in a dialog means a long
+  note pushes the buttons off the bottom of the screen.
+
+What is *not* shared is the pickers, and that is the honest answer rather than an oversight.
+`:suiteui` offers a colour, date, time and when picker; Project has no date, time or when to pick —
+deciding when something happens is LifeOps' job, and the timeline's "when" is free text on purpose
+(see above). Its own `ui/common/Pickers.kt` picks a piece of the outline or a document, which is a
+question about *this app's* tree and has no suite equivalent. Colours are assigned from a rotating
+palette and there is no UI to change one, here or in Maintenance, which stores the same column.
+
 ## Storage
 
 One Room database, `project.db`, with ten tables and one project id threaded through all of them.

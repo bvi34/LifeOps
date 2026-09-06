@@ -27,7 +27,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,11 +38,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.LoreEntryView
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Lore
@@ -132,12 +134,13 @@ fun LoreScreen(vm: LoreViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "search") {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "Search lore",
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search lore") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    // A query is not a sentence. Every screen that capitalises one makes somebody reach for
+                    // shift-backspace before their first search of the day.
+                    capitalise = KeyboardCapitalization.None
                 )
             }
 
@@ -346,13 +349,7 @@ private fun NewEntryDialog(onDismiss: () -> Unit, onCreate: (String, LoreCategor
         title = { Text("New lore entry") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier.horizontalScroll(rememberScrollState())
@@ -392,31 +389,25 @@ private fun EditEntryDialog(
         title = { Text(view.entry.name) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
+                SuiteTextField(
+                    label = "Also called (comma separated)",
                     value = aliases,
-                    onValueChange = { aliases = it },
-                    label = { Text("Also called (comma separated)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { aliases = it }
                 )
-                OutlinedTextField(
+                SuiteNoteField(
+                    label = "In one line",
                     value = summary,
                     onValueChange = { summary = it },
-                    label = { Text("In one line") },
-                    modifier = Modifier.fillMaxWidth()
+                    // Prose, but one sentence of it: it starts at a single line the way it always has, and
+                    // stops growing before it pushes the dialog's buttons off the screen.
+                    minLines = 1,
+                    maxLines = 3
                 )
-                OutlinedTextField(
+                SuiteNoteField(
+                    label = "Everything else — link with [[name]]",
                     value = body,
-                    onValueChange = { body = it },
-                    label = { Text("Everything else — link with [[name]]") },
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { body = it }
                 )
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),

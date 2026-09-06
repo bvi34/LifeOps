@@ -1,6 +1,7 @@
 package com.project.app.ui.docs
 
 import android.content.Intent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,17 +11,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.MenuBook
@@ -36,7 +36,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -66,6 +65,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.DocContent
 import com.project.app.data.prefs.ProjectPrefs
 import com.project.app.data.repository.ProjectRepository
@@ -453,11 +454,12 @@ fun DocEditorScreen(vm: DocEditorViewModel, onHistory: () -> Unit, onBack: () ->
             onDismissRequest = { renaming = false },
             title = { Text("Rename document") },
             text = {
-                OutlinedTextField(
+                SuiteTextField(
+                    // Labelled, where it was not before: an outlined field with no floating label is a box
+                    // whose meaning is carried entirely by the dialog's own title, and reads as unfinished.
+                    label = "Title",
                     value = title,
-                    onValueChange = { title = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { title = it }
                 )
             },
             confirmButton = {
@@ -483,11 +485,10 @@ fun DocEditorScreen(vm: DocEditorViewModel, onHistory: () -> Unit, onBack: () ->
                             "lost its line breaks on the way here.",
                         style = MaterialTheme.typography.bodySmall
                     )
-                    OutlinedTextField(
+                    SuiteNoteField(
+                        label = "Paste here",
                         value = markdown,
-                        onValueChange = { markdown = it },
-                        label = { Text("Paste here") },
-                        modifier = Modifier.fillMaxWidth()
+                        onValueChange = { markdown = it }
                     )
                 }
             },

@@ -2,7 +2,6 @@ package com.project.app.ui.outline
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
@@ -32,7 +32,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +49,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineNode
@@ -400,13 +402,7 @@ private fun TitlePromptDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Title") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            SuiteTextField(label = "Title", value = text, onValueChange = { text = it })
         },
         confirmButton = {
             TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) { Text("Add") }
@@ -432,26 +428,21 @@ private fun EditNodeDialog(
         title = { Text(node.title.ifBlank { "Untitled" }) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Title", value = title, onValueChange = { title = it })
+                SuiteNoteField(
+                    label = "What happens here",
                     value = synopsis,
                     onValueChange = { synopsis = it },
-                    label = { Text("What happens here") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 1,
+                    maxLines = 4
                 )
                 if (kind.tracksWords) {
-                    OutlinedTextField(
+                    SuiteNumberField(
+                        // Words are counted, never fractional and never negative — so the field accepts digits and
+                        // nothing else, and there is no wrong value left to complain about afterwards.
+                        label = "Word target (blank for none)",
                         value = target,
-                        onValueChange = { entry -> target = entry.filter { it.isDigit() } },
-                        label = { Text("Word target (blank for none)") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        onValueChange = { target = it }
                     )
                     Text(
                         // Said out loud because it is the question people ask of every writing tool.

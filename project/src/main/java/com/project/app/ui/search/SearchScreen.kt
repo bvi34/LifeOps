@@ -16,24 +16,25 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.remember
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectSearch
 import com.project.app.logic.SearchCorpus
@@ -132,12 +133,14 @@ fun SearchScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "query") {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "Search this project",
                     value = query,
                     onValueChange = { vm.setQuery(it) },
-                    label = { Text("Search this project") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus)
+                    // A query is not a sentence. Every screen that capitalises one makes somebody
+                    // reach for shift-backspace before their first search of the day.
+                    capitalise = KeyboardCapitalization.None,
+                    modifier = Modifier.focusRequester(focus)
                 )
             }
 

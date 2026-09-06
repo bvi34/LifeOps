@@ -66,7 +66,9 @@ ksp {
 }
 
 dependencies {
-    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    // The suite's shared appearance and its shared controls — one theme, one store, this app's
+    // colour identity in it, and the one text, note and number field every app uses. No app
+    // grows its own again; see docs/PROJECT.md.
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). Project supplies a BackupContributor.
     implementation(project(":backupkit"))
