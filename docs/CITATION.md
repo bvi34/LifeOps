@@ -511,10 +511,38 @@ done, tell me the words as you pass them if you can. `SystemSpeechEngine` implem
 platform's own engine and is the one that always works; it is also the only one that reports word
 boundaries (`onRangeStart`, API 26 — exactly Citation's minimum), so it is the way to get a
 word-by-word read-along rather than a sentence one. `NeuralSpeechEngine` runs a downloaded voice and
-plays the samples through a plain `AudioTrack`, with the native runtime kept *outside* the module
-behind `NeuralSynthesizer`/`NeuralSynthesizers` — an ONNX runtime ships tens of megabytes of native
-code per ABI, and a reader module should not carry that in its dependency graph. With nothing
-registered the narrator falls back to the platform voice and the app reads books exactly as before.
+plays its float samples through a plain `AudioTrack`, reaching the runtime only through
+`NeuralSynthesizer`/`NeuralSynthesizers` — so the engine, the planner and the player know nothing
+about which runtime is installed, or whether one is at all.
+
+**The neural runtime is sherpa-onnx, driving Piper VITS models** (`audio/SherpaNeuralSynthesizer`,
+the one class in Citation that knows a runtime exists). Three files make a voice speak, and they
+arrive from three places for reasons worth stating:
+
+- **The model** (60–120 MB) is downloaded, because it is far too large to ship to readers who never
+  listen. `VoiceCatalog` names seven English voices with their real sizes and SHA-256s.
+- **The token table** beside it maps the model's phoneme inventory to its trained ids, and comes
+  down with the model because it is per-voice.
+- **The pronunciation data** — espeak-ng's phoneme tables, intonation data, English dictionary and
+  English voice definitions — ships **in the APK** (`assets/espeak-ng-data`, unpacked once by
+  `audio/EspeakData`). The full data set is 18 MB across 355 files; the part an English voice
+  actually reads is **848 KB across 13**, verified by synthesis rather than by guesswork. Small
+  enough to always carry, which buys the thing that matters: the first voice a reader downloads
+  works offline the moment it lands, with no second download to fail halfway.
+
+The native libraries are neither committed nor optional-in-a-way-that-breaks: `:citation`'s build
+fetches them, pinned by version **and** SHA-256, into `build/` (`fetchNeuralVoiceRuntime`, ~45 MB
+once, arm64-v8a + armeabi-v7a). The 188 KB Java API is committed to `citation/libs/` instead,
+because a failure to reach a host must never be a failure to *compile*. If the fetch is skipped
+(`-Pcitation.skipNativeVoices`) or fails, the module still builds, the linker reports the runtime
+absent, nothing is registered, the Listen tab says the device's own voice is being used and stops
+offering downloads — and books read exactly as they did before speech existed.
+
+**Licensing, stated rather than buried:** sherpa-onnx is Apache-2.0, but its text-to-phoneme path is
+piper-phonemize over **espeak-ng, which is GPLv3**, and the pronunciation data in `assets/` is
+espeak-ng's. For a personal build that is nothing to act on; distributing the APK would carry
+GPLv3's obligations. Removing the runtime is a one-line change (don't register it) and costs only
+the neural voice.
 
 `Narrator` is the process-wide coordinator — plan, engine, position, audio focus — because listening
 outlives the screen, and `NarrationService` is the media-playback foreground service and
@@ -562,6 +590,12 @@ whichever was reached last when the book is opened — so a chapter listened to 
 land, in the reader and in the voice alike. A canonical place is staged on its own restore channel
 so the scrolling reader resolves it through the layout (find the line holding that character) rather
 than scrolling to a character count as though it were a pixel count.
+
+**Measured, not assumed:** on a container-grade x86 CPU the medium voice loads in ~2 s and
+synthesizes at **7–8× realtime** (a 7-second sentence in under a second), streaming in four chunks —
+which is what makes pause responsive, since the callback stops the model rather than only the
+speaker. A phone will be slower; the `high` voice is slower again, which is why the catalogue states
+the quality tier honestly.
 
 **Not built yet:** the read-along highlight. `ChapterRender` already maps canonical offsets to
 display offsets and `ReaderScreen` already shades ranges, and `NarrationState` already publishes the

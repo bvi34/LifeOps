@@ -14,8 +14,8 @@ import java.net.URL
  * are followed by hand for the same reason they are there — the host redirects to a CDN, and the
  * platform's automatic following stops at a protocol change.
  *
- * The config is fetched first. It is four kilobytes against sixty megabytes, so a wrong URL, an
- * expired host or a captive-portal login page costs the reader a moment rather than most of their
+ * The token table is fetched first. It is under a kilobyte against sixty megabytes, so a wrong URL,
+ * an expired host or a captive-portal login page costs the reader a moment rather than most of their
  * data allowance before it fails.
  */
 class VoiceDownloader(private val store: VoiceStore) {
@@ -31,20 +31,20 @@ class VoiceDownloader(private val store: VoiceStore) {
         model: VoiceModel,
         onProgress: (Float) -> Unit = {}
     ): VoiceStore.InstallResult = withContext(Dispatchers.IO) {
-        val config = fetch(model.configUrl) { stream ->
-            store.write(store.configFile(model), stream)
+        val tokens = fetch(model.tokensUrl) { stream ->
+            store.write(store.tokensFile(model), stream, model.tokensSha256)
         }
-        if (config is VoiceStore.InstallResult.Failed) return@withContext config
+        if (tokens is VoiceStore.InstallResult.Failed) return@withContext tokens
 
         val total = model.sizeBytes.coerceAtLeast(1L)
         val weights = fetch(model.modelUrl) { stream ->
-            store.write(store.modelFile(model), stream, model.md5) { written ->
+            store.write(store.modelFile(model), stream, model.sha256) { written ->
                 onProgress((written.toFloat() / total).coerceIn(0f, 1f))
             }
         }
-        // A voice is its pair. Weights that failed leave a config behind that is worth nothing and
-        // would otherwise sit in the store forever.
-        if (weights is VoiceStore.InstallResult.Failed) store.configFile(model).delete()
+        // A voice is its pair. Weights that failed leave a token table behind that is worth nothing
+        // and would otherwise sit in the store forever.
+        if (weights is VoiceStore.InstallResult.Failed) store.tokensFile(model).delete()
         weights
     }
 

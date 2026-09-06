@@ -32,12 +32,12 @@ class VoiceStore(context: Context) {
     /** The weights file for [model], installed or not. */
     fun modelFile(model: VoiceModel): File = File(dir, model.modelFileName)
 
-    /** The config beside it, which the runtime reads for sample rate and phonemes. */
-    fun configFile(model: VoiceModel): File = File(dir, model.configFileName)
+    /** The token table beside it, which the runtime reads to turn phonemes into model ids. */
+    fun tokensFile(model: VoiceModel): File = File(dir, model.tokensFileName)
 
     /** Whether both of [model]'s files are present and non-empty. */
     fun isInstalled(model: VoiceModel): Boolean =
-        modelFile(model).isNonEmpty() && configFile(model).isNonEmpty()
+        modelFile(model).isNonEmpty() && tokensFile(model).isNonEmpty()
 
     /** Whether the voice named [voiceId] is installed, when only its id is to hand. */
     fun isInstalled(voiceId: String): Boolean =
@@ -52,26 +52,26 @@ class VoiceStore(context: Context) {
      */
     fun installed(): List<InstalledVoice> =
         VoiceCatalog.VOICES.filter { isInstalled(it) }.map {
-            InstalledVoice(it, modelFile(it).absolutePath, configFile(it).absolutePath)
+            InstalledVoice(it, modelFile(it).absolutePath, tokensFile(it).absolutePath)
         }
 
     /**
      * Write one of [model]'s two files from [source], verifying it before it counts as installed.
      *
      * Writes to `<name>.part` and renames on success, so a failure at any point leaves the previous
-     * state intact and nothing half-written is ever visible to [installed]. [expectedMd5] is checked
-     * when the catalogue states one; a mismatch deletes the download and reports it rather than
-     * leaving a plausible-looking file that will crash a runtime later.
+     * state intact and nothing half-written is ever visible to [installed]. [expectedSha256] is
+     * checked when the catalogue states one; a mismatch deletes the download and reports it rather
+     * than leaving a plausible-looking file that will crash a runtime later.
      */
     fun write(
         target: File,
         source: InputStream,
-        expectedMd5: String? = null,
+        expectedSha256: String? = null,
         onProgress: ((Long) -> Unit)? = null
     ): InstallResult {
         val partial = File(target.parentFile, target.name + PART_SUFFIX)
         return try {
-            val digest = MessageDigest.getInstance("MD5")
+            val digest = MessageDigest.getInstance("SHA-256")
             var written = 0L
             partial.outputStream().use { out ->
                 val buffer = ByteArray(64 * 1024)
@@ -88,9 +88,9 @@ class VoiceStore(context: Context) {
                 partial.delete()
                 return InstallResult.Failed("Downloaded nothing")
             }
-            if (expectedMd5 != null) {
+            if (expectedSha256 != null) {
                 val actual = digest.digest().joinToString("") { "%02x".format(it) }
-                if (!actual.equals(expectedMd5, ignoreCase = true)) {
+                if (!actual.equals(expectedSha256, ignoreCase = true)) {
                     partial.delete()
                     return InstallResult.Failed("The download did not verify; it may have been cut short")
                 }
@@ -110,8 +110,8 @@ class VoiceStore(context: Context) {
     /** Remove a voice and both its files. Deletes succeed on a full disk; installs do not. */
     fun delete(model: VoiceModel): Boolean {
         val weights = modelFile(model).delete()
-        val config = configFile(model).delete()
-        return weights || config
+        val tokens = tokensFile(model).delete()
+        return weights || tokens
     }
 
     /** Clear any interrupted downloads — the reader's "why is this taking up space" answer. */

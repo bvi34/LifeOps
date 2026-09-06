@@ -18,10 +18,10 @@ import java.util.concurrent.atomic.AtomicBoolean
  * it — all of which are the reader's to spend knowingly, which is why the voice picker states the
  * size and the quality tier before anything is fetched.
  *
- * There is no seeking inside an utterance and no word reporting, and both are inherent rather than
- * unfinished: the model produces a sentence of audio as one act, with no alignment back to the
- * characters that produced it. So [reportsWordBoundaries] is false and the read-along highlight
- * lands on the sentence — which is what the planner made sentences small enough for.
+ * There is no word reporting, and that is inherent rather than unfinished: the model produces audio
+ * from phonemes with no alignment back to the characters that produced them. So
+ * [reportsWordBoundaries] is false and the read-along highlight lands on the sentence — which is
+ * what the planner made sentences small enough for.
  *
  * Playback is a plain [AudioTrack] rather than a media player, because there is no file, no
  * container and no seeking involved: samples arrive from the model and go to the speaker. That also
@@ -67,7 +67,7 @@ class NeuralSpeechEngine(
                 // model does not run minutes ahead of the speaker and make pause feel broken.
                 var offset = 0
                 while (offset < count && !cancelled.get()) {
-                    val written = output.write(samples, offset, count - offset)
+                    val written = output.write(samples, offset, count - offset, AudioTrack.WRITE_BLOCKING)
                     if (written <= 0) return@synthesize false
                     offset += written
                 }
@@ -106,7 +106,7 @@ class NeuralSpeechEngine(
         val minimum = AudioTrack.getMinBufferSize(
             rate,
             AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
+            AudioFormat.ENCODING_PCM_FLOAT
         ).coerceAtLeast(MINIMUM_BUFFER_BYTES)
         AudioTrack.Builder()
             .setAudioAttributes(
@@ -117,7 +117,7 @@ class NeuralSpeechEngine(
             )
             .setAudioFormat(
                 AudioFormat.Builder()
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
                     .setSampleRate(rate)
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()

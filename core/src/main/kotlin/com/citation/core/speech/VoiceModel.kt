@@ -9,10 +9,11 @@ package com.citation.core.speech
  * one, verify it, and speak with it offline forever after. That is the whole shape of the on-device
  * neural track: the download is the only thing that ever touches the network.
  *
- * The file pair is the Piper convention, which the on-device runtimes all consume: the ONNX weights
- * and a JSON config beside them naming the sample rate, the phoneme set and the speakers. Both are
- * required — a voice with a missing config cannot be loaded and is not installed, however many
- * megabytes of it are on disk.
+ * A voice is a **pair**: the ONNX weights, and the token table beside them mapping the model's
+ * phoneme inventory to the ids it was trained on. Both are required — weights without their tokens
+ * cannot be loaded and do not count as installed, however many megabytes of them are on disk. The
+ * pronunciation data that turns text into those phonemes is shared by every voice and ships with the
+ * app rather than being downloaded per voice.
  *
  * @property id the voice's canonical name, e.g. `en_US-lessac-medium`. Also its filename stem and
  *   the value stored in [SpeechSettings.voiceId].
@@ -22,9 +23,11 @@ package com.citation.core.speech
  * @property sampleRate the rate the model synthesizes at, in Hz.
  * @property sizeBytes the weights' size, for a download prompt that tells the truth before it starts.
  * @property modelUrl where the `.onnx` comes from.
- * @property configUrl where the `.onnx.json` comes from.
- * @property md5 the weights' MD5 as the publisher states it, or `null` when unknown. Integrity, not
- *   security: it catches the half-finished download, which is the failure that actually happens.
+ * @property tokensUrl where its token table comes from.
+ * @property sha256 the weights' SHA-256 as the publisher states it, or `null` when unknown.
+ *   Integrity, not security: it catches the half-finished download, which is the failure that
+ *   actually happens, and the runtime handed half a model does not fail politely.
+ * @property tokensSha256 the same for the token table.
  * @property speakers how many voices the model contains; more than one means [speaker] selects.
  * @property notes anything the reader should know before spending the megabytes.
  */
@@ -36,8 +39,9 @@ data class VoiceModel(
     val sampleRate: Int,
     val sizeBytes: Long,
     val modelUrl: String,
-    val configUrl: String,
-    val md5: String? = null,
+    val tokensUrl: String,
+    val sha256: String? = null,
+    val tokensSha256: String? = null,
     val speakers: Int = 1,
     val speaker: Int = 0,
     val notes: String? = null
@@ -46,8 +50,8 @@ data class VoiceModel(
     /** The weights' filename on disk. */
     val modelFileName: String get() = "$id.onnx"
 
-    /** The config's filename on disk, beside the weights, as every runtime expects to find it. */
-    val configFileName: String get() = "$id.onnx.json"
+    /** The token table's filename on disk, beside the weights. */
+    val tokensFileName: String get() = "$id.tokens.txt"
 
     /** "English (US) · Medium · 60 MB" — one line for a voice picker. */
     val summary: String get() = "$language · ${quality.label} · ${megabytes(sizeBytes)}"
@@ -86,7 +90,7 @@ enum class VoiceQuality(val label: String) {
 data class InstalledVoice(
     val model: VoiceModel,
     val modelPath: String,
-    val configPath: String
+    val tokensPath: String
 )
 
 /**
