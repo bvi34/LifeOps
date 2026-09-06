@@ -53,6 +53,7 @@ import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteNumberField
 import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineNode
 import com.project.app.logic.OutlineRow
@@ -141,7 +142,11 @@ class OutlineViewModel(
  * draft where you are moving a scene between chapters and cannot afford to guess where it landed.
  */
 @Composable
-fun OutlineScreen(vm: OutlineViewModel, kind: ProjectKind) {
+fun OutlineScreen(
+    vm: OutlineViewModel,
+    kind: ProjectKind,
+    onOpenFiles: (AttachKind, String) -> Unit = { _, _ -> }
+) {
     val rows by vm.rows.collectAsStateWithLifecycle()
     val pending by vm.pendingDelete.collectAsStateWithLifecycle()
 
@@ -233,6 +238,7 @@ fun OutlineScreen(vm: OutlineViewModel, kind: ProjectKind) {
 
     editing?.let { node ->
         EditNodeDialog(
+            onOpenFiles = { onOpenFiles(AttachKind.OUTLINE, it) },
             node = node,
             kind = kind,
             onDismiss = { editing = null },
@@ -413,6 +419,7 @@ private fun TitlePromptDialog(
 
 @Composable
 private fun EditNodeDialog(
+    onOpenFiles: (String) -> Unit,
     node: OutlineNode,
     kind: ProjectKind,
     onDismiss: () -> Unit,
@@ -465,6 +472,10 @@ private fun EditNodeDialog(
                         )
                     }
                 }
+
+                // Reference for this piece — the photograph of the street, the article it is based
+                // on — filed on the scene rather than in the project's one flat pile.
+                TextButton(onClick = { onOpenFiles(node.id) }) { Text("Files on this ${kind.piece}…") }
             }
         },
         confirmButton = {

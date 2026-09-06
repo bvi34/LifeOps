@@ -6,8 +6,10 @@ import com.lifeops.app.connection.TaskCompletionBus
 import com.project.app.data.db.ProjectDatabase
 import com.project.app.data.prefs.ProjectPrefs
 import com.project.app.data.repository.CardPublisher
+import com.operations.backupkit.AppId
 import com.project.app.connection.ProjectConnections
 import com.project.app.data.repository.ProjectRepository
+import com.repository.app.RepositoryApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -32,7 +34,20 @@ class ProjectApp private constructor(private val app: Application) {
 
     val database by lazy { ProjectDatabase.getInstance(app) }
     val prefs by lazy { ProjectPrefs(app) }
-    val repository by lazy { ProjectRepository(database.projectDao()) }
+    val repository by lazy {
+        ProjectRepository(
+            dao = database.projectDao(),
+            // A renamed record whose drawer on the household's shelf still says the old name is a
+            // drawer nobody finds again. Repository stores a label rather than a foreign key, so
+            // this is the push that keeps it true — resolved here because finding the shelf is an
+            // Android question and the repository is a thing that takes a DAO.
+            relabelDocuments = { recordKey, label ->
+                runCatching {
+                    RepositoryApp.get(app).documents.relabel(AppId.PROJECT.key, recordKey, label)
+                }
+            }
+        )
+    }
     /**
      * Project's connection layer — `/v1/Project/local/…`, the suite's second dispatcher.
      *

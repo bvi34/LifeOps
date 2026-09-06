@@ -48,6 +48,7 @@ import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.LoreEntryView
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.Lore
 import com.project.app.logic.LoreCategory
 import com.project.app.logic.LoreEntry
@@ -102,7 +103,10 @@ class LoreViewModel(
  * from becoming an entry.
  */
 @Composable
-fun LoreScreen(vm: LoreViewModel) {
+fun LoreScreen(
+    vm: LoreViewModel,
+    onOpenFiles: (AttachKind, String) -> Unit = { _, _ -> }
+) {
     val entries by vm.entries.collectAsStateWithLifecycle()
     val broken by vm.brokenLinks.collectAsStateWithLifecycle()
 
@@ -221,6 +225,7 @@ fun LoreScreen(vm: LoreViewModel) {
 
     editing?.let { view ->
         EditEntryDialog(
+            onOpenFiles = { onOpenFiles(AttachKind.LORE, it) },
             view = view,
             onDismiss = { editing = null },
             onSave = { entry, chosen ->
@@ -373,6 +378,7 @@ private fun NewEntryDialog(onDismiss: () -> Unit, onCreate: (String, LoreCategor
 
 @Composable
 private fun EditEntryDialog(
+    onOpenFiles: (String) -> Unit,
     view: LoreEntryView,
     onDismiss: () -> Unit,
     onSave: (LoreEntry, LoreCategory) -> Unit
@@ -421,6 +427,10 @@ private fun EditEntryDialog(
                         )
                     }
                 }
+
+                // Reference for this entry — a map, a portrait, the source you are keeping it
+                // honest against.
+                TextButton(onClick = { onOpenFiles(id) }) { Text("Files on this entry…") }
             }
         },
         confirmButton = {

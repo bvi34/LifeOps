@@ -54,6 +54,7 @@ import com.operations.suite.ui.pickers.SuiteDates
 import com.operations.suitekit.SuiteVerdict
 import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
 import com.project.app.logic.BoardColumn
@@ -177,7 +178,11 @@ class BoardViewModel(
  * top is how they are found and re-filed.
  */
 @Composable
-fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
+fun BoardScreen(
+    vm: BoardViewModel,
+    kind: ProjectKind,
+    onOpenFiles: (AttachKind, String) -> Unit = { _, _ -> }
+) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     var addingCardIn by remember { mutableStateOf<String?>(null) }
@@ -278,6 +283,7 @@ fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
 
     editingCard?.let { card ->
         CardDialog(
+            onOpenFiles = { onOpenFiles(AttachKind.CARD, it) },
             card = card,
             kind = kind,
             outlineRows = state.outlineRows,
@@ -528,6 +534,7 @@ private fun TextPromptDialog(
  */
 @Composable
 private fun CardDialog(
+    onOpenFiles: (String) -> Unit,
     card: BoardCard,
     kind: ProjectKind,
     outlineRows: List<OutlineRow>,
@@ -605,6 +612,10 @@ private fun CardDialog(
                         )
                     }
                 }
+
+                // A card is the piece of work somebody was sent the contract for — its paperwork
+                // belongs on it rather than in the project's one flat pile.
+                TextButton(onClick = { onOpenFiles(card.id) }) { Text("Files on this card…") }
 
                 TextButton(onClick = onDelete) { Text("Delete card") }
             }

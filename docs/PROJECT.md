@@ -468,8 +468,9 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `CardTasks.kt` | What should happen to the LifeOps task standing for a card, given what each side holds. |
 | `CardRound.kt` | Driving that decision over every card, and the two mistakes only a round can make. |
 | `ProjectLookup.kt` | Turning a name a caller said into a row — id first, exact names, and nothing at all when two match. |
+| `Attachments.kt` | Which records can hold files, and how a record's drawer reads on the household's shelf. |
 
-That is 201 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 206 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |
@@ -517,7 +518,40 @@ exceptions are `doc_revisions` and `doc_revision_blocks`, which hang off a *docu
 project — they are versions of one document and go with it, and the project cascade reaches them
 through it.
 
-The **cross-section links are soft** — a card's outline node and document, a doc's outline node, an
+### Files, on the thing they are about
+
+A project's *files* — the brief, the contract, the reference PDFs somebody was sent — are documents
+the household filed rather than writing the project is made of, so they live on the suite's shelf
+(`:repository`) and are shown here in place. Project stores no bytes and keeps no second document
+table.
+
+They can be filed on **four kinds of record**: the project, a piece of the outline, a lore entry, or
+a card. Until this they could only go on the project, which meant a reference photograph for one
+scene, the signed contract for one piece of work and a map for one lore entry all landed in the same
+flat pile — the thing every other app in the suite already avoids, since Health attaches per person
+and Maintenance per asset.
+
+A **document** is deliberately not one of the four. A document *is* the writing; a file attached to
+writing is either reference material (which belongs on the piece of the outline the writing is for)
+or a copy of the writing itself (which belongs on the shelf on its own).
+
+The panel lives on **its own screen**, reached from each record's dialog, rather than inside the
+dialog. Filing is three affordances wide — from this phone, off a drive, or something already on the
+shelf — and the result is a list; an `AlertDialog` holding all of that is a dialog you cannot read.
+
+Two consequences are worth stating because they are the cost of the shelf holding a **label** rather
+than a foreign key — the choice that lets Repository show a project's paperwork without knowing what
+a project is:
+
+- **A rename has to be pushed down.** Renaming a scene renames its drawer; renaming the *project*
+  renames every drawer in it, because a record's label leads with the project ("The Kestrel — The
+  docks"). It leads with it because the shelf lists the whole household's paperwork in one place,
+  where a drawer called "The docks" beside a mortgage statement is a question rather than an answer.
+- **A delete has to name every record.** A project's rows cascade with it, after which nothing is
+  left to work out which drawers belonged to it — so the record keys are read *before* the delete
+  and each drawer is emptied. Repository never cascades on somebody else's rules.
+
+The cross-section links are soft — a card's outline node and document, a doc's outline node, an
 event's scene — declared without a foreign key so deleting a scene does not delete the notes written
 about it. When an outline subtree *is* deleted, those links are explicitly cut in the same
 transaction: a link that dangles for ever is indistinguishable from one that was never made. Every

@@ -21,6 +21,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.project.app.data.prefs.ProjectPrefs
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.ProjectDestination
 import com.project.app.logic.ProjectLinks
 import com.project.app.ui.compile.CompileScreen
@@ -29,6 +30,8 @@ import com.project.app.ui.docs.DocEditorScreen
 import com.project.app.ui.docs.DocEditorViewModel
 import com.project.app.ui.docs.DocHistoryScreen
 import com.project.app.ui.docs.DocHistoryViewModel
+import com.project.app.ui.files.FilesScreen
+import com.project.app.ui.files.FilesViewModel
 import com.project.app.ui.search.SearchScreen
 import com.project.app.ui.search.SearchViewModel
 import com.project.app.ui.shelf.ShelfScreen
@@ -258,6 +261,9 @@ private fun ProjectNavGraph(
                 onSearch = { nav.navigate("project/$projectId/search") },
                 onCompile = { nav.navigate("project/$projectId/compile") },
                 onCardsChanged = onCardsChanged,
+                onOpenFiles = { kind, recordId ->
+                    nav.navigate("project/$projectId/files/${kind.key}/$recordId")
+                },
                 onBack = {
                     prefs.lastProjectId = null
                     nav.popBackStack()
@@ -301,6 +307,27 @@ private fun ProjectNavGraph(
                 factory = DocHistoryViewModel.Factory(repo, docId)
             )
             DocHistoryScreen(vm, onBack = { nav.popBackStack() })
+        }
+
+        composable(
+            route = "project/{projectId}/files/{kind}/{recordId}",
+            arguments = listOf(
+                navArgument("projectId") { type = NavType.StringType },
+                navArgument("kind") { type = NavType.StringType },
+                navArgument("recordId") { type = NavType.StringType }
+            )
+        ) { entry ->
+            val projectId = entry.arguments?.getString("projectId").orEmpty()
+            val recordId = entry.arguments?.getString("recordId").orEmpty()
+            // An unrecognised kind means a link from a build that knew about a record this one does
+            // not. The project's own drawer is the honest fallback: it is where the files were
+            // before there was anywhere else to put them.
+            val kind = AttachKind.fromKey(entry.arguments?.getString("kind")) ?: AttachKind.PROJECT
+            val vm: FilesViewModel = viewModel(
+                key = "files-$recordId",
+                factory = FilesViewModel.Factory(repo, projectId, kind, recordId)
+            )
+            FilesScreen(vm, onBack = { nav.popBackStack() })
         }
 
         composable(

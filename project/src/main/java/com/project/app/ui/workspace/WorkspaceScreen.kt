@@ -39,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.project.app.data.model.Doc
 import com.project.app.data.model.Project
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.SearchSection
 import com.project.app.ui.board.BoardScreen
 import com.project.app.ui.board.BoardViewModel
@@ -138,7 +139,9 @@ fun ProjectWorkspace(
     onBack: () -> Unit,
     /** Ask for a hand-off round — see `BoardViewModel`. Passed down rather than fetched from the
      *  app singleton, so a screen still knows nothing about how the app is assembled. */
-    onCardsChanged: () -> Unit = {}
+    onCardsChanged: () -> Unit = {},
+    /** Open the files filed on one record — see `ui/files/FilesScreen`. */
+    onOpenFiles: (AttachKind, String) -> Unit = { _, _ -> }
 ) {
     val vm: WorkspaceViewModel = viewModel(
         key = "workspace-$projectId",
@@ -211,7 +214,7 @@ fun ProjectWorkspace(
                         key = "outline-$projectId",
                         factory = OutlineViewModel.Factory(repo, projectId)
                     )
-                    OutlineScreen(outlineVm, current.kind)
+                    OutlineScreen(outlineVm, current.kind, onOpenFiles = onOpenFiles)
                 }
 
                 ProjectSection.DOCS -> {
@@ -227,7 +230,7 @@ fun ProjectWorkspace(
                         key = "lore-$projectId",
                         factory = LoreViewModel.Factory(repo, projectId)
                     )
-                    LoreScreen(loreVm)
+                    LoreScreen(loreVm, onOpenFiles = onOpenFiles)
                 }
 
                 ProjectSection.TIMELINE -> {
@@ -243,7 +246,7 @@ fun ProjectWorkspace(
                         key = "board-$projectId",
                         factory = BoardViewModel.Factory(repo, projectId, onCardsChanged)
                     )
-                    BoardScreen(boardVm, current.kind)
+                    BoardScreen(boardVm, current.kind, onOpenFiles = onOpenFiles)
                 }
             }
         }

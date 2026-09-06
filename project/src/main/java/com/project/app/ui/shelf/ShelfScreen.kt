@@ -192,9 +192,14 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
                     // The files attached to it go too, and Repository does not cascade on somebody
                     // else's rules — the owning app says what deleting one of its records means.
                     // Saying it here, beside the sentence that promises "everything in it".
+                    // Every record's drawer, not only the project's own: files now sit on scenes,
+                    // lore entries and cards too, and their rows cascade with the project — after
+                    // which nothing is left to say which drawers on the shelf belonged to it.
                     scope.launch {
-                        com.repository.app.RepositoryApp.get(context).documents
-                            .deleteFiledOn(AppId.PROJECT.key, going.id)
+                        val app = ProjectApp.get(context)
+                        val keys = app.repository.attachableRecordKeys(going.id)
+                        val documents = com.repository.app.RepositoryApp.get(context).documents
+                        keys.forEach { documents.deleteFiledOn(AppId.PROJECT.key, it) }
                     }
                     confirmDelete = null
                 }) { Text("Delete") }

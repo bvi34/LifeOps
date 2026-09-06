@@ -7,6 +7,7 @@ import com.project.app.data.db.ProjectDatabase
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.LoreCategory
+import com.project.app.logic.AttachKind
 import com.project.app.logic.CardTasks
 import com.project.app.logic.ProjectDestination
 import com.project.app.logic.SearchSection
@@ -45,7 +46,9 @@ import java.time.LocalDate
  * - that the **versions kept before a destructive edit** really hold what the document said, and
  *   really put it back;
  * - that an **address somebody was linked with** is checked against what is actually there before
- *   the app navigates to it.
+ *   the app navigates to it;
+ * - that a record's **file drawer on the household's shelf** is found, renamed and taken away with
+ *   the record it belongs to.
  *
  * A fake DAO would answer all of those with whatever this file assumed, which is why there isn't
  * one: the database below is in memory, but it is a real Room database — the same entities, the
@@ -504,6 +507,144 @@ class ProjectRepositoryTest {
         // progress through it. Finishing something early does not move its deadline.
         assertEquals(due, dao.getCard(cardId)?.dueOn)
         assertNotNull("the card was not marked finished", dao.getCard(cardId)?.doneAt)
+    }
+
+    // ------------------------------------------------------------------ files, on a record
+
+    @Test
+    fun `every kind of record can be found to file on, and reads project-first`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+
+        assertEquals(
+            "The Kestrel — The docks",
+            repo.attachTarget(projectId, AttachKind.OUTLINE, scene)?.shelfLabel
+        )
+        assertEquals(
+            "The Kestrel — Kestrel",
+            repo.attachTarget(projectId, AttachKind.LORE, lore)?.shelfLabel
+        )
+        assertEquals(
+            "The Kestrel — Rewrite it",
+            repo.attachTarget(projectId, AttachKind.CARD, card)?.shelfLabel
+        )
+        // The project's own drawer is the project, with nothing appended to it.
+        assertEquals(
+            "The Kestrel",
+            repo.attachTarget(projectId, AttachKind.PROJECT, projectId)?.shelfLabel
+        )
+        assertEquals("The docks", repo.attachTarget(projectId, AttachKind.OUTLINE, scene)?.name)
+    }
+
+    @Test
+    fun `a record that has gone resolves to nothing`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+
+        repo.deleteOutlineSubtree(projectId, scene)
+
+        // A link to a record's files can outlive the record. Saying so beats an empty drawer that
+        // looks like it lost somebody's paperwork.
+        assertNull(repo.attachTarget(projectId, AttachKind.OUTLINE, scene))
+    }
+
+    @Test
+    fun `a record cannot be reached through another project's id`() = runTest {
+        val mine = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val theirs = repo.addProject("The other one", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(mine, null, "The docks")
+
+        // Both halves exist, so checking them separately would let this through — and the drawer
+        // would be labelled with the wrong project's name.
+        assertNull(repo.attachTarget(theirs, AttachKind.OUTLINE, scene))
+        assertNotNull(repo.attachTarget(mine, AttachKind.OUTLINE, scene))
+    }
+
+    @Test
+    fun `everything in a project that can hold files is listed before it is deleted`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        val other = repo.addProject("The other one", ProjectKind.WRITING, null)
+        repo.addOutlineNode(other, null, "Not this one")
+
+        val keys = repo.attachableRecordKeys(projectId)
+
+        // The project itself included: its own drawer has to go too.
+        assertEquals(setOf(projectId, scene, lore, card), keys.toSet())
+    }
+
+    // ------------------------------------------------------------------ renames reach the shelf
+
+    /** A repository whose relabels are recorded rather than sent to a shelf that isn't here. */
+    private fun withRecorder(): Pair<ProjectRepository, MutableList<Pair<String, String>>> {
+        val seen = mutableListOf<Pair<String, String>>()
+        return ProjectRepository(dao) { key, label -> seen += key to label } to seen
+    }
+
+    @Test
+    fun `renaming a record renames its drawer`() = runTest {
+        val (repo, relabels) = withRecorder()
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        relabels.clear()
+
+        repo.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(title = "The harbour"))
+
+        assertEquals(listOf(scene to "The Kestrel — The harbour"), relabels)
+    }
+
+    @Test
+    fun `an edit that is not a rename says nothing to the shelf`() = runTest {
+        val (repo, relabels) = withRecorder()
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        relabels.clear()
+
+        // Changing the synopsis is not a rename, and a write to the shelf for every keystroke's
+        // worth of editing would be a lot of writing for nothing.
+        repo.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(synopsis = "She arrives."))
+
+        assertTrue(relabels.isEmpty())
+    }
+
+    @Test
+    fun `renaming a project renames every drawer in it`() = runTest {
+        val (repo, relabels) = withRecorder()
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        relabels.clear()
+
+        repo.updateProject(dao.getProject(projectId)!!.toModel().copy(name = "The Peregrine"))
+
+        // Every one of them, because a record's label leads with the project — otherwise renaming
+        // the project leaves every scene and card in it saying the old name for ever.
+        assertEquals(
+            mapOf(
+                projectId to "The Peregrine",
+                scene to "The Peregrine — The docks",
+                lore to "The Peregrine — Kestrel",
+                card to "The Peregrine — Rewrite it"
+            ),
+            relabels.toMap()
+        )
+    }
+
+    @Test
+    fun `a card renamed by the hand-off's own title rules still renames one drawer`() = runTest {
+        val (repo, relabels) = withRecorder()
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        relabels.clear()
+
+        repo.updateCard(projectId, dao.getCard(card)!!.toLogic().copy(title = "Rewrite the harbour"))
+
+        assertEquals(listOf(card to "The Kestrel — Rewrite the harbour"), relabels)
     }
 
     // ------------------------------------------------------------------ the hand-off's store side

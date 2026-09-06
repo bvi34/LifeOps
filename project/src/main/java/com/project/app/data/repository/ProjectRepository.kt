@@ -22,6 +22,8 @@ import com.project.app.logic.Revisions
 import com.project.app.data.model.Project
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
+import com.project.app.logic.AttachKind
+import com.project.app.logic.Attachments
 import com.project.app.logic.CardStore
 import com.project.app.logic.CardTasks
 import com.project.app.logic.BoardColumn
@@ -69,7 +71,23 @@ import java.util.UUID
  * every write that can change a count updates it in the same breath — see [refreshDocCount], which
  * is called from every block edit and is the single place that keeps the two in step.
  */
-class ProjectRepository(private val dao: ProjectDao) : CardStore {
+class ProjectRepository(
+    private val dao: ProjectDao,
+    /**
+     * How a rename reaches the household's shelf.
+     *
+     * Repository stores a record's name as a **label**, not a foreign key — which is what lets it
+     * show a project's paperwork without knowing what a project is, and is the one upkeep cost of
+     * that choice: a renamed record whose drawer still says the old name is a drawer nobody finds
+     * again. So every rename below pushes the new label down through here.
+     *
+     * A lambda rather than a dependency on `:repository`'s runtime, so this class stays a thing that
+     * takes a DAO — every test in `ProjectRepositoryTest` builds one without a document store, and
+     * the two tests that care about labels pass a recorder instead of standing up another database.
+     * The default does nothing, which is the truth in a host with no shelf.
+     */
+    private val relabelDocuments: suspend (recordKey: String, label: String) -> Unit = { _, _ -> }
+) : CardStore {
 
     private fun now() = System.currentTimeMillis()
     private fun newId() = UUID.randomUUID().toString()
@@ -201,6 +219,7 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
 
     suspend fun updateProject(project: Project) {
         val existing = dao.getProject(project.id) ?: return
+        val renamed = existing.name != project.name.trim()
         dao.upsertProject(
             existing.copy(
                 name = project.name.trim(),
@@ -211,6 +230,9 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
                 updatedAt = now()
             )
         )
+        // Every drawer, not just the project's own: a record's label leads with the project, so
+        // renaming "The Kestrel" leaves every scene and card in it saying the old name otherwise.
+        if (renamed) relabelEveryRecordOf(project.id)
     }
 
     suspend fun setArchived(projectId: String, archived: Boolean) {
@@ -262,6 +284,9 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
                 updatedAt = now()
             )
         )
+        if (existing.title != node.title.trim()) {
+            relabelRecord(existing.projectId, node.id, node.title.trim())
+        }
         touchProject(existing.projectId)
     }
 
@@ -701,6 +726,7 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
                 updatedAt = now()
             )
         )
+        if (existing.name != entry.name.trim()) relabelRecord(projectId, entry.id, entry.name.trim())
         touchProject(projectId)
     }
 
@@ -908,6 +934,7 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
                 // on a screen can wipe it and strand a task on somebody's week.
             )
         )
+        if (existing.title != card.title.trim()) relabelRecord(projectId, card.id, card.title.trim())
         touchProject(projectId)
     }
 
@@ -947,6 +974,76 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
         )
         touchProject(projectId)
     }
+
+    // ------------------------------------------------------------------ files, on a record
+
+    /** Push one record's new name down to whatever the shelf is holding for it. */
+    private suspend fun relabelRecord(projectId: String, recordKey: String, recordName: String) {
+        val project = dao.getProject(projectId) ?: return
+        relabelDocuments(recordKey, Attachments.shelfLabel(project.name, recordName))
+    }
+
+    /**
+     * Re-label every drawer belonging to a project, after the project itself was renamed.
+     *
+     * A loop over every record, which is only ever run on a rename — and is the price of a label
+     * that leads with the project. The alternative, a drawer called "The docks" sitting on a shelf
+     * beside a mortgage statement and a boiler manual, is not one worth paying less for.
+     */
+    private suspend fun relabelEveryRecordOf(projectId: String) {
+        val project = dao.getProject(projectId) ?: return
+        relabelDocuments(projectId, Attachments.shelfLabel(project.name, null))
+        dao.getOutline(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.title))
+        }
+        dao.getLore(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.name))
+        }
+        dao.getCards(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.title))
+        }
+    }
+
+
+    /**
+     * The record a set of files is filed on, ready to be shown.
+     *
+     * Null when it has been deleted since — which is ordinary, because a link to a record's files
+     * can outlive the record, and landing on a file drawer for something that is not there is worse
+     * than landing back where you were.
+     */
+    suspend fun attachTarget(projectId: String, kind: AttachKind, recordId: String): AttachTarget? {
+        val project = dao.getProject(projectId) ?: return null
+
+        val name = when (kind) {
+            AttachKind.PROJECT -> project.name.takeIf { recordId == projectId }
+            AttachKind.OUTLINE -> dao.getOutlineNode(recordId)?.takeIf { it.projectId == projectId }?.title
+            AttachKind.CARD -> dao.getCard(recordId)?.takeIf { it.projectId == projectId }?.title
+            // Lore has no by-id read of its own; the project's entries are a short list and this is
+            // asked once, when a screen opens.
+            AttachKind.LORE -> dao.getLore(projectId).firstOrNull { it.id == recordId }?.name
+        } ?: return null
+
+        return AttachTarget(
+            recordKey = recordId,
+            kind = kind,
+            name = name,
+            shelfLabel = Attachments.shelfLabel(project.name, name.takeIf { kind != AttachKind.PROJECT })
+        )
+    }
+
+    /**
+     * Every record of a project that could have files on it, including the project itself.
+     *
+     * Read before a project is deleted. Its rows cascade with it, so afterwards there is nothing
+     * left to work out which drawers on the shelf belonged to it — and the household would be left
+     * with a pile of documents filed against ids that name nothing.
+     */
+    suspend fun attachableRecordKeys(projectId: String): List<String> =
+        listOf(projectId) +
+            dao.getOutline(projectId).map { it.id } +
+            dao.getLore(projectId).map { it.id } +
+            dao.getCards(projectId).map { it.id }
 
     // ------------------------------------------------------------------ what the routes ask for
 
@@ -1330,3 +1427,13 @@ fun BoardCardEntity.toLogic() = BoardCard(
 
 /** A card and the project it belongs to — all a route needs before it can act on one. */
 data class CardOwner(val cardId: String, val projectId: String)
+
+/** A record files can be filed on, and how its drawer reads on the household's shelf. */
+data class AttachTarget(
+    val recordKey: String,
+    val kind: AttachKind,
+    /** The record's own name — what the screen is titled. */
+    val name: String,
+    /** The project-led label the shelf shows, so a drawer is not a question. */
+    val shelfLabel: String
+)
