@@ -51,6 +51,7 @@ import com.citation.core.manifest.StorageReport
 import com.citation.core.model.Book
 import com.citation.core.model.Chapter
 import com.citation.core.model.SourceType
+import com.citation.core.speech.SavedPlace
 import com.citation.core.note.Highlight
 import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
@@ -203,7 +204,14 @@ class CitationRepository private constructor(
         val book: Book,
         val rrFictionId: Long?,
         val chapterOrdinal: Int = 0,
-        val charOffset: Int = 0
+        val charOffset: Int = 0,
+        /**
+         * When the reading position was saved, and where the voice separately got to. The caller
+         * hands both to `Resume.choose`, which opens the book at whichever was reached last — so a
+         * chapter listened to in a pocket is where you land, not the page you last looked at.
+         */
+        val positionSavedAt: Long? = null,
+        val listening: SavedPlace? = null
     )
 
     /**
@@ -214,14 +222,23 @@ class CitationRepository private constructor(
      */
     suspend fun openBook(bookKey: String): OpenResult? {
         val entity = db.bookDao().get(bookKey) ?: return null
+        val listening = entity.listenChapterOrdinal?.let { ordinal ->
+            SavedPlace(ordinal, entity.listenCharOffset ?: 0, entity.listenedAt)
+        }
         val book = when (entity.sourceType) {
             SourceType.ROYAL_ROAD.name -> {
                 val fictionId = entity.sourceId?.toLongOrNull() ?: return null
-                return OpenResult(openRoyalRoad(fictionId), fictionId, entity.lastChapterOrdinal, entity.lastCharOffset)
+                return OpenResult(
+                    openRoyalRoad(fictionId), fictionId, entity.lastChapterOrdinal, entity.lastCharOffset,
+                    entity.positionSavedAt, listening
+                )
             }
             else -> CitationMappers.bookFromEntities(entity, db.chapterDao().forBook(bookKey))
         }
-        return OpenResult(book, null, entity.lastChapterOrdinal, entity.lastCharOffset)
+        return OpenResult(
+            book, null, entity.lastChapterOrdinal, entity.lastCharOffset,
+            entity.positionSavedAt, listening
+        )
     }
 
     /**
@@ -332,9 +349,29 @@ class CitationRepository private constructor(
         bookKey: String,
         chapterOrdinal: Int,
         charOffset: Int,
-        progressFraction: Float? = null
+        progressFraction: Float? = null,
+        now: Long = System.currentTimeMillis()
     ) {
-        db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset)
+        db.bookDao().savePosition(bookKey, chapterOrdinal, charOffset, now)
+        progressFraction?.let { db.bookDao().saveProgress(bookKey, it.coerceIn(0f, 1f)) }
+    }
+
+    /**
+     * Record where the **voice** got to, in canonical characters.
+     *
+     * Its own record rather than an overwrite of the reading position: listening happens with the
+     * app off screen and routinely ends up further on than the last page anybody looked at, and the
+     * book should open at whichever place was reached last. Progress rides along so the shelf shows
+     * the ground a listener covered, the same as it does for reading.
+     */
+    suspend fun saveListeningPosition(
+        bookKey: String,
+        chapterOrdinal: Int,
+        charOffset: Int,
+        progressFraction: Float? = null,
+        now: Long = System.currentTimeMillis()
+    ) {
+        db.bookDao().saveListeningPosition(bookKey, chapterOrdinal, charOffset, now)
         progressFraction?.let { db.bookDao().saveProgress(bookKey, it.coerceIn(0f, 1f)) }
     }
 

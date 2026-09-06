@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.LocalLibrary
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Person
@@ -62,7 +63,7 @@ import com.citation.core.model.SourceType
 import com.citation.core.sync.ReadingState
 
 /**
- * The Citation home shell: a five-tab bottom bar consolidating the app the way the main LifeOps app
+ * The Citation home shell: a six-tab bottom bar consolidating the app the way the main LifeOps app
  * does. Immersive readers (flowing text, PDF, O'Reilly) preempt this shell from [ReaderScreen]; when
  * none is open the reader lands here.
  *
@@ -70,13 +71,19 @@ import com.citation.core.sync.ReadingState
  *  - **Personal** — your reading stats and every captured note.
  *  - **Read** — resume the last thing you opened, right where you left off.
  *  - **Library** — everything you've added.
+ *  - **Listen** — the player, the voice, and how a book is read aloud.
  *  - **Settings** — storage, sync with LifeOps, and the rest.
+ *
+ * Listening gets a tab of its own rather than a sheet inside the reader because it is not a
+ * property of the page you have open: it keeps going with the app closed, and the reader reaching
+ * for the speed or a sleep timer usually is not looking at the book when they do.
  */
 private enum class HomeTab(val label: String, val icon: ImageVector) {
     NEW("New", Icons.Filled.AddCircle),
     PERSONAL("Personal", Icons.Filled.Person),
     READ("Read", Icons.Filled.MenuBook),
     LIBRARY("Library", Icons.Filled.LocalLibrary),
+    LISTEN("Listen", Icons.Filled.Headphones),
     SETTINGS("Settings", Icons.Filled.Settings)
 }
 
@@ -164,6 +171,7 @@ fun CitationHome(vm: ReaderViewModel) {
                 HomeTab.PERSONAL -> PersonalTab(vm)
                 HomeTab.READ -> ReadTab(vm, onGoToLibrary = { tabOrdinal = HomeTab.LIBRARY.ordinal })
                 HomeTab.LIBRARY -> LibraryScreen(vm)
+                HomeTab.LISTEN -> ListenTab(vm)
                 HomeTab.SETTINGS -> SettingsTab(vm)
             }
         }

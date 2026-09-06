@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.audio.Narrator
 import com.citation.app.ui.ReaderScreen
 import com.citation.app.ui.ReaderViewModel
 import com.citation.app.ui.theme.CitationTheme
@@ -56,7 +57,7 @@ class MainActivity : ComponentActivity() {
                         object : ViewModelProvider.Factory {
                             @Suppress("UNCHECKED_CAST")
                             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                                ReaderViewModel(repo) as T
+                                ReaderViewModel(repo, Narrator.get(this@MainActivity)) as T
                         }
                     )[ReaderViewModel::class.java]
                 }

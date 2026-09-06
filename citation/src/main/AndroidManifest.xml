@@ -6,6 +6,15 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Reading aloud keeps going with the screen off, so it runs as a media-playback foreground
+         service with a MediaSession behind it: lock-screen controls, headset buttons and the car
+         all come from that, and none of them work from an activity that the system is free to kill.
+         POST_NOTIFICATIONS is what makes the player visible on Android 13+; denied, the book still
+         reads and only the shade controls are missing. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- The floating quick-capture bubble draws a chat-head over other apps. Opt-in and gated at
          runtime (Settings.canDrawOverlays); the bubble never appears until the user grants it. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -75,6 +84,14 @@
         <service
             android:name=".QuickCaptureBubbleService"
             android:exported="false" />
+
+        <!-- The read-aloud player. Not exported: it is driven by the reader, by its own notification
+             actions, and by the media session the platform routes headset and lock-screen controls
+             through — never by another app directly. -->
+        <service
+            android:name=".audio.NarrationService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
 
         <!-- Shares exported Markdown notes as a real .md file via a content URI (see NotesExporter). -->
         <provider

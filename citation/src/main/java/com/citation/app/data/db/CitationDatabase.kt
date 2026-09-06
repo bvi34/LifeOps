@@ -19,7 +19,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * here rather than repeating the number — the same version stated twice drifts the moment a
  * migration lands.
  */
-const val CITATION_DB_VERSION = 9
+const val CITATION_DB_VERSION = 10
 
 @Database(
     entities = [
@@ -231,13 +231,34 @@ abstract class CitationDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v9 → v10: the voice keeps its own place.
+         *
+         * Reading aloud produces a second "where I was", and it cannot share the reading position's
+         * slot: it is recorded while the app is in a pocket and is routinely further on than the
+         * last page anybody looked at, and it is always a canonical character offset while the
+         * scroll reader stores pixels in `lastCharOffset`. So it gets columns of its own, and both
+         * places get a timestamp so opening a book can pick whichever was reached last.
+         *
+         * All nullable: every existing row is a book that has never been listened to, and an
+         * unstamped reading position keeps behaving exactly as it did.
+         */
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `positionSavedAt` INTEGER")
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `listenChapterOrdinal` INTEGER")
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `listenCharOffset` INTEGER")
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `listenedAt` INTEGER")
+            }
+        }
+
         fun get(context: Context): CitationDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
                     context.applicationContext,
                     CitationDatabase::class.java,
                     "citation.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
                     // A restore can swap in a `citation.db` written by a *newer* Citation build than
                     // the one now installed (e.g. reinstalling an older APK, then restoring). Room's
                     // default reaction to that downgrade is to throw on open — a permanent boot-crash.

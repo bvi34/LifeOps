@@ -30,6 +30,23 @@ data class BookEntity(
     // Reader position restore.
     val lastChapterOrdinal: Int = 0,
     val lastCharOffset: Int = 0,
+    /**
+     * When [lastCharOffset] was written, so it can be compared against the listening position below.
+     * Null for rows saved before positions were stamped — see `Resume.choose`.
+     */
+    val positionSavedAt: Long? = null,
+    // --- Where the *voice* got to.
+    //
+    // Kept apart from the reading position rather than sharing it, because they are different facts
+    // recorded by different things: listening happens with the app in a pocket and can end up hours
+    // ahead of the last page anybody looked at, and the reader is meant to open at whichever is more
+    // recent. They are also different *units* — the scroll reader stores pixels in [lastCharOffset]
+    // and the paged one stores characters, while the voice only ever knows characters — so one slot
+    // could not hold both without the reader having to guess which it had been handed.
+    val listenChapterOrdinal: Int? = null,
+    /** Canonical character offset, always — never a pixel. */
+    val listenCharOffset: Int? = null,
+    val listenedAt: Long? = null,
     // Read-in-place (O'Reilly) position token — the source reader's own opaque location.
     val externalLocation: String? = null,
     val isFavorite: Boolean = false,

@@ -120,6 +120,11 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import com.citation.core.speech.NarrationState
+import com.citation.core.speech.NarrationStatus
+import com.citation.core.speech.SleepTimer
 import com.citation.core.model.Book
 import com.citation.core.model.TocEntry
 import com.citation.core.model.SourceType
@@ -216,6 +221,7 @@ private fun FlowingReader(vm: ReaderViewModel) {
     val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
     val searchQuery by vm.searchQuery.collectAsStateWithLifecycle()
     val searchHits by vm.searchHits.collectAsStateWithLifecycle()
+    val narration by vm.narration.collectAsStateWithLifecycle()
 
     // Typography, theme and screen behaviour — persisted, and per-book when this book keeps its own.
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -364,6 +370,9 @@ private fun FlowingReader(vm: ReaderViewModel) {
                 percent = progress?.percent,
                 fraction = progress?.fraction,
                 timeLeft = timeLeft,
+                narration = narration,
+                canReadAloud = vm.canReadAloud,
+                onPlayPause = { vm.toggleAloud() },
                 onPrev = { vm.goToChapter(ordinal - 1) },
                 onNext = { vm.goToChapter(ordinal + 1) }
             )
@@ -648,11 +657,23 @@ private fun ScrollChapterBody(
     // Restore the saved scroll once (after the content is measured so maxValue is known), then persist
     // scroll as you read, debounced so a flick doesn't hammer the DB.
     LaunchedEffect(ord) {
+        // A place the *voice* reached is a canonical character offset, so it is resolved through the
+        // layout — find the line holding that character and scroll to its top — rather than being
+        // handed to scrollTo as though it were a pixel count, which is what the reading position on
+        // the older channel below actually is in this mode.
+        val canonical = vm.consumePendingCanonical(ord)
         val restore = vm.consumePendingScroll(ord)
         // Turned back into from the chapter after this one: continue reading backwards from its end
         // rather than being thrown to its first line, which is nowhere near where the turn came from.
         val landAtEnd = vm.consumePendingEnd(ord)
-        if (restore > 0 || landAtEnd) {
+        if (canonical > 0) {
+            withTimeoutOrNull(2000) { snapshotFlow { layout to scroll.maxValue }.first { it.first != null && it.second > 0 } }
+            layout?.let { l ->
+                val display = rendered.displayOf(canonical).coerceIn(0, l.layoutInput.text.length)
+                val top = l.getLineTop(l.getLineForOffset(display)).toInt()
+                scroll.scrollTo(top.coerceIn(0, scroll.maxValue))
+            }
+        } else if (restore > 0 || landAtEnd) {
             withTimeoutOrNull(2000) { snapshotFlow { scroll.maxValue }.first { it > 0 } }
             if (scroll.maxValue > 0) {
                 scroll.scrollTo(if (landAtEnd) scroll.maxValue else restore.coerceAtMost(scroll.maxValue))
@@ -866,7 +887,11 @@ private fun PagedChapterBody(
         // Restore the saved page once the pages are known: find the page whose slice holds the saved
         // character offset. Consumed once, so a turn doesn't snap back.
         var restoreOffset by remember(ord) { mutableStateOf(-1) }
-        LaunchedEffect(ord) { restoreOffset = vm.consumePendingScroll(ord) }
+        // Both channels are canonical in this mode, so either one restores the same way. The voice's
+        // is taken first: it is the more recent place by construction when both are staged.
+        LaunchedEffect(ord) {
+            restoreOffset = vm.consumePendingCanonical(ord).takeIf { it >= 0 } ?: vm.consumePendingScroll(ord)
+        }
         LaunchedEffect(pageStarts, restoreOffset) {
             if (restoreOffset > 0 && pageStarts.size > 1) {
                 // The stored offset is canonical, so it is translated into the rendered string's
@@ -965,6 +990,15 @@ private fun PagedChapterBody(
     }
 }
 
+/**
+ * The chapter bar, and the one control listening needs on the page.
+ *
+ * The play button lives here rather than behind the tools menu because that is where a reader
+ * already looks to move through the book, and because reading and listening are the same act on the
+ * same position — the voice starts at the **top of the page you are looking at**, not at some other
+ * place the book remembers. (It does: [ReaderViewModel.readAloud] uses the live position, which both
+ * reading modes keep pointed at the first line on screen.)
+ */
 @Composable
 private fun ReaderBottomBar(
     ordinal: Int,
@@ -972,6 +1006,9 @@ private fun ReaderBottomBar(
     percent: Int?,
     fraction: Float?,
     timeLeft: String?,
+    narration: NarrationState,
+    canReadAloud: Boolean,
+    onPlayPause: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -990,6 +1027,24 @@ private fun ReaderBottomBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(onClick = onPrev, enabled = ordinal > 0) { Text("Previous") }
+                if (canReadAloud) {
+                    val speaking = narration.status == NarrationStatus.SPEAKING
+                    val preparing = narration.status == NarrationStatus.PREPARING
+                    IconButton(onClick = onPlayPause) {
+                        Icon(
+                            imageVector = if (speaking) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                            // A neural voice takes a moment to load the first time; saying so beats a
+                            // button that looks like it did nothing.
+                            contentDescription = when {
+                                speaking -> "Pause reading aloud"
+                                preparing -> "Loading the voice"
+                                else -> "Read aloud from the top of this page"
+                            },
+                            tint = if (preparing) MaterialTheme.colorScheme.secondary
+                            else MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         buildString {
@@ -1000,8 +1055,19 @@ private fun ReaderBottomBar(
                     )
                     // Shown only once the pace estimate has earned it; an invented number on the
                     // first page is worse than none, because a reader cannot tell it was invented.
-                    timeLeft?.let {
-                        Text(it, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary)
+                    // While the voice is going it says so instead — with the sleep timer when one is
+                    // armed, which is the number that matters to somebody falling asleep.
+                    val listening = narration.isActive
+                    when {
+                        listening -> Text(
+                            SleepTimer.label(narration.sleepRemainingMillis)?.let { "Reading aloud · $it" }
+                                ?: "Reading aloud",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        timeLeft != null -> Text(
+                            timeLeft, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary
+                        )
                     }
                 }
                 OutlinedButton(onClick = onNext, enabled = ordinal < count - 1) { Text("Next") }
