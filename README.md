@@ -215,13 +215,20 @@ the receipts.
 > you already wrote that row by hand, it is the job. Ticking it in LifeOps moves the card to the
 > board's finished column; dragging it there takes the task off the week.
 >
+> It is also the **second app in the suite to serve connection routes** — `/v1/Project/local/…`, on
+> the same addressing scheme LifeOps uses and the `application` segment that scheme always reserved
+> for a peer. The routes can add and organise a project and cannot rewrite a word of what is already
+> written: nothing appends to a document, replaces one, edits a block or deletes a subtree, because
+> the caller is a sentence relayed by Advisor and a misheard word must not be able to destroy writing
+> with no second copy. A name that matches two projects resolves to neither and asks for an id.
+>
 > Project is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
 > the timeline reading, the board moves, the compile, the search, the rules about which versions of a
 > document are worth keeping and the addresses that say where in Project to open are pure JVM in
-> `project/logic/` and covered by 193 unit tests. The store beneath them — the cascades, the soft
+> `project/logic/` and covered by 201 unit tests. The store beneath them — the cascades, the soft
 > links, the word-count roll-up, the versions, a linked address checked against what is actually
-> there, and the schema's upgrade path — has 41 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
+> there, and the schema's upgrade path — has 61 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.

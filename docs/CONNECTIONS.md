@@ -20,12 +20,19 @@ This is an **in-process** routing convention, not an HTTP API — the app is off
 single-user, so there is no server behind these addresses. The scheme exists so that internal app
 comms and (later) external integrations share one addressing model and one call path.
 
+**Two applications serve routes.** LifeOps was the first and is the reference; **Project** is the
+second, and its arrival is what the `application` segment was reserved for. Each owns a
+`ConnectionDispatcher` built from the same machinery (`ConnectionAddress`, `ConnectionRegistry`,
+`ConnectionParams`, `ConnectionResult`) and answers only for its own segment — a `/v1/Project/…`
+address sent to LifeOps' dispatcher fails with `UNKNOWN_APPLICATION`, and the reverse likewise. One
+convention across the suite; one dispatcher per app that owns the data.
+
 ## The five segments
 
 | Segment | Example | Meaning |
 |---|---|---|
 | `version` | `v1` | Address-contract version. Bumped only on a breaking shape change. |
-| `application` | `LifeOps` | The owning app. Reserved so a future multi-app surface can address peers unambiguously. |
+| `application` | `LifeOps`, `Project` | The owning app. Two apps serve routes today; each has its own dispatcher and answers only for its own segment. |
 | `connection` | `local` | The namespace / transport. `local` is internal app comms; a named connection (an API or integration name) is reserved for future external integrations. |
 | `resource` | `task` | The noun being acted on. |
 | `action` | `create` | The verb. |
@@ -91,7 +98,8 @@ when (result) {
 
 ## Registered routes
 
-All under the `local` connection today (`/v1/LifeOps/local/…`):
+All under the `local` connection today (`/v1/LifeOps/local/…`). Project's own are listed
+[below](#projects-routes).
 
 | Resource | Actions | Service | Notes |
 |---|---|---|---|
@@ -122,6 +130,56 @@ Missing/unknown ids return `NOT_FOUND`; the route still exists, the entity does 
 **Deliberately not routed:** task image attachments (creation is bound to an Android photo-picker
 `Uri`/`Context`, not a serialisable payload), and read-only/reporting/infra surfaces (search,
 growth rings, weather cache, notifications, backup, preferences) — these aren't command-shaped.
+
+## Project's routes
+
+All under `/v1/Project/local/…`, served by `ProjectConnections.buildDispatcher` and reached through
+`ProjectApp.connectionDispatcher`.
+
+There is **no service layer** between these handlers and `ProjectRepository`, and that is deliberate
+rather than a shortcut. LifeOps needs one because its task lifecycle carries policy no repository
+owns — week resolution, scoring, reminder scheduling. In Project every structural edit is already a
+pure function in `logic/` returning the rows that changed, applied by one repository; that repository
+*is* the use-case layer, and a second one would be a second place for the rules to live.
+
+| Resource | Actions | Notes |
+|---|---|---|
+| `project` | `create`, `archive` | `create` takes `name` (required), `kind`, `summary`; an unknown kind reads as General, because kind is vocabulary and refusing to make a project because somebody said "novel" is pedantry. `archive` takes `project` and an optional `archived` (default true). |
+| `outline` | `add`, `setStatus` | `add` takes `project`, `title`, optional `parentId`. Deliberately **no delete**: deleting an outline row takes its whole subtree, which is a confirmation dialog's job and not a sentence's. |
+| `doc` | `create` | `project`, `title`, optional `outlineNodeId`. Creates the same one-empty-paragraph document the screen does. |
+| `lore` | `create` | `project`, `name`, optional `category`, `summary`, `body`. A body is allowed here because the row is new — nothing existing is overwritten. |
+| `timeline` | `add` | `project`, `title`, optional `when`, `era`, `detail`, `outlineNodeId`. `when` stays free text, so "the spring after the fire" is not refused. |
+| `card` | `create`, `move`, `complete`, `delete` | `create` takes `project`, `title`, optional `column` (defaults to the first unfinished one), `notes`, `dueOn` (ISO date), `outlineNodeId`, `docId`. The rest take a card `id`. |
+
+### The line these routes sit on
+
+**They can add and organise. They cannot rewrite a word of what is already written.** There is no
+route that appends to a document, replaces one from Markdown, edits a block, restores a version,
+deletes an outline subtree or deletes a project. Every one of those is a way for a caller working
+from a misheard sentence to destroy writing that may have no second copy anywhere. Creating an empty
+document is additive and undone by deleting it; rewriting one is neither. `ProjectConnectionsTest`
+asserts each of those addresses is `ROUTE_NOT_FOUND`, so the line is a test rather than an
+intention.
+
+### Naming the target
+
+A screen hands back the id of the row somebody tapped; a route is handed a *name*, because the
+caller is a sentence. `logic/ProjectLookup` resolves it: **id first**, then an exact name match that
+ignores case and surrounding space — never a prefix and never a substring, because "Kes" finding
+"The Kestrel" is a guess, and a guess writes into the wrong project the first time two of them start
+alike.
+
+**An ambiguous name resolves to nothing**, the same rule Lore uses for `[[double brackets]]`. Two
+projects called "Draft" produce an `INVALID_PARAMS` naming both and asking for an id, rather than a
+write into whichever row came back first. A caller that is told "which one?" can ask again; one that
+is told nothing writes into somebody's work and never finds out.
+
+### What a route does not touch
+
+`card/complete` moves the card into the board's finished column and deliberately leaves its
+published LifeOps task alone — the hand-off round sees a finished card and retires the task, which
+is the one place that decision is made. Clearing the link here would strand the task on somebody's
+week with nothing pointing at it.
 
 ## The one thing that points outward
 

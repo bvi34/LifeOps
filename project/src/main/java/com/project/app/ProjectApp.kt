@@ -6,6 +6,7 @@ import com.lifeops.app.connection.TaskCompletionBus
 import com.project.app.data.db.ProjectDatabase
 import com.project.app.data.prefs.ProjectPrefs
 import com.project.app.data.repository.CardPublisher
+import com.project.app.connection.ProjectConnections
 import com.project.app.data.repository.ProjectRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,6 +33,14 @@ class ProjectApp private constructor(private val app: Application) {
     val database by lazy { ProjectDatabase.getInstance(app) }
     val prefs by lazy { ProjectPrefs(app) }
     val repository by lazy { ProjectRepository(database.projectDao()) }
+    /**
+     * Project's connection layer — `/v1/Project/local/…`, the suite's second dispatcher.
+     *
+     * Lazy like everything else here: an install where nobody calls a route never builds it, and
+     * building it does not open the database.
+     */
+    val connectionDispatcher by lazy { ProjectConnections.buildDispatcher(repository) }
+
     val publisher by lazy {
         CardPublisher(
             store = repository,

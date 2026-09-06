@@ -61,5 +61,16 @@ data class ConnectionAddress(
         /** Build a canonical [ConnectionAddress] for the current version + application. */
         fun local(resource: String, action: String): ConnectionAddress =
             ConnectionAddress(CURRENT_VERSION, APPLICATION, CONNECTION_LOCAL, resource, action)
+
+        /**
+         * The same, for a peer that serves its own routes under this scheme.
+         *
+         * The `application` segment was reserved from the start "so a future multi-app surface can
+         * address peers without ambiguity"; this is that surface arriving. Project registers
+         * `/v1/Project/local/…` against its own dispatcher — one addressing convention across the
+         * suite rather than a second one invented per app.
+         */
+        fun localFor(application: String, resource: String, action: String): ConnectionAddress =
+            ConnectionAddress(CURRENT_VERSION, application, CONNECTION_LOCAL, resource, action)
     }
 }

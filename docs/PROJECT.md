@@ -238,6 +238,39 @@ Three rules it holds:
 This is also what makes the **hand-off to the LifeOps week** possible, which was not before: a card
 with no date is nothing a planner can place. See [The LifeOps week](#the-lifeops-week) below.
 
+## Connection routes — the way in
+
+Project serves `/v1/Project/local/…`, and is the **second app in the suite to serve routes at all**.
+The addressing scheme reserved its `application` segment from the start "so a future multi-app
+surface can address peers without ambiguity"; this is that surface. Project builds its own
+dispatcher from the same machinery LifeOps uses rather than inventing a second convention — see
+[CONNECTIONS.md](CONNECTIONS.md#projects-routes) for the full table.
+
+Why this app rather than another: every structural edit here is already a pure function returning
+the rows that changed, applied by one repository. A route is therefore a genuinely thin adapter over
+a use case that exists, rather than a second path into the data with its own quietly different
+rules — which is the property that makes routes safe to open at all, and why there is no service
+layer between the handlers and the repository.
+
+Two rules shape what is on offer.
+
+**They can add and organise; they cannot rewrite writing.** There is no route that appends to a
+document, replaces one from Markdown, edits a block, restores a version, deletes an outline subtree
+or deletes a project. The caller on the other end is Advisor relaying a sentence somebody spoke, and
+every one of those would be a way for a misheard word to destroy writing with no second copy. An
+empty document created by mistake is deleted; a chapter overwritten by mistake is gone. The test
+asserts each of those addresses is unrouted, so the line holds rather than being merely meant.
+
+**An ambiguous name resolves to nothing.** Routes are handed names, not ids, so `logic/ProjectLookup`
+matches on id first and then on an exact name — never a prefix, never a substring — and two projects
+of the same name produce a refusal that names both and asks for an id. It is the rule Lore already
+uses for `[[links]]`, applied where getting it wrong writes into somebody else's work.
+
+Nothing calls these yet. Advisor is the intended caller and has the read half already
+(`ProjectKnowledgeSource`), but acting on a sentence needs intent parsing on its side — the shape
+`TaskCommand` and `LifeOpsTaskWriter` have for tasks — which is a change to Advisor rather than to
+this app. The routes are the half that has to exist first.
+
 ## The LifeOps week
 
 A card with a due date puts itself on the LifeOps week as a task dated the day it falls due, and
@@ -434,8 +467,9 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Due.kt` | How a due date stands against a day, what to call it, and what Project makes of one being picked. |
 | `CardTasks.kt` | What should happen to the LifeOps task standing for a card, given what each side holds. |
 | `CardRound.kt` | Driving that decision over every card, and the two mistakes only a round can make. |
+| `ProjectLookup.kt` | Turning a name a caller said into a row — id first, exact names, and nothing at all when two match. |
 
-That is 193 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 201 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |

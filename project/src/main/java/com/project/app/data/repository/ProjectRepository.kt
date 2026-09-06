@@ -948,6 +948,39 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
         touchProject(projectId)
     }
 
+    // ------------------------------------------------------------------ what the routes ask for
+
+    /**
+     * Every project, for resolving a name a caller said out loud.
+     *
+     * Archived ones included, deliberately: archiving takes a project off the shelf, not out of the
+     * app, and "add a card to the Kestrel" failing because it was tidied away last month would be a
+     * puzzling refusal.
+     */
+    suspend fun allProjectsForLookup(): List<Project> = dao.allProjects().map { it.toModel() }
+
+    /** A board's columns, for resolving a column a caller named. */
+    suspend fun columnsOf(projectId: String): List<BoardColumn> =
+        dao.getColumns(projectId).map { it.toLogic() }
+
+    /** Which project a card belongs to — a route is handed a card id and nothing else. */
+    suspend fun cardWithProject(cardId: String): CardOwner? =
+        dao.getCard(cardId)?.let { CardOwner(it.id, it.projectId) }
+
+    /** Whether an outline row is really there, so a route can say NOT_FOUND rather than no-op. */
+    suspend fun outlineNodeExists(id: String): Boolean = dao.getOutlineNode(id) != null
+
+    /**
+     * Finish a card the way the board means it: moved into the finished column.
+     *
+     * The LifeOps link is deliberately left alone, which is the difference between this and
+     * [completeFromWeek]. Here the task is still open on somebody's week and has to be taken down
+     * by the next hand-off round, which needs the link to do it. There the task has already been
+     * ticked, so the link is let go of instead.
+     */
+    suspend fun completeCard(projectId: String, cardId: String, at: Long = now()): Boolean =
+        moveToDone(projectId, cardId, at)
+
     // ------------------------------------------------------------------ the LifeOps week
 
     /**
@@ -997,19 +1030,34 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
      */
     override suspend fun completeFromWeek(cardId: String, completedAt: Long): Boolean {
         val row = dao.getCard(cardId) ?: return false
-        val projectId = row.projectId
+        // Let go of the task: it has been ticked, and nothing here should ask about it again. Done
+        // first, so a failure to move the card still cannot leave the round chasing a finished task.
+        dao.upsertCard(row.copy(lifeOpsTaskId = null, publishedDue = null))
+        return moveToDone(row.projectId, cardId, completedAt)
+    }
+
+    /**
+     * Put a card in the column its board calls finished.
+     *
+     * Shared by the tick that arrives from LifeOps and the `card/complete` route, because "finished"
+     * has to mean one thing however it was asked for. The move goes through the same `Board.move` a
+     * drag goes through, so the position arithmetic and the `doneAt` stamp happen in one place.
+     *
+     * Returns whether anything actually moved: a card already finished reports false, so a round
+     * that runs twice over one tick counts it once.
+     */
+    private suspend fun moveToDone(projectId: String, cardId: String, at: Long): Boolean {
+        val row = dao.getCard(cardId) ?: return false
         val columns = dao.getColumns(projectId)
         val doneColumn = columns.firstOrNull { it.isDone }
-
-        // Let go of the task either way: it has been ticked, and nothing here should ask about it
-        // again.
-        dao.upsertCard(row.copy(lifeOpsTaskId = null, publishedDue = null))
 
         if (doneColumn != null && row.columnId == doneColumn.id) return false
 
         if (doneColumn == null) {
+            // A board whose finished column has been deleted still has to be able to take this, so
+            // the card is stamped where it stands rather than the completion being dropped.
             if (row.doneAt != null) return false
-            dao.upsertCard(dao.getCard(cardId)!!.copy(doneAt = completedAt))
+            dao.upsertCard(row.copy(doneAt = at))
             touchProject(projectId)
             return true
         }
@@ -1022,7 +1070,7 @@ class ProjectRepository(private val dao: ProjectDao) : CardStore {
             toColumnId = doneColumn.id,
             // Clamped to the end of the lane, so finished work reads in the order it was finished.
             toIndex = Int.MAX_VALUE,
-            now = completedAt
+            now = at
         )
         if (changed.isEmpty()) return false
 
@@ -1279,3 +1327,6 @@ fun BoardCardEntity.toLogic() = BoardCard(
     createdAt = createdAt,
     doneAt = doneAt
 )
+
+/** A card and the project it belongs to — all a route needs before it can act on one. */
+data class CardOwner(val cardId: String, val projectId: String)
