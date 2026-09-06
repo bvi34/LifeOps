@@ -1695,6 +1695,14 @@ class ReaderViewModel(
     // and duplicating any of it here is how the page and the voice would come to disagree about
     // where the reader is.
 
+    init {
+        // Claim the page-following hook now rather than at the first play: the narrator is a
+        // process-wide singleton that may already be reading when this ViewModel is built (an
+        // activity recreated while a backgrounded book carried on), and the reference it holds then
+        // belongs to a ViewModel that no longer exists.
+        narrator?.onPosition = ::onNarratedPosition
+    }
+
     private val idleNarration = MutableStateFlow(NarrationState())
 
     /** What the voice is doing, and which sentence it is on — the read-along highlight's source. */
@@ -1785,24 +1793,15 @@ class ReaderViewModel(
     fun readAloud() {
         val narrator = narrator ?: return
         val book = _openBook.value ?: return
-        narrator.onPosition = ::onNarratedPosition
         val (chapter, offset) = _position.value
         narrator.play(book, chapter, offset)
     }
 
     /** Pause the voice, keeping the book and the position. */
-    fun pauseAloud() {
-        narrator?.pause() ?: return
-        flushListeningPosition()
-    }
+    fun pauseAloud() = narrator?.pause() ?: Unit
 
     /** Stop reading aloud and give the engine back. */
-    fun stopAloud() {
-        narrator ?: return
-        // Written before the narrator forgets which book it had.
-        flushListeningPosition()
-        narrator.stop()
-    }
+    fun stopAloud() = narrator?.stop() ?: Unit
 
     /**
      * Play or pause, for the reader's single button.
@@ -1844,7 +1843,15 @@ class ReaderViewModel(
     }
 
     /**
-     * The voice moved: follow it with the reader's own position, and save it.
+     * The voice moved: follow it with the page.
+     *
+     * Only *following*. Recording where the voice got to is the narrator's own job, on a scope that
+     * outlives this ViewModel — the case that matters is an activity destroyed while a backgrounded
+     * book keeps reading, where a write on `viewModelScope` would be cancelled with it and the
+     * position would stop being recorded silently.
+     *
+     * And only while the two are the same book: the voice carries on through a book the reader may
+     * have closed and walked away from, and the page must not follow it there.
      *
      * Position, yes; pace, no. [com.citation.core.reader.ReadingPace] answers "how long will this
      * take *you* to read", learnt from how fast this reader reads — and a voice at 1.5x would teach
@@ -1853,60 +1860,13 @@ class ReaderViewModel(
      * [SpeechSettings.bankListeningTowardPace] on and have listening measured like reading.
      */
     private fun onNarratedPosition(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
-        // The voice keeps reading a book the reader may have closed and walked away from, so the
-        // page only follows it while the two are the same book. The *saving* below always uses the
-        // narrator's own key, never whatever happens to be open.
-        val onScreen = bookKey != null && bookKey == _openBook.value?.key?.toString()
-        var chapterChanged = false
-        if (onScreen) {
-            if (speechSettings.value.bankListeningTowardPace) {
-                onPositionChanged(chapterOrdinal, charOffset)
-                onReadingProgress()
-            } else {
-                _position.value = chapterOrdinal to charOffset
-            }
-            chapterChanged = _chapterOrdinal.value != chapterOrdinal
-            _chapterOrdinal.value = chapterOrdinal
+        if (bookKey == null || bookKey != _openBook.value?.key?.toString()) return
+        if (speechSettings.value.bankListeningTowardPace) {
+            onPositionChanged(chapterOrdinal, charOffset)
+            onReadingProgress()
+        } else {
+            _position.value = chapterOrdinal to charOffset
         }
-        // In memory every sentence; on disk far less often. The voice moves every few seconds and
-        // may do so for hours in a pocket, and a write per sentence would be a write per sentence
-        // for the whole of it. Being a sentence or two stale costs a listener nothing — the worst
-        // case on resume is hearing one line twice — but a crossed chapter is written at once,
-        // because that is the jump somebody would notice losing.
-        val now = System.currentTimeMillis()
-        if (!chapterChanged && now - lastListeningSaveAt < LISTENING_SAVE_INTERVAL_MILLIS) return
-        lastListeningSaveAt = now
-        saveListeningPosition(bookKey, chapterOrdinal, charOffset)
-    }
-
-    /**
-     * Write where the voice is right now, whatever the throttle above would have said.
-     *
-     * A no-op when the voice has no place — pressing pause in a book nobody has listened to must
-     * not invent a listening position and have the book resume from it.
-     */
-    private fun flushListeningPosition() {
-        val state = narration.value
-        val offset = state.charOffset ?: return
-        lastListeningSaveAt = System.currentTimeMillis()
-        saveListeningPosition(narrator?.openBookKey, state.chapterOrdinal, offset)
-    }
-
-    private fun saveListeningPosition(bookKey: String?, chapterOrdinal: Int, charOffset: Int) {
-        val key = bookKey ?: return
-        // Measured against the narrator's book, which is the one these characters are counted in.
-        val fraction = narrator?.progressFraction(chapterOrdinal, charOffset)
-        // Written to the *listening* place, not the reading one: it is a different fact, recorded
-        // while the app may be in a pocket, and it is always canonical characters — where the
-        // reading position is whatever the open reading mode stores. `Resume.choose` picks between
-        // them when the book is next opened.
-        viewModelScope.launch { repository.saveListeningPosition(key, chapterOrdinal, charOffset, fraction) }
-    }
-
-    private var lastListeningSaveAt = 0L
-
-    private companion object {
-        /** How often the listening position reaches the database while the voice runs. */
-        const val LISTENING_SAVE_INTERVAL_MILLIS = 10_000L
+        _chapterOrdinal.value = chapterOrdinal
     }
 }

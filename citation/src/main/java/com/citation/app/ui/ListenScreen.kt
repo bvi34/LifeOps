@@ -265,16 +265,20 @@ private fun VoiceSection(
             modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
         )
 
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            EnginePreference.entries.forEach { preference ->
-                FilterChip(
-                    selected = settings.engine == preference,
-                    onClick = { vm.updateSpeech { it.copy(engine = preference) } },
-                    label = { Text(preference.label) }
-                )
+        // Without a runtime there is exactly one engine, so offering a choice between three would
+        // be offering two ways to get silence.
+        if (vm.neuralVoicesSupported) {
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                EnginePreference.entries.forEach { preference ->
+                    FilterChip(
+                        selected = settings.engine == preference,
+                        onClick = { vm.updateSpeech { it.copy(engine = preference) } },
+                        label = { Text(preference.label) }
+                    )
+                }
             }
         }
 
@@ -305,7 +309,14 @@ private fun VoiceSection(
         }
 
         val installedIds = installed.map { it.model.id }.toSet()
-        val available = vm.voiceCatalog().filter { it.id !in installedIds }
+        // Nothing to download to. Offering sixty megabytes that no engine in this build can load
+        // would be the worst kind of dead button: it works, it takes a long time, and then nothing
+        // uses what it fetched.
+        val available = if (vm.neuralVoicesSupported) {
+            vm.voiceCatalog().filter { it.id !in installedIds }
+        } else {
+            emptyList()
+        }
         if (available.isNotEmpty()) {
             Text(
                 "Available to download",

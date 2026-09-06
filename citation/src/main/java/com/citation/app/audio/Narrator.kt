@@ -1,6 +1,7 @@
 package com.citation.app.audio
 
 import android.content.Context
+import com.citation.app.CitationApplication
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
@@ -77,6 +78,9 @@ class Narrator private constructor(private val context: Context) {
     init {
         // The player opens showing the speed and voice the reader last chose, before anything plays.
         _state.value = _state.value.copy(rate = settings.rate, voiceId = settings.voiceId)
+        // A download interrupted at forty megabytes is dead weight nothing will ever finish; the
+        // store keeps those on `.part` files precisely so they can be swept without risk.
+        voices.clearPartials()
     }
 
     /** Where to resume from after a pause, or after another app takes the audio and gives it back. */
@@ -96,6 +100,19 @@ class Narrator private constructor(private val context: Context) {
      * [SpeechSettings.bankListeningTowardPace] for why.
      */
     var onPosition: ((bookKey: String?, chapterOrdinal: Int, charOffset: Int) -> Unit)? = null
+
+    /**
+     * Saving where the voice got to is the narrator's own job, not the caller's.
+     *
+     * It used to ride out on [onPosition] and be written by the ViewModel, and that was wrong in
+     * exactly the case the feature exists for: an activity backgrounded for an hour can be destroyed
+     * while its foreground service keeps reading, and a `viewModelScope` write is cancelled with it.
+     * The position would then stop being recorded silently, and stay stopped even after the reader
+     * came back — the one thing a listener would notice, in the one situation they would notice it.
+     * So it is written here, on a scope that lives as long as the process the voice does.
+     */
+    private var lastSavedAt = 0L
+    private var lastSavedChapter = -1
 
     /**
      * How far through *its own* book a place is.
@@ -158,6 +175,7 @@ class Narrator private constructor(private val context: Context) {
 
     /** Stop speaking, keep the book and the position. */
     fun pause() {
+        flush()
         job?.cancel()
         job = null
         engine?.stop()
@@ -167,6 +185,8 @@ class Narrator private constructor(private val context: Context) {
 
     /** Stop, release the engine, and let the service go. */
     fun stop() {
+        // Before the book is forgotten, which is what makes it the last chance to record the place.
+        flush()
         job?.cancel()
         job = null
         engine?.release()
@@ -177,6 +197,7 @@ class Narrator private constructor(private val context: Context) {
         resumeIndex = 0
         pausedByFocusLoss = false
         announcedChapter = -1
+        lastSavedChapter = -1
         sleep = SleepTimer.cancel()
         _state.value = NarrationState()
     }
@@ -283,6 +304,7 @@ class Narrator private constructor(private val context: Context) {
 
                 publishSpeaking(at, utterance.range.takeIf { !utterance.isMarker })
                 onPosition?.invoke(openBookKey, plan.chapterOrdinal, utterance.start)
+                persist(plan.chapterOrdinal, utterance.start)
 
                 val result = speaker.speak(
                     utterance = utterance,
@@ -373,6 +395,37 @@ class Narrator private constructor(private val context: Context) {
             loadChapter(ordinal)
         }
         return true
+    }
+
+    /**
+     * Record where the voice is, in the book the voice has open.
+     *
+     * In memory every sentence — that is [onPosition]'s job — but on disk far less often: the voice
+     * moves every few seconds and may do so for hours in a pocket, and a write per sentence would be
+     * a write per sentence for the whole of it. Being a sentence stale costs a listener nothing (the
+     * worst case on resume is hearing one line twice), while a crossed chapter is written at once,
+     * because that is the jump somebody would notice losing.
+     */
+    private fun persist(chapterOrdinal: Int, charOffset: Int, force: Boolean = false) {
+        val key = openBookKey ?: return
+        val now = System.currentTimeMillis()
+        val crossedChapter = chapterOrdinal != lastSavedChapter
+        if (!force && !crossedChapter && now - lastSavedAt < SAVE_INTERVAL_MILLIS) return
+        lastSavedAt = now
+        lastSavedChapter = chapterOrdinal
+        val fraction = progressFraction(chapterOrdinal, charOffset)
+        scope.launch {
+            // Degrades rather than throws when the runtime is not installed — a background entry
+            // point must never be the thing that brings the app down.
+            val repository = CitationApplication.getOrNull()?.repository?.await() ?: return@launch
+            runCatching { repository.saveListeningPosition(key, chapterOrdinal, charOffset, fraction) }
+        }
+    }
+
+    /** Write the current place regardless of the throttle. A no-op before anything has been said. */
+    private fun flush() {
+        val range = _state.value.utteranceRange ?: return
+        persist(_state.value.chapterOrdinal, range.first, force = true)
     }
 
     private fun act(step: NarrationStep) {
@@ -536,6 +589,9 @@ class Narrator private constructor(private val context: Context) {
         private set
 
     companion object {
+        /** How often the listening position reaches the database while the voice runs. */
+        private const val SAVE_INTERVAL_MILLIS = 10_000L
+
         @Volatile
         private var instance: Narrator? = null
 
