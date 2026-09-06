@@ -2,7 +2,6 @@ package com.project.app.ui.shelf
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +14,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Inventory2
@@ -28,7 +28,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -48,7 +47,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.operations.backupkit.AppId
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.Project
+import com.project.app.ProjectApp
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectKind
 import com.project.app.logic.ProjectPulse
@@ -178,13 +180,26 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     val going = project
+                    // Read before the delete: a project's cards cascade with it, so after this the
+                    // round can never see them again to work out that their tasks should go — and
+                    // somebody would be left with a week full of tasks for a project that no longer
+                    // exists and no way to tell where they came from.
+                    scope.launch {
+                        val app = ProjectApp.get(context)
+                        app.retireTasks(app.repository.publishedTaskIdsOf(going.id))
+                    }
                     vm.deleteProject(going.id)
                     // The files attached to it go too, and Repository does not cascade on somebody
                     // else's rules — the owning app says what deleting one of its records means.
                     // Saying it here, beside the sentence that promises "everything in it".
+                    // Every record's drawer, not only the project's own: files now sit on scenes,
+                    // lore entries and cards too, and their rows cascade with the project — after
+                    // which nothing is left to say which drawers on the shelf belonged to it.
                     scope.launch {
-                        com.repository.app.RepositoryApp.get(context).documents
-                            .deleteFiledOn(AppId.PROJECT.key, going.id)
+                        val app = ProjectApp.get(context)
+                        val keys = app.repository.attachableRecordKeys(going.id)
+                        val documents = com.repository.app.RepositoryApp.get(context).documents
+                        keys.forEach { documents.deleteFiledOn(AppId.PROJECT.key, it) }
                     }
                     confirmDelete = null
                 }) { Text("Delete") }
@@ -280,18 +295,13 @@ private fun NewProjectDialog(
         title = { Text("New project") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
+                SuiteNoteField(
+                    label = "What is it? (optional)",
                     value = summary,
                     onValueChange = { summary = it },
-                    label = { Text("What is it? (optional)") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 1,
+                    maxLines = 3
                 )
                 // The kind only decides what the app calls things — scenes or tasks, chapters or
                 // features. It is offered here rather than buried in settings because renaming

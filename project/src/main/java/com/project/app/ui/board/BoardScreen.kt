@@ -30,7 +30,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,19 +46,31 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.fields.SuiteTextField
+import com.operations.suite.ui.pickers.SuiteDateButton
+import com.operations.suite.ui.pickers.SuiteDates
+import com.operations.suitekit.SuiteVerdict
 import com.project.app.data.model.Doc
 import com.project.app.data.repository.ProjectRepository
+import com.project.app.logic.AttachKind
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
 import com.project.app.logic.BoardColumn
 import com.project.app.logic.BoardLane
+import com.project.app.logic.Due
+import com.project.app.logic.DueOpinion
+import com.project.app.logic.DueStanding
+import com.project.app.logic.DueState
 import com.project.app.logic.Outline
 import com.project.app.logic.OutlineRow
-import com.project.app.logic.Tree
 import com.project.app.logic.ProjectKind
+import com.project.app.logic.Tree
 import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
 import com.project.app.ui.common.OutlinePickerDialog
+import java.time.LocalDate
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -82,7 +93,16 @@ data class BoardState(
 
 class BoardViewModel(
     private val repo: ProjectRepository,
-    private val projectId: String
+    private val projectId: String,
+    /**
+     * Ask for a hand-off round.
+     *
+     * Called after every edit that could change what the week should hold — a date set or dropped,
+     * a card renamed, moved into or out of the finished column, or deleted. The round is idempotent
+     * and cheap when there is nothing to do, so this errs towards calling it: reasoning about which
+     * edits *cannot* matter is exactly how a card ends up with a stale task on somebody's week.
+     */
+    private val sync: () -> Unit = {}
 ) : ViewModel() {
 
     val state: StateFlow<BoardState> = combine(
@@ -102,12 +122,24 @@ class BoardViewModel(
     fun addCard(columnId: String, title: String) =
         viewModelScope.launch { repo.addCard(projectId, columnId, title) }
 
-    fun updateCard(card: BoardCard) = viewModelScope.launch { repo.updateCard(projectId, card) }
+    fun updateCard(card: BoardCard) = viewModelScope.launch {
+        repo.updateCard(projectId, card)
+        sync()
+    }
 
-    fun deleteCard(id: String) = viewModelScope.launch { repo.deleteCard(projectId, id) }
+    fun deleteCard(id: String) = viewModelScope.launch {
+        // The task goes with the card, and the round works that out for itself: the card is gone,
+        // so the next snapshot has nothing asking for it and the link it left behind is retired.
+        repo.deleteCard(projectId, id)
+        sync()
+    }
 
-    fun moveCard(cardId: String, toColumnId: String, toIndex: Int) =
-        viewModelScope.launch { repo.moveCard(projectId, cardId, toColumnId, toIndex) }
+    fun moveCard(cardId: String, toColumnId: String, toIndex: Int) = viewModelScope.launch {
+        repo.moveCard(projectId, cardId, toColumnId, toIndex)
+        // Moving into the finished column is how a card is done here, which is the moment its task
+        // should come off the week — and moving back out is the moment it should return.
+        sync()
+    }
 
     fun addColumn(name: String) = viewModelScope.launch { repo.addColumn(projectId, name) }
 
@@ -121,10 +153,12 @@ class BoardViewModel(
 
     class Factory(
         private val repo: ProjectRepository,
-        private val projectId: String
+        private val projectId: String,
+        private val sync: () -> Unit = {}
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = BoardViewModel(repo, projectId) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            BoardViewModel(repo, projectId, sync) as T
     }
 }
 
@@ -144,7 +178,11 @@ class BoardViewModel(
  * top is how they are found and re-filed.
  */
 @Composable
-fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
+fun BoardScreen(
+    vm: BoardViewModel,
+    kind: ProjectKind,
+    onOpenFiles: (AttachKind, String) -> Unit = { _, _ -> }
+) {
     val state by vm.state.collectAsStateWithLifecycle()
 
     var addingCardIn by remember { mutableStateOf<String?>(null) }
@@ -245,6 +283,7 @@ fun BoardScreen(vm: BoardViewModel, kind: ProjectKind) {
 
     editingCard?.let { card ->
         CardDialog(
+            onOpenFiles = { onOpenFiles(AttachKind.CARD, it) },
             card = card,
             kind = kind,
             outlineRows = state.outlineRows,
@@ -370,6 +409,11 @@ private fun Lane(
             }
         }
 
+        // Read once for the whole lane rather than per card: "today" is one fact, and asking the
+        // clock inside a list item lets the same list disagree with itself as it scrolls past
+        // midnight.
+        val today = remember { LocalDate.now() }
+
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 80.dp),
@@ -414,6 +458,13 @@ private fun Lane(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
+                        Due.standing(
+                            dueOn = Due.dateOf(card.dueOn),
+                            today = today,
+                            // A card in the finished column is not late, however late it was: see
+                            // `logic/Due.DueState.DONE`.
+                            done = lane.column.isDone
+                        )?.let { DueChip(it) }
                     }
                 }
             }
@@ -428,6 +479,30 @@ private fun Lane(
     }
 }
 
+/**
+ * When a card is due, in one line, coloured by how much that now matters.
+ *
+ * Colour is the whole reason this is a chip rather than another grey caption: a board is read at a
+ * glance and "overdue" has to survive that glance. It is also the *only* thing a due date does to
+ * the board — nothing reorders, nothing is hidden, no lane sorts itself. Project says when the work
+ * is due and never when you will do it; that decision belongs to LifeOps.
+ */
+@Composable
+private fun DueChip(standing: DueStanding) {
+    val colour = when (standing.state) {
+        DueState.OVERDUE -> MaterialTheme.colorScheme.error
+        DueState.TODAY -> MaterialTheme.colorScheme.tertiary
+        DueState.SOON -> MaterialTheme.colorScheme.secondary
+        DueState.LATER, DueState.DONE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(
+        standing.label,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = if (standing.state == DueState.OVERDUE) FontWeight.SemiBold else null,
+        color = colour
+    )
+}
+
 @Composable
 private fun TextPromptDialog(
     title: String,
@@ -440,13 +515,7 @@ private fun TextPromptDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text(label) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            SuiteTextField(label = label, value = text, onValueChange = { text = it })
         },
         confirmButton = {
             TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) { Text("Add") }
@@ -465,6 +534,7 @@ private fun TextPromptDialog(
  */
 @Composable
 private fun CardDialog(
+    onOpenFiles: (String) -> Unit,
     card: BoardCard,
     kind: ProjectKind,
     outlineRows: List<OutlineRow>,
@@ -479,6 +549,8 @@ private fun CardDialog(
     var notes by remember(card.id) { mutableStateOf(card.notes.orEmpty()) }
     var outlineNodeId by remember(card.id) { mutableStateOf(card.outlineNodeId) }
     var docId by remember(card.id) { mutableStateOf(card.docId) }
+    var dueOn by remember(card.id) { mutableStateOf(Due.dateOf(card.dueOn)) }
+    var publish by remember(card.id) { mutableStateOf(card.publishToLifeOps) }
     var pickingOutline by remember { mutableStateOf(false) }
     var pickingDoc by remember { mutableStateOf(false) }
 
@@ -491,18 +563,13 @@ private fun CardDialog(
         title = { Text("Card") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Title", value = title, onValueChange = { title = it })
+                SuiteNoteField(
+                    label = "Notes",
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 1,
+                    maxLines = 4
                 )
 
                 TextButton(onClick = { pickingOutline = true }) {
@@ -519,6 +586,37 @@ private fun CardDialog(
                     )
                 }
 
+                // The suite's one date picker, told what this app makes of a choice rather than
+                // deciding for itself — Project refuses no date and remarks on one that has gone
+                // (see `logic/Due`), where another app might well refuse the same Tuesday.
+                SuiteDateButton(
+                    label = "due date",
+                    date = dueOn,
+                    onDateChange = { dueOn = it },
+                    check = { picked ->
+                        when (val opinion = Due.opinionOf(picked, LocalDate.now())) {
+                            is DueOpinion.Fine -> SuiteVerdict.Fine
+                            is DueOpinion.Remark -> SuiteVerdict.Note(opinion.message)
+                        }
+                    },
+                    display = { Due.standing(it, LocalDate.now())?.label ?: SuiteDates.toIso(it) }
+                )
+
+                // Offered only once there is a date, because without one there is nothing a week
+                // could hold — a switch that does nothing is worse than no switch.
+                if (dueOn != null) {
+                    TextButton(onClick = { publish = !publish }) {
+                        Text(
+                            if (publish) "On the LifeOps week ✓"
+                            else "Not on the LifeOps week"
+                        )
+                    }
+                }
+
+                // A card is the piece of work somebody was sent the contract for — its paperwork
+                // belongs on it rather than in the project's one flat pile.
+                TextButton(onClick = { onOpenFiles(card.id) }) { Text("Files on this card…") }
+
                 TextButton(onClick = onDelete) { Text("Delete card") }
             }
         },
@@ -529,7 +627,9 @@ private fun CardDialog(
                         title = title,
                         notes = notes.ifBlank { null },
                         outlineNodeId = outlineNodeId,
-                        docId = docId
+                        docId = docId,
+                        dueOn = dueOn?.toEpochDay(),
+                        publishToLifeOps = publish
                     )
                 )
             }) { Text("Save") }
@@ -579,21 +679,16 @@ private fun ColumnDialog(
         title = { Text("Column") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
+                SuiteTextField(label = "Name", value = name, onValueChange = { name = it })
+                SuiteNumberField(
+                    // A limit is a count, so the field is one: a WIP limit of "3 or 4" was never going to be
+                    // stored, and a keyboard that cannot type it is kinder than an error afterwards.
+                    label = "Limit at a time (blank for none)",
                     value = limit,
-                    onValueChange = { entry -> limit = entry.filter { it.isDigit() } },
-                    label = { Text("Limit at a time (blank for none)") },
-                    singleLine = true,
-                    supportingText = { Text("A limit warns. It never stops you putting a card here.") },
-                    enabled = !isDone,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { limit = it },
+                    supporting = "A limit warns. It never stops you putting a card here.",
+                    // The finished column has no limit to set — work is allowed to pile up in Done.
+                    enabled = !isDone
                 )
                 TextButton(onClick = { isDone = !isDone }) {
                     Text(if (isDone) "This is the finished column ✓" else "Mark as the finished column")

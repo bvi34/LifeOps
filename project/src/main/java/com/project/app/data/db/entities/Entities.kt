@@ -265,6 +265,90 @@ data class BoardCardEntity(
     /** Soft links into the other sections. Either may dangle; neither cascades. */
     val outlineNodeId: String?,
     val docId: String?,
+    /** Epoch day this card is due, or null. See `logic/Due` for the line this sits on. */
+    val dueOn: Long?,
+    /**
+     * Whether a dated card should put itself on the LifeOps week. On by default, because a deadline
+     * you wrote down is one you want to be reminded of — and off per card for the deadline that is
+     * a note to yourself rather than a job for a Tuesday.
+     */
+    val publishToLifeOps: Boolean,
+    /**
+     * The LifeOps task standing for this card, and the day it was published for.
+     *
+     * Managed only by the hand-off round (`logic/CardRound`), never by an edit on a screen: the UI
+     * hands back a `BoardCard`, which deliberately does not carry these, so no card edit can wipe
+     * the link and strand a task on somebody's week with nothing pointing at it.
+     */
+    val lifeOpsTaskId: String?,
+    val publishedDue: Long?,
     val createdAt: Long,
     val doneAt: Long?
+)
+
+/**
+ * One kept version of a document.
+ *
+ * Versions exist because a document's blocks can be replaced wholesale — pasting a chapter in
+ * throws away everything that was there — and what this app holds may be the only copy of that
+ * writing. A confirmation dialog is not a safety net; a copy is.
+ *
+ * It cascades with the document, which is the honest scope: these are versions *of* a document, not
+ * a wastebasket for deleted ones. Undeleting a document would be a different feature with a
+ * different lifetime, and pretending this one covers it would be worse than not offering it.
+ */
+@Entity(
+    tableName = "doc_revisions",
+    foreignKeys = [
+        ForeignKey(
+            entity = DocEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["docId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("docId"), Index("savedAt")]
+)
+data class DocRevisionEntity(
+    @PrimaryKey val id: String,
+    val docId: String,
+    /** `logic/RevisionReason.key` — why this version was kept. */
+    val reason: String,
+    /**
+     * Words of prose in the snapshot, stored for the same reason a document's count is: the list
+     * draws every version at once and cannot load every block to say how long each one was.
+     */
+    val wordCount: Int,
+    val savedAt: Long
+)
+
+/**
+ * The blocks of one kept version — a copy of `doc_blocks` as it stood.
+ *
+ * Stored as rows rather than as rendered Markdown, and that is the whole point of the table. The
+ * Markdown round trip is the app's *interchange* format and is lossy in the ways interchange
+ * formats are: an empty paragraph does not survive it, a paragraph that happens to begin "- " comes
+ * back as a list item, and a numbered run is renumbered. Every one of those is acceptable when
+ * exporting and none of them is acceptable when the copy is the thing you are restoring from.
+ */
+@Entity(
+    tableName = "doc_revision_blocks",
+    foreignKeys = [
+        ForeignKey(
+            entity = DocRevisionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["revisionId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("revisionId"), Index("sortOrder")]
+)
+data class DocRevisionBlockEntity(
+    @PrimaryKey val id: String,
+    val revisionId: String,
+    /** `logic/BlockType.key`. */
+    val type: String,
+    val text: String,
+    val checked: Boolean,
+    val sortOrder: Int
 )

@@ -173,6 +173,16 @@ the receipts.
 > that rejects the card in your hand teaches you to lie to it), and deleting a column **keeps its
 > cards**, stranded on purpose, with a banner to re-file them.
 >
+> Two edits can throw a whole document away in one tap — pasting Markdown over it, and rebuilding
+> its flattened tables — and what a project holds may be the only copy of that writing anywhere. So
+> a **version is kept first**, automatically, and the menu offers to keep one by hand before a
+> rewrite the app cannot see coming. The history says *why* each was kept rather than only when,
+> because a column of timestamps is not something anybody can choose from; **restoring keeps the
+> current text first**, so going back is itself undoable. A version stores its **blocks**, not
+> rendered Markdown — the Markdown round trip is the export format and drops an empty paragraph,
+> renumbers a list and reads a paragraph beginning `- ` as a list item, all of which are fine when
+> exporting and none of which are acceptable in the copy you restore from. The last twenty are kept.
+>
 > Two things tie the sections into one app rather than five. **Compile** walks the whole outline,
 > pulls in every document linked to it, and hands you the manuscript — and it reports the holes
 > rather than hiding them: pieces with nothing written are listed by name, and documents belonging to
@@ -181,11 +191,52 @@ the receipts.
 > the whole record rather than title-and-body separately (so "kestrel smuggler" finds the entry whose
 > name is in one and description in the other), ranked title-before-body and fully deterministic.
 >
-> Project deliberately does **not** schedule anything — no dates on cards; deciding what today looks
-> like is LifeOps' job — and it is **not on the sync spine**: nothing else in the suite writes into a
+> Anything in the suite can **open Project at a place** rather than merely starting it — a project, a
+> named section of one, or a document in the editor with its project underneath it on the back stack
+> — through one intent extra whose addresses are the app's own routes. A link naming something since
+> deleted lands on the shelf rather than on an editor for nothing, and there is no URL scheme: the
+> suite shares a process, and an app holding writing that never leaves the device has no reason to
+> let every app on the phone address its rows.
+>
+> A board card can carry a **due date**, and that is the only date in the app. The line Project holds
+> is finer than "no dates": when a thing is *due* is a fact about the work, and Maintenance keeps the
+> same kind of fact about a furnace; when you will *do* it is a decision about your time, and that is
+> LifeOps' to make. So there is no agenda here, no calendar, no today screen and no lane that sorts
+> itself by date — a dated card looks like any other but for the chip saying when it is due. A
+> finished card is never late however late it was, and a date that has already gone is remarked on
+> rather than refused, because people write down deadlines they have missed.
+>
+> A dated card **hands itself to the LifeOps week** — a task on the day it falls due, ticked in
+> either place and finished in both. That is the same one-way seam Maintenance uses (`:project ->
+> :lifeops`, plus the bus LifeOps announces completions on), and it is a reconciliation rather than
+> an event handler: a round runs on a tick, on opening Project and after every card edit, and
+> reaches the same answer each time, so a missed announcement costs latency and never correctness.
+> Publishing **adopts** an open task of the same title rather than adding a second beside it — if
+> you already wrote that row by hand, it is the job. Ticking it in LifeOps moves the card to the
+> board's finished column; dragging it there takes the task off the week.
+>
+> A project's **files** — the brief, the contract, the reference PDFs — are documents the household
+> filed rather than writing, so they live on the suite's shelf and are shown here in place. They can
+> be filed on the project, a piece of the outline, a lore entry or a card, so a photograph for one
+> scene and the contract for one piece of work no longer land in the same pile. Because the shelf
+> holds a *label* rather than a foreign key, a rename is pushed down to it — renaming a project
+> renames every drawer in it — and a delete names every record, since a project's rows cascade and
+> nothing is left afterwards to say which drawers were its.
+>
+> It is also the **second app in the suite to serve connection routes** — `/v1/Project/local/…`, on
+> the same addressing scheme LifeOps uses and the `application` segment that scheme always reserved
+> for a peer. The routes can add and organise a project and cannot rewrite a word of what is already
+> written: nothing appends to a document, replaces one, edits a block or deletes a subtree, because
+> the caller is a sentence relayed by Advisor and a misheard word must not be able to destroy writing
+> with no second copy. A name that matches two projects resolves to neither and asks for an id.
+>
+> Project is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
-> the timeline reading, the board moves, the compile and the search are pure JVM in `project/logic/`
-> and covered by 102 unit tests. It requests no permissions and has no `INTERNET`; nothing it holds
+> the timeline reading, the board moves, the compile, the search, the rules about which versions of a
+> document are worth keeping and the addresses that say where in Project to open are pure JVM in
+> `project/logic/` and covered by 206 unit tests. The store beneath them — the cascades, the soft
+> links, the word-count roll-up, the versions, a linked address checked against what is actually
+> there, and the schema's upgrade path — has 69 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.

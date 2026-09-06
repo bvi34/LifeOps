@@ -36,6 +36,12 @@ include(":people")
 // reconcile. It does depend on :repository, one way: a project's *files* — the brief, the contract,
 // the reference PDFs — are documents the household filed rather than writing the project is made of,
 // so they live on the suite's shelf and are shown on the Docs screen in place.
+//
+// It also writes *outward* to :lifeops, like Maintenance and for the same reason: a board card with
+// a due date publishes itself onto the LifeOps week as a task dated the day it falls due, and takes
+// the tick back. That is a one-way module dependency (:project -> :lifeops) plus the bus LifeOps
+// announces completions on, not a second planner — Project holds when a thing is *due*, never when
+// you will do it.
 include(":project")
 // Maintenance is the register of what the household owns and what those things need: assets (a
 // home, a car, the furnace), the identity each kind is known by (VIN, parcel number, serial), the

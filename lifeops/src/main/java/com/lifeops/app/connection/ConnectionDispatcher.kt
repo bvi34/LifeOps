@@ -16,6 +16,18 @@ package com.lifeops.app.connection
  */
 class ConnectionDispatcher(
     private val registry: ConnectionRegistry,
+    /**
+     * The application segment this dispatcher answers for.
+     *
+     * Defaults to LifeOps, which is every existing caller. It is a parameter rather than the
+     * constant it used to read because the scheme always reserved that segment for addressing
+     * peers, and Project now serves `/v1/Project/local/…` from its own dispatcher built on this
+     * same machinery. One convention across the suite; one dispatcher per app that owns routes.
+     *
+     * Declared before [onHandlerError] on purpose: that one is passed as a trailing lambda at the
+     * existing call site, and a parameter added after it would silently capture the lambda instead.
+     */
+    private val application: String = ConnectionAddress.APPLICATION,
     private val onHandlerError: (address: ConnectionAddress, error: Throwable) -> Unit = { _, _ -> }
 ) {
 
@@ -37,10 +49,10 @@ class ConnectionDispatcher(
                 "Unsupported version '${address.version}'; expected '${ConnectionAddress.CURRENT_VERSION}'"
             )
         }
-        if (address.application != ConnectionAddress.APPLICATION) {
+        if (address.application != application) {
             return ConnectionResult.fail(
                 ConnectionError.UNKNOWN_APPLICATION,
-                "Unknown application '${address.application}'; this dispatcher serves '${ConnectionAddress.APPLICATION}'"
+                "Unknown application '${address.application}'; this dispatcher serves '$application'"
             )
         }
         if (!registry.hasConnection(address.connection)) {

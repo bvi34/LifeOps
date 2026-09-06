@@ -6,6 +6,8 @@ import com.project.app.data.db.entities.BoardCardEntity
 import com.project.app.data.db.entities.BoardColumnEntity
 import com.project.app.data.db.entities.DocBlockEntity
 import com.project.app.data.db.entities.DocEntity
+import com.project.app.data.db.entities.DocRevisionBlockEntity
+import com.project.app.data.db.entities.DocRevisionEntity
 import com.project.app.data.db.entities.LoreEntryEntity
 import com.project.app.data.db.entities.OutlineNodeEntity
 import com.project.app.data.db.entities.ProjectEntity
@@ -13,9 +15,17 @@ import com.project.app.data.db.entities.TimelineEventEntity
 import com.project.app.data.model.Doc
 import com.project.app.data.model.DocContent
 import com.project.app.data.model.LoreEntryView
+import com.project.app.logic.DocRevision
+import com.project.app.logic.ProjectDestination
+import com.project.app.logic.RevisionReason
+import com.project.app.logic.Revisions
 import com.project.app.data.model.Project
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
+import com.project.app.logic.AttachKind
+import com.project.app.logic.Attachments
+import com.project.app.logic.CardStore
+import com.project.app.logic.CardTasks
 import com.project.app.logic.BoardColumn
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
@@ -61,7 +71,23 @@ import java.util.UUID
  * every write that can change a count updates it in the same breath — see [refreshDocCount], which
  * is called from every block edit and is the single place that keeps the two in step.
  */
-class ProjectRepository(private val dao: ProjectDao) {
+class ProjectRepository(
+    private val dao: ProjectDao,
+    /**
+     * How a rename reaches the household's shelf.
+     *
+     * Repository stores a record's name as a **label**, not a foreign key — which is what lets it
+     * show a project's paperwork without knowing what a project is, and is the one upkeep cost of
+     * that choice: a renamed record whose drawer still says the old name is a drawer nobody finds
+     * again. So every rename below pushes the new label down through here.
+     *
+     * A lambda rather than a dependency on `:repository`'s runtime, so this class stays a thing that
+     * takes a DAO — every test in `ProjectRepositoryTest` builds one without a document store, and
+     * the two tests that care about labels pass a recorder instead of standing up another database.
+     * The default does nothing, which is the truth in a host with no shelf.
+     */
+    private val relabelDocuments: suspend (recordKey: String, label: String) -> Unit = { _, _ -> }
+) : CardStore {
 
     private fun now() = System.currentTimeMillis()
     private fun newId() = UUID.randomUUID().toString()
@@ -75,6 +101,32 @@ class ProjectRepository(private val dao: ProjectDao) {
 
     /** One project, read once — what the "reopen where I left off" check asks before navigating. */
     suspend fun getProject(id: String): Project? = dao.getProject(id)?.toModel()
+
+    /**
+     * A destination somebody asked to open at, or `null` if it is not there any more.
+     *
+     * Every way into this app from outside — an intent from another app in the suite, and the app's
+     * own memory of where you were — names rows by id, and by the time it is opened a row may have
+     * been deleted. Advisor can quote a document from a snapshot taken before it was thrown away;
+     * "reopen the project I had last time" can name one archived on another screen a minute ago.
+     *
+     * So the address is checked before it is navigated to, and a stale one falls back to the shelf
+     * rather than to a workspace for something that does not exist. A document is checked against
+     * *its project*, not merely for existing: an address pairing a real document with a different
+     * real project would otherwise open the editor with a back stack leading somewhere it was never
+     * filed.
+     */
+    suspend fun resolve(destination: ProjectDestination): ProjectDestination? = when (destination) {
+        is ProjectDestination.Shelf -> destination
+
+        is ProjectDestination.Workspace ->
+            destination.takeIf { dao.getProject(it.projectId) != null }
+
+        is ProjectDestination.Document -> {
+            val doc = dao.getDoc(destination.docId)
+            if (doc != null && doc.projectId == destination.projectId) destination else null
+        }
+    }
 
     /**
      * Every project with the line that says where it has got to.
@@ -167,6 +219,7 @@ class ProjectRepository(private val dao: ProjectDao) {
 
     suspend fun updateProject(project: Project) {
         val existing = dao.getProject(project.id) ?: return
+        val renamed = existing.name != project.name.trim()
         dao.upsertProject(
             existing.copy(
                 name = project.name.trim(),
@@ -177,6 +230,9 @@ class ProjectRepository(private val dao: ProjectDao) {
                 updatedAt = now()
             )
         )
+        // Every drawer, not just the project's own: a record's label leads with the project, so
+        // renaming "The Kestrel" leaves every scene and card in it saying the old name otherwise.
+        if (renamed) relabelEveryRecordOf(project.id)
     }
 
     suspend fun setArchived(projectId: String, archived: Boolean) {
@@ -228,6 +284,9 @@ class ProjectRepository(private val dao: ProjectDao) {
                 updatedAt = now()
             )
         )
+        if (existing.title != node.title.trim()) {
+            relabelRecord(existing.projectId, node.id, node.title.trim())
+        }
         touchProject(existing.projectId)
     }
 
@@ -418,8 +477,13 @@ class ProjectRepository(private val dao: ProjectDao) {
     /**
      * Replace a document's contents with the blocks that Markdown parses to — what "paste a chapter
      * in" does. The old blocks go; this is an import, not a merge.
+     *
+     * Which is why a version is kept first. This is the one edit in the app that can throw away a
+     * morning's writing in a single tap, on data that may have no second copy anywhere, and a
+     * confirmation dialog does not help somebody who meant to paste and pasted the wrong thing.
      */
     suspend fun replaceDocFromMarkdown(docId: String, markdown: String) {
+        saveRevision(docId, RevisionReason.IMPORT)
         val blocks = DocBlocks.parse(markdown) { newId() }
             .ifEmpty { listOf(DocBlock(newId(), BlockType.PARAGRAPH, "")) }
         dao.replaceBlocks(
@@ -440,6 +504,10 @@ class ProjectRepository(private val dao: ProjectDao) {
      * recoverable, so it may as well be recovered.
      */
     suspend fun repairTables(docId: String): Int {
+        // Rewrites every flattened table in the document at once. Recoverable in principle — the
+        // text is still there in a different shape — but "in principle" is not a thing to offer
+        // somebody looking at forty rewritten rows, so it keeps a version like any bulk edit.
+        saveRevision(docId, RevisionReason.REPAIR)
         val repaired = dao.getBlocks(docId).mapNotNull { row ->
             if (row.type == BlockType.TABLE.key || !MarkdownTables.isFlattened(row.text)) return@mapNotNull null
             MarkdownTables.recover(row.text)
@@ -486,6 +554,115 @@ class ProjectRepository(private val dao: ProjectDao) {
         if (total != node.actualWords) {
             dao.upsertOutlineNode(node.copy(actualWords = total, updatedAt = now()))
         }
+    }
+
+    // ------------------------------------------------------------------ versions of a document
+
+    /**
+     * The versions kept for a document, newest first.
+     *
+     * Headers only — the blocks of a version are read when one is opened, not to draw a list of
+     * them. That is what the stored word count on each header is for.
+     */
+    fun observeRevisions(docId: String): Flow<List<DocRevision>> =
+        dao.observeRevisions(docId).map { rows -> rows.map { it.toLogic() } }
+
+    /** How many versions a document has, for the menu that offers to show them. */
+    fun observeRevisionCount(docId: String): Flow<Int> = dao.observeRevisionCount(docId)
+
+    /** The blocks of one version, for reading it before deciding to go back to it. */
+    suspend fun revisionBlocks(revisionId: String): List<DocBlock> =
+        dao.getRevisionBlocks(revisionId).map { it.toLogic() }
+
+    /**
+     * Keep what the document says right now, and say whether anything was kept.
+     *
+     * Two cases file nothing, and both are about not burying the versions that matter under ones
+     * that do not. A document with nothing written in it has nothing to lose — and a new document
+     * starts life holding a single empty paragraph, so without this, opening one and pasting into
+     * it would file a version of nothing. And a document identical to the version already at the
+     * top files nothing either: restoring twice, or pasting back exactly what was there, should not
+     * push four real versions off the end of the list with copies of each other.
+     *
+     * Public because it is also the manual "keep this" — the same act, asked for rather than
+     * inferred.
+     */
+    suspend fun saveRevision(docId: String, reason: RevisionReason): String? {
+        val doc = dao.getDoc(docId) ?: return null
+        val blocks = dao.getBlocks(docId).map { it.toLogic() }
+        if (!Revisions.worthKeeping(blocks)) return null
+
+        val existing = dao.getRevisions(docId).map { it.toLogic() }
+        val newest = existing.firstOrNull()
+        if (newest != null && !Revisions.differ(blocks, revisionBlocks(newest.id))) return null
+
+        val id = newId()
+        val saved = DocRevision(
+            id = id,
+            docId = docId,
+            reason = reason,
+            wordCount = doc.wordCount,
+            savedAt = now()
+        )
+        dao.writeRevision(
+            revision = DocRevisionEntity(
+                id = id,
+                docId = docId,
+                reason = reason.key,
+                wordCount = saved.wordCount,
+                savedAt = saved.savedAt
+            ),
+            blocks = blocks.mapIndexed { index, block ->
+                DocRevisionBlockEntity(
+                    id = newId(),
+                    revisionId = id,
+                    type = block.type.key,
+                    text = block.text,
+                    checked = block.checked,
+                    sortOrder = index
+                )
+            },
+            // Computed over the list *including* the one being filed, or the cap would be off by one
+            // and the table would settle at KEEP + 1.
+            pruned = Revisions.prunable(existing + saved)
+        )
+        return id
+    }
+
+    /**
+     * Put a document back to an earlier version, and say whether it happened.
+     *
+     * The current text is kept first, because a restore is a whole-document rewrite and the moment
+     * you most want the thing you just replaced is the moment straight after replacing it. Going
+     * back is therefore itself undoable, which is what stops the history being a one-way door.
+     *
+     * The blocks are copied out with new ids rather than moved: a version is not consumed by being
+     * restored, so the same one can be returned to twice.
+     */
+    suspend fun restoreRevision(docId: String, revisionId: String): Boolean {
+        val revision = dao.getRevision(revisionId) ?: return false
+        // A version belongs to one document. Restoring another document's text into this one would
+        // be a data-loss bug wearing the clothes of a safety feature.
+        if (revision.docId != docId) return false
+
+        // Read before the snapshot, deliberately. Filing a version can push the oldest off the end
+        // of the cap, and the oldest is exactly the one somebody is most likely to be restoring —
+        // so the text is in hand before anything can prune the row it came from.
+        val restored = dao.getRevisionBlocks(revisionId)
+        saveRevision(docId, RevisionReason.RESTORE)
+        dao.replaceBlocks(
+            docId,
+            restored
+                .mapIndexed { index, block ->
+                    DocBlockEntity(newId(), docId, block.type, block.text, block.checked, index)
+                }
+                // An editor with no block in it has nowhere to put the cursor; a version can only be
+                // empty if one was written before this rule existed, but the restore still has to
+                // leave a document somebody can type into.
+                .ifEmpty { listOf(DocBlockEntity(newId(), docId, BlockType.PARAGRAPH.key, "", false, 0)) }
+        )
+        refreshDocCount(docId)
+        return true
     }
 
     // ------------------------------------------------------------------ lore
@@ -549,6 +726,7 @@ class ProjectRepository(private val dao: ProjectDao) {
                 updatedAt = now()
             )
         )
+        if (existing.name != entry.name.trim()) relabelRecord(projectId, entry.id, entry.name.trim())
         touchProject(projectId)
     }
 
@@ -713,7 +891,8 @@ class ProjectRepository(private val dao: ProjectDao) {
         title: String,
         notes: String? = null,
         outlineNodeId: String? = null,
-        docId: String? = null
+        docId: String? = null,
+        dueOn: Long? = null
     ): String {
         val id = newId()
         val cards = dao.getCards(projectId).map { it.toLogic() }
@@ -727,6 +906,10 @@ class ProjectRepository(private val dao: ProjectDao) {
                 sortOrder = Board.nextSortOrder(cards, columnId),
                 outlineNodeId = outlineNodeId,
                 docId = docId,
+                dueOn = dueOn,
+                publishToLifeOps = true,
+                lifeOpsTaskId = null,
+                publishedDue = null,
                 createdAt = now(),
                 doneAt = null
             )
@@ -742,9 +925,16 @@ class ProjectRepository(private val dao: ProjectDao) {
                 title = card.title.trim().ifEmpty { "Untitled" },
                 notes = card.notes.clean(),
                 outlineNodeId = card.outlineNodeId,
-                docId = card.docId
+                docId = card.docId,
+                // Settable and clearable in the same breath: a deadline that has been dropped has
+                // to be droppable, or the only way to lose one is to delete the card.
+                dueOn = card.dueOn,
+                publishToLifeOps = card.publishToLifeOps
+                // The link is deliberately absent: `BoardCard` does not carry it, so no edit made
+                // on a screen can wipe it and strand a task on somebody's week.
             )
         )
+        if (existing.title != card.title.trim()) relabelRecord(projectId, card.id, card.title.trim())
         touchProject(projectId)
     }
 
@@ -784,6 +974,227 @@ class ProjectRepository(private val dao: ProjectDao) {
         )
         touchProject(projectId)
     }
+
+    // ------------------------------------------------------------------ files, on a record
+
+    /** Push one record's new name down to whatever the shelf is holding for it. */
+    private suspend fun relabelRecord(projectId: String, recordKey: String, recordName: String) {
+        val project = dao.getProject(projectId) ?: return
+        relabelDocuments(recordKey, Attachments.shelfLabel(project.name, recordName))
+    }
+
+    /**
+     * Re-label every drawer belonging to a project, after the project itself was renamed.
+     *
+     * A loop over every record, which is only ever run on a rename — and is the price of a label
+     * that leads with the project. The alternative, a drawer called "The docks" sitting on a shelf
+     * beside a mortgage statement and a boiler manual, is not one worth paying less for.
+     */
+    private suspend fun relabelEveryRecordOf(projectId: String) {
+        val project = dao.getProject(projectId) ?: return
+        relabelDocuments(projectId, Attachments.shelfLabel(project.name, null))
+        dao.getOutline(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.title))
+        }
+        dao.getLore(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.name))
+        }
+        dao.getCards(projectId).forEach {
+            relabelDocuments(it.id, Attachments.shelfLabel(project.name, it.title))
+        }
+    }
+
+
+    /**
+     * The record a set of files is filed on, ready to be shown.
+     *
+     * Null when it has been deleted since — which is ordinary, because a link to a record's files
+     * can outlive the record, and landing on a file drawer for something that is not there is worse
+     * than landing back where you were.
+     */
+    suspend fun attachTarget(projectId: String, kind: AttachKind, recordId: String): AttachTarget? {
+        val project = dao.getProject(projectId) ?: return null
+
+        val name = when (kind) {
+            AttachKind.PROJECT -> project.name.takeIf { recordId == projectId }
+            AttachKind.OUTLINE -> dao.getOutlineNode(recordId)?.takeIf { it.projectId == projectId }?.title
+            AttachKind.CARD -> dao.getCard(recordId)?.takeIf { it.projectId == projectId }?.title
+            // Lore has no by-id read of its own; the project's entries are a short list and this is
+            // asked once, when a screen opens.
+            AttachKind.LORE -> dao.getLore(projectId).firstOrNull { it.id == recordId }?.name
+        } ?: return null
+
+        return AttachTarget(
+            recordKey = recordId,
+            kind = kind,
+            name = name,
+            shelfLabel = Attachments.shelfLabel(project.name, name.takeIf { kind != AttachKind.PROJECT })
+        )
+    }
+
+    /**
+     * Every record of a project that could have files on it, including the project itself.
+     *
+     * Read before a project is deleted. Its rows cascade with it, so afterwards there is nothing
+     * left to work out which drawers on the shelf belonged to it — and the household would be left
+     * with a pile of documents filed against ids that name nothing.
+     */
+    suspend fun attachableRecordKeys(projectId: String): List<String> =
+        listOf(projectId) +
+            dao.getOutline(projectId).map { it.id } +
+            dao.getLore(projectId).map { it.id } +
+            dao.getCards(projectId).map { it.id }
+
+    // ------------------------------------------------------------------ what the routes ask for
+
+    /**
+     * Every project, for resolving a name a caller said out loud.
+     *
+     * Archived ones included, deliberately: archiving takes a project off the shelf, not out of the
+     * app, and "add a card to the Kestrel" failing because it was tidied away last month would be a
+     * puzzling refusal.
+     */
+    suspend fun allProjectsForLookup(): List<Project> = dao.allProjects().map { it.toModel() }
+
+    /** A board's columns, for resolving a column a caller named. */
+    suspend fun columnsOf(projectId: String): List<BoardColumn> =
+        dao.getColumns(projectId).map { it.toLogic() }
+
+    /** Which project a card belongs to — a route is handed a card id and nothing else. */
+    suspend fun cardWithProject(cardId: String): CardOwner? =
+        dao.getCard(cardId)?.let { CardOwner(it.id, it.projectId) }
+
+    /** Whether an outline row is really there, so a route can say NOT_FOUND rather than no-op. */
+    suspend fun outlineNodeExists(id: String): Boolean = dao.getOutlineNode(id) != null
+
+    /**
+     * Finish a card the way the board means it: moved into the finished column.
+     *
+     * The LifeOps link is deliberately left alone, which is the difference between this and
+     * [completeFromWeek]. Here the task is still open on somebody's week and has to be taken down
+     * by the next hand-off round, which needs the link to do it. There the task has already been
+     * ticked, so the link is let go of instead.
+     */
+    suspend fun completeCard(projectId: String, cardId: String, at: Long = now()): Boolean =
+        moveToDone(projectId, cardId, at)
+
+    // ------------------------------------------------------------------ the LifeOps week
+
+    /**
+     * Every card that could have anything to do with the week, with the facts to decide on.
+     *
+     * Read in one go across every project rather than per board: a round is about the *week*, and
+     * the week does not care which project a deadline came from. Cards with neither a date nor a
+     * link are dropped here rather than in the round — they can never produce an action, and
+     * carrying every card in the household through a decision to reach Idle is work for nothing.
+     */
+    override suspend fun cardSnapshots(): List<CardTasks.CardSnapshot> {
+        val projects = dao.allProjects().associateBy { it.id }
+        val doneColumns = dao.allColumns().filter { it.isDone }.mapTo(mutableSetOf()) { it.id }
+
+        return dao.allCards()
+            .filter { it.dueOn != null || it.lifeOpsTaskId != null }
+            .mapNotNull { row ->
+                val project = projects[row.projectId] ?: return@mapNotNull null
+                CardTasks.CardSnapshot(
+                    card = row.toLogic(),
+                    projectName = project.name,
+                    // A card in a column the board calls finished has nothing left to ask of a
+                    // planner — and one whose column was deleted is stranded rather than finished,
+                    // which is why this asks the column and not merely whether the id is known.
+                    inDoneColumn = row.columnId in doneColumns,
+                    link = CardTasks.TaskLink(row.lifeOpsTaskId, row.publishedDue)
+                )
+            }
+    }
+
+    override suspend fun setCardLink(cardId: String, taskId: String?, publishedDue: Long?) {
+        val existing = dao.getCard(cardId) ?: return
+        dao.upsertCard(existing.copy(lifeOpsTaskId = taskId, publishedDue = publishedDue))
+    }
+
+    /**
+     * Finish the card a tick in LifeOps stands for.
+     *
+     * "Finished" on a board means being in the column the board calls finished, so the card is
+     * *moved* — through the same `Board.move` a drag goes through, so the position arithmetic and
+     * the stamping of `doneAt` happen exactly once, in one place. A board whose finished column has
+     * been deleted still has to be able to take the tick, so the card is stamped where it stands
+     * rather than the completion being dropped on the floor.
+     *
+     * Returns whether anything actually moved: a card already finished here reports false, so a
+     * round that runs twice over the same tick counts it once.
+     */
+    override suspend fun completeFromWeek(cardId: String, completedAt: Long): Boolean {
+        val row = dao.getCard(cardId) ?: return false
+        // Let go of the task: it has been ticked, and nothing here should ask about it again. Done
+        // first, so a failure to move the card still cannot leave the round chasing a finished task.
+        dao.upsertCard(row.copy(lifeOpsTaskId = null, publishedDue = null))
+        return moveToDone(row.projectId, cardId, completedAt)
+    }
+
+    /**
+     * Put a card in the column its board calls finished.
+     *
+     * Shared by the tick that arrives from LifeOps and the `card/complete` route, because "finished"
+     * has to mean one thing however it was asked for. The move goes through the same `Board.move` a
+     * drag goes through, so the position arithmetic and the `doneAt` stamp happen in one place.
+     *
+     * Returns whether anything actually moved: a card already finished reports false, so a round
+     * that runs twice over one tick counts it once.
+     */
+    private suspend fun moveToDone(projectId: String, cardId: String, at: Long): Boolean {
+        val row = dao.getCard(cardId) ?: return false
+        val columns = dao.getColumns(projectId)
+        val doneColumn = columns.firstOrNull { it.isDone }
+
+        if (doneColumn != null && row.columnId == doneColumn.id) return false
+
+        if (doneColumn == null) {
+            // A board whose finished column has been deleted still has to be able to take this, so
+            // the card is stamped where it stands rather than the completion being dropped.
+            if (row.doneAt != null) return false
+            dao.upsertCard(row.copy(doneAt = at))
+            touchProject(projectId)
+            return true
+        }
+
+        val cards = dao.getCards(projectId).map { it.toLogic() }
+        val changed = Board.move(
+            columns = columns.map { it.toLogic() },
+            cards = cards,
+            cardId = cardId,
+            toColumnId = doneColumn.id,
+            // Clamped to the end of the lane, so finished work reads in the order it was finished.
+            toIndex = Int.MAX_VALUE,
+            now = at
+        )
+        if (changed.isEmpty()) return false
+
+        val byId = dao.getCards(projectId).associateBy { it.id }
+        dao.upsertCards(
+            changed.mapNotNull { card ->
+                byId[card.id]?.copy(
+                    columnId = card.columnId,
+                    sortOrder = card.sortOrder,
+                    doneAt = card.doneAt
+                )
+            }
+        )
+        touchProject(projectId)
+        return true
+    }
+
+    /**
+     * The LifeOps tasks standing for the cards of a project — read *before* it is deleted, so the
+     * caller can take them off the week afterwards.
+     *
+     * A project's cards cascade with it, which means the round can never see them again to work out
+     * that their tasks should go. Somebody would be left with a week full of tasks for a project
+     * that no longer exists and no way to tell where they came from.
+     */
+    suspend fun publishedTaskIdsOf(projectId: String): List<String> =
+        dao.getCards(projectId).mapNotNull { it.lifeOpsTaskId }
 
     // ------------------------------------------------------------------ search & compile
 
@@ -958,6 +1369,21 @@ fun DocBlockEntity.toLogic() = DocBlock(
     checked = checked
 )
 
+fun DocRevisionEntity.toLogic() = DocRevision(
+    id = id,
+    docId = docId,
+    reason = RevisionReason.fromKey(reason),
+    wordCount = wordCount,
+    savedAt = savedAt
+)
+
+fun DocRevisionBlockEntity.toLogic() = DocBlock(
+    id = id,
+    type = BlockType.fromKey(type),
+    text = text,
+    checked = checked
+)
+
 fun LoreEntryEntity.toLogic() = LoreEntry(
     id = id,
     name = name,
@@ -993,6 +1419,21 @@ fun BoardCardEntity.toLogic() = BoardCard(
     sortOrder = sortOrder,
     outlineNodeId = outlineNodeId,
     docId = docId,
+    dueOn = dueOn,
+    publishToLifeOps = publishToLifeOps,
     createdAt = createdAt,
     doneAt = doneAt
+)
+
+/** A card and the project it belongs to — all a route needs before it can act on one. */
+data class CardOwner(val cardId: String, val projectId: String)
+
+/** A record files can be filed on, and how its drawer reads on the household's shelf. */
+data class AttachTarget(
+    val recordKey: String,
+    val kind: AttachKind,
+    /** The record's own name — what the screen is titled. */
+    val name: String,
+    /** The project-led label the shelf shows, so a drawer is not a question. */
+    val shelfLabel: String
 )

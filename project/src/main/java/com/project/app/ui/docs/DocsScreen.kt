@@ -24,7 +24,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -41,13 +40,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.operations.backupkit.AppId
+import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.Doc
 import com.project.app.data.model.Project
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.Outline
-import com.project.app.logic.Tree
 import com.project.app.logic.OutlineNode
 import com.project.app.logic.ProjectPulse
+import com.project.app.logic.Tree
 import com.project.app.ui.common.DocPickerDialog
 import com.project.app.ui.common.EmptyState
 import com.project.app.ui.common.OutlinePickerDialog
@@ -203,13 +203,7 @@ fun DocsScreen(
             onDismissRequest = { showAdd = false },
             title = { Text("New document") },
             text = {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                SuiteTextField(label = "Title", value = title, onValueChange = { title = it })
             },
             confirmButton = {
                 TextButton(enabled = title.isNotBlank(), onClick = {

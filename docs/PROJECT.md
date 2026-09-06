@@ -23,9 +23,20 @@ Three tools got stirred together here, and it is worth naming which part came fr
 | **Reedsy** | An *outline* whose rows are parts of the work itself: they nest, they carry a status through drafting and revision, and they carry a **length** against a target. |
 | **Kanban** | A board of columns and cards, with limits that warn, for what is actually being done this week. |
 
-What it is **not** is a scheduler. Project never says when you will do something, and there is no
-date on a card. Deciding what today looks like is LifeOps' job, and a second planner would be a
-second answer to "what am I doing today" — which, in practice, means both of them stop being true.
+What it is **not** is a scheduler, and the line is finer than "no dates" — which is where this
+started and is no longer quite right. A card can carry a **due date**: the competition closes on the
+14th, the draft is promised on the 30th. What Project will never hold is **when you will do it**.
+
+That distinction is the whole of it. A due date is a *fact about the work* and belongs with the
+work; a plan is a *decision about your time* and belongs to LifeOps, which is where a week is
+planned. It is exactly the line Maintenance already draws — it knows the furnace is due a service
+and says nothing about which evening you will spend on it — and holding it is what stops there
+being a second answer to "what am I doing today", which in practice means both stop being true.
+
+Concretely, that rule shows up as things Project does not have: no agenda, no calendar, no today
+screen, no lane that reorders itself by date, no card hidden for being far off. A dated card looks
+exactly like an undated one but for the chip saying when it is due, coloured because a board is read
+at a glance and "overdue" has to survive that glance. Nothing else on the board changes.
 
 Project is also **not on the suite's sync spine**. People replicates because two apps genuinely
 write the same person; nothing else in the suite writes into a project, so there is nothing to
@@ -193,6 +204,155 @@ Moving a card is a menu of destinations rather than a drag, for the same reason 
 arrows: dragging between two columns that are half off-screen is a guess, and the one thing a board
 must never be is unsure where it just put your work.
 
+## Due dates — the only date here
+
+A board card, and nothing else, can be given a day it is due. Not an outline node: a chapter is a
+*part of the thing being made*, and giving structure a deadline is how an outline quietly turns into
+a schedule. Not a project either — you do not put "The Kestrel" on Tuesday's list.
+
+It is stored as an **epoch day**, nullable, and null is what almost every card holds. A day rather
+than an instant because a deadline is a date on a calendar, not a moment; nullable rather than zero
+because epoch day zero is a real date, and a zero here would file every undated card fifty years
+overdue.
+
+`logic/Due` reads a date against a `today` that is **passed in**, never taken from the clock inside
+itself. That is what makes "overdue by 3 days" testable at all, and on the screen it is why a lane
+reads the day once rather than per card — a list that asks the clock per row can disagree with
+itself as it scrolls past midnight.
+
+Three rules it holds:
+
+- **A finished card is never late**, however late it was. Leaving it red would have the board carry
+  a permanent accusation about work that is already behind you, which is not what anybody keeps a
+  board to be told. It says *"Was due 12 Feb"* instead.
+- **Nothing is ever refused.** A date that has already gone is remarked on and accepted, because
+  people write down deadlines they have missed and that is how a board comes to reflect reality
+  rather than the plan somebody had in January. The remark comes through the suite's own
+  `SuiteVerdict`, which is the mechanism by which a shared picker offers every date and asks the app
+  what it makes of the one chosen.
+- **Near dates are counted in days, far ones given as a date.** "In 3 days" lands where "17 Mar" has
+  to be worked out; past a week, "in 74 days" is a number nobody converts back into a day of the
+  year. The month names are spelled out in `logic/` rather than taken from a formatter, so a test
+  that passes in London passes in Berlin.
+
+This is also what makes the **hand-off to the LifeOps week** possible, which was not before: a card
+with no date is nothing a planner can place. See [The LifeOps week](#the-lifeops-week) below.
+
+## Connection routes — the way in
+
+Project serves `/v1/Project/local/…`, and is the **second app in the suite to serve routes at all**.
+The addressing scheme reserved its `application` segment from the start "so a future multi-app
+surface can address peers without ambiguity"; this is that surface. Project builds its own
+dispatcher from the same machinery LifeOps uses rather than inventing a second convention — see
+[CONNECTIONS.md](CONNECTIONS.md#projects-routes) for the full table.
+
+Why this app rather than another: every structural edit here is already a pure function returning
+the rows that changed, applied by one repository. A route is therefore a genuinely thin adapter over
+a use case that exists, rather than a second path into the data with its own quietly different
+rules — which is the property that makes routes safe to open at all, and why there is no service
+layer between the handlers and the repository.
+
+Two rules shape what is on offer.
+
+**They can add and organise; they cannot rewrite writing.** There is no route that appends to a
+document, replaces one from Markdown, edits a block, restores a version, deletes an outline subtree
+or deletes a project. The caller on the other end is Advisor relaying a sentence somebody spoke, and
+every one of those would be a way for a misheard word to destroy writing with no second copy. An
+empty document created by mistake is deleted; a chapter overwritten by mistake is gone. The test
+asserts each of those addresses is unrouted, so the line holds rather than being merely meant.
+
+**An ambiguous name resolves to nothing.** Routes are handed names, not ids, so `logic/ProjectLookup`
+matches on id first and then on an exact name — never a prefix, never a substring — and two projects
+of the same name produce a refusal that names both and asks for an id. It is the rule Lore already
+uses for `[[links]]`, applied where getting it wrong writes into somebody else's work.
+
+Nothing calls these yet. Advisor is the intended caller and has the read half already
+(`ProjectKnowledgeSource`), but acting on a sentence needs intent parsing on its side — the shape
+`TaskCommand` and `LifeOpsTaskWriter` have for tasks — which is a change to Advisor rather than to
+this app. The routes are the half that has to exist first.
+
+## The LifeOps week
+
+A card with a due date puts itself on the LifeOps week as a task dated the day it falls due, and
+ticking it in either place finishes it in both. This is the payoff of the date existing at all:
+Project says *when a card is due* and hands that to the app that decides *when you will do it*.
+
+It is the same seam Maintenance uses for upkeep, narrowed. Both apps are library modules in one
+process, so publishing is a call into LifeOps' own `TaskService` rather than a copy of a task living
+over here — one week planner in the suite, and a door into it rather than a second one. The
+dependency points one way only (`:project -> :lifeops`); LifeOps announces completions on a bus and
+knows nothing about who is listening.
+
+**A reconciliation, not an event handler.** A round runs when a tick is announced, when Project
+comes to the foreground, and after every edit to a card, and it reaches the same answer either way.
+So a tick that arrived mid-restore, a task somebody deleted, or a week that closed and carried the
+task into a new row under a new id are all just facts the next round reads. A missed announcement
+costs latency, never correctness. Unlike Maintenance's, this round runs **once**: a schedule recurs,
+so completing one there makes something new due and needs a second pass; a card has one date and one
+outcome.
+
+What each side owns:
+
+| | |
+|---|---|
+| **Publishing** | Every dated card, unless switched off on the card. On by default, because a deadline you wrote down is one you want reminding of — off for the deadline that is a note to yourself. |
+| **The title** | "The Kestrel: Rewrite the dock scene". The project leads: a week's list is read across a dozen unrelated things, and "Rewrite the dock scene" alone is a question rather than a job. |
+| **Adopting** | Publishing adopts an *open* task of the same title rather than adding a second beside it — if you had already written that row by hand, it **is** the job. Two rows for one piece of work is the worse outcome. Within a round, an id is claimed once: two cards named the same thing do not quietly share a row where one tick would finish both. |
+| **Ticking it there** | Moves the card into the board's finished column, through the same `Board.move` a drag goes through. A board whose finished column has been deleted is stamped where it stands rather than the tick being dropped on the floor. |
+| **Ticking it here** | Dragging into the finished column takes the task off the week. |
+| **Never** | `isRecurring` (a card happens once; LifeOps repeating it would put a second engine in charge of a date this app owns) and a hard deadline (which expires the task at week close, quietly binning a card that simply did not get done). |
+
+Three failure modes it is built around, all ordinary:
+
+- **A task deleted on purpose is not put back.** The day a card was published for is remembered
+  even after the link is dropped, so re-adding only happens once the date actually changes.
+  Otherwise the app argues with somebody who took a row off their week.
+- **A task stranded in a closed week is forgotten, not deleted** — deleting it would edit a week
+  that has already been reviewed.
+- **A link cannot be wiped by editing the card.** `BoardCard` deliberately does not carry it, so
+  every screen edit goes through a type that has no way to strand a task on somebody's week.
+
+The link lives on the card (`lifeOpsTaskId`, `publishedDue`) and is written only by the round. The
+whole decision is pure — `logic/CardTasks` decides, `logic/CardRound` drives — so the hand-off is
+tested against fakes, without LifeOps and without a device.
+
+## Versions — the way back
+
+Two edits in this app can throw a whole document away in one tap: **replacing it with pasted
+Markdown**, and **rebuilding its flattened tables**. What a project holds may be the only copy of
+that writing anywhere, and a confirmation dialog is not a safety net — it asks somebody who has
+already decided.
+
+So a version is kept first, automatically, and the document's menu offers **Keep this version** for
+the rewrites the app cannot see coming — the ones you do yourself, a paragraph at a time. The
+history lists them newest-first, each saying **why** it was kept rather than only when, because a
+column of timestamps is not something anybody can choose from. Open one to read what the document
+said; restore it to go back.
+
+Four rules make it a safety net rather than a log:
+
+- **A restore keeps the current text first.** The moment you most want what you just replaced is
+  the moment after replacing it, so going back is itself undoable and the history is not a one-way
+  door. A version is also not consumed by being restored — the same one can be returned to twice.
+- **Nothing empty is filed.** A new document holds one empty paragraph; without this, opening one
+  and pasting into it would file a version of nothing and put it at the top of the list.
+- **Nothing identical is filed.** If the version at the top already holds exactly what is about to
+  be replaced, a second copy buys nothing and costs a slot — so restoring twice, or pasting back
+  what was already there, does not push four real versions off the end.
+- **The last twenty are kept**, oldest dropped, and the screen says so rather than leaving it to be
+  discovered when a version somebody wanted has quietly gone.
+
+A version stores its **blocks**, not rendered Markdown, and that is the whole reason the table has
+the shape it does. Markdown is this app's *interchange* format and is lossy in the ways interchange
+formats are: an empty paragraph does not survive the round trip, a paragraph that happens to begin
+`- ` comes back as a list item, and a numbered run is renumbered. Every one of those is fine when
+exporting and none of them is acceptable when the copy is the thing you are restoring from.
+
+Versions belong to a document and **cascade with it**. That is the honest scope: this is a history
+of a document, not a wastebasket for deleted ones. Undeleting a document would be a different
+feature with a different lifetime, and pretending this one covers it would be worse than not
+offering it.
+
 ## Compile — the whole thing as one document
 
 The operation the app exists to make possible, and the reason the outline↔document link is worth
@@ -216,6 +376,47 @@ The rule that shapes the screen: **a hole is reported, never hidden.**
 - Only *leaves* count as holes: an act is supposed to have no text of its own.
 
 The result goes out to the clipboard or the share sheet as Markdown, like everything else here.
+
+## Opening at a place
+
+Until recently the only thing anything outside Project could do was *start* it. Advisor could quote
+a scene and never take you to it; the sandbox could open the app but not a project; a notification
+would have had nowhere to land. `MainActivity` now takes one intent extra —
+`com.project.app.extra.OPEN_DESTINATION` — holding an address in the vocabulary of
+`logic/ProjectLinks`:
+
+| Address | Opens |
+|---|---|
+| `shelf` | The shelf, explicitly — "open Project and do *not* reopen what I had last time". |
+| `project/<id>` | That project, on whichever section you last used. |
+| `project/<id>/<section>` | That project, on `outline`, `docs`, `lore`, `timeline` or `board`. |
+| `project/<id>/doc/<id>` | That document in the editor, with its project underneath it on the back stack, so Back means what it means everywhere else here. |
+
+The addresses are deliberately the app's own nav routes, so there is one vocabulary for "where in
+Project" rather than a private one for callers and another for the nav graph. Build the intent with
+`MainActivity.intentFor(context, destination)`; it carries `CLEAR_TOP | SINGLE_TOP`, so a second
+link reaches the instance already running rather than stacking another copy of the app on it.
+
+Three rules keep a link from being a way to break the app:
+
+- **A stale address opens the shelf.** Every one names rows by id, and by the time it is followed
+  the row may be gone — Advisor answers from a snapshot and can quote a document thrown away since.
+  So `ProjectRepository.resolve` checks it first, and a document is checked *against its project*
+  rather than merely for existing: an address pairing a real document with a different real project
+  would open the editor with a back stack leading somewhere it was never filed.
+- **Nonsense opens the app.** Parsing is total and returns `null` for anything unrecognised,
+  including an address written by an older or newer build. An unknown *section*, though, is refused
+  rather than read as the outline: landing somewhere plausible is how a caller's typo survives to
+  ship, appearing to work while showing the wrong screen every time.
+- **There is no URL scheme and no exported filter beyond the activity.** Project requests no
+  permissions and holds writing that never leaves the device; a `project://` scheme would let any
+  app on the phone address its rows, which is a surface it has no reason to offer inside a suite
+  that shares one process.
+
+The app's own **"reopen the project you left"** goes through the same path rather than being a
+special case in the nav graph — it is a destination like any other. That is the point of the shape:
+the remembered place is exercised on every single launch and a link is exercised rarely, so sharing
+one implementation means the rare one is not the untested one.
 
 ## Search — across all five sections
 
@@ -261,8 +462,15 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Timeline.kt` | Reading a "when" label, era bands, gaps, and order contradictions. |
 | `Board.kt` | Lanes, WIP-limit state, moving a card between columns, orphans, default columns. |
 | `ProjectPulse.kt` | The one line under a project's name on the shelf. |
+| `Revisions.kt` | Which versions of a document are worth keeping, which are copies of each other, and which fall off the end of the cap. |
+| `DeepLink.kt` | The addresses that say where in Project to open, and what is not a valid one. |
+| `Due.kt` | How a due date stands against a day, what to call it, and what Project makes of one being picked. |
+| `CardTasks.kt` | What should happen to the LifeOps task standing for a card, given what each side holds. |
+| `CardRound.kt` | Driving that decision over every card, and the two mistakes only a round can make. |
+| `ProjectLookup.kt` | Turning a name a caller said into a row — id first, exact names, and nothing at all when two match. |
+| `Attachments.kt` | Which records can hold files, and how a record's drawer reads on the household's shelf. |
 
-That is 137 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 206 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |
@@ -271,13 +479,79 @@ The Android side (`data/`, `ui/`) adds Room storage and the Compose screens and 
 every structural edit is a pure function that returns *the rows that changed*, and the repository's
 job is to write exactly those.
 
+## The controls it does not own
+
+Every field on every screen here is the suite's — `SuiteTextField`, `SuiteNoteField`,
+`SuiteNumberField` from `:suiteui`. Project used to write `OutlinedTextField` out longhand
+twenty-five times, which is how the rest of the suite got the way it was before `:suiteui` existed:
+one screen's field filtered non-digits and the one beside it did not, one filled its row and another
+did not, and each had a private opinion about supporting text. None of that is a decision worth an
+app making twice.
+
+Three things changed by adopting them rather than merely tidying up:
+
+- **The two count fields are counts.** A WIP limit and a word target now take digits and nothing
+  else. The board had hand-rolled that filter; the outline had not, so "about 2000" typed into a
+  word target went through `toIntOrNull()` and quietly became no target at all. The filter that
+  replaces both is `SuiteInput`, which is pure JVM in `:suitekit` and unit-tested there — coverage
+  this app now inherits instead of duplicating.
+- **Fields capitalise sentences; search boxes do not.** A raw `OutlinedTextField` capitalises
+  nothing, so every name and title here used to start lowercase unless you reached for shift. The
+  shared field has the suite's opinion instead — and the two search boxes opt out of it, because a
+  query is not a sentence.
+- **Prose fields have a ceiling.** They grew without limit before, which in a dialog means a long
+  note pushes the buttons off the bottom of the screen.
+
+What is *not* shared is the pickers, and that is the honest answer rather than an oversight.
+`:suiteui` offers a colour, date, time and when picker; Project has no date, time or when to pick —
+deciding when something happens is LifeOps' job, and the timeline's "when" is free text on purpose
+(see above). Its own `ui/common/Pickers.kt` picks a piece of the outline or a document, which is a
+question about *this app's* tree and has no suite equivalent. Colours are assigned from a rotating
+palette and there is no UI to change one, here or in Maintenance, which stores the same column.
+
 ## Storage
 
-One Room database, `project.db`, with eight tables and one project id threaded through all of them.
+One Room database, `project.db`, with ten tables and one project id threaded through all of them.
 That column is the architecture: every section is scoped to a project and cascades with it, so
-deleting a project cannot leave a doc or a card behind for a query that forgot to filter.
+deleting a project cannot leave a doc or a card behind for a query that forgot to filter. The two
+exceptions are `doc_revisions` and `doc_revision_blocks`, which hang off a *document* rather than a
+project — they are versions of one document and go with it, and the project cascade reaches them
+through it.
 
-The **cross-section links are soft** — a card's outline node and document, a doc's outline node, an
+### Files, on the thing they are about
+
+A project's *files* — the brief, the contract, the reference PDFs somebody was sent — are documents
+the household filed rather than writing the project is made of, so they live on the suite's shelf
+(`:repository`) and are shown here in place. Project stores no bytes and keeps no second document
+table.
+
+They can be filed on **four kinds of record**: the project, a piece of the outline, a lore entry, or
+a card. Until this they could only go on the project, which meant a reference photograph for one
+scene, the signed contract for one piece of work and a map for one lore entry all landed in the same
+flat pile — the thing every other app in the suite already avoids, since Health attaches per person
+and Maintenance per asset.
+
+A **document** is deliberately not one of the four. A document *is* the writing; a file attached to
+writing is either reference material (which belongs on the piece of the outline the writing is for)
+or a copy of the writing itself (which belongs on the shelf on its own).
+
+The panel lives on **its own screen**, reached from each record's dialog, rather than inside the
+dialog. Filing is three affordances wide — from this phone, off a drive, or something already on the
+shelf — and the result is a list; an `AlertDialog` holding all of that is a dialog you cannot read.
+
+Two consequences are worth stating because they are the cost of the shelf holding a **label** rather
+than a foreign key — the choice that lets Repository show a project's paperwork without knowing what
+a project is:
+
+- **A rename has to be pushed down.** Renaming a scene renames its drawer; renaming the *project*
+  renames every drawer in it, because a record's label leads with the project ("The Kestrel — The
+  docks"). It leads with it because the shelf lists the whole household's paperwork in one place,
+  where a drawer called "The docks" beside a mortgage statement is a question rather than an answer.
+- **A delete has to name every record.** A project's rows cascade with it, after which nothing is
+  left to work out which drawers belonged to it — so the record keys are read *before* the delete
+  and each drawer is emptied. Repository never cascades on somebody else's rules.
+
+The cross-section links are soft — a card's outline node and document, a doc's outline node, an
 event's scene — declared without a foreign key so deleting a scene does not delete the notes written
 about it. When an outline subtree *is* deleted, those links are explicitly cut in the same
 transaction: a link that dangles for ever is indistinguishable from one that was never made. Every
@@ -289,10 +563,53 @@ document and a scene's on the scene, because the shelf draws hundreds of them at
 that could change a count updates it in the same breath, in one place, so the stored number and the
 blocks cannot drift.
 
+### The three claims above, tested
+
+Every promise on this page so far is a promise about SQLite rather than about Kotlin, and none of
+them can be reached by reasoning the way `logic/` can. `ProjectRepositoryTest` asks the database
+directly, against a real in-memory Room instance rather than a fake DAO — a fake would answer each
+question with whatever the test assumed:
+
+- **the cascade**, including the two-step one: blocks belong to a document, which belongs to a
+  project, so deleting a project has to reach through two foreign keys — and has to leave the
+  project sitting next to it entirely alone;
+- **the soft links**, from both ends: deleting a scene keeps the document written for it, the event
+  dated to it and the card about it, each with its link cut rather than left to dangle; deleting a
+  document leaves the card that was about it;
+- **the word counts**, through every path that can move them — typing, adding, deleting and
+  reordering a block, pasting a chapter in, filing a document under a different scene, deleting the
+  last document a scene had, and renaming a scene, which must *not* move them.
+
+It also holds the two board decisions that look like bugs until you know them: deleting a column
+strands its cards instead of deleting them, and a card cannot be moved onto another project's board.
+
+### The upgrade path
+
+`ProjectMigrationTest` is the one this app's backup story rests on. It reads `project/schemas/`,
+builds a real database from **each version that has ever shipped**, and opens it through the same
+builder the app uses (`ProjectDatabase.builder`) — so a migration added to the app is a migration
+the test is already running. Opening is the assertion: Room compares every table, column, index and
+foreign key it finds against what the entities describe, and throws with the difference.
+
+The subtle part is what stops that test agreeing with itself. Change an entity without raising
+`PROJECT_DB_VERSION` and Room does not complain — it silently **rewrites** the exported schema for
+the version already on disk, so the test would build a database from the new shape and cheerfully
+confirm it. The phone that has had the app since release still holds the old shape. So the test
+pins each released version's **identity hash** as a constant of its own, where regenerating a schema
+cannot reach it, and fails naming the version that moved. There is deliberately no destructive
+fallback in the builder: for most of the suite that would cost a re-sync, and here it would delete
+the only copy of somebody's writing.
+
 ## Backup
 
 `ProjectBackupContributor` contributes the whole `project.db` plus Project's own `project_*`
-preferences to the Operations Sandbox archive, keyed under `project/`.
+preferences to the Operations Sandbox archive, keyed under `project/`. Because it is the whole file,
+the versions kept for each document come with it and need no handling of their own.
+
+Restoring an archive written by an **older** version of the app puts that older database on disk, so
+the restore path and the upgrade path are the same path: the file is swapped in, Project reopens it,
+and the migration runs. That is why `ProjectMigrationTest` opening a version 1 file through the
+production builder is not an abstract exercise — it is the restore.
 
 The database is copied as **bytes**, not re-serialised as JSON, and that matters more here than
 anywhere else in the suite: a project's documents may be the only copy of that writing that exists —

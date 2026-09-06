@@ -7,13 +7,22 @@ plugins {
     // written in, the lore it is consistent with, the timeline it happens on, and the board it gets
     // built through. Those five are not five apps — they are five views of one project, which is why
     // they share a database and a workspace rather than living in separate modules. What Project
-    // deliberately does not own is *when you will do it*: scheduling a day's work is LifeOps' job,
-    // and a second planner would be a second answer to "what am I doing today".
+    // deliberately does not own is *when you will do it*. A card can carry a due date — that is a
+    // fact about the work, the same one Maintenance keeps about a furnace — but scheduling a day's
+    // work is LifeOps' job, and a second planner would be a second answer to "what am I doing
+    // today". See logic/Due.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
+
+/**
+ * Where Room's exported schemas live: written by KSP, read back by `ProjectMigrationTest`, which
+ * builds a database from each of them and opens it through the production builder. Named once so the
+ * writer and the reader cannot drift apart.
+ */
+val schemaRoot = "$projectDir/schemas"
 
 android {
     namespace = "com.project.app"
@@ -36,17 +45,41 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        // Robolectric needs the merged Android resources to stand a context up. The store is the one
+        // part of this module that cannot be tested by reasoning about it — what the repository and
+        // the schema tests ask about (that a cascade really cascades, that a soft link is cut rather
+        // than followed, that a database written at version 1 still opens) is SQLite's behaviour and
+        // not Kotlin's — so `gradle :project:testDebugUnitTest` covers it on the JVM, without a device.
+        unitTests.isIncludeAndroidResources = true
+
+        // The schemas Room exports, handed to the tests that read them. `ProjectMigrationTest` builds
+        // a database from each one and opens it through the production builder, so the DDL it tests
+        // is the DDL that shipped rather than a copy of it that could drift.
+        unitTests.all {
+            it.systemProperty("project.schemaDir", "$schemaRoot/com.project.app.data.db.ProjectDatabase")
+        }
+    }
 }
 
 ksp {
-    arg("room.schemaLocation", "$projectDir/schemas")
+    arg("room.schemaLocation", schemaRoot)
 }
 
 dependencies {
-    // The suite's shared appearance — one theme, one store, this app's colour identity in it.
+    // The suite's shared appearance and its shared controls — one theme, one store, this app's
+    // colour identity in it, and the one text, note and number field every app uses. No app
+    // grows its own again; see docs/PROJECT.md.
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). Project supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // LifeOps, for the week. Project knows *when* a card is due; LifeOps is where a week is planned,
+    // so a dated card publishes itself there as a task on the day it falls due and takes the tick
+    // back (see data/repository/LifeOpsTasks). The dependency points one way only: LifeOps announces
+    // completions on a bus and knows nothing about who is listening. Exactly the arrow Maintenance
+    // draws, for exactly the same reason.
+    implementation(project(":lifeops"))
     // The suite's shelf. A project's *files* — the brief, the contract, the reference PDFs somebody
     // was sent — are documents the household filed, not writing the project is made of, and they
     // belong in the one place the suite keeps documents. The arrow points into Repository and never
@@ -73,4 +106,9 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // The store, on the JVM. Everything above the repository is pure logic and needs nothing to test
+    // it; the database is the exception, because the guarantees it makes are SQLite's. The same pair
+    // Maintenance uses, at the same versions.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }
