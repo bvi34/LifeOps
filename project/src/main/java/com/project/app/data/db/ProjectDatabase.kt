@@ -22,7 +22,7 @@ import com.project.app.data.db.entities.TimelineEventEntity
  * The schema version, in one place — the backup manifest reads it from here rather than repeating
  * the number, so it can't drift from the schema the copied file was written at.
  */
-const val PROJECT_DB_VERSION = 3
+const val PROJECT_DB_VERSION = 4
 
 /**
  * Project's own store: the shelf, and the five sections of everything on it.
@@ -92,6 +92,24 @@ internal val MIGRATION_2_3 = object : Migration(2, 3) {
     }
 }
 
+/**
+ * Version 4 lets a dated card put itself on the LifeOps week.
+ *
+ * Three columns, all additive. `publishToLifeOps` defaults to 1 so a card that predates the seam
+ * opts in the way a new one would — the same choice Maintenance made for its plans, and the one
+ * that matches what somebody meant when they wrote a deadline down. The link columns start null:
+ * nothing has been published yet, which is exactly true.
+ */
+internal val MIGRATION_3_4 = object : Migration(3, 4) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE `board_cards` ADD COLUMN `publishToLifeOps` INTEGER NOT NULL DEFAULT 1"
+        )
+        db.execSQL("ALTER TABLE `board_cards` ADD COLUMN `lifeOpsTaskId` TEXT")
+        db.execSQL("ALTER TABLE `board_cards` ADD COLUMN `publishedDue` INTEGER")
+    }
+}
+
 @Database(
     entities = [
         ProjectEntity::class,
@@ -142,7 +160,7 @@ abstract class ProjectDatabase : RoomDatabase() {
             name: String = DB_NAME
         ): RoomDatabase.Builder<ProjectDatabase> =
             Room.databaseBuilder(context.applicationContext, ProjectDatabase::class.java, name)
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         /** Close and drop the singleton so a restore can swap the underlying file. */
         fun closeInstance() {

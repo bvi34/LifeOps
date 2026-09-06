@@ -92,7 +92,16 @@ data class BoardState(
 
 class BoardViewModel(
     private val repo: ProjectRepository,
-    private val projectId: String
+    private val projectId: String,
+    /**
+     * Ask for a hand-off round.
+     *
+     * Called after every edit that could change what the week should hold — a date set or dropped,
+     * a card renamed, moved into or out of the finished column, or deleted. The round is idempotent
+     * and cheap when there is nothing to do, so this errs towards calling it: reasoning about which
+     * edits *cannot* matter is exactly how a card ends up with a stale task on somebody's week.
+     */
+    private val sync: () -> Unit = {}
 ) : ViewModel() {
 
     val state: StateFlow<BoardState> = combine(
@@ -112,12 +121,24 @@ class BoardViewModel(
     fun addCard(columnId: String, title: String) =
         viewModelScope.launch { repo.addCard(projectId, columnId, title) }
 
-    fun updateCard(card: BoardCard) = viewModelScope.launch { repo.updateCard(projectId, card) }
+    fun updateCard(card: BoardCard) = viewModelScope.launch {
+        repo.updateCard(projectId, card)
+        sync()
+    }
 
-    fun deleteCard(id: String) = viewModelScope.launch { repo.deleteCard(projectId, id) }
+    fun deleteCard(id: String) = viewModelScope.launch {
+        // The task goes with the card, and the round works that out for itself: the card is gone,
+        // so the next snapshot has nothing asking for it and the link it left behind is retired.
+        repo.deleteCard(projectId, id)
+        sync()
+    }
 
-    fun moveCard(cardId: String, toColumnId: String, toIndex: Int) =
-        viewModelScope.launch { repo.moveCard(projectId, cardId, toColumnId, toIndex) }
+    fun moveCard(cardId: String, toColumnId: String, toIndex: Int) = viewModelScope.launch {
+        repo.moveCard(projectId, cardId, toColumnId, toIndex)
+        // Moving into the finished column is how a card is done here, which is the moment its task
+        // should come off the week — and moving back out is the moment it should return.
+        sync()
+    }
 
     fun addColumn(name: String) = viewModelScope.launch { repo.addColumn(projectId, name) }
 
@@ -131,10 +152,12 @@ class BoardViewModel(
 
     class Factory(
         private val repo: ProjectRepository,
-        private val projectId: String
+        private val projectId: String,
+        private val sync: () -> Unit = {}
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = BoardViewModel(repo, projectId) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            BoardViewModel(repo, projectId, sync) as T
     }
 }
 
@@ -520,6 +543,7 @@ private fun CardDialog(
     var outlineNodeId by remember(card.id) { mutableStateOf(card.outlineNodeId) }
     var docId by remember(card.id) { mutableStateOf(card.docId) }
     var dueOn by remember(card.id) { mutableStateOf(Due.dateOf(card.dueOn)) }
+    var publish by remember(card.id) { mutableStateOf(card.publishToLifeOps) }
     var pickingOutline by remember { mutableStateOf(false) }
     var pickingDoc by remember { mutableStateOf(false) }
 
@@ -571,6 +595,17 @@ private fun CardDialog(
                     display = { Due.standing(it, LocalDate.now())?.label ?: SuiteDates.toIso(it) }
                 )
 
+                // Offered only once there is a date, because without one there is nothing a week
+                // could hold — a switch that does nothing is worse than no switch.
+                if (dueOn != null) {
+                    TextButton(onClick = { publish = !publish }) {
+                        Text(
+                            if (publish) "On the LifeOps week ✓"
+                            else "Not on the LifeOps week"
+                        )
+                    }
+                }
+
                 TextButton(onClick = onDelete) { Text("Delete card") }
             }
         },
@@ -582,7 +617,8 @@ private fun CardDialog(
                         notes = notes.ifBlank { null },
                         outlineNodeId = outlineNodeId,
                         docId = docId,
-                        dueOn = dueOn?.toEpochDay()
+                        dueOn = dueOn?.toEpochDay(),
+                        publishToLifeOps = publish
                     )
                 )
             }) { Text("Save") }

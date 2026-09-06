@@ -169,6 +169,12 @@ class ProjectMigrationTest {
             // null is the only honest answer — inventing one from `createdAt` would fill a restored
             // board with dates nobody chose.
             assertNull("a card from version 1 came back with a deadline", card?.dueOn)
+            // Version 4 added the hand-off. A card that predates it opts in the way a new one
+            // would — the choice that matches what somebody meant by writing a deadline down —
+            // and has published nothing, which is exactly true.
+            assertTrue("a card from version 1 came back opted out", card!!.publishToLifeOps)
+            assertNull(card.lifeOpsTaskId)
+            assertNull(card.publishedDue)
         } finally {
             db.close()
         }
@@ -389,7 +395,10 @@ class ProjectMigrationTest {
             // 2 added the two tables that keep versions of a document. Purely additive.
             2 to "d5c1f5fc309f019f2ec00621bec8a41f",
             // 3 put a nullable due date on a board card — one ALTER TABLE, no data touched.
-            3 to "b63a408af7a4c01ed6018ff8c4cf4b33"
+            3 to "b63a408af7a4c01ed6018ff8c4cf4b33",
+            // 4 let a dated card publish itself onto the LifeOps week: the switch and the two link
+            // columns. Additive, and the switch defaults on.
+            4 to "4eef8d717ec36817422c664fc0ac7a0f"
         )
     }
 

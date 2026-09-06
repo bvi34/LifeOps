@@ -74,6 +74,12 @@ dependencies {
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). Project supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // LifeOps, for the week. Project knows *when* a card is due; LifeOps is where a week is planned,
+    // so a dated card publishes itself there as a task on the day it falls due and takes the tick
+    // back (see data/repository/LifeOpsTasks). The dependency points one way only: LifeOps announces
+    // completions on a bus and knows nothing about who is listening. Exactly the arrow Maintenance
+    // draws, for exactly the same reason.
+    implementation(project(":lifeops"))
     // The suite's shelf. A project's *files* — the brief, the contract, the reference PDFs somebody
     // was sent — are documents the household filed, not writing the project is made of, and they
     // belong in the one place the suite keeps documents. The arrow points into Repository and never

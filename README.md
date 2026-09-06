@@ -206,13 +206,22 @@ the receipts.
 > finished card is never late however late it was, and a date that has already gone is remarked on
 > rather than refused, because people write down deadlines they have missed.
 >
+> A dated card **hands itself to the LifeOps week** — a task on the day it falls due, ticked in
+> either place and finished in both. That is the same one-way seam Maintenance uses (`:project ->
+> :lifeops`, plus the bus LifeOps announces completions on), and it is a reconciliation rather than
+> an event handler: a round runs on a tick, on opening Project and after every card edit, and
+> reaches the same answer each time, so a missed announcement costs latency and never correctness.
+> Publishing **adopts** an open task of the same title rather than adding a second beside it — if
+> you already wrote that row by hand, it is the job. Ticking it in LifeOps moves the card to the
+> board's finished column; dragging it there takes the task off the week.
+>
 > Project is **not on the sync spine**: nothing else in the suite writes into a
 > project, so there is nothing to reconcile. The tree walks, the Markdown round trip, the wiki index,
 > the timeline reading, the board moves, the compile, the search, the rules about which versions of a
 > document are worth keeping and the addresses that say where in Project to open are pure JVM in
-> `project/logic/` and covered by 164 unit tests. The store beneath them — the cascades, the soft
+> `project/logic/` and covered by 193 unit tests. The store beneath them — the cascades, the soft
 > links, the word-count roll-up, the versions, a linked address checked against what is actually
-> there, and the schema's upgrade path — has 33 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
+> there, and the schema's upgrade path — has 41 of its own, run against a real database on the JVM. It requests no permissions and has no `INTERNET`; nothing it holds
 > leaves the device.
 
 > **Maintenance** (the asset and upkeep register) is a peer module — see **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)**.

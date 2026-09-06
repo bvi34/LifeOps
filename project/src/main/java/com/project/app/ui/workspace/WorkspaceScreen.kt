@@ -135,7 +135,10 @@ fun ProjectWorkspace(
     onOpenDoc: (Doc) -> Unit,
     onSearch: () -> Unit,
     onCompile: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    /** Ask for a hand-off round — see `BoardViewModel`. Passed down rather than fetched from the
+     *  app singleton, so a screen still knows nothing about how the app is assembled. */
+    onCardsChanged: () -> Unit = {}
 ) {
     val vm: WorkspaceViewModel = viewModel(
         key = "workspace-$projectId",
@@ -238,7 +241,7 @@ fun ProjectWorkspace(
                 ProjectSection.BOARD -> {
                     val boardVm: BoardViewModel = viewModel(
                         key = "board-$projectId",
-                        factory = BoardViewModel.Factory(repo, projectId)
+                        factory = BoardViewModel.Factory(repo, projectId, onCardsChanged)
                     )
                     BoardScreen(boardVm, current.kind)
                 }

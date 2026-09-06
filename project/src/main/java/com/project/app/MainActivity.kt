@@ -79,7 +79,8 @@ class MainActivity : ComponentActivity() {
                     repo = app.repository,
                     prefs = app.prefs,
                     openDestination = openDestination,
-                    onDestinationConsumed = { openDestination = null }
+                    onDestinationConsumed = { openDestination = null },
+                    onCardsChanged = app::syncNow
                 )
             }
         }
@@ -91,6 +92,18 @@ class MainActivity : ComponentActivity() {
      * running rather than stacking a new copy of the app on top of it — and the intent arrives
      * here instead of through `onCreate`.
      */
+    /**
+     * Reconcile the board's due dates with the week whenever Project comes forward.
+     *
+     * The completion bus catches ticks as they happen, but a week can also close, a task be deleted
+     * or a date be edited while this app was not running — and a round is a reconciliation, so
+     * running one on the way in reaches the right answer without having caught any of that.
+     */
+    override fun onStart() {
+        super.onStart()
+        ProjectApp.get(this).syncNow()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -134,7 +147,8 @@ private fun ProjectNavGraph(
     repo: ProjectRepository,
     prefs: ProjectPrefs,
     openDestination: ProjectDestination? = null,
-    onDestinationConsumed: () -> Unit = {}
+    onDestinationConsumed: () -> Unit = {},
+    onCardsChanged: () -> Unit = {}
 ) {
     var sectionKey by rememberSaveable { mutableStateOf(prefs.lastSection ?: ProjectSection.OUTLINE.key) }
     val section = ProjectSection.fromKey(sectionKey)
@@ -243,6 +257,7 @@ private fun ProjectNavGraph(
                 onOpenDoc = { doc -> nav.navigate("project/$projectId/doc/${doc.id}") },
                 onSearch = { nav.navigate("project/$projectId/search") },
                 onCompile = { nav.navigate("project/$projectId/compile") },
+                onCardsChanged = onCardsChanged,
                 onBack = {
                     prefs.lastProjectId = null
                     nav.popBackStack()

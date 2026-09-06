@@ -50,6 +50,7 @@ import com.operations.backupkit.AppId
 import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteTextField
 import com.project.app.data.model.Project
+import com.project.app.ProjectApp
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectKind
 import com.project.app.logic.ProjectPulse
@@ -179,6 +180,14 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     val going = project
+                    // Read before the delete: a project's cards cascade with it, so after this the
+                    // round can never see them again to work out that their tasks should go — and
+                    // somebody would be left with a week full of tasks for a project that no longer
+                    // exists and no way to tell where they came from.
+                    scope.launch {
+                        val app = ProjectApp.get(context)
+                        app.retireTasks(app.repository.publishedTaskIdsOf(going.id))
+                    }
                     vm.deleteProject(going.id)
                     // The files attached to it go too, and Repository does not cascade on somebody
                     // else's rules — the owning app says what deleting one of its records means.

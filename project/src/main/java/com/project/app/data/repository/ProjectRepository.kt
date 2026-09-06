@@ -22,6 +22,8 @@ import com.project.app.logic.Revisions
 import com.project.app.data.model.Project
 import com.project.app.logic.Board
 import com.project.app.logic.BoardCard
+import com.project.app.logic.CardStore
+import com.project.app.logic.CardTasks
 import com.project.app.logic.BoardColumn
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
@@ -67,7 +69,7 @@ import java.util.UUID
  * every write that can change a count updates it in the same breath — see [refreshDocCount], which
  * is called from every block edit and is the single place that keeps the two in step.
  */
-class ProjectRepository(private val dao: ProjectDao) {
+class ProjectRepository(private val dao: ProjectDao) : CardStore {
 
     private fun now() = System.currentTimeMillis()
     private fun newId() = UUID.randomUUID().toString()
@@ -879,6 +881,9 @@ class ProjectRepository(private val dao: ProjectDao) {
                 outlineNodeId = outlineNodeId,
                 docId = docId,
                 dueOn = dueOn,
+                publishToLifeOps = true,
+                lifeOpsTaskId = null,
+                publishedDue = null,
                 createdAt = now(),
                 doneAt = null
             )
@@ -897,7 +902,10 @@ class ProjectRepository(private val dao: ProjectDao) {
                 docId = card.docId,
                 // Settable and clearable in the same breath: a deadline that has been dropped has
                 // to be droppable, or the only way to lose one is to delete the card.
-                dueOn = card.dueOn
+                dueOn = card.dueOn,
+                publishToLifeOps = card.publishToLifeOps
+                // The link is deliberately absent: `BoardCard` does not carry it, so no edit made
+                // on a screen can wipe it and strand a task on somebody's week.
             )
         )
         touchProject(projectId)
@@ -939,6 +947,109 @@ class ProjectRepository(private val dao: ProjectDao) {
         )
         touchProject(projectId)
     }
+
+    // ------------------------------------------------------------------ the LifeOps week
+
+    /**
+     * Every card that could have anything to do with the week, with the facts to decide on.
+     *
+     * Read in one go across every project rather than per board: a round is about the *week*, and
+     * the week does not care which project a deadline came from. Cards with neither a date nor a
+     * link are dropped here rather than in the round — they can never produce an action, and
+     * carrying every card in the household through a decision to reach Idle is work for nothing.
+     */
+    override suspend fun cardSnapshots(): List<CardTasks.CardSnapshot> {
+        val projects = dao.allProjects().associateBy { it.id }
+        val doneColumns = dao.allColumns().filter { it.isDone }.mapTo(mutableSetOf()) { it.id }
+
+        return dao.allCards()
+            .filter { it.dueOn != null || it.lifeOpsTaskId != null }
+            .mapNotNull { row ->
+                val project = projects[row.projectId] ?: return@mapNotNull null
+                CardTasks.CardSnapshot(
+                    card = row.toLogic(),
+                    projectName = project.name,
+                    // A card in a column the board calls finished has nothing left to ask of a
+                    // planner — and one whose column was deleted is stranded rather than finished,
+                    // which is why this asks the column and not merely whether the id is known.
+                    inDoneColumn = row.columnId in doneColumns,
+                    link = CardTasks.TaskLink(row.lifeOpsTaskId, row.publishedDue)
+                )
+            }
+    }
+
+    override suspend fun setCardLink(cardId: String, taskId: String?, publishedDue: Long?) {
+        val existing = dao.getCard(cardId) ?: return
+        dao.upsertCard(existing.copy(lifeOpsTaskId = taskId, publishedDue = publishedDue))
+    }
+
+    /**
+     * Finish the card a tick in LifeOps stands for.
+     *
+     * "Finished" on a board means being in the column the board calls finished, so the card is
+     * *moved* — through the same `Board.move` a drag goes through, so the position arithmetic and
+     * the stamping of `doneAt` happen exactly once, in one place. A board whose finished column has
+     * been deleted still has to be able to take the tick, so the card is stamped where it stands
+     * rather than the completion being dropped on the floor.
+     *
+     * Returns whether anything actually moved: a card already finished here reports false, so a
+     * round that runs twice over the same tick counts it once.
+     */
+    override suspend fun completeFromWeek(cardId: String, completedAt: Long): Boolean {
+        val row = dao.getCard(cardId) ?: return false
+        val projectId = row.projectId
+        val columns = dao.getColumns(projectId)
+        val doneColumn = columns.firstOrNull { it.isDone }
+
+        // Let go of the task either way: it has been ticked, and nothing here should ask about it
+        // again.
+        dao.upsertCard(row.copy(lifeOpsTaskId = null, publishedDue = null))
+
+        if (doneColumn != null && row.columnId == doneColumn.id) return false
+
+        if (doneColumn == null) {
+            if (row.doneAt != null) return false
+            dao.upsertCard(dao.getCard(cardId)!!.copy(doneAt = completedAt))
+            touchProject(projectId)
+            return true
+        }
+
+        val cards = dao.getCards(projectId).map { it.toLogic() }
+        val changed = Board.move(
+            columns = columns.map { it.toLogic() },
+            cards = cards,
+            cardId = cardId,
+            toColumnId = doneColumn.id,
+            // Clamped to the end of the lane, so finished work reads in the order it was finished.
+            toIndex = Int.MAX_VALUE,
+            now = completedAt
+        )
+        if (changed.isEmpty()) return false
+
+        val byId = dao.getCards(projectId).associateBy { it.id }
+        dao.upsertCards(
+            changed.mapNotNull { card ->
+                byId[card.id]?.copy(
+                    columnId = card.columnId,
+                    sortOrder = card.sortOrder,
+                    doneAt = card.doneAt
+                )
+            }
+        )
+        touchProject(projectId)
+        return true
+    }
+
+    /**
+     * The LifeOps tasks standing for the cards of a project — read *before* it is deleted, so the
+     * caller can take them off the week afterwards.
+     *
+     * A project's cards cascade with it, which means the round can never see them again to work out
+     * that their tasks should go. Somebody would be left with a week full of tasks for a project
+     * that no longer exists and no way to tell where they came from.
+     */
+    suspend fun publishedTaskIdsOf(projectId: String): List<String> =
+        dao.getCards(projectId).mapNotNull { it.lifeOpsTaskId }
 
     // ------------------------------------------------------------------ search & compile
 
@@ -1164,6 +1275,7 @@ fun BoardCardEntity.toLogic() = BoardCard(
     outlineNodeId = outlineNodeId,
     docId = docId,
     dueOn = dueOn,
+    publishToLifeOps = publishToLifeOps,
     createdAt = createdAt,
     doneAt = doneAt
 )

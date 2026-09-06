@@ -7,6 +7,7 @@ import com.project.app.data.db.ProjectDatabase
 import com.project.app.logic.BlockType
 import com.project.app.logic.DocBlock
 import com.project.app.logic.LoreCategory
+import com.project.app.logic.CardTasks
 import com.project.app.logic.ProjectDestination
 import com.project.app.logic.SearchSection
 import com.project.app.logic.ProjectKind
@@ -503,6 +504,148 @@ class ProjectRepositoryTest {
         // progress through it. Finishing something early does not move its deadline.
         assertEquals(due, dao.getCard(cardId)?.dueOn)
         assertNotNull("the card was not marked finished", dao.getCard(cardId)?.doneAt)
+    }
+
+    // ------------------------------------------------------------------ the hand-off's store side
+
+    @Test
+    fun `only cards a week could care about are put in front of the round`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val columnId = dao.getColumns(projectId).first().id
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+
+        val dated = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        repo.addCard(projectId, columnId, "Someday, maybe")
+
+        // Undated but still holding a live task: the deadline was dropped and the task has to come
+        // off the week, which only happens if this card is looked at.
+        val undatedButOnTheWeek = repo.addCard(projectId, columnId, "Deadline called off")
+        repo.setCardLink(undatedButOnTheWeek, taskId = "task-1", publishedDue = due)
+
+        // Undated, no task, but remembering a day it was once published for. There is nothing left
+        // to decide — no date to publish and no task to take down — so it is dropped here rather
+        // than carried through a decision that can only reach Idle.
+        val spent = repo.addCard(projectId, columnId, "Was on the week once")
+        repo.setCardLink(spent, taskId = null, publishedDue = due)
+
+        val snapshots = repo.cardSnapshots()
+
+        assertEquals(setOf(dated, undatedButOnTheWeek), snapshots.map { it.card.id }.toSet())
+        assertEquals("The Kestrel", snapshots.first { it.card.id == dated }.projectName)
+        assertEquals(
+            CardTasks.TaskLink("task-1", due),
+            snapshots.first { it.card.id == undatedButOnTheWeek }.link
+        )
+    }
+
+    @Test
+    fun `a card in the finished column is reported as finished`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
+
+        assertFalse(repo.cardSnapshots().single { it.card.id == cardId }.inDoneColumn)
+
+        repo.moveCard(projectId, cardId, columns.last { it.isDone }.id, 0)
+
+        assertTrue(repo.cardSnapshots().single { it.card.id == cardId }.inDoneColumn)
+    }
+
+    @Test
+    fun `a card stranded by a deleted column is not mistaken for finished`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val done = columns.last { it.isDone }
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+        val cardId = repo.addCard(projectId, done.id, "Fix the thing", dueOn = due)
+
+        repo.deleteColumn(projectId, done.id)
+
+        // Its column id now names nothing. Stranded is not finished — the work still wants doing,
+        // and reading "unknown column" as done would quietly take it off somebody's week.
+        assertFalse(repo.cardSnapshots().single { it.card.id == cardId }.inDoneColumn)
+    }
+
+    @Test
+    fun `a link survives editing the card it is on`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val columnId = dao.getColumns(projectId).first().id
+        val due = LocalDate.of(2026, 3, 14).toEpochDay()
+        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        repo.setCardLink(cardId, taskId = "task-1", publishedDue = due)
+
+        repo.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(title = "Rewrite the harbour"))
+
+        // `BoardCard` deliberately does not carry the link, so no edit made on a screen can wipe it
+        // and strand a task on somebody's week with nothing pointing at it.
+        assertEquals("task-1", dao.getCard(cardId)?.lifeOpsTaskId)
+        assertEquals(due, dao.getCard(cardId)?.publishedDue)
+        assertEquals("Rewrite the harbour", dao.getCard(cardId)?.title)
+    }
+
+    @Test
+    fun `a tick moves the card into the finished column and lets go of the task`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val done = columns.last { it.isDone }
+        val cardId = repo.addCard(
+            projectId, columns.first().id, "Fix the thing",
+            dueOn = LocalDate.of(2026, 3, 14).toEpochDay()
+        )
+        repo.setCardLink(cardId, taskId = "task-1", publishedDue = 0L)
+
+        assertTrue(repo.completeFromWeek(cardId, completedAt = 42L))
+
+        assertEquals(done.id, dao.getCard(cardId)?.columnId)
+        assertEquals(42L, dao.getCard(cardId)?.doneAt)
+        assertNull(dao.getCard(cardId)?.lifeOpsTaskId)
+        assertNull(dao.getCard(cardId)?.publishedDue)
+    }
+
+    @Test
+    fun `a second tick over the same card changes nothing and says so`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing")
+
+        assertTrue(repo.completeFromWeek(cardId, completedAt = 42L))
+        // Reported false, so a round running twice over one tick counts it once.
+        assertFalse(repo.completeFromWeek(cardId, completedAt = 99L))
+        assertEquals(42L, dao.getCard(cardId)?.doneAt)
+    }
+
+    @Test
+    fun `a board with no finished column still takes the tick`() = runTest {
+        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val columns = dao.getColumns(projectId)
+        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing")
+        columns.filter { it.isDone }.forEach { repo.deleteColumn(projectId, it.id) }
+
+        assertTrue(repo.completeFromWeek(cardId, completedAt = 42L))
+
+        // Nowhere to move it to, so it is stamped where it stands. Dropping the completion on the
+        // floor would lose a tick somebody made.
+        assertEquals(42L, dao.getCard(cardId)?.doneAt)
+        assertEquals(columns.first().id, dao.getCard(cardId)?.columnId)
+    }
+
+    @Test
+    fun `the tasks of a project can be read before it is deleted`() = runTest {
+        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val columnId = dao.getColumns(projectId).first().id
+        val a = repo.addCard(projectId, columnId, "One", dueOn = 20_000L)
+        val b = repo.addCard(projectId, columnId, "Two", dueOn = 20_001L)
+        repo.addCard(projectId, columnId, "Three")
+        repo.setCardLink(a, "task-a", 20_000L)
+        repo.setCardLink(b, "task-b", 20_001L)
+
+        // Read before the delete, because a project's cards cascade with it and no later round can
+        // see them to work out that their tasks should come off the week.
+        assertEquals(setOf("task-a", "task-b"), repo.publishedTaskIdsOf(projectId).toSet())
+
+        repo.deleteProject(projectId)
+        assertTrue(repo.cardSnapshots().none { it.card.id in setOf(a, b) })
     }
 
     // ------------------------------------------------------------------ opening at an address

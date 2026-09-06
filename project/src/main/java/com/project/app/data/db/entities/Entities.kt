@@ -267,6 +267,21 @@ data class BoardCardEntity(
     val docId: String?,
     /** Epoch day this card is due, or null. See `logic/Due` for the line this sits on. */
     val dueOn: Long?,
+    /**
+     * Whether a dated card should put itself on the LifeOps week. On by default, because a deadline
+     * you wrote down is one you want to be reminded of — and off per card for the deadline that is
+     * a note to yourself rather than a job for a Tuesday.
+     */
+    val publishToLifeOps: Boolean,
+    /**
+     * The LifeOps task standing for this card, and the day it was published for.
+     *
+     * Managed only by the hand-off round (`logic/CardRound`), never by an edit on a screen: the UI
+     * hands back a `BoardCard`, which deliberately does not carry these, so no card edit can wipe
+     * the link and strand a task on somebody's week with nothing pointing at it.
+     */
+    val lifeOpsTaskId: String?,
+    val publishedDue: Long?,
     val createdAt: Long,
     val doneAt: Long?
 )

@@ -36,6 +36,8 @@ data class BoardCard(
      * keeps this from being a second planner. See `logic/Due`.
      */
     val dueOn: Long? = null,
+    /** Whether a dated card should put itself on the LifeOps week. See `logic/CardTasks`. */
+    val publishToLifeOps: Boolean = true,
     val createdAt: Long = 0L,
     val doneAt: Long? = null
 )

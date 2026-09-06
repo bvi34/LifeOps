@@ -235,9 +235,53 @@ Three rules it holds:
   year. The month names are spelled out in `logic/` rather than taken from a formatter, so a test
   that passes in London passes in Berlin.
 
-This is also what makes a **hand-off to the LifeOps week** possible, which was not before: a card
-with no date is nothing a planner can place. That hand-off does not exist yet — see
-[MAINTENANCE.md](MAINTENANCE.md#the-lifeops-week) for the shape it will take.
+This is also what makes the **hand-off to the LifeOps week** possible, which was not before: a card
+with no date is nothing a planner can place. See [The LifeOps week](#the-lifeops-week) below.
+
+## The LifeOps week
+
+A card with a due date puts itself on the LifeOps week as a task dated the day it falls due, and
+ticking it in either place finishes it in both. This is the payoff of the date existing at all:
+Project says *when a card is due* and hands that to the app that decides *when you will do it*.
+
+It is the same seam Maintenance uses for upkeep, narrowed. Both apps are library modules in one
+process, so publishing is a call into LifeOps' own `TaskService` rather than a copy of a task living
+over here — one week planner in the suite, and a door into it rather than a second one. The
+dependency points one way only (`:project -> :lifeops`); LifeOps announces completions on a bus and
+knows nothing about who is listening.
+
+**A reconciliation, not an event handler.** A round runs when a tick is announced, when Project
+comes to the foreground, and after every edit to a card, and it reaches the same answer either way.
+So a tick that arrived mid-restore, a task somebody deleted, or a week that closed and carried the
+task into a new row under a new id are all just facts the next round reads. A missed announcement
+costs latency, never correctness. Unlike Maintenance's, this round runs **once**: a schedule recurs,
+so completing one there makes something new due and needs a second pass; a card has one date and one
+outcome.
+
+What each side owns:
+
+| | |
+|---|---|
+| **Publishing** | Every dated card, unless switched off on the card. On by default, because a deadline you wrote down is one you want reminding of — off for the deadline that is a note to yourself. |
+| **The title** | "The Kestrel: Rewrite the dock scene". The project leads: a week's list is read across a dozen unrelated things, and "Rewrite the dock scene" alone is a question rather than a job. |
+| **Adopting** | Publishing adopts an *open* task of the same title rather than adding a second beside it — if you had already written that row by hand, it **is** the job. Two rows for one piece of work is the worse outcome. Within a round, an id is claimed once: two cards named the same thing do not quietly share a row where one tick would finish both. |
+| **Ticking it there** | Moves the card into the board's finished column, through the same `Board.move` a drag goes through. A board whose finished column has been deleted is stamped where it stands rather than the tick being dropped on the floor. |
+| **Ticking it here** | Dragging into the finished column takes the task off the week. |
+| **Never** | `isRecurring` (a card happens once; LifeOps repeating it would put a second engine in charge of a date this app owns) and a hard deadline (which expires the task at week close, quietly binning a card that simply did not get done). |
+
+Three failure modes it is built around, all ordinary:
+
+- **A task deleted on purpose is not put back.** The day a card was published for is remembered
+  even after the link is dropped, so re-adding only happens once the date actually changes.
+  Otherwise the app argues with somebody who took a row off their week.
+- **A task stranded in a closed week is forgotten, not deleted** — deleting it would edit a week
+  that has already been reviewed.
+- **A link cannot be wiped by editing the card.** `BoardCard` deliberately does not carry it, so
+  every screen edit goes through a type that has no way to strand a task on somebody's week.
+
+The link lives on the card (`lifeOpsTaskId`, `publishedDue`) and is written only by the round. The
+whole decision is pure — `logic/CardTasks` decides, `logic/CardRound` drives — so the hand-off is
+tested against fakes, without LifeOps and without a device.
 
 ## Versions — the way back
 
@@ -388,8 +432,10 @@ Everything that decides anything is pure Kotlin in `project/logic/`, unit-tested
 | `Revisions.kt` | Which versions of a document are worth keeping, which are copies of each other, and which fall off the end of the cap. |
 | `DeepLink.kt` | The addresses that say where in Project to open, and what is not a valid one. |
 | `Due.kt` | How a due date stands against a day, what to call it, and what Project makes of one being picked. |
+| `CardTasks.kt` | What should happen to the LifeOps task standing for a card, given what each side holds. |
+| `CardRound.kt` | Driving that decision over every card, and the two mistakes only a round can make. |
 
-That is 164 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
+That is 193 JVM unit tests. The two guarantees the tree walk makes — orphans drawn, cycles
 terminating — are each asserted directly, because both are the kind of thing that is invisible until
 the day it costs somebody a folder full of writing.
 | `ProjectKind.kt` | The vocabulary each kind of project speaks. |
