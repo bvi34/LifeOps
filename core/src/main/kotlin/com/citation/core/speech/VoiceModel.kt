@@ -30,6 +30,7 @@ package com.citation.core.speech
  * @property tokensSha256 the same for the token table.
  * @property speakers how many voices the model contains; more than one means [speaker] selects.
  * @property notes anything the reader should know before spending the megabytes.
+ * @property origin whether Citation offered this voice or the reader added it; see [VoiceOrigin].
  */
 data class VoiceModel(
     val id: String,
@@ -44,7 +45,8 @@ data class VoiceModel(
     val tokensSha256: String? = null,
     val speakers: Int = 1,
     val speaker: Int = 0,
-    val notes: String? = null
+    val notes: String? = null,
+    val origin: VoiceOrigin = VoiceOrigin.CATALOGUE
 ) {
 
     /** The weights' filename on disk. */
@@ -53,8 +55,16 @@ data class VoiceModel(
     /** The token table's filename on disk, beside the weights. */
     val tokensFileName: String get() = "$id.tokens.txt"
 
-    /** "English (US) · Medium · 60 MB" — one line for a voice picker. */
-    val summary: String get() = "$language · ${quality.label} · ${megabytes(sizeBytes)}"
+    /**
+     * "en-US · Medium · 60 MB" — one line for a voice picker.
+     *
+     * The size is dropped rather than printed as "0 MB" when it is not yet known, which is the
+     * normal state of a voice the reader added: nobody types the byte count of a file they are
+     * about to fetch, and the store fills it in once the download lands.
+     */
+    val summary: String
+        get() = if (sizeBytes > 0) "$language · ${quality.label} · ${megabytes(sizeBytes)}"
+        else "$language · ${quality.label}"
 
     companion object {
         /** Whole megabytes, rounded up, so a size never reads as smaller than the download is. */
@@ -79,6 +89,26 @@ enum class VoiceQuality(val label: String) {
 
     /** Best sounding, largest, slowest. Worth it on a current phone. */
     HIGH("High")
+}
+
+/**
+ * Where a voice came from, which is the only thing that makes one behave differently from another.
+ *
+ * A reader's own voice is otherwise an ordinary [VoiceModel] — same store, same picker, same delete
+ * button — and that is the point of the type rather than a flag: the two differ in exactly three
+ * places, and each is a consequence of one having been typed in by a person. Its definition is
+ * kept in a manifest rather than in the build, so deleting it has to forget it as well as delete
+ * its files. It carries no publisher checksum, because there is no publisher to state one. And it
+ * is listed under its own heading, so a reader can tell what they added from what they were
+ * offered.
+ */
+enum class VoiceOrigin {
+
+    /** One of the voices this build offers by name — see [VoiceCatalog]. */
+    CATALOGUE,
+
+    /** One the reader added, by link or from their own files. */
+    USER
 }
 
 /**
