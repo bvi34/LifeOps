@@ -264,9 +264,11 @@ its `install`, which is what Health does.
 
 ## Tests
 
-`gradle :repository:test` — 76 JVM tests, no emulator needed.
+`gradle :repository:test` — 91 JVM tests, no emulator needed.
 
-Forty-five of them are over `logic/` and need no SDK at all. The other thirty-one are the store's,
+Forty-five of them are over `logic/` and need no SDK at all. Fifteen are the routes' (see
+[CONNECTIONS.md](CONNECTIONS.md#repositorys-routes)), and most of those are about the addresses this
+app deliberately does not serve. The remaining thirty-one are the store's,
 and they are the ones that matter most here, because **the rows in this app are captions**: every
 other module's rows could at worst be typed in again, whereas a row that outlives its file is a
 document the household believes it has and cannot open, and a file that outlives its row is a
@@ -288,6 +290,11 @@ mortgage statement nothing will ever delete.
   they are decided on a phone — including the file that describes itself happily and then fails to
   open, which is a Google Doc with no exportable bytes and not a contrived case. `FakeSource` is a
   real `DocumentSource`, which is all Repository has ever known about any lender.
+- `RepositoryConnectionsTest` — the routes, and the line they sit on: nine addresses that must stay
+  `ROUTE_NOT_FOUND` (filing, deleting and exporting, in every spelling somebody would reach for), a
+  document named the way a sentence names it, two of the same name resolving to *neither* with both
+  named back, a kind nobody recognises refused rather than quietly filed as "Other", and a lent
+  document that can be found through a route and not written to.
 - `DeepLinkTest` — the address vocabulary: every destination surviving the round trip, a lent
   document addressed by its lender as well as its id, a key that would split into extra segments
   refused at the point of *writing* rather than misread at the point of parsing, and anything
