@@ -8,6 +8,7 @@ import com.repository.app.data.store.DocumentFiles
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
+import com.repository.app.logic.RepositoryDestination
 import com.repository.app.logic.TransferChoice
 import com.repository.app.logic.TransferItem
 import com.repository.app.source.DocumentSources
@@ -471,6 +472,80 @@ class DocumentRepositoryTest {
         DocumentSources.unregister("health")
 
         assertNull(repo.exportCopy(lent))
+    }
+
+    // ------------------------------------------------------------------ opening at a place
+
+    @Test
+    fun `an address is checked against the shelf before the shelf is narrowed to it`() = runTest {
+        val id = fileOne("Manual", owner = truck, addedAt = march)
+
+        assertEquals(
+            RepositoryDestination.Shelf,
+            repo.resolve(RepositoryDestination.Shelf)
+        )
+        assertEquals(
+            RepositoryDestination.Drawer("maintenance"),
+            repo.resolve(RepositoryDestination.Drawer("maintenance"))
+        )
+        assertEquals(
+            RepositoryDestination.Record("maintenance", "a3f2"),
+            repo.resolve(RepositoryDestination.Record("maintenance", "a3f2"))
+        )
+        assertEquals(
+            RepositoryDestination.Document(id),
+            repo.resolve(RepositoryDestination.Document(id))
+        )
+    }
+
+    @Test
+    fun `an address for something that is not there any more comes back as nothing`() = runTest {
+        val id = fileOne("Manual", owner = truck, addedAt = march)
+
+        // Advisor grounds an answer in a statement thrown away since; an asset screen hands over a
+        // record whose last document went a minute ago. The caller opens the whole shelf, which is
+        // a list, rather than a narrowed one, which is an empty screen insisting nothing is filed.
+        repo.delete(id)
+
+        assertNull(repo.resolve(RepositoryDestination.Document(id)))
+        assertNull(repo.resolve(RepositoryDestination.Record("maintenance", "a3f2")))
+        assertNull(repo.resolve(RepositoryDestination.Drawer("maintenance")))
+        assertEquals("The shelf itself is always there", RepositoryDestination.Shelf, repo.resolve(RepositoryDestination.Shelf))
+    }
+
+    @Test
+    fun `a link to a document a lender is holding resolves like any other`() = runTest {
+        DocumentSources.register(
+            FakeSource(
+                appKey = "health",
+                documents = listOf(FakeSource.document("lab-1", "Blood panel", addedAt = march))
+            )
+        )
+
+        // A lab result is on the shelf exactly as much as a filed statement, and a link to one must
+        // not depend on which app happens to be holding it.
+        assertEquals(
+            RepositoryDestination.Document("lab-1", sourceKey = "health"),
+            repo.resolve(RepositoryDestination.Document("lab-1", sourceKey = "health"))
+        )
+        // Addressed without its lender it is a different document, and not one this app has.
+        assertNull(repo.resolve(RepositoryDestination.Document("lab-1")))
+    }
+
+    @Test
+    fun `the household's drawer is a place an address can name`() = runTest {
+        fileOne("Passport", owner = DocumentOwner.HOUSEHOLD, addedAt = march)
+        fileOne("Manual", owner = truck, addedAt = march)
+
+        assertEquals(RepositoryDestination.Drawer(null), repo.resolve(RepositoryDestination.Drawer(null)))
+    }
+
+    @Test
+    fun `a link into an app that has filed nothing is nothing, not an empty drawer`() = runTest {
+        fileOne("Passport", owner = DocumentOwner.HOUSEHOLD, addedAt = march)
+
+        assertNull(repo.resolve(RepositoryDestination.Drawer("maintenance")))
+        assertNull(repo.resolve(RepositoryDestination.Record("maintenance", "a3f2")))
     }
 
     // ------------------------------------------------------------------ a reviewed batch

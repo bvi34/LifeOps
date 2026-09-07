@@ -35,11 +35,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
+import com.repository.app.MainActivity
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
+import com.repository.app.logic.RepositoryDestination
 import com.repository.app.logic.Transfer
 import com.repository.app.ui.drive.DriveGrabDialog
 import com.repository.app.ui.drive.DriveSaveDialog
@@ -165,9 +167,27 @@ fun DocumentsPanel(
             }
         }
 
-        if (documents.size > 1) {
-            TextButton(onClick = { saving = documents }) {
-                Text("Save all ${documents.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+        if (documents.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // The second door, from inside the first. This panel shows what is filed *here*;
+                // the shelf shows it next to everything else the household has, which is where
+                // somebody goes when the manual they want turns out to have been filed against the
+                // house rather than the furnace. It opens narrowed to this record and one press from
+                // the rest — see `logic/RepositoryDestination`.
+                TextButton(
+                    onClick = {
+                        context.startActivity(
+                            MainActivity.intentFor(context, RepositoryDestination.Record(appKey, recordKey))
+                        )
+                    }
+                ) {
+                    Text("On the shelf", style = MaterialTheme.typography.labelMedium)
+                }
+                if (documents.size > 1) {
+                    TextButton(onClick = { saving = documents }) {
+                        Text("Save all ${documents.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
 

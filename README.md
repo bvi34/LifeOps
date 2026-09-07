@@ -358,7 +358,12 @@ the receipts.
 > Solved once per app that becomes five stores, five backups, and a household that has to remember
 > where it filed something. So there is one shelf with **two doors onto the same documents** — its own
 > screen, where the mortgage statement is findable without opening Maintenance, and a section it
-> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace.
+> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace. The two doors
+> open onto each other: the shelf can be **opened at a place** rather than merely started — one
+> drawer, one asset's documents, one document — and the section on the asset carries the button that
+> does it. A destination is a filter on the one list and never a screen, so the deepest link still
+> lands you on the shelf with everything else one press away, and an address naming a document
+> deleted since opens the whole list rather than an empty screen insisting nothing is filed.
 >
 > A document knows what it is about by **carrying a label, not a foreign key**: Maintenance says "this
 > is about `a3f2`, which is called *2018 Jeep Wrangler*", and Repository understands none of it — the

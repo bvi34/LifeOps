@@ -8,6 +8,7 @@ import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
+import com.repository.app.logic.RepositoryDestination
 import com.repository.app.logic.Shelf
 import com.repository.app.logic.Transfer
 import com.repository.app.logic.TransferChoice
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -229,6 +231,47 @@ class DocumentRepository(
     /** Delete every document filed against one record. Called by the owning app, never guessed at. */
     suspend fun deleteFiledOn(appKey: String, recordKey: String) {
         dao.filedBy(appKey).filter { it.ownerKey == recordKey }.forEach { delete(it.id) }
+    }
+
+    // ------------------------------------------------------------------ opening at a place
+
+    /**
+     * An address checked against what is actually on the shelf, or null if the thing it names has
+     * gone.
+     *
+     * Every way into this app from outside names rows by id, and by the time one is opened the row
+     * may not be there: Advisor can ground an answer in a statement thrown away since, and an asset
+     * screen can hand over a record whose last document was deleted on another screen a minute ago.
+     * So a destination is resolved *before* the shelf is narrowed to it, and a stale one comes back
+     * null — the caller opens the shelf plainly, which is the whole list rather than an empty one.
+     *
+     * Resolution is against the **merged** shelf, sources included, because a lent document is on
+     * the shelf exactly as much as a filed one and a link to a lab result must not depend on which
+     * app happens to be holding it.
+     */
+    suspend fun resolve(destination: RepositoryDestination): RepositoryDestination? {
+        if (destination is RepositoryDestination.Shelf) return destination
+        val shelf = observeShelf().first()
+        return when (destination) {
+            // Handled above; repeated so this stays an exhaustive `when` over the destinations
+            // rather than a `when` with an else that would swallow the next one somebody adds.
+            is RepositoryDestination.Shelf -> destination
+
+            is RepositoryDestination.Drawer ->
+                destination.takeIf { shelf.any { doc -> doc.owner.appKey == destination.appKey } }
+
+            is RepositoryDestination.Record -> destination.takeIf {
+                shelf.any { doc ->
+                    doc.owner.appKey == destination.appKey && doc.owner.recordKey == destination.recordKey
+                }
+            }
+
+            is RepositoryDestination.Document -> destination.takeIf {
+                shelf.any { doc ->
+                    doc.id == destination.documentId && doc.sourceKey == destination.sourceKey
+                }
+            }
+        }
     }
 
     // ------------------------------------------------------------------ handing one over

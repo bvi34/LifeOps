@@ -155,6 +155,40 @@ The remembered folder is **not** carried by the backup. It is a URI granted by a
 device to this install; restored onto a new phone it names a folder nothing has permission to open.
 Forgetting is honest — the first export after a restore asks once, and remembers again.
 
+## Being pointed at
+
+The shelf can be opened **at a place**, not only started. `logic/RepositoryDestination` is the
+vocabulary — the shelf, one drawer, one record's documents, one document — and `RepositoryLinks`
+writes each as an address (`drawer/maintenance/a3f2`, `lent/health/lab-1`) for
+`MainActivity.intentFor` to put on an intent.
+
+Three things follow from what this app is:
+
+- **A destination is a filter on the one list, never a screen.** The deepest link still lands
+  somebody on the shelf, narrowed, with a line saying what they are looking at and everything else
+  one press away. A drawer you have to open to see into is a folder by another name, and this app
+  exists because a household should not have had to file things correctly to find them. The drawer
+  chips and a deep link are consequently the *same* piece of state.
+- **A lent document is addressed by its lender as well as its id** (`lent/health/lab-1`). An id is
+  only unique inside the app that minted it, which is why the shelf keys its rows on the pair;
+  addressing one by id alone is a link that lands on somebody else's document the first time two
+  apps mint the same one.
+- **An address is checked before the shelf is narrowed to it.** `DocumentRepository.resolve` looks
+  for the thing on the merged shelf — sources included — and a destination naming something that has
+  gone comes back null, which every caller reads as "open the shelf". Advisor can ground an answer in
+  a statement thrown away since; landing somebody on an empty screen insisting nothing is filed is
+  worse than landing them on the list.
+
+The intent is **explicit**, with no URL scheme and no exported filter beyond the activity itself.
+This module declares no permissions and holds the household's paperwork; a `repository://` scheme
+would let anything on the phone address a mortgage statement by URI, which is a surface a filing
+cabinet has no reason to offer for a suite that shares one process.
+
+The first caller is the panel itself: a record's documents section carries an **On the shelf** button
+that opens the shelf narrowed to that record, which is the second door being opened from inside the
+first. Advisor is the obvious next one — it already reads the shelf through
+`RepositoryKnowledgeSource` and can now take somebody to what it cited.
+
 ## The backup
 
 `repository.db` **and the documents themselves**.
@@ -169,7 +203,7 @@ on restore they are written **before** the rows that name them.
 ```
 repository/src/main/java/com/repository/app/
 ├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents ·
-│                   Shelf · Drive/Drives · Transfer
+│                   Shelf · Drive/Drives · Transfer · RepositoryDestination/RepositoryLinks
 ├── data/
 │   ├── db/         Room, one table: rows that name files
 │   ├── prefs/      RepositoryPrefs — which drive, and where on it. Never backed up; see below
@@ -212,9 +246,9 @@ its `install`, which is what Health does.
 
 ## Tests
 
-`gradle :repository:test` — 58 JVM tests, no emulator needed.
+`gradle :repository:test` — 76 JVM tests, no emulator needed.
 
-Thirty-two of them are over `logic/` and need no SDK at all. The other twenty-six are the store's,
+Forty-five of them are over `logic/` and need no SDK at all. The other thirty-one are the store's,
 and they are the ones that matter most here, because **the rows in this app are captions**: every
 other module's rows could at worst be typed in again, whereas a row that outlives its file is a
 document the household believes it has and cannot open, and a file that outlives its row is a
@@ -236,6 +270,12 @@ mortgage statement nothing will ever delete.
   they are decided on a phone — including the file that describes itself happily and then fails to
   open, which is a Google Doc with no exportable bytes and not a contrived case. `FakeSource` is a
   real `DocumentSource`, which is all Repository has ever known about any lender.
+- `DeepLinkTest` — the address vocabulary: every destination surviving the round trip, a lent
+  document addressed by its lender as well as its id, a key that would split into extra segments
+  refused at the point of *writing* rather than misread at the point of parsing, and anything
+  unrecognised opening the shelf plainly. The rule the file is about is that a bad address is never a
+  plausible one — failing to link somebody to a document is a disappointment, and taking them to a
+  different one looks like it worked.
 - `ShelfTest` — newest filed first (the only date this app has, because it does not read documents),
   a search that finds the truck's manual by the word "wrangler" while the module still has no idea
   what a Wrangler is, the household's drawer leading, a drawer from an app this build does not have
