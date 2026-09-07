@@ -262,6 +262,11 @@ shelf.documents.deleteFiledOn(AppId.PROJECT.key, project.id)
 An app that already stores its own paperwork implements `DocumentSource` instead and registers it in
 its `install`, which is what Health does.
 
+**Not every app should be wired**, and the ones that are not are listed under
+[What is not here](#what-is-not-here). The test is whether the app's records accumulate paperwork
+that outlives them — an asset, a project, a person, an operation do; a pantry does not, and a book
+already *is* a file in the app that holds it.
+
 ## Tests
 
 `gradle :repository:test` — 91 JVM tests, no emulator needed.
@@ -325,9 +330,22 @@ Named so it is a decision rather than an omission:
   what the two doors already do.
 - **No migration of what already exists.** LifeOps' task attachments, Citation's books and Project's
   documents stay where they are. Health's are *lent* rather than moved.
-- **Five apps not wired.** Maintenance and Project file into the shelf and Health lends to it. The
-  rest is one dependency and one composable each, per the section above — deliberately left until
-  somebody decides where documents belong in those domains.
+- **Three apps not wired, and each is a decision rather than a gap.** Four file into the shelf —
+  Maintenance (an asset), Project (a project), People (a person) and LifeOps (an operation) — and
+  Health lends. The rest were looked at and left alone:
+  - **Citation** — a book *is* a file in Citation's own store, with its own reader, its own progress
+    and its own backup. The shelf holding a second copy of an epub would be two libraries, and the
+    household would have to know which one it opened.
+  - **Logistics** — nothing in it accumulates paperwork. A recipe's source screenshot is already kept
+    with the recipe because it *is* the recipe, and an order PDF is parsed into a pantry and then
+    finished with; neither is a document somebody goes looking for in two years.
+  - **Advisor** — reads the shelf (`RepositoryKnowledgeSource`) and owns nothing to file against.
+
+  Two of the four that are wired deliberately have **no cascade**. Removing a person in People
+  *archives* them, because the row survives as a tombstone for the other peers on the sync seam;
+  destroying their birth certificate on the way past would be a real deletion performed on behalf of
+  a reversible one. And an operation in LifeOps cannot be deleted at all — only completed. In both
+  cases the documents stay on the shelf, which is where they were findable from anyway.
 - **No sync with a drive.** Import and export are targeted and one-shot on purpose: these files,
   now. Watching a folder would mean a credential, a poll, and documents changing under a household
   that believes it filed them. The copy on the shelf is a copy, and the app says so.
