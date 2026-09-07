@@ -7,6 +7,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import com.citation.core.model.Book
 import com.citation.core.reader.ReadingProgress
+import com.citation.core.speech.CustomVoice
 import com.citation.core.speech.EnginePreference
 import com.citation.core.speech.Narration
 import com.citation.core.speech.NarrationState
@@ -21,7 +22,10 @@ import com.citation.core.speech.SpeechPlanner
 import com.citation.core.speech.SpeechSettings
 import com.citation.core.speech.Utterance
 import com.citation.core.speech.UtteranceKind
+import com.citation.core.speech.VoiceDraft
+import com.citation.core.speech.VoiceLibrary
 import com.citation.core.speech.VoiceModel
+import com.citation.core.speech.VoiceOrigin
 import com.citation.core.speech.VoiceSelection
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +37,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.InputStream
 
 /**
  * The narrator: one book, one voice, one position, held for as long as the reader is listening.
@@ -225,6 +231,24 @@ class Narrator private constructor(private val context: Context) {
     /** The voices installed on this device, for the picker. */
     fun installedVoices() = voices.installed()
 
+    /** The voices the reader added, installed or not — the ones only their manifest knows about. */
+    fun userVoices(): List<VoiceModel> = VoiceLibrary.mine(voices.added.voices())
+
+    /**
+     * Take down a voice the reader described, so it exists before anything is fetched.
+     *
+     * Recorded first and installed second, deliberately. Sixty megabytes is a long time to look at a
+     * screen that shows nothing, and a download that fails half way through it should leave the
+     * reader a voice to press retry on rather than a form to fill in again. The definition is cheap,
+     * reversible, and useless on its own: a voice with no files is not installed, so nothing will
+     * try to speak with it.
+     */
+    fun defineVoice(draft: VoiceDraft): CustomVoice.Outcome {
+        val outcome = CustomVoice.define(draft, VoiceLibrary.takenIds(voices.added.voices()))
+        if (outcome is CustomVoice.Outcome.Defined) voices.added.add(outcome.model)
+        return outcome
+    }
+
     /**
      * Download and install a voice, reporting `0f`..`1f` as it arrives.
      *
@@ -234,20 +258,61 @@ class Narrator private constructor(private val context: Context) {
      */
     suspend fun installVoice(model: VoiceModel, onProgress: (Float) -> Unit = {}): VoiceStore.InstallResult {
         val result = VoiceDownloader(voices).install(model, onProgress)
-        if (result is VoiceStore.InstallResult.Installed && model.id == settings.voiceId) {
-            engine?.release()
-            engine = null
-        }
+        settle(model, result)
         return result
     }
 
-    /** Delete a downloaded voice and its files. Drops the engine when it is the one loaded. */
+    /**
+     * Install a voice from two files already on the device, reporting bytes copied as it goes.
+     *
+     * The case a link cannot serve: the reader has the model on their laptop, or on an SD card, or
+     * downloaded it in a browser, and has no interest in fetching sixty megabytes a second time over
+     * a connection they may not have. Both streams are opened by the caller, because reading a
+     * document the reader picked needs a resolver and a permission grant that belong to the screen
+     * they picked it on, not here.
+     */
+    suspend fun importVoice(
+        model: VoiceModel,
+        openTokens: () -> InputStream?,
+        openWeights: () -> InputStream?,
+        onProgress: (Float) -> Unit = {}
+    ): VoiceStore.InstallResult = withContext(Dispatchers.IO) {
+        val total = model.sizeBytes
+        val result = voices.importFrom(model, openTokens, openWeights) { written ->
+            if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+        }
+        settle(model, result)
+        result
+    }
+
+    /**
+     * Delete a voice: its files, and its definition when the reader added it.
+     *
+     * Drops the engine when it is the one loaded, so the sentence after a deletion is spoken by
+     * whatever the narrator falls back to rather than by a model whose file has gone.
+     */
     fun deleteVoice(model: VoiceModel): Boolean {
         if (settings.voiceId == model.id || _state.value.voiceId == model.id) {
             engine?.release()
             engine = null
         }
         return voices.delete(model)
+    }
+
+    /**
+     * What both install paths owe the rest of the app once the files have landed.
+     *
+     * Two things, and neither is the download's business: a voice the reader added now has a size to
+     * show where it had none, and an engine holding the *previous* file for the selected voice is
+     * holding the wrong one.
+     */
+    private fun settle(model: VoiceModel, result: VoiceStore.InstallResult) {
+        if (result !is VoiceStore.InstallResult.Installed) return
+        if (model.origin == VoiceOrigin.USER) voices.added.resize(model.id, result.bytes)
+        if (model.id == settings.voiceId) {
+            engine?.release()
+            engine = null
+        }
     }
 
     /** Bytes the downloaded voices occupy, for the storage screen. */

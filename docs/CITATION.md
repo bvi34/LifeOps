@@ -496,6 +496,7 @@ reader, and can be annotated, with no second notion of "where I am".
 | **Sleep timer** | `speech/SleepTimer` | The one control only ever used by somebody who will not be awake to correct it: it fades out over the last twenty seconds rather than cutting off mid-word, offers *end of chapter* as well as a duration, and gives a reader who reaches for "still awake" a minute late the whole extension rather than what was left. |
 | **Resuming** | `speech/Resume`, `SavedPlace`, `ResumePoint` | Which of the two recorded places a book opens at — where the eye left off, or where the voice got to — and in which unit the winner is expressed. |
 | **Voices** | `speech/VoiceModel`, `VoiceCatalog`, `VoiceSelection` | A short curated list of open-licence Piper voices with their real sizes and checksums, and the rules for choosing between what is installed — including falling back to the best remaining voice when the chosen one has been deleted, rather than leaving a reader with silence and no explanation. |
+| **Voices of your own** | `speech/CustomVoice`, `VoiceDraft`, `VoiceLibrary` | What a reader is allowed to add, and what an id and a URL are then allowed to *be*: the id becomes a filename inside the voice store, so it is slugged from the name rather than typed and held to an alphabet that cannot climb out of its directory; links are HTTPS-only, because there is no publisher checksum to fall back on and the file is fed to a native runtime; a second "Alba" gets a file of its own instead of overwriting the first. `VoiceLibrary` is the catalogue and the reader's own answered as one question, so an added voice is never second-class — the store lists it, the picker resolves it, and the catalogue still wins an id clash. |
 
 **Why on-device neural, and what it costs.** The interesting options were the platform engine (free,
 offline, ships with the phone, sounds like a phone), a cloud voice (excellent, and it means paying
@@ -529,6 +530,22 @@ arrive from three places for reasons worth stating:
   actually reads is **848 KB across 13**, verified by synthesis rather than by guesswork. Small
   enough to always carry, which buys the thing that matters: the first voice a reader downloads
   works offline the moment it lands, with no second download to fail halfway.
+
+**Readers can add voices of their own**, and the curated list is what makes that necessary rather
+than contradictory: seven English narrators is the right size for a picker and the wrong size for
+everybody. Anything packaged for this runtime works — a voice in another language, a multi-speaker
+model holding hundreds of narrators, one somebody trained themselves — so the Listen tab takes a
+name and either a link or two files off the device, and from that moment the voice is ordinary:
+same store, same picker, same delete button, same fallback when it will not load. What it is *not*
+given is trust. Links are HTTPS-only (there is no published checksum to fall back on, and sixty
+megabytes of unverified input goes straight into a native inference runtime); the id is derived from
+the name rather than typed, because it becomes a filename inside the voice store; and the manifest
+that names these voices (`audio/UserVoiceRegistry`, `voices/voices.json`, beside the files it
+describes) re-checks every id it reads, because it is the one file in the store whose contents decide
+which paths get opened. The definition is written *before* the download so a failure sixty megabytes
+in leaves a retry rather than an empty form; deleting an added voice deletes its definition too, so
+"remove" means removed. Sizes come from the file that lands rather than from the reader, and the
+speaker index — the only fact nothing can infer — is the one extra field the form asks for.
 
 The native libraries are neither committed nor optional-in-a-way-that-breaks: `:citation`'s build
 fetches them, pinned by version **and** SHA-256, into `build/` (`fetchNeuralVoiceRuntime`, ~45 MB
@@ -570,7 +587,7 @@ the pace measurement declines to learn from it, and a reader who disagrees can t
   the reading estimate usually sits. Pressing it in a book the voice does *not* have open starts
   that book rather than silently resuming the other one.
 - **The Listen tab** holds the player, the voice picker (installed voices, the catalogue with sizes
-  and download progress, delete), speed, the sleep timer, and every toggle — including **continue in
+  and download progress, your own voices, delete), speed, the sleep timer, and every toggle — including **continue in
   the background**, which is the one thing that decides whether the voice is a feature of the page
   or of the app. It is a tab and not a sheet in the reader because listening is not a property of
   the page you have open: it keeps going with the app closed, and the person reaching for the speed

@@ -31,15 +31,22 @@ class VoiceDownloader(private val store: VoiceStore) {
         model: VoiceModel,
         onProgress: (Float) -> Unit = {}
     ): VoiceStore.InstallResult = withContext(Dispatchers.IO) {
-        val tokens = fetch(model.tokensUrl) { stream ->
+        if (model.modelUrl.isBlank() || model.tokensUrl.isBlank()) {
+            return@withContext VoiceStore.InstallResult.Failed(
+                "This voice was added from files on the device; there is nowhere to fetch it from."
+            )
+        }
+        val tokens = fetch(model.tokensUrl) { stream, _ ->
             store.write(store.tokensFile(model), stream, model.tokensSha256)
         }
         if (tokens is VoiceStore.InstallResult.Failed) return@withContext tokens
 
-        val total = model.sizeBytes.coerceAtLeast(1L)
-        val weights = fetch(model.modelUrl) { stream ->
+        val weights = fetch(model.modelUrl) { stream, length ->
+            // A catalogue voice states its size; a voice the reader added states nothing, so the
+            // server's own Content-Length is what turns the progress bar from a guess into a bar.
+            val total = model.sizeBytes.takeIf { it > 0 } ?: length.takeIf { it > 0 } ?: 0L
             store.write(store.modelFile(model), stream, model.sha256) { written ->
-                onProgress((written.toFloat() / total).coerceIn(0f, 1f))
+                if (total > 0) onProgress((written.toFloat() / total).coerceIn(0f, 1f))
             }
         }
         // A voice is its pair. Weights that failed leave a token table behind that is worth nothing
@@ -50,7 +57,7 @@ class VoiceDownloader(private val store: VoiceStore) {
 
     private fun fetch(
         url: String,
-        body: (java.io.InputStream) -> VoiceStore.InstallResult
+        body: (java.io.InputStream, Long) -> VoiceStore.InstallResult
     ): VoiceStore.InstallResult {
         var current = url
         var redirects = 0
@@ -76,7 +83,8 @@ class VoiceDownloader(private val store: VoiceStore) {
                 if (code != HttpURLConnection.HTTP_OK) {
                     return VoiceStore.InstallResult.Failed("The voice could not be fetched (HTTP $code)")
                 }
-                return connection.inputStream.use(body)
+                val length = connection.contentLengthLong
+                return connection.inputStream.use { body(it, length) }
             } catch (e: Exception) {
                 return VoiceStore.InstallResult.Failed(e.message ?: "The voice could not be fetched")
             } finally {

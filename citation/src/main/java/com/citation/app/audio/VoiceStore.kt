@@ -2,8 +2,9 @@ package com.citation.app.audio
 
 import android.content.Context
 import com.citation.core.speech.InstalledVoice
-import com.citation.core.speech.VoiceCatalog
+import com.citation.core.speech.VoiceLibrary
 import com.citation.core.speech.VoiceModel
+import com.citation.core.speech.VoiceOrigin
 import java.io.File
 import java.io.InputStream
 import java.security.MessageDigest
@@ -23,11 +24,19 @@ import java.security.MessageDigest
  * the failure that actually happens is a download interrupted at forty megabytes, and a runtime
  * handed half a model does not fail politely. Downloads land on a `.part` file and are renamed only
  * after they verify, so an interrupted one is never mistaken for a voice.
+ *
+ * The directory holds one file that is not a voice: the [UserVoiceRegistry] manifest saying what the
+ * reader's own voices are called. It sits here rather than with the speech settings because it
+ * describes this directory, and it is what makes a voice somebody added as listable as one the
+ * catalogue names — see [installed].
  */
 class VoiceStore(context: Context) {
 
     /** The voices directory, created on first use. */
     val dir: File = File(context.filesDir, DIRECTORY).apply { mkdirs() }
+
+    /** What the reader's own voices are called, since no build states it for them. */
+    val added = UserVoiceRegistry(File(dir, MANIFEST))
 
     /** The weights file for [model], installed or not. */
     fun modelFile(model: VoiceModel): File = File(dir, model.modelFileName)
@@ -41,17 +50,18 @@ class VoiceStore(context: Context) {
 
     /** Whether the voice named [voiceId] is installed, when only its id is to hand. */
     fun isInstalled(voiceId: String): Boolean =
-        VoiceCatalog.modelFor(voiceId)?.let { isInstalled(it) } ?: false
+        VoiceLibrary.modelFor(voiceId, added.voices())?.let { isInstalled(it) } ?: false
 
     /**
-     * Every complete voice on disk, catalogue order.
+     * Every complete voice on disk: the catalogue's, then the reader's own.
      *
-     * Only voices this build knows by name are returned: a stray `.onnx` in the directory has no
+     * Only voices something knows by *name* are returned — the build for a catalogue voice, the
+     * manifest for an added one. A stray `.onnx` in the directory belongs to neither, and has no
      * sample rate, no language and no name to show, so listing it would offer the reader a voice
      * nothing can actually load.
      */
     fun installed(): List<InstalledVoice> =
-        VoiceCatalog.VOICES.filter { isInstalled(it) }.map {
+        VoiceLibrary.known(added.voices()).filter { isInstalled(it) }.map {
             InstalledVoice(it, modelFile(it).absolutePath, tokensFile(it).absolutePath)
         }
 
@@ -107,20 +117,58 @@ class VoiceStore(context: Context) {
         }
     }
 
-    /** Remove a voice and both its files. Deletes succeed on a full disk; installs do not. */
+    /**
+     * Remove a voice: both its files, and — for one the reader added — the entry naming it.
+     *
+     * Both halves, because they are one thing. Deleting the files of an added voice but keeping its
+     * definition would leave it in the picker as a voice permanently waiting to be downloaded, which
+     * is not what anyone pressing a delete button meant. Deletes succeed on a full disk; installs do
+     * not, which is why this is also the reader's way out of one.
+     */
     fun delete(model: VoiceModel): Boolean {
         val weights = modelFile(model).delete()
         val tokens = tokensFile(model).delete()
-        return weights || tokens
+        val forgotten = model.origin == VoiceOrigin.USER && added.forget(model.id)
+        return weights || tokens || forgotten
+    }
+
+    /**
+     * Install both of [model]'s files from streams the caller opens — a voice the reader already has.
+     *
+     * The pairing rule is [VoiceDownloader]'s, for the reason stated there: a voice is its pair, so
+     * weights that failed take the token table with them rather than leaving something that looks
+     * installed from one angle. Streams are opened lazily and closed here, because the caller's are
+     * content URIs whose provider may be gone by the time the second one is wanted.
+     *
+     * Nothing is verified against a checksum, because there is no publisher to have stated one; the
+     * file came off the reader's own device, which is a stronger claim than any hash it could carry.
+     */
+    fun importFrom(
+        model: VoiceModel,
+        openTokens: () -> InputStream?,
+        openWeights: () -> InputStream?,
+        onProgress: ((Long) -> Unit)? = null
+    ): InstallResult {
+        val tokens = runCatching { openTokens()?.use { write(tokensFile(model), it) } }
+            .getOrElse { InstallResult.Failed(it.message ?: "That file could not be read") }
+            ?: InstallResult.Failed("That file could not be read")
+        if (tokens is InstallResult.Failed) return tokens
+
+        val weights = runCatching {
+            openWeights()?.use { write(modelFile(model), it, onProgress = onProgress) }
+        }.getOrElse { InstallResult.Failed(it.message ?: "That file could not be read") }
+            ?: InstallResult.Failed("That file could not be read")
+        if (weights is InstallResult.Failed) tokensFile(model).delete()
+        return weights
     }
 
     /** Clear any interrupted downloads — the reader's "why is this taking up space" answer. */
     fun clearPartials(): Int =
         dir.listFiles { file -> file.name.endsWith(PART_SUFFIX) }?.count { it.delete() } ?: 0
 
-    /** Bytes the voices directory occupies, for the storage screen. */
+    /** Bytes the voices themselves occupy, for the storage screen. The manifest is not a voice. */
     fun totalBytes(): Long =
-        dir.listFiles()?.sumOf { it.length() } ?: 0L
+        dir.listFiles()?.filter { it.name != MANIFEST }?.sumOf { it.length() } ?: 0L
 
     private fun File.isNonEmpty(): Boolean = isFile && length() > 0
 
@@ -133,5 +181,8 @@ class VoiceStore(context: Context) {
     companion object {
         private const val DIRECTORY = "voices"
         private const val PART_SUFFIX = ".part"
+
+        /** Names the voices no build knows about. Not a voice, and never listed as one. */
+        private const val MANIFEST = "voices.json"
     }
 }

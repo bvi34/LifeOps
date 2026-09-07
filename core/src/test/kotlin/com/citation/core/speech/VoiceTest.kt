@@ -101,6 +101,50 @@ class VoiceTest {
     }
 
     @Test
+    fun `a reader's own voice is chosen exactly like a catalogue one`() {
+        val mine = InstalledVoice(
+            model = VoiceModel(
+                id = "ada", name = "Ada", language = "en-US", quality = VoiceQuality.HIGH,
+                sampleRate = 22_050, sizeBytes = 70_000_000, modelUrl = "", tokensUrl = "",
+                origin = VoiceOrigin.USER
+            ),
+            modelPath = "/voices/ada.onnx",
+            tokensPath = "/voices/ada.tokens.txt"
+        )
+        val voices = listOf(installed("en_US-amy-medium", VoiceQuality.MEDIUM), mine)
+        assertEquals("ada", VoiceSelection.resolve(voices, SpeechSettings(voiceId = "ada"))?.model?.id)
+        assertEquals("ada", VoiceSelection.best(voices)?.model?.id)
+    }
+
+    @Test
+    fun `the library is the catalogue plus what the reader added`() {
+        val mine = VoiceModel(
+            id = "ada", name = "Ada", language = "en-US", quality = VoiceQuality.MEDIUM,
+            sampleRate = 22_050, sizeBytes = 0, modelUrl = "", tokensUrl = "",
+            origin = VoiceOrigin.USER
+        )
+        assertEquals(VoiceCatalog.VOICES, VoiceLibrary.known(emptyList()))
+        assertEquals(VoiceCatalog.VOICES.size + 1, VoiceLibrary.known(listOf(mine)).size)
+        assertEquals("Ada", VoiceLibrary.modelFor("ada", listOf(mine))?.name)
+        assertNull(VoiceLibrary.modelFor("ada", emptyList()))
+        assertNotNull(VoiceLibrary.modelFor(VoiceCatalog.DEFAULT_VOICE_ID, listOf(mine)))
+        assertTrue(VoiceLibrary.takenIds(listOf(mine)).contains("ada"))
+        assertTrue(VoiceLibrary.takenIds(listOf(mine)).containsAll(VoiceCatalog.VOICES.map { it.id }))
+        assertEquals(listOf(mine), VoiceLibrary.mine(listOf(mine)))
+    }
+
+    @Test
+    fun `a manifest cannot shadow a voice the catalogue ships`() {
+        val impostor = VoiceCatalog.default().copy(name = "Not Lessac", origin = VoiceOrigin.USER)
+        val known = VoiceLibrary.known(listOf(impostor))
+        assertEquals(VoiceCatalog.VOICES.size, known.size)
+        assertEquals(
+            VoiceCatalog.default().name,
+            VoiceLibrary.modelFor(VoiceCatalog.DEFAULT_VOICE_ID, listOf(impostor))?.name
+        )
+    }
+
+    @Test
     fun `sizes read as whole megabytes, rounded up`() {
         assertEquals("61 MB", VoiceModel.megabytes(63_201_294))
         assertEquals("1 MB", VoiceModel.megabytes(1))

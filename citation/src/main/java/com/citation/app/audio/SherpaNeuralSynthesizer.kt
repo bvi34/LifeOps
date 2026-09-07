@@ -25,6 +25,11 @@ import java.io.File
  * (see [EspeakData]), because it is shared by every voice and small enough to always have — which
  * is what makes a freshly downloaded voice work on a plane.
  *
+ * The model is loaded by path, which is the reason a voice the reader added needs nothing from this
+ * class: a file in the voice store is a file in the voice store, whether the catalogue named it or a
+ * person did. The one thing it takes from the voice's definition is which speaker to use, for the
+ * multi-speaker models the catalogue does not carry but readers do.
+ *
  * Synthesis is chunked through sherpa's own callback, so the player can start speaking a sentence
  * before the whole of it has been generated, and can stop in the middle of one. That is the
  * difference between a reader that responds to the pause button and one that finishes the sentence
@@ -34,6 +39,17 @@ class SherpaNeuralSynthesizer(private val context: Context) : NeuralSynthesizer 
 
     private var tts: OfflineTts? = null
     private var loadedVoiceId: String? = null
+
+    /**
+     * Which voice inside the model to speak with.
+     *
+     * Every catalogue voice is single-speaker, so this is 0 for all of them. It exists for the
+     * models a reader brings themselves: a good part of what is published for this runtime is
+     * multi-speaker, one file holding hundreds of narrators, and picking between them is a number
+     * passed to the generator rather than a different download. It is read at load rather than per
+     * sentence because it is a property of the voice, not of the utterance.
+     */
+    private var loadedSpeaker = 0
 
     override val sampleRate: Int get() = tts?.sampleRate ?: 0
 
@@ -60,6 +76,7 @@ class SherpaNeuralSynthesizer(private val context: Context) : NeuralSynthesizer 
                 .build()
             tts = OfflineTts(OfflineTtsConfig.builder().setModel(model).build())
             loadedVoiceId = voice.model.id
+            loadedSpeaker = voice.model.speaker.coerceAtLeast(0)
             true
         }.getOrElse {
             // A model that will not load — a truncated download, an ABI with no native library, a
@@ -83,7 +100,7 @@ class SherpaNeuralSynthesizer(private val context: Context) : NeuralSynthesizer 
                     0
                 }
             }
-            engine.generateWithCallback(text, SPEAKER, speed.coerceIn(MIN_SPEED, MAX_SPEED), callback)
+            engine.generateWithCallback(text, loadedSpeaker, speed.coerceIn(MIN_SPEED, MAX_SPEED), callback)
             !cancelled
         }.getOrDefault(false)
     }
@@ -92,6 +109,7 @@ class SherpaNeuralSynthesizer(private val context: Context) : NeuralSynthesizer 
         runCatching { tts?.release() }
         tts = null
         loadedVoiceId = null
+        loadedSpeaker = 0
     }
 
     companion object {
@@ -113,9 +131,6 @@ class SherpaNeuralSynthesizer(private val context: Context) : NeuralSynthesizer 
         private val runtimePresent: Boolean by lazy {
             runCatching { System.loadLibrary("sherpa-onnx-jni") }.isSuccess
         }
-
-        /** Every voice in the catalogue is single-speaker; a multi-speaker model would select here. */
-        private const val SPEAKER = 0
 
         // The model's own length scale, not resampling — so a faster reading stays in pitch. Outside
         // this range a VITS model stops being intelligible rather than merely sounding hurried.

@@ -6,6 +6,7 @@ import com.citation.app.data.CitationRepository
 import com.citation.app.data.opds.OpdsClient
 import com.citation.app.data.OreillyAccess
 import com.citation.app.audio.Narrator
+import com.citation.core.speech.CustomVoice
 import com.citation.core.speech.InstalledVoice
 import com.citation.core.speech.NarrationState
 import com.citation.core.speech.Resume
@@ -15,6 +16,7 @@ import com.citation.core.speech.SkipGranularity
 import com.citation.core.speech.SleepMode
 import com.citation.core.speech.SpeechSettings
 import com.citation.core.speech.VoiceCatalog
+import com.citation.core.speech.VoiceDraft
 import com.citation.core.speech.VoiceModel
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
@@ -1729,8 +1731,21 @@ class ReaderViewModel(
      */
     val installedVoices: StateFlow<List<InstalledVoice>> = _installedVoices.asStateFlow()
 
+    private val _userVoices = MutableStateFlow(narrator?.userVoices().orEmpty())
+
+    /**
+     * The voices the reader added themselves, whether or not their files arrived.
+     *
+     * Separate from [installedVoices] because it answers a different question. That one is "what can
+     * speak"; this one is "what did I add" — and the two differ exactly when a download failed,
+     * which is the moment the reader most needs to see the voice still listed, with a retry on it,
+     * rather than to be shown an empty picker and left to type the link again.
+     */
+    val userVoices: StateFlow<List<VoiceModel>> = _userVoices.asStateFlow()
+
     private fun refreshInstalledVoices() {
         _installedVoices.value = narrator?.installedVoices().orEmpty()
+        _userVoices.value = narrator?.userVoices().orEmpty()
     }
 
     /** The voices offered for the open book, its own language first. */
@@ -1765,10 +1780,85 @@ class ReaderViewModel(
      */
     fun installVoice(model: VoiceModel) {
         val narrator = narrator ?: return
+        install(model) { onProgress -> narrator.installVoice(model, onProgress) }
+    }
+
+    /**
+     * Add a voice of the reader's own, fetched from a link.
+     *
+     * Returns whether the draft was accepted, which is what the entry form needs to know: a rejected
+     * one leaves the reader looking at what they typed with the reason on the status line, and an
+     * accepted one closes and gets on with the download. The voice is recorded before it is fetched,
+     * so a failure sixty megabytes in leaves something to press retry on.
+     */
+    fun addVoiceFromLink(draft: VoiceDraft): Boolean {
+        val narrator = narrator ?: return false
+        val model = define(draft) ?: return false
+        install(model) { onProgress -> narrator.installVoice(model, onProgress) }
+        return true
+    }
+
+    /**
+     * Add a voice of the reader's own from two files already on this device.
+     *
+     * The streams are opened by the screen rather than here: reading a document the reader picked
+     * needs a `ContentResolver` and the grant that came with the pick, and this ViewModel
+     * deliberately has no `Context`. Sizes are what the picker reported, and are used for two things
+     * — the progress bar, and catching the one mistake everybody makes, which is picking the two
+     * files the wrong way round.
+     */
+    fun addVoiceFromFiles(
+        draft: VoiceDraft,
+        openTokens: () -> java.io.InputStream?,
+        openWeights: () -> java.io.InputStream?,
+        modelBytes: Long? = null,
+        tokensBytes: Long? = null
+    ): Boolean {
+        val narrator = narrator ?: return false
+        CustomVoice.checkFiles(modelBytes, tokensBytes)?.let {
+            _status.value = it
+            return false
+        }
+        val model = define(draft) ?: return false
+        // Only for the progress bar: what it actually weighs is recorded from what was copied.
+        val sized = model.copy(sizeBytes = modelBytes ?: 0L)
+        install(model) { onProgress -> narrator.importVoice(sized, openTokens, openWeights, onProgress) }
+        return true
+    }
+
+    /** Delete a voice — its files, and, when the reader added it, the entry naming it. */
+    fun deleteVoice(model: VoiceModel) {
+        if (narrator?.deleteVoice(model) == true) _status.value = "${model.name} removed."
+        refreshInstalledVoices()
+    }
+
+    private fun define(draft: VoiceDraft): VoiceModel? {
+        val narrator = narrator ?: return null
+        if (_voiceProgress.value != null) {
+            _status.value = "One voice is already downloading; let it finish first."
+            return null
+        }
+        return when (val outcome = narrator.defineVoice(draft)) {
+            is CustomVoice.Outcome.Defined -> outcome.model.also { refreshInstalledVoices() }
+            is CustomVoice.Outcome.Rejected -> {
+                _status.value = outcome.reason
+                null
+            }
+        }
+    }
+
+    /**
+     * The bookkeeping both ways of installing a voice share: one at a time, progress while it runs,
+     * and the outcome on the status line either way.
+     */
+    private fun install(
+        model: VoiceModel,
+        fetch: suspend ((Float) -> Unit) -> com.citation.app.audio.VoiceStore.InstallResult
+    ) {
         if (_voiceProgress.value != null) return
         viewModelScope.launch {
             _voiceProgress.value = model.id to 0f
-            val result = narrator.installVoice(model) { _voiceProgress.value = model.id to it }
+            val result = fetch { _voiceProgress.value = model.id to it }
             _voiceProgress.value = null
             refreshInstalledVoices()
             _status.value = when (result) {
@@ -1776,12 +1866,6 @@ class ReaderViewModel(
                 is com.citation.app.audio.VoiceStore.InstallResult.Failed -> result.reason
             }
         }
-    }
-
-    /** Delete a downloaded voice. */
-    fun deleteVoice(model: VoiceModel) {
-        if (narrator?.deleteVoice(model) == true) _status.value = "${model.name} removed."
-        refreshInstalledVoices()
     }
 
     /**
