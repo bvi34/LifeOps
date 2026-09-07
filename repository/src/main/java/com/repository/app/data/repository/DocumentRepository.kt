@@ -9,6 +9,7 @@ import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
 import com.repository.app.logic.RepositoryDestination
+import com.repository.app.logic.ShelfManifest
 import com.repository.app.logic.Shelf
 import com.repository.app.logic.Transfer
 import com.repository.app.logic.TransferChoice
@@ -100,11 +101,19 @@ class DocumentRepository(
         kind: DocumentKind,
         owner: DocumentOwner = DocumentOwner.HOUSEHOLD,
         note: String? = null,
-        addedAt: Long = System.currentTimeMillis()
+        addedAt: Long = System.currentTimeMillis(),
+        /**
+         * The id to file it under, for a document arriving from another shelf with its own already
+         * minted (see `logic/Sidecar`). Fresh for everything else, which is every other caller.
+         *
+         * Safe because ids are UUIDs: one from another install cannot collide with one of ours, so
+         * an id that is already here means the same document coming round again — which [importAll]
+         * checks for and skips rather than filing twice.
+         */
+        id: String = UUID.randomUUID().toString()
     ): String? {
         val picked = files.describe(source)
         val stored = files.save(source, picked) ?: return null
-        val id = UUID.randomUUID().toString()
         dao.upsertDocument(
             DocumentEntity(
                 id = id,
@@ -162,6 +171,71 @@ class DocumentRepository(
             }
         }
         TransferOutcome(filed, failed)
+    }
+
+    /**
+     * File a reviewed batch that arrived off a drive **with the shelf that wrote it**.
+     *
+     * The plain [fileAll] is what an import without a manifest does: bytes in, a title somebody
+     * typed over whatever the file was called, and the household's own drawer. This is the same
+     * thing when the folder also holds a `repository-shelf.json` — each file is matched to its entry
+     * by name, and arrives with the title, kind, note and *what it is about* that the other shelf
+     * had for it.
+     *
+     * Two rules make re-picking a folder safe, which matters because nobody remembers which four
+     * files were the new ones:
+     *
+     * - **A document already here is skipped, not re-filed.** Matched on the id the exporting shelf
+     *   minted, which the manifest carries.
+     * - **Nothing existing is ever overwritten.** Not the title, not the note, not the drawer. Two
+     *   phones both editing a caption is a conflict this app cannot resolve and has no business
+     *   guessing at, and an import that quietly reverted a rename would be worse than one that did
+     *   nothing.
+     *
+     * A file the manifest says nothing about is filed exactly as [fileAll] would file it — an import
+     * of four documents and one holiday photo should not refuse the photo.
+     */
+    suspend fun importAll(
+        choices: List<TransferChoice>,
+        manifest: ShelfManifest?,
+        kind: DocumentKind,
+        owner: DocumentOwner = DocumentOwner.HOUSEHOLD,
+        note: String? = null
+    ): TransferOutcome = withContext(Dispatchers.IO) {
+        var filed = 0
+        var skipped = 0
+        val failed = mutableListOf<String>()
+
+        Transfer.included(choices).forEach { choice ->
+            val entry = manifest?.entryFor(choice.item.displayName)
+
+            if (entry != null && dao.getDocument(entry.id) != null) {
+                skipped++
+                return@forEach
+            }
+
+            val id = runCatching {
+                file(
+                    source = Uri.parse(choice.item.uri),
+                    // The title from the manifest, not the one the review list guessed from the file
+                    // name — unless somebody edited it in the review list, in which case they mean it.
+                    title = choice.title,
+                    kind = entry?.documentKind ?: kind,
+                    owner = entry?.owner ?: owner,
+                    note = entry?.note ?: note,
+                    addedAt = entry?.addedAt ?: System.currentTimeMillis(),
+                    id = entry?.id ?: UUID.randomUUID().toString()
+                )
+            }.getOrNull()
+
+            if (id == null) {
+                failed += choice.title.trim().ifBlank { choice.item.displayName.orEmpty() }
+                    .ifBlank { "One file" }
+            } else {
+                filed++
+            }
+        }
+        TransferOutcome(filed, failed, skipped)
     }
 
     /**

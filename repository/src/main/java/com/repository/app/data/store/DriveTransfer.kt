@@ -6,6 +6,8 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import com.repository.app.logic.Documents
 import com.repository.app.logic.Drive
+import com.repository.app.logic.ShelfManifest
+import com.repository.app.logic.Sidecar
 import com.repository.app.logic.TransferItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,6 +124,90 @@ class DriveTransfer(private val context: Context, private val files: DocumentFil
                 stored.inputStream().use { it.copyTo(out) }
             } ?: return@runCatching null
             created
+        }.getOrNull()
+    }
+
+    /**
+     * The name a drive actually gave a file it just created.
+     *
+     * Asked rather than assumed, because a folder that already holds `Statement.pdf` answers a
+     * second one by making `Statement (1).pdf` — every provider does, and it is the right behaviour
+     * for a copy of somebody's records. The manifest written beside these files is keyed on the name
+     * on the drive, so a manifest keyed on the name we *asked for* would describe the wrong file the
+     * first time two statements met.
+     */
+    suspend fun nameOf(created: Uri): String? = withContext(Dispatchers.IO) {
+        files.describe(created).displayName
+    }
+
+    /**
+     * Write the shelf's own manifest into the folder, beside the documents it describes.
+     *
+     * Replaces the one already there, and that is the one overwrite in this class that is safe:
+     * `repository-shelf.json` is this app's file, written by this app, and never a household record.
+     * Everything else on a drive is somebody's own and is only ever added to.
+     *
+     * Failure is quiet and returns false. The documents are already written by the time this runs,
+     * and losing the captions is a smaller thing than an export that reports itself failed after
+     * putting nine files somewhere.
+     */
+    suspend fun saveManifest(folder: Uri, manifest: ShelfManifest): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val parent = DocumentsContract.buildDocumentUriUsingTree(
+                folder,
+                DocumentsContract.getTreeDocumentId(folder)
+            )
+            existingManifest(parent)?.let { old ->
+                runCatching { DocumentsContract.deleteDocument(context.contentResolver, old) }
+            }
+            val created = DocumentsContract.createDocument(
+                context.contentResolver,
+                parent,
+                Sidecar.MIME_TYPE,
+                Sidecar.FILE_NAME
+            ) ?: return@runCatching false
+            context.contentResolver.openOutputStream(created)?.use { out ->
+                out.write(Sidecar.encode(manifest).toByteArray())
+            } ?: return@runCatching false
+            true
+        }.getOrElse { false }
+    }
+
+    /** The manifest already in a folder, so a second export replaces it rather than stacking `(1)`s. */
+    private fun existingManifest(parent: Uri): Uri? = runCatching {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(
+            parent,
+            DocumentsContract.getDocumentId(parent)
+        )
+        context.contentResolver.query(
+            children,
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME
+            ),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            while (cursor.moveToNext()) {
+                if (Sidecar.isManifest(cursor.getString(1))) {
+                    return@use DocumentsContract.buildDocumentUriUsingTree(parent, cursor.getString(0))
+                }
+            }
+            null
+        }
+    }.getOrNull()
+
+    /**
+     * Read a manifest somebody picked along with their documents.
+     *
+     * Quiet on every failure: a folder with no manifest, a truncated one, one written by a newer
+     * Repository. The import carries on filing the documents plainly, because the captions are the
+     * nice-to-have and the documents are the point.
+     */
+    suspend fun readManifest(uri: Uri): ShelfManifest? = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { Sidecar.decode(it.readBytes().decodeToString()) }
         }.getOrNull()
     }
 

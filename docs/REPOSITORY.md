@@ -155,6 +155,37 @@ The remembered folder is **not** carried by the backup. It is a URI granted by a
 device to this install; restored onto a new phone it names a folder nothing has permission to open.
 Forgetting is honest — the first export after a restore asks once, and remembers again.
 
+## The shelf travels with its documents
+
+An export writes one small JSON file beside the documents — `repository-shelf.json` — and an import
+reads it. Without it the drive round trip moved the bytes and lost the shelf: the title went back to
+whatever the file was called, the kind became "Other", the note was gone, and "the 2018 Jeep
+Wrangler's manual" arrived as `Manual.pdf` in the household's own drawer.
+
+The format is `logic/Sidecar`, and four decisions are worth reading:
+
+- **It is keyed on the name the drive actually wrote.** A folder that already holds `Statement.pdf`
+  answers a second one with `Statement (1).pdf` — every provider does, and it is the right behaviour
+  for a copy of somebody's records — so the name is read back from what was created. A manifest keyed
+  on the name we *asked for* would describe the wrong file the first time two statements met.
+- **The id travels**, so importing the same folder twice is free. Ids are UUIDs, so one minted by
+  another install cannot collide with one of this shelf's own; a document arriving with an id already
+  here is the same document coming round again, which is the ordinary case, because nobody remembers
+  which four of the twelve files were the new ones. It is reported rather than hidden — "3 documents
+  filed · 9 were already here".
+- **Nothing existing is ever overwritten.** Not the title, not the note, not the drawer. Two phones
+  both editing a caption is a conflict this app cannot resolve and has no business guessing at, and
+  an import that quietly reverted somebody's rename would be worse than one that did nothing.
+- **A missing manifest can never stop an import.** Truncated, absent, some other JSON that happens to
+  sit in the folder, written by a newer Repository — all of them read as no manifest, and the
+  documents file plainly. The captions are the enrichment; the documents are the point. A file the
+  manifest says nothing about is filed too: an import of four documents and one holiday photo should
+  not argue with the photo.
+
+The owner travels as well, which is the payoff of the label being **on the row** rather than looked
+up: the other phone may have no asset `a3f2` at all, and the drawer still reads "Maintenance · 2018
+Jeep Wrangler".
+
 ## Being pointed at
 
 The shelf can be opened **at a place**, not only started. `logic/RepositoryDestination` is the
@@ -253,7 +284,8 @@ on restore they are written **before** the rows that name them.
 ```
 repository/src/main/java/com/repository/app/
 ├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents ·
-│                   Shelf · Drive/Drives · Transfer · RepositoryDestination/RepositoryLinks
+│                   Shelf · Drive/Drives · Transfer · RepositoryDestination/RepositoryLinks ·
+│                   Sidecar/ShelfManifest — the shelf that travels with an export
 ├── connection/     RepositoryConnections + local/ — the routes, on :connectkit's core
 ├── provider/       RepositoryDocumentsProvider — the shelf in the system Files app, read-only
 ├── data/
@@ -303,17 +335,21 @@ already *is* a file in the app that holds it.
 
 ## Tests
 
-`gradle :repository:test` — 101 JVM tests, no emulator needed.
+`gradle :repository:test` — 115 JVM tests, no emulator needed.
 
-Forty-five of them are over `logic/` and need no SDK at all. Fifteen are the routes' (see
-[CONNECTIONS.md](CONNECTIONS.md#repositorys-routes)), and most of those are about the addresses this
-app deliberately does not serve. The remaining thirty-one are the store's,
-and they are the ones that matter most here, because **the rows in this app are captions**: every
-other module's rows could at worst be typed in again, whereas a row that outlives its file is a
-document the household believes it has and cannot open, and a file that outlives its row is a
-mortgage statement nothing will ever delete.
+Fifty-four are over `logic/` and need no SDK at all. Fifteen are the routes' (see
+[CONNECTIONS.md](CONNECTIONS.md#repositorys-routes)) and ten the `DocumentsProvider`'s — most of both
+being about what those two doorways deliberately refuse to do.
 
-- `DocumentRepositoryTest` — the store, against a real Room database and a real folder of files. That
+The remaining thirty-six are the store's, and they are the ones that matter most here, because **the
+rows in this app are captions**: every other module's rows could at worst be typed in again, whereas
+a row that outlives its file is a document the household believes it has and cannot open, and a file
+that outlives its row is a mortgage statement nothing will ever delete.
+
+- `DocumentRepositoryTest` — the store, against a real Room database and a real folder of files.
+  Includes what happens when a folder saved from another phone's shelf is picked twice: nothing is
+  filed again, nothing already here is overwritten, and a file the manifest says nothing about is
+  filed anyway. That
   a file which cannot be read leaves *nothing* behind — no row and no half-written file; that
   deleting takes the bytes with the row, through the single delete and through the cascade an owning
   app calls when one of its records goes; that the cascade is keyed on the app **and** the record,
@@ -329,6 +365,11 @@ mortgage statement nothing will ever delete.
   they are decided on a phone — including the file that describes itself happily and then fails to
   open, which is a Google Doc with no exportable bytes and not a contrived case. `FakeSource` is a
   real `DocumentSource`, which is all Repository has ever known about any lender.
+- `SidecarTest` — the manifest an export writes. Mostly about every way it can be wrong: absent,
+  truncated, some other JSON in the same folder, written by a newer build — all of them read as no
+  manifest so the documents still import. Plus the two documents that landed under different names
+  staying different documents, and the size and MIME type deliberately *not* travelling, because
+  those are facts about the file that the importing shelf reads from the bytes it was handed.
 - `RepositoryDocumentsProviderTest` — the shelf as Android sees it, queried through the real
   `ContentResolver` with real `DocumentsContract` URIs. The provider is started from a full
   `ProviderInfo`, because `DocumentsProvider.attachInfo` refuses to run unless it is exported, grants
@@ -391,7 +432,17 @@ Named so it is a decision rather than an omission:
   cases the documents stay on the shelf, which is where they were findable from anyway.
 - **No sync with a drive.** Import and export are targeted and one-shot on purpose: these files,
   now. Watching a folder would mean a credential, a poll, and documents changing under a household
-  that believes it filed them. The copy on the shelf is a copy, and the app says so.
+  that believes it filed them. The copy on the shelf is a copy, and the app says so. The manifest an
+  export writes (see [The shelf travels with its documents](#the-shelf-travels-with-its-documents))
+  does not change that: nothing watches anything, and a copy taken at a moment simply carries what
+  the household typed about it.
+
+- **No sync spine for documents, and this one is a decision rather than a gap.** Repository is not a
+  peer on the People/LifeOps seam, for the reason Project and Maintenance are not: nothing else in
+  the suite writes to a document, so there is nothing to reconcile. And the suite has no network
+  transport to join — the seams are folders of JSON envelopes, and the partner seam's folder is one
+  the household moves between devices itself. Two phones share a shelf the way they share anything
+  else here: through a drive they already have, which is what the section below is about.
 - **No versions.** Filing a newer statement adds a document; it does not supersede one. A household
   keeping both is the normal case, and a version chain nobody asked for is a feature that makes the
   list harder to read.

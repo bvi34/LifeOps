@@ -9,6 +9,8 @@ import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.RepositoryDestination
+import com.repository.app.logic.ShelfEntry
+import com.repository.app.logic.ShelfManifest
 import com.repository.app.logic.TransferChoice
 import com.repository.app.logic.TransferItem
 import com.repository.app.source.DocumentSources
@@ -474,6 +476,143 @@ class DocumentRepositoryTest {
         assertNull(repo.exportCopy(lent))
     }
 
+    // ------------------------------------------------------------------ arriving from another shelf
+
+    @Test
+    fun `a document imported with the shelf that wrote it keeps everything a person typed`() = runTest {
+        val uri = FakePicker.offer("Mortgage statement March 2026.pdf")
+        val manifest = ShelfManifest(
+            documents = listOf(
+                ShelfEntry(
+                    file = "Mortgage statement March 2026.pdf",
+                    id = "from-the-other-phone",
+                    title = "Mortgage statement March 2026",
+                    kind = "statement",
+                    note = "the one from the bank",
+                    app = "maintenance",
+                    record = "b7c1",
+                    about = "12 Oak Lane",
+                    addedAt = march
+                )
+            )
+        )
+
+        val outcome = repo.importAll(
+            choices = listOf(
+                choice(
+                    uri.toString(),
+                    title = "Mortgage statement March 2026",
+                    displayName = "Mortgage statement March 2026.pdf"
+                )
+            ),
+            manifest = manifest,
+            kind = DocumentKind.OTHER
+        )
+
+        assertEquals(1, outcome.filed)
+        val document = repo.get("from-the-other-phone")!!
+        assertEquals("Mortgage statement March 2026", document.title)
+        assertEquals(DocumentKind.STATEMENT, document.kind)
+        assertEquals("the one from the bank", document.note)
+        // The drawer travels too. This shelf may have no asset `b7c1` at all, and the label carried
+        // on the row is what makes the drawer still read as something a person recognises.
+        assertEquals(DocumentOwner("maintenance", "b7c1", "12 Oak Lane"), document.owner)
+        assertEquals("Filed when the other shelf filed it, so both order it the same way", march, document.addedAt)
+    }
+
+    @Test
+    fun `picking the same folder again files nothing twice and says so`() = runTest {
+        val manifest = ShelfManifest(
+            documents = listOf(
+                ShelfEntry(file = "a.pdf", id = "doc-a", title = "The deed", kind = "title"),
+                ShelfEntry(file = "b.pdf", id = "doc-b", title = "The survey", kind = "report")
+            )
+        )
+        repo.importAll(
+            listOf(choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf")),
+            manifest,
+            DocumentKind.OTHER
+        )
+
+        // Nobody remembers which of the twelve files were the new ones, so re-picking the lot is the
+        // ordinary case rather than a mistake.
+        val outcome = repo.importAll(
+            listOf(
+                choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf"),
+                choice(FakePicker.offer("b.pdf").toString(), "The survey", displayName = "b.pdf")
+            ),
+            manifest,
+            DocumentKind.OTHER
+        )
+
+        assertEquals(1, outcome.filed)
+        assertEquals(1, outcome.alreadyHere)
+        assertEquals(listOf("The deed", "The survey").sorted(), repo.allRows().map { it.title }.sorted())
+        assertEquals("And no second copy of the bytes either", 2, context.storedFiles().size)
+    }
+
+    @Test
+    fun `an import never overwrites what is already on this shelf`() = runTest {
+        repo.importAll(
+            listOf(choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf")),
+            ShelfManifest(documents = listOf(ShelfEntry(file = "a.pdf", id = "doc-a", title = "The deed", kind = "title"))),
+            DocumentKind.OTHER
+        )
+        repo.update("doc-a", title = "The deed (12 Oak Lane)", kind = DocumentKind.TITLE, note = "in the safe")
+
+        // The other phone still calls it "The deed". Two phones both editing a caption is a conflict
+        // this app cannot resolve, and quietly reverting somebody's rename is the worse answer.
+        val outcome = repo.importAll(
+            listOf(choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf")),
+            ShelfManifest(documents = listOf(ShelfEntry(file = "a.pdf", id = "doc-a", title = "The deed", kind = "title"))),
+            DocumentKind.OTHER
+        )
+
+        assertEquals(0, outcome.filed)
+        assertEquals(1, outcome.alreadyHere)
+        assertEquals("The deed (12 Oak Lane)", repo.get("doc-a")!!.title)
+        assertEquals("in the safe", repo.get("doc-a")!!.note)
+    }
+
+    @Test
+    fun `a file the manifest says nothing about is filed anyway`() = runTest {
+        // Four documents and a holiday photo. Refusing the photo because it is not in the manifest
+        // would be an import that argues with what somebody picked.
+        val outcome = repo.importAll(
+            listOf(
+                choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf"),
+                choice(FakePicker.offer("beach.jpg").toString(), "Beach", displayName = "beach.jpg")
+            ),
+            ShelfManifest(documents = listOf(ShelfEntry(file = "a.pdf", id = "doc-a", title = "The deed", kind = "title"))),
+            kind = DocumentKind.OTHER,
+            owner = truck
+        )
+
+        assertEquals(2, outcome.filed)
+        assertEquals(DocumentKind.TITLE, repo.get("doc-a")!!.kind)
+        val photo = repo.allRows().single { it.title == "Beach" }
+        // Filed under what the caller chose, which is what an import without a manifest does.
+        assertEquals(DocumentKind.OTHER.key, photo.kind)
+        assertEquals("maintenance", photo.ownerApp)
+    }
+
+    @Test
+    fun `an import with no manifest at all is the plain one`() = runTest {
+        val outcome = repo.importAll(
+            listOf(choice(FakePicker.offer("a.pdf").toString(), "The deed", displayName = "a.pdf")),
+            manifest = null,
+            kind = DocumentKind.CONTRACT,
+            owner = house
+        )
+
+        assertEquals(1, outcome.filed)
+        assertEquals(0, outcome.alreadyHere)
+        val document = repo.observeOwn().first().single()
+        assertEquals("The deed", document.title)
+        assertEquals(DocumentKind.CONTRACT, document.kind)
+        assertEquals(house, document.owner)
+    }
+
     // ------------------------------------------------------------------ opening at a place
 
     @Test
@@ -605,8 +744,14 @@ class DocumentRepositoryTest {
 
     private suspend fun rowFor(id: String) = repo.allRows().single { it.id == id }
 
-    private fun choice(uri: String, title: String, include: Boolean = true) = TransferChoice(
-        item = TransferItem(uri = uri, displayName = title, mimeType = "application/pdf", sizeBytes = 10L),
+    private fun choice(
+        uri: String,
+        title: String,
+        include: Boolean = true,
+        /** What the *drive* calls the file, which is the only handle a manifest can be matched on. */
+        displayName: String = title
+    ) = TransferChoice(
+        item = TransferItem(uri = uri, displayName = displayName, mimeType = "application/pdf", sizeBytes = 10L),
         title = title,
         include = include
     )

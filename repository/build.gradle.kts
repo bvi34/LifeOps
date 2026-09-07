@@ -57,6 +57,9 @@ dependencies {
     // points one way, and a shelf that had to depend on the planner to answer "where is the
     // warranty" would be the wrong shape.
     implementation(project(":connectkit"))
+    // Pure JVM, and used only by `logic/Sidecar` — the small manifest an export writes beside the
+    // documents so the shelf travels with them. Same reason :backupkit takes it.
+    implementation(libs.gson)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

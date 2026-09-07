@@ -400,7 +400,12 @@ the receipts.
 > Documents also come **off a drive and go back onto one, targeted**: pick Google Drive, OneDrive or
 > Dropbox, choose the four files you actually want, review the list — untick the two dead drafts,
 > rename the third — and file the lot in one press; send one back, or everything a search has
-> narrowed to, into a folder chosen once and remembered per drive. There is **no Drive API, no
+> narrowed to, into a folder chosen once and remembered per drive — and the shelf goes with them: an
+> export writes one small manifest beside the files, so on the second phone each document arrives with
+> its real name, its kind, its note and what it is about, and anything already there is left alone
+> rather than filed twice. That is not sync and does not become it — nothing watches the folder and no
+> credential exists to watch it with; a copy taken at a moment simply carries what the household typed
+> about it. There is **no Drive API, no
 > OneDrive API and no credential**: each of those drives already publishes itself to Android as a
 > document provider, so this is the system picker with a starting point, and the module still holds
 > no permissions. What lands is a copy taken at a moment, never a link that syncs — see

@@ -47,7 +47,16 @@ data class TransferChoice(
  */
 data class TransferOutcome(
     val filed: Int,
-    val failed: List<String> = emptyList()
+    val failed: List<String> = emptyList(),
+    /**
+     * Documents the folder held that this shelf already has.
+     *
+     * Only an import with a manifest can know this — see `logic/Sidecar` — and it matters because
+     * re-picking a folder is the ordinary case: nobody remembers which four of the twelve files were
+     * the new ones. "3 filed · 9 already here" is a household being told its shelf is right, whereas
+     * silence after picking twelve files reads like something went wrong.
+     */
+    val alreadyHere: Int = 0
 ) {
     val everything: Boolean get() = failed.isEmpty()
 
@@ -156,7 +165,14 @@ object Transfer {
             outcome.failed.size <= 2 -> outcome.failed.joinToString(" and ") + " couldn't be read"
             else -> "${outcome.failed.size} couldn't be read"
         }
-        return listOfNotNull(filed, failed).joinToString(" · ").ifBlank { "Nothing was filed" }
+        // Said plainly rather than hidden, because re-picking a folder is the ordinary case and a
+        // household told nothing after picking twelve files assumes something went wrong.
+        val here = when (outcome.alreadyHere) {
+            0 -> null
+            1 -> "1 was already here"
+            else -> "${outcome.alreadyHere} were already here"
+        }
+        return listOfNotNull(filed, here, failed).joinToString(" · ").ifBlank { "Nothing was filed" }
     }
 
     /** "Saved to OneDrive", "Saved 3 documents to Google Drive · Projects". */
