@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /**
  * The single entry point for connection-function calls. Parses an address string, validates it
@@ -17,17 +17,18 @@ package com.lifeops.app.connection
 class ConnectionDispatcher(
     private val registry: ConnectionRegistry,
     /**
-     * The application segment this dispatcher answers for.
+     * The application segment this dispatcher answers for — `LifeOps`, `Project`, `Repository`.
      *
-     * Defaults to LifeOps, which is every existing caller. It is a parameter rather than the
-     * constant it used to read because the scheme always reserved that segment for addressing
-     * peers, and Project now serves `/v1/Project/local/…` from its own dispatcher built on this
-     * same machinery. One convention across the suite; one dispatcher per app that owns routes.
+     * Required, and deliberately without a default. It defaulted to LifeOps while LifeOps was the
+     * only app serving addresses, which is exactly the kind of default that stops being true
+     * quietly: a third app that forgot to pass its own segment would have built a dispatcher
+     * answering for somebody else's, and found out when a route it registered returned
+     * UNKNOWN_APPLICATION for its own address.
      *
-     * Declared before [onHandlerError] on purpose: that one is passed as a trailing lambda at the
-     * existing call site, and a parameter added after it would silently capture the lambda instead.
+     * Declared before [onHandlerError] on purpose: that one is passed as a trailing lambda at every
+     * call site, and a parameter added after it would silently capture the lambda instead.
      */
-    private val application: String = ConnectionAddress.APPLICATION,
+    private val application: String,
     private val onHandlerError: (address: ConnectionAddress, error: Throwable) -> Unit = { _, _ -> }
 ) {
 

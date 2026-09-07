@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /** A parsed address plus its payload — everything a handler needs to serve one call. */
 data class ConnectionRequest(

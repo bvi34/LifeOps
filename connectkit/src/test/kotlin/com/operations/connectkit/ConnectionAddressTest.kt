@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 import org.junit.Assert.*
 import org.junit.Test
@@ -48,8 +48,16 @@ class ConnectionAddressTest {
     }
 
     @Test
-    fun `local factory builds a current-version LifeOps address`() {
-        val a = ConnectionAddress.local("task", "create")
-        assertEquals("/v1/LifeOps/local/task/create", a.toString())
+    fun `the local factory builds a current-version address for whichever app asked`() {
+        assertEquals(
+            "/v1/LifeOps/local/task/create",
+            ConnectionAddress.localFor("LifeOps", "task", "create").toString()
+        )
+        // The segment was reserved for this from the start, and the kit has no favourite among the
+        // apps that fill it in.
+        assertEquals(
+            "/v1/Repository/local/document/search",
+            ConnectionAddress.localFor("Repository", "document", "search").toString()
+        )
     }
 }

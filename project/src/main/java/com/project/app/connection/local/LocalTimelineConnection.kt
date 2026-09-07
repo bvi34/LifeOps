@@ -1,7 +1,8 @@
 package com.project.app.connection.local
 
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.Resolution
+import com.operations.connectkit.ConnectionResult
 import com.project.app.data.repository.ProjectRepository
 
 /**
@@ -20,17 +21,17 @@ object LocalTimelineConnection {
         registry.register("local", "timeline", "add") { request ->
             val p = request.params
             when (val found = repo.resolveProject(p.requireString("project"))) {
-                is Resolved.Problem -> found.failure
-                is Resolved.Ok -> {
+                is Resolution.Problem -> found.failure
+                is Resolution.Ok -> {
                     val id = repo.addEvent(
-                        projectId = found.project.id,
+                        projectId = found.value.id,
                         title = p.requireString("title"),
                         whenLabel = p.getString("when"),
                         era = p.getString("era"),
                         detail = p.getString("detail"),
                         outlineNodeId = p.getString("outlineNodeId")
                     )
-                    ConnectionResult.ok("id" to id, "projectId" to found.project.id)
+                    ConnectionResult.ok("id" to id, "projectId" to found.value.id)
                 }
             }
         }

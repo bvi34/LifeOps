@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 import org.junit.Assert.*
 import org.junit.Test

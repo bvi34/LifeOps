@@ -80,6 +80,10 @@ dependencies {
     // completions on a bus and knows nothing about who is listening. Exactly the arrow Maintenance
     // draws, for exactly the same reason.
     implementation(project(":lifeops"))
+    // The address contract Project's own dispatcher is built on. A direct dependency rather than one
+    // inherited through :lifeops: Project serving `/v1/Project/local/…` has nothing to do with it
+    // also publishing cards onto the LifeOps week.
+    implementation(project(":connectkit"))
     // The suite's shelf. A project's *files* — the brief, the contract, the reference PDFs somebody
     // was sent — are documents the household filed, not writing the project is made of, and they
     // belong in the one place the suite keeps documents. The arrow points into Repository and never

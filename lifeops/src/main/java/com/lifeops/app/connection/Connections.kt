@@ -1,6 +1,9 @@
 package com.lifeops.app.connection
 
 import android.util.Log
+import com.operations.connectkit.ConnectionAddress
+import com.operations.connectkit.ConnectionDispatcher
+import com.operations.connectkit.ConnectionRegistry
 import com.lifeops.app.connection.local.LocalActivityConnection
 import com.lifeops.app.connection.local.LocalAspectConnection
 import com.lifeops.app.connection.local.LocalBookConnection
@@ -42,6 +45,14 @@ import com.lifeops.app.connection.service.WellnessService
  * future named integrations) are registered here.
  */
 object Connections {
+
+    /**
+     * The segment LifeOps answers for. It used to be a constant on [ConnectionAddress] itself; a
+     * shared address contract that names one of its callers is a contract with a favourite, so each
+     * app now states its own — see `ProjectConnections.APPLICATION` and
+     * `RepositoryConnections.APPLICATION`.
+     */
+    const val APPLICATION = "LifeOps"
 
     /** Services the connection layer dispatches into, gathered so [buildDispatcher] stays stable
      * as more are added. */
@@ -86,7 +97,7 @@ object Connections {
         LocalRunbookConnection.register(registry, services.runbook)
         LocalWellnessConnection.register(registry, services.wellness)
         // Future named connections (integrations) register their own connection namespace here.
-        return ConnectionDispatcher(registry) { address, error ->
+        return ConnectionDispatcher(registry, APPLICATION) { address, error ->
             Log.e("ConnectionDispatcher", "Handler failed for $address", error)
         }
     }

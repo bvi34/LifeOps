@@ -57,9 +57,20 @@ include(":maintenance")
 // shows the same documents in place, on the asset or the person they belong to. The dependency arrow
 // points into it (:maintenance -> :repository), and an app that already stores its own paperwork
 // lends it to the shelf read-only rather than moving it.
+//
+// It is the third app to serve connection routes, and the arrow is why :connectkit exists: the
+// address machinery lived inside :lifeops, and a shelf that had to depend on the planner to answer
+// "where is the warranty" would be the wrong shape. Its routes read and correct captions — they
+// cannot file, delete or export a document, and each of those addresses is asserted absent.
 include(":repository")
 include(":core")
 include(":backupkit")
+// The suite's address contract: `/v1/{application}/{connection}/{resource}/{action}`, the payload,
+// the registry and the dispatcher — pure JVM, and knowing nothing about what a task or a document
+// is. It lived inside :lifeops while LifeOps was the only app serving addresses; it is here because
+// Repository is the third, and unlike Project it cannot depend on :lifeops without inverting the one
+// arrow it is built around. Routes stay with whoever owns the data.
+include(":connectkit")
 // The suite's appearance and its shared controls: `:suitekit` is the pure-JVM contract (presets,
 // palettes, each app's colour identity, the maths that resolves them into a scheme, and the swatch
 // palette); `:suiteui` is the Compose theme, the store behind it that the sandbox settings edit and

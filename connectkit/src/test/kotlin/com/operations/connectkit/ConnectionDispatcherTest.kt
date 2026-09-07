@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
@@ -18,7 +18,7 @@ class ConnectionDispatcherTest {
         registry.register("local", "thing", "needs") { req ->
             ConnectionResult.ok("v" to req.params.requireString("required"))
         }
-        return ConnectionDispatcher(registry)
+        return ConnectionDispatcher(registry, "LifeOps")
     }
 
     @Test

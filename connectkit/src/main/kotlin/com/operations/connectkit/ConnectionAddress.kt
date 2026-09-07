@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /**
  * A parsed connection-function address of the form
@@ -32,7 +32,6 @@ data class ConnectionAddress(
 
     companion object {
         const val CURRENT_VERSION = "v1"
-        const val APPLICATION = "LifeOps"
 
         const val CONNECTION_LOCAL = "local"
 
@@ -58,17 +57,15 @@ data class ConnectionAddress(
             )
         }
 
-        /** Build a canonical [ConnectionAddress] for the current version + application. */
-        fun local(resource: String, action: String): ConnectionAddress =
-            ConnectionAddress(CURRENT_VERSION, APPLICATION, CONNECTION_LOCAL, resource, action)
-
         /**
-         * The same, for a peer that serves its own routes under this scheme.
+         * A canonical local address for one application.
          *
          * The `application` segment was reserved from the start "so a future multi-app surface can
-         * address peers without ambiguity"; this is that surface arriving. Project registers
-         * `/v1/Project/local/…` against its own dispatcher — one addressing convention across the
-         * suite rather than a second one invented per app.
+         * address peers without ambiguity"; this is that surface. There used to be a `local()`
+         * alongside this that filled the segment in with `"LifeOps"`, and a matching constant — both
+         * are gone, because a shared contract that names one of its callers is a contract with a
+         * favourite. Each app states its own segment; `Connections.APPLICATION` and its peers are
+         * where those now live.
          */
         fun localFor(application: String, resource: String, action: String): ConnectionAddress =
             ConnectionAddress(CURRENT_VERSION, application, CONNECTION_LOCAL, resource, action)

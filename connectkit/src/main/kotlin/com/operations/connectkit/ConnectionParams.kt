@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /**
  * Typed, read-only accessor over a route's payload. The payload is an untyped

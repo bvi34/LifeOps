@@ -1,8 +1,8 @@
 package com.lifeops.app.connection.local
 
-import com.lifeops.app.connection.ConnectionError
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionError
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.ConnectionResult
 import com.lifeops.app.connection.service.FutureOperationService
 import com.lifeops.app.data.model.FutureOperationStatus
 

@@ -41,6 +41,11 @@ dependencies {
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The suite's address contract (pure JVM): the five-segment address, the payload, the registry
+    // and the dispatcher. `api` rather than `implementation` because a dispatcher is part of this
+    // module's own surface — `LifeOpsApp.connectionDispatcher` hands one out, and a caller holding
+    // it needs the type. The *routes* are still LifeOps' own, in `connection/`.
+    api(project(":connectkit"))
     // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps
     // reads to ingest reading telemetry and notes. LifeOps is just another peer on the seam.
     implementation(project(":core"))

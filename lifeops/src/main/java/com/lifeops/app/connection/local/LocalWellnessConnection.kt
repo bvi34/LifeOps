@@ -1,7 +1,7 @@
 package com.lifeops.app.connection.local
 
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.ConnectionResult
 import com.lifeops.app.connection.service.WellnessService
 import com.lifeops.app.data.model.Initiative
 import com.lifeops.app.data.model.SensoryTrend
