@@ -189,6 +189,23 @@ that opens the shelf narrowed to that record, which is the second door being ope
 first. Advisor is the obvious next one — it already reads the shelf through
 `RepositoryKnowledgeSource` and can now take somebody to what it cited.
 
+## Answering in a sentence
+
+Repository serves `/v1/Repository/local/…` — the suite's third dispatcher, on the shared
+`:connectkit` core. The route table and the reasoning are in
+[CONNECTIONS.md](CONNECTIONS.md#repositorys-routes); what matters here is the line it sits on.
+
+**The routes read, and they correct captions. They cannot put a document on the shelf, take one off
+it, or hand one out.** Filing is not routable (a picked document is a `Uri` and a permission grant,
+not a payload); nothing deletes (the bytes may be the only copy in the house); nothing exports (a
+document leaves by one road, opened by the household pressing Send and not by a caller). Each refused
+address is asserted `ROUTE_NOT_FOUND` in `RepositoryConnectionsTest`, so adding one means deleting a
+test that says why not.
+
+Note what the dependency is: `:connectkit`, not `:lifeops`. The address machinery lived inside
+LifeOps until this module needed it, and a shelf that had to depend on the planner to answer "where
+is the warranty" would be the wrong shape. **The arrow into this module still points one way.**
+
 ## The backup
 
 `repository.db` **and the documents themselves**.
@@ -204,6 +221,7 @@ on restore they are written **before** the rows that name them.
 repository/src/main/java/com/repository/app/
 ├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents ·
 │                   Shelf · Drive/Drives · Transfer · RepositoryDestination/RepositoryLinks
+├── connection/     RepositoryConnections + local/ — the routes, on :connectkit's core
 ├── data/
 │   ├── db/         Room, one table: rows that name files
 │   ├── prefs/      RepositoryPrefs — which drive, and where on it. Never backed up; see below

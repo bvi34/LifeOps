@@ -2,6 +2,7 @@ package com.repository.app
 
 import android.app.Application
 import android.content.Context
+import com.repository.app.connection.RepositoryConnections
 import com.repository.app.data.db.RepositoryDatabase
 import com.repository.app.data.prefs.RepositoryPrefs
 import com.repository.app.data.repository.DocumentRepository
@@ -32,6 +33,15 @@ class RepositoryApp private constructor(private val app: Application) {
 
     /** Which drive, and where on it — a starting point, never a store of anything. */
     val prefs by lazy { RepositoryPrefs(app) }
+
+    /**
+     * The shelf's routes: `/v1/Repository/local/…`, the suite's third dispatcher.
+     *
+     * Lazy like everything else here — a household that never asks the shelf a question in a
+     * sentence builds no registry. What it serves, and the three things it deliberately refuses to,
+     * are in `connection/RepositoryConnections`.
+     */
+    val connectionDispatcher by lazy { RepositoryConnections.buildDispatcher(documents) }
 
     companion object {
 

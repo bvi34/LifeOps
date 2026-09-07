@@ -381,6 +381,14 @@ the receipts.
 > documents appear on the shelf beside everything else, while every change to one still happens in
 > Health, which is where the rules about deleting them live.
 >
+> The shelf also **answers in a sentence**: `/v1/Repository/local/…` is the suite's third dispatcher
+> (after LifeOps and Project), so "where is the Wrangler's warranty" is a route rather than a scroll.
+> The line it sits on is drawn tighter than anywhere else in the suite — the routes read and they
+> correct captions; they cannot put a document on the shelf, take one off it, or hand one out, and
+> each refused address is asserted in a test rather than merely left unwritten. The address machinery
+> that makes this possible moved out of LifeOps into `:connectkit` to get here, because the arrow into
+> this module still points one way.
+>
 > Documents also come **off a drive and go back onto one, targeted**: pick Google Drive, OneDrive or
 > Dropbox, choose the four files you actually want, review the list — untick the two dead drafts,
 > rename the third — and file the lot in one press; send one back, or everything a search has

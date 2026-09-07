@@ -20,19 +20,38 @@ This is an **in-process** routing convention, not an HTTP API — the app is off
 single-user, so there is no server behind these addresses. The scheme exists so that internal app
 comms and (later) external integrations share one addressing model and one call path.
 
-**Two applications serve routes.** LifeOps was the first and is the reference; **Project** is the
-second, and its arrival is what the `application` segment was reserved for. Each owns a
-`ConnectionDispatcher` built from the same machinery (`ConnectionAddress`, `ConnectionRegistry`,
-`ConnectionParams`, `ConnectionResult`) and answers only for its own segment — a `/v1/Project/…`
-address sent to LifeOps' dispatcher fails with `UNKNOWN_APPLICATION`, and the reverse likewise. One
-convention across the suite; one dispatcher per app that owns the data.
+**Three applications serve routes.** LifeOps was the first and is the reference; **Project** is the
+second, and its arrival is what the `application` segment was reserved for; **Repository** is the
+third. Each owns a `ConnectionDispatcher` built from the same machinery and answers only for its own
+segment — a `/v1/Project/…` address sent to LifeOps' dispatcher fails with `UNKNOWN_APPLICATION`, and
+the reverse likewise. One convention across the suite; one dispatcher per app that owns the data.
+
+That machinery is **`:connectkit`**, a pure-JVM module alongside `:core`, `:backupkit` and
+`:suitekit`: `ConnectionAddress`, `ConnectionParams`, `ConnectionRegistry`, `ConnectionDispatcher`,
+`ConnectionResult`/`ConnectionError`, `RouteHandler`, and the `NameLookup` rule below. It lived
+inside `:lifeops` until the third app wanted it. That was fine while LifeOps was the only one serving
+addresses and workable while Project was the second — Project already depends on `:lifeops`, because
+a dated card publishes itself onto the week. It stopped being workable at Repository, whose whole
+architecture is that the dependency arrow points *into* it and never out: a shelf that had to depend
+on the planner to answer "where is the warranty" would be the wrong shape. The core sitting inside
+one app is exactly what stops any other one serving routes at all, so it moved out and the routes
+stayed with whoever owns the data.
+
+Two things were tidied on the way out. `ConnectionAddress.APPLICATION` (a constant reading
+`"LifeOps"`) and the `local()` factory that used it are gone — a shared contract that names one of
+its callers is a contract with a favourite — so each app states its own segment
+(`Connections.APPLICATION`, `ProjectConnections.APPLICATION`, `RepositoryConnections.APPLICATION`)
+and `ConnectionAddress.localFor(application, …)` is the only factory. And `ConnectionDispatcher`'s
+`application` parameter lost its LifeOps default: an app that forgot to pass its own segment used to
+build a dispatcher answering for somebody else's, and find out when a route it had just registered
+returned `UNKNOWN_APPLICATION` for its own address.
 
 ## The five segments
 
 | Segment | Example | Meaning |
 |---|---|---|
 | `version` | `v1` | Address-contract version. Bumped only on a breaking shape change. |
-| `application` | `LifeOps`, `Project` | The owning app. Two apps serve routes today; each has its own dispatcher and answers only for its own segment. |
+| `application` | `LifeOps`, `Project`, `Repository` | The owning app. Three apps serve routes today; each has its own dispatcher and answers only for its own segment. |
 | `connection` | `local` | The namespace / transport. `local` is internal app comms; a named connection (an API or integration name) is reserved for future external integrations. |
 | `resource` | `task` | The noun being acted on. |
 | `action` | `create` | The verb. |
@@ -163,16 +182,21 @@ intention.
 
 ### Naming the target
 
-A screen hands back the id of the row somebody tapped; a route is handed a *name*, because the
-caller is a sentence. `logic/ProjectLookup` resolves it: **id first**, then an exact name match that
-ignores case and surrounding space — never a prefix and never a substring, because "Kes" finding
-"The Kestrel" is a guess, and a guess writes into the wrong project the first time two of them start
-alike.
+A screen hands back the id of the row somebody tapped; a route is handed a *name*, because the caller
+is a sentence. `NameLookup` in `:connectkit` resolves it, for every app: **id first**, then an exact
+name match that ignores case and surrounding space — never a prefix and never a substring, because
+"Kes" finding "The Kestrel" is a guess, and a guess acts on the wrong row the first time two of them
+start alike.
 
 **An ambiguous name resolves to nothing**, the same rule Lore uses for `[[double brackets]]`. Two
-projects called "Draft" produce an `INVALID_PARAMS` naming both and asking for an id, rather than a
-write into whichever row came back first. A caller that is told "which one?" can ask again; one that
-is told nothing writes into somebody's work and never finds out.
+projects called "Draft" — or two documents called "Statement" — produce an `INVALID_PARAMS` naming
+both and asking for an id, rather than acting on whichever row came back first. A caller that is told
+"which one?" can ask again; one that is told nothing writes into somebody's work and never finds out.
+
+`Match.orProblem(noun, reference)` turns the three answers into the three words the scheme already
+has (`Ok`, `NOT_FOUND`, `INVALID_PARAMS`) with one wording, so "which one did you mean" reads
+identically whichever app was asked. It is shared for the same reason the rule is: three copies of a
+resolution rule is three chances for one of them to start guessing.
 
 ### What a route does not touch
 
@@ -180,6 +204,59 @@ is told nothing writes into somebody's work and never finds out.
 published LifeOps task alone — the hand-off round sees a finished card and retires the task, which
 is the one place that decision is made. Clearing the link here would strand the task on somebody's
 week with nothing pointing at it.
+
+## Repository's routes
+
+All under `/v1/Repository/local/…`, served by `RepositoryConnections.buildDispatcher` and reached
+through `RepositoryApp.connectionDispatcher`. Like Project there is no service layer: the store
+already *is* the use-case layer — every rule about what happens to a row and the file under it lives
+in `DocumentRepository` and is tested there — and a second one would be a second place for them.
+
+| Resource | Actions | Notes |
+|---|---|---|
+| `document` | `list`, `search`, `get`, `update`, `detach` | `list` takes an optional `app`, `app`+`record`, or `household: true` to narrow to one drawer; otherwise the whole shelf. `search` runs the shelf's own search over the title, the note, the kind and **what the document is about**, so "wrangler" finds the truck's manual through a route while the module still has no idea what a Wrangler is. `get` takes a `document` (title or id). `update` takes `title`, `kind` and `note` — an omitted field is left alone, a blank `note` clears it, and an unrecognised `kind` is refused rather than quietly filed as "Other". `detach` puts a document back in the household's drawer. |
+| `drawer` | `list` | What the household has paperwork about: each drawer's app key (null for the household's own), label, count and total size. |
+
+Everything a route returns is **metadata** — what a document is called, what kind somebody said it
+is, what it is about, how big it is. Never a byte of it. This module does not read documents, and a
+route is not where it would start.
+
+### The line these routes sit on
+
+**They read, and they correct captions. They cannot put a document on the shelf, take one off it, or
+hand one out.**
+
+- **Filing is not routable at all**, and not out of caution: a picked document is an Android `Uri`
+  plus a permission grant, not a serialisable payload. Same exclusion LifeOps makes for task image
+  attachments, for the same reason.
+- **Nothing deletes.** Deleting here destroys bytes, and the bytes may be the only copy of that
+  document in the house — the scan of the title, the letter the solicitor sent once. Creating a row
+  is undone by deleting it; deleting a document is undone by nothing.
+- **Nothing exports.** A document leaves the device by exactly one road: somebody presses Open or
+  Send and picks where it goes. A route that handed a file out would be a second road, opened by a
+  caller rather than by the household, and the promise in Repository's manifest would stop being
+  true.
+
+`RepositoryConnectionsTest` asserts each of those addresses is `ROUTE_NOT_FOUND` — `document/file`,
+`create`, `add`, `delete`, `remove`, `export`, `send`, `open`, `drawer/delete` — so adding one means
+deleting a test that says why not.
+
+Renaming *is* allowed, and it is the one write that fits: a caption is something a person typed, a
+person who mistyped it is exactly who would ask a sentence to fix it, and making the change again
+undoes it. The bytes are untouched and unreachable from any address here.
+
+### What a lender lends
+
+A document another app is lending the shelf (see [REPOSITORY.md](REPOSITORY.md)) is **findable** by
+route and **not writable** by one. Findable because a household asking where the lab result is does
+not care which app is holding it, and answering "no such document" about one sitting in plain view is
+a worse answer. Not writable because Health has rules about renaming and deleting its own documents —
+it deletes a person's with the person — and a second writer would either duplicate those or break
+them.
+
+`update` and `detach` on a lent document fail with `INVALID_PARAMS` naming the app that holds it,
+rather than reporting a success that changed nothing, which is the failure a caller cannot see. Every
+document a route hands back carries `lentBy`, so a caller knows before it asks.
 
 ## The one thing that points outward
 
@@ -218,6 +295,10 @@ from a foreground or an edit, so a missed announcement costs latency, never corr
 
 `local/task` is the worked example end-to-end: `LocalTaskConnection` → `TaskService` →
 `TaskRepository`, with `week`/`operation`/`counter` following the same shape. New resources should
-mirror it. The routing core (`ConnectionAddress`, `ConnectionParams`, `ConnectionRegistry`,
-`ConnectionDispatcher`) is pure JVM and unit-tested under
-`app/src/test/java/com/lifeops/app/connection/`.
+mirror it. The routing core is `:connectkit` — pure JVM, no Android — and unit-tested under
+`connectkit/src/test/kotlin/com/operations/connectkit/`.
+
+**A fourth app serving routes** now needs one dependency and one object: `implementation(project(
+":connectkit"))`, then a `Connections` root that builds a `ConnectionRegistry`, registers its
+resources onto it, and returns `ConnectionDispatcher(registry, APPLICATION)`. That is the whole
+setup, which is the point of the core having moved out of `:lifeops`.

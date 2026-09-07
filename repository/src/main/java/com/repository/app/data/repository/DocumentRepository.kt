@@ -71,6 +71,16 @@ class DocumentRepository(
 
     suspend fun get(id: String): DocumentFacts? = dao.getDocument(id)?.toFacts()
 
+    /**
+     * The whole shelf as it stands right now — this app's rows and every lender's, in one list.
+     *
+     * The one-shot form of [observeShelf], for the callers that are answering a question rather than
+     * drawing a screen: a link being checked, a route being served. It is a real read of every
+     * source each time it is called, which is right for both — a household's shelf is a few hundred
+     * rows, and an answer assembled from a cached list is an answer about a shelf that has changed.
+     */
+    suspend fun everything(): List<DocumentFacts> = observeShelf().first()
+
     // ------------------------------------------------------------------ filing
 
     /**
@@ -251,7 +261,7 @@ class DocumentRepository(
      */
     suspend fun resolve(destination: RepositoryDestination): RepositoryDestination? {
         if (destination is RepositoryDestination.Shelf) return destination
-        val shelf = observeShelf().first()
+        val shelf = everything()
         return when (destination) {
             // Handled above; repeated so this stays an exhaustive `when` over the destinations
             // rather than a `when` with an else that would swallow the next one somebody adds.

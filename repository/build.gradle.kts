@@ -50,6 +50,13 @@ ksp {
 dependencies {
     implementation(project(":suiteui"))
     implementation(project(":backupkit"))
+    // The suite's address contract (pure JVM): the five-segment address, the payload, the registry,
+    // the dispatcher and the name-resolution rule every app's routes need first. Repository serves
+    // `/v1/Repository/local/…` from its own dispatcher built on it. Note what this is *not*: a
+    // dependency on LifeOps, where this machinery used to live — the arrow into this module still
+    // points one way, and a shelf that had to depend on the planner to answer "where is the
+    // warranty" would be the wrong shape.
+    implementation(project(":connectkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
