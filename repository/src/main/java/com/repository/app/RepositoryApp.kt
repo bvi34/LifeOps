@@ -55,5 +55,20 @@ class RepositoryApp private constructor(private val app: Application) {
             instance ?: synchronized(this) {
                 instance ?: RepositoryApp(context.applicationContext as Application).also { instance = it }
             }
+
+        /**
+         * Drop the container and the database under it.
+         *
+         * For tests, which must not inherit the shelf an earlier one built — the same reason
+         * `DocumentSources.clear()` exists. On a device this is never called: a restore swaps the
+         * database file and the sandbox asks the household to reopen the app, which is the suite's
+         * convention rather than this module's own.
+         */
+        fun reset() {
+            synchronized(this) {
+                RepositoryDatabase.closeInstance()
+                instance = null
+            }
+        }
     }
 }

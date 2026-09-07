@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="repository_app_name">Repository</string>
+    <!-- How the shelf names itself in the system Files app and in other apps' Open dialogs. -->
+    <string name="repository_root_title">Repository</string>
+    <string name="repository_root_summary">The household\'s shelf</string>
 </resources>

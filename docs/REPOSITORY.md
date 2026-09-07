@@ -206,6 +206,39 @@ Note what the dependency is: `:connectkit`, not `:lifeops`. The address machiner
 LifeOps until this module needed it, and a shelf that had to depend on the planner to answer "where
 is the warranty" would be the wrong shape. **The arrow into this module still points one way.**
 
+## The third door
+
+The shelf is one of the places Android offers, beside Drive and Downloads —
+`provider/RepositoryDocumentsProvider`. The first two doors are both inside the suite; a household
+attaching the mortgage statement to an email was still going through Downloads and a folder of files
+called `Scan_20240412.pdf`. Here it gets the same drawers, the same names, and the same search.
+
+Four things are worth knowing about it.
+
+**It is read-only, and it is the same line the routes sit on.** Every `COLUMN_FLAGS` it publishes is
+zero for create, delete, write, rename and move, `FLAG_SUPPORTS_CREATE` is absent from the root, and
+a document opened for writing is *refused* rather than quietly downgraded — an app told it holds a
+writable descriptor will act as though its edits were kept. A picker that could delete would let any
+app on the phone destroy the only copy of a document through a dialog nobody read carefully.
+
+**Its document ids are the app's own addresses.** A provider needs a stable string per document and
+Repository already had one: `logic/RepositoryLinks` (`shelf`, `drawer/maintenance`, `document/<id>`,
+`lent/health/<id>`). So there is one way to write down "somewhere on the shelf" — the id the Files
+app remembers in a recent-documents list is the same string that opens the app at that document —
+rather than a second vocabulary that could drift from the first.
+
+**The tree is the shelf's, not a folder tree.** The root is the drawers, household first; a drawer is
+its documents, newest first. There is no folder per record, because that would be the folders this
+app refuses to have — a record is addressable in the app and searchable here. Each document carries
+what it is *about* in `COLUMN_SUMMARY` ("2018 Jeep Wrangler · Manual or instructions"), which is the
+one thing a folder of scans could never tell anybody.
+
+**It does not widen what leaves the device.** The provider is guarded by
+`android.permission.MANAGE_DOCUMENTS`, held only by the system's own document UI, so no app can bind
+to it and go looking. An app receives exactly the one document the person picked, through a URI grant
+the system issues at the moment they pick it. That is the same decision as pressing Send inside the
+app, made in a different dialog — which is why the promise at the top of the manifest still holds.
+
 ## The backup
 
 `repository.db` **and the documents themselves**.
@@ -222,6 +255,7 @@ repository/src/main/java/com/repository/app/
 ├── logic/          Pure JVM, unit-tested: DocumentKind · DocumentOwner · DocumentFacts · Documents ·
 │                   Shelf · Drive/Drives · Transfer · RepositoryDestination/RepositoryLinks
 ├── connection/     RepositoryConnections + local/ — the routes, on :connectkit's core
+├── provider/       RepositoryDocumentsProvider — the shelf in the system Files app, read-only
 ├── data/
 │   ├── db/         Room, one table: rows that name files
 │   ├── prefs/      RepositoryPrefs — which drive, and where on it. Never backed up; see below
@@ -269,7 +303,7 @@ already *is* a file in the app that holds it.
 
 ## Tests
 
-`gradle :repository:test` — 91 JVM tests, no emulator needed.
+`gradle :repository:test` — 101 JVM tests, no emulator needed.
 
 Forty-five of them are over `logic/` and need no SDK at all. Fifteen are the routes' (see
 [CONNECTIONS.md](CONNECTIONS.md#repositorys-routes)), and most of those are about the addresses this
@@ -295,6 +329,15 @@ mortgage statement nothing will ever delete.
   they are decided on a phone — including the file that describes itself happily and then fails to
   open, which is a Google Doc with no exportable bytes and not a contrived case. `FakeSource` is a
   real `DocumentSource`, which is all Repository has ever known about any lender.
+- `RepositoryDocumentsProviderTest` — the shelf as Android sees it, queried through the real
+  `ContentResolver` with real `DocumentsContract` URIs. The provider is started from a full
+  `ProviderInfo`, because `DocumentsProvider.attachInfo` refuses to run unless it is exported, grants
+  URI permissions and is protected by `MANAGE_DOCUMENTS` — the framework asserting the manifest entry
+  this module actually ships, so a provider that would be rejected on a device is rejected here too.
+  What it asserts is the adaptation and the refusals: the drawers in the shelf's own order, a
+  document named the way it leaves by every other road, a lent document addressed by its lender, the
+  Files app's search being the shelf's search, every flag zero for create/delete/write/rename, and a
+  write mode refused outright.
 - `RepositoryConnectionsTest` — the routes, and the line they sit on: nine addresses that must stay
   `ROUTE_NOT_FOUND` (filing, deleting and exporting, in every spelling somebody would reach for), a
   document named the way a sentence names it, two of the same name resolving to *neither* with both
@@ -324,10 +367,10 @@ mortgage statement nothing will ever delete.
 
 Named so it is a decision rather than an omission:
 
-- **No `DocumentsProvider`.** Repository does not appear in the system Files app or in other apps'
-  Open/Save pickers. It would be the natural next step and is a genuinely large piece of work; the
-  request this was built for was reaching a mortgage statement without opening Maintenance, which is
-  what the two doors already do.
+- **No writing through the `DocumentsProvider`.** The shelf appears in the system Files app and in
+  other apps' Open dialogs (see [The third door](#the-third-door)), but read-only: no create, no
+  delete, no write, no rename, and no Save dialog. Filing and deleting happen where somebody can see
+  the whole shelf while they do it.
 - **No migration of what already exists.** LifeOps' task attachments, Citation's books and Project's
   documents stay where they are. Health's are *lent* rather than moved.
 - **Three apps not wired, and each is a decision rather than a gap.** Four file into the shelf —

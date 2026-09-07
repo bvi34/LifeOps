@@ -381,6 +381,14 @@ the receipts.
 > documents appear on the shelf beside everything else, while every change to one still happens in
 > Health, which is where the rules about deleting them live.
 >
+> The shelf is also **one of the places Android offers**, beside Drive and Downloads: a
+> `DocumentsProvider` puts the same drawers, names and search into the system Files app and into every
+> other app's Open dialog, so the mortgage statement is attached to an email without first being found
+> in Downloads under `Scan_20240412.pdf`. Read-only — no create, delete, write or rename, the same
+> line the routes sit on — and guarded by `MANAGE_DOCUMENTS`, so no app can bind to it and go looking;
+> what an app gets is the one document the person picked. Its document ids *are* the app's own deep
+> links, so the id the Files app remembers is the string that opens the shelf at that document.
+>
 > The shelf also **answers in a sentence**: `/v1/Repository/local/…` is the suite's third dispatcher
 > (after LifeOps and Project), so "where is the Wrangler's warranty" is a route rather than a scroll.
 > The line it sits on is drawn tighter than anywhere else in the suite — the routes read and they

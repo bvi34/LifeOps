@@ -305,6 +305,19 @@ class DocumentRepository(
 
     // ------------------------------------------------------------------ backup
 
+    /**
+     * The stored file behind one of this app's own documents, in place.
+     *
+     * The one hand-over that does **not** copy, and it is safe not to precisely because the caller
+     * cannot write: `provider/RepositoryDocumentsProvider` opens it read-only for the system file
+     * browser. Every other road out goes through [exportCopy] into `cacheDir/exports`, because those
+     * hand the file to another app that may do anything with it.
+     */
+    suspend fun fileOf(id: String): File? {
+        val row = dao.getDocument(id) ?: return null
+        return files.file(row.fileName)
+    }
+
     /** Every row, for the backup contributor. */
     suspend fun allRows(): List<DocumentEntity> = dao.allDocuments()
 

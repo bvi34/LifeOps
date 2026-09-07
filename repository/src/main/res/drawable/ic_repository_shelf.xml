@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The shelf's icon in the system Files app, where it sits beside Drive, Downloads and the SD card.
+     A drawn shelf rather than a folder: what this root offers is not a directory tree somebody
+     arranged, and a folder glyph would promise one. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="?android:attr/colorControlNormal">
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M3,3h2v18h-2z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M19,3h2v18h-2z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M5,11h14v2h-14z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7,5h3v5h-3z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M11,5h2v5h-2z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M14,6h3v4h-3z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M7,14h4v5h-4z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M12,14h5v5h-5z" />
+</vector>

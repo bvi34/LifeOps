@@ -1,16 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- THE PROMISE: nothing here goes anywhere. Repository declares no permissions at all, and
-         unlike the apps that do, it has no lookup that could earn one: it takes a stream of bytes
-         and gives the same bytes back. There is no OCR, no extraction, no "we noticed your rate went
-         up" — every fact it holds about a document is one a person typed. A mortgage statement and a
-         lab result are the most sensitive things in the suite, and the only way that stays true is
-         if nothing in this module can read them.
+    <!-- THE PROMISE: nothing here goes anywhere on its own. Repository declares no permissions at
+         all, and unlike the apps that do, it has no lookup that could earn one: it takes a stream of
+         bytes and gives the same bytes back. There is no OCR, no extraction, no "we noticed your
+         rate went up" — every fact it holds about a document is one a person typed. A mortgage
+         statement and a lab result are the most sensitive things in the suite, and the only way that
+         stays true is if nothing in this module can read them.
 
-         A document leaves this device exactly once: when somebody presses Open or Send and picks the
-         app it goes to. That is a copy made on request into cacheDir/exports (see
-         res/xml/repository_file_paths.xml), not a directory anything else can browse. -->
+         A document leaves this device only when the household hands it over, and there are now two
+         places that choice can be made — both of them the same choice.
+
+         Inside the app, pressing Open or Send makes a copy into cacheDir/exports (see
+         res/xml/repository_file_paths.xml) and hands that to the app somebody picked. Not a
+         directory anything else can browse.
+
+         Outside it, the shelf appears in the system Files app and in other apps' Open dialogs
+         through the DocumentsProvider below — so the statement can be attached to an email without
+         first being found in Downloads. That widens nothing on its own: the provider is guarded by
+         android.permission.MANAGE_DOCUMENTS, which only the system's own document UI holds, so no
+         app can bind to it and go looking. An app receives exactly the one document the person
+         chose, through a URI grant the system issues at the moment they choose it — and read-only,
+         because the provider offers no create, delete, write or rename. -->
 
     <!-- Repository is a library module: no app-level attributes here (name/icon/theme/label live on
          the :app host). Only its own components are declared for the manifest merger. -->
@@ -22,6 +33,21 @@
             android:exported="true"
             android:theme="@style/Theme.Repository"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- The shelf as a place Android offers, beside Drive and Downloads. Read-only, and guarded
+             by MANAGE_DOCUMENTS so only the system document UI can bind to it — an app reaches a
+             document here by the person picking it, never by asking. See the class for why nothing
+             in it can create, delete or write. -->
+        <provider
+            android:name=".provider.RepositoryDocumentsProvider"
+            android:authorities="${applicationId}.repository.documents"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
 
         <!-- A distinctly-named FileProvider subclass so this and the other apps' providers are
              separate <provider> nodes when the library manifests merge; the merger keys on class
