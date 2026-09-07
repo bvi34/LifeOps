@@ -1,8 +1,8 @@
 package com.project.app.connection
 
 import android.util.Log
-import com.lifeops.app.connection.ConnectionDispatcher
-import com.lifeops.app.connection.ConnectionRegistry
+import com.operations.connectkit.ConnectionDispatcher
+import com.operations.connectkit.ConnectionRegistry
 import com.project.app.connection.local.LocalCardConnection
 import com.project.app.connection.local.LocalDocConnection
 import com.project.app.connection.local.LocalLoreConnection

@@ -3,9 +3,9 @@ package com.project.app.connection
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
-import com.lifeops.app.connection.ConnectionError
-import com.lifeops.app.connection.ConnectionParams
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionError
+import com.operations.connectkit.ConnectionParams
+import com.operations.connectkit.ConnectionResult
 import com.project.app.data.db.ProjectDatabase
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.LoreCategory
@@ -40,7 +40,7 @@ class ProjectConnectionsTest {
 
     private lateinit var db: ProjectDatabase
     private lateinit var repo: ProjectRepository
-    private lateinit var dispatcher: com.lifeops.app.connection.ConnectionDispatcher
+    private lateinit var dispatcher: com.operations.connectkit.ConnectionDispatcher
 
     @Before
     fun setUp() {

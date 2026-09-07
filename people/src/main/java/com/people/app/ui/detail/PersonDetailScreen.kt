@@ -31,6 +31,9 @@ import com.people.app.partner.PartnerInviteCodec
 import com.people.app.ui.common.DetailRow
 import com.people.app.ui.common.HouseholdToggle
 import com.people.app.ui.common.PersonDot
+import com.operations.backupkit.AppId
+import com.repository.app.logic.DocumentKind
+import com.repository.app.ui.attach.DocumentsPanel
 import com.people.app.ui.common.SectionCard
 import com.people.app.ui.checkin.CheckInSection
 import com.people.app.ui.checkin.CheckInSectionState
@@ -406,6 +409,33 @@ fun PersonDetailScreen(
                     }
                 )
             }
+        }
+
+        SectionCard(title = "Documents") {
+            // The household's shelf, showing this person's drawer of it. Filed here, the passport is
+            // also findable from the shelf without remembering it was People that took it in — and
+            // an app that already keeps its own paperwork about a person, as Health does with a lab
+            // result, lends it there rather than moving it. Two doors, one set of documents.
+            //
+            // There is deliberately no cascade when somebody is removed here: removing a person
+            // *archives* them, because the row has to survive as a tombstone for the other peers on
+            // the sync seam (see `PeopleRepository.deletePerson`). Destroying their birth
+            // certificate on the way past would be a real deletion performed on behalf of a
+            // reversible one, and the documents stay on the shelf where they can still be found.
+            DocumentsPanel(
+                appKey = AppId.PEOPLE.key,
+                recordKey = current.id,
+                recordLabel = current.name,
+                kinds = listOf(
+                    DocumentKind.IDENTIFICATION,
+                    DocumentKind.RECORD,
+                    DocumentKind.CORRESPONDENCE,
+                    DocumentKind.POLICY,
+                    DocumentKind.OTHER
+                ),
+                emptyLine = "Passports, certificates, immunisation records — the paperwork that is " +
+                    "about ${current.name} rather than about a thing."
+            )
         }
 
         SectionCard(title = "Notes") {

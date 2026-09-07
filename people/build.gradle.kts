@@ -59,6 +59,10 @@ dependencies {
     implementation(project(":core"))
     // The Operations Sandbox backup format/engine (pure JVM). People supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The suite's shelf. A person is one of the two things in the household that most obviously has
+    // paperwork about it — the passport, the birth certificate, the immunisation record — and this
+    // is one dependency and one composable rather than a second document store in this app.
+    implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

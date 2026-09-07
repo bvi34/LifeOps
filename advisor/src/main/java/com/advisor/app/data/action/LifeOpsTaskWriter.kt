@@ -6,8 +6,8 @@ import com.advisor.app.logic.TaskCommand
 import com.advisor.app.logic.TaskWriteResult
 import com.advisor.app.logic.TaskWriter
 import com.lifeops.app.LifeOpsApp
-import com.lifeops.app.connection.ConnectionParams
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionParams
+import com.operations.connectkit.ConnectionResult
 import com.lifeops.app.data.db.LifeOpsDatabase
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter

@@ -139,6 +139,15 @@ class ShelfTest {
             "2 documents · 1.4 MB",
             Shelf.headline(listOf(document("a", "A", size = 400_000), document("b", "B", size = 1_000_000)))
         )
+        // A size nobody supplied is not nought. A picker often reports none and a lending app need
+        // not either, and "0 bytes" would be a false statement about the household's paperwork
+        // rather than a declined one.
+        assertEquals("2 documents", Shelf.headline(listOf(document("a", "A"), document("b", "B"))))
+        assertEquals(
+            "a total counts what it was told, and says so for the rest by staying quiet about them",
+            "2 documents · 400 KB",
+            Shelf.headline(listOf(document("a", "A", size = 400_000), document("b", "B")))
+        )
     }
 
     // ------------------------------------------------------------------ the rows themselves

@@ -8,6 +8,8 @@ import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
+import com.repository.app.logic.RepositoryDestination
+import com.repository.app.logic.ShelfManifest
 import com.repository.app.logic.Shelf
 import com.repository.app.logic.Transfer
 import com.repository.app.logic.TransferChoice
@@ -18,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -69,6 +72,16 @@ class DocumentRepository(
 
     suspend fun get(id: String): DocumentFacts? = dao.getDocument(id)?.toFacts()
 
+    /**
+     * The whole shelf as it stands right now — this app's rows and every lender's, in one list.
+     *
+     * The one-shot form of [observeShelf], for the callers that are answering a question rather than
+     * drawing a screen: a link being checked, a route being served. It is a real read of every
+     * source each time it is called, which is right for both — a household's shelf is a few hundred
+     * rows, and an answer assembled from a cached list is an answer about a shelf that has changed.
+     */
+    suspend fun everything(): List<DocumentFacts> = observeShelf().first()
+
     // ------------------------------------------------------------------ filing
 
     /**
@@ -88,11 +101,19 @@ class DocumentRepository(
         kind: DocumentKind,
         owner: DocumentOwner = DocumentOwner.HOUSEHOLD,
         note: String? = null,
-        addedAt: Long = System.currentTimeMillis()
+        addedAt: Long = System.currentTimeMillis(),
+        /**
+         * The id to file it under, for a document arriving from another shelf with its own already
+         * minted (see `logic/Sidecar`). Fresh for everything else, which is every other caller.
+         *
+         * Safe because ids are UUIDs: one from another install cannot collide with one of ours, so
+         * an id that is already here means the same document coming round again — which [importAll]
+         * checks for and skips rather than filing twice.
+         */
+        id: String = UUID.randomUUID().toString()
     ): String? {
         val picked = files.describe(source)
         val stored = files.save(source, picked) ?: return null
-        val id = UUID.randomUUID().toString()
         dao.upsertDocument(
             DocumentEntity(
                 id = id,
@@ -150,6 +171,71 @@ class DocumentRepository(
             }
         }
         TransferOutcome(filed, failed)
+    }
+
+    /**
+     * File a reviewed batch that arrived off a drive **with the shelf that wrote it**.
+     *
+     * The plain [fileAll] is what an import without a manifest does: bytes in, a title somebody
+     * typed over whatever the file was called, and the household's own drawer. This is the same
+     * thing when the folder also holds a `repository-shelf.json` — each file is matched to its entry
+     * by name, and arrives with the title, kind, note and *what it is about* that the other shelf
+     * had for it.
+     *
+     * Two rules make re-picking a folder safe, which matters because nobody remembers which four
+     * files were the new ones:
+     *
+     * - **A document already here is skipped, not re-filed.** Matched on the id the exporting shelf
+     *   minted, which the manifest carries.
+     * - **Nothing existing is ever overwritten.** Not the title, not the note, not the drawer. Two
+     *   phones both editing a caption is a conflict this app cannot resolve and has no business
+     *   guessing at, and an import that quietly reverted a rename would be worse than one that did
+     *   nothing.
+     *
+     * A file the manifest says nothing about is filed exactly as [fileAll] would file it — an import
+     * of four documents and one holiday photo should not refuse the photo.
+     */
+    suspend fun importAll(
+        choices: List<TransferChoice>,
+        manifest: ShelfManifest?,
+        kind: DocumentKind,
+        owner: DocumentOwner = DocumentOwner.HOUSEHOLD,
+        note: String? = null
+    ): TransferOutcome = withContext(Dispatchers.IO) {
+        var filed = 0
+        var skipped = 0
+        val failed = mutableListOf<String>()
+
+        Transfer.included(choices).forEach { choice ->
+            val entry = manifest?.entryFor(choice.item.displayName)
+
+            if (entry != null && dao.getDocument(entry.id) != null) {
+                skipped++
+                return@forEach
+            }
+
+            val id = runCatching {
+                file(
+                    source = Uri.parse(choice.item.uri),
+                    // The title from the manifest, not the one the review list guessed from the file
+                    // name — unless somebody edited it in the review list, in which case they mean it.
+                    title = choice.title,
+                    kind = entry?.documentKind ?: kind,
+                    owner = entry?.owner ?: owner,
+                    note = entry?.note ?: note,
+                    addedAt = entry?.addedAt ?: System.currentTimeMillis(),
+                    id = entry?.id ?: UUID.randomUUID().toString()
+                )
+            }.getOrNull()
+
+            if (id == null) {
+                failed += choice.title.trim().ifBlank { choice.item.displayName.orEmpty() }
+                    .ifBlank { "One file" }
+            } else {
+                filed++
+            }
+        }
+        TransferOutcome(filed, failed, skipped)
     }
 
     /**
@@ -231,6 +317,47 @@ class DocumentRepository(
         dao.filedBy(appKey).filter { it.ownerKey == recordKey }.forEach { delete(it.id) }
     }
 
+    // ------------------------------------------------------------------ opening at a place
+
+    /**
+     * An address checked against what is actually on the shelf, or null if the thing it names has
+     * gone.
+     *
+     * Every way into this app from outside names rows by id, and by the time one is opened the row
+     * may not be there: Advisor can ground an answer in a statement thrown away since, and an asset
+     * screen can hand over a record whose last document was deleted on another screen a minute ago.
+     * So a destination is resolved *before* the shelf is narrowed to it, and a stale one comes back
+     * null — the caller opens the shelf plainly, which is the whole list rather than an empty one.
+     *
+     * Resolution is against the **merged** shelf, sources included, because a lent document is on
+     * the shelf exactly as much as a filed one and a link to a lab result must not depend on which
+     * app happens to be holding it.
+     */
+    suspend fun resolve(destination: RepositoryDestination): RepositoryDestination? {
+        if (destination is RepositoryDestination.Shelf) return destination
+        val shelf = everything()
+        return when (destination) {
+            // Handled above; repeated so this stays an exhaustive `when` over the destinations
+            // rather than a `when` with an else that would swallow the next one somebody adds.
+            is RepositoryDestination.Shelf -> destination
+
+            is RepositoryDestination.Drawer ->
+                destination.takeIf { shelf.any { doc -> doc.owner.appKey == destination.appKey } }
+
+            is RepositoryDestination.Record -> destination.takeIf {
+                shelf.any { doc ->
+                    doc.owner.appKey == destination.appKey && doc.owner.recordKey == destination.recordKey
+                }
+            }
+
+            is RepositoryDestination.Document -> destination.takeIf {
+                shelf.any { doc ->
+                    doc.id == destination.documentId && doc.sourceKey == destination.sourceKey
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------------ handing one over
 
     /**
@@ -251,6 +378,19 @@ class DocumentRepository(
     }
 
     // ------------------------------------------------------------------ backup
+
+    /**
+     * The stored file behind one of this app's own documents, in place.
+     *
+     * The one hand-over that does **not** copy, and it is safe not to precisely because the caller
+     * cannot write: `provider/RepositoryDocumentsProvider` opens it read-only for the system file
+     * browser. Every other road out goes through [exportCopy] into `cacheDir/exports`, because those
+     * hand the file to another app that may do anything with it.
+     */
+    suspend fun fileOf(id: String): File? {
+        val row = dao.getDocument(id) ?: return null
+        return files.file(row.fileName)
+    }
 
     /** Every row, for the backup contributor. */
     suspend fun allRows(): List<DocumentEntity> = dao.allDocuments()

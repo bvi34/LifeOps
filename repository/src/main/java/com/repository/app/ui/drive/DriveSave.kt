@@ -22,6 +22,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.Drive
+import com.repository.app.logic.ShelfEntry
+import com.repository.app.logic.ShelfManifest
+import com.repository.app.logic.entry
 import com.repository.app.logic.Drives
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.Transfer
@@ -145,19 +148,37 @@ fun DriveSaveDialog(
                             return@launch
                         }
                         var saved = 0
+                        val entries = mutableListOf<ShelfEntry>()
                         documents.forEach { document ->
                             val copy = shelf.documents.exportCopy(document)
                             val written = copy?.let {
                                 shelf.drives.saveInto(tree, it, document.title, document.mimeType)
                             }
-                            if (written != null) saved++
+                            if (written != null) {
+                                saved++
+                                // Keyed on the name the drive actually gave it: a folder that
+                                // already holds a `Statement.pdf` answers the second one with
+                                // `Statement (1).pdf`, and a manifest keyed on the name we asked for
+                                // would describe the wrong file.
+                                shelf.drives.nameOf(written)?.let { name ->
+                                    entries += document.entry(name)
+                                }
+                            }
                         }
+                        // The shelf, travelling with its documents. Written after them and never
+                        // instead of them: if this fails the copies are still there, and what is
+                        // lost is the captions rather than the paperwork.
+                        val carried = entries.isNotEmpty() &&
+                            shelf.drives.saveManifest(tree, ShelfManifest(documents = entries))
                         saving = false
                         if (saved == 0) {
                             problem = "Nothing could be written there."
                             return@launch
                         }
-                        onSaved(Transfer.savedLine(saved, drive, folderLabel))
+                        onSaved(
+                            Transfer.savedLine(saved, drive, folderLabel) +
+                                if (carried) " · with what they are, for the other phone" else ""
+                        )
                         onDismiss()
                     }
                 }

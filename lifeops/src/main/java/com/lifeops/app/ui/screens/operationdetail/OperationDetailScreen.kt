@@ -15,6 +15,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.operations.backupkit.AppId
+import com.repository.app.logic.DocumentKind
+import com.repository.app.ui.attach.DocumentsPanel
 import com.lifeops.app.data.model.OperationStatus
 import com.lifeops.app.data.model.TaskStatus
 import com.lifeops.app.ui.components.AppHeader
@@ -97,6 +100,41 @@ fun OperationDetailScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
                         )
+                    }
+                }
+            }
+            // The paperwork about this operation, on the household's shelf.
+            //
+            // Not task attachments, which are a different thing and stay where they are: a photo
+            // pinned to "call the roofer back" is working material for one week, whereas the quote,
+            // the permit and the warranty outlive the operation entirely and are what somebody goes
+            // looking for two years later. Those belong on the shelf, findable without remembering
+            // which app took them in.
+            if (operation != null) {
+                item {
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Documents",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            DocumentsPanel(
+                                appKey = AppId.LIFEOPS.key,
+                                recordKey = operation.id,
+                                recordLabel = operation.title,
+                                kinds = listOf(
+                                    DocumentKind.CONTRACT,
+                                    DocumentKind.RECEIPT,
+                                    DocumentKind.REPORT,
+                                    DocumentKind.WARRANTY,
+                                    DocumentKind.CORRESPONDENCE,
+                                    DocumentKind.OTHER
+                                ),
+                                emptyLine = "The quote, the permit, the warranty — what outlives the " +
+                                    "operation and gets looked for years later."
+                            )
+                        }
                     }
                 }
             }

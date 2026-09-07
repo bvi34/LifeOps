@@ -120,6 +120,9 @@ dependencies {
     // The Operations Sandbox backup format/engine (pure JVM). Advisor supplies a BackupContributor
     // for its own store (granted permissions + saved conversations).
     implementation(project(":backupkit"))
+    // The address contract: Advisor *calls* routes (it writes a task you asked it for) rather than
+    // serving any.
+    implementation(project(":connectkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

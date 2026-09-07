@@ -1,7 +1,7 @@
 package com.lifeops.app.connection.local
 
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.ConnectionResult
 import com.lifeops.app.connection.service.TaskService
 import com.lifeops.app.data.model.Priority
 
@@ -84,5 +84,5 @@ object LocalTaskConnection {
         value?.let { Priority.from(it.lowercase()) } ?: Priority.MEDIUM
 
     private fun notFound(id: String): ConnectionResult =
-        ConnectionResult.fail(com.lifeops.app.connection.ConnectionError.NOT_FOUND, "No task with id '$id'")
+        ConnectionResult.fail(com.operations.connectkit.ConnectionError.NOT_FOUND, "No task with id '$id'")
 }

@@ -20,7 +20,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,13 +33,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.operations.backupkit.AppId
+import com.operations.suite.ui.fields.SuiteTextField
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentOwner
+import com.repository.app.logic.RepositoryDestination
 import com.repository.app.logic.Shelf
+import com.repository.app.logic.describe
 import com.repository.app.logic.Transfer
 import com.repository.app.ui.attach.DocumentRow
 import com.repository.app.ui.attach.openDocument
@@ -61,9 +64,19 @@ import kotlinx.coroutines.launch
  * Search is over the title, the note, the kind and **what the document is about** — so "wrangler"
  * finds the truck's manual, and this module still does not know what a truck is (the owning app said
  * so when it filed it; see `logic/DocumentOwner`).
+ *
+ * [showing] is how something *else* points at this screen — an asset's documents section saying "and
+ * here is the rest of the shelf", Advisor taking somebody to the statement it just quoted. It is a
+ * filter on the one list rather than a place the app navigates to, which is why a deep link and a
+ * drawer chip are the same piece of state: whatever somebody was sent for, everything else is one
+ * press away. See `logic/RepositoryDestination`.
  */
 @Composable
-fun ShelfScreen(onFile: () -> Unit) {
+fun ShelfScreen(
+    onFile: () -> Unit,
+    showing: RepositoryDestination = RepositoryDestination.Shelf,
+    onShowingChange: (RepositoryDestination) -> Unit = {}
+) {
     val context = LocalContext.current
     val shelf = remember { RepositoryApp.get(context) }
     val scope = rememberCoroutineScope()
@@ -72,19 +85,22 @@ fun ShelfScreen(onFile: () -> Unit) {
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
     var query by remember { mutableStateOf("") }
-    var drawer by remember { mutableStateOf<String?>(null) }
     var grabbing by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf<List<DocumentFacts>>(emptyList()) }
     var said by remember { mutableStateOf<String?>(null) }
 
     val drawers = remember(documents) { Shelf.drawers(documents) { key -> AppId.fromKey(key)?.defaultDisplayName } }
-    val visible = remember(documents, query, drawer) {
-        val inDrawer = when (drawer) {
-            null -> documents
-            Shelf.HOUSEHOLD_LABEL -> documents.filter { it.owner.appKey == null }
-            else -> documents.filter { it.owner.appKey == drawer }
+    val visible = remember(documents, query, showing) {
+        val scoped = when (showing) {
+            is RepositoryDestination.Shelf -> documents
+            is RepositoryDestination.Drawer -> documents.filter { it.owner.appKey == showing.appKey }
+            is RepositoryDestination.Record -> Shelf.on(documents, showing.appKey, showing.recordKey)
+            // The pair, not the id: an id is only unique inside the app that minted it.
+            is RepositoryDestination.Document -> documents.filter {
+                it.id == showing.documentId && it.sourceKey == showing.sourceKey
+            }
         }
-        Shelf.search(inDrawer, query)
+        Shelf.search(scoped, query)
     }
 
     Scaffold(
@@ -102,12 +118,13 @@ fun ShelfScreen(onFile: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "search") {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "Search",
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    // A search box is the one field in the suite that should not shift a keyboard
+                    // into caps: what goes in it is half a word off a document, not a sentence.
+                    capitalise = KeyboardCapitalization.None
                 )
             }
 
@@ -142,6 +159,32 @@ fun ShelfScreen(onFile: () -> Unit) {
                 }
             }
 
+            // What somebody was sent here for, when they were sent for something narrower than a
+            // drawer — one asset's documents, or one document. The chips below cannot say it (they
+            // are per app, and a chip per record would be the folders this app refuses to have), so
+            // it is a line, and the line's whole job is to make leaving it obvious. A household that
+            // followed a link and then cannot find the rest of its paperwork has been handed a
+            // folder after all.
+            showing.describe(documents)?.let { line ->
+                item(key = "narrowed") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            line,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        TextButton(onClick = { onShowingChange(RepositoryDestination.Shelf) }) {
+                            Text("Show everything", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
             // One chip per drawer that has something in it. They are a filter rather than a
             // navigation: the list is the app, and a drawer you have to open to see into is a folder
             // by another name.
@@ -152,15 +195,19 @@ fun ShelfScreen(onFile: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         FilterChip(
-                            selected = drawer == null,
-                            onClick = { drawer = null },
+                            selected = showing is RepositoryDestination.Shelf,
+                            onClick = { onShowingChange(RepositoryDestination.Shelf) },
                             label = { Text("Everything") }
                         )
                         drawers.forEach { group ->
-                            val key = group.appKey ?: Shelf.HOUSEHOLD_LABEL
+                            val drawer = RepositoryDestination.Drawer(group.appKey)
                             FilterChip(
-                                selected = drawer == key,
-                                onClick = { drawer = if (drawer == key) null else key },
+                                selected = showing == drawer,
+                                onClick = {
+                                    onShowingChange(
+                                        if (showing == drawer) RepositoryDestination.Shelf else drawer
+                                    )
+                                },
                                 label = { Text(group.label, style = MaterialTheme.typography.labelSmall) }
                             )
                         }
@@ -205,7 +252,7 @@ fun ShelfScreen(onFile: () -> Unit) {
             // household actually asks for: "put the project's documents on OneDrive", which is a
             // search for the project and one press. Offered only when the list has been narrowed,
             // because "save all 240" is not an errand anybody has.
-            if (visible.size > 1 && (query.isNotBlank() || drawer != null)) {
+            if (visible.size > 1 && (query.isNotBlank() || showing !is RepositoryDestination.Shelf)) {
                 item(key = "save-these") {
                     TextButton(onClick = { saving = visible }) {
                         Text("Save these ${visible.size} to a drive…", style = MaterialTheme.typography.labelMedium)

@@ -18,7 +18,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,11 +34,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
+import com.repository.app.MainActivity
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
+import com.repository.app.logic.RepositoryDestination
 import com.repository.app.logic.Transfer
 import com.repository.app.ui.drive.DriveGrabDialog
 import com.repository.app.ui.drive.DriveSaveDialog
@@ -165,9 +168,27 @@ fun DocumentsPanel(
             }
         }
 
-        if (documents.size > 1) {
-            TextButton(onClick = { saving = documents }) {
-                Text("Save all ${documents.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+        if (documents.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                // The second door, from inside the first. This panel shows what is filed *here*;
+                // the shelf shows it next to everything else the household has, which is where
+                // somebody goes when the manual they want turns out to have been filed against the
+                // house rather than the furnace. It opens narrowed to this record and one press from
+                // the rest — see `logic/RepositoryDestination`.
+                TextButton(
+                    onClick = {
+                        context.startActivity(
+                            MainActivity.intentFor(context, RepositoryDestination.Record(appKey, recordKey))
+                        )
+                    }
+                ) {
+                    Text("On the shelf", style = MaterialTheme.typography.labelMedium)
+                }
+                if (documents.size > 1) {
+                    TextButton(onClick = { saving = documents }) {
+                        Text("Save all ${documents.size} to a drive…", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
         }
 
@@ -348,12 +369,10 @@ internal fun FileDialog(
         title = { Text(heading) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "What is it",
                     value = name,
-                    onValueChange = { name = it },
-                    label = { Text("What is it") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { name = it }
                 )
                 // The chips scroll sideways: the kinds do not fit across a phone, and a wrapped row
                 // changes height as they change, which makes a dialog jump while you are reading it.
@@ -369,11 +388,13 @@ internal fun FileDialog(
                         )
                     }
                 }
-                OutlinedTextField(
+                // A note is prose — "the one the bank sent, not the one from the broker" — so it
+                // gets the field that expects a paragraph rather than a line that scrolls sideways.
+                SuiteNoteField(
+                    label = "Notes",
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 2
                 )
             }
         },

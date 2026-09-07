@@ -1,8 +1,11 @@
 package com.project.app.connection.local
 
-import com.lifeops.app.connection.ConnectionError
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionError
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.NameLookup
+import com.operations.connectkit.Resolution
+import com.operations.connectkit.orProblem
+import com.operations.connectkit.ConnectionResult
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectLookup
 import java.time.LocalDate
@@ -30,28 +33,30 @@ object LocalCardConnection {
         registry.register("local", "card", "create") { request ->
             val p = request.params
             when (val found = repo.resolveProject(p.requireString("project"))) {
-                is Resolved.Problem -> found.failure
-                is Resolved.Ok -> {
-                    val projectId = found.project.id
+                is Resolution.Problem -> found.failure
+                is Resolution.Ok -> {
+                    val projectId = found.value.id
                     val columns = repo.columnsOf(projectId)
 
                     val named = p.getString("column")
                     val column = if (named == null) {
+                        // Nothing named: where work starts on this board, which is the first column
+                        // that is not the finished one.
                         ProjectLookup.defaultColumn(columns) { it.isDone }
-                    } else {
-                        when (val m = ProjectLookup.resolve(named, columns, { it.id }, { it.name })) {
-                            is ProjectLookup.Match.Found -> m.value
-                            is ProjectLookup.Match.None -> null
-                            is ProjectLookup.Match.Ambiguous -> return@register ConnectionResult.fail(
-                                ConnectionError.INVALID_PARAMS,
-                                "More than one column is called '$named'. Use its id."
+                            ?: return@register ConnectionResult.fail(
+                                ConnectionError.NOT_FOUND,
+                                "${found.value.name} has no column to put a card in"
                             )
+                    } else {
+                        // The same resolution rule the project itself went through, and the same
+                        // wording for the two ways it can fail — one place, so "which one did you
+                        // mean" reads identically wherever a sentence named something.
+                        val match = NameLookup.resolve(named, columns, { it.id }, { it.name })
+                        when (val column = match.orProblem("column on ${found.value.name}", named)) {
+                            is Resolution.Problem -> return@register column.failure
+                            is Resolution.Ok -> column.value
                         }
-                    } ?: return@register ConnectionResult.fail(
-                        ConnectionError.NOT_FOUND,
-                        if (named == null) "${found.project.name} has no column to put a card in"
-                        else "No column called '$named' on ${found.project.name}"
-                    )
+                    }
 
                     val text = p.getString("dueOn")
                     val dueOn = if (text == null) null else {
@@ -84,16 +89,10 @@ object LocalCardConnection {
 
             val named = p.requireString("column")
             val columns = repo.columnsOf(card.projectId)
-            val target = when (val m = ProjectLookup.resolve(named, columns, { it.id }, { it.name })) {
-                is ProjectLookup.Match.Found -> m.value
-                is ProjectLookup.Match.None -> return@register ConnectionResult.fail(
-                    ConnectionError.NOT_FOUND,
-                    "No column called '$named' on that board"
-                )
-                is ProjectLookup.Match.Ambiguous -> return@register ConnectionResult.fail(
-                    ConnectionError.INVALID_PARAMS,
-                    "More than one column is called '$named'. Use its id."
-                )
+            val match = NameLookup.resolve(named, columns, { it.id }, { it.name })
+            val target = when (val column = match.orProblem("column on that board", named)) {
+                is Resolution.Problem -> return@register column.failure
+                is Resolution.Ok -> column.value
             }
 
             // Clamped to the end of the lane, which is where a card put there by somebody else's

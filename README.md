@@ -358,7 +358,12 @@ the receipts.
 > Solved once per app that becomes five stores, five backups, and a household that has to remember
 > where it filed something. So there is one shelf with **two doors onto the same documents** — its own
 > screen, where the mortgage statement is findable without opening Maintenance, and a section it
-> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace.
+> **lends** to the app that owns the thing, so the furnace's manual sits on the furnace. The two doors
+> open onto each other: the shelf can be **opened at a place** rather than merely started — one
+> drawer, one asset's documents, one document — and the section on the asset carries the button that
+> does it. A destination is a filter on the one list and never a screen, so the deepest link still
+> lands you on the shelf with everything else one press away, and an address naming a document
+> deleted since opens the whole list rather than an empty screen insisting nothing is filed.
 >
 > A document knows what it is about by **carrying a label, not a foreign key**: Maintenance says "this
 > is about `a3f2`, which is called *2018 Jeep Wrangler*", and Repository understands none of it — the
@@ -376,10 +381,31 @@ the receipts.
 > documents appear on the shelf beside everything else, while every change to one still happens in
 > Health, which is where the rules about deleting them live.
 >
+> The shelf is also **one of the places Android offers**, beside Drive and Downloads: a
+> `DocumentsProvider` puts the same drawers, names and search into the system Files app and into every
+> other app's Open dialog, so the mortgage statement is attached to an email without first being found
+> in Downloads under `Scan_20240412.pdf`. Read-only — no create, delete, write or rename, the same
+> line the routes sit on — and guarded by `MANAGE_DOCUMENTS`, so no app can bind to it and go looking;
+> what an app gets is the one document the person picked. Its document ids *are* the app's own deep
+> links, so the id the Files app remembers is the string that opens the shelf at that document.
+>
+> The shelf also **answers in a sentence**: `/v1/Repository/local/…` is the suite's third dispatcher
+> (after LifeOps and Project), so "where is the Wrangler's warranty" is a route rather than a scroll.
+> The line it sits on is drawn tighter than anywhere else in the suite — the routes read and they
+> correct captions; they cannot put a document on the shelf, take one off it, or hand one out, and
+> each refused address is asserted in a test rather than merely left unwritten. The address machinery
+> that makes this possible moved out of LifeOps into `:connectkit` to get here, because the arrow into
+> this module still points one way.
+>
 > Documents also come **off a drive and go back onto one, targeted**: pick Google Drive, OneDrive or
 > Dropbox, choose the four files you actually want, review the list — untick the two dead drafts,
 > rename the third — and file the lot in one press; send one back, or everything a search has
-> narrowed to, into a folder chosen once and remembered per drive. There is **no Drive API, no
+> narrowed to, into a folder chosen once and remembered per drive — and the shelf goes with them: an
+> export writes one small manifest beside the files, so on the second phone each document arrives with
+> its real name, its kind, its note and what it is about, and anything already there is left alone
+> rather than filed twice. That is not sync and does not become it — nothing watches the folder and no
+> credential exists to watch it with; a copy taken at a moment simply carries what the household typed
+> about it. There is **no Drive API, no
 > OneDrive API and no credential**: each of those drives already publishes itself to Android as a
 > document provider, so this is the system picker with a starting point, and the module still holds
 > no permissions. What lands is a copy taken at a moment, never a link that syncs — see

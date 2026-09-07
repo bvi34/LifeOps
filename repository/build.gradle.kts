@@ -50,6 +50,16 @@ ksp {
 dependencies {
     implementation(project(":suiteui"))
     implementation(project(":backupkit"))
+    // The suite's address contract (pure JVM): the five-segment address, the payload, the registry,
+    // the dispatcher and the name-resolution rule every app's routes need first. Repository serves
+    // `/v1/Repository/local/…` from its own dispatcher built on it. Note what this is *not*: a
+    // dependency on LifeOps, where this machinery used to live — the arrow into this module still
+    // points one way, and a shelf that had to depend on the planner to answer "where is the
+    // warranty" would be the wrong shape.
+    implementation(project(":connectkit"))
+    // Pure JVM, and used only by `logic/Sidecar` — the small manifest an export writes beside the
+    // documents so the shelf travels with them. Same reason :backupkit takes it.
+    implementation(libs.gson)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -70,4 +80,8 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // The store's own tests run against a real Room database and a real files directory — see
+    // `DocumentRepositoryTest`. `logic/` needs none of this and still doesn't.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

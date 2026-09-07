@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /** Outcome of dispatching a connection request. */
 sealed interface ConnectionResult {

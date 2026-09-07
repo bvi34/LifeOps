@@ -1,4 +1,4 @@
-package com.lifeops.app.connection
+package com.operations.connectkit
 
 /**
  * Holds the [RouteHandler] for every registered `connection/resource/action`. Populated once at

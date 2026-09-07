@@ -94,11 +94,19 @@ object Shelf {
     fun on(documents: List<DocumentFacts>, appKey: String, recordKey: String): List<DocumentFacts> =
         order(documents.filter { it.owner.appKey == appKey && it.owner.recordKey == recordKey })
 
-    /** "4 documents · 2.1 MB" — the one line at the top of the shelf. */
+    /**
+     * "4 documents · 2.1 MB" — the one line at the top of the shelf.
+     *
+     * The total counts only the sizes it was *told*, and disappears when it was told none. A picker
+     * often supplies no size and a lending app need not either, and a shelf of four documents that
+     * announces "0 bytes" is stating something false about the household's paperwork rather than
+     * declining to state anything. Same rule as `Transfer.headline`, for the same reason.
+     */
     fun headline(documents: List<DocumentFacts>): String {
         if (documents.isEmpty()) return "Nothing filed yet"
         val count = if (documents.size == 1) "1 document" else "${documents.size} documents"
-        val size = Documents.formatSize(documents.sumOf { it.sizeBytes ?: 0L })
+        val known = documents.mapNotNull { it.sizeBytes }
+        val size = if (known.isEmpty()) null else Documents.formatSize(known.sum())
         return listOfNotNull(count, size).joinToString(" · ")
     }
 

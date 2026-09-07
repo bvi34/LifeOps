@@ -1,7 +1,8 @@
 package com.project.app.connection.local
 
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.Resolution
+import com.operations.connectkit.ConnectionResult
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.LoreCategory
 
@@ -22,10 +23,10 @@ object LocalLoreConnection {
         registry.register("local", "lore", "create") { request ->
             val p = request.params
             when (val found = repo.resolveProject(p.requireString("project"))) {
-                is Resolved.Problem -> found.failure
-                is Resolved.Ok -> {
+                is Resolution.Problem -> found.failure
+                is Resolution.Ok -> {
                     val id = repo.addLoreEntry(
-                        projectId = found.project.id,
+                        projectId = found.value.id,
                         name = p.requireString("name"),
                         // Unknown reads as Other, which is what Other is for: nothing has to be
                         // miscategorised to be written down.
@@ -33,7 +34,7 @@ object LocalLoreConnection {
                         summary = p.getString("summary"),
                         body = p.getString("body").orEmpty()
                     )
-                    ConnectionResult.ok("id" to id, "projectId" to found.project.id)
+                    ConnectionResult.ok("id" to id, "projectId" to found.value.id)
                 }
             }
         }

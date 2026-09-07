@@ -41,6 +41,11 @@ dependencies {
     implementation(project(":suiteui"))
     // The Operations Sandbox backup format/engine (pure JVM). LifeOps supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The suite's address contract (pure JVM): the five-segment address, the payload, the registry
+    // and the dispatcher. `api` rather than `implementation` because a dispatcher is part of this
+    // module's own surface — `LifeOpsApp.connectionDispatcher` hands one out, and a caller holding
+    // it needs the type. The *routes* are still LifeOps' own, in `connection/`.
+    api(project(":connectkit"))
     // Citation's sync spine (pure JVM): the packet/envelope contract + file-drop transport LifeOps
     // reads to ingest reading telemetry and notes. LifeOps is just another peer on the seam.
     implementation(project(":core"))
@@ -49,6 +54,12 @@ dependencies {
     // household roster is replicated over a mailbox, not borrowed live the way Logistics borrows
     // LifeOps' food catalog. LifeOps keeps owning its own `persons` table and every key into it.
     implementation(project(":people"))
+    // The suite's shelf. An operation is the one thing in LifeOps that accumulates paperwork — the
+    // quote, the permit, the warranty for whatever got built — and it goes on the household's shelf
+    // rather than into a second store here. Note the direction: :lifeops -> :repository, never the
+    // reverse. It is why the address contract had to leave this module for :connectkit before
+    // Repository could serve routes.
+    implementation(project(":repository"))
     implementation(libs.androidx.compose.ui.graphics)
 
     implementation(libs.androidx.core.ktx)

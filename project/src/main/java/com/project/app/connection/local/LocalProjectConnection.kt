@@ -1,7 +1,8 @@
 package com.project.app.connection.local
 
-import com.lifeops.app.connection.ConnectionRegistry
-import com.lifeops.app.connection.ConnectionResult
+import com.operations.connectkit.ConnectionRegistry
+import com.operations.connectkit.Resolution
+import com.operations.connectkit.ConnectionResult
 import com.project.app.data.repository.ProjectRepository
 import com.project.app.logic.ProjectKind
 
@@ -28,11 +29,11 @@ object LocalProjectConnection {
 
         registry.register("local", "project", "archive") { request ->
             when (val found = repo.resolveProject(request.params.requireString("project"))) {
-                is Resolved.Problem -> found.failure
-                is Resolved.Ok -> {
+                is Resolution.Problem -> found.failure
+                is Resolution.Ok -> {
                     val archived = request.params.getBoolean("archived", default = true)
-                    repo.setArchived(found.project.id, archived)
-                    ConnectionResult.ok("id" to found.project.id, "archived" to archived)
+                    repo.setArchived(found.value.id, archived)
+                    ConnectionResult.ok("id" to found.value.id, "archived" to archived)
                 }
             }
         }

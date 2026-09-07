@@ -21,7 +21,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,12 +34,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.operations.suite.ui.fields.SuiteTextField
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
 import com.repository.app.logic.Documents
 import com.repository.app.logic.Drive
 import com.repository.app.logic.Drives
+import com.repository.app.logic.ShelfManifest
+import com.repository.app.logic.Sidecar
 import com.repository.app.logic.Transfer
 import com.repository.app.logic.TransferChoice
 import com.repository.app.logic.TransferOutcome
@@ -89,6 +91,16 @@ fun DriveGrabDialog(
     var filing by remember { mutableStateOf(false) }
     var reading by remember { mutableStateOf(false) }
 
+    /**
+     * The shelf that wrote these documents, if the household picked its manifest along with them.
+     *
+     * It is not offered as one of the files to file — it is not a document — so it is taken out of
+     * the review list and kept here instead. Picking it is optional and picking it is worth it: with
+     * it each document arrives with the title, kind, note and what-it-is-about the other shelf had,
+     * and one already here is skipped rather than filed twice. See `logic/Sidecar`.
+     */
+    var manifest by remember { mutableStateOf<ShelfManifest?>(null) }
+
     val picker = rememberLauncherForActivityResult(PickFiles()) { uris ->
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         // The durable grant first, on every one of them: the transient grant dies with this
@@ -110,7 +122,20 @@ fun DriveGrabDialog(
             // Added to what is already there rather than replacing it, because "Pick more" has to
             // mean more: a household grabbing a project's paperwork out of two folders should not
             // lose the first four to fetch the fifth. A file picked twice is still one row.
-            val added = Transfer.plan(picked)
+            // The manifest is read and set aside rather than reviewed: it is the shelf, not a
+            // document, and offering to file it would put a JSON file in somebody's drawer.
+            val (manifests, documents) = picked.partition { Sidecar.isManifest(it.displayName) }
+            manifests.forEach { entry ->
+                shelf.drives.readManifest(Uri.parse(entry.uri))?.let { manifest = it }
+            }
+
+            val added = Transfer.plan(documents).map { choice ->
+                // The title the other shelf had, in the review list, where somebody can still
+                // change it — rather than the one guessed from the file name underneath it.
+                manifest?.entryFor(choice.item.displayName)
+                    ?.let { entry -> choice.copy(title = entry.title) }
+                    ?: choice
+            }
             choices = choices + added.filterNot { fresh -> choices.any { it.item.uri == fresh.item.uri } }
         }
     }
@@ -138,6 +163,17 @@ fun DriveGrabDialog(
                     Text(
                         "A starting point, not a filter — the picker will let you walk anywhere " +
                             "from there, and the shelf records where each file actually came from.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Said where somebody is about to pick, because the manifest is easy to walk
+                    // past — it is one small file among the documents, and picking it is the
+                    // difference between the shelf arriving and the bytes arriving.
+                    Text(
+                        "If the folder was saved from another phone's shelf it also holds " +
+                            "“${Sidecar.FILE_NAME}”. Pick that too and each document arrives with " +
+                            "its name, its kind and what it is about — and anything already on this " +
+                            "shelf is left alone.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -185,6 +221,15 @@ fun DriveGrabDialog(
                         }
                     }
 
+                    manifest?.let {
+                        Text(
+                            "These came off another phone's shelf, so they keep their names and " +
+                                "what they are about.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
                     Transfer.duplicateWarning(choices)?.let {
                         Text(
                             it,
@@ -204,7 +249,7 @@ fun DriveGrabDialog(
                 onClick = {
                     filing = true
                     scope.launch {
-                        val outcome = shelf.documents.fileAll(choices, kind, owner)
+                        val outcome = shelf.documents.importAll(choices, manifest, kind, owner)
                         filing = false
                         onFiled(outcome)
                         onDismiss()
@@ -260,14 +305,14 @@ private fun ChoiceRow(choice: TransferChoice, onChange: (TransferChoice) -> Unit
             onCheckedChange = { onChange(choice.copy(include = it)) }
         )
         Column(Modifier.weight(1f)) {
-            OutlinedTextField(
+            SuiteTextField(
+                label = "What it is",
                 value = choice.title,
                 onValueChange = { onChange(choice.copy(title = it)) },
-                enabled = choice.include,
-                singleLine = true,
-                label = { Text("What it is", style = MaterialTheme.typography.labelSmall) },
-                textStyle = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth()
+                // Unticking a file greys its name rather than hiding it: the review list is here so
+                // somebody can see what they are about to file, and a row that vanishes when it is
+                // excluded takes the evidence of the decision with it.
+                enabled = choice.include
             )
             Text(
                 listOfNotNull(
