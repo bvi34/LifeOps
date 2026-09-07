@@ -18,7 +18,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +34,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.core.content.FileProvider
+import com.operations.suite.ui.fields.SuiteNoteField
+import com.operations.suite.ui.fields.SuiteTextField
 import com.repository.app.MainActivity
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
@@ -368,12 +369,10 @@ internal fun FileDialog(
         title = { Text(heading) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "What is it",
                     value = name,
-                    onValueChange = { name = it },
-                    label = { Text("What is it") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    onValueChange = { name = it }
                 )
                 // The chips scroll sideways: the kinds do not fit across a phone, and a wrapped row
                 // changes height as they change, which makes a dialog jump while you are reading it.
@@ -389,11 +388,13 @@ internal fun FileDialog(
                         )
                     }
                 }
-                OutlinedTextField(
+                // A note is prose — "the one the bank sent, not the one from the broker" — so it
+                // gets the field that expects a paragraph rather than a line that scrolls sideways.
+                SuiteNoteField(
+                    label = "Notes",
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Notes") },
-                    modifier = Modifier.fillMaxWidth()
+                    minLines = 2
                 )
             }
         },

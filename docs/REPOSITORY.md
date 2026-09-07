@@ -211,7 +211,7 @@ repository/src/main/java/com/repository/app/
 │   │               DriveTransfer — the picker's side of a drive: describing, granting, writing
 │   └── repository/ DocumentRepository — the shelf as the rest of the suite sees it
 ├── source/         DocumentSource + DocumentSources — the read-only seam for apps that keep their own
-├── ui/
+├── ui/          (the suite's fields throughout — `SuiteTextField`/`SuiteNoteField`, never a raw one)
 │   ├── shelf/      ShelfScreen — one list, one search box, no folders
 │   ├── drive/      DriveGrabDialog · DriveSaveDialog — off a drive and back onto one, targeted
 │   └── attach/     DocumentsPanel — the section lent to an owning app, and Attach from the shelf

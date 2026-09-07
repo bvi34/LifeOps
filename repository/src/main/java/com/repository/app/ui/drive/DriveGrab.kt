@@ -21,7 +21,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.operations.suite.ui.fields.SuiteTextField
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentKind
 import com.repository.app.logic.DocumentOwner
@@ -260,14 +260,14 @@ private fun ChoiceRow(choice: TransferChoice, onChange: (TransferChoice) -> Unit
             onCheckedChange = { onChange(choice.copy(include = it)) }
         )
         Column(Modifier.weight(1f)) {
-            OutlinedTextField(
+            SuiteTextField(
+                label = "What it is",
                 value = choice.title,
                 onValueChange = { onChange(choice.copy(title = it)) },
-                enabled = choice.include,
-                singleLine = true,
-                label = { Text("What it is", style = MaterialTheme.typography.labelSmall) },
-                textStyle = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth()
+                // Unticking a file greys its name rather than hiding it: the review list is here so
+                // somebody can see what they are about to file, and a row that vanishes when it is
+                // excluded takes the evidence of the decision with it.
+                enabled = choice.include
             )
             Text(
                 listOfNotNull(

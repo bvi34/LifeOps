@@ -20,7 +20,6 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -34,9 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.operations.backupkit.AppId
+import com.operations.suite.ui.fields.SuiteTextField
 import com.repository.app.RepositoryApp
 import com.repository.app.logic.DocumentFacts
 import com.repository.app.logic.DocumentOwner
@@ -117,12 +118,13 @@ fun ShelfScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item(key = "search") {
-                OutlinedTextField(
+                SuiteTextField(
+                    label = "Search",
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    // A search box is the one field in the suite that should not shift a keyboard
+                    // into caps: what goes in it is half a word off a document, not a sentence.
+                    capitalise = KeyboardCapitalization.None
                 )
             }
 
