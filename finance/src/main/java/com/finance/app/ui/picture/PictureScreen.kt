@@ -103,7 +103,9 @@ class PictureViewModel(
 
     private fun build(picture: FinanceRepository.Picture, includeSpending: Boolean): PictureState {
         val now = today()
-        val months = CashFlow.byMonth(picture.transactions, now, months = 6)
+        // countable() rather than transactions: only rows from accounts in the base currency, so a
+        // month's totals are in one unit. See Accounts.inBaseCurrency.
+        val months = CashFlow.byMonth(picture.countable(), now, months = 6)
         val thisMonth = months.lastOrNull()
         val position = picture.netPosition()
 
@@ -179,6 +181,7 @@ fun PictureScreen(vm: PictureViewModel, onOpenDue: () -> Unit, onOpenConnections
     ) {
         item { ForecastCard(state, symbol, onOpenDue) }
         item { PositionCard(state) }
+        if (state.position.partial) item { PartialCard(state) }
         item { MonthCard(state) }
         if (state.months.size > 1) item { TrendCard(state) }
         item {
@@ -277,6 +280,29 @@ private fun PositionCard(state: PictureState) {
             Figure("Held", suiteMoney(state.position.assetsCents, withCents = false))
             Figure("Owed", suiteMoney(state.position.liabilitiesCents, withCents = false))
         }
+    }
+}
+
+/**
+ * Said out loud when something was left out of the figures above.
+ *
+ * The alternative — converting at some rate the app fetched from a third host — would break the
+ * two-host promise this module is built around and would put a number on screen whose accuracy
+ * depends on a rate nobody chose. Leaving them out is honest; leaving them out *silently* was the
+ * bug.
+ */
+@Composable
+private fun PartialCard(state: PictureState) {
+    SectionCard(title = "Not everything is counted above") {
+        Text(
+            "You hold accounts in ${state.position.excludedCurrencies.sorted().joinToString(", ")}, " +
+                "and the figures above are ${state.position.currency} only. This app won't add " +
+                "currencies together, because doing that needs an exchange rate — which would mean " +
+                "asking a third party, and would put a number here whose accuracy you didn't " +
+                "choose.\n\nOpen those accounts individually and the figures are their own, and right.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

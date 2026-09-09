@@ -141,6 +141,39 @@ and so does every bank statement ever printed. The parsers pick one convention a
 `PlaidJson` negates on the way in; `MercuryJson` does not need to, and the absence of a flip there is
 deliberate rather than an oversight.
 
+## Unlike currencies are refused, not converted
+
+`Accounts.netPosition` counts only accounts in the **base currency** — whichever most of your
+accounts use — and names anything it left out, which the Picture screen then says out loud. The same
+refusal applies one layer along to every cross-account roll-up, because a transaction inherits its
+account's currency (`Accounts.inBaseCurrency`).
+
+This used to be the quietest bug in the module: the figures were summed across currencies with no
+conversion and no guard, so one euro account made the headline number meaningless and *nothing about
+the screen looked any different*.
+
+Converting instead would mean a live exchange rate, which means a third host to talk to — breaking
+the promise the whole module is built around — and would put a figure on screen whose accuracy
+nobody chose. Leaving them out and saying so is the smaller, more honest cost, and an account's own
+page shows its balance in its own currency, correctly.
+
+## Two accounts, one transfer
+
+Move $500 from checking to savings with both connected and two rows arrive: `-500` on one, `+500` on
+the other. Both are real; neither is spending or income. Counted naively the month reports $500 more
+spent *and* $500 more earned — it nets out correctly and reports two totals that are both wrong. The
+card-payment version is worse: $600 of groceries on a card is $600 of spending, and the $600 that
+clears the card is the same money arriving where it was always going.
+
+`Transfers.pair` is the structural answer, applied once on the way out of the store so no screen can
+forget it. A debit matched by a credit of **exactly** the same size, on a **different** account,
+within **three days**, is money that never left the household — whatever either provider called it.
+Each row is consumed by at most one pairing.
+
+The provider's own category (`TRANSFER_IN`, `internalTransfer`) is still read and still helps, but
+it was never enough on its own: a provider labels a transaction by what it looks like from one side,
+with no idea the other side is also an account this household holds.
+
 ## What is due, and how much of it the app actually knows
 
 A bill comes from one of three places and they are **not** equally trustworthy. Every bill carries its

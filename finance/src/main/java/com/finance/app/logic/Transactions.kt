@@ -67,7 +67,12 @@ data class Transaction(
 /**
  * The categories this app rolls spending up into.
  *
- * Sixteen, and stopping there is a decision. Plaid's personal-finance taxonomy has a hundred and
+ * Sixteen, and stopping there is a decision. There is deliberately no "subscriptions": neither
+ * provider has a category that maps to one, so it was a slice that could only ever be empty — a
+ * filter chip that never appeared and a legend entry that meant nothing. "What am I subscribed to"
+ * is a better question answered elsewhere, by [Recurring], which the Activity screen leads with.
+ *
+ * Plaid's personal-finance taxonomy has a hundred and
  * four detailed categories under sixteen primaries, and the detailed layer is genuinely useful for
  * a budgeting app that asks you to set a limit per line. This is not that app: it answers "where
  * did it go" and "what is due", and at that altitude the difference between `FOOD_AND_DRINK_FAST_FOOD`
@@ -89,7 +94,6 @@ enum class Category(val key: String, val label: String) {
     DEBT("debt", "Loan & card payments"),
     SHOPPING("shopping", "Shopping"),
     ENTERTAINMENT("entertainment", "Entertainment"),
-    SUBSCRIPTIONS("subscriptions", "Subscriptions"),
     TRAVEL("travel", "Travel"),
     FEES("fees", "Fees & interest"),
     OTHER("other", "Other");

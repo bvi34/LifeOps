@@ -1,6 +1,7 @@
 package com.finance.app.logic
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -121,5 +122,121 @@ class AccountsTest {
             )
         )
         assertEquals(listOf("big", "small"), funding.map { it.id })
+    }
+}
+
+/**
+ * Currencies, and the app's refusal to add unlike ones.
+ *
+ * This was the quietest bug in the module: the figures were summed across currencies with no
+ * conversion and no guard, so one euro account made the headline number meaningless and nothing
+ * about the screen looked any different.
+ */
+class CurrencyTest {
+
+    private fun inCurrency(
+        id: String,
+        currency: String,
+        current: Double,
+        kind: AccountKind = AccountKind.DEPOSITORY
+    ) = account(id = id, kind = kind, current = current, available = current).copy(currency = currency)
+
+    @Test
+    fun `the base is whatever most of the counted accounts use`() {
+        val accounts = listOf(
+            inCurrency("a", "USD", 100.0),
+            inCurrency("b", "USD", 200.0),
+            inCurrency("c", "EUR", 900.0)
+        )
+        assertEquals("USD", Accounts.baseCurrency(accounts))
+    }
+
+    @Test
+    fun `an even split falls to whichever holds more money`() {
+        // One account each way: the count says nothing, so the larger holding is the better guess.
+        val accounts = listOf(inCurrency("a", "USD", 100.0), inCurrency("b", "EUR", 900.0))
+        assertEquals("EUR", Accounts.baseCurrency(accounts))
+    }
+
+    @Test
+    fun `and a total tie is arbitrary but stable, so a figure cannot change between two reads`() {
+        val accounts = listOf(inCurrency("a", "USD", 100.0), inCurrency("b", "EUR", 100.0))
+        assertEquals(
+            Accounts.baseCurrency(accounts),
+            Accounts.baseCurrency(accounts.reversed())
+        )
+    }
+
+    @Test
+    fun `no accounts at all falls back rather than throwing`() {
+        assertEquals("USD", Accounts.baseCurrency(emptyList()))
+    }
+
+    @Test
+    fun `an account in another currency is left out, and says so`() {
+        // The ordinary shape of this: a household banking at home, with one account abroad.
+        val position = Accounts.netPosition(
+            listOf(
+                inCurrency("chk", "USD", 2_400.0),
+                inCurrency("sav", "USD", 6_000.0),
+                inCurrency("eur", "EUR", 9_000.0)
+            )
+        )
+        // 900,000 euro cents added to 840,000 dollar cents is not a number about anything.
+        assertEquals(840_000L, position.assetsCents)
+        assertEquals("USD", position.currency)
+        assertEquals(setOf("EUR"), position.excludedCurrencies)
+        assertTrue("the screen has to be able to say so", position.partial)
+    }
+
+    @Test
+    fun `the ordinary household has nothing excluded and nothing to say`() {
+        val position = Accounts.netPosition(
+            listOf(inCurrency("chk", "USD", 2_400.0), inCurrency("sav", "USD", 6_000.0))
+        )
+        assertEquals(840_000L, position.assetsCents)
+        assertFalse(position.partial)
+        assertTrue(position.excludedCurrencies.isEmpty())
+    }
+
+    @Test
+    fun `currency comparison is not case sensitive`() {
+        val position = Accounts.netPosition(
+            listOf(inCurrency("a", "usd", 100.0), inCurrency("b", "USD", 100.0))
+        )
+        assertEquals(20_000L, position.assetsCents)
+        assertFalse(position.partial)
+    }
+
+    @Test
+    fun `a base can be forced, which is what an account's own page does`() {
+        val accounts = listOf(
+            inCurrency("chk", "USD", 2_400.0),
+            inCurrency("sav", "USD", 6_000.0),
+            inCurrency("eur", "EUR", 9_000.0)
+        )
+        val position = Accounts.netPosition(accounts, base = "EUR")
+        assertEquals(900_000L, position.assetsCents)
+        assertEquals(setOf("USD"), position.excludedCurrencies)
+    }
+
+    @Test
+    fun `roll-ups only see transactions from accounts in the base currency`() {
+        // A transaction has no currency of its own — it inherits its account's — so a month summed
+        // over mixed accounts is wrong in the same invisible way a net worth was.
+        val accounts = listOf(inCurrency("chk", "USD", 100.0), inCurrency("eur", "EUR", 100.0))
+        val rows = listOf(
+            txn("2026-09-04", -40.0, "SAFEWAY", accountId = "chk"),
+            txn("2026-09-05", -80.0, "EUROPEAN SHOP", accountId = "eur")
+        )
+        val kept = Accounts.inBaseCurrency(rows, accounts, base = "USD")
+        assertEquals(listOf("chk"), kept.map { it.accountId })
+    }
+
+    @Test
+    fun `a transaction whose account we no longer hold is kept rather than silently dropped`() {
+        // A connection removed mid-refresh would otherwise shrink the month's totals with no trace.
+        val rows = listOf(txn("2026-09-04", -40.0, "SAFEWAY", accountId = "gone"))
+        assertEquals(1, Accounts.inBaseCurrency(rows, accounts = emptyList(), base = "USD").size)
     }
 }

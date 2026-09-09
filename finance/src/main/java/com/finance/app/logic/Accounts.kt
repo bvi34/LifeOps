@@ -1,5 +1,7 @@
 package com.finance.app.logic
 
+import kotlin.math.abs
+
 /**
  * What an account *is*, and the one rule that makes a pile of balances into a picture.
  *
@@ -97,9 +99,50 @@ object Accounts {
         val assetsCents: Long,
         val liabilitiesCents: Long,
         /** Cash you could spend today: depository accounts only, at their available figure. */
-        val cashCents: Long
+        val cashCents: Long,
+        /** The currency every figure above is in. Nothing in another one was added to them. */
+        val currency: String = "USD",
+        /**
+         * The currencies of accounts left out because they are not [currency].
+         *
+         * Empty for almost every household, and the whole point when it is not: a screen that has
+         * something here has to say so, because the alternative is a total that silently means
+         * nothing.
+         */
+        val excludedCurrencies: Set<String> = emptySet()
     ) {
         val netCents: Long get() = assetsCents - liabilitiesCents
+
+        /** True when something was left out and the figures are therefore a partial answer. */
+        val partial: Boolean get() = excludedCurrencies.isNotEmpty()
+    }
+
+    /**
+     * The currency the picture is denominated in: whichever most of the counted accounts use.
+     *
+     * Derived rather than configured, because it is not a decision anybody wants to make — a
+     * household knows what its money is in, and asking would be a settings row that exists to state
+     * the obvious.
+     *
+     * Three keys, in order, and the order is the whole of it. **Most accounts** first, because the
+     * ordinary shape of this problem is a household with several accounts at home and one abroad.
+     * **Most money** second, for the genuine tie — one account each way, where the count says
+     * nothing and the larger holding is the better guess. **Alphabetical** last, which is arbitrary
+     * and admits it: what it buys is that the answer cannot depend on the order rows came back from
+     * SQLite in, so a figure never changes between two identical reads.
+     */
+    fun baseCurrency(accounts: List<Account>, fallback: String = "USD"): String {
+        val counted = accounts.filter { it.includeInPicture && !it.closed }
+        if (counted.isEmpty()) return fallback
+        return counted
+            .groupBy { it.currency.uppercase() }
+            .entries
+            .sortedWith(
+                compareByDescending<Map.Entry<String, List<Account>>> { it.value.size }
+                    .thenByDescending { entry -> entry.value.sumOf { abs(it.balance.currentCents) } }
+                    .thenBy { it.key }
+            )
+            .first().key
     }
 
     /**
@@ -108,13 +151,35 @@ object Accounts {
      * Closed accounts and ones you excluded are skipped; a closed account with a zero balance would
      * not change the arithmetic, but one closed with a balance still on it (a card paid off and shut
      * last month that the institution keeps reporting) very much would.
+     *
+     * ## Unlike currencies are refused, not converted
+     *
+     * Accounts not in [base] are left out and named in [NetPosition.excludedCurrencies]. This was
+     * once worse than a limitation: the figures were summed across currencies with no conversion and
+     * no guard, so one euro account made the headline number meaningless with no visible symptom —
+     * the worst kind of wrong, because nothing about the screen looked different.
+     *
+     * Converting instead would mean a live exchange rate, which means a third host to talk to, which
+     * would break the promise this module is built around — and would put a number on screen whose
+     * accuracy depends on a rate nobody chose. Leaving them out and saying so is the smaller and more
+     * honest cost, and a household with genuinely mixed currencies can open each account's own page,
+     * where the figure is in its own currency and correct.
      */
-    fun netPosition(accounts: List<Account>): NetPosition {
+    fun netPosition(
+        accounts: List<Account>,
+        base: String = baseCurrency(accounts)
+    ): NetPosition {
         var assets = 0L
         var liabilities = 0L
         var cash = 0L
+        val excluded = mutableSetOf<String>()
         accounts.asSequence()
             .filter { it.includeInPicture && !it.closed }
+            .filter { account ->
+                val same = account.currency.equals(base, ignoreCase = true)
+                if (!same) excluded += account.currency.uppercase()
+                same
+            }
             .forEach { account ->
                 val magnitude = account.balance.spendable(account.kind)
                 if (account.kind.owed) {
@@ -127,7 +192,34 @@ object Accounts {
                     if (account.kind == AccountKind.DEPOSITORY) cash += magnitude
                 }
             }
-        return NetPosition(assetsCents = assets, liabilitiesCents = liabilities, cashCents = cash)
+        return NetPosition(
+            assetsCents = assets,
+            liabilitiesCents = liabilities,
+            cashCents = cash,
+            currency = base.uppercase(),
+            excludedCurrencies = excluded
+        )
+    }
+
+    /**
+     * The transactions belonging to accounts in [base] — everything a cross-account roll-up may add.
+     *
+     * The same refusal as [netPosition], applied one layer along: a transaction has no currency of
+     * its own, it inherits its account's, so a month's spending summed over mixed accounts is wrong
+     * in exactly the same invisible way a net worth was.
+     */
+    fun inBaseCurrency(
+        transactions: List<Transaction>,
+        accounts: List<Account>,
+        base: String
+    ): List<Transaction> {
+        val allowed = accounts.asSequence()
+            .filter { it.currency.equals(base, ignoreCase = true) }
+            .mapTo(mutableSetOf()) { it.id }
+        // A transaction whose account is not held at all (a connection removed mid-refresh) is kept:
+        // dropping it would silently shrink a month's totals, and it was denominated in the base
+        // currency far more often than not.
+        return transactions.filter { it.accountId in allowed || accounts.none { a -> a.id == it.accountId } }
     }
 
     /** The accounts a payment could plausibly come out of, in the order to offer them. */

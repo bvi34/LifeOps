@@ -60,8 +60,11 @@ class ActivityViewModel(
         .observePicture(today().minusMonths(15), today())
         .map { picture ->
             ActivityState(
+                // The list shows everything — an account in another currency is still your money
+                // and its rows are still true. Only the *detector* is restricted, because a series'
+                // "typical amount" summed across currencies would be a number about nothing.
                 transactions = picture.transactions,
-                series = Recurring.detect(picture.transactions),
+                series = Recurring.detect(picture.countable()),
                 accountNames = picture.accounts.associate { it.id to it.displayName() }
             )
         }

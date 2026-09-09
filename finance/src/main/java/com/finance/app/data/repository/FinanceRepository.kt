@@ -17,6 +17,7 @@ import com.finance.app.logic.Merchants
 import com.finance.app.logic.Provider
 import com.finance.app.logic.Recurring
 import com.finance.app.logic.Transaction
+import com.finance.app.logic.Transfers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -68,7 +69,10 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
             Picture(
                 accounts = accounts.map { it.toModel() },
                 bills = bills.map { it.toModel() },
-                transactions = transactions.map { it.toModel() }
+                // Pairing happens here, once, on the way out of the store rather than at each call
+                // site — a screen that forgot to do it would quietly show a month with the same
+                // money counted twice, and there would be nothing on it to say so.
+                transactions = Transfers.mark(transactions.map { it.toModel() })
             )
         }
 
@@ -78,7 +82,21 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
         val bills: List<Bills.Bill>,
         val transactions: List<Transaction>
     ) {
-        fun netPosition(): Accounts.NetPosition = Accounts.netPosition(accounts)
+        /** What the household's money is mostly in — see [Accounts.baseCurrency]. */
+        val baseCurrency: String get() = Accounts.baseCurrency(accounts)
+
+        fun netPosition(): Accounts.NetPosition = Accounts.netPosition(accounts, baseCurrency)
+
+        /**
+         * The transactions a cross-account roll-up may add together.
+         *
+         * Every summary in the app goes through this rather than through [transactions] directly.
+         * A transaction inherits its account's currency, so summing over mixed accounts produces a
+         * figure that is wrong in exactly the invisible way [Accounts.netPosition] used to be.
+         */
+        fun countable(): List<Transaction> =
+            Accounts.inBaseCurrency(transactions, accounts, baseCurrency)
+
         fun accountName(accountId: String): String? =
             accounts.firstOrNull { it.id == accountId }?.displayName()
     }
@@ -93,7 +111,7 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
         dao.accountsFor(connectionId).map { it.toModel() }
 
     suspend fun transactionsSince(from: LocalDate): List<Transaction> =
-        dao.since(from.toEpochDay()).map { it.toModel() }
+        Transfers.mark(dao.since(from.toEpochDay()).map { it.toModel() })
 
     suspend fun bills(): List<Bills.Bill> = dao.bills().map { it.toModel() }
 
@@ -233,7 +251,12 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
      */
     suspend fun rebuildBills(today: LocalDate, statements: List<Bills.Bill>, horizonDays: Long = 45L) {
         val existing = dao.bills().associateBy { it.id }
-        val transactions = dao.since(today.minusDays(HISTORY_DAYS).toEpochDay()).map { it.toModel() }
+        // Paired before anything reads them: an unpaired card payment looks like a recurring bill
+        // in its own right, so this is also what stops "pay the Visa" being predicted as a second
+        // obligation beside the card's own statement.
+        val transactions = Transfers.mark(
+            dao.since(today.minusDays(HISTORY_DAYS).toEpochDay()).map { it.toModel() }
+        )
 
         val typed = existing.values.filter { Bills.Source.fromKey(it.source) == Bills.Source.MANUAL }
             .map { it.toModel() }

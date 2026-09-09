@@ -350,6 +350,14 @@ the receipts.
 > because a rate taken on the 3rd is three days divided by three days and projects a household into
 > destitution by Friday.
 >
+> It will not **add unlike currencies**. The figures count accounts in whichever currency most of
+> yours use, and the screen names anything left out — because converting would need a live exchange
+> rate, which means a third host to talk to and a number on screen whose accuracy you didn't choose.
+> It also **pairs the two halves of a transfer**: a debit matched by a credit of exactly the same size
+> on another account within three days is money that never left the household, whatever either bank
+> called it — which is what stops a $500 move to savings reading as $500 spent *and* $500 earned, and
+> what stops the groceries you put on a card being counted again when you pay the card off.
+>
 > Tapping an account opens **its own page**: what is in it, what is due out of it, what has moved
 > through it, and its **paperwork** — the statement, the payoff letter, the 1099. Those documents live
 > on Repository's shelf rather than in a second store of Finance's own, findable from there without

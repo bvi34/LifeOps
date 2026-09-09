@@ -79,6 +79,8 @@ class AccountDetailViewModel(
                 bills = picture.bills
                     .filter { it.accountId == accountId }
                     .sortedWith(compareBy({ it.paid }, { it.dueDate })),
+                // One account is one currency, so this roll-up needs no base-currency filter —
+                // and unlike the cross-account screens it is correct for a foreign account too.
                 months = CashFlow.byMonth(mine, today(), months = 6),
                 today = today()
             )
