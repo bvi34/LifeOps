@@ -6,8 +6,9 @@ launcher icon. Opening it gives you a **phone home screen**: a tile per app, eac
 and colour, over a dock holding the gear and the backups. From there it:
 
 - opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
-  **Advisor**, **Health**, **People**, **Project**, **Maintenance**, and **Finance**),
-- **paints all nine of them**: one preset, one light/dark mode, and one accent per app, chosen in the
+  **Advisor**, **Health**, **People**, **Project**, **Maintenance**, **Finance**, **Repository** and
+  **Secrets**),
+- **paints all of them**: one preset, one light/dark mode, and one accent per app, chosen in the
   gear and obeyed everywhere,
 - **wears a wallpaper of your choosing** on its own home screen — a shipped design, a gradient you
   mixed, or (the default) the suite's own colours, and
@@ -161,11 +162,33 @@ no per-entity allow-list to fall out of date.
   **no credential travels**. The Plaid client secret, the per-connection access tokens, the Mercury
   API tokens and the sync cursors live in `secure_finance_access`, whose name does not match the
   `finance` prefix this contributor collects by — so the exclusion is a property of the name rather
-  than of a filter somebody could relax later. The cost is that restoring onto new hardware means
-  reconnecting the banks; the alternative is a zip in a cloud drive carrying a standing read grant on
-  a bank account, which cannot be rotated by changing a password and whose escape nobody would
-  notice. The older years of transaction history, on the other hand, genuinely are the only copy —
-  providers hand over a rolling window — which is why the database is copied as bytes.
+  than of a filter somebody could relax later. The alternative would be a zip in a cloud drive
+  carrying a standing read grant on a bank account, which cannot be rotated by changing a password
+  and whose escape nobody would notice. What used to be the cost of that — reconnecting every bank on
+  new hardware — is now paid by **Secrets**, below: the credentials are mirrored into the vault,
+  which travels sealed. The older years of transaction history, on the other hand, genuinely are the
+  only copy — providers hand over a rolling window — which is why the database is copied as bytes.
+
+- **Secrets** — copies the vault, `vault.opsv`, byte for byte, plus `shared_prefs/secrets_*.xml`
+  (auto-lock, clipboard timeout — preferences, not secrets). This is the one contributor that
+  **deliberately puts credentials in the archive**, and the only one whose restore refuses to
+  overwrite what it finds.
+
+  Both need saying. What travels is not a credential but a *sealed file* whose key is a passphrase in
+  somebody's head — 310,000 rounds of PBKDF2 away from a key that wraps the one the vault is
+  encrypted with. Copy it out of the zip and you have what a thief holding the phone would have. That
+  is what makes the credentials the other apps mirror into it (Finance's tokens, Citation's
+  sign-ins) survive onto a new phone at last. The **device unlock** — the vault key wrapped by *this*
+  phone's Keystore for the fingerprint shortcut — is excluded, by a file name
+  (`secure_secrets_device`) that fails this contributor's prefix test: an archive holding both the
+  sealed vault and a device-unwrappable copy of its key would be an archive holding the vault in
+  plaintext.
+
+  And the restore: onto a phone with **no** vault the archived one becomes the vault, which is the
+  case this app was built for. Onto a phone that already **has** one it is staged beside it and
+  offered in Secrets' settings as something to **merge** — because a wholesale swap here would delete
+  every password added since the backup, and unlike a balance or a transaction there is nowhere to
+  fetch those back from. See **[SECRETS.md](SECRETS.md)**.
 
 Because the apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
 each contributor scopes strictly to its own files by name.

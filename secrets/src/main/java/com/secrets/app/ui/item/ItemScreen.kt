@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -70,9 +71,11 @@ import kotlinx.coroutines.launch
  * itself, which stays masked until it is revealed, one field at a time (see
  * [com.secrets.app.ui.common.SecretValue]).
  *
- * Changes are saved when the screen is left rather than on every keystroke: a save re-seals and
- * rewrites the whole file, and doing that per character would be both wasteful and a way to leave a
- * half-typed password behind as the stored one.
+ * Changes are saved when Save is pressed, not as they are typed. A save re-seals and rewrites the
+ * whole file, so saving per keystroke would be wasteful — but the real reason is that a
+ * half-typed password written to the vault is a password that no longer opens anything, and an
+ * editor that autosaves gives nobody the chance to change their mind. Leaving without saving keeps
+ * what was there before, which is the behaviour a text field in a vault should have.
  */
 class ItemViewModel(
     private val store: VaultStore,
@@ -308,7 +311,8 @@ fun ItemScreen(
 
         OutlinedButton(onClick = vm::addField) {
             Icon(Icons.Filled.Add, contentDescription = null)
-            Text("  Add a field")
+            Spacer(Modifier.width(8.dp))
+            Text("Add a field")
         }
 
         SuiteTextField(

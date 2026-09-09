@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -106,7 +107,7 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
             _state.value = _state.value.copy(error = "Use at least $MIN_PASSPHRASE characters.")
             return
         }
-        run(onOpened) { store.create(passphrase.toCharArray()) }
+        launchOp(onOpened) { store.create(passphrase.toCharArray()) }
     }
 
     fun unlock(passphrase: String, onOpened: () -> Unit) {
@@ -170,7 +171,7 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
     /** A suggestion for a master passphrase, which is the one place words beat symbols. */
     fun suggestion(): String = PasswordGenerator.passphrase(words = 5, separator = "-").value
 
-    private fun run(onDone: () -> Unit, block: suspend () -> Boolean) {
+    private fun launchOp(onDone: () -> Unit, block: suspend () -> Boolean) {
         _state.value = _state.value.copy(busy = true, error = null)
         viewModelScope.launch {
             val ok = block()
@@ -312,7 +313,6 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
                 Text(if (state.creating) "Make the vault" else "Unlock")
             }
             if (state.busy) {
-                Spacer(Modifier.height(0.dp))
                 CircularProgressIndicator(modifier = Modifier.padding(start = 16.dp))
             }
         }
@@ -321,8 +321,8 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
             Spacer(Modifier.height(12.dp))
             OutlinedButton(onClick = { deviceGate(context) }, enabled = !state.busy) {
                 Icon(Icons.Filled.Fingerprint, contentDescription = null)
-                Spacer(Modifier.height(0.dp))
-                Text("  Use the device lock")
+                Spacer(Modifier.width(8.dp))
+                Text("Use the device lock")
             }
         }
 

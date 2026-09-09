@@ -22,11 +22,12 @@ the receipts.
 > share a silhouette, so a tile is recognisable before its colour registers — over a dock holding
 > the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
-> (`:people`), Project (`:project`), Maintenance (`:maintenance`), or Finance (`:finance`); one place to back the whole suite up into a single `.zip` and restore from it; and one
-> place that decides what all nine of them **look** like — a shared preset and light/dark mode, plus
+> (`:people`), Project (`:project`), Maintenance (`:maintenance`), Finance (`:finance`), Repository
+> (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> place that decides what all of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
-> People, Project, Maintenance and Finance are library modules hosted in that one process —
+> People, Project, Maintenance, Finance, Repository and Secrets are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -431,6 +432,36 @@ the receipts.
 > `maintenance/logic/` under **206 JVM tests**. It holds `INTERNET` for those two keyless
 > government lookups and nothing else — the mortgage, the address, the parcel number, the service
 > history and the odometer have no code path to the network at all.
+
+> **Secrets** (the suite's vault) is a peer module — see **[docs/SECRETS.md](docs/SECRETS.md)**.
+> It is a **1Password-shaped password manager** for the household's own logins, cards, keys and
+> notes — and, under the same lock, **every credential the other apps hold**: Finance's Plaid keys
+> and bank access tokens, Citation's catalogue sign-ins and library card. That second half is why it
+> exists. Every app here keeps its credentials in `EncryptedSharedPreferences` behind an Android
+> Keystore key and deliberately leaves them out of the backup, which is right — a zip in a cloud
+> drive carrying a bank access token would be the worst thing this suite could produce — and which
+> cost one thing every contributor states plainly: **restore onto a new phone and every credential is
+> gone**, because a key held in one phone's hardware cannot be carried to the next one.
+>
+> The vault changes what the key *is*. One file, sealed with **AES-256-GCM** under a key derived from
+> a **master passphrase** (PBKDF2-HMAC-SHA256, 310,000 rounds) that wraps a random vault key — a
+> passphrase in somebody's head rather than anything the phone or the archive holds. So the vault
+> **travels in the backup**, on purpose, holding credentials: copy it out of the zip and you have
+> what a thief holding the phone would have, which is a ciphertext and no key. Each app still keeps
+> its own store as the working copy and now **mirrors** every write into the vault and **reads
+> through** to it when its own store comes up empty — which after a restore is every credential at
+> once, and then never again. Nine reconnections become one passphrase, and a phone with no vault
+> behaves exactly as it did before.
+>
+> It is the one app whose restore refuses to restore: an archived vault is not swapped over a live
+> one — that would delete every password added since the backup, with nowhere to fetch them from — it
+> is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
+> changed. There is no `INTERNET` permission in the module and no HTTP client on its classpath: no
+> sync, no account, and no breach lookup, not even the k-anonymous kind. It cannot recover a
+> forgotten passphrase, and says so before it makes a vault. The format, the crypto, the generator,
+> the audit and the merge are the pure-JVM `:vaultkit` under **74 JVM tests**, most of which assert
+> that the vault *fails* to open — wrong passphrase, flipped bit, a header edited to claim a cheaper
+> KDF, a spliced key, a truncated file.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

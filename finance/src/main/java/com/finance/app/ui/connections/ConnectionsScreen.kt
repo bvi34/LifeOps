@@ -133,13 +133,14 @@ class ConnectionsViewModel(
                     _stage.value = LinkStage.Finishing
                     val exchange = client.exchange(result.publicToken)
                     val connectionId = UUID.randomUUID().toString()
-                    // The token first, then the row. A row without its token is a connection that
-                    // looks present and cannot refresh; a token without its row is an orphan the
-                    // next link overwrites harmlessly.
-                    secrets.setToken(connectionId, exchange.accessToken)
                     val name = result.institutionName
                         ?: result.institutionId?.let { client.institutionName(it) }
                         ?: "Bank"
+                    // The token first, then the row. A row without its token is a connection that
+                    // looks present and cannot refresh; a token without its row is an orphan the
+                    // next link overwrites harmlessly. The name is resolved before either, so the
+                    // copy filed in the vault is called "USAA access token" rather than a UUID.
+                    secrets.setToken(connectionId, exchange.accessToken, label = name)
                     repository.upsertConnection(
                         Connection(
                             id = connectionId,
@@ -225,7 +226,7 @@ class ConnectionsViewModel(
         viewModelScope.launch {
             _busy.value = true
             val connectionId = UUID.randomUUID().toString()
-            secrets.setToken(connectionId, apiToken.trim())
+            secrets.setToken(connectionId, apiToken.trim(), label = nickname.ifBlank { "Mercury" })
             repository.upsertConnection(
                 Connection(
                     id = connectionId,
@@ -286,7 +287,7 @@ class ConnectionsViewModel(
         val existing = secrets.token(USER_ID_SLOT)
         if (existing != null) return existing
         val minted = UUID.randomUUID().toString()
-        secrets.setToken(USER_ID_SLOT, minted)
+        secrets.setToken(USER_ID_SLOT, minted, label = "Plaid user id")
         return minted
     }
 

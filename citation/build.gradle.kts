@@ -135,6 +135,11 @@ dependencies {
     implementation(project(":core"))
     // The Operations Sandbox backup format/engine (pure JVM). Citation supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The vault contract (pure JVM). Citation mirrors its catalogue sign-ins and its library card
+    // into the Secrets vault and reads through to it when its own Keystore-backed store comes up
+    // empty — which on a restored phone is always. The dependency is on the *contract*, never on
+    // :secrets; the implementation is found through a registration the sandbox makes at start-up.
+    implementation(project(":vaultkit"))
 
     // PDF text extraction for the reflow track (see data/pdf/PdfPageText). The same PDFBox-Android
     // port :logistics already uses for the Walmart order import, so the app carries it either way.

@@ -46,18 +46,19 @@ interface SecretsBroker {
  *
  * Because the dependency arrow would be wrong in every direction. Finance cannot depend on :secrets
  * (a bank client that pulls in a password manager's UI), :secrets cannot depend on Finance (it would
- * have to depend on all nine), and there is no container in the middle: the sandbox's `Application`
+ * have to depend on every app in the suite), and there is no container in the middle: the sandbox's `Application`
  * installs both, but a hosted app resolves what it needs when a screen asks, not when the process
  * starts. So the seam is the same shape as LifeOps' completion bus — a static registration and a
  * null check — and the honest name for it is a service locator.
  *
- * ## What happens while the vault is locked
+ * ## What happens while the vault is shut
  *
  * The interesting half. A read while locked returns null, which every caller already handles: it is
  * the same answer they get on a phone where nothing was ever connected.
  *
- * A *write* while locked is the case that would quietly break the promise this whole app exists for.
- * Finance re-authorises a connection at eight in the morning, the vault has not been opened since
+ * A *write* that cannot land — the vault is locked, or there is no vault yet — is the case that would
+ * quietly break the promise this whole app exists for. Finance re-authorises a connection at eight in
+ * the morning, the vault has not been opened since
  * the phone booted, the token lands only in Finance's own keystore store — and the next restore
  * loses it, exactly as before. So writes that cannot land are **queued in memory** and flushed the
  * next time the vault is unlocked ([flushPending]).
@@ -67,6 +68,10 @@ interface SecretsBroker {
  * next opened and the queue is gone — the app's own store still has the token, so nothing is broken
  * that was not already, and the mirror happens on the next write. [PENDING_LIMIT] caps it, because
  * an unbounded in-memory pile of secrets is its own kind of bug.
+ *
+ * A household with no vault at all queues too, and that is on purpose rather than an oversight:
+ * making a vault flushes the queue, so somebody who connects a bank in the morning and creates a
+ * vault in the afternoon gets that connection filed without having to touch Finance again.
  */
 object SecretsAccess {
 

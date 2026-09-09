@@ -395,7 +395,13 @@ asleep" should render as a message with a retry, not a crash. Credentials are he
 **own origin**, so a redirect out to a CDN cannot carry someone's server password with it, and they
 live in a Keystore-backed store (`CatalogCredentials`) rather than the database: a `citation.db`
 travels — the sandbox backup copies it, a restore swaps it in wholesale — so a database carrying
-server passwords would make every backup a credential leak.
+server passwords would make every backup a credential leak. That store cannot travel (its key is
+this phone's), which used to mean re-entering every sign-in on a new phone; each one is now also
+**mirrored into the Secrets vault** and read back through it when this store comes up empty, along
+with the O'Reilly library card and PIN (`OreillyAccess`). The vault is sealed with a passphrase
+rather than with the hardware, so it rides in the archive and a restored install asks for that
+passphrase instead of for a library card that is in a drawer somewhere —
+see **[SECRETS.md](SECRETS.md)**.
 
 `ui/CatalogScreen` browses natively rather than in a WebView, which is the whole point: the entries
 are data, so a tap becomes a download that lands in the library with its series, subjects and blurb
