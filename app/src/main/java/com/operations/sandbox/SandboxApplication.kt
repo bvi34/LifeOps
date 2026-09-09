@@ -8,6 +8,7 @@ import com.lifeops.app.LifeOpsApp
 import com.maintenance.app.MaintenanceApp
 import com.people.app.PeopleApp
 import com.repository.app.RepositoryApp
+import com.secrets.app.SecretsApp
 import com.project.app.ProjectApp
 import com.finance.app.FinanceApp
 import com.logistics.app.LogisticsApp
@@ -45,5 +46,12 @@ class SandboxApplication : Application() {
         MaintenanceApp.install(this)
         FinanceApp.install(this)
         RepositoryApp.install(this)
+        // Secrets is installed last and matters first: installing it registers the broker that
+        // Finance, Citation and anything else reads its credentials back through. It has to happen
+        // at start-up rather than when somebody opens the app, because a sync that runs before
+        // anybody has touched Secrets is exactly the case the vault exists to serve — and it costs
+        // one file's header being read. Nothing is unlocked by installing; the vault comes up shut
+        // on every process start, always.
+        SecretsApp.install(this)
     }
 }

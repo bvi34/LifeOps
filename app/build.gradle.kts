@@ -128,6 +128,10 @@ dependencies {
     implementation(project(":maintenance"))
     implementation(project(":finance"))
     implementation(project(":repository"))
+    // Secrets, the vault. The sandbox is the only module that names it: it installs the app (which
+    // registers the broker every other app reads credentials through) and registers its backup
+    // contributor. Nothing else in the suite depends on this module — see the note in settings.gradle.
+    implementation(project(":secrets"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

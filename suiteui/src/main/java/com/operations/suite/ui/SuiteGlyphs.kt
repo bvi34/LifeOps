@@ -353,6 +353,49 @@ object SuiteGlyphs {
         }
 
     /**
+     * Secrets — a padlock: a square body with the shackle standing over it.
+     *
+     * The one mark in the set that is allowed to be the obvious drawing. Everything else here is a
+     * picture of the *work* rather than a category, and a padlock is a category — but it is also the
+     * single most-recognised object in software, it says "this is shut" from across a room, and the
+     * app's whole job is that the thing is shut. Inventing something cleverer would have cost
+     * legibility for the sake of consistency with a rule that exists to serve legibility.
+     *
+     * The silhouette is a body with a hoop over it, which nothing else in the set has: the closest
+     * neighbour is Health's thermometer, and a thermometer is a tube with a bulb at the *bottom*
+     * while this is a block with an arc at the top. The keyhole takes the highlight because the
+     * keyhole is the part that means "this opens for somebody" rather than "this is a box".
+     */
+    private fun padlock(ink: Ink): ImageVector =
+        glyph("SuitePadlock") {
+            // The shackle: a half-round hoop standing on the body, drawn open at the bottom so it
+            // reads as passing behind rather than as a circle sitting on a square.
+            line(width = 1.7f, ink = ink.line) {
+                moveTo(7.6f, 10.4f)
+                lineTo(7.6f, 7.6f)
+                arcTo(4.4f, 4.4f, 0f, false, true, 16.4f, 7.6f)
+                lineTo(16.4f, 10.4f)
+            }
+            // The body. A rounded block, wider than it is tall by a hair, so the hoop above it is
+            // the thing that carries the shape.
+            line(width = 1.7f, ink = ink.line) {
+                moveTo(6.2f, 10.4f)
+                lineTo(17.8f, 10.4f)
+                arcTo(1.4f, 1.4f, 0f, false, true, 19.2f, 11.8f)
+                lineTo(19.2f, 18.6f)
+                arcTo(1.4f, 1.4f, 0f, false, true, 17.8f, 20f)
+                lineTo(6.2f, 20f)
+                arcTo(1.4f, 1.4f, 0f, false, true, 4.8f, 18.6f)
+                lineTo(4.8f, 11.8f)
+                arcTo(1.4f, 1.4f, 0f, false, true, 6.2f, 10.4f)
+                close()
+            }
+            // The keyhole: the one element the mark exists to show.
+            solid(ink = ink.highlight) { circle(cx = 12f, cy = 14.2f, r = 1.5f) }
+            line(width = 1.8f, ink = ink.highlight) { moveTo(12f, 15.2f); lineTo(12f, 17.4f) }
+        }
+
+    /**
      * How to draw each mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it.
      * The drawing is a *function* of its ink rather than a finished vector, so the tintable form
      * and the two-colour one can never be different drawings.
@@ -367,7 +410,8 @@ object SuiteGlyphs {
         "answer-spark" to ::answerSpark,
         "wrench" to ::wrench,
         "folder-shelf" to ::folderShelf,
-        "coin-stack" to ::coinStack
+        "coin-stack" to ::coinStack,
+        "padlock" to ::padlock
     )
 
     /** Every mark in its tintable form, by icon key — what an app with no icon colours is drawn with. */
