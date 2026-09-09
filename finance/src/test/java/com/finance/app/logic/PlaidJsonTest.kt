@@ -244,13 +244,72 @@ class PlaidJsonTest {
     }
 
     @Test
-    fun `link and exchange come back as tokens`() {
-        assertEquals(
-            "link-production-abc",
-            PlaidJson.linkToken("""{"link_token":"link-production-abc","expiration":"2026-09-09T12:00:00Z"}""")
-        )
-        assertNull(PlaidJson.linkToken("""{"link_token":""}"""))
+    fun `starting a link yields the token to poll with and the page to open`() {
+        val start = PlaidJson.linkStart(
+            """{"link_token":"link-production-abc","hosted_link_url":"https://secure.plaid.com/hl/abc",
+                "expiration":"2026-09-09T12:00:00Z"}"""
+        )!!
+        assertEquals("link-production-abc", start.linkToken)
+        assertEquals("https://secure.plaid.com/hl/abc", start.hostedUrl)
+        assertTrue("the page has to be somewhere we may send somebody", Endpoints.permits(start.hostedUrl!!))
+        assertNull(PlaidJson.linkStart("""{"link_token":""}"""))
+    }
 
+    @Test
+    fun `an unfinished link session is not an answer yet`() {
+        // Null means "they haven't finished", which is the normal state for as long as somebody is
+        // typing their password. It must not read as a failure.
+        assertNull(PlaidJson.linkResult("""{"link_token":"link-production-abc","link_sessions":[]}"""))
+        assertNull(
+            PlaidJson.linkResult(
+                """{"link_sessions":[{"link_session_id":"s","results":{"item_add_results":[]},"on_success":null}]}"""
+            )
+        )
+    }
+
+    @Test
+    fun `a finished link session yields the public token and the institution`() {
+        val json = """
+            {
+              "link_token": "link-production-abc",
+              "link_sessions": [{
+                "link_session_id": "s-1",
+                "results": {
+                  "item_add_results": [{
+                    "public_token": "public-production-123",
+                    "institution": {"institution_id": "ins_21", "name": "USAA"}
+                  }]
+                }
+              }]
+            }
+        """.trimIndent()
+        val result = PlaidJson.linkResult(json)!!
+        assertEquals("public-production-123", result.publicToken)
+        assertEquals("ins_21", result.institutionId)
+        assertEquals("USAA", result.institutionName)
+    }
+
+    @Test
+    fun `the on_success shape is read too, or a finished session would look unfinished forever`() {
+        val json = """
+            {
+              "link_sessions": [{
+                "link_session_id": "s-1",
+                "results": {"item_add_results": []},
+                "on_success": {
+                  "public_token": "public-production-456",
+                  "metadata": {"institution": {"institution_id": "ins_3", "name": "Chase"}}
+                }
+              }]
+            }
+        """.trimIndent()
+        val result = PlaidJson.linkResult(json)!!
+        assertEquals("public-production-456", result.publicToken)
+        assertEquals("Chase", result.institutionName)
+    }
+
+    @Test
+    fun `exchange comes back as a token and an item`() {
         val exchange = PlaidJson.exchange("""{"access_token":"access-production-xyz","item_id":"item-9"}""")!!
         assertEquals("access-production-xyz", exchange.accessToken)
         assertEquals("item-9", exchange.itemId)

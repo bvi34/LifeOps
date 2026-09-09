@@ -19,6 +19,8 @@ data class SettingsUiState(
     val readingPointsPerHour: Int = com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR,
     // Which aspect the upkeep tasks Maintenance publishes onto the week are filed under (null = none).
     val maintenanceAspectId: String? = null,
+    // The same, for the bills Finance publishes.
+    val financeAspectId: String? = null,
     val categories: Map<String, List<Category>> = emptyMap(),
     val gameResources: List<GameResource> = emptyList(),
     val expandedAspectId: String? = null,
@@ -99,7 +101,8 @@ class SettingsViewModel(
                 wellnessSlotHours = preferencesRepository.wellnessSlotHours,
                 readingAspectId = preferencesRepository.readingAspectId,
                 readingPointsPerHour = preferencesRepository.readingPointsPerHour,
-                maintenanceAspectId = preferencesRepository.maintenanceAspectId
+                maintenanceAspectId = preferencesRepository.maintenanceAspectId,
+                financeAspectId = preferencesRepository.financeAspectId
             )
         }
         foodItemRepository?.let { repo ->
@@ -261,6 +264,17 @@ class SettingsViewModel(
     fun setMaintenanceAspect(aspectId: String?) {
         preferencesRepository.maintenanceAspectId = aspectId
         _uiState.update { it.copy(maintenanceAspectId = aspectId) }
+    }
+
+    /**
+     * Choose the aspect the bills Finance puts on the week are filed under (null = none).
+     *
+     * Same rules as [setMaintenanceAspect]: it takes effect on the next task published, and never
+     * reaches back into a week already planned.
+     */
+    fun setFinanceAspect(aspectId: String?) {
+        preferencesRepository.financeAspectId = aspectId
+        _uiState.update { it.copy(financeAspectId = aspectId) }
     }
 
     /** Set the flat reward rate (resource points per engaged hour of reading). */

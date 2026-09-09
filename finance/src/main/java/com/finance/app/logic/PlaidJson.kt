@@ -6,8 +6,8 @@ import com.google.gson.annotations.SerializedName
 import java.time.LocalDate
 
 /**
- * Pure parsing of the four Plaid responses this app reads. No network and no Android; the HTTP hop
- * lives in `data/net/PlaidClient`.
+ * Pure parsing of the Plaid responses this app reads. No network and no Android; the HTTP hop lives
+ * in `data/net/PlaidClient`.
  *
  * The split is the same one Maintenance uses for vPIC and Health for RxNorm, and it earns its keep
  * more here than in either: Plaid's payloads are large, deeply nested and full of fields with real
@@ -50,10 +50,59 @@ object PlaidJson {
         )
     }
 
-    /** `/link/token/create` → the token the Hosted Link page is opened with. */
-    fun linkToken(json: String): String? =
-        runCatching { gson.fromJson(json, LinkTokenBody::class.java) }.getOrNull()
-            ?.link_token?.takeIf { it.isNotBlank() }
+    /**
+     * `/link/token/create` → the token, and the page to open.
+     *
+     * **Hosted Link**, which is why this returns a URL rather than only a token. The alternative is
+     * Plaid's native Android SDK, and taking it would mean adding a large third-party dependency
+     * that opens its own activity — into a suite whose entire discipline is framework-free logic and
+     * one HTTP call per provider. Hosted Link needs neither: the person signs in on a page Plaid
+     * hosts, and the app asks [linkResult] afterwards what came of it.
+     *
+     * It also removes the redirect the SDK route needs. There is no App Link to register, no
+     * intent-filter, and no URL carrying a token back into this process where another app could
+     * race for it — the result is fetched over the same authenticated channel as everything else.
+     */
+    fun linkStart(json: String): LinkStart? {
+        val body = runCatching { gson.fromJson(json, LinkTokenBody::class.java) }.getOrNull() ?: return null
+        val token = body.link_token?.takeIf { it.isNotBlank() } ?: return null
+        return LinkStart(linkToken = token, hostedUrl = body.hosted_link_url?.takeIf { it.isNotBlank() })
+    }
+
+    /**
+     * `/link/token/get` → what the person did on the hosted page, if they have finished.
+     *
+     * Null means "not yet" rather than "failed": the session exists and nobody has completed it, so
+     * the caller waits. Plaid reports the result in two shapes depending on the flow, and both are
+     * read — `item_add_results` for a completed link, `on_success` for the callback-shaped payload —
+     * because an app that understood only one of them would sit there saying "waiting" forever
+     * against a session that had plainly succeeded.
+     */
+    fun linkResult(json: String): LinkResult? {
+        val body = runCatching { gson.fromJson(json, LinkGetBody::class.java) }.getOrNull() ?: return null
+        body.link_sessions.orEmpty().forEach { session ->
+            session.results?.item_add_results.orEmpty().forEach { result ->
+                val token = result.public_token?.takeIf { it.isNotBlank() }
+                if (token != null) {
+                    return LinkResult(
+                        publicToken = token,
+                        institutionId = result.institution?.institution_id,
+                        institutionName = result.institution?.name?.takeIf { it.isNotBlank() }
+                    )
+                }
+            }
+            val fallback = session.on_success?.public_token?.takeIf { it.isNotBlank() }
+            if (fallback != null) {
+                val institution = session.on_success?.metadata?.institution
+                return LinkResult(
+                    publicToken = fallback,
+                    institutionId = institution?.institution_id,
+                    institutionName = institution?.name?.takeIf { it.isNotBlank() }
+                )
+            }
+        }
+        return null
+    }
 
     /** `/item/public_token/exchange` → the long-lived access token, and the item it belongs to. */
     fun exchange(json: String): Exchange? {
@@ -257,6 +306,16 @@ object PlaidJson {
 
     data class Exchange(val accessToken: String, val itemId: String)
 
+    /** A link in progress: the token to poll with, and the page to send the person to. */
+    data class LinkStart(val linkToken: String, val hostedUrl: String?)
+
+    /** A finished link: the token to exchange, and what the institution turned out to be called. */
+    data class LinkResult(
+        val publicToken: String,
+        val institutionId: String?,
+        val institutionName: String?
+    )
+
     data class Sync(
         val added: List<Transaction>,
         val modified: List<Transaction>,
@@ -294,12 +353,24 @@ object PlaidJson {
         val display_message: String?
     )
 
-    private data class LinkTokenBody(val link_token: String?)
+    private data class LinkTokenBody(val link_token: String?, val hosted_link_url: String?)
+
+    private data class LinkGetBody(val link_sessions: List<LinkSessionRow>?)
+
+    private data class LinkSessionRow(val results: LinkResultsRow?, val on_success: OnSuccessRow?)
+
+    private data class LinkResultsRow(val item_add_results: List<ItemAddRow>?)
+
+    private data class ItemAddRow(val public_token: String?, val institution: InstitutionRow?)
+
+    private data class OnSuccessRow(val public_token: String?, val metadata: OnSuccessMetadataRow?)
+
+    private data class OnSuccessMetadataRow(val institution: InstitutionRow?)
 
     private data class ExchangeBody(val access_token: String?, val item_id: String?)
 
     private data class InstitutionBody(val institution: InstitutionRow?)
-    private data class InstitutionRow(val name: String?)
+    private data class InstitutionRow(val institution_id: String?, val name: String?)
 
     private data class AccountsBody(val accounts: List<AccountRow>?)
 

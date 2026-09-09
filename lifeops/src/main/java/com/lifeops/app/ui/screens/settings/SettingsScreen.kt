@@ -187,10 +187,27 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Maintenance upkeep", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(8.dp))
-                MaintenanceAspectSection(
+                PublishedTaskAspectSection(
+                    blurb = "Maintenance puts each upkeep job on your week as a task, dated the " +
+                        "day it falls due — an oil change, a filter, a registration. This is the " +
+                        "aspect they arrive under.",
                     aspects = state.aspects,
                     selectedAspectId = state.maintenanceAspectId,
                     onSelectAspect = viewModel::setMaintenanceAspect
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            item {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                Text("Finance bills", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                PublishedTaskAspectSection(
+                    blurb = "Finance puts each bill on your week as a task, dated the day it falls " +
+                        "due — the card, the mortgage, the insurance. This is the aspect they " +
+                        "arrive under. Finance ticks them off by itself when the payment lands.",
+                    aspects = state.aspects,
+                    selectedAspectId = state.financeAspectId,
+                    onSelectAspect = viewModel::setFinanceAspect
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -442,11 +459,17 @@ private fun ReadingRewardsSection(
  * work into LifeOps, and LifeOps decides which part of your life it counts towards — not that app.
  *
  * The one difference is what "none" means. Reading rewards are *off* until an aspect is chosen;
- * upkeep tasks arrive either way, and an unfiled one still scores. So the chip says "Unfiled"
+ * published tasks arrive either way, and an unfiled one still scores. So the chip says "Unfiled"
  * rather than "Off", because nothing here is being switched off.
+ *
+ * There are two of these now — Maintenance's upkeep and Finance's bills — and they get separate
+ * settings rather than one shared one, because changing the oil and paying the mortgage are not the
+ * same part of anybody's life. The only thing that differs between the two is [blurb], so the
+ * section is parameterised rather than copied.
  */
 @Composable
-private fun MaintenanceAspectSection(
+private fun PublishedTaskAspectSection(
+    blurb: String,
     aspects: List<Aspect>,
     selectedAspectId: String?,
     onSelectAspect: (String?) -> Unit
@@ -454,8 +477,7 @@ private fun MaintenanceAspectSection(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                "Maintenance puts each upkeep job on your week as a task, dated the day it falls " +
-                    "due — an oil change, a filter, a registration. This is the aspect they arrive under.",
+                blurb,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

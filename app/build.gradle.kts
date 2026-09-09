@@ -126,6 +126,7 @@ dependencies {
     implementation(project(":people"))
     implementation(project(":project"))
     implementation(project(":maintenance"))
+    implementation(project(":finance"))
     implementation(project(":repository"))
     implementation(project(":backupkit"))
 
