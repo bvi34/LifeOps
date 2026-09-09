@@ -86,6 +86,13 @@ object SuiteApps {
             defaultAccent = 0xFFB91C1CL
         ),
         SuiteAppInfo(
+            appId = AppId.FINANCE,
+            label = "Finance",
+            tagline = "Accounts, what's due and what's left",
+            iconKey = "coin-stack",
+            defaultAccent = 0xFF0E7490L
+        ),
+        SuiteAppInfo(
             appId = AppId.REPOSITORY,
             label = "Repository",
             tagline = "Every document, filed once and findable",

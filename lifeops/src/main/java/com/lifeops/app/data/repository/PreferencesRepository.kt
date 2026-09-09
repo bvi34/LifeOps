@@ -40,6 +40,23 @@ class PreferencesRepository(context: Context) {
             }.apply()
         }
 
+    /**
+     * The aspect the tasks **Finance** puts on the week are filed under (null = none).
+     *
+     * A third app feeding work into the planner, and it gets its own setting rather than borrowing
+     * [maintenanceAspectId] because paying the mortgage and changing the oil are not the same part
+     * of anybody's life. Same rules as Maintenance's: null means unfiled rather than off, and the
+     * value is read when a task is **published**, so changing it re-files what arrives from then on
+     * and leaves what is already on a week — including anything you re-filed by hand — alone.
+     */
+    var financeAspectId: String?
+        get() = prefs.getString("finance_aspect_id", null)
+        set(value) {
+            prefs.edit().apply {
+                if (value == null) remove("finance_aspect_id") else putString("finance_aspect_id", value)
+            }.apply()
+        }
+
     /** Resource points earned per engaged hour of reading (flat rate; default 5). */
     var readingPointsPerHour: Int
         get() = prefs.getInt("reading_points_per_hour", com.lifeops.app.util.ReadingRewards.DEFAULT_POINTS_PER_HOUR)

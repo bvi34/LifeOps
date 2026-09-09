@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Compose supplies the real theme (see ui/theme). This is only the launch/base theme the
+         Material3 Compose setup expects. -->
+    <style name="Theme.Finance" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

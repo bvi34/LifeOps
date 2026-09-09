@@ -3,6 +3,7 @@ package com.operations.sandbox
 import android.content.Context
 import com.advisor.app.backup.AdvisorBackupContributor
 import com.citation.app.backup.CitationBackupContributor
+import com.finance.app.backup.FinanceBackupContributor
 import com.health.app.backup.HealthBackupContributor
 import com.lifeops.app.backup.LifeOpsBackupContributor
 import com.maintenance.app.backup.MaintenanceBackupContributor
@@ -40,6 +41,7 @@ class BackupCenter(context: Context, private val sandboxVersion: String) {
         PeopleBackupContributor(appContext),
         ProjectBackupContributor(appContext),
         MaintenanceBackupContributor(appContext),
+        FinanceBackupContributor(appContext),
         RepositoryBackupContributor(appContext)
     )
 
