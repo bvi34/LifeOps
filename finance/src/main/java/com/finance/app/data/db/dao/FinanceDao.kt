@@ -142,8 +142,38 @@ interface FinanceDao {
     @Query("UPDATE bills SET lifeOpsTaskId = :taskId, publishedDueEpochDay = :publishedDue WHERE id = :id")
     suspend fun setBillLink(id: String, taskId: String?, publishedDue: Long?)
 
-    @Query("DELETE FROM bills WHERE id = :id")
-    suspend fun deleteBill(id: String)
+    /**
+     * Delete every occurrence of one typed bill that has not been paid.
+     *
+     * A repeating manual bill is a *series* of rows sharing an account and a payee, so "stop asking
+     * me for this" has to remove the ones still ahead rather than only the one being looked at —
+     * otherwise next month's occurrence, already minted, comes straight back.
+     *
+     * Paid occurrences survive: they are a record of money that actually left, and deleting them
+     * would quietly rewrite the household's own history.
+     */
+    @Query(
+        """
+        DELETE FROM bills
+        WHERE source = 'manual'
+          AND accountId = :accountId
+          AND merchantKey = :merchantKey
+          AND paidOnEpochDay IS NULL
+        """
+    )
+    suspend fun deleteManualSeries(accountId: String, merchantKey: String)
+
+    /** The unpaid occurrences of one typed series, so their week tasks can be withdrawn first. */
+    @Query(
+        """
+        SELECT * FROM bills
+        WHERE source = 'manual'
+          AND accountId = :accountId
+          AND merchantKey = :merchantKey
+          AND paidOnEpochDay IS NULL
+        """
+    )
+    suspend fun manualSeries(accountId: String, merchantKey: String): List<BillEntity>
 
     /**
      * Clear out predictions that a fresh detection run no longer stands behind.

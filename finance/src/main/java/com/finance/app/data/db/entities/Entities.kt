@@ -190,5 +190,11 @@ data class BillEntity(
     @ColumnInfo(defaultValue = "1")
     val publishToWeek: Boolean = true,
     val lifeOpsTaskId: String? = null,
-    val publishedDueEpochDay: Long? = null
+    val publishedDueEpochDay: Long? = null,
+    /**
+     * How often a **manual** bill comes back, in months. Null is a one-off, and is what every
+     * statement and predicted bill carries — their next date comes from the institution or from
+     * [com.finance.app.logic.Recurring], not from this column.
+     */
+    val recurrenceMonths: Int? = null
 )

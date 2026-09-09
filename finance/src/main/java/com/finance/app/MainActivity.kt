@@ -11,6 +11,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,6 +44,7 @@ import com.finance.app.ui.due.DueScreen
 import com.finance.app.ui.due.DueViewModel
 import com.finance.app.ui.picture.PictureScreen
 import com.finance.app.ui.picture.PictureViewModel
+import com.finance.app.ui.settings.FinanceSettingsScreen
 import com.finance.app.ui.theme.FinanceTheme
 
 /**
@@ -99,6 +101,7 @@ private const val ROUTE_DUE = "due"
 private const val ROUTE_ACCOUNTS = "accounts"
 private const val ROUTE_ACTIVITY = "activity"
 private const val ROUTE_CONNECTIONS = "connections"
+private const val ROUTE_SETTINGS = "settings"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,6 +125,7 @@ private fun FinanceShell(app: FinanceApp) {
                             ROUTE_ACCOUNTS -> "Accounts"
                             ROUTE_ACTIVITY -> "Activity"
                             ROUTE_CONNECTIONS -> "Connections"
+                            ROUTE_SETTINGS -> "Settings"
                             else -> "Finance"
                         }
                     )
@@ -135,6 +139,9 @@ private fun FinanceShell(app: FinanceApp) {
                 },
                 actions = {
                     if (onTab) {
+                        IconButton(onClick = { nav.navigate(ROUTE_SETTINGS) }) {
+                            Icon(Icons.Filled.Tune, contentDescription = "Settings")
+                        }
                         IconButton(onClick = { nav.navigate(ROUTE_CONNECTIONS) }) {
                             Icon(Icons.Filled.Link, contentDescription = "Connections")
                         }
@@ -203,7 +210,7 @@ private fun FinanceShell(app: FinanceApp) {
                 val vm: DueViewModel = viewModel(
                     factory = DueViewModel.Factory(app.repository, app.publisher, app.prefs)
                 )
-                DueScreen(vm = vm, onOpenConnections = { nav.navigate(ROUTE_CONNECTIONS) })
+                DueScreen(vm = vm)
             }
             composable(ROUTE_ACCOUNTS) {
                 val vm: AccountsViewModel = viewModel(factory = AccountsViewModel.Factory(app.repository))
@@ -216,11 +223,17 @@ private fun FinanceShell(app: FinanceApp) {
                 val vm: ActivityViewModel = viewModel(factory = ActivityViewModel.Factory(app.repository))
                 ActivityScreen(vm = vm)
             }
+            composable(ROUTE_SETTINGS) {
+                // No view model: three preferences read and written directly, with nothing derived
+                // from them here. A ViewModel would exist only to hold a copy of what the prefs
+                // already hold.
+                FinanceSettingsScreen(prefs = app.prefs)
+            }
             composable(ROUTE_CONNECTIONS) {
                 val vm: ConnectionsViewModel = viewModel(
                     factory = ConnectionsViewModel.Factory(app.repository, app.secrets, app.sync)
                 )
-                ConnectionsScreen(vm = vm, onBack = { nav.popBackStack() })
+                ConnectionsScreen(vm = vm)
             }
         }
     }

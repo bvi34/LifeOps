@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "30600b6c7ca7ef58e735ee189eec96a1",
+    "identityHash": "824d2668025a042ba44835d396a397ff",
     "entities": [
       {
         "tableName": "connections",
@@ -356,7 +356,7 @@
       },
       {
         "tableName": "bills",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `payee` TEXT NOT NULL, `dueEpochDay` INTEGER NOT NULL, `amountCents` INTEGER NOT NULL, `minimumCents` INTEGER, `source` TEXT NOT NULL, `category` TEXT NOT NULL, `merchantKey` TEXT, `paidOnEpochDay` INTEGER, `autopay` INTEGER NOT NULL DEFAULT 0, `publishToWeek` INTEGER NOT NULL DEFAULT 1, `lifeOpsTaskId` TEXT, `publishedDueEpochDay` INTEGER, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `accountId` TEXT NOT NULL, `payee` TEXT NOT NULL, `dueEpochDay` INTEGER NOT NULL, `amountCents` INTEGER NOT NULL, `minimumCents` INTEGER, `source` TEXT NOT NULL, `category` TEXT NOT NULL, `merchantKey` TEXT, `paidOnEpochDay` INTEGER, `autopay` INTEGER NOT NULL DEFAULT 0, `publishToWeek` INTEGER NOT NULL DEFAULT 1, `lifeOpsTaskId` TEXT, `publishedDueEpochDay` INTEGER, `recurrenceMonths` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -443,6 +443,12 @@
             "columnName": "publishedDueEpochDay",
             "affinity": "INTEGER",
             "notNull": false
+          },
+          {
+            "fieldPath": "recurrenceMonths",
+            "columnName": "recurrenceMonths",
+            "affinity": "INTEGER",
+            "notNull": false
           }
         ],
         "primaryKey": {
@@ -495,7 +501,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '30600b6c7ca7ef58e735ee189eec96a1')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '824d2668025a042ba44835d396a397ff')"
     ]
   }
 }

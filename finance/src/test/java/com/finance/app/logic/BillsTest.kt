@@ -196,3 +196,149 @@ class BillsTest {
         assertFalse(bill(due = "2026-09-12", amount = 10.0).paid)
     }
 }
+
+/**
+ * Repeating manual bills — the one source that has to mint its own next occurrence, because nobody
+ * else is going to tell us the rent is due again.
+ */
+class ManualBillTest {
+
+    private val today = LocalDate.parse("2026-09-09")
+
+    private fun rent(
+        due: String,
+        months: Int? = 1,
+        paidOn: String? = null
+    ) = bill(
+        payee = "Landlord",
+        due = due,
+        amount = 1_400.0,
+        source = Bills.Source.MANUAL,
+        recurrenceMonths = months,
+        paidOn = paidOn,
+        id = Bills.manualId("acct", Merchants.key("Landlord"), LocalDate.parse(due))
+    )
+
+    @Test
+    fun `a repeating manual bill mints the occurrences it owes, up to the horizon`() {
+        val minted = Bills.rollForward(listOf(rent("2026-09-01")), today, horizonDays = 100L)
+        assertEquals(
+            listOf("2026-10-01", "2026-11-01", "2026-12-01").map(LocalDate::parse),
+            minted.map { it.dueDate }
+        )
+        assertTrue("a fresh occurrence owes nothing yet", minted.none { it.paid })
+    }
+
+    @Test
+    fun `a one-off manual bill does not repeat`() {
+        assertTrue(Bills.rollForward(listOf(rent("2026-09-01", months = null)), today, 100L).isEmpty())
+    }
+
+    @Test
+    fun `only manual bills roll forward - the others are told their next date`() {
+        val statement = bill(
+            payee = "USAA Visa", due = "2026-09-12", amount = 1_240.0,
+            source = Bills.Source.STATEMENT, recurrenceMonths = 1
+        )
+        val predicted = bill(
+            payee = "Netflix", due = "2026-09-12", amount = 15.49,
+            source = Bills.Source.PREDICTED, recurrenceMonths = 1
+        )
+        assertTrue(Bills.rollForward(listOf(statement, predicted), today, 100L).isEmpty())
+    }
+
+    @Test
+    fun `running it twice mints nothing the second time`() {
+        // The ids are derived from the date, so "the same occurrence" is the same row by
+        // construction. This is what lets the roll run as often as anything else in the module.
+        val first = Bills.rollForward(listOf(rent("2026-09-01")), today, 100L)
+        val second = Bills.rollForward(listOf(rent("2026-09-01")) + first, today, 100L)
+        assertTrue(second.isEmpty())
+    }
+
+    @Test
+    fun `it steps from the last occurrence, not from today`() {
+        // Somebody who stops opening the app for three months should come back to a rent bill for
+        // each of those months — visibly unpaid, which is true — rather than to one dated today
+        // that quietly pretends the gap didn't happen.
+        val minted = Bills.rollForward(listOf(rent("2026-06-01")), today, horizonDays = 30L)
+        assertEquals(
+            listOf("2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01").map(LocalDate::parse),
+            minted.map { it.dueDate }
+        )
+    }
+
+    @Test
+    fun `a quarterly manual bill steps by quarters`() {
+        val estimate = bill(
+            payee = "IRS estimate", due = "2026-06-15", amount = 2_100.0,
+            source = Bills.Source.MANUAL, recurrenceMonths = 3,
+            id = Bills.manualId("acct", Merchants.key("IRS estimate"), LocalDate.parse("2026-06-15"))
+        )
+        val minted = Bills.rollForward(listOf(estimate), today, horizonDays = 120L)
+        assertEquals(
+            listOf("2026-09-15", "2026-12-15").map(LocalDate::parse),
+            minted.map { it.dueDate }
+        )
+    }
+
+    @Test
+    fun `two payees on one account are two series`() {
+        val minted = Bills.rollForward(
+            listOf(
+                rent("2026-09-01"),
+                bill(
+                    payee = "Storage unit", due = "2026-09-20", amount = 90.0,
+                    source = Bills.Source.MANUAL, recurrenceMonths = 1,
+                    id = Bills.manualId("acct", Merchants.key("Storage unit"), LocalDate.parse("2026-09-20"))
+                )
+            ),
+            today, horizonDays = 45L
+        )
+        assertEquals(setOf("Landlord", "Storage unit"), minted.map { it.payee }.toSet())
+    }
+
+    @Test
+    fun `a corrupt recurrence cannot spin`() {
+        // Zero months would never advance the date. The filter refuses it outright rather than
+        // relying on the step bound to notice.
+        assertTrue(Bills.rollForward(listOf(rent("2026-09-01", months = 0)), today, 100L).isEmpty())
+    }
+
+    @Test
+    fun `a typed payee settles against the bank's own wording for it`() {
+        // The one case where the key was typed by a person rather than derived from a bank string.
+        // Somebody writes "Landlord"; the bank says "LANDLORD SEPT AUTOPAY". Exact matching would
+        // mean a typed bill never settles itself and rent gets ticked off by hand forever.
+        val settled = Bills.settle(
+            listOf(rent("2026-09-01")),
+            listOf(txn("2026-09-02", -1_400.0, "LANDLORD SEPT AUTOPAY"))
+        )
+        assertEquals(LocalDate.parse("2026-09-02"), settled.single().paidOn)
+    }
+
+    @Test
+    fun `a loose prefix is still not a match`() {
+        // "LAND" must not settle a landscaping invoice just because the amount happens to fit.
+        val settled = Bills.settle(
+            listOf(rent("2026-09-01")),
+            listOf(txn("2026-09-02", -1_400.0, "LANDSCAPING CO"))
+        )
+        assertNull(settled.single().paidOn)
+    }
+
+    @Test
+    fun `the relaxation applies to typed bills only`() {
+        // A predicted bill's key is derived from bank strings by construction, so it has no excuse
+        // for being approximate — and loosening it there would start merging real payees.
+        val predicted = bill(
+            payee = "LANDLORD", due = "2026-09-01", amount = 1_400.0,
+            source = Bills.Source.PREDICTED
+        )
+        val settled = Bills.settle(
+            listOf(predicted),
+            listOf(txn("2026-09-02", -1_400.0, "LANDLORD SEPT AUTOPAY"))
+        )
+        assertNull(settled.single().paidOn)
+    }
+}

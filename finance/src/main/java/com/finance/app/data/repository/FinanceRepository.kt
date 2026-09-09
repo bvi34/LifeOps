@@ -128,7 +128,70 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
     suspend fun setBillPublishToWeek(billId: String, publish: Boolean) =
         dao.setPublishToWeek(billId, publish)
 
-    suspend fun deleteBill(billId: String) = dao.deleteBill(billId)
+    /**
+     * Add (or correct) a typed bill.
+     *
+     * The id is derived from the account, the payee and the date ([Bills.manualId]), which is what
+     * lets somebody re-enter the same bill without producing a second copy of it — and what lets
+     * [Bills.rollForward] mint next month's occurrence idempotently.
+     *
+     * Editing a repeating bill is deliberately *not* a separate operation: entering it again with a
+     * new amount overwrites that occurrence, and the ones ahead are re-minted from it on the next
+     * rebuild. Rent going up is a new figure from a date, not a retrospective correction to the
+     * months already paid at the old one.
+     */
+    suspend fun addManualBill(
+        accountId: String,
+        payee: String,
+        due: LocalDate,
+        amountCents: Long,
+        recurrenceMonths: Int?,
+        category: Category = Category.OTHER,
+        publishToWeek: Boolean = true
+    ): Bills.Bill {
+        val merchantKey = Merchants.key(payee)
+        val bill = Bills.Bill(
+            id = Bills.manualId(accountId, merchantKey, due),
+            accountId = accountId,
+            payee = payee.trim(),
+            dueDate = due,
+            amountCents = amountCents,
+            source = Bills.Source.MANUAL,
+            category = category,
+            merchantKey = merchantKey,
+            publishToWeek = publishToWeek,
+            recurrenceMonths = recurrenceMonths
+        )
+        // Carry any link the same occurrence already had, so re-entering a bill that is already on
+        // the week corrects it in place rather than orphaning the task.
+        val previous = dao.bill(bill.id)
+        dao.upsertBills(
+            listOf(
+                bill.toEntity(
+                    lifeOpsTaskId = previous?.lifeOpsTaskId,
+                    publishedDueEpochDay = previous?.publishedDueEpochDay
+                )
+            )
+        )
+        return bill
+    }
+
+    /**
+     * Stop a typed bill, and hand back the LifeOps task ids that need withdrawing.
+     *
+     * Two halves, because only one of them belongs to this class. Removing the rows is a database
+     * question; taking their tasks off somebody's week is the publisher's, and it has to happen
+     * behind the same gate a round runs under — so the ids come back rather than being acted on
+     * here. The caller pairs them (see the Due screen's view model).
+     *
+     * Unpaid occurrences only. A paid one is a record of money that actually left, and deleting it
+     * would quietly rewrite the household's own history.
+     */
+    suspend fun deleteManualSeries(accountId: String, merchantKey: String): List<String> {
+        val doomed = dao.manualSeries(accountId, merchantKey)
+        dao.deleteManualSeries(accountId, merchantKey)
+        return doomed.mapNotNull { it.lifeOpsTaskId }
+    }
 
     suspend fun upsertBills(bills: List<Bills.Bill>) = dao.upsertBills(bills.map { it.toEntity() })
 
@@ -172,8 +235,13 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
         val existing = dao.bills().associateBy { it.id }
         val transactions = dao.since(today.minusDays(HISTORY_DAYS).toEpochDay()).map { it.toModel() }
 
-        val manual = existing.values.filter { Bills.Source.fromKey(it.source) == Bills.Source.MANUAL }
+        val typed = existing.values.filter { Bills.Source.fromKey(it.source) == Bills.Source.MANUAL }
             .map { it.toModel() }
+        // Repeating typed bills mint their own next occurrences, and they do it *before* prediction
+        // runs so that a predicted bill can be dropped against next month's rent as well as this
+        // month's. Rolling afterwards would show both for a fortnight, every month.
+        val minted = Bills.rollForward(typed, today, horizonDays)
+        val manual = typed + minted
         val predicted = Bills.predict(
             series = Recurring.detect(transactions),
             today = today,
@@ -187,7 +255,8 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
             bill.copy(
                 paidOn = previous.paidOnEpochDay?.let { LocalDate.ofEpochDay(it) },
                 publishToWeek = previous.publishToWeek,
-                autopay = previous.autopay
+                autopay = previous.autopay,
+                recurrenceMonths = previous.recurrenceMonths
             )
         }
 
@@ -329,7 +398,8 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
         merchantKey = merchantKey,
         paidOn = paidOnEpochDay?.let { LocalDate.ofEpochDay(it) },
         autopay = autopay,
-        publishToWeek = publishToWeek
+        publishToWeek = publishToWeek,
+        recurrenceMonths = recurrenceMonths
     )
 
     private fun Bills.Bill.toEntity(
@@ -349,7 +419,8 @@ class FinanceRepository(private val dao: FinanceDao) : BillStore {
         autopay = autopay,
         publishToWeek = publishToWeek,
         lifeOpsTaskId = lifeOpsTaskId,
-        publishedDueEpochDay = publishedDueEpochDay
+        publishedDueEpochDay = publishedDueEpochDay,
+        recurrenceMonths = recurrenceMonths
     )
 
     private companion object {

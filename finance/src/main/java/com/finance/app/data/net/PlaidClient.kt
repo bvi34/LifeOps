@@ -85,18 +85,51 @@ class PlaidClient(
      * back into this process — would mean either a large third-party dependency or an App Link that
      * another installed app could contend for.
      */
-    suspend fun startLink(userId: String): PlaidJson.LinkStart = post(
+    suspend fun startLink(
+        userId: String,
+        /**
+         * The token of a connection being **repaired** rather than added.
+         *
+         * Passing it puts Plaid into *update mode*: the person re-authenticates the item they
+         * already have, and the access token this app holds keeps working afterwards. There is no
+         * new item, no new token, and — the part that matters — no second copy of the same bank in
+         * the account list, quietly counted twice in net worth.
+         */
+        accessToken: String? = null
+    ): PlaidJson.LinkStart = post(
         path = "/link/token/create",
         body = buildString {
             append("""{"client_id":${clientId.json()},"secret":${secret.json()},""")
             append(""""client_name":"LifeOps Finance","country_codes":["US"],"language":"en",""")
-            append(""""products":["transactions"],"optional_products":["liabilities"],""")
+            if (accessToken == null) {
+                append(""""products":["transactions"],"optional_products":["liabilities"],""")
+            } else {
+                // Update mode takes the item instead of a product list, and Plaid rejects the
+                // request outright if both are sent — the products are already on the item.
+                append(""""access_token":${accessToken.json()},""")
+            }
             append(""""hosted_link":{},""")
             append(""""user":{"client_user_id":${userId.json()}}""")
             append("}")
         }
     ).let { body ->
         PlaidJson.linkStart(body) ?: throw PlaidException("Plaid didn't return a link token.")
+    }
+
+    /**
+     * Whether a connection can be read again — the test for "did the repair work".
+     *
+     * Deliberately *not* a poll of `/link/token/get`. In update mode Plaid repairs the item in place
+     * and there is no public token handed back, so the payload shape that says "finished" is both
+     * different from the add case and not worth guessing at. The question this app actually cares
+     * about is "can I read this account again", so that is the question asked: a successful balance
+     * read is the repair, and a `reauth` error is "not yet". Anything else is a real failure and is
+     * allowed to propagate.
+     */
+    suspend fun canRead(accessToken: String): Boolean = try {
+        accounts(accessToken, connectionId = "probe").isNotEmpty()
+    } catch (e: PlaidException) {
+        if (e.reauth) false else throw e
     }
 
     /**

@@ -73,6 +73,7 @@ internal fun bill(
     merchantKey: String? = Merchants.key(payee),
     paidOn: String? = null,
     publishToWeek: Boolean = true,
+    recurrenceMonths: Int? = null,
     id: String = "$source:$payee:$due"
 ) = Bills.Bill(
     id = id,
@@ -84,7 +85,8 @@ internal fun bill(
     source = source,
     merchantKey = merchantKey,
     paidOn = paidOn?.let { LocalDate.parse(it) },
-    publishToWeek = publishToWeek
+    publishToWeek = publishToWeek,
+    recurrenceMonths = recurrenceMonths
 )
 
 /** A run of charges from one payee, one period apart, for building recurring series in tests. */

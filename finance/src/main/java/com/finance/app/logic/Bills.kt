@@ -78,7 +78,17 @@ object Bills {
         val paidOn: LocalDate? = null,
         val autopay: Boolean = false,
         /** Whether this bill should put itself on the LifeOps week. Autopaid ones default to not. */
-        val publishToWeek: Boolean = true
+        val publishToWeek: Boolean = true,
+        /**
+         * How often a **manual** bill comes back, in months. Null is a one-off.
+         *
+         * Only manual bills carry this, and the asymmetry is the point. A statement bill's next
+         * occurrence comes from the institution, which knows; a predicted one's comes from
+         * [Recurring], which has three occurrences of evidence. A manual bill has neither — nobody
+         * is going to tell us the rent is due again — so the person who typed it says how often, and
+         * that answer is the only one available.
+         */
+        val recurrenceMonths: Int? = null
     ) {
         val paid: Boolean get() = paidOn != null
 
@@ -134,6 +144,68 @@ object Bills {
     }
 
     /**
+     * The id a manual bill is filed under.
+     *
+     * Derived rather than random, exactly as the provider-backed ids are, and for a reason specific
+     * to this source: a manual bill has to be able to *repeat*, and repeating means minting next
+     * month's occurrence without minting a second copy of one that already exists. Deriving the id
+     * from the account, the payee and the date makes "the same occurrence" the same row by
+     * construction, so [rollForward] can be run as often as anything else in this module without
+     * accumulating duplicates.
+     */
+    fun manualId(accountId: String, merchantKey: String, due: LocalDate): String =
+        "manual:$accountId:$merchantKey:$due"
+
+    /**
+     * Mint the occurrences a repeating manual bill owes but does not yet have.
+     *
+     * Only manual bills, and only ones the person said repeat. Statement bills get their next date
+     * from the institution and predicted ones from [Recurring]; a manual bill has neither, which is
+     * why it is the one source that needs this at all.
+     *
+     * The rule is deliberately conservative: **step from the latest occurrence that already exists**,
+     * never from today. A household that stops opening the app for three months should come back to
+     * a rent bill for each of those months — visibly unpaid, which is the truth — rather than to one
+     * bill dated today that quietly pretends the gap did not happen. What stops that running away is
+     * the horizon: the series only ever advances to it, and [MAX_ROLL_STEPS] bounds a corrupt row.
+     *
+     * Returns only the **new** occurrences, so the caller can insert them without touching anything
+     * it already holds.
+     */
+    fun rollForward(bills: List<Bill>, today: LocalDate, horizonDays: Long): List<Bill> {
+        val horizon = today.plusDays(horizonDays)
+        return bills.asSequence()
+            .filter { it.source == Source.MANUAL && (it.recurrenceMonths ?: 0) > 0 }
+            // One series per payee per account. Grouping by the same two fields the id is derived
+            // from is what makes the generated ids collide with anything already present.
+            .groupBy { it.accountId to it.merchantKey.orEmpty() }
+            .flatMap { (key, occurrences) ->
+                val (accountId, merchantKey) = key
+                val latest = occurrences.maxBy { it.dueDate }
+                val months = latest.recurrenceMonths?.toLong() ?: return@flatMap emptyList()
+                val taken = occurrences.mapTo(mutableSetOf()) { it.dueDate }
+
+                val minted = mutableListOf<Bill>()
+                var due = latest.dueDate
+                var steps = 0
+                while (steps < MAX_ROLL_STEPS) {
+                    due = due.plusMonths(months)
+                    steps++
+                    if (due.isAfter(horizon)) break
+                    if (!taken.add(due)) continue
+                    minted += latest.copy(
+                        id = manualId(accountId, merchantKey, due),
+                        dueDate = due,
+                        // A fresh occurrence owes nothing yet and holds no claim on anybody's week
+                        // until the round decides it should.
+                        paidOn = null
+                    )
+                }
+                minted
+            }
+    }
+
+    /**
      * Mark the bills in [bills] that a transaction in [payments] looks like it settled.
      *
      * Matching is by payee key, then by date window, then by amount — and a payment is consumed by
@@ -170,7 +242,19 @@ object Bills {
         val atLeastMinimum = bill.minimumCents?.let { amount >= it } ?: false
         if (!nearAmount && !atLeastMinimum) return false
         val key = bill.merchantKey ?: return true
-        return key == Merchants.key(payment.label())
+        val paid = Merchants.key(payment.label())
+        if (bill.source != Source.MANUAL) return key == paid
+
+        // A manual bill is the one case where the key was typed by a person rather than derived
+        // from a bank string, so exact matching is the wrong test: somebody writes "Landlord" and
+        // the bank says "LANDLORD SEPT AUTOPAY". Without this, a typed bill would essentially never
+        // settle itself and the household would be ticking rent off by hand forever.
+        //
+        // The relaxation is one-sided prefix matching with a floor on length, because a short prefix
+        // is a bad match rather than a generous one: "LAND" would otherwise settle a landscaping
+        // invoice. Four characters is enough to stop that and short enough for a real payee name.
+        if (key.length < MIN_MANUAL_KEY || paid.length < MIN_MANUAL_KEY) return key == paid
+        return key.startsWith(paid) || paid.startsWith(key)
     }
 
     /**
@@ -210,6 +294,21 @@ object Bills {
      */
     private const val OVERDUE_MEMORY_DAYS = 60L
 
+    /**
+     * How much of a typed payee has to match a bank string before it counts as the same payee.
+     *
+     * Only manual bills are matched this loosely; see [matches].
+     */
+    private const val MIN_MANUAL_KEY = 4
+
     /** How close a prediction has to be to a statement bill to be considered the same obligation. */
     private const val DUPLICATE_WINDOW_DAYS = 14L
+
+    /**
+     * A bound on how far one call to [rollForward] will step a series.
+     *
+     * The horizon already stops it in every sane case; this stops a row with a corrupt date — a
+     * recurrence of zero months would otherwise never advance — from spinning.
+     */
+    private const val MAX_ROLL_STEPS = 240
 }

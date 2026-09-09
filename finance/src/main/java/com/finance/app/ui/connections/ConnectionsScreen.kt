@@ -59,11 +59,17 @@ sealed interface LinkStage {
     data object Idle : LinkStage
     data object Starting : LinkStage
 
-    /** The hosted page is open in a browser and we are asking Plaid whether they've finished. */
-    data class Waiting(val hostedUrl: String) : LinkStage
+    /**
+     * The hosted page is open in a browser and we are asking Plaid whether they've finished.
+     *
+     * [repairing] distinguishes adding a bank from re-authorising one that already exists. The
+     * mechanics are nearly identical and the wording must not be: somebody repairing a connection
+     * needs to know their history is not about to be replaced.
+     */
+    data class Waiting(val hostedUrl: String, val repairing: Boolean = false) : LinkStage
     data object Finishing : LinkStage
     data class Failed(val message: String) : LinkStage
-    data class Done(val institution: String) : LinkStage
+    data class Done(val institution: String, val repaired: Boolean = false) : LinkStage
 }
 
 class ConnectionsViewModel(
@@ -116,7 +122,7 @@ class ConnectionsViewModel(
                     _stage.value = LinkStage.Failed("Plaid didn't give a sign-in page we can open.")
                     return@launch
                 }
-                _stage.value = LinkStage.Waiting(hosted)
+                _stage.value = LinkStage.Waiting(hosted, repairing = false)
 
                 var waited = 0L
                 while (waited < LINK_TIMEOUT_MS) {
@@ -145,6 +151,61 @@ class ConnectionsViewModel(
                         )
                     )
                     _stage.value = LinkStage.Done(name)
+                    sync.refreshAll()
+                    return@launch
+                }
+                _stage.value = LinkStage.Failed("That sign-in didn't finish. Try again when you're ready.")
+            } catch (e: Exception) {
+                _stage.value = LinkStage.Failed(e.message ?: "Couldn't reach Plaid.")
+            }
+        }
+    }
+
+    /**
+     * Re-authorise a connection the bank has locked, **in place**.
+     *
+     * This exists because the alternative was genuinely broken: without update mode, the only way
+     * back from `ITEM_LOGIN_REQUIRED` was to add the bank again, which minted a second connection
+     * with a second copy of every account — both counted in net worth, with the dead one still
+     * sitting there. A re-authorisation has to repair what is already here or it is not a
+     * re-authorisation.
+     *
+     * Completion is detected by reading the account again rather than by polling Plaid for a link
+     * result. In update mode there is no public token handed back, and "can I read this account
+     * now" is the question the app actually cares about — see [PlaidClient.canRead].
+     */
+    fun repairPlaidLink(connection: Connection) {
+        val keys = secrets.plaidKeys ?: run {
+            _stage.value = LinkStage.Failed("Add your Plaid client id and secret first.")
+            return
+        }
+        val token = secrets.token(connection.id) ?: run {
+            _stage.value = LinkStage.Failed(
+                "That connection has no token left on this device — remove it and add the bank again."
+            )
+            return
+        }
+        viewModelScope.launch {
+            _stage.value = LinkStage.Starting
+            val client = PlaidClient(keys.clientId, keys.secret, keys.environment)
+            try {
+                val start = client.startLink(userId = stableUserId(), accessToken = token)
+                val hosted = start.hostedUrl
+                if (hosted == null || !Endpoints.permits(hosted)) {
+                    _stage.value = LinkStage.Failed("Plaid didn't give a sign-in page we can open.")
+                    return@launch
+                }
+                _stage.value = LinkStage.Waiting(hosted, repairing = true)
+
+                var waited = 0L
+                while (waited < LINK_TIMEOUT_MS) {
+                    delay(POLL_INTERVAL_MS)
+                    waited += POLL_INTERVAL_MS
+                    if (!client.canRead(token)) continue
+
+                    _stage.value = LinkStage.Finishing
+                    repository.markProblem(connection.id, needsReauth = false, error = null)
+                    _stage.value = LinkStage.Done(connection.displayName, repaired = true)
                     sync.refreshAll()
                     return@launch
                 }
@@ -258,7 +319,7 @@ class ConnectionsViewModel(
  * earned the credential.
  */
 @Composable
-fun ConnectionsScreen(vm: ConnectionsViewModel, onBack: () -> Unit) {
+fun ConnectionsScreen(vm: ConnectionsViewModel) {
     val connections by vm.connections.collectAsStateWithLifecycle()
     val stage by vm.stage.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
@@ -293,7 +354,11 @@ fun ConnectionsScreen(vm: ConnectionsViewModel, onBack: () -> Unit) {
                 }
             ) {
                 connections.forEach { connection ->
-                    ConnectionRow(connection, onRemove = { confirmRemoval = connection })
+                    ConnectionRow(
+                        connection = connection,
+                        onRepair = { vm.repairPlaidLink(connection) },
+                        onRemove = { confirmRemoval = connection }
+                    )
                     Spacer(Modifier.height(8.dp))
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -421,30 +486,51 @@ private fun MercuryHelpCard() {
 }
 
 @Composable
-private fun ConnectionRow(connection: Connection, onRemove: () -> Unit) {
+private fun ConnectionRow(connection: Connection, onRepair: () -> Unit, onRemove: () -> Unit) {
+    val needsSignIn = connection.status() == Connection.Status.NEEDS_SIGN_IN
     Card(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text(connection.displayName, fontWeight = FontWeight.SemiBold)
-                val (line, colour) = when (connection.status()) {
-                    // Needing to sign in again is the routine event, so it gets the ordinary accent
-                    // rather than the error colour — it is a thing to do, not a thing that broke.
-                    Connection.Status.NEEDS_SIGN_IN ->
-                        "Your bank wants you to sign in again" to MaterialTheme.colorScheme.primary
-                    Connection.Status.PROBLEM ->
-                        (connection.lastError ?: "Something went wrong") to MaterialTheme.colorScheme.error
-                    Connection.Status.NEVER_REFRESHED ->
-                        "Not refreshed yet" to MaterialTheme.colorScheme.onSurfaceVariant
-                    Connection.Status.OK ->
-                        "${connection.provider.label} · up to date" to MaterialTheme.colorScheme.onSurfaceVariant
+        Column(Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(connection.displayName, fontWeight = FontWeight.SemiBold)
+                    val (line, colour) = when (connection.status()) {
+                        // Needing to sign in again is the routine event, so it gets the ordinary
+                        // accent rather than the error colour — it is a thing to do, not a thing
+                        // that broke.
+                        Connection.Status.NEEDS_SIGN_IN ->
+                            "Your bank wants you to sign in again" to MaterialTheme.colorScheme.primary
+                        Connection.Status.PROBLEM ->
+                            (connection.lastError ?: "Something went wrong") to MaterialTheme.colorScheme.error
+                        Connection.Status.NEVER_REFRESHED ->
+                            "Not refreshed yet" to MaterialTheme.colorScheme.onSurfaceVariant
+                        Connection.Status.OK ->
+                            "${connection.provider.label} · up to date" to MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = colour)
                 }
-                Text(line, style = MaterialTheme.typography.bodySmall, color = colour)
+                TextButton(onClick = onRemove) { Text("Remove") }
             }
-            TextButton(onClick = onRemove) { Text("Remove") }
+
+            // The action that makes the state above actionable. Without it the row said "sign in
+            // again" and offered no way to, and the only route back was adding the bank a second
+            // time — which left two of everything, both counted.
+            if (needsSignIn && connection.provider.canExpire) {
+                Spacer(Modifier.height(8.dp))
+                Button(onClick = onRepair, modifier = Modifier.fillMaxWidth()) {
+                    Text("Sign in again")
+                }
+                Text(
+                    "This repairs the connection you already have. Your accounts, history and bills " +
+                        "stay exactly as they are.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         }
     }
 }
@@ -463,12 +549,23 @@ private fun LinkDialog(stage: LinkStage, context: Context, onDismiss: () -> Unit
 
         is LinkStage.Waiting -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Sign in to your bank") },
+            title = { Text(if (stage.repairing) "Sign in again" else "Sign in to your bank") },
             text = {
                 Text(
-                    "Open the page, sign in, and come back — this will notice when you're done.\n\n" +
-                        "The page is Plaid's, not this app's: your bank password is typed there and " +
-                        "never passes through here."
+                    buildString {
+                        append("Open the page, sign in, and come back — this will notice when you're done.\n\n")
+                        if (stage.repairing) {
+                            append(
+                                "This repairs the connection you already have: nothing is added and " +
+                                    "nothing is replaced, so your accounts, history and bills are " +
+                                    "untouched.\n\n"
+                            )
+                        }
+                        append(
+                            "The page is Plaid's, not this app's: your bank password is typed there " +
+                                "and never passes through here."
+                        )
+                    }
                 )
             },
             confirmButton = {
@@ -486,8 +583,20 @@ private fun LinkDialog(stage: LinkStage, context: Context, onDismiss: () -> Unit
 
         is LinkStage.Done -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("${stage.institution} connected") },
-            text = { Text("Pulling the accounts and history now. It may take a minute.") },
+            title = {
+                Text(
+                    if (stage.repaired) "${stage.institution} is back" else "${stage.institution} connected"
+                )
+            },
+            text = {
+                Text(
+                    if (stage.repaired) {
+                        "Catching up on anything that happened while it was locked."
+                    } else {
+                        "Pulling the accounts and history now. It may take a minute."
+                    }
+                )
+            },
             confirmButton = { TextButton(onClick = onDismiss) { Text("Good") } }
         )
 

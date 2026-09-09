@@ -89,6 +89,22 @@ Plaid brings statement due dates, which is the single most valuable thing in thi
 re-authentication: a bank can decide at any time that you should sign in again. Those come together;
 neither is optional.
 
+### Re-authenticating repairs the connection you have
+
+When a bank locks an item (`ITEM_LOGIN_REQUIRED`), the Connections row says so in the ordinary accent
+rather than in red — it is a thing to do, not a thing that broke — and offers **Sign in again**. That
+runs Plaid in *update mode*: the existing `access_token` is passed to `/link/token/create`, the person
+re-authenticates the item already held, and the token keeps working afterwards.
+
+The alternative would be adding the bank a second time, which mints a whole new connection with a
+second copy of every account — both counted in net worth, with the dead one still sitting there. A
+re-authorisation has to repair what is already there or it is not a re-authorisation.
+
+Completion is detected by **reading the account again**, not by polling `/link/token/get`. In update
+mode there is no public token handed back, so the payload that says "finished" is both different from
+the add case and not worth guessing at; "can I read this account now" is the question the app
+actually cares about, so it is the one asked.
+
 ### Why Hosted Link rather than Plaid's SDK
 
 Plaid's Android SDK is a large third-party dependency that opens its own activity, into a suite whose
@@ -133,12 +149,42 @@ that appears only when something is doubtful is a badge people learn to skip.
 | Source | Means |
 |---|---|
 | **From your statement** | The institution said so. A card's `next_payment_due_date`, a mortgage servicer's next payment. A fact with a date on it. |
-| **You entered this** | Typed in. As trustworthy as the person who typed it, which is usually the most trustworthy thing here. |
+| **You entered this** | Typed in on the Due screen. As trustworthy as the person who typed it, which is usually the most trustworthy thing here. |
 | **Predicted from your history** | `logic/Recurring` found a pattern and stepped it forward. A good guess about a real obligation whose exact date and amount are this app's arithmetic. |
 
 A card's bill is published as the **statement balance**, with the minimum shown beside it rather than
 instead of it. Paying the minimum is how a balance becomes permanent, and an app that leads with the
 minimum is quietly recommending that.
+
+### Bills you write down yourself
+
+Plaid cannot report a bill paid from an account nobody connected, and never will. Rent by standing
+order, a quarterly tax estimate, the loan from a relative — without somewhere to put those, the Due
+list is only ever as complete as the connections behind it, which is the kind of partial truth that
+makes somebody stop trusting the whole screen.
+
+So a typed bill is a first-class source, and the part that makes it worth having is that **it
+repeats**. A one-off is useful for a tax estimate and useless for rent; a household that had to
+re-type the rent every month would stop after two. `Bills.rollForward` mints the occurrences a
+repeating bill owes, and two details make it safe to run as often as everything else here:
+
+- **Ids are derived** (`Bills.manualId` — account, payee, date), so "the same occurrence" is the same
+  row by construction and running the roll twice mints nothing the second time.
+- **It steps from the last occurrence, never from today.** Stop opening the app for three months and
+  you come back to a rent bill for each of those months, visibly unpaid — which is true — rather
+  than to one dated today that quietly pretends the gap did not happen.
+
+Typed bills are also the one case where payee matching is **relaxed**. Everywhere else a merchant key
+is derived from a bank string and compared exactly; here it was typed by a person, who writes
+"Landlord" while the bank says `LANDLORD SEPT AUTOPAY`. Exact matching would mean a typed bill
+essentially never settles itself. So a typed bill matches on a one-sided prefix, with a four-character
+floor — enough that "LAND" cannot settle a landscaping invoice.
+
+Removing one removes the occurrences ahead of it too, and withdraws their week tasks. Occurrences
+already paid survive: they are a record of money that actually left, and deleting them would rewrite
+the household's own history. Statement and predicted bills have no Remove button at all — one is the
+institution's word and the other is re-derived on every refresh, so the button would undo itself
+within the hour. Untick the week instead.
 
 ### Finding the things that come round
 
@@ -241,6 +287,23 @@ Which aspect these tasks are filed under is **LifeOps' decision, not this app's*
 `Settings → Finance bills` in LifeOps, read at publish time, so changing it re-files what arrives
 from then on and never touches a week already planned — including anything you moved by hand.
 
+## The three settings
+
+There are deliberately only three, and none is a toggle for a feature:
+
+- **Your floor** — the balance you don't want to go under. Zero by default, which makes the alarm the
+  overdraft. Set it and the forecast's warning becomes something you can act on a week early.
+- **How far ahead** — what the Due list and the forecast reach to. Six weeks by default.
+- **Whether the forecast counts ordinary spending**, or shows scheduled bills alone.
+
+Everything else about this app is either a fact from a bank (not a preference) or a position the app
+has taken: income is never projected, a card's bill leads with the statement balance rather than the
+minimum, and a bill is only marked paid by a payment landing or a task being ticked. A switch for
+those would be an app that could not stand behind its own numbers.
+
+Appearance is not here either — that lives in the Operations Sandbox gear and paints every app at
+once.
+
 ## Where Finance ends and Maintenance begins
 
 There is a real overlap and it is resolved by asking *whose fact is it*.
@@ -280,7 +343,8 @@ access, and paste it into `Connections → Add Mercury`. No Plaid account is inv
 
 When a bank later asks you to sign in again, the connection says so on the Connections screen in the
 ordinary accent rather than in red — it is a thing to do, not a thing that broke — and everything
-already fetched stays exactly as good as it was.
+already fetched stays exactly as good as it was. **Sign in again** on that row repairs the connection
+in place; do not add the bank a second time, and the app does not make you.
 
 ## The code
 

@@ -330,7 +330,11 @@ the receipts.
 > Bills arrive three ways and the app never pretends they are equally solid: **from your statement**
 > (a card's real `next_payment_due_date`), **entered by you**, or **predicted** — three occurrences on
 > a steady rhythm for a steady amount, and a prediction is dropped when a statement already covers the
-> same obligation. Amounts are filtered *before* the rhythm is examined, so a gym charged $45 monthly
+> same obligation. A bill you type in **repeats**, because a one-off is useful for a tax estimate and
+> useless for rent, and it steps from its last occurrence rather than from today — stop opening the
+> app for three months and you come back to a rent bill for each of them, visibly unpaid, rather than
+> one dated today that pretends the gap did not happen. It is also the one bill whose payee is matched
+> loosely, since you write "Landlord" and the bank says `LANDLORD SEPT AUTOPAY`. Amounts are filtered *before* the rhythm is examined, so a gym charged $45 monthly
 > that also takes $180 once a year keeps its monthly series instead of being thrown away as irregular.
 > A card's bill leads with the **statement balance** and keeps the minimum beside it, because leading
 > with the minimum is how a balance becomes permanent. There is **no "mark as paid" button**: a bill
@@ -345,6 +349,11 @@ the receipts.
 > balance on the trough day can only beat it. The burn rate comes from the last *complete* month,
 > because a rate taken on the 3rd is three days divided by three days and projects a household into
 > destitution by Friday.
+>
+> When a bank locks a connection, the row says so in the ordinary accent rather than in red — it is a
+> thing to do, not a thing that broke — and **Sign in again** repairs the connection you already have
+> through Plaid's update mode. Adding the bank a second time would mint a duplicate of every account,
+> both counted in net worth, so the app does not make you.
 >
 > Bills go **on the LifeOps week**, the same seam Maintenance publishes upkeep on and for the same
 > reason — one planner for the suite. A bill publishes itself ten days ahead as a task dated the day
