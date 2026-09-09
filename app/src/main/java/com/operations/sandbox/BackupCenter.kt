@@ -12,6 +12,7 @@ import com.operations.backupkit.AppId
 import com.people.app.backup.PeopleBackupContributor
 import com.project.app.backup.ProjectBackupContributor
 import com.repository.app.backup.RepositoryBackupContributor
+import com.secrets.app.backup.SecretsBackupContributor
 import com.operations.backupkit.BackupContributor
 import com.operations.backupkit.BackupEngine
 import com.operations.backupkit.BackupManifest
@@ -42,7 +43,8 @@ class BackupCenter(context: Context, private val sandboxVersion: String) {
         ProjectBackupContributor(appContext),
         MaintenanceBackupContributor(appContext),
         FinanceBackupContributor(appContext),
-        RepositoryBackupContributor(appContext)
+        RepositoryBackupContributor(appContext),
+        SecretsBackupContributor(appContext)
     )
 
     /** Write the [selected] apps into [out] as a single archive. [out] is closed by the engine. */

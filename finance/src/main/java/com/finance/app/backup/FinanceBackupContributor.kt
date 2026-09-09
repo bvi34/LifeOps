@@ -21,16 +21,20 @@ import java.io.File
  * start with `finance`, so [financePrefFiles] cannot pick it up even by accident — the exclusion is
  * a property of the name rather than of a filter somebody could relax in a later commit.
  *
- * That is the single most important line in this file, and it has a cost worth stating plainly:
- * **restore this backup onto a new phone and the connections have to be re-authorised.** Accounts,
- * balances, years of transactions, bills and their history all come back; the ability to fetch new
- * ones does not, until somebody signs in again. Two minutes of inconvenience, against a zip file in
- * a cloud drive that would otherwise carry a standing read grant on a bank account — one that cannot
- * be rotated by changing a password, and whose escape the household would have no way of noticing.
+ * That is the single most important line in this file, and it used to come with a cost stated just
+ * as plainly: restore onto a new phone and every connection had to be re-authorised.
  *
- * The cursor is left behind for a related but separate reason: restored beside a token that is gone,
- * it would tell the *next* connection to start from where the *old* one left off, silently skipping
- * everything in between. Forgetting them together is the only coherent option.
+ * **That cost is now paid somewhere else.** Every credential this app writes is also mirrored into
+ * the Secrets vault (see `FinanceSecrets`), and the vault *does* travel — as a sealed file whose key
+ * is a passphrase in somebody's head rather than anything the archive or the phone holds. So the
+ * archive still contains no readable token, this contributor still writes none, and a restore onto a
+ * new phone gets its connections back the moment somebody unlocks their vault. If there is no vault,
+ * the old bargain stands unchanged: reconnect, and it takes two minutes.
+ *
+ * The cursor is left behind for a related but separate reason, and is not mirrored into the vault
+ * either: a cursor is a claim about what has already been fetched, and the safe direction for it to
+ * be wrong in is "fetch too much". A restored connection therefore syncs from the beginning once and
+ * the repository de-duplicates what comes back.
  *
  * ## Why the database is copied rather than exported
  *

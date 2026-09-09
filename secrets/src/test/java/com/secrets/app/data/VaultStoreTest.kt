@@ -1,0 +1,277 @@
+package com.secrets.app.data
+
+import androidx.test.core.app.ApplicationProvider
+import com.operations.backupkit.AppId
+import com.operations.vaultkit.ManagedSecrets
+import com.operations.vaultkit.SecretRef
+import com.operations.vaultkit.SecretsAccess
+import com.operations.vaultkit.VaultEnvelope
+import com.operations.vaultkit.VaultItem
+import com.operations.vaultkit.VaultState
+import com.secrets.app.broker.VaultBroker
+import java.util.UUID
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * The store, on the JVM.
+ *
+ * These are the parts that cannot be tested by reasoning about them: what is on disk after a save,
+ * what a locked vault will and will not answer, and — the test this whole app was asked for — what a
+ * credential does when the phone it was typed into is gone.
+ *
+ * [android.content.Context] is Robolectric's, which gives a real `filesDir` and a real (in-memory)
+ * keystore, so the file store and the broker run exactly as they do on a device.
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
+class VaultStoreTest {
+
+    private lateinit var store: VaultStore
+
+    private val passphrase get() = "a passphrase nobody guesses".toCharArray()
+
+    @Before
+    fun setUp() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        // Each test starts from an empty vault directory; Robolectric hands out a fresh data dir per
+        // test class, not per test, so this is the reset.
+        VaultFileStore(context).deleteAll()
+        store = VaultStore(context)
+        SecretsAccess.reset()
+    }
+
+    @After
+    fun tearDown() {
+        SecretsAccess.reset()
+    }
+
+    @Test
+    fun `a new install has no vault, and making one opens it`() = runTest {
+        assertEquals(VaultState.ABSENT, store.state.value)
+        assertFalse(store.exists)
+
+        assertTrue(store.create(passphrase))
+
+        assertEquals(VaultState.UNLOCKED, store.state.value)
+        assertTrue(store.exists)
+        assertNotNull(store.document.value)
+    }
+
+    @Test
+    fun `a vault cannot be made twice over the top of itself`() = runTest {
+        assertTrue(store.create(passphrase))
+
+        assertFalse("a second create would destroy the first vault", store.create("another".toCharArray()))
+    }
+
+    @Test
+    fun `locking drops the document, and the right passphrase brings it back`() = runTest {
+        store.create(passphrase)
+        store.mutate { it.upsert(item("Bank", "hunter2"), 10) }
+
+        store.lock()
+        assertEquals(VaultState.LOCKED, store.state.value)
+        assertNull(store.document.value)
+
+        assertEquals(VaultStore.UnlockResult.WRONG_PASSPHRASE, store.unlock("nope".toCharArray()))
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, store.unlock(passphrase))
+        assertEquals("hunter2", store.document.value?.live?.single()?.secret)
+    }
+
+    @Test
+    fun `a saved vault survives being reopened by a fresh store - the process restart`() = runTest {
+        store.create(passphrase)
+        store.mutate { it.upsert(item("Bank", "hunter2"), 10) }
+
+        val second = VaultStore(ApplicationProvider.getApplicationContext())
+        assertEquals("a new process finds a locked vault, never an open one", VaultState.LOCKED, second.state.value)
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, second.unlock(passphrase))
+        assertEquals("hunter2", second.document.value?.live?.single()?.secret)
+    }
+
+    @Test
+    fun `nothing readable is left on disk`() = runTest {
+        store.create(passphrase)
+        store.mutate { it.upsert(item("Allotment gate", "elderflower-4417"), 10) }
+
+        val bytes = VaultFileStore(ApplicationProvider.getApplicationContext()).read()!!
+        val asText = String(bytes, Charsets.ISO_8859_1)
+
+        assertFalse("the secret is in the file in plain text", asText.contains("elderflower-4417"))
+        assertFalse("so is the title", asText.contains("Allotment gate"))
+        assertTrue(VaultEnvelope.looksLikeVault(bytes))
+    }
+
+    @Test
+    fun `a locked vault refuses to be written to`() = runTest {
+        store.create(passphrase)
+        store.lock()
+
+        assertFalse(store.mutateBlocking { it.upsert(item("Bank", "x"), 10) })
+    }
+
+    @Test
+    fun `changing the passphrase retires the old one and keeps the contents`() = runTest {
+        store.create(passphrase)
+        store.mutate { it.upsert(item("Bank", "hunter2"), 10) }
+
+        assertTrue(store.changePassphrase(passphrase, "something else entirely".toCharArray()))
+        store.lock()
+
+        assertEquals(VaultStore.UnlockResult.WRONG_PASSPHRASE, store.unlock(passphrase))
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, store.unlock("something else entirely".toCharArray()))
+        assertEquals("hunter2", store.document.value?.live?.single()?.secret)
+    }
+
+    @Test
+    fun `changing the passphrase needs the current one`() = runTest {
+        store.create(passphrase)
+
+        assertFalse(store.changePassphrase("wrong".toCharArray(), "new passphrase here".toCharArray()))
+    }
+
+    @Test
+    fun `the auto-lock fires on elapsed time and not before`() = runTest {
+        store.create(passphrase)
+        val now = System.currentTimeMillis()
+
+        assertFalse(store.shouldAutoLock(now, timeoutMillis = 60_000))
+        assertTrue(store.shouldAutoLock(now + 61_000, timeoutMillis = 60_000))
+        assertFalse("zero means never", store.shouldAutoLock(now + 10_000_000, timeoutMillis = 0))
+
+        store.lock()
+        assertFalse("a shut vault has nothing to lock", store.shouldAutoLock(now + 61_000, 60_000))
+    }
+
+    @Test
+    fun `destroying leaves nothing behind`() = runTest {
+        store.create(passphrase)
+        store.mutate { it.upsert(item("Bank", "hunter2"), 10) }
+
+        assertTrue(store.destroy())
+
+        assertEquals(VaultState.ABSENT, store.state.value)
+        assertFalse(store.exists)
+        assertNull(VaultFileStore(ApplicationProvider.getApplicationContext()).read())
+    }
+
+    // --- The broker, which is what the other apps see ---------------------------------------------
+
+    @Test
+    fun `an app files a credential and reads it back`() = runTest {
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        val ref = SecretRef("finance", "usaa", "access-token")
+
+        assertTrue(SecretsAccess.remember(ref, "access-abc", "Finance — USAA token", AppId.FINANCE))
+
+        assertEquals("access-abc", SecretsAccess.read(ref))
+        val item = store.document.value!!.managed(ref)!!
+        assertEquals("Finance — USAA token", item.title)
+        assertEquals("finance", item.managedBy)
+    }
+
+    @Test
+    fun `a locked vault tells an app nothing, and keeps the write for later`() = runTest {
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        val ref = SecretRef("finance", "usaa", "access-token")
+        SecretsAccess.remember(ref, "access-abc", "t", AppId.FINANCE)
+
+        store.lock()
+        assertNull(SecretsAccess.read(ref))
+        assertFalse(SecretsAccess.remember(ref, "access-def", "t", AppId.FINANCE))
+        assertEquals(1, SecretsAccess.pendingCount)
+
+        store.unlock(passphrase)
+        // Unlocking flushes the queue — see VaultStore.unlock, which is where that happens.
+        assertEquals("access-def", SecretsAccess.read(ref))
+        assertEquals(0, SecretsAccess.pendingCount)
+    }
+
+    @Test
+    fun `a rename in the vault survives the app writing the credential again`() = runTest {
+        store.create(passphrase)
+        val broker = VaultBroker(store)
+        val ref = SecretRef("finance", "usaa", "access-token")
+        broker.write(ref, "one", "Finance — USAA token", AppId.FINANCE)
+        val id = store.document.value!!.managed(ref)!!.id
+        store.mutate { document ->
+            document.upsert(document.item(id)!!.copy(title = "The joint account"), 20)
+        }
+
+        broker.write(ref, "two", "Finance — USAA token", AppId.FINANCE)
+
+        val item = store.document.value!!.managed(ref)!!
+        assertEquals("two", item.secret)
+        assertEquals("the value is the app's; the name is the household's", "The joint account", item.title)
+    }
+
+    @Test
+    fun `forgetting a credential tombstones it rather than dropping the row`() = runTest {
+        store.create(passphrase)
+        val broker = VaultBroker(store)
+        val ref = SecretRef("citation", "calibre", "password")
+        broker.write(ref, "abc", "Citation — Calibre", AppId.CITATION)
+
+        assertTrue(broker.forget(ref))
+
+        assertNull(broker.read(ref))
+        assertTrue(store.document.value!!.items.single().isDeleted)
+    }
+
+    /**
+     * The whole point of the app, in one test.
+     *
+     * A phone with Finance connected and a vault. Take the backup. Get a new phone: the app's own
+     * encrypted store is empty (it never travels), the vault is restored. Read the token.
+     */
+    @Test
+    fun `a credential read through the vault survives a phone that no longer exists`() = runTest {
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        val ref = SecretRef("finance", "usaa", "access-token")
+
+        // The old phone: Finance writes its token to its own store *and* mirrors it here.
+        var financeLocalStore: String? = "access-abc"
+        ManagedSecrets.remember(ref, financeLocalStore!!, "Finance — USAA token", AppId.FINANCE)
+
+        // The new phone: the vault file came back in the archive; Finance's keystore store did not.
+        val vaultBytes = VaultFileStore(ApplicationProvider.getApplicationContext()).read()!!
+        val newPhone = VaultStore(ApplicationProvider.getApplicationContext())
+        VaultFileStore(ApplicationProvider.getApplicationContext()).write(vaultBytes)
+        newPhone.refreshState()
+        SecretsAccess.register(VaultBroker(newPhone))
+        financeLocalStore = null
+
+        // Before the vault is opened, Finance is exactly where it would have been without this app.
+        assertNull(ManagedSecrets.readThrough(ref, { financeLocalStore }, { financeLocalStore = it }))
+
+        newPhone.unlock(passphrase)
+
+        assertEquals(
+            "access-abc",
+            ManagedSecrets.readThrough(ref, { financeLocalStore }, { financeLocalStore = it })
+        )
+        assertEquals("and it is back in Finance's own store", "access-abc", financeLocalStore)
+    }
+
+    private fun item(title: String, secret: String) = VaultItem(
+        id = UUID.randomUUID().toString(),
+        title = title,
+        secret = secret,
+        createdAt = 1,
+        updatedAt = 1
+    )
+}

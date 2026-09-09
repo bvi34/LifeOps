@@ -93,6 +93,13 @@ object SuiteApps {
             defaultAccent = 0xFF0E7490L
         ),
         SuiteAppInfo(
+            appId = AppId.SECRETS,
+            label = "Secrets",
+            tagline = "One vault, and the creds that survive a restore",
+            iconKey = "padlock",
+            defaultAccent = 0xFFBE185DL
+        ),
+        SuiteAppInfo(
             appId = AppId.REPOSITORY,
             label = "Repository",
             tagline = "Every document, filed once and findable",

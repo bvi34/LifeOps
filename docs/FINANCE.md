@@ -64,14 +64,22 @@ in `secure_finance_access`, a file whose name deliberately does not start with `
 contributor's prefix filter cannot pick it up even by accident. The exclusion is a property of the
 name rather than of a filter somebody could relax in a later commit.
 
-The cost is real and is worth paying: **restore a backup onto a new phone and you reconnect.**
-Accounts, balances, years of transactions and every bill come back; the ability to fetch new ones
-does not, until somebody signs in again. Two minutes, against a zip file in a cloud drive that would
-otherwise carry a standing read grant on a bank account — one that cannot be rotated by changing a
-password, and whose escape the household would have no way of noticing.
+That exclusion is not negotiable: the alternative is a zip file in a cloud drive carrying a standing
+read grant on a bank account — one that cannot be rotated by changing a password, and whose escape
+the household would have no way of noticing.
 
-The cursor is left behind for a related reason: restored beside a token that is gone, it would tell
-the *next* connection to start where the *old* one left off, silently skipping everything between.
+It used to come with a cost stated just as plainly — *restore onto a new phone and you reconnect* —
+and that cost is now paid somewhere else. Every credential this app writes is **mirrored into the
+Secrets vault** and read back through it when this app's own store comes up empty, which after a
+restore is all of them (`FinanceSecrets`, and **[SECRETS.md](SECRETS.md)** for why the vault can
+travel when this store cannot: its key is a passphrase rather than something held in one phone's
+hardware). The archive still contains no readable token and this contributor still writes none;
+what changed is that unlocking the vault on the new phone brings the connections back. On a phone
+with no vault, the old bargain stands unchanged and reconnecting takes two minutes.
+
+The cursor is left behind for a related reason, and is not mirrored either: a cursor is a claim about
+what has already been fetched, and the safe direction for it to be wrong in is "fetch too much". A
+restored connection syncs from the beginning once, and the repository de-duplicates what comes back.
 
 ## The two providers are not interchangeable
 

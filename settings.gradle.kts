@@ -76,6 +76,16 @@ include(":repository")
 // the statement, the payoff letter — is a document the household filed rather than something a
 // finance app should keep a second copy of.
 include(":finance")
+// Secrets is the suite's vault: one encrypted file, one master passphrase, and the credentials every
+// other app used to keep in a device-bound store that a restore could not bring back. It is the one
+// app whose backup payload deliberately contains credentials — safely, because the key that opens
+// them is a passphrase in somebody's head rather than anything the archive or the phone holds.
+//
+// The dependency arrow points *out* of it and never in: no app depends on :secrets. They depend on
+// :vaultkit for the ref and the broker interface, and find the implementation through a
+// registration the sandbox makes at start-up (SecretsAccess). A bank client that had to pull in a
+// password manager's UI to read its own token would be the wrong shape.
+include(":secrets")
 include(":core")
 include(":backupkit")
 // The suite's address contract: `/v1/{application}/{connection}/{resource}/{action}`, the payload,
@@ -84,6 +94,12 @@ include(":backupkit")
 // Repository is the third, and unlike Project it cannot depend on :lifeops without inverting the one
 // arrow it is built around. Routes stay with whoever owns the data.
 include(":connectkit")
+// The suite's *secret-keeping contract*: the vault file format, the key derivation, the document
+// inside it, the address a credential is filed under, the generator and the audit — pure JVM, and
+// with no Android Keystore anywhere in it. That last part is the point rather than a coincidence: a
+// key bound to one phone's hardware dies with that phone, which is exactly the failure the Secrets
+// app exists to fix, so the root of trust here is a passphrase the household knows.
+include(":vaultkit")
 // The suite's appearance and its shared controls: `:suitekit` is the pure-JVM contract (presets,
 // palettes, each app's colour identity, the maths that resolves them into a scheme, and the swatch
 // palette); `:suiteui` is the Compose theme, the store behind it that the sandbox settings edit and

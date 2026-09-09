@@ -20,7 +20,15 @@ enum class AppId(val key: String, val defaultDisplayName: String) {
     PROJECT("project", "Project"),
     MAINTENANCE("maintenance", "Maintenance"),
     REPOSITORY("repository", "Repository"),
-    FINANCE("finance", "Finance");
+    FINANCE("finance", "Finance"),
+
+    /**
+     * The vault. Unlike every other entry here, this app's payload is *meant* to be in the archive
+     * while holding credentials — it is a sealed file whose key is a passphrase rather than anything
+     * the archive or the phone contains. See `SecretsBackupContributor`, which is the one restore in
+     * the suite that deliberately does not overwrite what it finds.
+     */
+    SECRETS("secrets", "Secrets");
 
     companion object {
         fun fromKey(key: String): AppId? = entries.firstOrNull { it.key == key }

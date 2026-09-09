@@ -6,6 +6,9 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.citation.core.oreilly.OreillyLibraryProxy
+import com.operations.backupkit.AppId
+import com.operations.vaultkit.ManagedSecrets
+import com.operations.vaultkit.SecretRef
 import java.security.KeyStore
 
 /**
@@ -18,6 +21,13 @@ import java.security.KeyStore
  * The proxy host is *not* a secret and defaults to Mid-Continent Public Library; the card and PIN are
  * yours alone and are only ever read back to fill the library's own sign-in form via
  * [com.citation.core.oreilly.EzproxyLogin].
+ *
+ * The card and PIN are also **mirrored into the Secrets vault** and read back through it when this
+ * store comes up empty — which on a new phone is always, because this store is bound to the old
+ * phone's Keystore and cannot travel. The vault can: it is sealed with a passphrase rather than with
+ * the hardware, so it rides in the backup and a restored install asks for the master passphrase
+ * instead of for a library card that is in a drawer somewhere. Where there is no vault, nothing here
+ * behaves differently from before.
  */
 class OreillyAccess(context: Context) {
 
@@ -34,8 +44,8 @@ class OreillyAccess(context: Context) {
     fun proxy(): OreillyLibraryProxy? =
         proxyHost().takeIf { it.isNotBlank() }?.let { OreillyLibraryProxy(it) }
 
-    private fun card(): String? = prefs.getString(KEY_CARD, null)?.takeIf { it.isNotBlank() }
-    private fun pin(): String? = prefs.getString(KEY_PIN, null)?.takeIf { it.isNotBlank() }
+    private fun card(): String? = read(KEY_CARD, cardRef)
+    private fun pin(): String? = read(KEY_PIN, pinRef)
 
     /** Card + PIN if both are stored, else null — the pair the auto-reauth script needs. */
     fun credentials(): Credentials? {
@@ -53,11 +63,34 @@ class OreillyAccess(context: Context) {
 
     fun setCredentials(card: String, pin: String) {
         prefs.edit().putString(KEY_CARD, card.trim()).putString(KEY_PIN, pin).apply()
+        mirror(cardRef, card.trim(), "library card")
+        mirror(pinRef, pin, "library card PIN")
     }
 
     /** Forget the card + PIN (keeps the proxy host — that isn't a secret). */
     fun clearCredentials() {
         prefs.edit().remove(KEY_CARD).remove(KEY_PIN).apply()
+        ManagedSecrets.forget(cardRef)
+        ManagedSecrets.forget(pinRef)
+    }
+
+    // --- The vault ------------------------------------------------------------------------------
+    //
+    // One library, so the connection segment is `oreilly` rather than a row id. The proxy host stays
+    // out of it: it is a preference with a sensible default, it is not a credential, and a restored
+    // install that reaches the wrong library says so immediately.
+
+    private val cardRef = SecretRef(APP, "oreilly", "library-card")
+    private val pinRef = SecretRef(APP, "oreilly", "library-pin")
+
+    private fun read(key: String, ref: SecretRef): String? = ManagedSecrets.readThrough(
+        ref = ref,
+        local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },
+        rehydrate = { value -> prefs.edit().putString(key, value).apply() }
+    )
+
+    private fun mirror(ref: SecretRef, value: String, what: String) {
+        ManagedSecrets.remember(ref, value, ManagedSecrets.label(AppId.CITATION, what), AppId.CITATION)
     }
 
     /** A snapshot for the Settings screen — proxy host and whether a card/PIN are on file. */
@@ -70,6 +103,10 @@ class OreillyAccess(context: Context) {
 
     private companion object {
         const val TAG = "OreillyAccess"
+
+        /** This app's segment in a [SecretRef]; matches [AppId.CITATION]'s key. */
+        const val APP = "citation"
+
         const val PREFS_NAME = "oreilly_access"
         const val KEY_PROXY = "proxy_host"
         const val KEY_CARD = "card"

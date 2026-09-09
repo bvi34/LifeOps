@@ -65,6 +65,11 @@ dependencies {
     implementation(project(":suitekit"))
     // The Operations Sandbox backup format/engine (pure JVM). Finance supplies a BackupContributor.
     implementation(project(":backupkit"))
+    // The vault contract (pure JVM). Finance mirrors every credential it holds into the Secrets
+    // vault and reads through to it when its own store comes up empty — which after a restore is
+    // every credential at once. It depends on the *contract*, never on :secrets: the implementation
+    // is found through a registration the sandbox makes at start-up.
+    implementation(project(":vaultkit"))
     // LifeOps, for the week. Finance knows *when* a bill is due; LifeOps is where a week is planned,
     // so a bill publishes itself there as a task dated the day it falls due and takes the tick back
     // (see data/repository/LifeOpsTasks). The dependency points one way only: LifeOps announces
