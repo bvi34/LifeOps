@@ -127,6 +127,40 @@ class BillsTest {
     }
 
     @Test
+    fun `a real Plaid statement carries no payee key, and still hides the duplicate`() {
+        // The shape PlaidJson actually produces: a liability names the *account*, not the string the
+        // payment leaves checking under, so merchantKey is null. Matching on keys alone meant this
+        // never fired and every connected card showed its bill twice.
+        val series = Recurring.detect(monthlyRun("2026-06-12", 4, -420.0, "USAA CARD PAYMENT"))
+        val fromIssuer = bill(
+            payee = "USAA Rewards Visa",
+            due = "2026-10-14",
+            amount = 420.0,
+            source = Bills.Source.STATEMENT,
+            merchantKey = null
+        )
+        assertTrue(
+            "the issuer's word wins; the prediction is the same money seen twice",
+            Bills.predict(series, today, 45L, existing = listOf(fromIssuer)).isEmpty()
+        )
+    }
+
+    @Test
+    fun `an unrelated bill of a different size is not swallowed by that`() {
+        // The amount test only stands in for a missing key, so it must not merge two real payees who
+        // happen to fall due in the same fortnight.
+        val series = Recurring.detect(monthlyRun("2026-06-12", 4, -420.0, "USAA CARD PAYMENT"))
+        val unrelated = bill(
+            payee = "Some other card",
+            due = "2026-10-14",
+            amount = 38.0,
+            source = Bills.Source.STATEMENT,
+            merchantKey = null
+        )
+        assertEquals(1, Bills.predict(series, today, 45L, existing = listOf(unrelated)).size)
+    }
+
+    @Test
     fun `a prediction well clear of the statement is a different obligation and survives`() {
         val series = Recurring.detect(monthlyRun("2026-06-12", 4, -420.0, "USAA MORTGAGE"))
         val unrelated = bill(

@@ -125,10 +125,7 @@ object Bills {
         return series.mapNotNull { candidate ->
             val due = candidate.nextAfter(today.minusDays(1))
             if (due.isAfter(horizon)) return@mapNotNull null
-            val duplicated = statements.any { bill ->
-                bill.merchantKey == candidate.merchantKey &&
-                    abs(ChronoUnit.DAYS.between(bill.dueDate, due)) <= DUPLICATE_WINDOW_DAYS
-            }
+            val duplicated = statements.any { bill -> coversSameObligation(bill, candidate, due) }
             if (duplicated) return@mapNotNull null
             Bill(
                 id = "predicted:${candidate.accountId}:${candidate.merchantKey}:$due",
@@ -203,6 +200,35 @@ object Bills {
                 }
                 minted
             }
+    }
+
+    /**
+     * Whether a statement bill and a predicted one are the same obligation seen twice.
+     *
+     * Close in time, and then one of two tests depending on what the statement actually knows:
+     *
+     * - **Both have a payee key** → they have to match. A predicted bill's key is derived from a bank
+     *   string, so when a statement has one too, comparing them is exact and cheap.
+     * - **The statement has none** → compare the amounts instead. This is the case that matters,
+     *   because it is the normal one: a Plaid liability names the *account* ("USAA Rewards Visa") and
+     *   the prediction is keyed on whatever the checking account called the transfer ("USAA CARD
+     *   PAYMENT", "ACH PMT 4821"). There is no reliable string relationship between those two, which
+     *   is the same reason [matches] settles a card statement on amount alone.
+     *
+     * Comparing keys alone — which this did at first — meant the de-duplication never fired for a
+     * real Plaid statement, and every connected card showed its bill twice: once from the issuer,
+     * once predicted from the payment leaving checking.
+     */
+    private fun coversSameObligation(
+        statement: Bill,
+        candidate: Recurring.Series,
+        due: LocalDate
+    ): Boolean {
+        if (abs(ChronoUnit.DAYS.between(statement.dueDate, due)) > DUPLICATE_WINDOW_DAYS) return false
+        val statementKey = statement.merchantKey
+        if (statementKey != null) return statementKey == candidate.merchantKey
+        val gap = abs(candidate.typicalAmountCents - statement.amountCents).toDouble()
+        return gap <= statement.amountCents * SETTLE_AMOUNT_TOLERANCE
     }
 
     /**

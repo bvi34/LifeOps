@@ -30,10 +30,14 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
+import com.finance.app.ui.account.AccountDetailScreen
+import com.finance.app.ui.account.AccountDetailViewModel
 import com.finance.app.ui.accounts.AccountsScreen
 import com.finance.app.ui.accounts.AccountsViewModel
 import com.finance.app.ui.activity.ActivityScreen
@@ -102,6 +106,7 @@ private const val ROUTE_ACCOUNTS = "accounts"
 private const val ROUTE_ACTIVITY = "activity"
 private const val ROUTE_CONNECTIONS = "connections"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_ACCOUNT = "account/{accountId}"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,6 +131,9 @@ private fun FinanceShell(app: FinanceApp) {
                             ROUTE_ACTIVITY -> "Activity"
                             ROUTE_CONNECTIONS -> "Connections"
                             ROUTE_SETTINGS -> "Settings"
+                            // The account page titles itself from the account, in its own first
+                            // card — repeating the name up here would say it twice on one screen.
+                            ROUTE_ACCOUNT -> "Account"
                             else -> "Finance"
                         }
                     )
@@ -217,11 +225,21 @@ private fun FinanceShell(app: FinanceApp) {
                 // An account's own page is not built yet; tapping a row does nothing rather than
                 // navigating somewhere empty. The Activity tab already answers "what happened on
                 // this account" for the whole household, which is most of what a detail page is for.
-                AccountsScreen(vm = vm, onOpenAccount = {})
+                AccountsScreen(vm = vm, onOpenAccount = { nav.navigate("account/$it") })
             }
             composable(ROUTE_ACTIVITY) {
                 val vm: ActivityViewModel = viewModel(factory = ActivityViewModel.Factory(app.repository))
                 ActivityScreen(vm = vm)
+            }
+            composable(
+                route = ROUTE_ACCOUNT,
+                arguments = listOf(navArgument("accountId") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val accountId = backStackEntry.arguments?.getString("accountId").orEmpty()
+                val vm: AccountDetailViewModel = viewModel(
+                    factory = AccountDetailViewModel.Factory(app.repository, accountId)
+                )
+                AccountDetailScreen(vm = vm)
             }
             composable(ROUTE_SETTINGS) {
                 // No view model: three preferences read and written directly, with nothing derived

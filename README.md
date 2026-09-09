@@ -350,6 +350,11 @@ the receipts.
 > because a rate taken on the 3rd is three days divided by three days and projects a household into
 > destitution by Friday.
 >
+> Tapping an account opens **its own page**: what is in it, what is due out of it, what has moved
+> through it, and its **paperwork** — the statement, the payoff letter, the 1099. Those documents live
+> on Repository's shelf rather than in a second store of Finance's own, findable from there without
+> Repository knowing they were filed here.
+>
 > When a bank locks a connection, the row says so in the ordinary accent rather than in red — it is a
 > thing to do, not a thing that broke — and **Sign in again** repairs the connection you already have
 > through Plaid's update mode. Adding the bank a second time would mint a duplicate of every account,

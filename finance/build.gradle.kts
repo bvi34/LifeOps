@@ -71,8 +71,10 @@ dependencies {
     // completions on a bus and knows nothing about who is listening.
     implementation(project(":lifeops"))
     // Repository, for the paperwork. A statement, a payoff letter, a 1099 — the documents money
-    // arrives with are documents the household filed, so Finance keeps no document store of its own
-    // and shows the shelf's rows back on the account.
+    // arrives with are documents the household filed, so Finance keeps no document store of its own:
+    // the account page lends the shelf a section (`ui/account/AccountDetailScreen`, one
+    // `DocumentsPanel` call) and the rows stay findable from Repository without it knowing they were
+    // filed here.
     implementation(project(":repository"))
 
     implementation(libs.androidx.core.ktx)

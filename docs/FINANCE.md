@@ -12,9 +12,10 @@ Citation, Logistics, Advisor, Health, People, Project, Maintenance and Repositor
 ```
 Operations Sandbox  →  Finance  →  Picture   (the forecast floor, net position, this month)
                                →  Due       (bills, by urgency)
-                               →  Accounts  (the register, grouped by which way the money points)
+                               →  Accounts  (the register)  →  one account
                                →  Activity  (the ledger, and what comes round)
                                →  Connections (set-up, and the promises)
+                               →  Settings
 ```
 
 ## The promise, stated first
@@ -152,6 +153,14 @@ that appears only when something is doubtful is a badge people learn to skip.
 | **You entered this** | Typed in on the Due screen. As trustworthy as the person who typed it, which is usually the most trustworthy thing here. |
 | **Predicted from your history** | `logic/Recurring` found a pattern and stepped it forward. A good guess about a real obligation whose exact date and amount are this app's arithmetic. |
 
+A predicted bill is dropped when a statement already covers the same obligation — connect a card and
+its payment shows up in checking as a textbook monthly series, so showing both is showing one bill
+twice. Matching that pair is less obvious than it looks: a Plaid liability names the *account* ("USAA
+Rewards Visa") while the prediction is keyed on whatever the checking account called the transfer
+("ACH PMT 4821"), and there is no reliable string relationship between the two. So the test is
+closeness in time plus **the amount** whenever the statement has no payee key of its own — the same
+reason a card statement settles on amount alone.
+
 A card's bill is published as the **statement balance**, with the minimum shown beside it rather than
 instead of it. Paying the minimum is how a balance becomes permanent, and an app that leads with the
 minimum is quietly recommending that.
@@ -287,6 +296,18 @@ Which aspect these tasks are filed under is **LifeOps' decision, not this app's*
 `Settings → Finance bills` in LifeOps, read at publish time, so changing it re-files what arrives
 from then on and never touches a week already planned — including anything you moved by hand.
 
+## An account's own page
+
+Tapping an account opens it: the balance (and what of it is genuinely available), the bills filed
+against it, what has moved through it this month, its activity — and its **documents**.
+
+That last section is the one place Finance touches `:repository`, and it is why that dependency
+exists. Money arrives with paperwork — a mortgage statement, a payoff letter, a 1099, the notice that
+the rate changed — and a finance app that grew its own document store would be the second place in
+the suite a household had to remember to look. So the account page lends the shelf a section: the
+rows live in Repository, findable from there without it knowing they were filed here, and are worked
+on from both ends. One `DocumentsPanel` call, exactly as Maintenance does it on an asset.
+
 ## The three settings
 
 There are deliberately only three, and none is a toggle for a feature:
@@ -368,3 +389,21 @@ payload shapes rather than a screen being squinted at on a phone.
 The Android half is deliberately thin: `data/net/` is two HTTP clients, `data/db/` is four tables,
 `data/repository/` is the mapping and the refresh, and `ui/` renders what the logic already worked
 out.
+
+It is not untested, though. `FinanceRepositoryTest` and `FinanceDatabaseTest` run against a real Room
+database under Robolectric, because a handful of this module's claims are about SQLite's behaviour
+rather than Kotlin's and a fake DAO would answer each of them with whatever the test assumed:
+
+- that removing a connection takes its accounts and their history — **and leaves its bills standing**,
+  the one deliberate gap in the cascade, expressed as the *absence* of a foreign key and therefore
+  exactly the kind of thing a later tidy-up restores by accident;
+- that an account a refresh stops seeing is **closed rather than deleted**, so one bad response from
+  a bank cannot erase years of transactions;
+- that `rebuildBills` carries a bill's paid state, its week switch and its LifeOps task link across a
+  rebuild, and prunes only what it is allowed to.
+
+That last suite earned itself immediately: it caught the de-duplication bug described under
+[What is due](#what-is-due-and-how-much-of-it-the-app-actually-knows) — statement bills from Plaid
+carry no payee key, so the check meant to hide a duplicated card bill was comparing `null` to a
+string and never fired. The logic tests had passed because their fixture supplied a key that the real
+parser never does.
