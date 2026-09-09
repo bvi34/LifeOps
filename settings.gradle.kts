@@ -84,6 +84,12 @@ include(":backupkit")
 // Repository is the third, and unlike Project it cannot depend on :lifeops without inverting the one
 // arrow it is built around. Routes stay with whoever owns the data.
 include(":connectkit")
+// The suite's *secret-keeping contract*: the vault file format, the key derivation, the document
+// inside it, the address a credential is filed under, the generator and the audit — pure JVM, and
+// with no Android Keystore anywhere in it. That last part is the point rather than a coincidence: a
+// key bound to one phone's hardware dies with that phone, which is exactly the failure the Secrets
+// app exists to fix, so the root of trust here is a passphrase the household knows.
+include(":vaultkit")
 // The suite's appearance and its shared controls: `:suitekit` is the pure-JVM contract (presets,
 // palettes, each app's colour identity, the maths that resolves them into a scheme, and the swatch
 // palette); `:suiteui` is the Compose theme, the store behind it that the sandbox settings edit and
