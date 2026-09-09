@@ -2,6 +2,7 @@ package com.secrets.app.data
 
 import android.content.Context
 import android.util.Log
+import com.operations.vaultkit.SecretSources
 import com.operations.vaultkit.SecretsAccess
 import com.operations.vaultkit.VaultCrypto
 import com.operations.vaultkit.VaultDocument
@@ -343,6 +344,45 @@ class VaultStore(context: Context) {
             _state.value = VaultState.ABSENT
             true
         }
+    }
+
+    /**
+     * The way back from a forgotten passphrase: throw the vault away, make a new one, and ask every
+     * app to file what it still holds.
+     *
+     * ## Why this is not a recovery
+     *
+     * Nothing here decrypts the old vault. It cannot — that is the property the whole app rests on,
+     * and a reset that could read what the old passphrase protected would mean the passphrase never
+     * protected it. So this is a **deletion followed by a rebuild**, and what comes back is only what
+     * somebody else still has:
+     *
+     *  - **Managed credentials come back**, because they were never the vault's only copy. Finance's
+     *    tokens, Citation's sign-ins and the rest are sitting in each app's own encrypted store on
+     *    this phone, and [SecretSources] asks each app to file them again. That is the whole point of
+     *    this call: a forgotten passphrase should not cost the household nine reconnections when the
+     *    credentials are, at this moment, twelve inches away.
+     *  - **Everything typed into Secrets is gone.** The logins, the notes, the cards. The vault was
+     *    the only place they existed. The screen that offers this says so before it runs.
+     *
+     * On a phone where the apps are also empty — a fresh install, a restore in which the vault was
+     * the thing that failed — the refill returns nothing, and reporting that honestly is better than
+     * reporting a success of zero.
+     *
+     * ## What else it takes with it
+     *
+     * The device shortcut ([DeviceUnlock]), because it held the *old* vault key. Backups taken before
+     * the reset are untouched and still open with the old passphrase — so if that passphrase is
+     * remembered later, the archive is still a way back to what was typed in, and Settings will merge
+     * it. That is worth knowing before pressing this, and it is on the screen too.
+     */
+    suspend fun resetForgottenPassphrase(replacement: CharArray): SecretSources.Refill? {
+        if (!destroy()) return null
+        if (!create(replacement)) return null
+        // Only after the new vault is open, so the writes land rather than queue — the queue would
+        // work, but a reset that reported "3 filed" while holding them in memory would be a reset
+        // that loses them to a crash on the way back to the list.
+        return SecretSources.refileAll()
     }
 
     /**

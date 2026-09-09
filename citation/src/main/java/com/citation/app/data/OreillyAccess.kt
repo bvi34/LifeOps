@@ -83,6 +83,20 @@ class OreillyAccess(context: Context) {
     private val cardRef = SecretRef(APP, "oreilly", "library-card")
     private val pinRef = SecretRef(APP, "oreilly", "library-pin")
 
+    /**
+     * File the card and PIN into the vault, and say how many refs were written (0 or 2).
+     *
+     * For the rebuild after a lost passphrase. The card is in a wallet and the PIN is in somebody's
+     * head — but they are also right here, and asking for them again when this store has them would
+     * be a poor use of an afternoon.
+     */
+    fun refileIntoVault(): Int {
+        val stored = credentials() ?: return 0
+        mirror(cardRef, stored.card, "library card")
+        mirror(pinRef, stored.pin, "library card PIN")
+        return 2
+    }
+
     private fun read(key: String, ref: SecretRef): String? = ManagedSecrets.readThrough(
         ref = ref,
         local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },

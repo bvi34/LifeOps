@@ -30,6 +30,9 @@ dependencies {
     implementation(project(":backupkit"))
 
     testImplementation("junit:junit:4.13.2")
+    // The refill contract is a suspending one — an app looks its own connection names up in a
+    // database before it can title what it files — so its tests need a test dispatcher.
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
 
 java {

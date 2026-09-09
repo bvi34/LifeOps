@@ -87,6 +87,35 @@ class CatalogCredentials(context: Context) {
     private fun passwordRef(catalogId: String) =
         SecretRef(APP, SecretRef.segment(catalogId), "password")
 
+    /**
+     * File every sign-in this store holds into the vault, and say how many refs were written.
+     *
+     * For the rebuild after a lost passphrase — see [com.operations.vaultkit.SecretSource]. These
+     * sign-ins are still here; only the vault's copy of them went.
+     *
+     * [nameFor] turns a catalogue id into its name, so a re-filed row is called "Calibre — home
+     * server" rather than a row key. The caller resolves those names first ([catalogIds] says which
+     * to look up) because looking a name up is a database read and this is not a suspending call.
+     */
+    fun refileIntoVault(nameFor: (String) -> String? = { null }): Int {
+        var filed = 0
+        catalogIds().forEach { catalogId ->
+            val stored = credentials(catalogId) ?: return@forEach
+            val label = nameFor(catalogId) ?: "Catalogue"
+            mirror(userRef(catalogId), stored.username, "$label username")
+            filed++
+            if (stored.password.isNotEmpty()) {
+                mirror(passwordRef(catalogId), stored.password, "$label password")
+                filed++
+            }
+        }
+        return filed
+    }
+
+    /** Every catalogue this store has a sign-in for — what a refill needs names for. */
+    fun catalogIds(): List<String> =
+        prefs.all.keys.filter { it.startsWith(USER_PREFIX) }.map { it.removePrefix(USER_PREFIX) }
+
     private fun read(key: String, ref: SecretRef): String? = ManagedSecrets.readThrough(
         ref = ref,
         local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },
@@ -97,7 +126,7 @@ class CatalogCredentials(context: Context) {
         ManagedSecrets.remember(ref, value, ManagedSecrets.label(AppId.CITATION, what), AppId.CITATION)
     }
 
-    private fun userKey(id: String) = "user:$id"
+    private fun userKey(id: String) = "$USER_PREFIX$id"
     private fun passwordKey(id: String) = "pass:$id"
 
     private companion object {
@@ -105,6 +134,9 @@ class CatalogCredentials(context: Context) {
 
         /** This app's segment in a [SecretRef]; matches [AppId.CITATION]'s key. */
         const val APP = "citation"
+
+        /** The key prefix a stored username wears, and the one a refill enumerates by. */
+        const val USER_PREFIX = "user:"
 
         const val PREFS_NAME = "opds_catalog_access"
         const val ANDROID_KEYSTORE = "AndroidKeyStore"

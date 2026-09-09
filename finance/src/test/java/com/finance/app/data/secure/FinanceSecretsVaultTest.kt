@@ -190,6 +190,39 @@ class FinanceSecretsVaultTest {
     }
 
     @Test
+    fun `refiling hands the vault everything this store holds, named where it can be`() {
+        val secrets = freshInstall()
+        secrets.setToken("conn-1", "access-abc")
+        secrets.setToken("conn-2", "access-def")
+        secrets.plaidKeys = FinanceSecrets.PlaidKeys("client", "secret", Endpoints.PlaidEnvironment.SANDBOX)
+        // The vault is the thing that was lost, so empty it and leave this store alone — which is
+        // exactly the state a forgotten passphrase leaves behind.
+        vault.items.clear()
+
+        val filed = secrets.refileIntoVault { id -> if (id == "conn-1") "USAA" else null }
+
+        assertEquals(5, filed)
+        assertEquals("access-abc", vault.items["finance/conn-1/access-token"])
+        assertEquals("access-def", vault.items["finance/conn-2/access-token"])
+        assertEquals("client", vault.items["finance/self/plaid-client-id"])
+        assertEquals("Finance — USAA access token", vault.labels["finance/conn-1/access-token"])
+        assertEquals(
+            "a connection whose name could not be looked up is still filed, just generically",
+            "Finance — Connection access token",
+            vault.labels["finance/conn-2/access-token"]
+        )
+    }
+
+    @Test
+    fun `refiling an empty store files nothing and says so`() {
+        val secrets = freshInstall()
+        vault.items.clear()
+
+        assertEquals(0, secrets.refileIntoVault())
+        assertTrue(vault.items.isEmpty())
+    }
+
+    @Test
     fun `this app's ref segment is its AppId key`() {
         // The Secrets list shows "managed by Finance" by resolving this string through AppId; a
         // typo here would file every token under an app that does not exist.

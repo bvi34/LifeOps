@@ -4,6 +4,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.operations.backupkit.AppId
 import com.operations.vaultkit.ManagedSecrets
 import com.operations.vaultkit.SecretRef
+import com.operations.vaultkit.SecretSource
+import com.operations.vaultkit.SecretSources
 import com.operations.vaultkit.SecretsAccess
 import com.operations.vaultkit.VaultEnvelope
 import com.operations.vaultkit.VaultItem
@@ -54,6 +56,23 @@ class VaultStoreTest {
     @After
     fun tearDown() {
         SecretsAccess.reset()
+        SecretSources.reset()
+    }
+
+    /**
+     * An app that still holds its own credentials, which is the whole premise of a reset: the vault
+     * lost them, the app did not.
+     */
+    private class FakeApp(
+        override val owner: AppId,
+        private val holds: Map<SecretRef, String>
+    ) : SecretSource {
+        override suspend fun refile(): Int {
+            holds.forEach { (ref, value) ->
+                SecretsAccess.remember(ref, value, "${owner.defaultDisplayName} — refiled", owner)
+            }
+            return holds.size
+        }
     }
 
     @Test
@@ -265,6 +284,86 @@ class VaultStoreTest {
             ManagedSecrets.readThrough(ref, { financeLocalStore }, { financeLocalStore = it })
         )
         assertEquals("and it is back in Finance's own store", "access-abc", financeLocalStore)
+    }
+
+    // --- The forgotten passphrase --------------------------------------------------------------
+
+    @Test
+    fun `a reset replaces the vault and refills it from the apps that still hold their own`() = runTest {
+        val token = SecretRef("finance", "usaa", "access-token")
+        val card = SecretRef("citation", "oreilly", "library-card")
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        SecretsAccess.remember(token, "access-abc", "Finance — USAA", AppId.FINANCE)
+        // And something only a person could have put there.
+        store.mutate { it.upsert(item("Allotment gate", "elderflower"), 10) }
+        SecretSources.register(FakeApp(AppId.FINANCE, mapOf(token to "access-abc")))
+        SecretSources.register(FakeApp(AppId.CITATION, mapOf(card to "31234-5678")))
+
+        val refill = store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
+
+        assertNotNull(refill)
+        assertEquals(2, refill!!.filed)
+        assertEquals(VaultState.UNLOCKED, store.state.value)
+        // The managed credentials are back...
+        assertEquals("access-abc", SecretsAccess.read(token))
+        assertEquals("31234-5678", SecretsAccess.read(card))
+        // ...and what somebody typed in is not, because the vault was the only place it was.
+        assertTrue(
+            "a reset cannot recover what only the old vault held",
+            store.document.value!!.live.none { it.title == "Allotment gate" }
+        )
+    }
+
+    @Test
+    fun `after a reset only the new passphrase opens the vault`() = runTest {
+        store.create(passphrase)
+
+        store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
+        store.lock()
+
+        assertEquals(VaultStore.UnlockResult.WRONG_PASSPHRASE, store.unlock(passphrase))
+        assertEquals(
+            VaultStore.UnlockResult.UNLOCKED,
+            store.unlock("a completely new passphrase".toCharArray())
+        )
+    }
+
+    @Test
+    fun `a reset on a phone whose apps are also empty reports nothing rather than a success`() = runTest {
+        store.create(passphrase)
+
+        val refill = store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
+
+        assertNotNull(refill)
+        assertTrue(refill!!.empty)
+        assertEquals(VaultState.UNLOCKED, store.state.value)
+        assertTrue(store.document.value!!.live.isEmpty())
+    }
+
+    @Test
+    fun `a reset works with no vault at all - the corrupt file case`() = runTest {
+        // Nothing was ever created, or what was there could not be parsed and was thrown away. The
+        // reset is the same operation either way: delete whatever is there, build, refill.
+        SecretSources.register(FakeApp(AppId.FINANCE, mapOf(SecretRef("finance", "usaa", "access-token") to "abc")))
+
+        val refill = store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
+
+        assertNotNull(refill)
+        assertEquals(1, refill!!.filed)
+        assertEquals(VaultState.UNLOCKED, store.state.value)
+    }
+
+    @Test
+    fun `a reset drops the device shortcut with the vault it belonged to`() = runTest {
+        store.create(passphrase)
+
+        store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
+
+        // Robolectric has no secure lock screen, so the shortcut can never have been on here — what
+        // this asserts is the invariant that matters either way: nothing is left claiming to open a
+        // vault that no longer exists.
+        assertFalse(store.device.isEnabled)
     }
 
     private fun item(title: String, secret: String) = VaultItem(
