@@ -63,6 +63,19 @@ include(":maintenance")
 // "where is the warranty" would be the wrong shape. Its routes read and correct captions — they
 // cannot file, delete or export a document, and each of those addresses is asserted absent.
 include(":repository")
+// Finance is the suite's picture of the household's money: the accounts as the institutions report
+// them, the balances, the transactions behind them, and — the part that earns the app — the dates
+// things fall due. It reaches two providers, both with credentials the household types in itself:
+// Plaid (which is how USAA and most retail banks are reachable at all) and Mercury's own API. It is
+// read-only by construction — there is no transfer call anywhere in the module.
+//
+// Like Project and Maintenance it is not a peer on the sync spine (nothing else in the suite writes
+// to a balance) and it writes *outward* to :lifeops for the same reason they do: a bill with a due
+// date publishes itself onto the LifeOps week as a task dated the day it falls due, and takes the
+// tick back. It also depends on :repository, one way, because the paperwork money arrives with —
+// the statement, the payoff letter — is a document the household filed rather than something a
+// finance app should keep a second copy of.
+include(":finance")
 include(":core")
 include(":backupkit")
 // The suite's address contract: `/v1/{application}/{connection}/{resource}/{action}`, the payload,

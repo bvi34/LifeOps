@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- THE PROMISE: this app reads, and only reads.
+
+         Finance is the first module in the suite whose whole job is to talk to somebody else's
+         server about this household, so the promise cannot be the one Maintenance and Repository
+         make ("nothing identifying leaves the device"). It is a different promise, and a narrower
+         one, and it is worth stating exactly:
+
+           1. NOTHING LEAVES THAT YOU DID NOT HAND OVER. The only credentials this app holds are the
+              ones typed into Connections — your own Plaid client id and secret, your own Mercury
+              API token. It ships with none, it discovers none, and it talks to exactly two hosts:
+              the Plaid API and the Mercury API (`logic/Endpoints` is the allow-list, and it is a
+              tested function rather than a habit). No analytics, no crash reporter, no "anonymous"
+              telemetry. Your balances are not sent anywhere by this module, including to us.
+
+           2. IT CANNOT MOVE MONEY. Every request in `data/net/` is a GET, or the one POST Plaid
+              requires to hand back data it already holds. There is no transfer, no payment, no bill
+              pay and no ACH call in this module — not disabled, not gated behind a setting: absent.
+              Plaid tokens are requested for the read-only products only (`transactions`, `auth`,
+              `liabilities`), and Mercury issues genuinely read-only tokens, which is the one the
+              Connections screen tells you to make.
+
+           3. THE CREDENTIALS ARE KEPT PROPERLY. Access tokens and API secrets live in
+              EncryptedSharedPreferences under a keystore key, never in the database and never in
+              the "which tab were you on" preferences file — which is also why the backup
+              contributor leaves them behind rather than writing them into a zip that ends up in
+              Google Drive. Restore a backup onto a new phone and you reconnect; that is the
+              intended cost.
+
+         INTERNET is therefore a permission this app genuinely needs and the others mostly avoid,
+         and the answer to "could this request tell anyone something about this household" is, for
+         once, yes — it is asking your bank about your money on your behalf. What keeps that honest
+         is that the two people it can ask are the two you chose, and it happens because you pressed
+         Refresh or because the app came to the foreground with a stale picture. Nothing here polls
+         on a timer, wakes the device, or runs when you have not opened the app. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Finance is a library module: no app-level attributes here (name/icon/theme/label live on
+         the :app host). Only Finance's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher: the Operations Sandbox home opens this explicitly. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Finance"
+            android:windowSoftInputMode="adjustResize" />
+
+    </application>
+
+</manifest>

@@ -307,6 +307,52 @@ object SuiteGlyphs {
         }
 
     /**
+     * Finance — a stack of coins, drawn squat and wide.
+     *
+     * The proportions are the whole of the design decision. A coin stack drawn tall is a cylinder,
+     * and the set already has a tall rounded cylinder in Health's thermometer; at 18dp the two would
+     * be the same grey lozenge with different fiddly bits on top. So this one is deliberately wider
+     * than it is high — three flat discs seen slightly from above, sitting on the floor of the
+     * viewport — which gives it a silhouette nothing else here has.
+     *
+     * The lower coins are the structure and the top one takes the highlight, because the top of the
+     * stack is where the eye goes and where "how much is there" is read. The ellipse edges are
+     * drawn open rather than as closed rings: a stack is a stack because you can see the *side* of
+     * the coins under the top face, and closing every ring turned it into three separate rings.
+     */
+    private fun coinStack(ink: Ink): ImageVector =
+        glyph("SuiteCoinStack") {
+            // The two coins underneath: each a front arc (the visible near edge) plus the two short
+            // verticals that give the disc its thickness. Structure, so they take the line ink.
+            line(width = 1.7f, ink = ink.line) {
+                // Bottom coin.
+                moveTo(3.8f, 16.6f)
+                arcTo(8.2f, 3.4f, 0f, false, false, 20.2f, 16.6f)
+                moveTo(3.8f, 16.6f); lineTo(3.8f, 14.2f)
+                moveTo(20.2f, 16.6f); lineTo(20.2f, 14.2f)
+                // Middle coin, offset up by one coin's thickness.
+                moveTo(3.8f, 13.0f)
+                arcTo(8.2f, 3.4f, 0f, false, false, 20.2f, 13.0f)
+                moveTo(3.8f, 13.0f); lineTo(3.8f, 10.6f)
+                moveTo(20.2f, 13.0f); lineTo(20.2f, 10.6f)
+            }
+            // The top coin, whole: the one ellipse closed all the way round, so the stack has a face
+            // rather than trailing off. This is the element the mark exists to show.
+            line(width = 1.9f, ink = ink.highlight) {
+                moveTo(3.8f, 9.4f)
+                arcTo(8.2f, 3.4f, 0f, false, false, 20.2f, 9.4f)
+                arcTo(8.2f, 3.4f, 0f, false, false, 3.8f, 9.4f)
+                close()
+            }
+            // The near edge of the top coin's thickness, so it sits on the stack instead of floating
+            // above it. Secondary — it is a shadow line, not part of the shape.
+            line(width = 1.4f, alpha = 0.5f, ink = ink.line) {
+                moveTo(3.8f, 9.4f); lineTo(3.8f, 7.0f)
+                moveTo(20.2f, 9.4f); lineTo(20.2f, 7.0f)
+            }
+        }
+
+    /**
      * How to draw each mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it.
      * The drawing is a *function* of its ink rather than a finished vector, so the tintable form
      * and the two-colour one can never be different drawings.
@@ -320,7 +366,8 @@ object SuiteGlyphs {
         "open-book" to ::openBook,
         "answer-spark" to ::answerSpark,
         "wrench" to ::wrench,
-        "folder-shelf" to ::folderShelf
+        "folder-shelf" to ::folderShelf,
+        "coin-stack" to ::coinStack
     )
 
     /** Every mark in its tintable form, by icon key — what an app with no icon colours is drawn with. */

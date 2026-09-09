@@ -9,6 +9,7 @@ import com.maintenance.app.MaintenanceApp
 import com.people.app.PeopleApp
 import com.repository.app.RepositoryApp
 import com.project.app.ProjectApp
+import com.finance.app.FinanceApp
 import com.logistics.app.LogisticsApp
 
 /**
@@ -42,6 +43,7 @@ class SandboxApplication : Application() {
         PeopleApp.install(this)
         ProjectApp.install(this)
         MaintenanceApp.install(this)
+        FinanceApp.install(this)
         RepositoryApp.install(this)
     }
 }
