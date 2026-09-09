@@ -76,7 +76,7 @@ interface SecretsBroker {
 object SecretsAccess {
 
     /**
-     * More than the suite could plausibly queue between a boot and an unlock — nine apps with a
+     * More than the suite could plausibly queue between a boot and an unlock — ten apps with a
      * handful of connections each — and small enough that a leak shows up as a refusal rather than
      * as memory.
      */

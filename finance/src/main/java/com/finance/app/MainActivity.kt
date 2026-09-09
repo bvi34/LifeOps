@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
  * `ON_START` also fires the moment the observer is registered on an already-started lifecycle, so
  * this covers the first composition as well as every later return to the foreground — one trigger
  * rather than a `LaunchedEffect` for the first case and something else for all the others. (The same
- * shape Maintenance uses for its upkeep round, for the same reason: nine other apps share this
+ * shape Maintenance uses for its upkeep round, for the same reason: the suite's other apps share this
  * process, and walking to LifeOps and back does not recreate this activity.)
  *
  * The refresh throttles itself — see [com.finance.app.data.prefs.FinancePrefs.shouldAutoRefresh] —

@@ -29,8 +29,8 @@ import java.io.File
  * with. Copy this file out of the zip and what you have is the same thing an attacker who stole the
  * phone would have, and no more.
  *
- * That is the whole argument for the app. Nine apps' credentials now survive a restore, and the
- * archive is no more dangerous than the passphrase is weak.
+ * That is the whole argument for the app. The other apps' credentials now survive a restore, and
+ * the archive is no more dangerous than the passphrase is weak.
  *
  * ## What is left behind
  *

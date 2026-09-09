@@ -119,7 +119,14 @@ private fun SecretsShell(app: SecretsApp) {
     // stack that survived a lock would be a back stack somebody could press their way into.
     androidx.compose.runtime.LaunchedEffect(vaultState) {
         if (vaultState != VaultState.UNLOCKED && route != ROUTE_UNLOCK) {
-            nav.navigate(ROUTE_UNLOCK) { popUpTo(0) }
+            nav.navigate(ROUTE_UNLOCK) {
+                // Inclusive of the start destination, which *is* the unlock screen: what is being
+                // cleared is every item screen stacked on top of it, along with the saved state
+                // Compose would otherwise restore — a list that came back showing the vault's
+                // contents after a lock would make the lock decorative.
+                popUpTo(nav.graph.findStartDestination().id) { inclusive = true }
+                launchSingleTop = true
+            }
         }
     }
 

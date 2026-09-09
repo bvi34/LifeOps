@@ -11,7 +11,7 @@ import com.secrets.app.data.VaultStore
 import java.util.UUID
 
 /**
- * The vault as the other nine apps see it: [SecretsBroker], implemented over the real store.
+ * The vault as the other apps see it: [SecretsBroker], implemented over the real store.
  *
  * Registered once at start-up ([com.secrets.app.SecretsApp.install]) with
  * [com.operations.vaultkit.SecretsAccess], which is where Finance and Citation find it.
@@ -20,11 +20,24 @@ import java.util.UUID
  *
  * It can read back what it filed, file something, and forget it. It cannot list the vault, cannot
  * read another app's refs — well, it *could*, since a ref is just a string and every module is in
- * one process — and the honest thing to say about that is: this is not a sandbox, it is a shape. Nine
+ * one process — and the honest thing to say about that is: this is not a sandbox, it is a shape. Ten
  * apps written by the same person in the same process cannot be isolated from each other by an
  * interface, and pretending otherwise would be theatre. What the shape buys is that reaching further
  * has to be *written down*: there is no listing call to be tempted by, and a module reading
  * `citation/oreilly/pin` would have to name it.
+ *
+ * ## What a write costs the caller
+ *
+ * [write] and [forget] are synchronous: they change the document and re-seal and rewrite the vault
+ * file before returning, on whatever thread the calling app was on — which for a screen saving a
+ * token is usually the main one. That is deliberate. A "write" that returned before it had written
+ * could not honestly report whether the vault took it, and the queue in
+ * [com.operations.vaultkit.SecretsAccess] depends on that answer being true.
+ *
+ * The cost is bounded by the size of the vault: one AES pass and one small file write, single-digit
+ * milliseconds for a household's worth of secrets, and no key derivation (the header is reused —
+ * see `VaultEnvelope.reseal`). A vault large enough for that to be felt is a vault this app was not
+ * built for.
  *
  * ## Titles
  *

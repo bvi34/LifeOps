@@ -166,7 +166,7 @@ class VaultStoreTest {
         assertNull(VaultFileStore(ApplicationProvider.getApplicationContext()).read())
     }
 
-    // --- The broker, which is what the other nine apps see ---------------------------------------
+    // --- The broker, which is what the other apps see ---------------------------------------------
 
     @Test
     fun `an app files a credential and reads it back`() = runTest {
