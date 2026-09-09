@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,6 +46,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.operations.suite.ui.fields.SuiteTextField
 import com.operations.vaultkit.PasswordGenerator
+import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretSources
 import com.operations.vaultkit.SecretsAccess
 import com.secrets.app.data.VaultStore
 import com.secrets.app.ui.common.StrengthBar
@@ -78,7 +81,11 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
         val error: String? = null,
         val corrupt: Boolean = false,
         val canUseDevice: Boolean = false,
-        val pendingMirrors: Int = 0
+        val pendingMirrors: Int = 0,
+        /** Which apps could refill a rebuilt vault, so the reset screen can name them. */
+        val refillable: List<AppId> = emptyList(),
+        /** What the last reset actually filed. Shown once, on the way into the new vault. */
+        val refill: SecretSources.Refill? = null
     )
 
     private val _state = MutableStateFlow(State())
@@ -94,7 +101,8 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
             creating = !store.exists,
             corrupt = store.unreadable,
             canUseDevice = store.device.isEnabled,
-            pendingMirrors = SecretsAccess.pendingCount
+            pendingMirrors = SecretsAccess.pendingCount,
+            refillable = SecretSources.owners
         )
     }
 
@@ -168,6 +176,39 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
         }
     }
 
+    /**
+     * Throw the vault away and build a new one, then let every app file what it still holds.
+     *
+     * The screen behind this asks twice and spells out what is lost — see
+     * [VaultStore.resetForgottenPassphrase], which is where the reasoning lives. What is handled here
+     * is only the reporting: the count is carried into the unlocked app rather than swallowed,
+     * because "3 things came back" and "nothing came back" are very different afternoons and the
+     * household should not have to go looking to find out which one they are having. The vault is
+     * open by the time this returns, and the screen deliberately does *not* move on by itself: a
+     * report that flashes past on the way into a list is a report nobody read.
+     */
+    fun resetForgotten(replacement: String, confirmation: String) {
+        if (replacement != confirmation) {
+            _state.value = _state.value.copy(error = "Those two do not match.")
+            return
+        }
+        if (replacement.length < MIN_PASSPHRASE) {
+            _state.value = _state.value.copy(error = "Use at least $MIN_PASSPHRASE characters.")
+            return
+        }
+        _state.value = _state.value.copy(busy = true, error = null)
+        viewModelScope.launch {
+            val chars = replacement.toCharArray()
+            val refill = store.resetForgottenPassphrase(chars)
+            chars.fill(' ')
+            if (refill == null) {
+                _state.value = _state.value.copy(busy = false, error = "The vault could not be replaced.")
+                return@launch
+            }
+            _state.value = _state.value.copy(busy = false, creating = false, refill = refill, error = null)
+        }
+    }
+
     /** A suggestion for a master passphrase, which is the one place words beat symbols. */
     fun suggestion(): String = PasswordGenerator.passphrase(words = 5, separator = "-").value
 
@@ -205,6 +246,7 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
     var passphrase by remember { mutableStateOf("") }
     var confirmation by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
+    var resetting by remember { mutableStateOf(false) }
 
     val deviceGate = DeviceUnlockGate { vm.unlockWithDevice(onOpened) }
 
@@ -215,6 +257,12 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
+        val refill = state.refill
+        if (refill != null) {
+            ResetReport(refill = refill, onContinue = onOpened)
+            return@Column
+        }
+
         Text(
             text = if (state.creating) "Make a vault" else "Unlock",
             style = MaterialTheme.typography.headlineSmall
@@ -326,6 +374,13 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
             }
         }
 
+        if (!state.creating) {
+            Spacer(Modifier.height(16.dp))
+            TextButton(onClick = { resetting = true }, enabled = !state.busy) {
+                Text("I have forgotten it")
+            }
+        }
+
         if (state.pendingMirrors > 0) {
             Spacer(Modifier.height(20.dp))
             Text(
@@ -336,6 +391,164 @@ fun UnlockScreen(vm: UnlockViewModel, onOpened: () -> Unit) {
             )
         }
     }
+
+    if (resetting) {
+        ResetDialog(
+            refillable = state.refillable,
+            busy = state.busy,
+            onDismiss = { resetting = false },
+            onConfirm = { replacement, again ->
+                resetting = false
+                vm.resetForgotten(replacement, again)
+            }
+        )
+    }
+}
+
+/**
+ * What a reset did, shown on the way in rather than as a toast on the way past.
+ *
+ * A destructive operation that reports "done" has told the household nothing they can act on. This
+ * names the apps and the counts, and — when nothing came back — says that plainly instead of
+ * dressing an empty result as a success. The vault is already open behind this card; the only thing
+ * the button does is stop reading.
+ */
+@Composable
+private fun ResetReport(refill: SecretSources.Refill, onContinue: () -> Unit) {
+    Text("The vault has been replaced", style = MaterialTheme.typography.headlineSmall)
+    Spacer(Modifier.height(12.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            if (refill.empty) {
+                Text("Nothing was filed back", style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "No other app had a credential stored on this phone to give back. The new vault " +
+                        "is empty, and anything the apps connect from now on will be filed in it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                val plural = if (refill.filed == 1) "credential" else "credentials"
+                Text(
+                    "${refill.filed} $plural filed again",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(refill.summary(), style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Those apps kept their own working copies all along — the vault was the spare, " +
+                        "and it is a spare again. What you typed in yourself is not here: only a " +
+                        "backup taken before the reset still holds that, and only the old passphrase " +
+                        "opens it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(16.dp))
+    Button(onClick = onContinue) { Text("Open the vault") }
+}
+
+/**
+ * What a reset says before it does anything.
+ *
+ * This is the most destructive button in the suite and the copy is the safety feature. Three things
+ * have to be understood before somebody presses it, and none of them are obvious:
+ *
+ *  1. **The passwords you typed in are gone.** Not "reset", not "recoverable by support" — gone,
+ *    because the vault was the only place they were. That is stated first and without softening.
+ *  2. **The apps' credentials come back**, and it is worth saying *which* apps, by name, because
+ *    "some things will be restored" is exactly the kind of reassurance that turns out to be worth
+ *    nothing. If no app is registered, the dialog says nothing will come back rather than implying
+ *    something might.
+ *  3. **An old backup still opens with the old passphrase.** If it surfaces later — written down
+ *    somewhere, remembered in the shower — the archive is still a route back to what was typed in,
+ *    through the merge on the settings screen. A reset does not burn that.
+ */
+@Composable
+private fun ResetDialog(
+    refillable: List<AppId>,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var replacement by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Start the vault again") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Nothing can open the old vault without its passphrase — not this app, not " +
+                        "anybody. So this does not recover it. It deletes it and builds a new one.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("What you lose", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Everything you typed into Secrets yourself — logins, notes, cards. The vault " +
+                        "was the only place those existed.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("What comes back", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = if (refillable.isEmpty()) {
+                        "Nothing, on this phone. No other app has anything filed here to give back."
+                    } else {
+                        "The credentials the other apps still hold on this phone — " +
+                            refillable.joinToString(", ") { it.defaultDisplayName } +
+                            " — are filed again automatically. Their own stores kept working copies " +
+                            "all along; the vault was the spare."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("And if the passphrase turns up later", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Backups taken before now still open with it. Restore one and Settings will " +
+                        "offer to merge it, which brings the typed-in items back too.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(16.dp))
+                SuiteTextField(
+                    label = "New passphrase",
+                    value = replacement,
+                    onValueChange = { replacement = it },
+                    capitalise = KeyboardCapitalization.None
+                )
+                if (replacement.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    StrengthBar(secret = replacement)
+                }
+                Spacer(Modifier.height(8.dp))
+                SuiteTextField(
+                    label = "New passphrase again",
+                    value = confirmation,
+                    onValueChange = { confirmation = it },
+                    capitalise = KeyboardCapitalization.None,
+                    isError = confirmation.isNotEmpty() && confirmation != replacement
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(replacement, confirmation) },
+                enabled = !busy &&
+                    replacement.length >= UnlockViewModel.MIN_PASSPHRASE &&
+                    replacement == confirmation
+            ) { Text("Delete and start again") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 /**

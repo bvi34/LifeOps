@@ -12,6 +12,9 @@ import com.citation.app.data.opds.CatalogCredentials
 import com.citation.app.data.store.FileStores
 import com.citation.app.work.RoyalRoadScheduler
 import com.citation.app.work.SyncWorker
+import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretSource
+import com.operations.vaultkit.SecretSources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.SupervisorJob
@@ -46,6 +49,7 @@ class CitationApplication private constructor(private val app: Application) {
         // is built here and handed to the repository as a seam.
         val pdfText = PdfPageText(app)
         repository = appScope.async { CitationRepository.create(db, files, oreillyAccess, pdfText, catalogCredentials) }
+        registerAsSecretSource(oreillyAccess, catalogCredentials)
         // The on-device neural voice's runtime, registered only once the linker confirms this build
         // actually carries it — the native libraries are fetched at build time and may legitimately
         // be absent. Off the main thread, because confirming it maps tens of megabytes. Nothing is
@@ -61,6 +65,33 @@ class CitationApplication private constructor(private val app: Application) {
         RoyalRoadScheduler.schedule(app)
         // Register the periodic sync round with LifeOps (drain outbox, consume acquire intents).
         SyncWorker.schedule(app)
+    }
+
+    /**
+     * Offer the vault a way to rebuild this app's half of itself after a forgotten passphrase.
+     *
+     * The two stores are handed in rather than resolved later because they are already built here,
+     * and the catalogue names come from the repository — which is a [kotlinx.coroutines.Deferred],
+     * and awaiting it is free by the time anybody is resetting a vault by hand.
+     */
+    private fun registerAsSecretSource(
+        oreillyAccess: OreillyAccess,
+        catalogCredentials: CatalogCredentials
+    ) {
+        SecretSources.register(object : SecretSource {
+            override val owner = AppId.CITATION
+
+            override suspend fun refile(): Int {
+                // The names are resolved up front, suspending, so the store's own re-filing stays a
+                // plain synchronous walk over what it holds. A `runBlocking` inside it would be a
+                // database read on whatever thread happened to be running the reset.
+                val repo = runCatching { repository.await() }.getOrNull()
+                val names = catalogCredentials.catalogIds().associateWith { id ->
+                    runCatching { repo?.catalog(id)?.name }.getOrNull()
+                }
+                return catalogCredentials.refileIntoVault { names[it] } + oreillyAccess.refileIntoVault()
+            }
+        })
     }
 
     companion object {

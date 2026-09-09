@@ -203,6 +203,46 @@ class FinanceSecrets internal constructor(context: Context, private val override
     }
 
     /**
+     * File everything this store holds into the vault, and say how many refs were written.
+     *
+     * The reverse of the read-through, and it exists for one situation: the vault was lost — a
+     * forgotten passphrase, a file that would not parse — and is being built again. These
+     * credentials were never the vault's only copy; they are right here, and re-filing them costs
+     * nothing and saves the household reconnecting every bank it has.
+     *
+     * [nameFor] turns a connection id into the institution's name, so a re-filed token is called
+     * "USAA access token" rather than a UUID. It is a lambda rather than a repository because this
+     * class has never known what a connection *is* and should not start now; the caller
+     * ([com.finance.app.FinanceApp]) has the database and does the looking up.
+     *
+     * Idempotent: re-filing a credential the vault already holds writes the same value back, which
+     * the broker treats as no change at all.
+     */
+    fun refileIntoVault(nameFor: (String) -> String? = { null }): Int {
+        var filed = 0
+
+        plaidKeys?.let { keys ->
+            mirror(plaidClientRef, keys.clientId, "Plaid client id")
+            mirror(plaidSecretRef, keys.secret, "Plaid client secret")
+            mirror(plaidEnvRef, keys.environment.key, "Plaid environment")
+            filed += 3
+        }
+
+        prefs.all.keys
+            .filter { it.startsWith(TOKEN_PREFIX) }
+            .map { it.removePrefix(TOKEN_PREFIX) }
+            .forEach { connectionId ->
+                val token = prefs.getString(tokenKey(connectionId), null)?.takeIf { it.isNotBlank() }
+                    ?: return@forEach
+                val label = nameFor(connectionId) ?: "Connection"
+                mirror(tokenRef(connectionId), token, "$label access token")
+                filed++
+            }
+
+        return filed
+    }
+
+    /**
      * One value: this store if it has it, the vault if it does not, and back into this store if the
      * vault was the one that had it.
      *

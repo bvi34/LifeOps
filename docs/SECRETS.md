@@ -11,7 +11,7 @@ framework-independent core — the file format, the key derivation, the document
 audit, the merge — is `:vaultkit`, pure JVM and unit-tested without a device.
 
 ```
-Operations Sandbox  →  Secrets  →  Unlock     (or make a vault, the first time)
+Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; start again if it is forgotten)
                                 →  Vault      (everything, searchable)  →  one item
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
@@ -130,7 +130,7 @@ find the implementation through a registration the sandbox makes at start-up
 read its own token would be the wrong shape.
 
 The seam is three calls and no listing: read what you filed, file it, forget it. That is not a
-sandbox — nine modules in one process cannot be isolated from each other by an interface, and
+sandbox — eleven modules in one process cannot be isolated from each other by an interface, and
 pretending otherwise would be theatre — it is a *shape*, so that reaching further has to be written
 down rather than happening by default.
 
@@ -155,6 +155,43 @@ week, and merging an archive in which something was deleted does not remove an i
 afterwards. There is no field-level merge — one person edits one item, and a password stitched
 together from two versions of itself works nowhere.
 
+## A forgotten passphrase: delete, rebuild, refill
+
+Nothing can open the old vault without its passphrase. That is the property everything else rests
+on, and a "recovery" that got round it would mean the passphrase never protected anything. So the
+answer to a forgotten passphrase is not recovery — it is **deletion followed by a rebuild**, and the
+useful observation is that the rebuild does not have to start empty.
+
+The managed credentials were never the vault's only copy. Finance's tokens, Citation's sign-ins and
+the library card are all sitting in each app's own encrypted store on this phone, twelve inches from
+the person who has just lost their passphrase. So each app implements `SecretSource` — the reverse
+of the read-through, where an app answers a vault that lost its copy — and the reset asks all of
+them:
+
+```
+Unlock screen → "I have forgotten it"
+    → what you lose:        everything you typed in. The vault was the only place it was.
+    → what comes back:      the credentials Finance and Citation still hold on this phone.
+    → what survives anyway: a backup taken before the reset. The old passphrase still opens it,
+                            and Settings will merge it if that passphrase ever turns up.
+    → new passphrase, twice
+    → delete · create · SecretSources.refileAll()
+    → "5 credentials filed again — Finance 3, Citation 2"
+```
+
+It lives on the **unlock screen**, which is the only place it can: somebody who has forgotten the
+passphrase cannot reach Settings. The report is shown on the way in rather than as a toast on the
+way past, because "5 came back" and "nothing came back" are very different afternoons and neither
+should have to be discovered by scrolling a list.
+
+Two honest limits. On a phone where the apps are *also* empty — a fresh install, a restore in which
+the vault was the thing that failed — the refill returns nothing, and the screen says so rather than
+reporting a success of zero. And a source that throws is counted as zero while the others carry on:
+the day somebody loses their vault is the worst possible day to abandon eight apps' credentials
+because the ninth has a bug.
+
+The device shortcut goes with the vault it belonged to, since it held the old vault key.
+
 ## The device shortcut, and why it is not a contradiction
 
 The argument above is that a key bound to one phone's hardware dies with that phone. The fingerprint
@@ -178,7 +215,9 @@ Revoking it, or losing the phone, costs nothing: type the passphrase.
   that sends a hash prefix to somebody else's server. The audit says weak, reused, old and empty, and
   those are the things that can be known without telling anyone anything.
 - **It cannot recover a forgotten passphrase.** There is no reset link, no support address, no copy
-  anybody else holds. The screen that creates a vault says so before it makes one.
+  anybody else holds. The screen that creates a vault says so before it makes one. What it *can* do
+  is start again and refill from the other apps — see below, and note that this is a rebuild rather
+  than a recovery.
 - **It does not search secrets.** The search box reads titles, usernames, addresses, notes, tags and
   refs, and never a secret. Typing a password into a search box to find where you used it is a
   reasonable thing to want and a terrible thing to support — it puts the password into a text field,
@@ -202,14 +241,15 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 74 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 80 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault.
 
-`:secrets` — 21 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
-does and does not contain, both restore paths, and the one this app exists for — a credential
-mirrored on a phone that no longer exists, read back on the one that replaced it.
+`:secrets` — 26 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+does and does not contain, both restore paths, the reset (including that it cannot bring back what
+only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
+longer exists, read back on the one that replaced it.
 
-`:finance` — 8 more, on its half of the seam: which refs it uses, that a write reaches both stores,
-that a read prefers the local copy, that a restore rehydrates, and that with no vault installed the
-app behaves exactly as it did before.
+`:finance` — 10 more, on its half of the seam: which refs it uses, that a write reaches both stores,
+that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything
+it holds, and that with no vault installed the app behaves exactly as it did before.

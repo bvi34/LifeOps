@@ -9,6 +9,9 @@ import com.finance.app.data.repository.FinanceRepository
 import com.finance.app.data.repository.FinanceSync
 import com.finance.app.data.secure.FinanceSecrets
 import com.lifeops.app.connection.TaskCompletionBus
+import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretSource
+import com.operations.vaultkit.SecretSources
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -88,6 +91,28 @@ class FinanceApp private constructor(private val app: Application) {
         }
     }
 
+    /**
+     * Offer the vault a way to rebuild this app's half of itself.
+     *
+     * Registered at install, cheap by construction: it is one object in a map, and nothing it holds
+     * is touched until somebody resets a forgotten passphrase — at which point the lazy store and
+     * the lazy database open for the first time, which is exactly the moment they are wanted.
+     *
+     * The name lookup is why this lives here rather than in [FinanceSecrets]: the credentials are
+     * filed by connection id, and only the database knows that `7f3a…` is called "USAA".
+     */
+    private fun registerAsSecretSource() {
+        SecretSources.register(object : SecretSource {
+            override val owner = AppId.FINANCE
+
+            override suspend fun refile(): Int {
+                val names = runCatching { repository.connections().associate { it.id to it.displayName } }
+                    .getOrDefault(emptyMap())
+                return secrets.refileIntoVault { id -> names[id] }
+            }
+        })
+    }
+
     private fun listenForCompletions() {
         TaskCompletionBus.register {
             // Straight onto the background scope, gate and all: LifeOps resumes this on whichever
@@ -112,13 +137,21 @@ class FinanceApp private constructor(private val app: Application) {
 
         fun install(app: Application): FinanceApp =
             instance ?: synchronized(this) {
-                instance ?: FinanceApp(app).also { it.listenForCompletions(); instance = it }
+                instance ?: FinanceApp(app).also {
+                    it.listenForCompletions()
+                    it.registerAsSecretSource()
+                    instance = it
+                }
             }
 
         fun get(context: Context): FinanceApp =
             instance ?: synchronized(this) {
                 instance ?: FinanceApp(context.applicationContext as Application)
-                    .also { it.listenForCompletions(); instance = it }
+                    .also {
+                        it.listenForCompletions()
+                        it.registerAsSecretSource()
+                        instance = it
+                    }
             }
     }
 }

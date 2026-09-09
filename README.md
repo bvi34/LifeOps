@@ -458,7 +458,9 @@ the receipts.
 > is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
 > changed. There is no `INTERNET` permission in the module and no HTTP client on its classpath: no
 > sync, no account, and no breach lookup, not even the k-anonymous kind. It cannot recover a
-> forgotten passphrase, and says so before it makes a vault. The format, the crypto, the generator,
+> forgotten passphrase — nothing can, which is the point — but the unlock screen offers to **delete
+> the vault and refill it**: the managed credentials were never the vault's only copy, so each app
+> files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
 > the audit and the merge are the pure-JVM `:vaultkit` under **74 JVM tests**, most of which assert
 > that the vault *fails* to open — wrong passphrase, flipped bit, a header edited to claim a cheaper
 > KDF, a spliced key, a truncated file.
