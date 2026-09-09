@@ -22,11 +22,11 @@ the receipts.
 > share a silhouette, so a tile is recognisable before its colour registers — over a dock holding
 > the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
-> (`:people`), Project (`:project`), or Maintenance (`:maintenance`); one place to back the whole suite up into a single `.zip` and restore from it; and one
-> place that decides what all eight of them **look** like — a shared preset and light/dark mode, plus
+> (`:people`), Project (`:project`), Maintenance (`:maintenance`), or Finance (`:finance`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> place that decides what all nine of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
-> People, Project and Maintenance are library modules hosted in that one process —
+> People, Project, Maintenance and Finance are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -297,6 +297,63 @@ the receipts.
 > already written by hand is **adopted** rather than duplicated, and a plan you paused takes its task
 > off the week. Maintenance raises **no notifications of its own**; deciding
 > what today looks like stays LifeOps' job.
+>
+
+> **Finance** (the picture of the household's money) is a peer module — see **[docs/FINANCE.md](docs/FINANCE.md)**.
+> It owns *what the institutions say*: the accounts, their balances, the transactions behind them,
+> the bills that come round and the day each one falls due. It reaches USAA — and most retail banks —
+> through **Plaid**, and **Mercury** through Mercury's own API, using credentials the household types
+> in itself.
+>
+> The promise is narrower than the rest of the suite's and is stated on the Connections screen rather
+> than left to be discovered: **it reads, and only reads.** Nothing under Plaid's `transfer`,
+> `payment_initiation`, `signal` or `bank_transfer` surface exists anywhere in the module — not
+> switched off, *absent* — and link tokens are minted for `transactions` and `liabilities` only, so
+> the capability is not on the access token either. Mercury is asked for a read-only token, which is
+> stronger still: enforced at Mercury's end rather than at ours. It talks to **two hosts and no
+> others**, and that allow-list is a tested function checked on every request — exact-match and
+> TLS-only, so a lookalike host or a userinfo authority fails it. It never asks for a full account
+> number, and the ones that arrive anyway are cut to **four digits at the parser**, before anything
+> can write them down; there is no column for more. Sign-in happens on a Plaid-hosted page in **a real
+> browser, not a WebView** — a bank password should be typed somewhere this app demonstrably cannot
+> see, and the address bar is how you check whose page it is. Your Plaid secret stays on this phone
+> behind the keystore, which is a deliberate departure from Plaid's own advice and is why **the backup
+> carries no credential at all**: restore onto new hardware and you reconnect.
+>
+> Two sign conventions are fixed once, in tested code, because both are the sort of bug that fills a
+> screen with confident wrong numbers. A **balance is stored exactly as the institution reports it** —
+> the number you can check against your bank's app — and the direction lives on the *kind*, so owing
+> money makes you poorer rather than richer, and a card you overpaid counts as an asset rather than as
+> a negative debt. A **transaction is negative when money leaves**, the way a statement reads, whether
+> Plaid (which reports the opposite) or Mercury sent it.
+>
+> Bills arrive three ways and the app never pretends they are equally solid: **from your statement**
+> (a card's real `next_payment_due_date`), **entered by you**, or **predicted** — three occurrences on
+> a steady rhythm for a steady amount, and a prediction is dropped when a statement already covers the
+> same obligation. Amounts are filtered *before* the rhythm is examined, so a gym charged $45 monthly
+> that also takes $180 once a year keeps its monthly series instead of being thrown away as irregular.
+> A card's bill leads with the **statement balance** and keeps the minimum beside it, because leading
+> with the minimum is how a balance becomes permanent. There is **no "mark as paid" button**: a bill
+> is settled when a matching payment turns up in the account, or when its LifeOps task is ticked —
+> both facts, where a button would be an intention. Paid bills stay on the list, because a list that
+> empties itself as the month goes on looks like the app forgot.
+>
+> The front screen leads with a **floor, not a forecast**: *"at worst $412 in six days, before
+> anything else comes in."* Money coming in is deliberately **never projected** — payroll is regular
+> and easily detected, and projecting it would draw a much prettier line that never shows a problem,
+> on the strength of a promise about somebody's employer. So the line only ever falls, and the real
+> balance on the trough day can only beat it. The burn rate comes from the last *complete* month,
+> because a rate taken on the 3rd is three days divided by three days and projects a household into
+> destitution by Friday.
+>
+> Bills go **on the LifeOps week**, the same seam Maintenance publishes upkeep on and for the same
+> reason — one planner for the suite. A bill publishes itself ten days ahead as a task dated the day
+> it falls due, carrying the figure in its title (a predicted one says "about", so the week never
+> quotes a guess as though a biller had sent it), and **Finance ticks it off by itself when the
+> payment lands**. Its own aspect, `Settings → Finance bills`, not Maintenance's — changing the oil
+> and paying the mortgage are not the same part of anybody's life. Like Project and Maintenance it is
+> not a peer on the sync spine, and it raises **no notifications of its own**: the reminder is a task,
+> in the place you already look.
 >
 > A vehicle's **VIN opens three things**, and the app sends **eleven of its seventeen characters** to
 > do it: the half that describes the model. The six dropped are the serial — the part on your title,

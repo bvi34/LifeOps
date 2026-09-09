@@ -6,8 +6,8 @@ launcher icon. Opening it gives you a **phone home screen**: a tile per app, eac
 and colour, over a dock holding the gear and the backups. From there it:
 
 - opens any of the apps we build (**LifeOps** — the standard app — **Citation**, **Logistics**,
-  **Advisor**, **Health**, **People**, **Project**, and **Maintenance**),
-- **paints all eight of them**: one preset, one light/dark mode, and one accent per app, chosen in the
+  **Advisor**, **Health**, **People**, **Project**, **Maintenance**, and **Finance**),
+- **paints all nine of them**: one preset, one light/dark mode, and one accent per app, chosen in the
   gear and obeyed everywhere,
 - **wears a wallpaper of your choosing** on its own home screen — a shipped design, a gradient you
   mixed, or (the default) the suite's own colours, and
@@ -154,6 +154,18 @@ no per-entity allow-list to fall out of date.
   due dates and costs are all computed on read — so a restored file cannot come back internally
   inconsistent; what it does hold is a VIN off a door jamb and a parcel number off a tax bill, which
   is exactly the kind of thing nobody can reconstruct from memory.
+
+- **Finance** — WAL-checkpoints and copies `finance.db` (the connections, the accounts and their
+  balances, the transaction history, and the bills with what has been paid), plus
+  `shared_prefs/finance_*.xml`. It is the one contributor that deliberately leaves something behind:
+  **no credential travels**. The Plaid client secret, the per-connection access tokens, the Mercury
+  API tokens and the sync cursors live in `secure_finance_access`, whose name does not match the
+  `finance` prefix this contributor collects by — so the exclusion is a property of the name rather
+  than of a filter somebody could relax later. The cost is that restoring onto new hardware means
+  reconnecting the banks; the alternative is a zip in a cloud drive carrying a standing read grant on
+  a bank account, which cannot be rotated by changing a password and whose escape nobody would
+  notice. The older years of transaction history, on the other hand, genuinely are the only copy —
+  providers hand over a rolling window — which is why the database is copied as bytes.
 
 Because the apps share one process/package, `shared_prefs/` holds everyone's prefs together, so
 each contributor scopes strictly to its own files by name.
