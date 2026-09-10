@@ -432,7 +432,9 @@ be the most convincing wrong answer the feature could give. The rows aren't dele
 speaking for a plan they were never about, and come back the moment somebody is put on that policy
 again.
 
-Individual checks can be deleted for the mis-taps. There is deliberately **no "clear history"**:
+Individual checks can be deleted for the mis-taps — after a confirmation that says what goes with
+one, because a check is evidence and "this doctor was in network last March" is exactly the fact
+worth keeping. There is deliberately **no "clear history"**:
 clearing it means making the app forget that a doctor used to be in network, which is the fact worth
 keeping.
 
@@ -708,12 +710,16 @@ seriously enough to ignore them for exactly that reason.
 │   ├── store/        CardImageStore, DocumentStore — files beside the database rather than in it
 │   │                 (+ ImageDownsampler, the two-pass decode both of them share)
 │   ├── repository/   HealthRepository — what happens; Mappers.kt — what a row means. Every
-│   │                 judgement is delegated to logic/, and a mapper never invents a value
+│   │                 judgement is delegated to logic/, and a mapper never invents a value.
+│   │                 RestorableDelete — a delete that can be put back *exactly*, and the line
+│   │                 that decides which deletes are offered back rather than confirmed
 │   └── prefs/        HealthPrefs — selected person + display units (deliberately not in the db)
 ├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
 ├── ui/               Compose, one package per tab, each with its own `*ViewModel.kt`:
 │                     today · vitals · meds · information · record · coverage (+ common, theme).
+│                     common/ carries the shared vocabulary, Undo (the offer-it-back snackbar) and
+│                     ConfirmDeleteDialog (the deletes that ask first).
 │                     No `people/` — Health has no household screen; the People app owns the
 │                     household and Health is a peer on its sync seam.
 │   └── information/  InformationScreen (the shell) · PersonCards (who they are, what is normal,
@@ -817,12 +823,47 @@ declared an illness is still a real reading, deleting a medicine must not delete
 dose of it was given, and throwing a bottle away must not delete either the regimens given from it or
 the doses recorded against it.
 
+## Deleting — offered back, or asked about first
+
+Every Delete button in Health used to fire on the first tap, with no confirmation and no way back.
+That is the wrong default for this app in particular: its records are typed once, often at 3am, and
+most of them cannot be reconstructed afterwards. Nobody remembers what the thermometer said on
+Tuesday.
+
+There are two honest answers to that, and which one a delete gets is decided by a single question —
+**can it be put back exactly?**
+
+- **Offered back.** A reading, a dose, a medicine, a care note, an allergy, a condition, a
+  vaccination. The row is read before it is dropped and returned to the caller as a
+  `RestorableDelete`, which the screen offers as an "Undo" snackbar. It goes back under **its own
+  id**, so everything that pointed at it — a document filed against a condition, a certificate
+  against a vaccine dose — finds it again. The restore is the inverse of the whole delete rather
+  than of the row write: deleting a dose puts its stock back in the bottle, so undoing it draws that
+  stock out again.
+- **Asked about first.** A document, an insurance policy, somebody's membership of one, a doctor, a
+  bottle, an illness, a recorded network check. Each of these takes something with it that no row
+  restore would bring back — the file behind a document, the photographs of a card, the checks
+  recorded against a doctor, the links from a bottle to the medicines given from it — so they get a
+  dialog that says **what else goes**, in the same sentence as what is being deleted. "Delete this?"
+  teaches somebody to tap Delete without reading it; "the stored file goes with the record, and
+  Health cannot get it back" does not.
+
+The line matters more than either mechanism. An undo that quietly put back less than it took would
+be worse than no undo at all, because the household would stop checking — so a delete that cannot
+restore exactly is never offered back, it asks.
+
+Undo is the better answer wherever it is available, because it costs the common case nothing: a
+household deleting a mis-typed reading taps once and moves on, and only the one who deleted the
+wrong row pays anything. A confirm dialog charges all of them for the mistake of a few. The snackbar
+is deliberately shown on the long duration rather than the default four seconds — this is the window
+in which somebody realises what they have just done.
+
 ## Backup
 
 `HealthBackupContributor` (registered as `AppId.HEALTH`) copies the whole `health.db` into the sandbox
 archive and swaps it back on restore — complete by construction, the same approach LifeOps, Citation
 and Logistics use. It also carries Health's own `health_*` preferences (selected person, display
-unit) and, like LifeOps' contributor, touches **only** files matching its own prefix: the hosted apps
+units) and, like LifeOps' contributor, touches **only** files matching its own prefix: the hosted apps
 share one `shared_prefs/` directory. The manifest's data version is read from
 `HEALTH_DB_VERSION` rather than hand-copied, so it cannot drift from the schema.
 
@@ -905,7 +946,10 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 229 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 233 tests.
+All but one are framework-free; `RestorableDeleteTest` stands a context up with Robolectric because
+what it has to prove is what the *database* looks like after an undo, which is not a claim reasoning
+about the code can settle:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -947,6 +991,10 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
 - `ReadingTimelineEntryTest` — a temperature in the history written in the unit asked for, the site
   coming with it, the fever verdict being the same call in either unit, a weight written in the unit
   asked for, and the weight unit not leaking into the numbers it has no business changing.
+- `RestorableDeleteTest` — an undone reading coming back under its own id rather than as a copy, an
+  undone dose taking its stock back out of the bottle it was returned to, an undone condition being
+  found again by the document still filed against it, and a second delete of the same row offering
+  nothing back rather than an undo that would restore nothing.
 - `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
   itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
   nobody filled in never reaching the card, the subscriber named only when it is somebody else, the

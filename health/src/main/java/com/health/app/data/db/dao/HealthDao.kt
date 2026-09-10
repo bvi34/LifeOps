@@ -136,6 +136,10 @@ interface HealthDao {
     @Query("SELECT * FROM readings ORDER BY takenAt DESC")
     suspend fun getAllReadings(): List<ReadingEntity>
 
+    /** One row, read before it is deleted so the delete can be offered back. */
+    @Query("SELECT * FROM readings WHERE id = :id")
+    suspend fun getReading(id: String): ReadingEntity?
+
     // --- the history window --------------------------------------------------------------------
     //
     // Four `…Since` queries, one per kind of record, so a person's history can be read over a span
@@ -337,6 +341,10 @@ interface HealthDao {
 
     @Query("SELECT * FROM care_notes ORDER BY at DESC")
     suspend fun getAllCareNotes(): List<CareNoteEntity>
+
+    /** One row, read before it is deleted so the delete can be offered back. */
+    @Query("SELECT * FROM care_notes WHERE id = :id")
+    suspend fun getCareNote(id: String): CareNoteEntity?
 
     @Query("SELECT * FROM care_notes WHERE profileId = :profileId AND at >= :since ORDER BY at")
     suspend fun getCareNotesSince(profileId: String, since: Long): List<CareNoteEntity>

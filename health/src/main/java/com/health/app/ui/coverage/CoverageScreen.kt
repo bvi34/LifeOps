@@ -37,6 +37,7 @@ import com.health.app.logic.Insurance
 import com.health.app.logic.NetworkStatus
 import com.health.app.logic.NetworkVerdict
 import com.health.app.logic.PlanType
+import com.health.app.ui.common.ConfirmDeleteDialog
 import com.health.app.ui.common.NoProfiles
 import com.health.app.ui.common.ProfileBar
 import com.health.app.ui.common.SectionCard
@@ -85,6 +86,10 @@ fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
     var historyFor by remember { mutableStateOf<CareTeamMember?>(null) }
     var phoneFor by remember { mutableStateOf<CareTeamMember?>(null) }
     var checkingFor by remember { mutableStateOf<CareTeamMember?>(null) }
+    var removingMembership by remember { mutableStateOf<CoverageCard?>(null) }
+    var deletingPlan by remember { mutableStateOf<InsurancePlan?>(null) }
+    var deletingProvider by remember { mutableStateOf<Provider?>(null) }
+    var deletingCheck by remember { mutableStateOf<NetworkCheck?>(null) }
 
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
@@ -127,7 +132,7 @@ fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
                     onExport = { vm.exportCard(context, it) },
                     onEditPlan = { editingPlan = it },
                     onJoinPlan = { joiningPlan = it },
-                    onRemove = { vm.deleteMembership(it.membership.id) },
+                    onRemove = { removingMembership = it },
                     onProbe = vm::probeDirectory,
                     onAdd = { showAddPlan = true }
                 )
@@ -186,10 +191,7 @@ fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
                 vm.setPlanArchived(plan.id, !plan.archived)
                 editingPlan = null
             },
-            onDelete = {
-                vm.deletePlan(plan.id)
-                editingPlan = null
-            }
+            onDelete = { deletingPlan = plan }
         )
     }
     joiningPlan?.let { plan ->
@@ -236,10 +238,7 @@ fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
                 vm.updateProvider(it)
                 editingProvider = null
             },
-            onDelete = {
-                vm.deleteProvider(provider.id)
-                editingProvider = null
-            }
+            onDelete = { deletingProvider = provider }
         )
     }
     checkingFor?.let { member ->
@@ -267,7 +266,57 @@ fun CoverageScreen(vm: CoverageViewModel, onOpenPeople: () -> Unit) {
         NetworkHistorySheet(
             member = member,
             onDismiss = { historyFor = null },
-            onDeleteCheck = { vm.deleteCheck(it.id) }
+            onDeleteCheck = { deletingCheck = it }
+        )
+    }
+
+    // Nothing on this screen is offered back afterwards, and each of these says why in its own words:
+    // every one of them takes something with it that a restored row would not bring back — the
+    // photographs of a card, the checks recorded against a doctor, or the evidence itself.
+    removingMembership?.let { card ->
+        ConfirmDeleteDialog(
+            title = "Take ${card.memberName} off ${card.plan.displayName}?",
+            body = "Their membership goes, along with any photographs of their own copy of the card. " +
+                "The policy itself, and everybody else on it, stays. This can't be undone.",
+            confirmLabel = "Remove",
+            onDismiss = { removingMembership = null },
+            onConfirm = { vm.deleteMembership(card.membership.id) }
+        )
+    }
+    deletingPlan?.let { plan ->
+        ConfirmDeleteDialog(
+            title = "Delete ${plan.displayName}?",
+            body = "The policy goes, along with everybody's membership of it and every photograph of " +
+                "the card. If the cover has simply ended, archiving it keeps the record instead. " +
+                "This can't be undone.",
+            onDismiss = { deletingPlan = null },
+            onConfirm = {
+                vm.deletePlan(plan.id)
+                editingPlan = null
+            }
+        )
+    }
+    deletingProvider?.let { provider ->
+        ConfirmDeleteDialog(
+            title = "Delete ${provider.name}?",
+            body = "The doctor goes, along with every network check recorded against them — evidence " +
+                "about somebody who is no longer here. Conditions they managed and doses they gave " +
+                "are kept, and simply lose their clinician. This can't be undone.",
+            onDismiss = { deletingProvider = null },
+            onConfirm = {
+                vm.deleteProvider(provider.id)
+                editingProvider = null
+            }
+        )
+    }
+    deletingCheck?.let { check ->
+        ConfirmDeleteDialog(
+            title = "Delete this check?",
+            body = "The record that this doctor was checked — and what the answer was — goes with it. " +
+                "Delete it when the check was made against the wrong doctor; an answer that has " +
+                "since changed is worth keeping, because the change is the point.",
+            onDismiss = { deletingCheck = null },
+            onConfirm = { vm.deleteCheck(check.id) }
         )
     }
 }

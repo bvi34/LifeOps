@@ -14,11 +14,14 @@ import com.health.app.data.repository.HealthRepository
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.TempUnit
 import com.health.app.logic.WeightUnit
+import com.health.app.ui.common.UndoOffer
+import com.health.app.ui.common.UndoOffers
 import com.health.app.logic.Temperature
 import com.health.app.logic.TimelineDay
 import com.health.app.ui.common.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -196,12 +199,20 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
         if (summaryEpisodeId == episode.id) loadSummary(episode.id)
     }
 
+    /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
+    private val undoable = UndoOffers()
+    val undoOffers: SharedFlow<UndoOffer> = undoable.offers
+
     fun deleteEpisode(episode: Episode) = viewModelScope.launch {
         repo.deleteEpisode(episode.id)
         clearSummary()
     }
 
-    fun deleteCareNote(note: CareNote) = viewModelScope.launch { repo.deleteCareNote(note.id) }
+    fun deleteCareNote(note: CareNote) = viewModelScope.launch {
+        undoable.offer("${note.kind.label} note deleted", repo.deleteCareNote(note.id))
+    }
+
+    fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

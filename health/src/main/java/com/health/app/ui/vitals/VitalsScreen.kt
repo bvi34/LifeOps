@@ -40,6 +40,9 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
     var showTemp by remember { mutableStateOf(false) }
     var showOther by remember { mutableStateOf(false) }
 
+    val snackbar = remember { SnackbarHostState() }
+    UndoHost(vm.undoOffers, snackbar, vm::undo)
+
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
         return
@@ -48,6 +51,7 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
     val temperatures = readings.filter { it.type == ReadingType.TEMPERATURE }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showTemp = true },

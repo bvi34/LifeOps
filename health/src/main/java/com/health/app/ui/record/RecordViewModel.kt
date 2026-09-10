@@ -25,7 +25,10 @@ import com.health.app.logic.DocumentKind
 import com.health.app.logic.Documents
 import com.health.app.logic.VaccineSeries
 import com.health.app.logic.VaccineSource
+import com.health.app.ui.common.UndoOffer
+import com.health.app.ui.common.UndoOffers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -170,6 +173,10 @@ class RecordViewModel(
     private val _documentMessage = MutableStateFlow<String?>(null)
     val documentMessage: StateFlow<String?> = _documentMessage.asStateFlow()
 
+    /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
+    private val undoable = UndoOffers()
+    val undoOffers: SharedFlow<UndoOffer> = undoable.offers
+
     fun dismissDocumentMessage() {
         _documentMessage.value = null
     }
@@ -190,7 +197,15 @@ class RecordViewModel(
 
     fun updateAllergy(allergy: Allergy) = viewModelScope.launch { repo.updateAllergy(allergy) }
 
-    fun deleteAllergy(id: String) = viewModelScope.launch { repo.deleteAllergy(id) }
+    /**
+     * Delete an allergy, and offer it back.
+     *
+     * The one row in Health that a medicine is checked against — a household that deletes it by
+     * mistake loses the warning, not just the record, and would never be told it had.
+     */
+    fun deleteAllergy(allergy: Allergy) = viewModelScope.launch {
+        undoable.offer("${allergy.substance} allergy deleted", repo.deleteAllergy(allergy.id))
+    }
 
     fun addCondition(profileId: String, draft: ConditionDraft) = viewModelScope.launch {
         repo.addCondition(
@@ -207,7 +222,9 @@ class RecordViewModel(
 
     fun updateCondition(condition: Condition) = viewModelScope.launch { repo.updateCondition(condition) }
 
-    fun deleteCondition(id: String) = viewModelScope.launch { repo.deleteCondition(id) }
+    fun deleteCondition(condition: Condition) = viewModelScope.launch {
+        undoable.offer("${condition.name} deleted", repo.deleteCondition(condition.id))
+    }
 
     fun addImmunization(profileId: String, draft: ImmunizationDraft) = viewModelScope.launch {
         repo.addImmunization(
@@ -226,7 +243,11 @@ class RecordViewModel(
     fun updateImmunization(immunization: Immunization) =
         viewModelScope.launch { repo.updateImmunization(immunization) }
 
-    fun deleteImmunization(id: String) = viewModelScope.launch { repo.deleteImmunization(id) }
+    fun deleteImmunization(immunization: Immunization) = viewModelScope.launch {
+        undoable.offer("${immunization.vaccine} dose deleted", repo.deleteImmunization(immunization.id))
+    }
+
+    fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     // --- documents ---------------------------------------------------------------------------------
 

@@ -499,7 +499,17 @@ class HealthRepository(
     private suspend fun episodeIdAt(profileId: String, atMillis: Long): String? =
         dao.getEpisodeAt(profileId, atMillis)?.id
 
-    suspend fun deleteReading(id: String) = dao.deleteReading(id)
+    /**
+     * Drop a reading, and hand back the way to put it exactly where it was.
+     *
+     * Nobody can reconstruct what the thermometer said on Tuesday, so this is one of the deletes
+     * that must be offerable back rather than merely confirmed — see [RestorableDelete].
+     */
+    suspend fun deleteReading(id: String): RestorableDelete? {
+        val row = dao.getReading(id) ?: return null
+        dao.deleteReading(id)
+        return RestorableDelete { dao.upsertReading(row) }
+    }
 
     // --- symptoms -----------------------------------------------------------------------------
 
@@ -670,9 +680,21 @@ class HealthRepository(
         onReminderChange(medicationId)
     }
 
-    suspend fun deleteMedication(id: String) {
+    /**
+     * Stop tracking a medicine for one person, keeping every dose already given from it.
+     *
+     * Restorable: the row goes back under its own id, so the doses that name it and the bottle it
+     * was linked to find it again. The reminder is torn down and rebuilt on both paths, because a
+     * medicine that comes back with no reminder is a medicine somebody stops being told to give.
+     */
+    suspend fun deleteMedication(id: String): RestorableDelete? {
+        val row = dao.getMedication(id) ?: return null
         dao.deleteMedication(id)
         onReminderChange(id)
+        return RestorableDelete {
+            dao.upsertMedication(row)
+            onReminderChange(id)
+        }
     }
 
     fun observeDoses(profileId: String): Flow<List<Dose>> =
@@ -763,12 +785,23 @@ class HealthRepository(
      * bottle that Health believes is emptier than it is, and no way to say otherwise except by
      * re-typing the quantity.
      */
-    suspend fun deleteDose(id: String) {
-        val dose = dao.getDose(id)
+    suspend fun deleteDose(id: String): RestorableDelete? {
+        val dose = dao.getDose(id) ?: return null
         dao.deleteDose(id)
-        val medicationId = dose?.medicationId ?: return
-        returnToCabinet(medicationId, dose.amount, dose.unit)
-        onReminderChange(medicationId)
+        val medicationId = dose.medicationId
+        if (medicationId != null) {
+            returnToCabinet(medicationId, dose.amount, dose.unit)
+            onReminderChange(medicationId)
+        }
+        // The inverse of the delete, not just of the row write: the stock this dose put back comes
+        // out of the bottle again, under the same same-unit rule it was drawn on in the first place.
+        return RestorableDelete {
+            dao.upsertDose(dose)
+            if (medicationId != null) {
+                drawFromCabinet(medicationId, dose.amount, dose.unit)
+                onReminderChange(medicationId)
+            }
+        }
     }
 
     /** The inverse of [drawFromCabinet], under exactly the same same-unit rule. */
@@ -1145,7 +1178,11 @@ class HealthRepository(
         return id
     }
 
-    suspend fun deleteCareNote(id: String) = dao.deleteCareNote(id)
+    suspend fun deleteCareNote(id: String): RestorableDelete? {
+        val row = dao.getCareNote(id) ?: return null
+        dao.deleteCareNote(id)
+        return RestorableDelete { dao.upsertCareNote(row) }
+    }
 
     // --- the history --------------------------------------------------------------------------
 
@@ -1329,7 +1366,11 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteAllergy(id: String) = dao.deleteAllergy(id)
+    suspend fun deleteAllergy(id: String): RestorableDelete? {
+        val row = dao.getAllergy(id) ?: return null
+        dao.deleteAllergy(id)
+        return RestorableDelete { dao.upsertAllergy(row) }
+    }
 
     suspend fun addCondition(
         profileId: String,
@@ -1377,7 +1418,12 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteCondition(id: String) = dao.deleteCondition(id)
+    suspend fun deleteCondition(id: String): RestorableDelete? {
+        val row = dao.getCondition(id) ?: return null
+        dao.deleteCondition(id)
+        // Documents filed against it keep pointing at this id, and find it again on the way back.
+        return RestorableDelete { dao.upsertCondition(row) }
+    }
 
     /**
      * Everything recorded for this person that matches a medicine, worst first.
@@ -1482,7 +1528,12 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteImmunization(id: String) = dao.deleteImmunization(id)
+    suspend fun deleteImmunization(id: String): RestorableDelete? {
+        val row = dao.getImmunization(id) ?: return null
+        dao.deleteImmunization(id)
+        // As for a condition: the certificate filed against this dose still names this id.
+        return RestorableDelete { dao.upsertImmunization(row) }
+    }
 
     // --- documents --------------------------------------------------------------------------------
     //

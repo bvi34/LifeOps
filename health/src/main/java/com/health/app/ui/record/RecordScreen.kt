@@ -28,9 +28,11 @@ import com.health.app.logic.Allergies
 import com.health.app.logic.ConditionStatus
 import com.health.app.logic.Immunizations
 import com.health.app.logic.VaccineSeries
+import com.health.app.ui.common.ConfirmDeleteDialog
 import com.health.app.ui.common.NoProfiles
 import com.health.app.ui.common.ProfileBar
 import com.health.app.ui.common.SectionCard
+import com.health.app.ui.common.UndoHost
 
 /**
  * The Record tab: **what is true about this person between illnesses**.
@@ -73,6 +75,10 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     var editingCondition by remember { mutableStateOf<Condition?>(null) }
     var addingVaccine by remember { mutableStateOf(false) }
     var editingVaccine by remember { mutableStateOf<Immunization?>(null) }
+    var discarding by remember { mutableStateOf<Document?>(null) }
+
+    val snackbar = remember { SnackbarHostState() }
+    UndoHost(vm.undoOffers, snackbar, vm::undo)
 
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
@@ -81,6 +87,7 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     val person = selected
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             if (person != null) {
                 ExtendedFloatingActionButton(
@@ -141,30 +148,43 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
                     allergies = record.allergies,
                     person = person,
                     onEdit = { editingAllergy = it },
-                    onDelete = { vm.deleteAllergy(it.id) }
+                    onDelete = vm::deleteAllergy
                 )
                 1 -> ConditionList(
                     conditions = record.conditions,
                     providers = providers,
                     person = person,
                     onEdit = { editingCondition = it },
-                    onDelete = { vm.deleteCondition(it.id) }
+                    onDelete = vm::deleteCondition
                 )
                 2 -> VaccineList(
                     series = vaccineSeries,
                     person = person,
                     onEdit = { doseId -> immunizationsById[doseId]?.let { editingVaccine = it } },
-                    onDelete = { doseId -> vm.deleteImmunization(doseId) }
+                    onDelete = { doseId -> immunizationsById[doseId]?.let(vm::deleteImmunization) }
                 )
                 else -> DocumentList(
                     documents = documents,
                     householdDocuments = householdDocuments,
                     person = person,
                     onOpen = { vm.openDocument(context, it) },
-                    onDelete = { vm.deleteDocument(it.id) }
+                    onDelete = { discarding = it }
                 )
             }
         }
+    }
+
+    discarding?.let { document ->
+        // Not offered back, unlike everything else on this tab: the row is only half of a document,
+        // and the file behind it is gone the moment this is confirmed. An undo that put back a row
+        // pointing at nothing would be worse than no undo at all.
+        ConfirmDeleteDialog(
+            title = "Delete ${document.title}?",
+            body = "The stored file goes with the record, and Health cannot get it back. Whatever it " +
+                "was filed against — an illness, a vaccine, a condition — stays.",
+            onDismiss = { discarding = null },
+            onConfirm = { vm.deleteDocument(document.id) }
+        )
     }
 
     if (addingAllergy && person != null) {

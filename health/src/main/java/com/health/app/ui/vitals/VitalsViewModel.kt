@@ -15,6 +15,7 @@ import com.health.app.logic.TempUnit
 import com.health.app.logic.WeightUnit
 import com.health.app.ui.common.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -44,6 +45,10 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
     val weightUnit: StateFlow<WeightUnit> =
         repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
+    /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
+    private val undoable = UndoOffers()
+    val undoOffers: SharedFlow<UndoOffer> = undoable.offers
+
     val readings: StateFlow<List<Reading>> = selected
         .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeReadings(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -59,7 +64,17 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
         selected.value?.let { repo.logReading(it.id, type, value, secondary, note = note) }
     }
 
-    fun delete(reading: Reading) = viewModelScope.launch { repo.deleteReading(reading.id) }
+    /**
+     * Delete a reading, and offer it back.
+     *
+     * A temperature nobody can take again is exactly the kind of record that must survive a mis-tap,
+     * and the list this button sits in is scrolled with a thumb.
+     */
+    fun delete(reading: Reading) = viewModelScope.launch {
+        undoable.offer("${reading.type.label} deleted", repo.deleteReading(reading.id))
+    }
+
+    fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
