@@ -12,6 +12,7 @@ import com.health.app.data.model.ReadingType
 import com.health.app.data.repository.HealthRepository
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import com.health.app.ui.common.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.SharingStarted
@@ -22,10 +23,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
- * The Vitals tab's state: one person's measurements, and the unit they are shown in.
+ * The Vitals tab's state: one person's measurements, and the units they are shown in.
  *
- * Readings are always stored in Celsius and converted for display, so the unit is a display concern
- * that never reaches a stored value — see `logic/Temperature`.
+ * Temperatures are always stored in Celsius and weights in kilograms, converted for display, so the
+ * units are a display concern that never reaches a stored value — see `logic/Temperature` and
+ * `logic/Weight`.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
@@ -39,6 +41,9 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
     val unit: StateFlow<TempUnit> =
         repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
 
+    val weightUnit: StateFlow<WeightUnit> =
+        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
+
     val readings: StateFlow<List<Reading>> = selected
         .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeReadings(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -49,6 +54,7 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
         selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
+    /** [value] is already in the type's canonical unit — a weight arrives in kilograms. */
     fun logOther(type: ReadingType, value: Double, secondary: Double?, note: String?) = viewModelScope.launch {
         selected.value?.let { repo.logReading(it.id, type, value, secondary, note = note) }
     }

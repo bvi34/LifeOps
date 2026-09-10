@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Profile
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import com.health.app.logic.Temperature
 import com.health.app.ui.common.*
 import com.operations.suite.ui.fields.SuiteNumberField
@@ -123,15 +124,24 @@ internal fun NormalForThemCard(person: Profile, unit: TempUnit, onEdit: () -> Un
 }
 
 /**
- * °C or °F.
+ * °C or °F, kg or lb.
  *
- * It lives on this tab rather than in a settings screen because choosing the unit and recording that
- * somebody runs at 36.4 are the same act — saying how temperatures should read for this household —
- * and Health has no settings screen otherwise. Readings are always stored in Celsius and converted
- * for display, so changing this never rewrites anything already recorded, and the card says so.
+ * It lives on this tab rather than in a settings screen because choosing the units and recording
+ * that somebody runs at 36.4 are the same act — saying how numbers should read for this household —
+ * and Health has no settings screen otherwise. The two are separate choices rather than one
+ * metric/imperial switch because households are genuinely mixed: plenty of people read a fever in
+ * °C and their own weight in pounds, and a single toggle would force them to be wrong about one.
+ *
+ * Readings are always stored in Celsius and kilograms and converted for display, so changing either
+ * never rewrites anything already recorded, and the card says so.
  */
 @Composable
-internal fun DisplayUnitCard(unit: TempUnit, onSelect: (TempUnit) -> Unit) {
+internal fun DisplayUnitCard(
+    unit: TempUnit,
+    weightUnit: WeightUnit,
+    onSelect: (TempUnit) -> Unit,
+    onSelectWeight: (WeightUnit) -> Unit
+) {
     SectionCard(title = "Display") {
         Text("Show temperatures in", style = MaterialTheme.typography.bodySmall)
         ChoiceRow(
@@ -140,9 +150,16 @@ internal fun DisplayUnitCard(unit: TempUnit, onSelect: (TempUnit) -> Unit) {
             onSelect = onSelect,
             label = { if (it == TempUnit.CELSIUS) "Celsius (°C)" else "Fahrenheit (°F)" }
         )
+        Text("Show weights in", style = MaterialTheme.typography.bodySmall)
+        ChoiceRow(
+            options = WeightUnit.entries,
+            selected = weightUnit,
+            onSelect = onSelectWeight,
+            label = { it.label }
+        )
         Text(
-            "Readings are always stored in Celsius and converted for display, so changing this never " +
-                "rewrites anything already recorded.",
+            "Readings are always stored in Celsius and kilograms and converted for display, so " +
+                "changing either never rewrites anything already recorded.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

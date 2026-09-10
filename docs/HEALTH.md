@@ -26,7 +26,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
 | **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
-| **Information** | **Who this person is, what is normal for them, and what has gone wrong.** Their name, relationship and age as the directory has them; **their own usual temperature** and the medical note that goes with it — the two things Health owns outright and never publishes; whether temperatures read in °C or °F; and then the illnesses. Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
+| **Information** | **Who this person is, what is normal for them, and what has gone wrong.** Their name, relationship and age as the directory has them; **their own usual temperature** and the medical note that goes with it — the two things Health owns outright and never publishes; whether temperatures read in °C or °F and weights in kg or lb; and then the illnesses. Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
 | **Record** | **What is true about a person between illnesses.** *Allergies* — structured, ordered worst-first, and checked against any medicine being added. *Conditions* — the long-running things an illness episode could never hold. *Vaccines* — the card in the drawer, typed up, reported as what is **recorded** and never as "up to date". *Documents* — the paperwork, stored exactly as it arrived and never read. |
 | **Care** | **Who pays for this, and who do we take her to.** *Cards* is the household's insurance as copied off the card — each person's own member number on the household's policy, whether the coverage is current, photographs of the card, and **a PDF of it on demand**. *Doctors* is the care team, which belongs to the household and **not** to the policy: each shown with where they stand against this person's coverage, read out of the whole history of checks rather than a single flag. |
 
@@ -132,14 +132,18 @@ So the tab reads top-down as the answer to "tell me about her":
 2. **What's normal for them** — their own usual temperature, and the medical note. Neither is ever
    published over the seam, neither has a column anywhere else in the suite, and this is the only
    screen in the household that can change them.
-3. **Display** — °C or °F. It lives here rather than in a settings screen Health otherwise doesn't
-   have, because choosing the unit and recording that somebody runs at 36.4 are the same act: saying
-   how temperatures should read for this household. Readings are always stored in Celsius, so changing
-   it never rewrites anything.
+3. **Display** — °C or °F, and kg or lb. It lives here rather than in a settings screen Health
+   otherwise doesn't have, because choosing the units and recording that somebody runs at 36.4 are the
+   same act: saying how numbers should read for this household. The two are separate choices rather
+   than one metric/imperial switch, because households are genuinely mixed — plenty of people read a
+   fever in °C and their own weight in pounds, and a single toggle would force them to be wrong about
+   one of them. Readings are always stored in Celsius and kilograms, so changing either never rewrites
+   anything.
 4. **The illnesses**, exactly as before, with the care log underneath.
 
 The baseline is typed in whatever unit the household is using and converted on the way in — somebody
-who reads temperatures in Fahrenheit does not know their child's normal in Celsius.
+who reads temperatures in Fahrenheit does not know their child's normal in Celsius. A weight recorded
+on the Vitals tab makes the same bargain against pounds and kilograms.
 
 ## The medicine cabinet
 
@@ -626,9 +630,10 @@ minutes apart and were landing at opposite ends of the screen with a whole day b
 midnight being exactly the stretch somebody is trying to read. Whichever direction is chosen, it
 applies to the days, the entries inside them, and the tie-break between two records sharing a minute.
 
-Temperatures in it are written in the household's display unit, like every other number in the app.
-They are stored in Celsius and converted on the way out (see `logic/Temperature`), so the history is
-handed the unit when it is built, and rebuilt when the unit changes with an illness open.
+Temperatures and weights in it are written in the household's display units, like every other number
+in the app. They are stored in Celsius and kilograms and converted on the way out (see
+`logic/Temperature` and `logic/Weight`), so the history is handed both units when it is built, and
+rebuilt when either changes with an illness open.
 
 ### Filling it in afterwards
 
@@ -677,6 +682,7 @@ seriously enough to ignore them for exactly that reason.
 :health (Android library, com.health.app)
 ├── logic/            pure JVM, unit-tested — no Android imports
 │   ├── Temperature      °C/°F conversion, tolerant parsing, plausibility bounds, formatting
+│   ├── Weight           kg/lb conversion, tolerant parsing, plausibility bounds, formatting
 │   ├── Fever            sites, bands, age-aware red flags, the standing disclaimer
 │   ├── DoseSchedule     interval + rolling-24h dose windows and countdown formatting
 │   ├── DoseReminder     when a reminder next fires, in both modes, against an injected clock
@@ -703,7 +709,7 @@ seriously enough to ignore them for exactly that reason.
 │   │                 (+ ImageDownsampler, the two-pass decode both of them share)
 │   ├── repository/   HealthRepository — what happens; Mappers.kt — what a row means. Every
 │   │                 judgement is delegated to logic/, and a mapper never invents a value
-│   └── prefs/        HealthPrefs — selected person + display unit (deliberately not in the db)
+│   └── prefs/        HealthPrefs — selected person + display units (deliberately not in the db)
 ├── card/             InsuranceCardPdf — the wallet card as a card-sized PDF, on demand
 ├── reminder/         MedicationReminderWorker + scheduler (WorkManager; timing lives in logic/)
 ├── ui/               Compose, one package per tab, each with its own `*ViewModel.kt`:
@@ -711,7 +717,7 @@ seriously enough to ignore them for exactly that reason.
 │                     No `people/` — Health has no household screen; the People app owns the
 │                     household and Health is a peer on its sync seam.
 │   └── information/  InformationScreen (the shell) · PersonCards (who they are, what is normal,
-│                     the °C/°F choice) · EpisodeCards · EpisodeHistory · EpisodeDialogs ·
+│                     the °C/°F and kg/lb choices) · EpisodeCards · EpisodeHistory · EpisodeDialogs ·
 │                     BackfillRecord (the vocabulary the dialogs and the view model share)
 ├── backup/           HealthBackupContributor (health.db + health_* prefs + insurance-cards/ + documents/)
 ├── HealthFileProvider.kt  exposes cacheDir/exports only — the card PDF, and on-request copies of
@@ -737,8 +743,8 @@ One `health.db`, nineteen tables:
   plus the `personKey` and
   `syncVersion` that make a profile a peer's view of a household member. *Schema v2 adds those two
   via `MIGRATION_1_2`; the colour, baseline and notes are Health's own and never leave it.*
-- **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C),
-  with the site for temperatures and a nullable episode link.
+- **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C,
+  weight always in kg), with the site for temperatures and a nullable episode link.
 - **`symptoms`** — name, severity 1–5, started, ended (null while it's still going).
 - **`medications`** — **one person's use of a product**: their dose, the label's limits (every one
   nullable), their reminder setting, and the two links that keep it from duplicating anything —
@@ -899,11 +905,15 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 207 tests:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 229 tests:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
   one-decimal formatting.
+- `WeightTest` — conversion both ways against the avoirdupois pound, a round trip through pounds
+  coming back to the same kilograms, tolerant parsing (`" 70,5 kg "`, `"100 lbs"`), rejection of
+  weights no person has (`705` kg, `0`), a newborn still being believable, and one-decimal formatting
+  with a change carrying its sign.
 - `FeverTest` — the bands, the site adjustment changing the verdict on the same number, the newborn
   flag judged on the reading as taken rather than only on the adjustment, the under-six-months
   escalation, 40 °C being urgent at any age, hypothermia never being routine, and an unknown age
@@ -935,7 +945,8 @@ Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitT
   being accused of anything, simultaneous entries reading in the order they happened, and days grouped
   in the reader's own zone rather than UTC.
 - `ReadingTimelineEntryTest` — a temperature in the history written in the unit asked for, the site
-  coming with it, and the fever verdict being the same call in either unit.
+  coming with it, the fever verdict being the same call in either unit, a weight written in the unit
+  asked for, and the weight unit not leaking into the numbers it has no business changing.
 - `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
   itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
   nobody filled in never reaching the card, the subscriber named only when it is somebody else, the

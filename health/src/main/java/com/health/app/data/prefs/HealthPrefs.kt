@@ -3,18 +3,21 @@ package com.health.app.data.prefs
 import android.content.Context
 import android.content.SharedPreferences
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
- * Health's two settings: which person is on screen, and whether temperatures are shown in °C or °F.
+ * Health's settings: which person is on screen, and the units its numbers are read in — °C or °F
+ * for temperatures, kg or lb for weights.
  *
- * Neither belongs in the database. The selected profile is a UI position, not a fact about anyone's
- * health, and restoring a backup should not drag the *reader's* last screen state along with the
- * medical records. The display unit is the same kind of thing — it changes what you read, never what
- * was stored (readings are always Celsius; see `logic/Temperature`).
+ * None of them belongs in the database. The selected profile is a UI position, not a fact about
+ * anyone's health, and restoring a backup should not drag the *reader's* last screen state along
+ * with the medical records. The display units are the same kind of thing — they change what you
+ * read, never what was stored (temperatures are always Celsius and weights always kilograms; see
+ * `logic/Temperature` and `logic/Weight`).
  *
  * The file is named `health_prefs` so the sandbox's per-app prefs isolation — every contributor
  * touches only files matching its own prefix — keeps working. See [com.health.app.backup.HealthBackupContributor].
@@ -31,6 +34,10 @@ class HealthPrefs(context: Context) {
     var temperatureUnit: TempUnit
         get() = TempUnit.fromKey(prefs.getString(KEY_TEMP_UNIT, TempUnit.CELSIUS.key)!!)
         set(value) = prefs.edit().putString(KEY_TEMP_UNIT, value.key).apply()
+
+    var weightUnit: WeightUnit
+        get() = WeightUnit.fromKey(prefs.getString(KEY_WEIGHT_UNIT, WeightUnit.KILOGRAMS.key)!!)
+        set(value) = prefs.edit().putString(KEY_WEIGHT_UNIT, value.key).apply()
 
     /**
      * The highest version of a People-seam peer's packets Health has durably taken. Keyed by peer so
@@ -56,9 +63,12 @@ class HealthPrefs(context: Context) {
 
     fun observeTemperatureUnit(): Flow<TempUnit> = observe(KEY_TEMP_UNIT) { temperatureUnit }
 
+    fun observeWeightUnit(): Flow<WeightUnit> = observe(KEY_WEIGHT_UNIT) { weightUnit }
+
     companion object {
         const val FILE_NAME = "health_prefs"
         private const val KEY_SELECTED_PROFILE = "selected_profile_id"
         private const val KEY_TEMP_UNIT = "temperature_unit"
+        private const val KEY_WEIGHT_UNIT = "weight_unit"
     }
 }

@@ -43,6 +43,7 @@ fun InformationScreen(vm: InformationViewModel, onOpenPeople: () -> Unit) {
     val history by vm.openHistory.collectAsStateWithLifecycle()
     val medications by vm.medications.collectAsStateWithLifecycle()
     val unit by vm.unit.collectAsStateWithLifecycle()
+    val weightUnit by vm.weightUnit.collectAsStateWithLifecycle()
 
     var expandedId by remember { mutableStateOf<String?>(null) }
     var showHistoryFor by remember { mutableStateOf<String?>(null) }
@@ -76,7 +77,12 @@ fun InformationScreen(vm: InformationViewModel, onOpenPeople: () -> Unit) {
                     )
                 }
                 item(key = "display") {
-                    DisplayUnitCard(unit = unit, onSelect = vm::setUnit)
+                    DisplayUnitCard(
+                        unit = unit,
+                        weightUnit = weightUnit,
+                        onSelect = vm::setUnit,
+                        onSelectWeight = vm::setWeightUnit
+                    )
                 }
                 item(key = "illness-header") {
                     Text("Illnesses", style = MaterialTheme.typography.titleSmall)

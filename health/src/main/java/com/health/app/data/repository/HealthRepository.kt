@@ -94,6 +94,7 @@ import com.health.app.logic.TimelineEntry
 import com.health.app.logic.TimelineFacts
 import com.health.app.logic.TimelineKind
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.PersonBinder
 import com.people.app.sync.PersonPacket
@@ -177,6 +178,12 @@ class HealthRepository(
 
     fun setTemperatureUnit(unit: TempUnit) {
         prefs.temperatureUnit = unit
+    }
+
+    fun observeWeightUnit(): Flow<WeightUnit> = prefs.observeWeightUnit()
+
+    fun setWeightUnit(unit: WeightUnit) {
+        prefs.weightUnit = unit
     }
 
     /**
@@ -1151,18 +1158,19 @@ class HealthRepository(
      *
      * Read once on demand rather than observed, like the summary: it folds four tables, which is
      * worth doing when somebody opens the history and not worth redoing on every unrelated write.
-     * The display unit is read the same way, at the same moment, so the temperatures in the history
-     * are written in the scale the rest of the app is showing.
+     * The display units are read the same way, at the same moment, so the temperatures and weights
+     * in the history are written in the scales the rest of the app is showing.
      */
     suspend fun episodeHistory(episodeId: String): List<TimelineDay> {
         val episode = dao.getEpisode(episodeId) ?: return emptyList()
         val profile = dao.getProfile(episode.profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
         val unit = prefs.temperatureUnit
+        val weightUnit = prefs.weightUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths, unit) },
+                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths, unit, weightUnit) },
                 symptoms = dao.getSymptomsForEpisode(episodeId).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesForEpisode(episodeId).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesForEpisode(episodeId).map { it.toTimelineEntry() },
@@ -1185,10 +1193,11 @@ class HealthRepository(
         val profile = dao.getProfile(profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
         val unit = prefs.temperatureUnit
+        val weightUnit = prefs.weightUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths, unit) },
+                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths, unit, weightUnit) },
                 symptoms = dao.getSymptomsSince(profileId, sinceMillis).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesSince(profileId, sinceMillis).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesSince(profileId, sinceMillis).map { it.toTimelineEntry() }

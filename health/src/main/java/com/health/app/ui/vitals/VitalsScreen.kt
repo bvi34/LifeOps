@@ -20,6 +20,8 @@ import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
+import com.health.app.logic.Weight
+import com.health.app.logic.WeightUnit
 import com.health.app.ui.common.*
 import com.operations.suite.ui.fields.SuiteNumberField
 
@@ -33,6 +35,7 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val readings by vm.readings.collectAsStateWithLifecycle()
     val unit by vm.unit.collectAsStateWithLifecycle()
+    val weightUnit by vm.weightUnit.collectAsStateWithLifecycle()
 
     var showTemp by remember { mutableStateOf(false) }
     var showOther by remember { mutableStateOf(false) }
@@ -110,7 +113,7 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
                         Text("History", style = MaterialTheme.typography.titleSmall)
                     }
                     items(readings, key = { it.id }) { reading ->
-                        ReadingRow(reading, unit, onDelete = { vm.delete(reading) })
+                        ReadingRow(reading, unit, weightUnit, onDelete = { vm.delete(reading) })
                     }
                 }
             }
@@ -131,6 +134,7 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
     }
     if (showOther) {
         LogOtherReadingDialog(
+            weightUnit = weightUnit,
             onDismiss = { showOther = false },
             onConfirm = { type, value, secondary, note ->
                 vm.logOther(type, value, secondary, note)
@@ -141,11 +145,17 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
 }
 
 @Composable
-private fun ReadingRow(reading: Reading, unit: TempUnit, onDelete: () -> Unit) {
+private fun ReadingRow(
+    reading: Reading,
+    unit: TempUnit,
+    weightUnit: WeightUnit,
+    onDelete: () -> Unit
+) {
     val value = when (reading.type) {
         ReadingType.TEMPERATURE -> Temperature.format(reading.value, unit)
         ReadingType.BLOOD_PRESSURE ->
             "${trimAmount(reading.value)}/${reading.secondaryValue?.let { trimAmount(it) } ?: "?"} mmHg"
+        ReadingType.WEIGHT -> Weight.format(reading.value, weightUnit)
         else -> "${trimAmount(reading.value)} ${reading.type.unit}"
     }
     val assessment = if (reading.type == ReadingType.TEMPERATURE) {
@@ -233,8 +243,17 @@ private fun TemperatureChart(readings: List<Reading>, unit: TempUnit, modifier: 
     }
 }
 
+/**
+ * Everything that isn't a temperature, recorded through one dialog.
+ *
+ * A weight is typed in whatever unit the household reads in and converted to kilograms on the way
+ * in — the same bargain the baseline temperature makes, and for the same reason: somebody who
+ * weighs themselves in pounds does not know the number in kilograms, and asking them to convert it
+ * is asking them to get it wrong.
+ */
 @Composable
 private fun LogOtherReadingDialog(
+    weightUnit: WeightUnit,
     onDismiss: () -> Unit,
     onConfirm: (ReadingType, Double, Double?, String?) -> Unit
 ) {
@@ -244,7 +263,14 @@ private fun LogOtherReadingDialog(
     var note by remember { mutableStateOf("") }
 
     val options = ReadingType.entries.filter { it != ReadingType.TEMPERATURE }
-    val value = primary.replace(',', '.').toDoubleOrNull()
+    val isWeight = type == ReadingType.WEIGHT
+    // Always the canonical unit by the time it leaves here: kilograms for a weight, as typed otherwise.
+    val value = if (isWeight) {
+        Weight.parseToKilograms(primary, weightUnit)
+    } else {
+        primary.replace(',', '.').toDoubleOrNull()
+    }
+    val weightInvalid = isWeight && primary.isNotBlank() && value == null
     val diastolic = secondary.replace(',', '.').toDoubleOrNull()
     val needsSecond = type == ReadingType.BLOOD_PRESSURE
 
@@ -255,11 +281,17 @@ private fun LogOtherReadingDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 ChoiceRow(options, type, { type = it }, { it.label })
                 SuiteNumberField(
-                    label = if (needsSecond) "Systolic (mmHg)" else "${type.label} (${type.unit})",
+                    label = when {
+                        needsSecond -> "Systolic (mmHg)"
+                        isWeight -> "${type.label} (${weightUnit.symbol})"
+                        else -> "${type.label} (${type.unit})"
+                    },
                     value = primary,
                     onValueChange = { primary = it },
                     modifier = Modifier.fillMaxWidth(),
-                    decimals = true
+                    decimals = true,
+                    supporting = if (weightInvalid) "That isn't a weight Health can read" else null,
+                    isError = weightInvalid
                 )
                 if (needsSecond) {
                     SuiteNumberField(
