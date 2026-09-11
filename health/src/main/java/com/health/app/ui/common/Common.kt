@@ -68,13 +68,19 @@ fun formatStamp(millis: Long, nowMillis: Long = System.currentTimeMillis()): Str
  * Blood pressure is the one reading with two numbers, and reads the way it is said out loud.
  */
 fun formatReading(reading: Reading, unit: TempUnit, weightUnit: WeightUnit): String =
-    when (reading.type) {
-        ReadingType.TEMPERATURE -> Temperature.format(reading.value, unit)
-        ReadingType.WEIGHT -> Weight.format(reading.value, weightUnit)
-        ReadingType.BLOOD_PRESSURE ->
-            "${trimAmount(reading.value)}/${reading.secondaryValue?.let { trimAmount(it) } ?: "?"} " +
-                reading.type.unit
-        else -> "${trimAmount(reading.value)} ${reading.type.unit}"
+    if (reading.type == ReadingType.BLOOD_PRESSURE) {
+        "${trimAmount(reading.value)}/${reading.secondaryValue?.let { trimAmount(it) } ?: "?"} " +
+            reading.type.unit
+    } else {
+        formatValue(reading.type, reading.value, unit, weightUnit)
+    }
+
+/** One number of a given kind, in the household's units — the halves of a blood pressure included. */
+fun formatValue(type: ReadingType, value: Double, unit: TempUnit, weightUnit: WeightUnit): String =
+    when (type) {
+        ReadingType.TEMPERATURE -> Temperature.format(value, unit)
+        ReadingType.WEIGHT -> Weight.format(value, weightUnit)
+        else -> "${trimAmount(value)} ${type.unit}"
     }
 
 /** The colour a care level is allowed to be. Red is reserved; nothing else in Health uses it. */

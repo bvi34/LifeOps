@@ -24,7 +24,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | Tab | Purpose |
 |---|---|
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
-| **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. Tapping any of them corrects it. |
+| **Vitals** | The measurement history. A curve for whichever measurement you pick — temperature with the fever line marked, or a weight, blood pressure, pulse, breathing rate or oxygen trend — plotted against real time, plus every reading in one list. Tapping any of them corrects it. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
 | **Information** | **Who this person is, what is normal for them, and what has gone wrong.** Their name, relationship and age as the directory has them; **their own usual temperature** and the medical note that goes with it — the two things Health owns outright and never publishes; whether temperatures read in °C or °F and weights in kg or lb; and then the illnesses. Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
 | **Record** | **What is true about a person between illnesses.** *Allergies* — structured, ordered worst-first, and checked against any medicine being added. *Conditions* — the long-running things an illness episode could never hold. *Vaccines* — the card in the drawer, typed up, reported as what is **recorded** and never as "up to date". *Documents* — the paperwork, stored exactly as it arrived and never read. |
@@ -860,6 +860,27 @@ Cross-table links are plain nullable ids rather than foreign keys — a reading 
 declared an illness is still a real reading, deleting a medicine must not delete the record that a
 dose of it was given, and throwing a bottle away must not delete either the regimens given from it or
 the doses recorded against it.
+
+## The chart — any measurement, one line
+
+The curve is deliberately plain: a line, a dot per reading, and one dashed rule where there is a
+threshold worth drawing, because the only question a chart like this is asked is *is it above the
+line, and is it going up or down*. Points are plotted against **real time** rather than reading
+number, so the gap where everybody slept looks like a gap.
+
+It drew temperatures and nothing else for most of the app's life, which left the household tracking a
+weight for a thyroid problem or a blood pressure for hypertension reading a column of numbers and
+doing the trend in their head — the one job a chart exists for. Any measurement with two readings is
+now drawable and the picker appears once there is a choice to make; a household that only takes
+temperatures is never asked which chart it wants.
+
+**Only temperature brings a threshold and flagged points with it.** `Fever` is a judgement from
+published thresholds, and Health has one of those for body temperature and none for the rest —
+colouring an oxygen saturation red would be the app inventing a clinical opinion it does not have.
+The other charts say what was measured and when, and leave the reading to the reader.
+
+A blood pressure draws **both** of its numbers, because a systolic on its own is not a blood
+pressure.
 
 ## Correcting a reading
 
