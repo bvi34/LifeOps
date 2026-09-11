@@ -86,6 +86,9 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
         undoable.offer("${reading.type.label} deleted", repo.deleteReading(reading.id))
     }
 
+    /** Correct a reading already recorded — same checks as typing it, same row afterwards. */
+    fun update(reading: Reading) = viewModelScope.launch { repo.updateReading(reading) }
+
     fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {

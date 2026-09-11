@@ -24,7 +24,7 @@ the fever started — and the next morning nobody can reconstruct it. Health's j
 | Tab | Purpose |
 |---|---|
 | **Today** | The cockpit for whoever is selected: their latest temperature with its verdict, the illness in progress, which medicines are **due now** vs. how long to wait, what symptoms are still going — and four one-tap records (temperature, dose, symptom, care note). |
-| **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. |
+| **Vitals** | The measurement history. A temperature curve plotted against real time with the fever line marked, plus every other reading (heart rate, breathing, oxygen, blood pressure, weight) in one list. Tapping any of them corrects it. |
 | **Meds** | The **medicine cabinet**, in two halves. *Cabinet* is the household's actual stock — every bottle and box, whether it's still in date, whether there's enough left, where it lives, and everyone who takes it with their own dose and live dose window. *[Name]'s medicines* is the per-person regimen: the spacing and daily limits **from their own labels**, each showing its window — due now, wait *this* long, or the day's allowance is spent — plus reminders and the full history of doses given. |
 | **Information** | **Who this person is, what is normal for them, and what has gone wrong.** Their name, relationship and age as the directory has them; **their own usual temperature** and the medical note that goes with it — the two things Health owns outright and never publishes; whether temperatures read in °C or °F and weights in kg or lb; and then the illnesses. Episodes past and present, each readable back two ways: a **summary** (how long, how high it peaked, which way it's going, what was given, what's still going) and a **history** — everything that was done, hour by hour, day by day. Anything that wasn't recorded at the time can be added afterwards, including an illness that has already been and gone. Plus the care log. |
 | **Record** | **What is true about a person between illnesses.** *Allergies* — structured, ordered worst-first, and checked against any medicine being added. *Conditions* — the long-running things an illness episode could never hold. *Vaccines* — the card in the drawer, typed up, reported as what is **recorded** and never as "up to date". *Documents* — the paperwork, stored exactly as it arrived and never read. |
@@ -861,6 +861,21 @@ declared an illness is still a real reading, deleting a medicine must not delete
 dose of it was given, and throwing a bottle away must not delete either the regimens given from it or
 the doses recorded against it.
 
+## Correcting a reading
+
+A record you can only delete is a record you re-type. Tapping any row in the Vitals history reopens
+**the same dialog that recorded it**, filled in — not a reduced one, because a 384 typed for 38.4 is
+wrong in exactly the way a new reading can be wrong, and a household that can only delete and
+re-enter it loses the site, the note and the time along with the typo. The kind is the one thing a
+correction can't change: a heart rate that should have been a weight isn't a typo in that row, it is
+a different row.
+
+The row keeps its id, so nothing pointing at it is disturbed, and the illness it belongs to is
+**only** re-derived when the time moves. That restraint matters more than it looks: starting an
+illness adopts the readings taken in the hours before it was declared, so a reading can legitimately
+sit inside an episode that began after it — and a rule that recomputed the link on every edit would
+evict exactly those the moment somebody fixed a typo in a note.
+
 ## Deleting — offered back, or asked about first
 
 Every Delete button in Health used to fire on the first tap, with no confirmation and no way back.
@@ -984,10 +999,11 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 245 tests.
-All but three are framework-free; `RestorableDeleteTest`, `BackfilledReadingTest` and
-`LatestReadingsTest` stand a context up with Robolectric because what they have to prove is what the
-*database* looks like afterwards, which is not a claim reasoning about the code can settle:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 248 tests.
+Four stand a context up with Robolectric — `RestorableDeleteTest`, `BackfilledReadingTest`,
+`LatestReadingsTest` and `CorrectedReadingTest` — because what they have to prove is what the
+*database* looks like afterwards, which is not a claim reasoning about the code can settle. The rest
+are framework-free:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -1041,6 +1057,10 @@ All but three are framework-free; `RestorableDeleteTest`, `BackfilledReadingTest
 - `BackfilledReadingTest` — a weight taken during a past illness filed against *that* illness rather
   than whichever one happens to be open now, and a reading from a week nobody called an illness
   belonging to none rather than being adopted by the nearest.
+- `CorrectedReadingTest` — a corrected value keeping the row's id, its site and the illness that
+  **adopted** it (the case a naive "re-derive the episode on every edit" would silently evict), a
+  corrected *time* re-filing it against the illness it really happened in, and an edit to a row that
+  has since been deleted changing nothing rather than resurrecting it.
 - `LatestReadingsTest` — the most recent reading of each kind rather than the first one recorded,
   nothing invented for a kind nobody has measured, and one person's readings never answering for
   another's.

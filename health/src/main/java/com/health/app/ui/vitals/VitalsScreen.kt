@@ -43,6 +43,7 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
 
     var showTemp by remember { mutableStateOf(false) }
     var showOther by remember { mutableStateOf(false) }
+    var correcting by remember { mutableStateOf<Reading?>(null) }
 
     val snackbar = remember { SnackbarHostState() }
     UndoHost(vm.undoOffers, snackbar, vm::undo)
@@ -121,7 +122,13 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
                         Text("History", style = MaterialTheme.typography.titleSmall)
                     }
                     items(readings, key = { it.id }) { reading ->
-                        ReadingRow(reading, unit, weightUnit, onDelete = { vm.delete(reading) })
+                        ReadingRow(
+                            reading = reading,
+                            unit = unit,
+                            weightUnit = weightUnit,
+                            onClick = { correcting = reading },
+                            onDelete = { vm.delete(reading) }
+                        )
                     }
                 }
             }
@@ -140,6 +147,39 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
             }
         )
     }
+    // Correcting is the same form as recording, filled in — see the dialogs' own notes for why.
+    correcting?.let { reading ->
+        if (reading.type == ReadingType.TEMPERATURE) {
+            LogTemperatureDialog(
+                unit = unit,
+                ageMonths = profile?.ageMonthsAt(System.currentTimeMillis()),
+                editing = reading,
+                onDismiss = { correcting = null },
+                onConfirm = { celsius, site, note, at ->
+                    vm.update(reading.copy(value = celsius, site = site, note = note, takenAt = at))
+                    correcting = null
+                }
+            )
+        } else {
+            LogOtherReadingDialog(
+                weightUnit = weightUnit,
+                editing = reading,
+                onDismiss = { correcting = null },
+                onConfirm = { _, value, secondary, note, at ->
+                    vm.update(
+                        reading.copy(
+                            value = value,
+                            secondaryValue = secondary,
+                            note = note,
+                            takenAt = at
+                        )
+                    )
+                    correcting = null
+                }
+            )
+        }
+    }
+
     if (showOther) {
         LogOtherReadingDialog(
             weightUnit = weightUnit,
@@ -157,6 +197,7 @@ private fun ReadingRow(
     reading: Reading,
     unit: TempUnit,
     weightUnit: WeightUnit,
+    onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
     val value = formatReading(reading, unit, weightUnit)
@@ -174,6 +215,7 @@ private fun ReadingRow(
             reading.note
         ).joinToString(" · "),
         trailingColor = assessment?.let { careColor(it.careLevel) },
+        onClick = onClick,
         onDelete = onDelete
     )
 }
@@ -267,13 +309,22 @@ private fun TemperatureChart(readings: List<Reading>, unit: TempUnit, modifier: 
 private fun LogOtherReadingDialog(
     weightUnit: WeightUnit,
     onDismiss: () -> Unit,
+    editing: Reading? = null,
     onConfirm: (ReadingType, Double, Double?, String?, Long) -> Unit
 ) {
-    var type by remember { mutableStateOf(ReadingType.HEART_RATE) }
-    var primary by remember { mutableStateOf("") }
-    var secondary by remember { mutableStateOf("") }
-    var note by remember { mutableStateOf("") }
-    var at by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var type by remember { mutableStateOf(editing?.type ?: ReadingType.HEART_RATE) }
+    var primary by remember {
+        mutableStateOf(
+            when {
+                editing == null -> ""
+                editing.type == ReadingType.WEIGHT -> Weight.formatBare(editing.value, weightUnit)
+                else -> trimAmount(editing.value)
+            }
+        )
+    }
+    var secondary by remember { mutableStateOf(editing?.secondaryValue?.let { trimAmount(it) }.orEmpty()) }
+    var note by remember { mutableStateOf(editing?.note.orEmpty()) }
+    var at by remember { mutableLongStateOf(editing?.takenAt ?: System.currentTimeMillis()) }
 
     val options = ReadingType.entries.filter { it != ReadingType.TEMPERATURE }
     val isWeight = type == ReadingType.WEIGHT
@@ -292,13 +343,15 @@ private fun LogOtherReadingDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Measurement") },
+        title = { Text(if (editing == null) "Measurement" else "Correct this reading") },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                ChoiceRow(options, type, { type = it }, { it.label })
+                // The kind is fixed on a correction. A heart rate that should have been a weight is
+                // not a typo in this row, it is a different row — delete it and record the weight.
+                if (editing == null) ChoiceRow(options, type, { type = it }, { it.label })
                 SuiteNumberField(
                     label = when {
                         needsSecond -> "Systolic (mmHg)"

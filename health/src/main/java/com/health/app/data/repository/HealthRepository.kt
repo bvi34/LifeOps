@@ -527,6 +527,31 @@ class HealthRepository(
         dao.getEpisodeAt(profileId, atMillis)?.id
 
     /**
+     * Correct a reading already recorded.
+     *
+     * The row keeps its id, so nothing that pointed at it is disturbed. The illness it belongs to is
+     * **only** re-derived when the time moved: a reading adopted into an episode that started after
+     * it was taken (see [startEpisode]'s backfill window) is filed there deliberately, and
+     * recomputing that link while somebody fixes a typo in the note would quietly evict it.
+     */
+    suspend fun updateReading(reading: Reading) {
+        val existing = dao.getReading(reading.id) ?: return
+        val episodeId =
+            if (reading.takenAt == existing.takenAt) existing.episodeId
+            else episodeIdAt(existing.profileId, reading.takenAt)
+        dao.upsertReading(
+            existing.copy(
+                value = reading.value,
+                secondaryValue = reading.secondaryValue,
+                site = reading.site?.key,
+                takenAt = reading.takenAt,
+                note = reading.note?.trim()?.ifBlank { null },
+                episodeId = episodeId
+            )
+        )
+    }
+
+    /**
      * Drop a reading, and hand back the way to put it exactly where it was.
      *
      * Nobody can reconstruct what the thermometer said on Tuesday, so this is one of the deletes
