@@ -29,6 +29,8 @@ import com.health.app.logic.PlanType
 import com.health.app.logic.ProviderDirectory
 import com.health.app.logic.ReminderMode
 import com.health.app.logic.TempSite
+import com.health.app.logic.VitalRange
+import com.health.app.logic.Vitals
 import java.time.LocalTime
 
 /**
@@ -37,14 +39,25 @@ import java.time.LocalTime
  * being re-guessed by each screen.
  */
 
-/** The kinds of measurement Health records. Each carries the canonical unit its value is stored in. */
-enum class ReadingType(val key: String, val label: String, val unit: String) {
-    TEMPERATURE("temperature", "Temperature", "°C"),
-    HEART_RATE("heart_rate", "Heart rate", "bpm"),
-    BLOOD_PRESSURE("blood_pressure", "Blood pressure", "mmHg"),
-    OXYGEN("oxygen", "Oxygen (SpO₂)", "%"),
-    RESPIRATORY_RATE("respiratory_rate", "Breathing rate", "breaths/min"),
-    WEIGHT("weight", "Weight", "kg");
+/**
+ * The kinds of measurement Health records. Each carries the canonical unit its value is stored in,
+ * and the bounds a believable value falls in — see `logic/Vitals` for what those bounds are for, and
+ * what they are deliberately not for.
+ */
+enum class ReadingType(
+    val key: String,
+    val label: String,
+    val unit: String,
+    val range: VitalRange,
+    /** The second number's bounds, for the one reading that has two. */
+    val secondaryRange: VitalRange? = null
+) {
+    TEMPERATURE("temperature", "Temperature", "°C", Vitals.TEMPERATURE),
+    HEART_RATE("heart_rate", "Heart rate", "bpm", Vitals.HEART_RATE),
+    BLOOD_PRESSURE("blood_pressure", "Blood pressure", "mmHg", Vitals.SYSTOLIC, Vitals.DIASTOLIC),
+    OXYGEN("oxygen", "Oxygen (SpO₂)", "%", Vitals.OXYGEN),
+    RESPIRATORY_RATE("respiratory_rate", "Breathing rate", "breaths/min", Vitals.RESPIRATORY_RATE),
+    WEIGHT("weight", "Weight", "kg", Vitals.WEIGHT);
 
     companion object {
         fun fromKey(key: String?): ReadingType =

@@ -28,9 +28,17 @@ import com.health.app.logic.Allergies
 import com.health.app.logic.ConditionStatus
 import com.health.app.logic.Immunizations
 import com.health.app.logic.VaccineSeries
+import com.health.app.data.model.Reading
+import com.health.app.data.model.ReadingType
+import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
+import com.health.app.ui.common.ConfirmDeleteDialog
+import com.health.app.ui.common.formatReading
+import com.health.app.ui.common.formatStamp
 import com.health.app.ui.common.NoProfiles
 import com.health.app.ui.common.ProfileBar
 import com.health.app.ui.common.SectionCard
+import com.health.app.ui.common.UndoHost
 
 /**
  * The Record tab: **what is true about this person between illnesses**.
@@ -55,6 +63,9 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     val vaccineSeries by vm.vaccineSeries.collectAsStateWithLifecycle()
     val immunizationsById by vm.immunizationsById.collectAsStateWithLifecycle()
     val documents by vm.documents.collectAsStateWithLifecycle()
+    val latestReadings by vm.latestReadings.collectAsStateWithLifecycle()
+    val unit by vm.unit.collectAsStateWithLifecycle()
+    val weightUnit by vm.weightUnit.collectAsStateWithLifecycle()
     val householdDocuments by vm.householdDocuments.collectAsStateWithLifecycle()
     val pendingDocument by vm.pendingDocument.collectAsStateWithLifecycle()
     val documentMessage by vm.documentMessage.collectAsStateWithLifecycle()
@@ -73,6 +84,10 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     var editingCondition by remember { mutableStateOf<Condition?>(null) }
     var addingVaccine by remember { mutableStateOf(false) }
     var editingVaccine by remember { mutableStateOf<Immunization?>(null) }
+    var discarding by remember { mutableStateOf<Document?>(null) }
+
+    val snackbar = remember { SnackbarHostState() }
+    UndoHost(vm.undoOffers, snackbar, vm::undo)
 
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
@@ -81,6 +96,7 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
     val person = selected
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             if (person != null) {
                 ExtendedFloatingActionButton(
@@ -141,30 +157,46 @@ fun RecordScreen(vm: RecordViewModel, onOpenPeople: () -> Unit) {
                     allergies = record.allergies,
                     person = person,
                     onEdit = { editingAllergy = it },
-                    onDelete = { vm.deleteAllergy(it.id) }
+                    onDelete = vm::deleteAllergy
                 )
                 1 -> ConditionList(
                     conditions = record.conditions,
                     providers = providers,
                     person = person,
+                    latestReadings = latestReadings,
+                    unit = unit,
+                    weightUnit = weightUnit,
                     onEdit = { editingCondition = it },
-                    onDelete = { vm.deleteCondition(it.id) }
+                    onDelete = vm::deleteCondition
                 )
                 2 -> VaccineList(
                     series = vaccineSeries,
                     person = person,
                     onEdit = { doseId -> immunizationsById[doseId]?.let { editingVaccine = it } },
-                    onDelete = { doseId -> vm.deleteImmunization(doseId) }
+                    onDelete = { doseId -> immunizationsById[doseId]?.let(vm::deleteImmunization) }
                 )
                 else -> DocumentList(
                     documents = documents,
                     householdDocuments = householdDocuments,
                     person = person,
                     onOpen = { vm.openDocument(context, it) },
-                    onDelete = { vm.deleteDocument(it.id) }
+                    onDelete = { discarding = it }
                 )
             }
         }
+    }
+
+    discarding?.let { document ->
+        // Not offered back, unlike everything else on this tab: the row is only half of a document,
+        // and the file behind it is gone the moment this is confirmed. An undo that put back a row
+        // pointing at nothing would be worse than no undo at all.
+        ConfirmDeleteDialog(
+            title = "Delete ${document.title}?",
+            body = "The stored file goes with the record, and Health cannot get it back. Whatever it " +
+                "was filed against — an illness, a vaccine, a condition — stays.",
+            onDismiss = { discarding = null },
+            onConfirm = { vm.deleteDocument(document.id) }
+        )
     }
 
     if (addingAllergy && person != null) {
@@ -563,6 +595,9 @@ private fun ConditionList(
     conditions: List<Condition>,
     providers: List<Provider>,
     person: Profile?,
+    latestReadings: Map<ReadingType, Reading>,
+    unit: TempUnit,
+    weightUnit: WeightUnit,
     onEdit: (Condition) -> Unit,
     onDelete: (Condition) -> Unit
 ) {
@@ -586,6 +621,9 @@ private fun ConditionList(
                 ConditionCard(
                     condition = condition,
                     provider = providers.firstOrNull { it.id == condition.providerId },
+                    latest = condition.monitorReadingType?.let { latestReadings[it] },
+                    unit = unit,
+                    weightUnit = weightUnit,
                     onEdit = { onEdit(condition) },
                     onDelete = { onDelete(condition) }
                 )
@@ -598,6 +636,9 @@ private fun ConditionList(
 private fun ConditionCard(
     condition: Condition,
     provider: Provider?,
+    latest: Reading?,
+    unit: TempUnit,
+    weightUnit: WeightUnit,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -621,8 +662,12 @@ private fun ConditionCard(
             provider?.let {
                 Text("Managed by ${it.name}", style = MaterialTheme.typography.bodySmall)
             }
-            condition.monitorReadingType?.let {
-                Text("Watched with: ${it.label}", style = MaterialTheme.typography.bodySmall)
+            condition.monitorReadingType?.let { type ->
+                // The chronic-care hook, finally saying something. Naming the measurement that
+                // matters is only half of it: the question somebody opens this card with is "and
+                // when was that last taken?", and a card that knows the answer and doesn't give it
+                // is a card that sends them to another tab to find out.
+                MonitoredReading(type, latest, unit, weightUnit)
             }
             condition.note?.takeIf { it.isNotBlank() }?.let {
                 Text(it, style = MaterialTheme.typography.bodyMedium)
@@ -633,6 +678,35 @@ private fun ConditionCard(
             }
         }
     }
+}
+
+/**
+ * "Watched with: Weight · 17.4 kg, 3 days ago" — or, when there is nothing to say, that there isn't.
+ *
+ * Health has no table of which vital belongs to which diagnosis and will not invent one, so this
+ * says nothing about whether the number is *good*. It says what it is and when it was taken, which
+ * is what somebody managing a long-running condition is actually keeping track of.
+ */
+@Composable
+private fun MonitoredReading(
+    type: ReadingType,
+    latest: Reading?,
+    unit: TempUnit,
+    weightUnit: WeightUnit
+) {
+    Text(
+        buildString {
+            append("Watched with: ").append(type.label)
+            if (latest == null) {
+                append(" · none recorded yet")
+            } else {
+                append(" · ").append(formatReading(latest, unit, weightUnit))
+                append(", ").append(formatStamp(latest.takenAt))
+            }
+        },
+        style = MaterialTheme.typography.bodySmall,
+        color = if (latest == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+    )
 }
 
 @Composable

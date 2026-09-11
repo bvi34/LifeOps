@@ -43,122 +43,147 @@ fun InformationScreen(vm: InformationViewModel, onOpenPeople: () -> Unit) {
     val history by vm.openHistory.collectAsStateWithLifecycle()
     val medications by vm.medications.collectAsStateWithLifecycle()
     val unit by vm.unit.collectAsStateWithLifecycle()
+    val weightUnit by vm.weightUnit.collectAsStateWithLifecycle()
 
     var expandedId by remember { mutableStateOf<String?>(null) }
     var showHistoryFor by remember { mutableStateOf<String?>(null) }
     var backfilling by remember { mutableStateOf(false) }
     var editingDates by remember { mutableStateOf<Episode?>(null) }
     var editingDetails by remember { mutableStateOf<Profile?>(null) }
+    var deletingEpisode by remember { mutableStateOf<Episode?>(null) }
+
+    val snackbar = remember { SnackbarHostState() }
+    UndoHost(vm.undoOffers, snackbar, vm::undo)
 
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
         return
     }
 
-    Column(Modifier.fillMaxSize()) {
-        ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
-        HorizontalDivider()
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            ProfileBar(profiles, selected?.id, vm::select, onOpenPeople)
+            HorizontalDivider()
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            selected?.let { person ->
-                item(key = "about") {
-                    AboutPersonCard(person = person, onEdit = { editingDetails = person })
-                }
-                item(key = "normal") {
-                    NormalForThemCard(
-                        person = person,
-                        unit = unit,
-                        onEdit = { editingDetails = person }
-                    )
-                }
-                item(key = "display") {
-                    DisplayUnitCard(unit = unit, onSelect = vm::setUnit)
-                }
-                item(key = "illness-header") {
-                    Text("Illnesses", style = MaterialTheme.typography.titleSmall)
-                }
-            }
-
-            if (episodes.isEmpty()) {
-                item(key = "empty") {
-                    SectionCard(title = "No illnesses recorded") {
-                        Text(
-                            "Start one from the Today tab when someone comes down with something. " +
-                                "Everything recorded while it's open is kept together, so afterwards " +
-                                "you can answer \"how long was the fever\" without reconstructing it.",
-                            style = MaterialTheme.typography.bodySmall
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                selected?.let { person ->
+                    item(key = "about") {
+                        AboutPersonCard(person = person, onEdit = { editingDetails = person })
+                    }
+                    item(key = "normal") {
+                        NormalForThemCard(
+                            person = person,
+                            unit = unit,
+                            onEdit = { editingDetails = person }
                         )
-                        Text(
-                            "An illness that's already been and gone can go in too: start it, set " +
-                                "its dates to when it actually ran, and fill the history in from " +
-                                "memory. Late is better than never — and Health marks which entries " +
-                                "were added afterwards, so the record stays honest about itself.",
-                            style = MaterialTheme.typography.bodySmall
+                    }
+                    item(key = "display") {
+                        DisplayUnitCard(
+                            unit = unit,
+                            weightUnit = weightUnit,
+                            onSelect = vm::setUnit,
+                            onSelectWeight = vm::setWeightUnit
+                        )
+                    }
+                    item(key = "illness-header") {
+                        Text("Illnesses", style = MaterialTheme.typography.titleSmall)
+                    }
+                }
+
+                if (episodes.isEmpty()) {
+                    item(key = "empty") {
+                        SectionCard(title = "No illnesses recorded") {
+                            Text(
+                                "Start one from the Today tab when someone comes down with something. " +
+                                    "Everything recorded while it's open is kept together, so afterwards " +
+                                    "you can answer \"how long was the fever\" without reconstructing it.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                "An illness that's already been and gone can go in too: start it, set " +
+                                    "its dates to when it actually ran, and fill the history in from " +
+                                    "memory. Late is better than never — and Health marks which entries " +
+                                    "were added afterwards, so the record stays honest about itself.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                } else {
+                    items(episodes, key = { it.id }) { episode ->
+                        EpisodeCard(
+                            episode = episode,
+                            expanded = expandedId == episode.id,
+                            summary = summary.takeIf { expandedId == episode.id },
+                            historyCount = if (expandedId == episode.id) Timeline.entryCount(history) else 0,
+                            unit = unit,
+                            onToggle = {
+                                if (expandedId == episode.id) {
+                                    expandedId = null
+                                    vm.clearSummary()
+                                } else {
+                                    expandedId = episode.id
+                                    vm.loadSummary(episode.id)
+                                }
+                            },
+                            onHistory = {
+                                // Opening the history from a collapsed card has to load it first —
+                                // the sheet reads whatever the expanded episode last loaded.
+                                if (expandedId != episode.id) {
+                                    expandedId = episode.id
+                                    vm.loadSummary(episode.id)
+                                }
+                                showHistoryFor = episode.id
+                            },
+                            onEditDates = { editingDates = episode },
+                            onEnd = { vm.endEpisode(episode) },
+                            onReopen = { vm.reopenEpisode(episode) },
+                            onDelete = { deletingEpisode = episode }
                         )
                     }
                 }
-            } else {
-                items(episodes, key = { it.id }) { episode ->
-                    EpisodeCard(
-                        episode = episode,
-                        expanded = expandedId == episode.id,
-                        summary = summary.takeIf { expandedId == episode.id },
-                        historyCount = if (expandedId == episode.id) Timeline.entryCount(history) else 0,
-                        unit = unit,
-                        onToggle = {
-                            if (expandedId == episode.id) {
-                                expandedId = null
-                                vm.clearSummary()
-                            } else {
-                                expandedId = episode.id
-                                vm.loadSummary(episode.id)
-                            }
-                        },
-                        onHistory = {
-                            // Opening the history from a collapsed card has to load it first —
-                            // the sheet reads whatever the expanded episode last loaded.
-                            if (expandedId != episode.id) {
-                                expandedId = episode.id
-                                vm.loadSummary(episode.id)
-                            }
-                            showHistoryFor = episode.id
-                        },
-                        onEditDates = { editingDates = episode },
-                        onEnd = { vm.endEpisode(episode) },
-                        onReopen = { vm.reopenEpisode(episode) },
-                        onDelete = { vm.deleteEpisode(episode) }
-                    )
-                }
-            }
 
-            item(key = "care-header") {
-                Text("Care log", style = MaterialTheme.typography.titleSmall)
-            }
-            if (careNotes.isEmpty()) {
-                item(key = "no-care") {
-                    Text(
-                        "Fluids, rest, a call to the doctor and what they said — recorded from the " +
-                            "Today tab, or added to an illness's history afterwards. Each one is " +
-                            "kept with the illness that was going on when it happened.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                item(key = "care-header") {
+                    Text("Care log", style = MaterialTheme.typography.titleSmall)
                 }
-            } else {
-                items(careNotes, key = { it.id }) { note ->
-                    RecordRow(
-                        headline = note.text,
-                        support = "${note.kind.label} · ${formatStamp(note.at)}",
-                        onDelete = { vm.deleteCareNote(note) }
-                    )
+                if (careNotes.isEmpty()) {
+                    item(key = "no-care") {
+                        Text(
+                            "Fluids, rest, a call to the doctor and what they said — recorded from the " +
+                                "Today tab, or added to an illness's history afterwards. Each one is " +
+                                "kept with the illness that was going on when it happened.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                } else {
+                    items(careNotes, key = { it.id }) { note ->
+                        RecordRow(
+                            headline = note.text,
+                            support = "${note.kind.label} · ${formatStamp(note.at)}",
+                            onDelete = { vm.deleteCareNote(note) }
+                        )
+                    }
                 }
-            }
 
-            item(key = "disclaimer") { DisclaimerText() }
+                item(key = "disclaimer") { DisclaimerText() }
+            }
         }
+    }
+
+    deletingEpisode?.let { episode ->
+        // Not offered back: deleting an illness cuts every reading, dose, symptom and note loose from
+        // it rather than deleting them, and putting the row back would not put them back inside it.
+        ConfirmDeleteDialog(
+            title = "Delete ${episode.title}?",
+            body = "Everything recorded during it — the readings, the doses, the symptoms, the care " +
+                "notes — is kept, and simply stops belonging to an illness. Only the illness itself " +
+                "goes, and it can't be undone.",
+            onDismiss = { deletingEpisode = null },
+            onConfirm = { vm.deleteEpisode(episode) }
+        )
     }
 
     showHistoryFor?.let { episodeId ->

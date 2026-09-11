@@ -13,11 +13,15 @@ import com.health.app.data.model.Profile
 import com.health.app.data.repository.HealthRepository
 import com.health.app.logic.EpisodeSummary
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
+import com.health.app.ui.common.UndoOffer
+import com.health.app.ui.common.UndoOffers
 import com.health.app.logic.Temperature
 import com.health.app.logic.TimelineDay
 import com.health.app.ui.common.*
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,7 +34,7 @@ import kotlinx.coroutines.launch
  * The Information tab's state.
  *
  * One view model over the whole tab: the person as the directory has them, the two fields Health owns
- * about them, the display unit, and their illnesses with the care log. They share a view model
+ * about them, the display units, and their illnesses with the care log. They share a view model
  * because they share a subject — everything here is scoped to whoever the profile bar has selected,
  * and splitting them would mean two objects re-deriving the same person.
  */
@@ -46,6 +50,9 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
 
     val unit: StateFlow<TempUnit> =
         repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+
+    val weightUnit: StateFlow<WeightUnit> =
+        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
     val episodes: StateFlow<List<Episode>> = selected
         .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeEpisodes(profile.id) }
@@ -86,12 +93,12 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
     fun select(profile: Profile) = repo.selectProfile(profile.id)
 
     /**
-     * The display unit lives on this tab because this is where a person's *normal* is set.
+     * The display units live on this tab because this is where a person's *normal* is set.
      *
      * Choosing °C or °F and recording that somebody runs at 36.4 are the same act of saying how
-     * temperatures should read for this household, so they sit together rather than in a settings
-     * screen the app otherwise doesn't have. Readings are always stored in Celsius, so this never
-     * rewrites anything already recorded.
+     * numbers should read for this household, so they sit together rather than in a settings screen
+     * the app otherwise doesn't have. Readings are always stored in Celsius, so this never rewrites
+     * anything already recorded.
      *
      * An open history is re-read afterwards. Everything else on the tab renders its temperatures
      * from the live unit, but the history's rows are formatted once when it is loaded — so without
@@ -100,6 +107,12 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      */
     fun setUnit(unit: TempUnit) = viewModelScope.launch {
         repo.setTemperatureUnit(unit)
+        summaryEpisodeId?.let { _openHistory.value = repo.episodeHistory(it) }
+    }
+
+    /** kg or lb — the same bargain as [setUnit], for the same reason, over stored kilograms. */
+    fun setWeightUnit(unit: WeightUnit) = viewModelScope.launch {
+        repo.setWeightUnit(unit)
         summaryEpisodeId?.let { _openHistory.value = repo.episodeHistory(it) }
     }
 
@@ -186,12 +199,20 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
         if (summaryEpisodeId == episode.id) loadSummary(episode.id)
     }
 
+    /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
+    private val undoable = UndoOffers()
+    val undoOffers: SharedFlow<UndoOffer> = undoable.offers
+
     fun deleteEpisode(episode: Episode) = viewModelScope.launch {
         repo.deleteEpisode(episode.id)
         clearSummary()
     }
 
-    fun deleteCareNote(note: CareNote) = viewModelScope.launch { repo.deleteCareNote(note.id) }
+    fun deleteCareNote(note: CareNote) = viewModelScope.launch {
+        undoable.offer("${note.kind.label} note deleted", repo.deleteCareNote(note.id))
+    }
+
+    fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

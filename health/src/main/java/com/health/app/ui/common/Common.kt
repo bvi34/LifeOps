@@ -18,10 +18,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.Profile
+import com.health.app.data.model.Reading
+import com.health.app.data.model.ReadingType
 import com.health.app.logic.Allergies
 import com.health.app.logic.AllergyWarning
 import com.health.app.logic.CareLevel
 import com.health.app.logic.Fever
+import com.health.app.logic.TempUnit
+import com.health.app.logic.Temperature
+import com.health.app.logic.Weight
+import com.health.app.logic.WeightUnit
 import java.time.LocalDate
 import com.operations.suite.ui.pickers.SuiteDates
 
@@ -53,6 +59,29 @@ fun formatDayTime(millis: Long): String = SuiteDates.formatDayTime(millis)
 /** Today's entries read as a time; older ones need the date, because "14:20" alone lies about age. */
 fun formatStamp(millis: Long, nowMillis: Long = System.currentTimeMillis()): String =
     SuiteDates.formatStamp(millis, nowMillis)
+
+/**
+ * A measurement written out in the units the household reads in.
+ *
+ * One function because there is one right answer: a temperature is stored in Celsius and a weight in
+ * kilograms, and a screen that forgets to convert quotes a number nobody in the house recognises.
+ * Blood pressure is the one reading with two numbers, and reads the way it is said out loud.
+ */
+fun formatReading(reading: Reading, unit: TempUnit, weightUnit: WeightUnit): String =
+    if (reading.type == ReadingType.BLOOD_PRESSURE) {
+        "${trimAmount(reading.value)}/${reading.secondaryValue?.let { trimAmount(it) } ?: "?"} " +
+            reading.type.unit
+    } else {
+        formatValue(reading.type, reading.value, unit, weightUnit)
+    }
+
+/** One number of a given kind, in the household's units — the halves of a blood pressure included. */
+fun formatValue(type: ReadingType, value: Double, unit: TempUnit, weightUnit: WeightUnit): String =
+    when (type) {
+        ReadingType.TEMPERATURE -> Temperature.format(value, unit)
+        ReadingType.WEIGHT -> Weight.format(value, weightUnit)
+        else -> "${trimAmount(value)} ${type.unit}"
+    }
 
 /** The colour a care level is allowed to be. Red is reserved; nothing else in Health uses it. */
 @Composable

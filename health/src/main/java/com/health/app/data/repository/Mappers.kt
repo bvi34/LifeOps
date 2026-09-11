@@ -60,6 +60,8 @@ import com.health.app.logic.TempSite
 import com.health.app.logic.TimelineEntry
 import com.health.app.logic.TimelineKind
 import com.health.app.logic.TempUnit
+import com.health.app.logic.Weight
+import com.health.app.logic.WeightUnit
 import com.people.app.sync.PersonPacket
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -222,11 +224,16 @@ fun DoseEntity.toModel() = Dose(
  * give the same answer to the same number. Nothing else carries a care level — Health has no opinion
  * about a care note, and defaulting one to "routine" would be inventing one.
  *
- * A temperature is stored in Celsius and read in whatever the household chose, so [unit] has to be
- * passed in: this is the one mapper that writes a number the display unit governs, and hard-coding
- * Celsius here is how a history ends up quoting °C to somebody who set the app to °F everywhere else.
+ * A temperature is stored in Celsius and a weight in kilograms, and both are read in whatever the
+ * household chose, so [unit] and [weightUnit] have to be passed in: this is the one mapper that
+ * writes numbers the display units govern, and hard-coding the storage unit here is how a history
+ * ends up quoting °C — or kg — to somebody who set the app to °F and lb everywhere else.
  */
-fun ReadingEntity.toTimelineEntry(ageMonths: Int?, unit: TempUnit): TimelineEntry {
+fun ReadingEntity.toTimelineEntry(
+    ageMonths: Int?,
+    unit: TempUnit,
+    weightUnit: WeightUnit
+): TimelineEntry {
     val readingType = ReadingType.fromKey(type)
     val tempSite = site?.let { TempSite.fromKey(it) }
     val assessment = if (readingType == ReadingType.TEMPERATURE) {
@@ -241,6 +248,7 @@ fun ReadingEntity.toTimelineEntry(ageMonths: Int?, unit: TempUnit): TimelineEntr
         }
         ReadingType.BLOOD_PRESSURE ->
             "${trimAmount(value)}/${secondaryValue?.let { trimAmount(it) } ?: "?"} ${readingType.unit}"
+        ReadingType.WEIGHT -> Weight.format(value, weightUnit)
         else -> "${trimAmount(value)} ${readingType.unit}"
     }
     return TimelineEntry(

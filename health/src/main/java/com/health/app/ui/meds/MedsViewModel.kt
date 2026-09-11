@@ -15,11 +15,14 @@ import com.health.app.logic.AllergyWarning
 import com.health.app.logic.DrugCandidate
 import com.health.app.logic.DrugMonograph
 import com.health.app.logic.ReminderMode
+import com.health.app.ui.common.UndoOffer
+import com.health.app.ui.common.UndoOffers
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,6 +88,10 @@ class MedsViewModel(
     val search: StateFlow<DrugSearchState> = _search.asStateFlow()
 
     private var searchJob: Job? = null
+
+    /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
+    private val undoable = UndoOffers()
+    val undoOffers: SharedFlow<UndoOffer> = undoable.offers
 
     fun select(profile: Profile) = repo.selectProfile(profile.id)
 
@@ -312,9 +319,24 @@ class MedsViewModel(
     fun setReminder(medication: Medication, mode: ReminderMode, times: List<LocalTime>) =
         viewModelScope.launch { repo.setMedicationReminder(medication.id, mode, times) }
 
-    fun deleteMedication(medication: Medication) = viewModelScope.launch { repo.deleteMedication(medication.id) }
+    /**
+     * Stop tracking a medicine, and offer it back — the doses given from it are kept either way.
+     */
+    fun deleteMedication(medication: Medication) = viewModelScope.launch {
+        undoable.offer("${medication.name} removed", repo.deleteMedication(medication.id))
+    }
 
-    fun deleteDose(dose: Dose) = viewModelScope.launch { repo.deleteDose(dose.id) }
+    /**
+     * Delete a dose that was never given, and offer it back.
+     *
+     * Both directions move the stock: deleting returns it to the bottle, undoing draws it out again,
+     * so a household that changes its mind is not left counting tablets by hand.
+     */
+    fun deleteDose(dose: Dose) = viewModelScope.launch {
+        undoable.offer("Dose of ${dose.medicationName} deleted", repo.deleteDose(dose.id))
+    }
+
+    fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 
     /**
      * Let a cancellation stay a cancellation.

@@ -38,6 +38,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        // Robolectric needs the merged Android resources to stand a context up; the repository's
+        // own rules — what a restored delete leaves behind — are tested through an in-memory
+        // database on the JVM, so `gradle :health:testDebugUnitTest` still covers them with no device.
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 ksp {
@@ -86,4 +93,10 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
+    // The repository is JVM-testable by construction — every Android edge it has is a hook (see
+    // its constructor) — but the store underneath it is Room, and what a restored delete has to
+    // prove is what the *database* looks like afterwards. Robolectric stands a context up so an
+    // in-memory HealthDatabase can answer that, the same way :finance tests its own store.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

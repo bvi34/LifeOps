@@ -94,6 +94,7 @@ import com.health.app.logic.TimelineEntry
 import com.health.app.logic.TimelineFacts
 import com.health.app.logic.TimelineKind
 import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import com.people.app.sync.LocalRosterChange
 import com.people.app.sync.PersonBinder
 import com.people.app.sync.PersonPacket
@@ -177,6 +178,12 @@ class HealthRepository(
 
     fun setTemperatureUnit(unit: TempUnit) {
         prefs.temperatureUnit = unit
+    }
+
+    fun observeWeightUnit(): Flow<WeightUnit> = prefs.observeWeightUnit()
+
+    fun setWeightUnit(unit: WeightUnit) {
+        prefs.weightUnit = unit
     }
 
     /**
@@ -429,6 +436,24 @@ class HealthRepository(
     fun observeReadings(profileId: String): Flow<List<Reading>> =
         dao.observeReadings(profileId).map { rows -> rows.map { it.toModel() } }
 
+    /**
+     * The most recent reading of each kind, for the screens that ask *when was that last taken?*
+     *
+     * The Record tab's chronic conditions are the caller this exists for: a condition can name the
+     * one measurement that matters for it — oxygen for asthma, weight for a thyroid problem — and
+     * saying so is worth nothing unless the number itself is there next to it.
+     *
+     * Derived from the same flow the Vitals history reads rather than a query per kind: a household
+     * has hundreds of readings, not millions, and one observer that re-folds beats six that each
+     * re-run on every unrelated write.
+     */
+    fun observeLatestReadings(profileId: String): Flow<Map<ReadingType, Reading>> =
+        dao.observeReadings(profileId).map { rows ->
+            rows.map { it.toModel() }
+                .groupBy { it.type }
+                .mapValues { (_, ofType) -> ofType.maxBy { it.takenAt } }
+        }
+
     fun observeTemperatures(profileId: String): Flow<List<Reading>> =
         dao.observeReadingsOfType(profileId, ReadingType.TEMPERATURE.key).map { rows -> rows.map { it.toModel() } }
 
@@ -451,6 +476,15 @@ class HealthRepository(
         note = note
     )
 
+    /**
+     * Record any measurement. [value] is canonical for its [type] — a weight in kilograms — and is
+     * expected to have been checked against `logic/Vitals` by whatever typed it, the same contract
+     * [logTemperature] states: bounds belong at the point of entry, where the person who typed the
+     * number is still there to be told what was wrong with it.
+     *
+     * [takenAt] is when the measurement was *taken*. It decides which illness the row belongs to,
+     * so a reading filled in afterwards lands in the story it happened in rather than today's.
+     */
     suspend fun logReading(
         profileId: String,
         type: ReadingType,
@@ -492,7 +526,42 @@ class HealthRepository(
     private suspend fun episodeIdAt(profileId: String, atMillis: Long): String? =
         dao.getEpisodeAt(profileId, atMillis)?.id
 
-    suspend fun deleteReading(id: String) = dao.deleteReading(id)
+    /**
+     * Correct a reading already recorded.
+     *
+     * The row keeps its id, so nothing that pointed at it is disturbed. The illness it belongs to is
+     * **only** re-derived when the time moved: a reading adopted into an episode that started after
+     * it was taken (see [startEpisode]'s backfill window) is filed there deliberately, and
+     * recomputing that link while somebody fixes a typo in the note would quietly evict it.
+     */
+    suspend fun updateReading(reading: Reading) {
+        val existing = dao.getReading(reading.id) ?: return
+        val episodeId =
+            if (reading.takenAt == existing.takenAt) existing.episodeId
+            else episodeIdAt(existing.profileId, reading.takenAt)
+        dao.upsertReading(
+            existing.copy(
+                value = reading.value,
+                secondaryValue = reading.secondaryValue,
+                site = reading.site?.key,
+                takenAt = reading.takenAt,
+                note = reading.note?.trim()?.ifBlank { null },
+                episodeId = episodeId
+            )
+        )
+    }
+
+    /**
+     * Drop a reading, and hand back the way to put it exactly where it was.
+     *
+     * Nobody can reconstruct what the thermometer said on Tuesday, so this is one of the deletes
+     * that must be offerable back rather than merely confirmed — see [RestorableDelete].
+     */
+    suspend fun deleteReading(id: String): RestorableDelete? {
+        val row = dao.getReading(id) ?: return null
+        dao.deleteReading(id)
+        return RestorableDelete { dao.upsertReading(row) }
+    }
 
     // --- symptoms -----------------------------------------------------------------------------
 
@@ -663,9 +732,21 @@ class HealthRepository(
         onReminderChange(medicationId)
     }
 
-    suspend fun deleteMedication(id: String) {
+    /**
+     * Stop tracking a medicine for one person, keeping every dose already given from it.
+     *
+     * Restorable: the row goes back under its own id, so the doses that name it and the bottle it
+     * was linked to find it again. The reminder is torn down and rebuilt on both paths, because a
+     * medicine that comes back with no reminder is a medicine somebody stops being told to give.
+     */
+    suspend fun deleteMedication(id: String): RestorableDelete? {
+        val row = dao.getMedication(id) ?: return null
         dao.deleteMedication(id)
         onReminderChange(id)
+        return RestorableDelete {
+            dao.upsertMedication(row)
+            onReminderChange(id)
+        }
     }
 
     fun observeDoses(profileId: String): Flow<List<Dose>> =
@@ -756,12 +837,23 @@ class HealthRepository(
      * bottle that Health believes is emptier than it is, and no way to say otherwise except by
      * re-typing the quantity.
      */
-    suspend fun deleteDose(id: String) {
-        val dose = dao.getDose(id)
+    suspend fun deleteDose(id: String): RestorableDelete? {
+        val dose = dao.getDose(id) ?: return null
         dao.deleteDose(id)
-        val medicationId = dose?.medicationId ?: return
-        returnToCabinet(medicationId, dose.amount, dose.unit)
-        onReminderChange(medicationId)
+        val medicationId = dose.medicationId
+        if (medicationId != null) {
+            returnToCabinet(medicationId, dose.amount, dose.unit)
+            onReminderChange(medicationId)
+        }
+        // The inverse of the delete, not just of the row write: the stock this dose put back comes
+        // out of the bottle again, under the same same-unit rule it was drawn on in the first place.
+        return RestorableDelete {
+            dao.upsertDose(dose)
+            if (medicationId != null) {
+                drawFromCabinet(medicationId, dose.amount, dose.unit)
+                onReminderChange(medicationId)
+            }
+        }
     }
 
     /** The inverse of [drawFromCabinet], under exactly the same same-unit rule. */
@@ -1138,7 +1230,11 @@ class HealthRepository(
         return id
     }
 
-    suspend fun deleteCareNote(id: String) = dao.deleteCareNote(id)
+    suspend fun deleteCareNote(id: String): RestorableDelete? {
+        val row = dao.getCareNote(id) ?: return null
+        dao.deleteCareNote(id)
+        return RestorableDelete { dao.upsertCareNote(row) }
+    }
 
     // --- the history --------------------------------------------------------------------------
 
@@ -1151,18 +1247,19 @@ class HealthRepository(
      *
      * Read once on demand rather than observed, like the summary: it folds four tables, which is
      * worth doing when somebody opens the history and not worth redoing on every unrelated write.
-     * The display unit is read the same way, at the same moment, so the temperatures in the history
-     * are written in the scale the rest of the app is showing.
+     * The display units are read the same way, at the same moment, so the temperatures and weights
+     * in the history are written in the scales the rest of the app is showing.
      */
     suspend fun episodeHistory(episodeId: String): List<TimelineDay> {
         val episode = dao.getEpisode(episodeId) ?: return emptyList()
         val profile = dao.getProfile(episode.profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
         val unit = prefs.temperatureUnit
+        val weightUnit = prefs.weightUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths, unit) },
+                readings = dao.getReadingsForEpisode(episodeId).map { it.toTimelineEntry(ageMonths, unit, weightUnit) },
                 symptoms = dao.getSymptomsForEpisode(episodeId).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesForEpisode(episodeId).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesForEpisode(episodeId).map { it.toTimelineEntry() },
@@ -1185,10 +1282,11 @@ class HealthRepository(
         val profile = dao.getProfile(profileId)
         val ageMonths = profile?.birthDate?.let { Age.monthsAt(it, now()) }
         val unit = prefs.temperatureUnit
+        val weightUnit = prefs.weightUnit
 
         return Timeline.build(
             TimelineFacts(
-                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths, unit) },
+                readings = dao.getReadingsSince(profileId, sinceMillis).map { it.toTimelineEntry(ageMonths, unit, weightUnit) },
                 symptoms = dao.getSymptomsSince(profileId, sinceMillis).flatMap { it.toTimelineEntries() },
                 doses = dao.getDosesSince(profileId, sinceMillis).map { it.toTimelineEntry() },
                 careNotes = dao.getCareNotesSince(profileId, sinceMillis).map { it.toTimelineEntry() }
@@ -1320,7 +1418,11 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteAllergy(id: String) = dao.deleteAllergy(id)
+    suspend fun deleteAllergy(id: String): RestorableDelete? {
+        val row = dao.getAllergy(id) ?: return null
+        dao.deleteAllergy(id)
+        return RestorableDelete { dao.upsertAllergy(row) }
+    }
 
     suspend fun addCondition(
         profileId: String,
@@ -1368,7 +1470,12 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteCondition(id: String) = dao.deleteCondition(id)
+    suspend fun deleteCondition(id: String): RestorableDelete? {
+        val row = dao.getCondition(id) ?: return null
+        dao.deleteCondition(id)
+        // Documents filed against it keep pointing at this id, and find it again on the way back.
+        return RestorableDelete { dao.upsertCondition(row) }
+    }
 
     /**
      * Everything recorded for this person that matches a medicine, worst first.
@@ -1473,7 +1580,12 @@ class HealthRepository(
         )
     }
 
-    suspend fun deleteImmunization(id: String) = dao.deleteImmunization(id)
+    suspend fun deleteImmunization(id: String): RestorableDelete? {
+        val row = dao.getImmunization(id) ?: return null
+        dao.deleteImmunization(id)
+        // As for a condition: the certificate filed against this dose still names this id.
+        return RestorableDelete { dao.upsertImmunization(row) }
+    }
 
     // --- documents --------------------------------------------------------------------------------
     //

@@ -9,10 +9,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.health.app.data.model.CareKind
 import com.health.app.data.model.Medication
+import com.health.app.data.model.Reading
 import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
+import com.health.app.logic.Vitals
 import com.operations.suite.ui.pickers.SuiteWhenField
 import com.health.app.logic.HealthWhen
 import com.operations.suite.ui.fields.SuiteNumberField
@@ -34,6 +36,11 @@ import com.operations.suite.ui.fields.SuiteNumberField
  * Log a temperature. The reading is checked as it's typed by [Temperature.parseToCelsius], and the
  * verdict from [Fever.assess] is shown *before* you save — so an armpit 37.7 announces itself as a
  * fever at the moment that matters, rather than after it has been filed as unremarkable.
+ *
+ * Pass [editing] and the same dialog corrects a reading already recorded, filled in with what is
+ * there. Correcting is deliberately the *same* form as recording rather than a reduced one: a 384
+ * typed for 38.4 is wrong in exactly the way a new reading can be wrong, and a household that can
+ * only delete and re-enter it loses the site, the note and the time along with the typo.
  */
 @Composable
 fun LogTemperatureDialog(
@@ -41,12 +48,13 @@ fun LogTemperatureDialog(
     ageMonths: Int?,
     onDismiss: () -> Unit,
     initialAt: Long = System.currentTimeMillis(),
+    editing: Reading? = null,
     onConfirm: (celsius: Double, site: TempSite, note: String?, at: Long) -> Unit
 ) {
-    var text by remember { mutableStateOf("") }
-    var site by remember { mutableStateOf(TempSite.ORAL) }
-    var note by remember { mutableStateOf("") }
-    var at by remember { mutableLongStateOf(initialAt) }
+    var text by remember { mutableStateOf(editing?.let { Temperature.formatBare(it.value, unit) }.orEmpty()) }
+    var site by remember { mutableStateOf(editing?.site ?: TempSite.ORAL) }
+    var note by remember { mutableStateOf(editing?.note.orEmpty()) }
+    var at by remember { mutableLongStateOf(editing?.takenAt ?: initialAt) }
 
     val celsius = Temperature.parseToCelsius(text, unit)
     val assessment = celsius?.let { Fever.assess(it, site, ageMonths) }
@@ -54,7 +62,7 @@ fun LogTemperatureDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Temperature") },
+        title = { Text(if (editing == null) "Temperature" else "Correct this reading") },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
@@ -66,7 +74,7 @@ fun LogTemperatureDialog(
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
                     decimals = true,
-                    supporting = if (invalid) "That isn't a body temperature — check the number." else null,
+                    supporting = if (invalid) Vitals.TEMPERATURE.complaint else null,
                     isError = invalid
                 )
                 Text("Taken", style = MaterialTheme.typography.labelMedium)

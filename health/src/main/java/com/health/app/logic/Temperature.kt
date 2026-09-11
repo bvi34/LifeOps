@@ -40,9 +40,9 @@ enum class TempSite(val key: String, val label: String, val toOralOffsetC: Doubl
 
 object Temperature {
 
-    /** Physically plausible bounds for a body reading, in °C — anything outside is a typo. */
-    private const val MIN_C = 25.0
-    private const val MAX_C = 45.0
+    /** Physically plausible bounds for a body reading — shared with every other measurement's, in
+     * `logic/Vitals`, so there is one place that says what a believable reading is. */
+    private val PLAUSIBLE = Vitals.TEMPERATURE
 
     fun toCelsius(value: Double, unit: TempUnit): Double =
         if (unit == TempUnit.CELSIUS) value else (value - 32.0) * 5.0 / 9.0
@@ -68,7 +68,7 @@ object Temperature {
             .replace(',', '.')
         val raw = cleaned.toDoubleOrNull() ?: return null
         val celsius = toCelsius(raw, unit)
-        return celsius.takeIf { it in MIN_C..MAX_C }
+        return celsius.takeIf { it in PLAUSIBLE }
     }
 
     /** "38.4 °C" / "101.1 °F" — one decimal, which is all a home thermometer is honest to. */

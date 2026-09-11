@@ -62,6 +62,10 @@ fun MedsScreen(vm: MedsViewModel, onOpenPeople: () -> Unit) {
     var restocking by remember { mutableStateOf<CabinetItem?>(null) }
     var reminderFor by remember { mutableStateOf<Medication?>(null) }
     var reading by remember { mutableStateOf<CabinetEntry?>(null) }
+    var binning by remember { mutableStateOf<CabinetItem?>(null) }
+
+    val snackbar = remember { SnackbarHostState() }
+    UndoHost(vm.undoOffers, snackbar, vm::undo)
 
     if (profiles.isEmpty()) {
         NoProfiles(onOpenPeople)
@@ -69,6 +73,7 @@ fun MedsScreen(vm: MedsViewModel, onOpenPeople: () -> Unit) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = { showAdd = true },
@@ -101,7 +106,7 @@ fun MedsScreen(vm: MedsViewModel, onOpenPeople: () -> Unit) {
                     onRestock = { restocking = it },
                     onEdit = { editing = it },
                     onRead = { reading = it },
-                    onDelete = { vm.deleteCabinetItem(it.id) },
+                    onDelete = { binning = it },
                     onAdd = { showAdd = true }
                 )
                 else -> PersonMedicines(
@@ -117,6 +122,21 @@ fun MedsScreen(vm: MedsViewModel, onOpenPeople: () -> Unit) {
                 )
             }
         }
+    }
+
+    binning?.let { item ->
+        // Not offered back, unlike a medicine or a dose: binning a bottle also unlinks every medicine
+        // that drew stock from it and prunes the product facts nothing points at any more, and an
+        // undo that restored the row alone would put back a bottle nobody is taking from.
+        ConfirmDeleteDialog(
+            title = "Throw away ${item.displayName}?",
+            body = "The bottle goes, and any medicine given from it stops tracking stock — the " +
+                "medicines themselves, and every dose already recorded, stay. This one can't be " +
+                "undone.",
+            confirmLabel = "Throw away",
+            onDismiss = { binning = null },
+            onConfirm = { vm.deleteCabinetItem(item.id) }
+        )
     }
 
     if (showAdd) {
