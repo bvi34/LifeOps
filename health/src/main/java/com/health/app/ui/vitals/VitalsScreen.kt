@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -17,6 +19,7 @@ import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
 import com.health.app.logic.DoseSchedule
 import com.health.app.logic.Fever
+import com.health.app.logic.HealthWhen
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
@@ -24,6 +27,7 @@ import com.health.app.logic.Weight
 import com.health.app.logic.WeightUnit
 import com.health.app.ui.common.*
 import com.operations.suite.ui.fields.SuiteNumberField
+import com.operations.suite.ui.pickers.SuiteWhenField
 
 /**
  * The measurement history for one person: the temperature curve first, because it is the one people
@@ -140,8 +144,8 @@ fun VitalsScreen(vm: VitalsViewModel, onOpenPeople: () -> Unit) {
         LogOtherReadingDialog(
             weightUnit = weightUnit,
             onDismiss = { showOther = false },
-            onConfirm = { type, value, secondary, note ->
-                vm.logOther(type, value, secondary, note)
+            onConfirm = { type, value, secondary, note, at ->
+                vm.logOther(type, value, secondary, note, at)
                 showOther = false
             }
         )
@@ -254,35 +258,52 @@ private fun TemperatureChart(readings: List<Reading>, unit: TempUnit, modifier: 
  * in — the same bargain the baseline temperature makes, and for the same reason: somebody who
  * weighs themselves in pounds does not know the number in kilograms, and asking them to convert it
  * is asking them to get it wrong.
+ *
+ * Every number is checked as it is typed, against the bounds its kind of measurement carries (see
+ * `logic/Vitals`). This is the only place these four are ever entered, so it is the only place that
+ * can catch "920" typed for an oxygen saturation — after here the number is a fact about somebody's
+ * body, charted, read back to a doctor and handed to Advisor.
+ *
+ * And it asks **when**, like every other record dialog in the app. It is the one that didn't, and
+ * the omission was not only a missing convenience: the repository files a reading against the
+ * illness that was open *at the instant it was taken*, so a weight typed up on Sunday for Friday
+ * used to land in the wrong story — or in none.
  */
 @Composable
 private fun LogOtherReadingDialog(
     weightUnit: WeightUnit,
     onDismiss: () -> Unit,
-    onConfirm: (ReadingType, Double, Double?, String?) -> Unit
+    onConfirm: (ReadingType, Double, Double?, String?, Long) -> Unit
 ) {
     var type by remember { mutableStateOf(ReadingType.HEART_RATE) }
     var primary by remember { mutableStateOf("") }
     var secondary by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
+    var at by remember { mutableLongStateOf(System.currentTimeMillis()) }
 
     val options = ReadingType.entries.filter { it != ReadingType.TEMPERATURE }
     val isWeight = type == ReadingType.WEIGHT
-    // Always the canonical unit by the time it leaves here: kilograms for a weight, as typed otherwise.
-    val value = if (isWeight) {
-        Weight.parseToKilograms(primary, weightUnit)
-    } else {
-        primary.replace(',', '.').toDoubleOrNull()
-    }
-    val weightInvalid = isWeight && primary.isNotBlank() && value == null
-    val diastolic = secondary.replace(',', '.').toDoubleOrNull()
     val needsSecond = type == ReadingType.BLOOD_PRESSURE
+
+    // Always the canonical unit by the time it leaves here, and always a believable number: a weight
+    // converts from the household's unit on the way through, everything else is bounded where it is.
+    val value = if (isWeight) Weight.parseToKilograms(primary, weightUnit) else type.range.parse(primary)
+    val diastolic = type.secondaryRange?.parse(secondary)
+
+    // A weight's own parser does the converting, but the complaint is the same one its range carries.
+    val primaryComplaint = type.range.complaint.takeIf { primary.isNotBlank() && value == null }
+    val secondaryComplaint = type.secondaryRange
+        ?.takeIf { secondary.isNotBlank() && diastolic == null }
+        ?.complaint
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Measurement") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 ChoiceRow(options, type, { type = it }, { it.label })
                 SuiteNumberField(
                     label = when {
@@ -294,8 +315,8 @@ private fun LogOtherReadingDialog(
                     onValueChange = { primary = it },
                     modifier = Modifier.fillMaxWidth(),
                     decimals = true,
-                    supporting = if (weightInvalid) "That isn't a weight Health can read" else null,
-                    isError = weightInvalid
+                    supporting = primaryComplaint,
+                    isError = primaryComplaint != null
                 )
                 if (needsSecond) {
                     SuiteNumberField(
@@ -303,7 +324,9 @@ private fun LogOtherReadingDialog(
                         value = secondary,
                         onValueChange = { secondary = it },
                         modifier = Modifier.fillMaxWidth(),
-                        decimals = true
+                        decimals = true,
+                        supporting = secondaryComplaint,
+                        isError = secondaryComplaint != null
                     )
                 }
                 OutlinedTextField(
@@ -312,12 +335,18 @@ private fun LogOtherReadingDialog(
                     label = { Text("Note (optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                SuiteWhenField(
+                    value = at,
+                    onValueChange = { at = it },
+                    label = "Taken",
+                    check = { HealthWhen.check(it) }
+                )
             }
         },
         confirmButton = {
             TextButton(
                 enabled = value != null && (!needsSecond || diastolic != null),
-                onClick = { value?.let { onConfirm(type, it, diastolic, note.ifBlank { null }) } }
+                onClick = { value?.let { onConfirm(type, it, diastolic, note.ifBlank { null }, at) } }
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

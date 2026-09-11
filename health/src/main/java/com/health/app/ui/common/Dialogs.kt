@@ -13,6 +13,7 @@ import com.health.app.logic.Fever
 import com.health.app.logic.TempSite
 import com.health.app.logic.TempUnit
 import com.health.app.logic.Temperature
+import com.health.app.logic.Vitals
 import com.operations.suite.ui.pickers.SuiteWhenField
 import com.health.app.logic.HealthWhen
 import com.operations.suite.ui.fields.SuiteNumberField
@@ -66,7 +67,7 @@ fun LogTemperatureDialog(
                     onValueChange = { text = it },
                     modifier = Modifier.fillMaxWidth(),
                     decimals = true,
-                    supporting = if (invalid) "That isn't a body temperature — check the number." else null,
+                    supporting = if (invalid) Vitals.TEMPERATURE.complaint else null,
                     isError = invalid
                 )
                 Text("Taken", style = MaterialTheme.typography.labelMedium)

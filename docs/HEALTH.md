@@ -100,6 +100,28 @@ the same answer to the same question.
 - **Care levels are ordered** (`ROUTINE` → `MONITOR` → `CALL_DOCTOR` → `SEEK_CARE_NOW`) so the worst
   call across a screen's worth of facts is a `maxOf`, not a re-derivation.
 
+### Is that a number a body produces?
+
+`logic/Vitals` carries one `VitalRange` per measurement — the bounds a believable value falls in, in
+the canonical unit, and the sentence to say when a typed value doesn't. Temperature and weight had
+their own bounds inside their own parsers from the start; heart rate, blood pressure, oxygen and
+breathing rate had none at all, which meant "920" typed into the oxygen field saved cleanly, charted,
+and was handed to Advisor as a fact about somebody's body. All seven now come from the same place,
+and the two parsers that convert units read their bounds from it rather than keeping their own.
+
+**They catch typing, not patients.** Every range is far wider than anything a clinician would call
+normal, because the job is to reject numbers no living person produces — never to argue with a
+reading somebody actually took. A resting pulse of 38 in a cyclist and one of 190 in a feverish
+toddler are both real and both go in. `Fever` is where Health says what a number *means*; this is
+only where it says the number is a number.
+
+Blood pressure is bounded as **two** ranges rather than one, because the commonest mistake with it is
+the two numbers the wrong way round, and a single range admitting both could not notice.
+
+The check happens where the number is typed, not where it is stored — the same contract
+`logTemperature` always stated. Bounds belong at the point of entry, while the person who typed it is
+still there to be told what was wrong with it.
+
 ### Can the next dose be given yet?
 
 `DoseSchedule.evaluate(rule, history, now)` answers with `READY`, `WAIT` or `LIMIT_REACHED`, plus when
@@ -643,6 +665,13 @@ A history you can only write at the moment things happen is a history that mostl
 written. So every record dialog now asks **when**, and every one of them defaults to "now" at no cost
 in taps. Nothing about recording a temperature as it is taken got slower.
 
+*Every one* now includes the measurement dialog on the Vitals tab — a weight, a blood pressure, an
+oxygen saturation or a breathing rate. It was the one that never asked, and the omission cost more
+than a convenience: readings are filed against the illness that was open **at the instant they were
+taken**, so one typed up on Sunday for Friday was landing in today's story, or in none. The number
+was right and the illness it belonged to was wrong, which is the failure nobody notices, because
+nothing about the row looks incorrect.
+
 What that buys is the case this exists for: the 2am dose typed up over breakfast, the doctor's call
 on day three, an entire illness that was never recorded at all. Set an episode's dates to when it
 actually ran and fill the rest in from memory.
@@ -685,6 +714,8 @@ seriously enough to ignore them for exactly that reason.
 ├── logic/            pure JVM, unit-tested — no Android imports
 │   ├── Temperature      °C/°F conversion, tolerant parsing, plausibility bounds, formatting
 │   ├── Weight           kg/lb conversion, tolerant parsing, plausibility bounds, formatting
+│   ├── Vitals           what a believable measurement is, per kind — one place, shared by both
+│   │                    unit-converting parsers and by every field that types a number
 │   ├── Fever            sites, bands, age-aware red flags, the standing disclaimer
 │   ├── DoseSchedule     interval + rolling-24h dose windows and countdown formatting
 │   ├── DoseReminder     when a reminder next fires, in both modes, against an injected clock
@@ -946,10 +977,10 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 233 tests.
-All but one are framework-free; `RestorableDeleteTest` stands a context up with Robolectric because
-what it has to prove is what the *database* looks like after an undo, which is not a claim reasoning
-about the code can settle:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 243 tests.
+All but two are framework-free; `RestorableDeleteTest` and `BackfilledReadingTest` stand a context up
+with Robolectric because what they have to prove is what the *database* looks like afterwards, which
+is not a claim reasoning about the code can settle:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -958,6 +989,11 @@ about the code can settle:
   coming back to the same kilograms, tolerant parsing (`" 70,5 kg "`, `"100 lbs"`), rejection of
   weights no person has (`705` kg, `0`), a newborn still being believable, and one-decimal formatting
   with a change carrying its sign.
+- `VitalsTest` — the three typos these bounds exist for (an oxygen saturation with a zero too many, a
+  pulse that lost its decimal point, a systolic typed into the diastolic box), readings that are
+  unusual but real going in anyway, each range's ends counting as inside it, blood pressure bounded
+  as two numbers rather than one, and the two unit-converting parsers taking their bounds from here
+  rather than keeping their own.
 - `FeverTest` — the bands, the site adjustment changing the verdict on the same number, the newborn
   flag judged on the reading as taken rather than only on the adjustment, the under-six-months
   escalation, 40 °C being urgent at any age, hypothermia never being routine, and an unknown age
@@ -995,6 +1031,9 @@ about the code can settle:
   undone dose taking its stock back out of the bottle it was returned to, an undone condition being
   found again by the document still filed against it, and a second delete of the same row offering
   nothing back rather than an undo that would restore nothing.
+- `BackfilledReadingTest` — a weight taken during a past illness filed against *that* illness rather
+  than whichever one happens to be open now, and a reading from a week nobody called an illness
+  belonging to none rather than being adopted by the nearest.
 - `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
   itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
   nobody filled in never reaching the card, the subscriber named only when it is somebody else, the

@@ -59,9 +59,21 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
         selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
-    /** [value] is already in the type's canonical unit — a weight arrives in kilograms. */
-    fun logOther(type: ReadingType, value: Double, secondary: Double?, note: String?) = viewModelScope.launch {
-        selected.value?.let { repo.logReading(it.id, type, value, secondary, note = note) }
+    /**
+     * [value] is already in the type's canonical unit — a weight arrives in kilograms — and already
+     * checked against what its kind of measurement can plausibly be, in the dialog that typed it.
+     *
+     * [at] is when it was *taken*, not when it was typed, and the difference is load-bearing: the
+     * repository files a reading against the illness that was going on at that instant.
+     */
+    fun logOther(
+        type: ReadingType,
+        value: Double,
+        secondary: Double?,
+        note: String?,
+        at: Long
+    ) = viewModelScope.launch {
+        selected.value?.let { repo.logReading(it.id, type, value, secondary, takenAt = at, note = note) }
     }
 
     /**

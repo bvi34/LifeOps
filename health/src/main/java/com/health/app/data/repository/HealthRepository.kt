@@ -458,6 +458,15 @@ class HealthRepository(
         note = note
     )
 
+    /**
+     * Record any measurement. [value] is canonical for its [type] — a weight in kilograms — and is
+     * expected to have been checked against `logic/Vitals` by whatever typed it, the same contract
+     * [logTemperature] states: bounds belong at the point of entry, where the person who typed the
+     * number is still there to be told what was wrong with it.
+     *
+     * [takenAt] is when the measurement was *taken*. It decides which illness the row belongs to,
+     * so a reading filled in afterwards lands in the story it happened in rather than today's.
+     */
     suspend fun logReading(
         profileId: String,
         type: ReadingType,

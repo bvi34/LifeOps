@@ -25,9 +25,8 @@ object Weight {
     /** The international avoirdupois pound, so a converted number matches the scale in the bathroom. */
     private const val POUNDS_PER_KILOGRAM = 2.2046226218487757
 
-    /** Plausible bounds for a human weight, in kg — anything outside is a typo, not a person. */
-    private const val MIN_KG = 0.2
-    private const val MAX_KG = 500.0
+    /** Plausible bounds for a human weight — kept with every other measurement's in `logic/Vitals`. */
+    private val PLAUSIBLE = Vitals.WEIGHT
 
     fun toKilograms(value: Double, unit: WeightUnit): Double =
         if (unit == WeightUnit.KILOGRAMS) value else value / POUNDS_PER_KILOGRAM
@@ -60,7 +59,7 @@ object Weight {
             .replace(',', '.')
         val raw = cleaned.toDoubleOrNull() ?: return null
         val kilograms = toKilograms(raw, unit)
-        return kilograms.takeIf { it in MIN_KG..MAX_KG }
+        return kilograms.takeIf { it in PLAUSIBLE }
     }
 
     /** "70.5 kg" / "155.4 lb" — one decimal, which is all a bathroom scale is honest to. */
