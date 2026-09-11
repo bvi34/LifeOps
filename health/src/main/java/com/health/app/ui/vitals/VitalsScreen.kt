@@ -159,13 +159,7 @@ private fun ReadingRow(
     weightUnit: WeightUnit,
     onDelete: () -> Unit
 ) {
-    val value = when (reading.type) {
-        ReadingType.TEMPERATURE -> Temperature.format(reading.value, unit)
-        ReadingType.BLOOD_PRESSURE ->
-            "${trimAmount(reading.value)}/${reading.secondaryValue?.let { trimAmount(it) } ?: "?"} mmHg"
-        ReadingType.WEIGHT -> Weight.format(reading.value, weightUnit)
-        else -> "${trimAmount(reading.value)} ${reading.type.unit}"
-    }
+    val value = formatReading(reading, unit, weightUnit)
     val assessment = if (reading.type == ReadingType.TEMPERATURE) {
         Fever.assess(reading.value, reading.site ?: TempSite.ORAL)
     } else {

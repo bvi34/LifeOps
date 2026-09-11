@@ -436,6 +436,24 @@ class HealthRepository(
     fun observeReadings(profileId: String): Flow<List<Reading>> =
         dao.observeReadings(profileId).map { rows -> rows.map { it.toModel() } }
 
+    /**
+     * The most recent reading of each kind, for the screens that ask *when was that last taken?*
+     *
+     * The Record tab's chronic conditions are the caller this exists for: a condition can name the
+     * one measurement that matters for it — oxygen for asthma, weight for a thyroid problem — and
+     * saying so is worth nothing unless the number itself is there next to it.
+     *
+     * Derived from the same flow the Vitals history reads rather than a query per kind: a household
+     * has hundreds of readings, not millions, and one observer that re-folds beats six that each
+     * re-run on every unrelated write.
+     */
+    fun observeLatestReadings(profileId: String): Flow<Map<ReadingType, Reading>> =
+        dao.observeReadings(profileId).map { rows ->
+            rows.map { it.toModel() }
+                .groupBy { it.type }
+                .mapValues { (_, ofType) -> ofType.maxBy { it.takenAt } }
+        }
+
     fun observeTemperatures(profileId: String): Flow<List<Reading>> =
         dao.observeReadingsOfType(profileId, ReadingType.TEMPERATURE.key).map { rows -> rows.map { it.toModel() } }
 

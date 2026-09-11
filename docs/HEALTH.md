@@ -525,6 +525,13 @@ a question a doctor asks, and deleting it to tidy the list is how a record stops
 oxygen for asthma, blood pressure for hypertension. Nullable, and null for most, because Health has no
 table of which vital belongs to which diagnosis and will not invent one.
 
+When somebody sets it, **the card shows that measurement** — the latest one, in the household's
+units, and when it was taken: "Watched with: Weight · 17.4 kg, 3 days ago". Naming the number that
+matters and then not showing it tells a household nothing it didn't already know, and sends it to
+another tab to find out. When nothing of that kind has been recorded yet the card says so, rather
+than going quiet. What it never says is whether the number is *good*: there is no table of what
+normal looks like per diagnosis here either.
+
 ### Onset dates are recorded at the precision they're known
 
 Nobody remembers the day their child's eczema started; plenty remember the year. So `logic/PartialDate`
@@ -977,10 +984,10 @@ the place for one. The Care tab's records stay in the Care tab.
 
 ## Tests
 
-Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 243 tests.
-All but two are framework-free; `RestorableDeleteTest` and `BackfilledReadingTest` stand a context up
-with Robolectric because what they have to prove is what the *database* looks like afterwards, which
-is not a claim reasoning about the code can settle:
+Pure-JVM suites under `health/src/test` (run with `gradle :health:testDebugUnitTest`) — 245 tests.
+All but three are framework-free; `RestorableDeleteTest`, `BackfilledReadingTest` and
+`LatestReadingsTest` stand a context up with Robolectric because what they have to prove is what the
+*database* looks like afterwards, which is not a claim reasoning about the code can settle:
 
 - `TemperatureTest` — conversion both ways, a *difference* converted as a difference (0.5 °C is
   0.9 °F, not 32.9), tolerant parsing (`" 38,4 °C "`), rejection of impossible values (`986`), and
@@ -1034,6 +1041,9 @@ is not a claim reasoning about the code can settle:
 - `BackfilledReadingTest` — a weight taken during a past illness filed against *that* illness rather
   than whichever one happens to be open now, and a reading from a week nobody called an illness
   belonging to none rather than being adopted by the nearest.
+- `LatestReadingsTest` — the most recent reading of each kind rather than the first one recorded,
+  nothing invented for a kind nobody has measured, and one person's readings never answering for
+  another's.
 - `InsuranceTest` — a card with no dates saying so rather than assuming it is current, the end date
   itself still counting as covered, a renewal typed in back-to-front still reporting as ended, fields
   nobody filled in never reaching the card, the subscriber named only when it is somebody else, the

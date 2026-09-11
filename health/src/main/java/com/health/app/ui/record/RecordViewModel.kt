@@ -14,6 +14,7 @@ import com.health.app.data.model.Document
 import com.health.app.data.model.Immunization
 import com.health.app.data.model.Profile
 import com.health.app.data.model.Provider
+import com.health.app.data.model.Reading
 import com.health.app.data.model.ReadingType
 import com.health.app.data.model.StandingRecord
 import com.health.app.data.repository.HealthRepository
@@ -22,6 +23,8 @@ import com.health.app.logic.AllergyKind
 import com.health.app.logic.AllergySeverity
 import com.health.app.logic.ConditionStatus
 import com.health.app.logic.DocumentKind
+import com.health.app.logic.TempUnit
+import com.health.app.logic.WeightUnit
 import com.health.app.logic.Documents
 import com.health.app.logic.VaccineSeries
 import com.health.app.logic.VaccineSource
@@ -155,6 +158,26 @@ class RecordViewModel(
         }
         .map { list -> list.associateBy { it.id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /**
+     * The latest of each measurement, so a condition that names one can show it.
+     *
+     * Kept on this tab rather than read by the card, because "watched with: weight" and "17.4 kg,
+     * three days ago" are the same sentence — a condition that says what matters and then can't say
+     * what it is has told the household nothing it didn't already know.
+     */
+    val latestReadings: StateFlow<Map<ReadingType, Reading>> = selected
+        .flatMapLatest { profile ->
+            if (profile == null) flowOf(emptyMap()) else repo.observeLatestReadings(profile.id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** The units those readings are written in — see `logic/Temperature` and `logic/Weight`. */
+    val unit: StateFlow<TempUnit> =
+        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+
+    val weightUnit: StateFlow<WeightUnit> =
+        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
     val documents: StateFlow<List<Document>> = selected
         .flatMapLatest { profile ->
