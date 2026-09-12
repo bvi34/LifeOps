@@ -12,6 +12,8 @@ import com.secrets.app.SecretsApp
 import com.project.app.ProjectApp
 import com.finance.app.FinanceApp
 import com.logistics.app.LogisticsApp
+import com.operations.sandbox.cloud.CloudBackupPrefs
+import com.operations.sandbox.cloud.ScheduledCloudBackupWorker
 import com.operations.sandbox.update.UpdatePrefs
 import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretSource
@@ -37,10 +39,14 @@ import com.operations.vaultkit.SecretSources
  * and both peers reconcile through a folder rather than through each other, so the order they come
  * up in cannot change what either ends up holding.
  *
- * The shell registers one thing on its own behalf, after Secrets: it holds a credential too (the
- * updater's GitHub token) and is therefore a [SecretSource] like Finance and Citation, so a vault
- * rebuilt after a forgotten passphrase gets the token filed back rather than leaving the suite
- * unable to update itself.
+ * The shell registers on its own behalf too, after Secrets: it holds credentials (the updater's
+ * GitHub token, and the signature the scheduled cloud backup uploads with) and is therefore a
+ * [SecretSource] like Finance and Citation, so a vault rebuilt after a forgotten passphrase gets
+ * them filed back rather than leaving the suite unable to update or to back itself up.
+ *
+ * It also owns one piece of background work now — the scheduled archive to the household's own
+ * storage account — which is registered here rather than from a screen, because a backup that only
+ * exists while somebody has the settings open is not a backup.
  */
 class SandboxApplication : Application() {
     override fun onCreate() {
@@ -63,6 +69,11 @@ class SandboxApplication : Application() {
         // on every process start, always.
         SecretsApp.install(this)
         registerShellAsSecretSource()
+        // Re-register the scheduled cloud backup. WorkManager's own store survives a restart, but
+        // not a reinstall or a "clear data", and this is also where a frequency or Wi-Fi-only
+        // setting restored from a vault-backed reinstall first takes effect. It cancels the job
+        // when the feature is off, so calling it unconditionally is the whole of the contract.
+        ScheduledCloudBackupWorker.sync(this)
     }
 
     /**
@@ -74,14 +85,20 @@ class SandboxApplication : Application() {
      * registers here on the same terms every app does: it can refill what it still holds, and it
      * cannot read anything it did not file.
      *
-     * [UpdatePrefs] is constructed on demand rather than held: it is two `SharedPreferences` opens,
-     * and a reset is the one moment it is worth paying for them.
+     * The shell holds two of them now — the updater's GitHub token and the signature the scheduled
+     * backup uploads with — and both are refiled, because a rebuilt vault that restores one and not
+     * the other leaves the household with exactly the silent failure this seam exists to prevent.
+     *
+     * [UpdatePrefs] and [CloudBackupPrefs] are constructed on demand rather than held: they are a
+     * couple of `SharedPreferences` opens, and a reset is the one moment it is worth paying for them.
      */
     private fun registerShellAsSecretSource() {
         SecretSources.register(object : SecretSource {
             override val owner = SecretOwner.SHELL
 
-            override suspend fun refile(): Int = UpdatePrefs(this@SandboxApplication).refileIntoVault()
+            override suspend fun refile(): Int =
+                UpdatePrefs(this@SandboxApplication).refileIntoVault() +
+                    CloudBackupPrefs(this@SandboxApplication).refileIntoVault()
         })
     }
 }

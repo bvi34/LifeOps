@@ -149,9 +149,15 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
-    // Keystore-backed storage for the updater's GitHub token — a credential, so not left in a
-    // plain app-private file. Already used elsewhere in the suite for the same reason.
+    // Keystore-backed storage for the updater's GitHub token and the scheduled backup's Azure
+    // signature — credentials, so not left in a plain app-private file. Already used elsewhere in
+    // the suite for the same reason.
     implementation(libs.androidx.security.crypto)
+    // The scheduled cloud backup. The container has had no background work of its own until now —
+    // the updater is deliberately launch-time only — but an archive that has to happen whether or
+    // not anybody opens the app is exactly what WorkManager is for, and LifeOps and Citation
+    // already bring it into this process for their own jobs.
+    implementation(libs.androidx.work.runtime.ktx)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

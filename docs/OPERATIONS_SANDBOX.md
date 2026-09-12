@@ -178,7 +178,8 @@ no per-entity allow-list to fall out of date.
   somebody's head — 310,000 rounds of PBKDF2 away from a key that wraps the one the vault is
   encrypted with. Copy it out of the zip and you have what a thief holding the phone would have. That
   is what makes the credentials the rest of the suite mirrors into it (Finance's tokens, Citation's
-  sign-ins, **and this container's own GitHub update token**) survive onto a new phone at last. The
+  sign-ins, **and the container's own GitHub update token and Azure backup signature**) survive onto a
+new phone at last. The
   shell's token is worth calling out because it is the case that proves the pattern is not an
   app-by-app courtesy: the sandbox kept it exactly as Finance kept its bank tokens, lost it on
   exactly the same restore, and afterwards could not tell anybody a new version existed. It files at
@@ -201,6 +202,93 @@ each contributor scopes strictly to its own files by name.
 **Restore requires a restart.** Swapping database files closes the live Room handle for the lifetime
 of the process, so after a restore the sandbox tells you to **fully close Operations Sandbox and
 reopen it** — reopening just the hosted screen would reuse the now-closed database.
+
+---
+
+## Scheduled backups to Azure (`:backupkit/cloud` + `:app/cloud`)
+
+The Full Backup above is deliberate and manual: somebody picks a moment, picks a file, and knows
+where the zip went. That is the right shape for a backup somebody *takes* and the wrong shape for
+the one that *saves* them — the archive that matters is the one from the ordinary Tuesday nobody
+thought about, and it has to be somewhere other than the phone that is about to be dropped in a
+river. So the sandbox can also write the same archive, on a schedule, into a container in the
+household's own Azure storage account.
+
+Same archive, same engine, same contributors. Nothing about the format changes; this is a
+destination and a clock.
+
+### Why a SAS, and no Azure SDK
+
+Authentication is a **shared access signature** — a query string the household generates on their own
+container — and never an account key. An account key *is* the account: every container, read and
+write and delete, with no expiry. A SAS is the same credential narrowed on all four axes that
+matter: one container, create/write only, an expiry date, and revocable from the portal without
+touching anything else.
+
+It is also *just a query string*, which is what lets the Android side be one class of
+`HttpURLConnection` (`AzureBlobStore`: `PUT` an archive, `GET` a listing, `DELETE` what rolled off).
+The Azure Storage SDK would add several megabytes and a dependency tree to a sideloaded APK to save
+about forty lines and a request signature nobody needs.
+
+The cost of a SAS is that it expires — which is the point, and is why `AzureSas` reads `se` and `sp`
+straight out of the token. The settings screen can say *"Signature allows upload, list, delete —
+expires in 11 days"* on the day it is pasted, rather than the household finding out on the day it
+stopped.
+
+### What lives where
+
+Everything that **decides** anything is pure JVM, in `:backupkit/cloud`, tested without an emulator:
+
+| | |
+|---|---|
+| `AzureBlobTarget` | account + container + prefix + SAS → the blob and listing URLs; Azure's own naming rules, checked here rather than by a 400 at 2am. `TargetCheck` is either a usable target or the first thing wrong with it, so a screen cannot show a green tick over an address nothing will reach. |
+| `AzureSas` | expiry and permissions, read off the token. An unparseable expiry is "unknown", never "expired" — a date format must not be what switches a household's backups off. |
+| `CloudBackupSchedule` | whether a run is owed: never-run, a clock moved backwards, and a wake-up a few minutes early all have the answer the household would want, and a test each. |
+| `CloudBackupNaming` | `operations-backup-20260912-020005Z.zip`, stamped in **UTC** so lexicographic order is chronological order — a phone that changes timezone must not be able to reorder the archives that retention deletes by. |
+| `CloudBackupRetention` | which archives have rolled off the keep-count. |
+| `AzureBlobListing` / `AzureBlobStatus` | reading a `List Blobs` answer and an error document; whether a status is worth retrying. |
+
+The Android half (`:app`'s `com.operations.sandbox.cloud`) is glue: `CloudBackupPrefs` (settings, and
+the signature), `AzureBlobStore` (three requests), `CloudBackupRunner` (write → upload → prune →
+write down what happened) and `ScheduledCloudBackupWorker` (a periodic WorkManager job).
+
+### The safety properties worth stating
+
+- **Retention only ever deletes archives this app wrote.** Candidates are filtered by
+  `CloudBackupNaming.isArchiveName`, so a photo, a `readme.txt`, or a zip copied into the same
+  container by hand is never a candidate — whatever the keep-count says. "Keep everything" is what an
+  unconfigured retention setting means.
+- **Nothing is uploaded until it is switched on**, and off is genuinely off: the job is *cancelled*,
+  not left to wake and find a flag false.
+- **Wi-Fi only, by default.** A whole-suite archive is not a few kilobytes, and nobody should meet
+  this feature through their mobile bill.
+- **The archive is staged to the cache and deleted in a `finally`.** Blob storage wants a content
+  length up front and a phone cannot hold a suite-sized archive in memory to find one; a failed
+  upload that left a copy of the household's entire data set in the cache would be its own small
+  disaster.
+- **A failed run still counts as a run.** `lastRunAt` moves on every attempt, so a wrong container
+  name is not retried as fast as WorkManager will allow; `lastSuccessAt` moves only when an archive
+  actually landed, and that is what the screen reports.
+- **Only the server's own failures are retried.** A 403 does not fix itself, and retrying it with
+  backoff until the phone is replaced is how a broken setting becomes a battery complaint.
+- **The destination never travels in the archive.** These settings are the container's, like the
+  updater's, and deliberately outside the backup: an archive carrying its own upload credential would
+  let anyone holding a copy keep writing into the household's storage account.
+
+### The one thing that does travel
+
+The signature mirrors into the **vault**, like every other credential the suite holds, at
+`sandbox/self/azure-backup-sas` under the `SecretOwner` that is the container. It is the shell's
+second credential and it makes the same case the first one did: kept in `EncryptedSharedPreferences`
+behind a hardware-bound key, it would die on a restore, and a new phone would look exactly like a
+working one while having uploaded nothing since the day it was set up. See **[SECRETS.md](SECRETS.md)**.
+
+### A minimal SAS
+
+In the portal, on the **container** (not the account): *Shared access tokens* → permissions
+**Create** and **Write** (add **List** and **Delete** to let old archives be pruned), an expiry the
+household is willing to renew, HTTPS only. Paste the token — or the whole URL — into the Backups tab;
+the app takes it either way.
 
 ---
 
@@ -291,6 +379,15 @@ is the container's alone.
 - **Full Backup** → the system *create-document* picker → the selected apps stream into one `.zip`.
 - **Restore from zip…** → the system *open-document* picker → the archive's manifest is read, then
   the apps that are both selected and present in the archive are restored.
+- **Scheduled backup to Azure** → the same archive, uploaded to the household's own storage
+  container every day (or three days, or week), on Wi-Fi, keeping the newest few. Off until it is
+  switched on. *Back up now* runs the identical path a scheduled run takes, so a wrong container or
+  an expired signature shows up in front of somebody rather than at two in the morning. See
+  *Scheduled backups to Azure* above.
+
+The ticks govern the whole tab — the zip, the restore **and** the scheduled upload — rather than the
+schedule keeping a second, invisible selection that could quietly keep uploading an app somebody had
+unticked.
 
 ---
 
@@ -536,6 +633,19 @@ impression of it.
 `:backupkit` has full JVM unit tests (`gradle :backupkit:test`, no SDK required): manifest
 round-trip, backup→restore payload fidelity across apps, selection, skipping unknown/absent apps,
 the no-manifest case, and the zip-slip guard.
+
+The cloud destination is held to the same bar and in the same module: blob and listing URLs
+(including a prefix, a continuation marker and a sovereign endpoint), Azure's account/container
+naming rules, a SAS pasted in each of the three forms people copy it in, every shape Azure writes an
+expiry in — and that an *unreadable* expiry is never treated as expired — permissions, the due-check's
+awkward cases (never run, a clock moved backwards, an early wake-up), a real `List Blobs` answer and
+a real error document, which statuses are worth retrying, and retention: newest kept, oldest first,
+"keep everything" by default, and **nothing the app did not write is ever a candidate for deletion**.
+
+The shell's own half is Robolectric (`gradle :app:testDebugUnitTest`): what an unconfigured install
+does (nothing, on Wi-Fi, keeping a week), a destination read back from preferences, and the
+signature's mirroring — both stores written, read back through the vault on a new phone, refilled
+locally, forgotten on clear, queued while the vault is shut, and refiled into a rebuilt one.
 
 `:suitekit` is tested the same way (`gradle :suitekit:test`, no SDK required): hex parsing of every
 form the settings field accepts (and the fallback for a half-typed one), the exact luminance

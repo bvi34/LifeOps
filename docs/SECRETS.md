@@ -3,7 +3,8 @@
 Secrets is the suite's password manager. It keeps the household's own logins, cards, licence keys
 and notes; and it keeps, under the same lock, **every credential the rest of the suite holds** —
 Finance's Plaid keys and bank access tokens, Citation's catalogue sign-ins and library card, and the
-Operations Sandbox's own GitHub update token — so that restoring a backup onto a new phone does not
+Operations Sandbox's own GitHub update token and the signature its scheduled cloud backup uploads
+with — so that restoring a backup onto a new phone does not
 throw them away.
 
 It is a hosted library module inside the Operations Sandbox container (`:app`), a peer to LifeOps,
@@ -138,6 +139,14 @@ restore, and answers a rebuilt vault like any app. It is shown in the vault list
 "Operations Sandbox — GitHub update token", beside the household's own logins, because a credential
 the suite keeps on its own behalf is exactly the sort of thing that should be visible rather than
 tactful.
+
+The container holds a second one now, on the same terms: the **shared access signature** its
+scheduled backup uploads with, filed at `sandbox/self/azure-backup-sas` and shown as
+"Operations Sandbox — Azure backup signature". It is the sharper version of the same failure — a
+restore that dropped it would leave a new phone that looks exactly like a working one and has not
+backed itself up since the day it replaced the old one. Both are refiled into a rebuilt vault
+together; see *Scheduled backups to Azure* in
+**[OPERATIONS_SANDBOX.md](OPERATIONS_SANDBOX.md)**.
 
 Equality is on the key alone and the set of keys is closed, for the same reason `AppId.key` is: an
 archive written last year names its owners by string. `SecretOwnerTest` asserts that `sandbox`

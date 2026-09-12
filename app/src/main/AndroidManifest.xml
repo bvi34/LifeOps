@@ -3,7 +3,7 @@
 
     <!-- LifeOps and Citation contribute their own <uses-permission> entries via the manifest
          merger (they're library dependencies), so they are not repeated here. That includes
-         INTERNET, which the updater below relies on. -->
+         INTERNET, which the updater below and the scheduled backup upload both rely on. -->
 
     <!-- The suite is sideloaded — built from a git tag by GitHub Actions and published as a
          release — so the container has to be able to install its own successor. This permission
