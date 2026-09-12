@@ -136,7 +136,15 @@ jobs:
             ls -l app/build/outputs/apk/release/ || true
             exit 1
           fi
-          "$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs "$APK"
+          # The runner ships several build-tools versions, so the glob matches more than one
+          # apksigner; picking the newest keeps this a single command instead of feeding one
+          # apksigner the path of the next as its subcommand.
+          APKSIGNER=$(ls -1 "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::No apksigner under $ANDROID_HOME/build-tools — cannot verify the APK signature."
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs "$APK"
           cp "$APK" release.apk
           sha256sum release.apk | tee release.apk.sha256
 
