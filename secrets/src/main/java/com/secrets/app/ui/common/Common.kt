@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.operations.suitekit.SuiteApps
-import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretStrength
 import com.operations.vaultkit.VaultItem
 import kotlinx.coroutines.CoroutineScope
@@ -184,6 +184,9 @@ fun StrengthBar(secret: String, modifier: Modifier = Modifier) {
  */
 fun ownerLabel(item: VaultItem): String? {
     val key = item.managedBy ?: return null
-    val appId = AppId.fromKey(key) ?: return key.replaceFirstChar(Char::uppercaseChar)
+    val owner = SecretOwner.fromKey(key) ?: return key.replaceFirstChar(Char::uppercaseChar)
+    // An app is named as the home screen names it, so "Finance" on a tile and "Finance" on a vault
+    // row are visibly the same thing. The shell has no tile, so it answers with its own name.
+    val appId = owner.appId ?: return owner.displayName
     return SuiteApps.of(appId).label
 }

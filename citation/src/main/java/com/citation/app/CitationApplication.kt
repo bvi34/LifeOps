@@ -13,6 +13,7 @@ import com.citation.app.data.store.FileStores
 import com.citation.app.work.RoyalRoadScheduler
 import com.citation.app.work.SyncWorker
 import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
 import kotlinx.coroutines.CoroutineScope
@@ -79,7 +80,7 @@ class CitationApplication private constructor(private val app: Application) {
         catalogCredentials: CatalogCredentials
     ) {
         SecretSources.register(object : SecretSource {
-            override val owner = AppId.CITATION
+            override val owner = SecretOwner.of(AppId.CITATION)
 
             override suspend fun refile(): Int {
                 // The names are resolved up front, suspending, so the store's own re-filing stays a

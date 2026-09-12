@@ -3,6 +3,7 @@ package com.finance.app.data.secure
 import androidx.test.core.app.ApplicationProvider
 import com.finance.app.logic.Endpoints
 import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretsAccess
 import com.operations.vaultkit.SecretsBroker
@@ -34,12 +35,12 @@ class FinanceSecretsVaultTest {
     private class FakeVault(override var state: VaultState = VaultState.UNLOCKED) : SecretsBroker {
         val items = LinkedHashMap<String, String>()
         val labels = LinkedHashMap<String, String>()
-        val owners = LinkedHashMap<String, AppId>()
+        val owners = LinkedHashMap<String, SecretOwner>()
 
         override fun read(ref: SecretRef): String? =
             if (state == VaultState.UNLOCKED) items[ref.format()] else null
 
-        override fun write(ref: SecretRef, value: String, label: String, owner: AppId): Boolean {
+        override fun write(ref: SecretRef, value: String, label: String, owner: SecretOwner): Boolean {
             if (state != VaultState.UNLOCKED) return false
             items[ref.format()] = value
             labels[ref.format()] = label
@@ -100,7 +101,7 @@ class FinanceSecretsVaultTest {
         assertEquals("access-abc", secrets.token("conn-1"))
         assertEquals("access-abc", vault.items["finance/conn-1/access-token"])
         assertEquals("Finance — USAA access token", vault.labels["finance/conn-1/access-token"])
-        assertEquals(AppId.FINANCE, vault.owners["finance/conn-1/access-token"])
+        assertEquals(SecretOwner.of(AppId.FINANCE), vault.owners["finance/conn-1/access-token"])
     }
 
     @Test

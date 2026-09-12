@@ -12,6 +12,10 @@ import com.secrets.app.SecretsApp
 import com.project.app.ProjectApp
 import com.finance.app.FinanceApp
 import com.logistics.app.LogisticsApp
+import com.operations.sandbox.update.UpdatePrefs
+import com.operations.vaultkit.SecretOwner
+import com.operations.vaultkit.SecretSource
+import com.operations.vaultkit.SecretSources
 
 /**
  * The single [Application] for the whole suite. LifeOps and Citation are library modules now, so
@@ -32,6 +36,11 @@ import com.logistics.app.LogisticsApp
  * People is installed late but is not late to matter: LifeOps' own startup runs a People sync round,
  * and both peers reconcile through a folder rather than through each other, so the order they come
  * up in cannot change what either ends up holding.
+ *
+ * The shell registers one thing on its own behalf, after Secrets: it holds a credential too (the
+ * updater's GitHub token) and is therefore a [SecretSource] like Finance and Citation, so a vault
+ * rebuilt after a forgotten passphrase gets the token filed back rather than leaving the suite
+ * unable to update itself.
  */
 class SandboxApplication : Application() {
     override fun onCreate() {
@@ -53,5 +62,26 @@ class SandboxApplication : Application() {
         // one file's header being read. Nothing is unlocked by installing; the vault comes up shut
         // on every process start, always.
         SecretsApp.install(this)
+        registerShellAsSecretSource()
+    }
+
+    /**
+     * The container's own half of the vault seam.
+     *
+     * The shell is not a hosted app — it has no tile, no [com.operations.backupkit.AppId] and no
+     * backup contributor — but it holds exactly the kind of credential the vault was built for, and
+     * losing it on a restore has exactly the consequence the vault was built to prevent. So it
+     * registers here on the same terms every app does: it can refill what it still holds, and it
+     * cannot read anything it did not file.
+     *
+     * [UpdatePrefs] is constructed on demand rather than held: it is two `SharedPreferences` opens,
+     * and a reset is the one moment it is worth paying for them.
+     */
+    private fun registerShellAsSecretSource() {
+        SecretSources.register(object : SecretSource {
+            override val owner = SecretOwner.SHELL
+
+            override suspend fun refile(): Int = UpdatePrefs(this@SandboxApplication).refileIntoVault()
+        })
     }
 }

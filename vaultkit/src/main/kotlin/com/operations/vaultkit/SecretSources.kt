@@ -1,7 +1,5 @@
 package com.operations.vaultkit
 
-import com.operations.backupkit.AppId
-
 /**
  * An app that can hand the vault everything it holds, on demand.
  *
@@ -29,8 +27,8 @@ import com.operations.backupkit.AppId
  */
 interface SecretSource {
 
-    /** Which app this is, for the report the reset screen shows. */
-    val owner: AppId
+    /** Who this is, for the report the reset screen shows. Usually an app; once, the shell. */
+    val owner: SecretOwner
 
     /**
      * File everything this app currently holds into the vault, and return how many refs it wrote.
@@ -55,15 +53,15 @@ interface SecretSource {
  */
 object SecretSources {
 
-    private val sources = LinkedHashMap<AppId, SecretSource>()
+    private val sources = LinkedHashMap<SecretOwner, SecretSource>()
 
     /** Register (or replace) the source for one app. Called from that app's `install`. */
     fun register(source: SecretSource) {
         synchronized(sources) { sources[source.owner] = source }
     }
 
-    /** Which apps could refill the vault, in registration order. */
-    val owners: List<AppId> get() = synchronized(sources) { sources.keys.toList() }
+    /** Who could refill the vault, in registration order. */
+    val owners: List<SecretOwner> get() = synchronized(sources) { sources.keys.toList() }
 
     /**
      * What a refill did, per app.
@@ -72,19 +70,19 @@ object SecretSources {
      * screen: "Finance 3, Citation 2" tells somebody their bank connections came back, and "0
      * everywhere" tells them the thing they were afraid of is in fact true.
      */
-    data class Refill(val byApp: Map<AppId, Int>) {
+    data class Refill(val byOwner: Map<SecretOwner, Int>) {
 
-        val filed: Int get() = byApp.values.sum()
+        val filed: Int get() = byOwner.values.sum()
 
         /** The apps that had something to give. */
-        val contributed: List<AppId> get() = byApp.filterValues { it > 0 }.keys.toList()
+        val contributed: List<SecretOwner> get() = byOwner.filterValues { it > 0 }.keys.toList()
 
         val empty: Boolean get() = filed == 0
 
         /** "Finance 3, Citation 2" — what the reset screen prints. */
-        fun summary(): String = byApp.filterValues { it > 0 }
+        fun summary(): String = byOwner.filterValues { it > 0 }
             .entries
-            .joinToString(", ") { (app, count) -> "${app.defaultDisplayName} $count" }
+            .joinToString(", ") { (owner, count) -> "${owner.displayName} $count" }
     }
 
     /**
@@ -96,7 +94,7 @@ object SecretSources {
      */
     suspend fun refileAll(): Refill {
         val snapshot = synchronized(sources) { sources.values.toList() }
-        val counts = LinkedHashMap<AppId, Int>()
+        val counts = LinkedHashMap<SecretOwner, Int>()
         for (source in snapshot) {
             counts[source.owner] = runCatching { source.refile() }.getOrDefault(0)
         }

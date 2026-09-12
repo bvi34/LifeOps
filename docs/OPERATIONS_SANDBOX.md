@@ -177,8 +177,13 @@ no per-entity allow-list to fall out of date.
   Both need saying. What travels is not a credential but a *sealed file* whose key is a passphrase in
   somebody's head — 310,000 rounds of PBKDF2 away from a key that wraps the one the vault is
   encrypted with. Copy it out of the zip and you have what a thief holding the phone would have. That
-  is what makes the credentials the other apps mirror into it (Finance's tokens, Citation's
-  sign-ins) survive onto a new phone at last. The **device unlock** — the vault key wrapped by *this*
+  is what makes the credentials the rest of the suite mirrors into it (Finance's tokens, Citation's
+  sign-ins, **and this container's own GitHub update token**) survive onto a new phone at last. The
+  shell's token is worth calling out because it is the case that proves the pattern is not an
+  app-by-app courtesy: the sandbox kept it exactly as Finance kept its bank tokens, lost it on
+  exactly the same restore, and afterwards could not tell anybody a new version existed. It files at
+  `sandbox/self/github-token` under a `SecretOwner` that is the container rather than an `AppId` —
+  the shell has no tile and no payload of its own, so it is deliberately not a twelfth app. The **device unlock** — the vault key wrapped by *this*
   phone's Keystore for the fingerprint shortcut — is excluded, by a file name
   (`secure_secrets_device`) that fails this contributor's prefix test: an archive holding both the
   sealed vault and a device-unwrappable copy of its key would be an archive holding the vault in
@@ -213,6 +218,16 @@ is: seven apps behind one icon.
 - A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
   container rather than to any app: **Settings** (the gear) and **Backups**.
 - A **weather tile** between the clock and the grid — see *Weather on the home screen* below.
+- **Notice lines** under the clock, at most two, each one row and neither dismissible: *"v1.4.2 is
+  available — tap to update"*, and *"3 credentials are waiting for your vault — tap to unlock"*. Both
+  are conditions that end by being dealt with rather than by being acknowledged, which is why there
+  is no ✕ on either. The second is the only thing anywhere outside Secrets that says the vault has
+  something waiting on it: a credential written while the vault was shut is queued in memory and
+  does not survive the process, so before this it could be lost in silence. See
+  *Saying so* in **[SECRETS.md](SECRETS.md)** for why a locked vault on its own is deliberately not
+  worth a line, and why a phone with no vault is offered one rather than told to unlock.
+- A **count on one tile**, when Secrets has writes waiting. Only Secrets can have one: a home screen
+  where every tile carries a red circle is a home screen where none of them mean anything.
 - A **wallpaper** behind the lot — see *The launcher's wallpaper* below. Out of the box it is mixed
   from the suite's own colours, so the home screen is already wearing the chosen preset before an
   app is opened; a user who wants something else picks it in the gear.

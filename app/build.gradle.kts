@@ -112,6 +112,10 @@ android {
         // The updater reads BuildConfig.VERSION_NAME and BuildConfig.UPDATE_REPO.
         buildConfig = true
     }
+
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -155,4 +159,10 @@ dependencies {
     // whose methods all throw. The real implementation here is what lets ReleaseFeed's parsing be
     // tested off-device, the way the suite tests the rest of its logic.
     testImplementation("org.json:json:20240303")
+    // The shell now holds a credential of its own and mirrors it into the vault, and that is not a
+    // thing that can be tested by reasoning about it: what is being tested is what a real
+    // SharedPreferences does when a restore has emptied it. Robolectric runs it on the JVM, the way
+    // :secrets and :finance test the same seam from their side.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
 }

@@ -1,9 +1,10 @@
 # Secrets — one vault, and the credentials that survive a restore
 
 Secrets is the suite's password manager. It keeps the household's own logins, cards, licence keys
-and notes; and it keeps, under the same lock, **every credential the other apps hold** — Finance's
-Plaid keys and bank access tokens, Citation's catalogue sign-ins and library card — so that restoring
-a backup onto a new phone does not throw them away.
+and notes; and it keeps, under the same lock, **every credential the rest of the suite holds** —
+Finance's Plaid keys and bank access tokens, Citation's catalogue sign-ins and library card, and the
+Operations Sandbox's own GitHub update token — so that restoring a backup onto a new phone does not
+throw them away.
 
 It is a hosted library module inside the Operations Sandbox container (`:app`), a peer to LifeOps,
 Citation, Logistics, Advisor, Health, People, Project, Maintenance, Repository and Finance. Its
@@ -106,10 +107,42 @@ back down — so a restore costs one vault read per credential and then behaves 
 before.
 
 A credential is filed under a **`SecretRef`**: `finance/usaa/access-token`, `citation/oreilly/library-pin`.
-Three segments — the owning app's `AppId` key, which of its things this belongs to (a connection id,
-or `self`), and which secret. Refs are filing names, not addresses: nothing dispatches on them, and
-`:vaultkit` deliberately does not depend on `:connectkit`, because a vault that can be *called* is a
-vault with a surface.
+Three segments — the owner's key, which of its things this belongs to (a connection id, or `self`),
+and which secret. Refs are filing names, not addresses: nothing dispatches on them, and `:vaultkit`
+deliberately does not depend on `:connectkit`, because a vault that can be *called* is a vault with a
+surface.
+
+### The owner is not always an app
+
+That first segment used to be an `AppId`, and could not stay one.
+
+The container itself holds a credential: the GitHub token the updater checks releases with. It sat
+in `EncryptedSharedPreferences` behind a Keystore key, deliberately outside the archive — word for
+word the arrangement Finance had, and word for word the reason this app exists. So a restore brought
+back every setting on the Updates tab and not the token, and the suite quietly lost the ability to
+tell anybody there was a new version, on a phone that was quite likely the replacement for a lost
+one.
+
+The obvious fix is a twelfth `AppId`, and the test that makes it wrong is a good one: `SuiteAppsTest`
+asserts that every `AppId` has a tile on the home screen. The shell is not an app on its own home
+screen. So the owner widened instead — **`SecretOwner`** is either a hosted app or the container —
+and `AppId` went back to meaning what it says:
+
+| | key | shown as | has a tile |
+|---|---|---|---|
+| A hosted app | its `AppId.key` | Finance, Citation, … | yes |
+| The container | `sandbox` | Operations Sandbox | no |
+
+The shell's token is filed at `sandbox/self/github-token`, mirrors on every write, reads through on a
+restore, and answers a rebuilt vault like any app. It is shown in the vault list as
+"Operations Sandbox — GitHub update token", beside the household's own logins, because a credential
+the suite keeps on its own behalf is exactly the sort of thing that should be visible rather than
+tactful.
+
+Equality is on the key alone and the set of keys is closed, for the same reason `AppId.key` is: an
+archive written last year names its owners by string. `SecretOwnerTest` asserts that `sandbox`
+collides with no app's key, so a future hosted app called "Sandbox" fails a test rather than
+silently adopting the container's credentials.
 
 ### While the vault is shut
 
@@ -121,6 +154,45 @@ before anybody has opened Secrets, would otherwise put the token in a device-bou
 else — exactly the failure this app exists to fix. So writes that cannot land are queued in memory
 and flushed on the next unlock. The queue is memory-only and capped: a pending write is a plaintext
 secret, and the one place this suite will not put a plaintext secret is a file.
+
+### And somebody is told
+
+The queue above was correct and, for a while, invisible — which amounted to a quieter version of the
+failure it prevents. The queue does not survive the process, by design; so a household that happened
+not to open Secrets that day lost the mirror silently, on exactly the credentials the vault exists to
+carry onto the next phone. Nothing outside this app could see that there was a reason to unlock,
+because nothing outside this app could see the vault at all.
+
+So the vault is now **observable**: `SecretsAccess.watch` takes a listener and tells it two things —
+what state the vault is in, and how many writes are waiting — whenever either changes. The shape is
+LifeOps' completion bus, and so are the rules: facts rather than requests, a listener that throws
+cannot break the write it was told about, and a watcher is handed neither the broker, the queued
+refs, nor their values. A listener list is the last place to widen a seam whose whole design is *no
+listing*.
+
+The sandbox's home screen is the one thing watching. A line appears under the clock —
+
+```
+  🔒  3 credentials are waiting for your vault — tap to unlock
+```
+
+— and the Secrets tile carries the same count, so it is still there after the line has been read
+past. Tapping either opens the unlock screen, which already said how many were waiting; the change
+is that somebody now finds out without going and looking.
+
+Two judgements are worth stating, because both are about what is *not* shown:
+
+- **A locked vault on its own is not news.** The vault comes up shut on every process start, always,
+  so "Secrets is locked" would be true nearly every time anybody glanced at the home screen — a
+  permanent badge is a badge people stop seeing, including on the day it means something. The line
+  appears only when a credential is actually stranded.
+- **A household with no vault is asked to make one, not to unlock one.** Queued writes land the
+  moment a vault is created, so the offer is real; and telling somebody to unlock a vault they have
+  never made is an instruction they cannot follow.
+
+Exactly one app can carry a count on that home screen, and the parameter is a plain number rather
+than a hook the other ten can start hanging their own on. A home screen where every tile has a red
+circle is a home screen where none of them mean anything.
 
 ### Where the arrow points
 
@@ -241,9 +313,13 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 80 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 94 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
-truncated file, a version from the future, and an old archive merged over a newer vault.
+truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
+owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
+build is nobody rather than somebody invented) and the watcher (told on registration, told when a
+write strands, told when a flush clears it, silent after unwatching, and a watcher that throws
+cannot take a write down with it).
 
 `:secrets` — 26 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
@@ -253,3 +329,9 @@ longer exists, read back on the one that replaced it.
 `:finance` — 10 more, on its half of the seam: which refs it uses, that a write reaches both stores,
 that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything
 it holds, and that with no vault installed the app behaves exactly as it did before.
+
+`:app` — 14, and the same list from the shell's side: the updater's token reaches both stores, the
+vault row says *Operations Sandbox* rather than an app's name, a token filed on one phone is read
+back on the phone that replaced it, a write while the vault is shut is queued rather than lost, a
+rebuilt vault gets the token filed again, and a phone with no vault behaves exactly as it did
+before. Plus what the home screen says, and — the half that matters more — when it says nothing.
