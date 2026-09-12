@@ -92,10 +92,38 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "ndk;$NDK_VERSION" "cmake;3.22.1"
 
+      - name: Work out the Robolectric runtime cache key
+        id: robolectric-key
+        run: echo "key=robolectric-sdks-$(.github/scripts/robolectric-cache-key.sh)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Robolectric's Android runtimes
+        # Robolectric downloads the Android framework it runs tests against — a ~100MB jar per SDK
+        # level — from Maven Central *during* the test run, with no retry. A single refused
+        # connection fails the build on a test that never got to run. Restoring them from a cache is
+        # what stops that; see the key script for the rest.
+        id: robolectric-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robolectric-key.outputs.key }}
+          restore-keys: robolectric-sdks-
+
       - name: Unit tests
         # The gate. A tag that does not pass the suite's own tests does not become a release — the
-        # steps below never run, and no APK is published.
-        run: ./gradlew test -Padvisor.buildNativeLlm=false --stacktrace
+        # steps below never run, and no APK is published. Through the retry wrapper, because a
+        # Robolectric runtime that fails to download is the one failure here that says nothing about
+        # the code; every other failure still fails the first time.
+        run: .github/scripts/run-jvm-tests.sh test -Padvisor.buildNativeLlm=false --stacktrace
+
+      - name: Save Robolectric's Android runtimes
+        # `always()`, because jars downloaded by a run whose tests failed are worth exactly as much
+        # as jars downloaded by one whose tests passed, and the next run should not fetch them again
+        # to be told the same thing.
+        if: always() && steps.robolectric-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robolectric-key.outputs.key }}
 
       - name: Decode the signing keystore
         # Written outside the workspace so it cannot be swept into an artifact or a build output by

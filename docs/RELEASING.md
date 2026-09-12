@@ -158,6 +158,31 @@ Both workflows pin the NDK version (`NDK_VERSION`, passed to Gradle as `-Padviso
 rather than taking whatever the runner image ships, because that default changes without warning and
 llama.cpp is exactly the kind of code that notices. Bump it in both files at once.
 
+### Robolectric's Android runtimes
+
+The tests that need a real Android context — Finance's and Health's databases, the vault stores, the
+restore paths — run on Robolectric, which does not ship the framework itself. The first test at a
+given SDK level downloads a ~100 MB `android-all-instrumented` jar from Maven Central *during* the
+test run, into `~/.m2/repository`, and gives up on the first refused connection. A dropped handshake
+therefore arrives looking like a failing test:
+
+```
+FinanceSecretsVaultTest > a token set while the vault is shut lands the next time it is opened FAILED
+    java.lang.AssertionError at MavenArtifactFetcher.java:129
+        Caused by: java.net.ConnectException
+```
+
+Nothing is wrong with the code when that happens, so both workflows do two things about it. They
+cache `~/.m2/repository/org/robolectric` under a key derived from the things that decide which jars
+are needed — the Robolectric version, the SDK levels tests pin with `@Config`, the modules'
+compile/min/target SDKs (`.github/scripts/robolectric-cache-key.sh`) — so a normal run never goes
+near the network; and they run the tests through `.github/scripts/run-jvm-tests.sh`, which retries
+once, and only when the build printed `Failed to fetch maven artifact`. A failing assertion does not
+print that, so a genuinely broken test still fails the first time.
+
+The cache is saved even when the tests fail, and restored across branches from the one the default
+branch's CI writes, which is how a tag build gets a warm cache without ever having run before.
+
 ## When the app finds no update
 
 *Settings → Updates → Check for updates* reports what it actually established, and the message
