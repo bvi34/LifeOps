@@ -10,6 +10,7 @@ import com.operations.sandbox.BuildConfig
 import com.operations.sandbox.update.logic.AppVersion
 import com.operations.sandbox.update.logic.AvailableRelease
 import com.operations.sandbox.update.logic.ReleaseFeed
+import com.operations.sandbox.update.logic.ReleaseLookup
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -44,17 +45,52 @@ class Updater(
     val installedVersion: AppVersion = AppVersion.parse(BuildConfig.VERSION_NAME)
 
     /**
-     * Ask GitHub for the newest published release.
+     * Ask GitHub for the newest published release, and say what came back.
      *
-     * Returns null for "nothing to offer", which covers a genuinely up-to-date app, a release with
-     * no APK attached, a rate-limited or offline request, and a malformed response alike. The
-     * caller cannot act differently on any of them, so they are not worth distinguishing; a thrown
-     * exception, on the other hand, would have to be caught somewhere, and the launcher is not the
-     * place to surface "GitHub returned 403".
+     * This used to answer `null` for every outcome — up to date, no APK on the release, rate
+     * limited, offline, malformed — on the reasoning that the caller could not act differently on
+     * any of them. That was wrong twice over: the caller cannot act, but the *user* can, and the
+     * screen was left inferring a cause it had no way to know. It inferred "the repository is
+     * private, add a token", which is the wrong advice for every case except one.
+     *
+     * So the outcomes are distinguished here, where the status code is still in hand, and still
+     * without throwing: a [ReleaseLookup] is returned for every path including the failures.
      */
-    suspend fun fetchLatestRelease(): AvailableRelease? = withContext(Dispatchers.IO) {
-        val body = runCatching { get(ReleaseFeed.latestReleaseUrl(repo)) }.getOrNull() ?: return@withContext null
-        ReleaseFeed.parseLatestRelease(body)
+    suspend fun fetchLatestRelease(): ReleaseLookup = withContext(Dispatchers.IO) {
+        when (val answer = get(ReleaseFeed.latestReleaseUrl(repo))) {
+            is Answer.Failed -> ReleaseLookup.Unreachable(answer.detail)
+            is Answer.Received -> when {
+                answer.status in 200..299 -> ReleaseFeed.readLatestRelease(answer.body)
+                // Rate limiting arrives as a 403 (or 429) with the remaining quota at zero. Without
+                // that header check it would be reported as an access problem and send the user off
+                // to mint a token that changes nothing.
+                answer.isRateLimited -> ReleaseLookup.RateLimited
+                // A 404 here is genuinely ambiguous: a private repository is invisible to an
+                // anonymous request, and a repository that has simply never published a release
+                // answers exactly the same way. One extra request settles it — if the repository
+                // itself reads back, the releases are visible and there just aren't any, and no
+                // token would have helped.
+                answer.status == 404 -> if (repoIsVisible()) {
+                    ReleaseLookup.NoReleaseYet
+                } else {
+                    ReleaseLookup.AccessDenied(answer.status)
+                }
+                answer.status == 401 || answer.status == 403 -> ReleaseLookup.AccessDenied(answer.status)
+                else -> ReleaseLookup.HttpError(answer.status)
+            }
+        }
+    }
+
+    /**
+     * Whether the repository's own metadata can be read.
+     *
+     * Only ever called to interpret a 404 from the releases endpoint, so a failure to answer is
+     * treated as "not visible": that path already knows the request it cares about came back 404,
+     * and the conservative reading of a second failure is the one that at least mentions access.
+     */
+    private fun repoIsVisible(): Boolean {
+        val answer = get(ReleaseFeed.repoUrl(repo))
+        return answer is Answer.Received && answer.status in 200..299
     }
 
     /** Whether a token has been saved — what decides which of the two download URLs is used. */
@@ -214,22 +250,54 @@ class Updater(
         error("The download redirected too many times")
     }
 
-    private fun get(url: String): String {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            // GitHub rejects requests with no User-Agent outright, and the Accept header pins the
-            // API's response shape so a future default can't quietly change the JSON under us.
-            setRequestProperty("User-Agent", USER_AGENT)
-            setRequestProperty("Accept", "application/vnd.github+json")
-            setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
-            // Only present while the repository is private, where an anonymous request is a 404
-            // indistinguishable from "there are no releases".
-            prefs.token?.let { setRequestProperty("Authorization", "Bearer $it") }
+    /**
+     * What one API request came back as.
+     *
+     * [Failed] is "never got an answer" — no network, DNS, timeout, TLS — which is a different
+     * thing from an answer that says no, and the two lead to different sentences on screen.
+     */
+    private sealed interface Answer {
+        data class Received(val status: Int, val body: String, val rateLimitRemaining: Int?) : Answer {
+            val isRateLimited: Boolean
+                get() = (status == 403 || status == 429) && rateLimitRemaining == 0
         }
+
+        data class Failed(val detail: String?) : Answer
+    }
+
+    /**
+     * One GET against the API, returning the status rather than throwing on it.
+     *
+     * The error body has to be read from `errorStream`, not `inputStream` — reading the latter on a
+     * 4xx throws, which is how the status code used to get lost on the way up.
+     */
+    private fun get(url: String): Answer {
+        val connection = runCatching {
+            (URL(url).openConnection() as HttpURLConnection).apply {
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                // GitHub rejects requests with no User-Agent outright, and the Accept header pins
+                // the API's response shape so a future default can't quietly change the JSON.
+                setRequestProperty("User-Agent", USER_AGENT)
+                setRequestProperty("Accept", "application/vnd.github+json")
+                setRequestProperty("X-GitHub-Api-Version", "2022-11-28")
+                // Needed only while the repository is private, where an anonymous request is a 404.
+                prefs.token?.let { setRequestProperty("Authorization", "Bearer $it") }
+            }
+        }.getOrElse { return Answer.Failed(it.message) }
+
         try {
-            if (connection.responseCode !in 200..299) error("GitHub answered ${connection.responseCode}")
-            return connection.inputStream.bufferedReader().use { it.readText() }
+            val status = connection.responseCode
+            val body = runCatching {
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            }.getOrDefault("")
+            val remaining = connection.getHeaderField("X-RateLimit-Remaining")?.toIntOrNull()
+            return Answer.Received(status, body, remaining)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            return Answer.Failed(failure.message)
         } finally {
             connection.disconnect()
         }

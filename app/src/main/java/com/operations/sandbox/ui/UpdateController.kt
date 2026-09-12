@@ -13,6 +13,7 @@ import com.operations.sandbox.update.UpdatePrefs
 import com.operations.sandbox.update.Updater
 import com.operations.sandbox.update.logic.AvailableRelease
 import com.operations.sandbox.update.logic.ReleaseFeed
+import com.operations.sandbox.update.logic.ReleaseLookup
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -42,8 +43,15 @@ sealed interface UpdateState {
     /** The APK is on disk and the installer is one tap away. */
     data class ReadyToInstall(val release: AvailableRelease, val apk: File) : UpdateState
 
-    /** Something went wrong, said in a sentence a person can act on. */
-    data class Failed(val message: String) : UpdateState
+    /**
+     * The check ended without an update to offer, and the reason is worth saying out loud.
+     *
+     * [title] varies because not every one of these is a failure to *check*: "the newest release
+     * has no APK on it" is a perfectly successful check whose answer happens to be that there is
+     * nothing installable, and filing that under "Couldn't check" is what sent people looking for
+     * a broken token.
+     */
+    data class Failed(val message: String, val title: String = "Couldn't check") : UpdateState
 }
 
 /**
@@ -143,26 +151,82 @@ class UpdateController(
         job?.cancel()
         job = scope.launch {
             if (!silent) state = UpdateState.Checking
-            val release = updater.fetchLatestRelease()
+            val lookup = updater.fetchLatestRelease()
             // Only a check that actually reached GitHub resets the throttle, so a week spent
-            // offline doesn't burn the interval and then go quiet once the network is back.
-            if (release != null) prefs.lastCheckedAt = System.currentTimeMillis()
-            state = when {
-                release == null -> if (silent) UpdateState.Idle else UpdateState.Failed(
-                    if (!hasToken) {
-                        "Couldn't read the releases. This repository is private, so the updater " +
-                            "needs a GitHub access token — add one below. (It could also be that " +
-                            "the newest release has no APK attached yet.)"
-                    } else {
-                        "Couldn't reach GitHub. Check the connection, and that the saved token " +
-                            "still has read access to the repository."
-                    }
-                )
-                ReleaseFeed.isUpgrade(updater.installedVersion, release) -> UpdateState.Available(release)
-                silent -> UpdateState.Idle
-                else -> UpdateState.UpToDate
+            // offline doesn't burn the interval and then go quiet once the network is back. Note
+            // that "reached GitHub" includes every answer it gave, not just the useful ones — a
+            // repository whose newest release has no APK would otherwise re-ask on every single
+            // launch forever, which is the throttle failing in exactly the case it exists for.
+            if (lookup !is ReleaseLookup.Unreachable) prefs.lastCheckedAt = System.currentTimeMillis()
+            state = when (lookup) {
+                is ReleaseLookup.Found -> when {
+                    ReleaseFeed.isUpgrade(updater.installedVersion, lookup.release) ->
+                        UpdateState.Available(lookup.release)
+                    silent -> UpdateState.Idle
+                    else -> UpdateState.UpToDate
+                }
+                // Everything below is "nothing to offer". A launch check stays silent about all of
+                // it; a check the user pressed for says which of them it was.
+                else -> if (silent) UpdateState.Idle else explain(lookup)
             }
         }
+    }
+
+    /**
+     * The sentence for a check that came back with nothing.
+     *
+     * Every branch says what was actually established and what, if anything, the user can do about
+     * it. Only [ReleaseLookup.AccessDenied] mentions a token, because only there is a token the
+     * fix; the no-APK cases name the release workflow instead, since that is where the missing file
+     * was supposed to come from and no amount of fiddling on the phone will conjure it.
+     */
+    private fun explain(lookup: ReleaseLookup): UpdateState.Failed = when (lookup) {
+        is ReleaseLookup.NoApkAttached -> UpdateState.Failed(
+            title = "Nothing to install",
+            message = "GitHub's newest release is ${lookup.tag}, but it has no APK attached, so " +
+                "there is nothing for the updater to install. A release only carries one when the " +
+                "release workflow builds it — which it does for tags shaped like v1.2.3, and not " +
+                "for a release published by hand. Re-tag the commit and push the tag."
+        )
+        ReleaseLookup.NoReleaseYet -> UpdateState.Failed(
+            title = "Nothing to install",
+            message = "The repository's releases are readable, and it hasn't published one yet. " +
+                "Push a tag shaped like v1.2.3 and the release workflow will build the APK."
+        )
+        is ReleaseLookup.UnreadableTag -> UpdateState.Failed(
+            title = "Nothing to install",
+            message = "GitHub's newest release is tagged \"${lookup.tag}\", which isn't a version " +
+                "this app can compare itself against, so it can't tell whether it is newer. " +
+                "Releases have to be tagged v1.2.3."
+        )
+        is ReleaseLookup.AccessDenied -> UpdateState.Failed(
+            title = "Couldn't read the releases",
+            message = if (hasToken) {
+                "GitHub answered ${lookup.status} — the saved token doesn't have read access to " +
+                    "this repository's contents, or it has expired. Replace it below."
+            } else {
+                "GitHub answered ${lookup.status}, so the releases aren't visible to an anonymous " +
+                    "request. If the repository is private, add an access token below."
+            }
+        )
+        ReleaseLookup.RateLimited -> UpdateState.Failed(
+            message = "GitHub is rate-limiting this phone. Nothing is wrong — wait a few minutes " +
+                "and try again. Saving a token raises the limit considerably."
+        )
+        is ReleaseLookup.HttpError -> UpdateState.Failed(
+            message = "GitHub answered ${lookup.status}. If that persists it is GitHub's end, not " +
+                "this phone's — githubstatus.com will say."
+        )
+        is ReleaseLookup.Unreachable -> UpdateState.Failed(
+            message = "Couldn't reach GitHub" + (lookup.detail?.let { " ($it)" } ?: "") +
+                ". Check the connection and try again."
+        )
+        ReleaseLookup.Unreadable -> UpdateState.Failed(
+            message = "GitHub answered, but not with a release this app could read. Try again, and " +
+                "if it keeps happening the release itself is probably malformed."
+        )
+        // Not a failure, and never routed here.
+        is ReleaseLookup.Found -> UpdateState.Failed(message = "An update is available.")
     }
 
     /**

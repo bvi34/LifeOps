@@ -34,16 +34,65 @@ data class AvailableRelease(
 }
 
 /**
- * Turning GitHub's `/releases/latest` response into an [AvailableRelease].
+ * Why a check for updates ended the way it did.
+ *
+ * This type exists because the first version of the updater collapsed every outcome into a single
+ * `null`, and the screen then had to *guess* what had happened. It guessed "the repository must be
+ * private, add a token" — which was wrong, and unactionably so, in the one case that actually
+ * happens most: GitHub was read perfectly well, and the newest release simply has no APK attached
+ * to it because the release workflow never ran for that tag. No token on earth fixes that, so
+ * asking for one sends the user off to mint credentials for a problem that lives in CI.
+ *
+ * Each case below is a *different sentence* on the screen, and several of them are not errors at
+ * all. Distinguishing them is the whole point; the two that mean "there is nothing to install, and
+ * nothing you can do from the phone" must never read as "your credentials are wrong".
+ */
+sealed interface ReleaseLookup {
+
+    /** A release with an installable APK on it. Still has to be newer — see [ReleaseFeed.isUpgrade]. */
+    data class Found(val release: AvailableRelease) : ReleaseLookup
+
+    /** GitHub answered, the repository has never published a release the phone could install. */
+    data object NoReleaseYet : ReleaseLookup
+
+    /**
+     * GitHub answered, the newest release exists, and it has no APK on it.
+     *
+     * The normal cause is a release made by hand in the browser, or a release workflow that failed
+     * before it uploaded. Actionable, but not on the phone.
+     */
+    data class NoApkAttached(val tag: String) : ReleaseLookup
+
+    /** The newest release's tag isn't a version this app can compare itself against. */
+    data class UnreadableTag(val tag: String) : ReleaseLookup
+
+    /** GitHub answered with something that isn't a release document at all. */
+    data object Unreadable : ReleaseLookup
+
+    /**
+     * 401/403/404 — the releases are not visible to this request.
+     *
+     * This, and only this, is the case a token fixes.
+     */
+    data class AccessDenied(val status: Int) : ReleaseLookup
+
+    /** Too many requests from this IP or token. Fixes itself; the user need only wait. */
+    data object RateLimited : ReleaseLookup
+
+    /** GitHub answered, badly — a 5xx, or any status not covered above. */
+    data class HttpError(val status: Int) : ReleaseLookup
+
+    /** The request never got an answer: no network, DNS, timeout, TLS. */
+    data class Unreachable(val detail: String?) : ReleaseLookup
+}
+
+/**
+ * Turning GitHub's `/releases/latest` response into a [ReleaseLookup].
  *
  * Kept apart from the HTTP that fetches it so the interesting half — which asset counts as the APK,
  * what happens when a release was published with none, how a tag becomes a comparable version — is
  * ordinary JVM code with unit tests, and the networking layer stays a thin call with nothing to get
  * wrong in it.
- *
- * Every failure mode here answers `null`, meaning "there is nothing to offer". A release with no APK
- * attached is the normal case for a run that failed halfway, and it must read as "no update", never
- * as an error the user has to dismiss.
  */
 object ReleaseFeed {
 
@@ -52,18 +101,32 @@ object ReleaseFeed {
 
     fun latestReleaseUrl(repo: String): String = "https://api.github.com/repos/$repo/releases/latest"
 
-    fun parseLatestRelease(json: String): AvailableRelease? {
-        val root = runCatching { JSONObject(json) }.getOrNull() ?: return null
+    /** Whether the repository itself can be read — the probe that disambiguates a 404. */
+    fun repoUrl(repo: String): String = "https://api.github.com/repos/$repo"
+
+    /**
+     * Read the release document, saying precisely what was found.
+     *
+     * Note the deliberate ordering: the tag is parsed *before* the assets are searched, so a
+     * release tagged `nightly` reports [ReleaseLookup.UnreadableTag] rather than being lumped in
+     * with a release that has no APK. They have different fixes.
+     */
+    fun readLatestRelease(json: String): ReleaseLookup {
+        val root = runCatching { JSONObject(json) }.getOrNull() ?: return ReleaseLookup.Unreadable
+
+        val tag = root.optString("tag_name").takeIf { it.isNotBlank() } ?: return ReleaseLookup.Unreadable
 
         // `releases/latest` already excludes drafts and pre-releases, but a caller pointed at a
         // different endpoint could hand us one, and shipping a draft to a phone would be a bug.
-        if (root.optBoolean("draft", false) || root.optBoolean("prerelease", false)) return null
+        // Nothing installable has been published, which is what NoReleaseYet says.
+        if (root.optBoolean("draft", false) || root.optBoolean("prerelease", false)) {
+            return ReleaseLookup.NoReleaseYet
+        }
 
-        val tag = root.optString("tag_name").takeIf { it.isNotBlank() } ?: return null
         val version = AppVersion.parse(tag)
-        if (version == AppVersion.UNKNOWN) return null
+        if (version == AppVersion.UNKNOWN) return ReleaseLookup.UnreadableTag(tag)
 
-        val assets = root.optJSONArray("assets") ?: return null
+        val assets = root.optJSONArray("assets") ?: return ReleaseLookup.NoApkAttached(tag)
         var fallback: JSONObject? = null
         var chosen: JSONObject? = null
         for (i in 0 until assets.length()) {
@@ -78,22 +141,28 @@ object ReleaseFeed {
             // built before the asset was named. First one wins, since order is publish order.
             if (fallback == null) fallback = asset
         }
-        val asset = chosen ?: fallback ?: return null
+        val asset = chosen ?: fallback ?: return ReleaseLookup.NoApkAttached(tag)
         val browserUrl = asset.optString("browser_download_url")
         val apiUrl = asset.optString("url")
-        // One of the two has to be usable; which one is the caller's problem, not the parser's.
-        if (browserUrl.isBlank() && apiUrl.isBlank()) return null
+        // An APK with no way to fetch it is, to the phone, the same as no APK.
+        if (browserUrl.isBlank() && apiUrl.isBlank()) return ReleaseLookup.NoApkAttached(tag)
 
-        return AvailableRelease(
-            tag = tag,
-            version = version,
-            notes = root.optString("body").trim(),
-            apkBrowserUrl = browserUrl,
-            apkApiUrl = apiUrl,
-            apkSizeBytes = asset.optLong("size", 0L).coerceAtLeast(0L),
-            htmlUrl = root.optString("html_url")
+        return ReleaseLookup.Found(
+            AvailableRelease(
+                tag = tag,
+                version = version,
+                notes = root.optString("body").trim(),
+                apkBrowserUrl = browserUrl,
+                apkApiUrl = apiUrl,
+                apkSizeBytes = asset.optLong("size", 0L).coerceAtLeast(0L),
+                htmlUrl = root.optString("html_url")
+            )
         )
     }
+
+    /** The release, or null if there isn't an installable one — [readLatestRelease] without the reason. */
+    fun parseLatestRelease(json: String): AvailableRelease? =
+        (readLatestRelease(json) as? ReleaseLookup.Found)?.release
 
     /**
      * Whether [release] is worth offering over what is running.

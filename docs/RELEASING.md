@@ -157,3 +157,37 @@ before a tag is pushed rather than during a release.
 Both workflows pin the NDK version (`NDK_VERSION`, passed to Gradle as `-Padvisor.ndkVersion`)
 rather than taking whatever the runner image ships, because that default changes without warning and
 llama.cpp is exactly the kind of code that notices. Bump it in both files at once.
+
+## When the app finds no update
+
+*Settings → Updates → Check for updates* reports what it actually established, and the message
+distinguishes cases that look identical from the phone but have opposite fixes.
+
+**"Nothing to install — the newest release has no APK attached."** The release exists; nothing was
+built for it. Almost always this means the tag wasn't `vMAJOR.MINOR.PATCH`, so the release workflow
+either rejected it or — before this was fixed — never started at all. Check the Actions tab: a tag
+of the wrong shape now produces a failed run whose error says what to re-tag, rather than nothing.
+The remedy is to re-tag the same commit and delete the APK-less release, since the updater looks at
+`releases/latest` and a hand-made release stays newest until it goes:
+
+```bash
+git tag v0.1.0 0.1^{commit}
+git push origin v0.1.0
+# then delete the old release and its tag on GitHub
+```
+
+A release made by hand in the browser never has an APK on it. GitHub's "Source code (zip/tar.gz)"
+are not release assets — they are generated on demand, they are not `release.apk`, and the updater
+correctly ignores them.
+
+**"Couldn't read the releases — GitHub answered 404/401/403."** This, and only this, is the case an
+access token fixes: the releases aren't visible to the request. It means the repository is private
+and no token is saved, or the saved token has expired or lost `Contents: Read-only` on this
+repository. A token cannot conjure an APK onto a release that has none, which is why the two
+messages are kept apart — the updater used to print this one for both, and it sent people off to
+mint credentials for a problem that lived in CI.
+
+**"Nothing published yet."** The releases are readable and there are none. Push a tag.
+
+A local `./gradlew assembleDebug` build calls itself `0.0.0-dev`, which is below every real release,
+so a dev build always has an update available to it once one is actually published.

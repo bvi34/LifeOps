@@ -11,7 +11,13 @@ name: Release
 
 on:
   push:
-    tags: ['v*']
+    # Every tag, not just `v*` — deliberately wider than the tags this workflow will actually
+    # build. A tag that doesn't match the scheme used to match nothing here, so pushing `0.1`
+    # started no run, said nothing, and produced no APK; the only visible trace was a release with
+    # source archives on it and an app that could never find anything to install. Matching all tags
+    # and then rejecting the wrong shape in the first step turns that silence into a red X with a
+    # sentence explaining what to re-tag.
+    tags: ['*']
   workflow_dispatch:
     inputs:
       tag:
@@ -58,7 +64,7 @@ jobs:
             TAG="${GITHUB_REF#refs/tags/}"
           fi
           if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH. The APK's version and the in-app updater both read it, so it has to parse."
+            echo "::error::Tag '$TAG' is not vMAJOR.MINOR.PATCH, so no APK was built and no release was published. The tag is the version: the APK's versionName and versionCode are derived from it, and the in-app updater compares itself against it. Re-tag the same commit and push that instead, e.g. 'git tag v0.1.0 $TAG^{commit} && git push origin v0.1.0'. If a release already exists on '$TAG', delete it — it has no APK on it, and the updater will keep reporting that there is nothing to install for as long as it is the newest one."
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"

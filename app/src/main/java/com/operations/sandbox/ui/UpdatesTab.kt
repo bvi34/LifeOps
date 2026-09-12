@@ -147,7 +147,7 @@ internal fun UpdatesTab(updates: UpdateController) {
             updates = updates
         )
 
-        is UpdateState.Failed -> SectionCard(title = "Couldn't check") {
+        is UpdateState.Failed -> SectionCard(title = state.title) {
             Text(state.message, style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -163,12 +163,13 @@ internal fun UpdatesTab(updates: UpdateController) {
 }
 
 /**
- * Where the GitHub access token goes, and why there has to be one.
+ * Where the GitHub access token goes, and when there needs to be one.
  *
- * The repository is private, and a private repository's releases are a 404 to an anonymous
- * request — indistinguishable, from the app's side, from a repository that has never published
- * anything. So without a token the updater is not merely restricted, it is silently useless, and
- * that is worth a card explaining itself rather than a mysterious failure.
+ * A *private* repository's releases are a 404 to an anonymous request, so the updater cannot see
+ * them without a token. A public one needs nothing, and this card used to claim otherwise — it
+ * stated flatly that the repository was private, which turned the token into a step everyone
+ * assumed was mandatory and the first thing blamed whenever a check came back empty. It is offered
+ * here, not demanded.
  *
  * The token is stored encrypted on this phone and sent only to api.github.com. It is deliberately
  * *not* baked into the APK: an APK is a file that gets copied about, and a credential inside one is
@@ -181,9 +182,9 @@ private fun GitHubTokenCard(updates: UpdateController) {
 
     SectionCard(
         title = "GitHub access",
-        subtitle = "The repository is private, so checking for releases needs a personal access " +
-            "token with read access to its contents. It is stored encrypted on this phone and " +
-            "sent only to api.github.com."
+        subtitle = "Only needed if the repository is private — a public one's releases are " +
+            "readable without any credentials. A token also raises GitHub's rate limit. It is " +
+            "stored encrypted on this phone and sent only to api.github.com."
     ) {
         if (updates.hasToken) {
             Text("A token is saved.", style = MaterialTheme.typography.bodyMedium)
@@ -217,8 +218,9 @@ private fun GitHubTokenCard(updates: UpdateController) {
         Spacer(Modifier.height(12.dp))
         Text(
             "Make one at github.com/settings/tokens — a fine-grained token, this repository only, " +
-                "with Contents: Read-only. Nothing else is needed. If the repository is ever made " +
-                "public, remove the token; the updater works without one.",
+                "with Contents: Read-only. Nothing else is needed. A token cannot help when a " +
+                "release simply has no APK attached to it; that is fixed by the release workflow, " +
+                "not from here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
