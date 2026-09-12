@@ -171,4 +171,10 @@ dependencies {
     // :secrets and :finance test the same seam from their side.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // Test-only: `BackupCoverageTest` opens every hosted app's database through that app's own
+    // singleton, which is the whole point of it — a census measured against paths this repository
+    // spelled out by hand would only prove the list matches itself. Those singletons return Room
+    // types, and the hosted apps expose Room as `implementation`, so it reaches the shell's test
+    // classpath here and nowhere else. Nothing in :app's own source uses Room.
+    testImplementation(libs.androidx.room.runtime)
 }

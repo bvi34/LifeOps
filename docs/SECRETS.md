@@ -107,6 +107,44 @@ consulted. On a restored phone the local store is empty, the vault answers, and 
 back down — so a restore costs one vault read per credential and then behaves exactly as it did
 before.
 
+### The pull is not enough on its own
+
+`readThrough` is *lazy*: it puts a credential back when something asks for it, and only if the vault
+happens to be open at that moment. That is almost always right, and "almost" is doing a lot of work.
+The first morning on a restored phone is exactly when it isn't:
+
+- the scheduled cloud backup wakes at 2am, reads through to a **shut** vault, gets null, and records
+  "paste a signature" on a phone whose household has done nothing wrong;
+- Finance's sync runs before anybody has opened anything and reports a bank connection that looks as
+  though it was never set up;
+- the updater's launch check happens before the passphrase is typed, so the suite cannot say a new
+  version exists.
+
+None of those is wrong about what it saw. They are all asking a vault that is shut.
+
+So the vault **pushes as well**. `SecretSource` has a second half — `rehydrate()` — and unlocking
+runs it for every registered app:
+
+```kotlin
+private suspend fun openedUp() = withContext(Dispatchers.IO) {
+    SecretsAccess.flushPending()   // what was written while it was shut goes in first
+    SecretSources.rehydrateAll()   // then every app takes back what it is missing
+}
+```
+
+The order is what makes it safe. A credential refreshed this morning while the vault was shut is in
+the pending queue, not in the file; flushing first means step two cannot read a stale value out of
+the vault and hand it back to the app that had already replaced it. And `ManagedSecrets.restock`
+fills **only an empty slot** — the local store is the working copy and is always at least as new as
+the vault's, so a full slot is never touched.
+
+Each app enumerates from **its own data, not from its credential store**, which is the part that is
+easy to get backwards: after a restore the credential store is precisely what is empty. Finance asks
+the database which connections exist, Citation asks which catalogues exist, and the shell has two
+fixed refs. The result is that typing one passphrase brings back every credential in the suite,
+without opening a single app — and that every unlock after that finds nothing to do and costs a
+preference read per slot.
+
 A credential is filed under a **`SecretRef`**: `finance/usaa/access-token`, `citation/oreilly/library-pin`.
 Three segments — the owner's key, which of its things this belongs to (a connection id, or `self`),
 and which secret. Refs are filing names, not addresses: nothing dispatches on them, and `:vaultkit`
@@ -335,11 +373,15 @@ does and does not contain, both restore paths, the reset (including that it cann
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
 longer exists, read back on the one that replaced it.
 
-`:finance` — 10 more, on its half of the seam: which refs it uses, that a write reaches both stores,
+`:finance` — 14 more, on its half of the seam: which refs it uses, that a write reaches both stores,
 that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything
 it holds, and that with no vault installed the app behaves exactly as it did before.
 
-`:app` — 14, and the same list from the shell's side: the updater's token reaches both stores, the
+`:secrets`' list now includes the push: that unlocking hands every app back what its own store lost,
+that it never writes over a credential the phone already has, and that making a vault takes the same
+round.
+
+`:app` — 17, and the same list from the shell's side: the updater's token reaches both stores, the
 vault row says *Operations Sandbox* rather than an app's name, a token filed on one phone is read
 back on the phone that replaced it, a write while the vault is shut is queued rather than lost, a
 rebuilt vault gets the token filed again, and a phone with no vault behaves exactly as it did

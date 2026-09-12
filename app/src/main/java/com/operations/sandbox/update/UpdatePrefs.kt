@@ -129,6 +129,25 @@ class UpdatePrefs internal constructor(context: Context, private val override: S
     }
 
     /**
+     * Take the token back out of the vault if this store has lost it, and say how many refs were
+     * restored (one or none).
+     *
+     * The push half of the read-through above. The pull works — the next check reads through and
+     * finds the token — but only when a check happens *while the vault is open*, and the launch
+     * check on a restored phone runs before anybody has typed a passphrase. So the vault pushes on
+     * unlock as well ([com.operations.vaultkit.SecretSource.rehydrate]), and the suite can tell the
+     * household about an update on the first morning rather than the first time they open Secrets
+     * and then the Updates tab.
+     */
+    fun restockFromVault(): Int = if (
+        ManagedSecrets.restock(
+            ref = TOKEN_REF,
+            local = { secrets.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } },
+            save = { value -> writeLocally(value) }
+        )
+    ) 1 else 0
+
+    /**
      * Whether the shell may ask GitHub on its own at launch. On by default — an update nobody is
      * told about may as well not exist when there is no store to nag on the app's behalf — and off
      * is a single switch away on the Updates tab, after which nothing here touches the network

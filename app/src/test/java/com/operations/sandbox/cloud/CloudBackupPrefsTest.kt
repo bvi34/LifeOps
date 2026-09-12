@@ -191,6 +191,34 @@ class CloudBackupPrefsTest {
     }
 
     @Test
+    fun `an unlock puts the signature back before the next scheduled archive runs`() {
+        // The case that matters most for this credential: the backup worker runs in the background,
+        // hours before anybody opens anything, and a read-through against a shut vault would have it
+        // record "paste a signature" on a phone whose household has done nothing wrong.
+        val vault = FakeVault()
+        SecretsAccess.register(vault)
+        prefs().sasToken = sas
+        wipeLocalStoreOnly()
+
+        assertEquals(1, prefs().restockFromVault())
+
+        assertEquals(sas, localSas())
+        assertTrue(prefs().target() is TargetCheck.Incomplete) // the account and container are separate settings
+        assertEquals("nothing left to do on the next unlock", 0, prefs().restockFromVault())
+    }
+
+    @Test
+    fun `an unlock never writes over a signature pasted on this phone`() {
+        val vault = FakeVault()
+        SecretsAccess.register(vault)
+        prefs().sasToken = sas
+        vault.items[ref.format()] = "sv=2022-11-02&sp=r&sig=an%2Folder%2Fone"
+
+        assertEquals(0, prefs().restockFromVault())
+        assertEquals(sas, localSas())
+    }
+
+    @Test
     fun `a rebuilt vault gets the signature filed again`() {
         val vault = FakeVault()
         SecretsAccess.register(vault)

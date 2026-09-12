@@ -203,6 +203,44 @@ each contributor scopes strictly to its own files by name.
 of the process, so after a restore the sandbox tells you to **fully close Operations Sandbox and
 reopen it** — reopening just the hosted screen would reuse the now-closed database.
 
+### Is it actually full? (`BackupCoverageTest`)
+
+Every contributor says it copies its app whole. Nothing checked the claim *across* the suite, and
+the failure mode is by definition the file nobody thought about — a second database added to an app,
+a store that writes beside the one that is swept, a preferences file whose name slipped outside its
+app's prefix.
+
+So `:app` takes a **census**. It makes every app put its real files on disk — databases through each
+app's own singleton, preferences through each app's own file-name constant, owned files through each
+app's own store — takes one archive, and then walks the whole data directory asserting that each
+file is either **in the archive** or **on a written list of deliberate exclusions, with the reason
+attached**. Measuring against paths spelled out in the test would only prove the list matches itself;
+measuring against what the apps themselves declare is what catches next year's database.
+
+It also checks that every `AppId` has exactly one contributor, that the manifest names every app that
+contributed and nothing it didn't, and that a **wipe-and-restore** returns every archived byte.
+
+What the census found on its first run, both now fixed:
+
+- **Citation's `speech_settings.json`** — the narrator's voice, speed and sleep timer — sits in
+  `filesDir` *beside* `sovereign/` rather than inside it, so the sweep missed it. A restored phone
+  had every book and no voice. It is now carried, named by the store that owns it.
+- **Health and Repository share `filesDir/documents`.** One process, one package, one folder: each
+  app's contributor sweeps it whole, so every document is in the archive twice and restoring either
+  app brings back both apps' files. Harmless, surprising, and now a test that fails if either app
+  moves.
+
+The deliberate exclusions, each of which the test forces somebody to justify in a line: caches
+(Citation's Royal Road bodies, Advisor's vector index), Advisor's downloaded models, Citation's
+export copies, every credential store (the vault carries those), the device unlock, the container's
+own preferences — and two that are worth knowing about:
+
+| Left out | Why |
+|---|---|
+| `logistics_prefs` | a display toggle; `LogisticsBackupContributor` says so in its own words |
+| `repository_prefs` | the last drive and folder a transfer used — SAF grants that do not survive a reinstall |
+| `operations_suite_appearance` | **the suite's whole look** — preset, palette, per-app accents, wallpaper. It belongs to the container rather than to any hosted app, and the archive has no slice for the container, so it is re-chosen after a restore. The one gap here that is a *choice* rather than a reason |
+
 ---
 
 ## Scheduled backups to Azure (`:backupkit/cloud` + `:app/cloud`)

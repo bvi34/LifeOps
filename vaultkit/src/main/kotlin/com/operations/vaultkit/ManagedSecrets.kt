@@ -60,6 +60,33 @@ object ManagedSecrets {
     }
 
     /**
+     * Put a credential *back* into an app's own store, if the app has lost it and the vault has it.
+     *
+     * The read-through above is lazy by design and that is almost always right: an app asks for its
+     * token when it needs it, and the vault answers the first time after a restore. Almost always,
+     * because "when it needs it" is doing a lot of work — a sync that runs at six in the morning
+     * needs it while the vault is shut, gets null, and behaves exactly as it would for a connection
+     * that was never set up. The household's first morning on a new phone is then a row of apps
+     * quietly reporting nothing to sync.
+     *
+     * So there is a push as well as a pull. The moment the vault opens, every app is asked to
+     * restock what it is missing ([SecretSource.rehydrate]), and this is the one-credential version
+     * of that: fill [save] from the vault **only** when [local] is empty, and say whether anything
+     * was written.
+     *
+     * Never overwrites. A local value is the working copy and is by definition at least as new as
+     * the vault's — a token refreshed this morning and mirrored while the vault was shut is sitting
+     * in the queue, not in the file — so a restock that preferred the vault would hand an app back
+     * the credential it had just replaced.
+     */
+    fun restock(ref: SecretRef, local: () -> String?, save: (String) -> Unit): Boolean {
+        if (!local().isNullOrBlank()) return false
+        val fromVault = SecretsAccess.read(ref)?.takeIf { it.isNotBlank() } ?: return false
+        save(fromVault)
+        return true
+    }
+
+    /**
      * File a credential in the vault under [ref], titled [label] and shown as belonging to [owner].
      *
      * Every app calls this *after* writing its own store, never instead of it. If the vault is shut

@@ -454,6 +454,13 @@ the receipts.
 > container, rather than an `AppId`; the shell files at `sandbox/self/github-token`, mirrors, reads
 > through and refills like any app, and appears in the household's own vault list under its own name.
 >
+> And the reading is not only lazy. A read-through puts a credential back when something asks for
+> one — which on the first morning after a restore is a background sync at 2am asking a vault that
+> is still shut, and reporting a connection that looks as though it was never set up. So **unlocking
+> the vault hands every app back what it is missing**, in one round, before anything asks: the
+> queued writes go in first, then each app takes back the refs its own rows say it should have.
+> One passphrase, and the suite has its credentials again without a single app being opened.
+>
 > The vault changes what the key *is*. One file, sealed with **AES-256-GCM** under a key derived from
 > a **master passphrase** (PBKDF2-HMAC-SHA256, 310,000 rounds) that wraps a random vault key — a
 > passphrase in somebody's head rather than anything the phone or the archive holds. So the vault

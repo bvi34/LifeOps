@@ -243,6 +243,43 @@ class FinanceSecrets internal constructor(context: Context, private val override
     }
 
     /**
+     * Take back from the vault everything this store is missing, for the connections [connectionIds]
+     * names, and say how many refs were restored.
+     *
+     * The mirror of [refileIntoVault], and the one that runs on an ordinary phone rather than after
+     * a disaster: this is what a restore needs. The database came back in the archive, so the
+     * connections are all here; the tokens did not, because they were behind a key that belongs to
+     * a phone the household no longer has.
+     *
+     * The ids come from the caller — which is to say from the *database* — rather than from this
+     * store's own keys, and that is the whole trick. After a restore this store is empty, so
+     * enumerating it would find nothing to ask the vault for; the connections are the thing that
+     * survived, and they are what says which refs to go looking for.
+     *
+     * Nothing is overwritten: [ManagedSecrets.restock] fills only an empty slot, so a token
+     * refreshed this morning is never replaced by the copy the vault happens to hold.
+     */
+    fun restockFromVault(connectionIds: Collection<String>): Int {
+        var restored = 0
+
+        if (restock(KEY_PLAID_CLIENT, plaidClientRef)) restored++
+        if (restock(KEY_PLAID_SECRET, plaidSecretRef)) restored++
+        if (restock(KEY_PLAID_ENV, plaidEnvRef)) restored++
+
+        connectionIds.distinct().forEach { connectionId ->
+            if (restock(tokenKey(connectionId), tokenRef(connectionId))) restored++
+        }
+        return restored
+    }
+
+    /** One slot: filled from the vault if this store has nothing in it. */
+    private fun restock(key: String, ref: SecretRef): Boolean = ManagedSecrets.restock(
+        ref = ref,
+        local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },
+        save = { value -> prefs.edit().putString(key, value).apply() }
+    )
+
+    /**
      * One value: this store if it has it, the vault if it does not, and back into this store if the
      * vault was the one that had it.
      *

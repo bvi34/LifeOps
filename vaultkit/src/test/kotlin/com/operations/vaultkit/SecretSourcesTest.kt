@@ -24,8 +24,16 @@ class SecretSourcesTest {
         private val explode: Boolean = false
     ) : SecretSource {
         var asked = 0
+        var restocked = 0
+
         override suspend fun refile(): Int {
             asked++
+            if (explode) error("this app is having a bad day")
+            return count
+        }
+
+        override suspend fun rehydrate(): Int {
+            restocked++
             if (explode) error("this app is having a bad day")
             return count
         }
@@ -90,6 +98,52 @@ class SecretSourcesTest {
 
         assertEquals(listOf(SecretOwner.of(AppId.FINANCE)), SecretSources.owners)
         assertEquals(1, refill.filed)
+    }
+
+    // --- The other direction: the vault filling the apps, on every unlock ------------------------
+
+    @Test
+    fun `an unlock asks every app to take back what it is missing`() = runTest {
+        val finance = FakeSource(SecretOwner.of(AppId.FINANCE), 3)
+        val citation = FakeSource(SecretOwner.of(AppId.CITATION), 2)
+        SecretSources.register(finance)
+        SecretSources.register(citation)
+
+        val restock = SecretSources.rehydrateAll()
+
+        assertEquals(1, finance.restocked)
+        assertEquals(1, citation.restocked)
+        assertEquals(5, restock.filed)
+        assertEquals("Finance 3, Citation 2", restock.summary())
+        // The two directions are separate rounds: asking the vault to fill the apps must not also
+        // push the apps' copies back into the vault.
+        assertEquals(0, finance.asked)
+    }
+
+    @Test
+    fun `one app failing to take its credentials back does not cost the others theirs`() = runTest {
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 0, explode = true))
+        val citation = FakeSource(SecretOwner.of(AppId.CITATION), 2)
+        SecretSources.register(citation)
+
+        val restock = SecretSources.rehydrateAll()
+
+        assertEquals(1, citation.restocked)
+        assertEquals(2, restock.filed)
+        assertEquals(0, restock.byOwner[SecretOwner.of(AppId.FINANCE)])
+    }
+
+    @Test
+    fun `an ordinary unlock finds nothing to do and says so`() = runTest {
+        // Every app's store is already full: the normal case, since this runs on every unlock and
+        // only the first one after a restore has anything to put back.
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 0))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.CITATION), 0))
+
+        val restock = SecretSources.rehydrateAll()
+
+        assertTrue(restock.empty)
+        assertEquals("", restock.summary())
     }
 
     @Test

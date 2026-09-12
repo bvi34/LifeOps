@@ -196,6 +196,33 @@ class UpdateTokenVaultTest {
     }
 
     @Test
+    fun `an unlock puts the token back before anything asks for it`() {
+        // The pull above works only when something reads the token *while the vault is open*, and
+        // the launch check on a restored phone runs before anybody has typed a passphrase. So the
+        // vault pushes on unlock, and this is the shell's half of that round.
+        val vault = FakeVault()
+        SecretsAccess.register(vault)
+        prefs().token = "ghp_abc"
+        wipeLocalStoreOnly()
+
+        assertEquals(1, prefs().restockFromVault())
+
+        assertEquals("ghp_abc", localToken())
+        assertEquals("and the second unlock of the day has nothing to do", 0, prefs().restockFromVault())
+    }
+
+    @Test
+    fun `an unlock never writes over a token typed on this phone`() {
+        val vault = FakeVault()
+        SecretsAccess.register(vault)
+        prefs().token = "ghp_typed_here"
+        vault.items[ref.format()] = "ghp_older_copy"
+
+        assertEquals(0, prefs().restockFromVault())
+        assertEquals("ghp_typed_here", localToken())
+    }
+
+    @Test
     fun `a rebuilt vault gets the token filed again`() {
         // The forgotten-passphrase path: the vault is gone, the token is still twelve inches away
         // in the shell's own store, and there is no reason for the rebuild to leave the updater

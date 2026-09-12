@@ -97,6 +97,28 @@ class OreillyAccess(context: Context) {
         return 2
     }
 
+    /**
+     * Take the card and PIN back out of the vault when this store has neither, and say how many refs
+     * were restored (0 or 2).
+     *
+     * The mirror of [refileIntoVault] and the one a restore walks: on a new phone this store is
+     * empty because its key belonged to the old one, and the vault came across in the archive. Run
+     * on every unlock, so the ordinary answer is 0 and costs two preference reads.
+     */
+    fun restockFromVault(): Int {
+        var restored = 0
+        if (restock(KEY_CARD, cardRef)) restored++
+        if (restock(KEY_PIN, pinRef)) restored++
+        return restored
+    }
+
+    /** One slot: filled from the vault only when this store has nothing in it. */
+    private fun restock(key: String, ref: SecretRef): Boolean = ManagedSecrets.restock(
+        ref = ref,
+        local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },
+        save = { value -> prefs.edit().putString(key, value).apply() }
+    )
+
     private fun read(key: String, ref: SecretRef): String? = ManagedSecrets.readThrough(
         ref = ref,
         local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },

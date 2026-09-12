@@ -112,6 +112,34 @@ class CatalogCredentials(context: Context) {
         return filed
     }
 
+    /**
+     * Take back from the vault the sign-ins for [catalogIds] that this store is missing, and say how
+     * many refs were restored.
+     *
+     * The ids come from the caller — from the *catalogue rows in the database* — rather than from
+     * [catalogIds], and the difference is the entire point on a restored phone: this store is what
+     * came up empty, so its own keys would name nothing to ask for. The catalogues themselves
+     * travelled in the archive.
+     *
+     * A password that was genuinely empty (a catalogue that wants only a username) restores as one
+     * ref rather than two, which is the same arithmetic [refileIntoVault] uses.
+     */
+    fun restockFromVault(catalogIds: Collection<String>): Int {
+        var restored = 0
+        catalogIds.distinct().forEach { catalogId ->
+            if (restock(userKey(catalogId), userRef(catalogId))) restored++
+            if (restock(passwordKey(catalogId), passwordRef(catalogId))) restored++
+        }
+        return restored
+    }
+
+    /** One slot: filled from the vault only when this store has nothing in it. */
+    private fun restock(key: String, ref: SecretRef): Boolean = ManagedSecrets.restock(
+        ref = ref,
+        local = { prefs.getString(key, null)?.takeIf { it.isNotBlank() } },
+        save = { value -> prefs.edit().putString(key, value).apply() }
+    )
+
     /** Every catalogue this store has a sign-in for — what a refill needs names for. */
     fun catalogIds(): List<String> =
         prefs.all.keys.filter { it.startsWith(USER_PREFIX) }.map { it.removePrefix(USER_PREFIX) }

@@ -1594,6 +1594,15 @@ class CitationRepository private constructor(
 
     suspend fun catalog(id: String): CatalogSource? = db.opdsCatalogDao().get(id)?.toSource()
 
+    /**
+     * Every catalogue the household has, by id.
+     *
+     * Asked for by the vault seam rather than by a screen: after a restore the catalogues are here
+     * and their sign-ins are not, and `CatalogCredentials` cannot enumerate what it is missing —
+     * only the rows can say which sign-ins should exist. See `SecretSource.rehydrate`.
+     */
+    suspend fun catalogIds(): List<String> = db.opdsCatalogDao().all().map { it.id }
+
     /** Open a catalog page: its root when [url] is null, otherwise the page a link pointed at. */
     suspend fun openCatalog(
         source: CatalogSource,

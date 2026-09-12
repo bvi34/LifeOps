@@ -99,6 +99,15 @@ class SandboxApplication : Application() {
             override suspend fun refile(): Int =
                 UpdatePrefs(this@SandboxApplication).refileIntoVault() +
                     CloudBackupPrefs(this@SandboxApplication).refileIntoVault()
+
+            /**
+             * And the direction a restore walks: both of the shell's credentials are device-bound
+             * and did not travel, the vault did, and this puts them back the moment it is opened
+             * rather than waiting for the next launch check or the next scheduled archive to ask.
+             */
+            override suspend fun rehydrate(): Int =
+                UpdatePrefs(this@SandboxApplication).restockFromVault() +
+                    CloudBackupPrefs(this@SandboxApplication).restockFromVault()
         })
     }
 }

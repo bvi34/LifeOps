@@ -125,6 +125,24 @@ class CloudBackupPrefs internal constructor(context: Context, private val overri
         }.apply()
     }
 
+    /**
+     * Take the signature back out of the vault if this store has lost it, and say how many refs were
+     * restored (one or none).
+     *
+     * The push half of the read-through above, and the one that matters most here: the scheduled
+     * backup runs in the background, hours before anybody opens anything, and a worker that reads
+     * through to a *shut* vault gets null and records "paste a signature" on a phone whose household
+     * has done nothing wrong. Pushing on unlock means the first archive after a restore goes to the
+     * same container the last one did.
+     */
+    fun restockFromVault(): Int = if (
+        ManagedSecrets.restock(
+            ref = SAS_REF,
+            local = { secrets.getString(KEY_SAS, null)?.takeIf { it.isNotBlank() } },
+            save = { value -> writeSasLocally(value) }
+        )
+    ) 1 else 0
+
     /** How often an archive is owed. */
     var frequency: CloudBackupFrequency
         get() = CloudBackupFrequency.fromKey(prefs.getString(KEY_FREQUENCY, null))
