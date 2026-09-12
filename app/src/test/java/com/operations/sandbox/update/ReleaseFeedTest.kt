@@ -2,6 +2,7 @@ package com.operations.sandbox.update
 
 import com.operations.sandbox.update.logic.AppVersion
 import com.operations.sandbox.update.logic.ReleaseFeed
+import com.operations.sandbox.update.logic.ReleaseLookup
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -155,6 +156,91 @@ class ReleaseFeedTest {
         assertEquals(
             "https://api.github.com/repos/bvi34/LifeOps/releases/latest",
             ReleaseFeed.latestReleaseUrl("bvi34/LifeOps")
+        )
+        assertEquals(
+            "https://api.github.com/repos/bvi34/LifeOps",
+            ReleaseFeed.repoUrl("bvi34/LifeOps")
+        )
+    }
+
+    // --- Why there was nothing to offer -------------------------------------------------------
+    //
+    // The reason is the point of these. "No APK on the release" and "the releases aren't visible"
+    // are both "no update" to the caller, but they are opposite sentences to a user: one is fixed
+    // in CI and the other by pasting a token, and the updater used to report the second for both.
+
+    @Test
+    fun `a release with no apk says so, and names the tag`() {
+        val lookup = ReleaseFeed.readLatestRelease(releaseJson(tag = "v0.1.0", assets = "[]"))
+        assertEquals(ReleaseLookup.NoApkAttached("v0.1.0"), lookup)
+    }
+
+    @Test
+    fun `the release this app actually shipped against reads as no apk`() {
+        // GitHub's real answer for release 0.1: published by hand, source archives only. Source
+        // tarballs are not assets, so `assets` comes back empty rather than absent.
+        val lookup = ReleaseFeed.readLatestRelease(
+            """{"tag_name":"0.1","draft":false,"prerelease":false,"body":"","assets":[]}"""
+        )
+        assertEquals(ReleaseLookup.NoApkAttached("0.1"), lookup)
+    }
+
+    @Test
+    fun `a release with only non-apk assets reads as no apk`() {
+        val assets = """[{"name":"mapping.txt","size":10,"url":"u","browser_download_url":"b"}]"""
+        assertEquals(
+            ReleaseLookup.NoApkAttached("v1.4.2"),
+            ReleaseFeed.readLatestRelease(releaseJson(assets = assets))
+        )
+    }
+
+    @Test
+    fun `an apk with no usable url reads as no apk rather than as a broken response`() {
+        val assets = """[{"name":"release.apk","size":10,"url":"","browser_download_url":""}]"""
+        assertEquals(
+            ReleaseLookup.NoApkAttached("v1.4.2"),
+            ReleaseFeed.readLatestRelease(releaseJson(assets = assets))
+        )
+    }
+
+    @Test
+    fun `an unversioned tag is reported apart from a missing apk`() {
+        // Both are "nothing to offer", and they are different fixes, so they must not collapse
+        // into one message. This one is the tag's fault, and says which tag.
+        assertEquals(
+            ReleaseLookup.UnreadableTag("nightly"),
+            ReleaseFeed.readLatestRelease(releaseJson(tag = "nightly"))
+        )
+    }
+
+    @Test
+    fun `drafts and pre-releases read as nothing published yet`() {
+        assertEquals(ReleaseLookup.NoReleaseYet, ReleaseFeed.readLatestRelease(releaseJson(draft = true)))
+        assertEquals(
+            ReleaseLookup.NoReleaseYet,
+            ReleaseFeed.readLatestRelease(releaseJson(prerelease = true))
+        )
+    }
+
+    @Test
+    fun `a response that isn't a release reads as unreadable, never as an access problem`() {
+        assertEquals(ReleaseLookup.Unreadable, ReleaseFeed.readLatestRelease(""))
+        assertEquals(ReleaseLookup.Unreadable, ReleaseFeed.readLatestRelease("not json at all"))
+        assertEquals(ReleaseLookup.Unreadable, ReleaseFeed.readLatestRelease("[]"))
+        assertEquals(ReleaseLookup.Unreadable, ReleaseFeed.readLatestRelease("{}"))
+        assertEquals(
+            ReleaseLookup.Unreadable,
+            ReleaseFeed.readLatestRelease("""{"message":"Not Found"}""")
+        )
+    }
+
+    @Test
+    fun `a good release is found, and the wrapper agrees with it`() {
+        val lookup = ReleaseFeed.readLatestRelease(releaseJson())
+        assertTrue(lookup is ReleaseLookup.Found)
+        assertEquals(
+            (lookup as ReleaseLookup.Found).release,
+            ReleaseFeed.parseLatestRelease(releaseJson())
         )
     }
 }
