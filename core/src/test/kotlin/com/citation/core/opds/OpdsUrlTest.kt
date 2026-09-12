@@ -68,10 +68,41 @@ class OpdsUrlTest {
     }
 
     @Test
+    fun `an https catalog never resolves a link down onto plain http`() {
+        // What broke browsing Feedbooks: a catalog served over https states its own links with
+        // http://, Android refuses cleartext, and the whole page fails on a link nobody typed.
+        assertEquals("https://www.feedbooks.com/book/1", OpdsUrl.resolve(base, "http://www.feedbooks.com/book/1"))
+        assertEquals("https://host.test/opds/dir/next", OpdsUrl.resolve(base, "http://host.test/opds/dir/next"))
+        // Port, query and fragment survive the upgrade untouched.
+        assertEquals(
+            "https://host.test:8080/opds?page=2#top",
+            OpdsUrl.resolve(base, "http://host.test:8080/opds?page=2#top")
+        )
+    }
+
+    @Test
+    fun `a catalog the user added as http stays on http`() {
+        val lan = "http://nas.local:8080/opds"
+        assertEquals("http://nas.local:8080/books", OpdsUrl.resolve(lan, "books"))
+        assertEquals("http://other.local/x", OpdsUrl.resolve(lan, "http://other.local/x"))
+        // Only downgrades are refused: a server that upgrades itself is followed gladly.
+        assertEquals("https://nas.local/opds", OpdsUrl.resolve(lan, "https://nas.local/opds"))
+    }
+
+    @Test
+    fun `keepSecure leaves everything that is not an https to http step alone`() {
+        assertEquals("data:image/png;base64,AAAA", OpdsUrl.resolve(base, "data:image/png;base64,AAAA"))
+        assertEquals("https://host.test/x", OpdsUrl.keepSecure("https://host.test/", "https://host.test/x"))
+        assertEquals("http://host.test/x", OpdsUrl.keepSecure("", "http://host.test/x"))
+    }
+
+    @Test
     fun `presets are all absolute and distinct`() {
         val presets = CatalogSource.presets()
         assertTrue(presets.isNotEmpty())
         assertEquals(presets.size, presets.map { it.id }.distinct().size)
         presets.forEach { assertTrue(it.name, OpdsUrl.isAbsolute(it.rootUrl)) }
+        // A public preset that shipped as http:// would be unreachable on Android by policy.
+        presets.forEach { assertTrue(it.name, it.rootUrl.startsWith("https://")) }
     }
 }

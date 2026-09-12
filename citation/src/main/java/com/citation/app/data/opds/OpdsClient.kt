@@ -166,12 +166,14 @@ class OpdsClient(
                         val location = conn.getHeaderField("Location")
                             ?: return Result.HttpError(code)
                         if (++hops > MAX_REDIRECTS) return Result.Unreachable("Too many redirects")
-                        url = URL(URL(url), location).toString()
+                        // Resolved rather than concatenated, so a relative Location works and a hop
+                        // that would drop an https fetch onto plain http is kept on https instead.
+                        url = OpdsUrl.resolve(url, location)
                     }
                     else -> return Result.HttpError(code)
                 }
             } catch (e: Exception) {
-                return Result.Unreachable(e.message ?: e.javaClass.simpleName)
+                return Result.Unreachable(describe(e))
             } finally {
                 conn?.disconnect()
             }
@@ -194,6 +196,23 @@ class OpdsClient(
             android.util.Base64.NO_WRAP
         )
         return "Basic $encoded"
+    }
+
+    /**
+     * Say what actually went wrong, in words the catalog screen can show.
+     *
+     * Android refuses plain http by default, and the exception it throws for that ("Cleartext HTTP
+     * traffic to … not permitted") reads as an app bug rather than as what it is: a server that only
+     * offers an unencrypted connection. Redirects are kept on https by [OpdsUrl.resolve], so what
+     * reaches here is a catalog whose own address is `http://` — most often a server on the LAN.
+     */
+    private fun describe(e: Exception): String {
+        val message = e.message ?: e.javaClass.simpleName
+        return if (message.contains("cleartext", ignoreCase = true)) {
+            "that server only offers an unencrypted http connection, which Android blocks."
+        } else {
+            message
+        }
     }
 
     /** Read at most [maxBytes]; `null` means the response ran past the cap. */

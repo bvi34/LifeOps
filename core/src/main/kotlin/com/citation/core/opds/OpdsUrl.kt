@@ -19,13 +19,36 @@ object OpdsUrl {
         val trimmed = href.trim()
         if (trimmed.isEmpty()) return base
         if (trimmed.startsWith("data:")) return trimmed
-        return try {
+        val resolved = try {
             // Spaces and other stray characters are common in real hrefs and illegal in a URI.
             URI(base).resolve(URI(encodeIllegal(trimmed))).toString()
         } catch (_: Exception) {
             fallback(base, trimmed)
         }
+        return keepSecure(base, resolved)
     }
+
+    /**
+     * Never step down from https to http part-way through browsing a catalog.
+     *
+     * Real feeds are full of `http://` links they no longer mean: a server reached over https states
+     * its own entries with the scheme it was configured with years ago, and a redirect chain hops to
+     * a plain-http host that has served https for just as long. Android refuses cleartext by default,
+     * so following either one verbatim fails the whole page with "Cleartext HTTP traffic to … not
+     * permitted" — a platform error about a link the user never saw, on a catalog that works.
+     *
+     * A link stated inside an https page is therefore fetched over https. It costs nothing when the
+     * host speaks both (nearly all do), and where it does not, the failure is an ordinary
+     * unreachable-server one instead of a policy violation. A catalog the user deliberately added as
+     * `http://` — a Calibre server on the LAN — starts on http and stays there; this only refuses to
+     * *downgrade*.
+     */
+    fun keepSecure(base: String, url: String): String =
+        if (base.startsWith("https://", true) && url.startsWith("http://", true)) {
+            "https://" + url.substring("http://".length)
+        } else {
+            url
+        }
 
     /** Percent-encode the characters that make an otherwise-fine href unparseable. */
     private fun encodeIllegal(href: String): String =

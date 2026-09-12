@@ -385,13 +385,16 @@ in speaking it properly rather than writing an integration per source.
 | **JSON (OPDS 2.0)** | `opds/Opds2Parser` | Readium-based servers. Normalised into the **same** `OpdsFeed`, so nothing downstream learns there are two protocols. |
 | **Classification** | `opds/OpdsLink`, `OpdsLinkKind`, `OpdsFormat` | OPDS says everything through `rel` and `type`: whether an entry is a book or a folder, downloadable or only borrowable, where its cover is, how to page and search. Decided once, as data — the UI never pattern-matches a rel string. |
 | **Feed model** | `opds/OpdsFeed`, `OpdsEntry`, `OpdsFacetGroup` | Navigation and publications already separated, paging and facets picked out, and every href **absolute** by parse time. Entry metadata mirrors `BookMetadata` deliberately — a catalog usually knows more than the file does. |
-| **URLs** | `opds/OpdsUrl`, `OpenSearchDescription` | Resolution for every way feeds state a link (absolute, protocol-relative, root-relative, relative, with spaces in it), and OpenSearch template expansion — the indirection OPDS uses instead of inventing its own search. |
+| **URLs** | `opds/OpdsUrl`, `OpenSearchDescription` | Resolution for every way feeds state a link (absolute, protocol-relative, root-relative, relative, with spaces in it), and OpenSearch template expansion — the indirection OPDS uses instead of inventing its own search. A link stated inside an https page is also **kept on https**: feeds and redirects are full of stale `http://` addresses, and Android refuses cleartext, so following one verbatim failed a working catalog with a platform error about a link nobody typed. |
 | **Catalogs** | `opds/CatalogSource`, `CatalogPage`, `CatalogDecoder` | Saved catalogs with free public presets as seeds. A typed address is normalised from what a person actually types (`nas.local:8080`) rather than what the protocol wants. The decoder sniffs the body as well as the content type, so a correct feed under the wrong type still parses and an HTML sign-in page is reported as "not a catalog" instead of silently parsing to an empty shelf. |
 
 **Android wiring:** `data/opds/OpdsClient` is the only class that touches a catalog server (the
 `NwsClient`/`NwsParser` split again). It copes with what real servers do — Basic auth, manual
-redirect hops, mislabelled types, a size cap — and returns **typed failures**, because "the NAS is
-asleep" should render as a message with a retry, not a crash. Credentials are held to the catalog's
+redirect hops that never downgrade an https fetch onto cleartext, mislabelled types, a size cap —
+and returns **typed failures**, because "the NAS is asleep" should render as a message with a retry,
+not a crash. A catalog whose own address is `http://` (a server on the LAN) is still refused by the
+platform; that comes back as a sentence about an unencrypted server rather than the raw policy
+exception. Credentials are held to the catalog's
 **own origin**, so a redirect out to a CDN cannot carry someone's server password with it, and they
 live in a Keystore-backed store (`CatalogCredentials`) rather than the database: a `citation.db`
 travels — the sandbox backup copies it, a restore swaps it in wholesale — so a database carrying
