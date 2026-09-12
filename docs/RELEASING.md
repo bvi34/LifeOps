@@ -183,6 +183,36 @@ print that, so a genuinely broken test still fails the first time.
 The cache is saved even when the tests fail, and restored across branches from the one the default
 branch's CI writes, which is how a tag build gets a warm cache without ever having run before.
 
+## When the install says the package conflicts
+
+> App not installed as package conflicts with an existing package.
+
+Android identifies an app by its package name *and* the key it was signed with, and it will not let
+one be replaced by the other signed differently. A `./gradlew assembleDebug` build carries the debug
+keystore; every release carries the keystore the workflow decodes from `RELEASE_KEYSTORE_BASE64`.
+They share `com.operations.sandbox`, so the first published release a hand-built install is ever
+offered is the one install that cannot succeed. Nothing is wrong with the release, and re-downloading
+it changes nothing.
+
+The Updates tab now says this before handing the APK to the installer — it compares the certificates
+of the downloaded file against the running build's — and offers **Save the APK…** instead of an
+Install button that only leads to the system's own version of the sentence above.
+
+The order of the steps matters, because two of them are one-way:
+
+1. **Save the APK** somewhere outside the app. The download lives in the app's cache and is deleted
+   with the app; on a private repository it cannot simply be fetched again in a browser afterwards,
+   because the asset needs the token that went with the app.
+2. **Back up** from *Settings → Backups*, to a file. Uninstalling takes the databases with it.
+3. **Uninstall Operations Sandbox.**
+4. **Install the saved APK** from Files.
+5. **Restore the backup.**
+
+It is a one-time crossing: every release after this one is signed with the same keystore, so they
+install over the top with the data left alone. Keep the keystore — losing it means every future
+release conflicts with the installed app in exactly this way, and that is a bigger problem than this
+one.
+
 ## When the app finds no update
 
 *Settings → Updates → Check for updates* reports what it actually established, and the message

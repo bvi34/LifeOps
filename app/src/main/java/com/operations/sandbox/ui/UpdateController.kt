@@ -1,6 +1,7 @@
 package com.operations.sandbox.ui
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -12,11 +13,14 @@ import androidx.compose.ui.platform.LocalContext
 import com.operations.sandbox.update.UpdatePrefs
 import com.operations.sandbox.update.Updater
 import com.operations.sandbox.update.logic.AvailableRelease
+import com.operations.sandbox.update.logic.InstallCompatibility
 import com.operations.sandbox.update.logic.ReleaseFeed
 import com.operations.sandbox.update.logic.ReleaseLookup
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -40,8 +44,15 @@ sealed interface UpdateState {
     /** [progress] is 0f..1f, or -1f when the server didn't say how big the file is. */
     data class Downloading(val release: AvailableRelease, val progress: Float) : UpdateState
 
-    /** The APK is on disk and the installer is one tap away. */
-    data class ReadyToInstall(val release: AvailableRelease, val apk: File) : UpdateState
+    /**
+     * The APK is on disk and the installer is one tap away — unless [signingConflict], in which
+     * case the installer is a dead end and the screen says so instead of walking into it.
+     */
+    data class ReadyToInstall(
+        val release: AvailableRelease,
+        val apk: File,
+        val signingConflict: Boolean = false
+    ) : UpdateState
 
     /**
      * The check ended without an update to offer, and the reason is worth saying out loud.
@@ -252,7 +263,15 @@ class UpdateController(
                 }
             }
             state = result.fold(
-                onSuccess = { UpdateState.ReadyToInstall(release, it) },
+                onSuccess = { apk ->
+                    // Read the APK's signature now rather than at the tap: this is the moment the
+                    // file exists, and a card that already knows the install cannot work can offer
+                    // the way round it instead of a button that leads to a system refusal.
+                    val conflict = withContext(Dispatchers.IO) {
+                        updater.compatibilityOf(apk) == InstallCompatibility.SIGNATURE_CONFLICT
+                    }
+                    UpdateState.ReadyToInstall(release, apk, signingConflict = conflict)
+                },
                 onFailure = { UpdateState.Failed("Download failed: ${it.message ?: "unknown error"}") }
             )
         }
@@ -280,6 +299,43 @@ class UpdateController(
         context.startActivity(updater.installIntent(apk))
         return true
     }
+
+    /**
+     * Copy the downloaded APK into a document the user picked.
+     *
+     * Needed only for the signature-conflict path, and needed *badly* there: the download lives in
+     * this app's own cache, and the fix for a conflict is to uninstall this app — which deletes the
+     * cache and the APK inside it. Re-downloading afterwards is not an option either, since a
+     * private repository's asset needs the token that went with the app. So the file has to be put
+     * somewhere that outlives the uninstall before the uninstall happens.
+     */
+    fun saveApkTo(uri: Uri?, apk: File) {
+        if (uri == null) {
+            saveStatus = "Not saved."
+            return
+        }
+        scope.launch {
+            saveStatus = "Saving…"
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val out = context.contentResolver.openOutputStream(uri)
+                        ?: error("Could not open the destination file")
+                    out.use { stream -> apk.inputStream().use { it.copyTo(stream) } }
+                }
+            }
+            saveStatus = result.fold(
+                onSuccess = {
+                    "Saved. It stays there after Operations Sandbox is uninstalled — open it from " +
+                        "Files to install."
+                },
+                onFailure = { "Couldn't save the APK: ${it.message ?: "unknown error"}" }
+            )
+        }
+    }
+
+    /** What the last [saveApkTo] did, for the line under the button. */
+    var saveStatus by mutableStateOf<String?>(null)
+        private set
 
     fun openReleasePage(release: AvailableRelease) {
         context.startActivity(updater.releasePageIntent(release))
