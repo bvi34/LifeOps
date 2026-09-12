@@ -144,7 +144,7 @@ class VaultStore(context: Context) {
             touch()
             true
         }
-    }.also { if (it) SecretsAccess.flushPending() }
+    }.also { if (it) openedUp() }
 
     /**
      * Open the vault with [passphrase].
@@ -167,7 +167,7 @@ class VaultStore(context: Context) {
         }
         adopt(key, document)
         UnlockResult.UNLOCKED
-    }.also { if (it == UnlockResult.UNLOCKED) SecretsAccess.flushPending() }
+    }.also { if (it == UnlockResult.UNLOCKED) openedUp() }
 
     /**
      * Open the vault with the key the device kept for the fingerprint shortcut.
@@ -193,7 +193,32 @@ class VaultStore(context: Context) {
         }
         adopt(key, document)
         UnlockResult.UNLOCKED
-    }.also { if (it == UnlockResult.UNLOCKED) SecretsAccess.flushPending() }
+    }.also { if (it == UnlockResult.UNLOCKED) openedUp() }
+
+    /**
+     * What happens the moment the vault is open, whichever way it was opened.
+     *
+     * Both directions of the seam, in the order that cannot lose anything:
+     *
+     *  1. **Flush.** Credentials written while the vault was shut are sitting in memory; they are
+     *     the newest copies of themselves and they go in first, so step 2 cannot read a stale value
+     *     out of the file and hand it back to the app that had already replaced it.
+     *  2. **Rehydrate.** Every app is asked to take back what it is missing. On an ordinary unlock
+     *     that is nothing at all and costs a map lookup per app; on the first unlock after a restore
+     *     it is every credential the household has, put back without them opening a single app.
+     *
+     * Step 2 is the whole point of the vault travelling in the archive. Before it, a restored phone
+     * got its credentials back one at a time and only when something happened to ask for one while
+     * the vault was open — so a sync that ran at six in the morning against a shut vault reported a
+     * bank connection that looked as though it had never been set up.
+     *
+     * On IO because an app's rehydrate reads its database to find out which connections it has, and
+     * unlock is called from a screen.
+     */
+    private suspend fun openedUp() = withContext(Dispatchers.IO) {
+        SecretsAccess.flushPending()
+        SecretSources.rehydrateAll()
+    }
 
     /** Shut the vault: wipe the key, drop the document, tell everyone. */
     fun lock() {

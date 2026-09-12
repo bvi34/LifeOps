@@ -36,11 +36,23 @@ val RESTORE_MIME_TYPES = arrayOf("application/zip", "application/octet-stream")
 class BackupController(
     private val context: Context,
     private val center: BackupCenter,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    initialSelection: Set<AppId> = center.contributors.map { it.appId }.toSet()
 ) {
     val apps: List<BackupContributor> get() = center.contributors
 
-    var selected by mutableStateOf(center.contributors.map { it.appId }.toSet())
+    /**
+     * The ticks, which the tab's every action reads: the zip, the restore, and the scheduled
+     * upload. [initialSelection] is where they start — the sandbox seeds it with what the scheduled
+     * backup is set to include, so the list survives a relaunch rather than silently going back to
+     * "everything" and re-widening a schedule somebody deliberately narrowed. An app the archive
+     * knows about but this build has no contributor for is not selectable, so the set is
+     * intersected rather than trusted.
+     */
+    var selected by mutableStateOf(
+        initialSelection.intersect(center.contributors.map { it.appId }.toSet())
+            .ifEmpty { center.contributors.map { it.appId }.toSet() }
+    )
         private set
 
     var working by mutableStateOf(false)
@@ -113,10 +125,13 @@ class BackupController(
 }
 
 @Composable
-fun rememberBackupController(center: BackupCenter): BackupController {
+fun rememberBackupController(
+    center: BackupCenter,
+    initialSelection: Set<AppId> = center.contributors.map { it.appId }.toSet()
+): BackupController {
     val context = LocalContext.current.applicationContext
     val scope = rememberCoroutineScope()
-    return remember(center, scope) { BackupController(context, center, scope) }
+    return remember(center, scope) { BackupController(context, center, scope, initialSelection) }
 }
 
 fun defaultBackupName(): String {

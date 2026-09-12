@@ -149,9 +149,15 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
     implementation(libs.kotlinx.coroutines.android)
-    // Keystore-backed storage for the updater's GitHub token — a credential, so not left in a
-    // plain app-private file. Already used elsewhere in the suite for the same reason.
+    // Keystore-backed storage for the updater's GitHub token and the scheduled backup's Azure
+    // signature — credentials, so not left in a plain app-private file. Already used elsewhere in
+    // the suite for the same reason.
     implementation(libs.androidx.security.crypto)
+    // The scheduled cloud backup. The container has had no background work of its own until now —
+    // the updater is deliberately launch-time only — but an archive that has to happen whether or
+    // not anybody opens the app is exactly what WorkManager is for, and LifeOps and Citation
+    // already bring it into this process for their own jobs.
+    implementation(libs.androidx.work.runtime.ktx)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")
@@ -165,4 +171,10 @@ dependencies {
     // :secrets and :finance test the same seam from their side.
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("androidx.test:core:1.6.1")
+    // Test-only: `BackupCoverageTest` opens every hosted app's database through that app's own
+    // singleton, which is the whole point of it — a census measured against paths this repository
+    // spelled out by hand would only prove the list matches itself. Those singletons return Room
+    // types, and the hosted apps expose Room as `implementation`, so it reaches the shell's test
+    // classpath here and nowhere else. Nothing in :app's own source uses Room.
+    testImplementation(libs.androidx.room.runtime)
 }

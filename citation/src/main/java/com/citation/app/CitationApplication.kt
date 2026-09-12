@@ -92,6 +92,19 @@ class CitationApplication private constructor(private val app: Application) {
                 }
                 return catalogCredentials.refileIntoVault { names[it] } + oreillyAccess.refileIntoVault()
             }
+
+            /**
+             * The other direction: the catalogues are in the database that came back, their sign-ins
+             * are in the vault that came back, and this is what puts the second inside the first.
+             *
+             * The ids are read from the repository rather than from the credential store, because on
+             * the phone this exists for the credential store is the empty one.
+             */
+            override suspend fun rehydrate(): Int {
+                val repo = runCatching { repository.await() }.getOrNull()
+                val catalogIds = runCatching { repo?.catalogIds() }.getOrNull().orEmpty()
+                return catalogCredentials.restockFromVault(catalogIds) + oreillyAccess.restockFromVault()
+            }
         })
     }
 

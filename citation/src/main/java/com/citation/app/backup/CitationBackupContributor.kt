@@ -2,6 +2,7 @@ package com.citation.app.backup
 
 import android.content.Context
 import androidx.sqlite.db.SimpleSQLiteQuery
+import com.citation.app.audio.SpeechSettingsStore
 import com.citation.app.data.db.CITATION_DB_VERSION
 import com.citation.app.data.db.CitationDatabase
 import com.operations.backupkit.AppId
@@ -18,10 +19,19 @@ import java.io.File
  * refetchable by design, so it stays out of the archive exactly as [com.citation.core.manifest] and
  * the eviction policy intend.
  *
+ * The narrator's settings are the third thing, and they are the reason this list is worth keeping
+ * honest: `speech_settings.json` sits in `filesDir` *beside* `sovereign/` rather than inside it, so
+ * a contributor that carried "the database and the owned files" carried everything except the
+ * voice, the speed and the sleep timer — which somebody would discover the first time they pressed
+ * play on a restored phone. A file that is one directory away from the sweep is exactly the shape
+ * of thing a full backup loses quietly; `BackupCoverageTest` now takes a census of the whole data
+ * directory so the next one fails a test instead.
+ *
  * Archive layout:
  * ```
- * citation/citation.db          ← WAL-checkpointed, whole-file copy
- * citation/sovereign/…          ← every owned file, paths preserved
+ * citation/citation.db            ← WAL-checkpointed, whole-file copy
+ * citation/sovereign/…            ← every owned file, paths preserved
+ * citation/speech_settings.json   ← the narrator's voice, speed and sleep timer
  * ```
  *
  * Restore is a **whole-file swap** of `citation.db` (not a row merge), so a Citation restart is
@@ -57,6 +67,11 @@ class CitationBackupContributor(private val context: Context) : BackupContributo
                 sink.entry("$SOVEREIGN_PREFIX$rel").use { out -> file.inputStream().use { it.copyTo(out) } }
             }
         }
+
+        val speech = speechSettingsFile()
+        if (speech.isFile) {
+            sink.entry(SPEECH_ENTRY).use { out -> speech.inputStream().use { it.copyTo(out) } }
+        }
     }
 
     override fun restore(source: BackupSource) {
@@ -66,6 +81,15 @@ class CitationBackupContributor(private val context: Context) : BackupContributo
             val dest = File(sovereign, rel.removePrefix(SOVEREIGN_PREFIX))
             dest.parentFile?.mkdirs()
             source.open(rel)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
+        }
+
+        // The narrator's settings, which are a whole file and are replaced by one: the store's own
+        // decoding is total, so an older build's file restored onto a newer one keeps every field
+        // it has and defaults the rest.
+        source.open(SPEECH_ENTRY)?.use { input ->
+            val speech = speechSettingsFile()
+            speech.parentFile?.mkdirs()
+            speech.outputStream().use { input.copyTo(it) }
         }
 
         // Then swap the database file wholesale. Close the live handle, drop stale WAL/SHM sidecars
@@ -82,9 +106,13 @@ class CitationBackupContributor(private val context: Context) : BackupContributo
 
     private fun sovereignDir() = File(context.filesDir, "sovereign")
 
+    /** Named by the store that owns it, so the two cannot drift apart. */
+    private fun speechSettingsFile() = File(context.filesDir, SpeechSettingsStore.FILE_NAME)
+
     companion object {
         private const val DB_NAME = "citation.db"
         private const val DB_ENTRY = "citation.db"
         private const val SOVEREIGN_PREFIX = "sovereign/"
+        private const val SPEECH_ENTRY = SpeechSettingsStore.FILE_NAME
     }
 }

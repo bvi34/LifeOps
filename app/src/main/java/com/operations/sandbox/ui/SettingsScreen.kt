@@ -65,7 +65,9 @@ enum class SettingsTab(val label: String) {
  * exactly one place to look when something is the wrong colour. The launcher's own wallpaper is
  * chosen here too: it belongs to the container's home screen, so no hosted app is affected by it.
  *
- * **Backups** is the archive the sandbox has always driven: pick apps, write one zip, read it back.
+ * **Backups** is the archive the sandbox has always driven: pick apps, write one zip, read it back —
+ * and, under it, the same archive sent to the household's own Azure storage account on a schedule,
+ * because the backup that saves somebody is the one nobody had to remember to take.
  *
  * **Updates** is the third thing that belongs to the container rather than to any app: the suite
  * ships as one sideloaded APK built from a git tag, so this is where it asks GitHub whether a newer
@@ -74,6 +76,7 @@ enum class SettingsTab(val label: String) {
 @Composable
 fun SandboxSettingsScreen(
     backup: BackupController,
+    cloud: CloudBackupController,
     updates: UpdateController,
     tab: SettingsTab,
     onTabChange: (SettingsTab) -> Unit,
@@ -125,6 +128,7 @@ fun SandboxSettingsScreen(
                     SettingsTab.APPEARANCE -> AppearanceTab(appearance, store, focusedApp)
                     SettingsTab.BACKUPS -> BackupsTab(
                         backup = backup,
+                        cloud = cloud,
                         onBackup = { createBackup.launch(defaultBackupName()) },
                         onRestore = { pickRestore.launch(RESTORE_MIME_TYPES) }
                     )
@@ -747,12 +751,19 @@ private fun PresetCard(
 @Composable
 private fun BackupsTab(
     backup: BackupController,
+    cloud: CloudBackupController,
     onBackup: () -> Unit,
     onRestore: () -> Unit
 ) {
+    // One list of ticks governs the whole tab — the zip, the restore, and the scheduled upload.
+    // A second, invisible selection for the schedule is how somebody unticks Finance, takes a
+    // backup without it, and keeps uploading it every night regardless.
+    LaunchedEffect(backup.selected) { cloud.setIncludedApps(backup.selected) }
+
     SectionCard(
         title = "What to include",
-        subtitle = "Both buttons act on the apps ticked here."
+        subtitle = "Everything on this tab acts on the apps ticked here — the zip, the restore, " +
+            "and the scheduled upload."
     ) {
         backup.apps.forEach { entry ->
             Row(
@@ -823,6 +834,8 @@ private fun BackupsTab(
             Text(message, style = MaterialTheme.typography.bodyMedium)
         }
     }
+
+    CloudBackupSection(cloud, appCount = backup.apps.size)
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -111,6 +111,19 @@ class FinanceApp private constructor(private val app: Application) {
                     .getOrDefault(emptyMap())
                 return secrets.refileIntoVault { id -> names[id] }
             }
+
+            /**
+             * The other direction, and the one a restore actually walks: the connections came back
+             * in the archive and their tokens did not, so the ids come out of the database and the
+             * tokens come out of the vault.
+             *
+             * Cheap when there is nothing to do — which is every unlock but the first one after a
+             * restore — because each slot that is already full is a preference read and no more.
+             */
+            override suspend fun rehydrate(): Int {
+                val ids = runCatching { repository.connections().map { it.id } }.getOrDefault(emptyList())
+                return secrets.restockFromVault(ids)
+            }
         })
     }
 

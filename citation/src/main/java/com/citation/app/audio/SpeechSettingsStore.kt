@@ -96,7 +96,13 @@ class SpeechSettingsStore(context: Context) {
         return runCatching { parse(raw) }.getOrDefault(fallback)
     }
 
-    private companion object {
+    companion object {
+
+        /**
+         * The file, named here rather than inside the store, because something else now has to know
+         * it: `CitationBackupContributor` carries this file, and a backup that names the file by
+         * hand is a backup that stops carrying it the day somebody renames it here.
+         */
         const val FILE_NAME = "speech_settings.json"
     }
 }

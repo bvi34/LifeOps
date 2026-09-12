@@ -23,7 +23,10 @@ the receipts.
 > the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), Project (`:project`), Maintenance (`:maintenance`), Finance (`:finance`), Repository
-> (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it; and one
+> (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it —
+> or to have that same archive **uploaded to your own Azure storage container on a schedule**, on
+> Wi-Fi, keeping the newest few, so the backup that saves you is the one nobody had to remember to
+> take; and one
 > place that decides what all of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
@@ -437,7 +440,7 @@ the receipts.
 > It is a **1Password-shaped password manager** for the household's own logins, cards, keys and
 > notes — and, under the same lock, **every credential the rest of the suite holds**: Finance's Plaid
 > keys and bank access tokens, Citation's catalogue sign-ins and library card, and the Operations
-> Sandbox's own GitHub update token. That second half is why it
+> Sandbox's own GitHub update token and Azure backup signature. That second half is why it
 > exists. Every app here keeps its credentials in `EncryptedSharedPreferences` behind an Android
 > Keystore key and deliberately leaves them out of the backup, which is right — a zip in a cloud
 > drive carrying a bank access token would be the worst thing this suite could produce — and which
@@ -450,6 +453,13 @@ the receipts.
 > to say a new version existed. So a secret's owner is a `SecretOwner`, either a hosted app or the
 > container, rather than an `AppId`; the shell files at `sandbox/self/github-token`, mirrors, reads
 > through and refills like any app, and appears in the household's own vault list under its own name.
+>
+> And the reading is not only lazy. A read-through puts a credential back when something asks for
+> one — which on the first morning after a restore is a background sync at 2am asking a vault that
+> is still shut, and reporting a connection that looks as though it was never set up. So **unlocking
+> the vault hands every app back what it is missing**, in one round, before anything asks: the
+> queued writes go in first, then each app takes back the refs its own rows say it should have.
+> One passphrase, and the suite has its credentials again without a single app being opened.
 >
 > The vault changes what the key *is*. One file, sealed with **AES-256-GCM** under a key derived from
 > a **master passphrase** (PBKDF2-HMAC-SHA256, 310,000 rounds) that wraps a random vault key — a

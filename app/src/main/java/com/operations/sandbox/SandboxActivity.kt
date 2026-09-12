@@ -16,12 +16,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.operations.backupkit.AppId
 import com.operations.sandbox.ui.BackupController
+import com.operations.sandbox.ui.CloudBackupController
 import com.operations.sandbox.ui.SandboxHomeScreen
 import com.operations.sandbox.ui.SandboxSettingsScreen
 import com.operations.sandbox.ui.SettingsTab
 import com.operations.sandbox.ui.UpdateController
 import com.operations.sandbox.ui.WeatherWidgetController
 import com.operations.sandbox.ui.rememberBackupController
+import com.operations.sandbox.ui.rememberCloudBackupController
 import com.operations.sandbox.ui.rememberUpdateController
 import com.operations.sandbox.ui.rememberWeatherWidgetController
 import com.operations.sandbox.ui.theme.SandboxTheme
@@ -60,7 +62,11 @@ private const val ROUTE_SETTINGS = "settings"
 @Composable
 private fun SandboxShell(center: BackupCenter) {
     val context = LocalContext.current
-    val backup: BackupController = rememberBackupController(center)
+    // The scheduled upload's settings are read first because the Backups tab's ticks start from
+    // them: the apps a scheduled archive includes are the apps the tab shows ticked, so the two
+    // cannot drift apart across a relaunch.
+    val cloud: CloudBackupController = rememberCloudBackupController()
+    val backup: BackupController = rememberBackupController(center, cloud.includedApps)
     // Hoisted for the same reason the backup controller is: leaving the home screen for Settings
     // shouldn't cancel a location fix or a forecast fetch that's already in flight. Null only if
     // LifeOps somehow isn't installed in this process, in which case the home screen omits the tile.
@@ -90,6 +96,7 @@ private fun SandboxShell(center: BackupCenter) {
     when (route) {
         ROUTE_SETTINGS -> SandboxSettingsScreen(
             backup = backup,
+            cloud = cloud,
             updates = updates,
             tab = SettingsTab.entries.firstOrNull { it.name == tabName } ?: SettingsTab.APPEARANCE,
             onTabChange = { tabName = it.name },

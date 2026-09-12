@@ -66,13 +66,22 @@ class VaultStoreTest {
      */
     private class FakeApp(
         override val owner: SecretOwner,
-        private val holds: Map<SecretRef, String>
+        /** The refs this app knows it should have — its rows, which travel in the archive. */
+        private val holds: Map<SecretRef, String>,
+        /** Its own encrypted store: full on the old phone, empty on the new one. */
+        val store: MutableMap<SecretRef, String> = holds.toMutableMap()
     ) : SecretSource {
+
         override suspend fun refile(): Int {
-            holds.forEach { (ref, value) ->
+            store.forEach { (ref, value) ->
                 SecretsAccess.remember(ref, value, "${owner.displayName} — refiled", owner)
             }
-            return holds.size
+            return store.size
+        }
+
+        /** The other direction: fill the empty slots from the vault, and never the full ones. */
+        override suspend fun rehydrate(): Int = holds.keys.count { ref ->
+            ManagedSecrets.restock(ref, local = { store[ref] }, save = { store[ref] = it })
         }
     }
 
@@ -285,6 +294,65 @@ class VaultStoreTest {
             ManagedSecrets.readThrough(ref, { financeLocalStore }, { financeLocalStore = it })
         )
         assertEquals("and it is back in Finance's own store", "access-abc", financeLocalStore)
+    }
+
+    @Test
+    fun `unlocking hands every app back the credentials its own store lost`() = runTest {
+        // The push, rather than the pull above. Same new phone: the rows came back in the archive
+        // and every app's credential store is empty, because it was behind a key the old phone
+        // owned. Nobody opens Finance, nobody opens Citation — somebody types their passphrase.
+        val token = SecretRef("finance", "usaa", "access-token")
+        val card = SecretRef("citation", "oreilly", "library-card")
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        SecretsAccess.remember(token, "access-abc", "Finance — USAA", SecretOwner.of(AppId.FINANCE))
+        SecretsAccess.remember(card, "31234-5678", "Citation — library card", SecretOwner.of(AppId.CITATION))
+        store.lock()
+
+        val finance = FakeApp(SecretOwner.of(AppId.FINANCE), mapOf(token to ""), store = mutableMapOf())
+        val citation = FakeApp(SecretOwner.of(AppId.CITATION), mapOf(card to ""), store = mutableMapOf())
+        SecretSources.register(finance)
+        SecretSources.register(citation)
+
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, store.unlock(passphrase))
+
+        assertEquals("access-abc", finance.store[token])
+        assertEquals("31234-5678", citation.store[card])
+    }
+
+    @Test
+    fun `an unlock never writes over a credential an app still has`() = runTest {
+        // The working copy is always at least as new as the vault's: a token refreshed this morning
+        // and mirrored while the vault was shut must not be replaced by yesterday's on unlock.
+        val token = SecretRef("finance", "usaa", "access-token")
+        store.create(passphrase)
+        SecretsAccess.register(VaultBroker(store))
+        SecretsAccess.remember(token, "yesterdays", "Finance — USAA", SecretOwner.of(AppId.FINANCE))
+        store.lock()
+
+        val finance = FakeApp(
+            SecretOwner.of(AppId.FINANCE),
+            mapOf(token to ""),
+            store = mutableMapOf(token to "refreshed-this-morning")
+        )
+        SecretSources.register(finance)
+
+        store.unlock(passphrase)
+
+        assertEquals("refreshed-this-morning", finance.store[token])
+    }
+
+    @Test
+    fun `making a vault also offers the apps whatever it already holds`() = runTest {
+        // A household that makes a vault for the first time on a phone that has one restored from
+        // somewhere else is rare; a household that makes one and has nothing waiting is the norm.
+        // Either way `create` opens the vault, so it takes the same round as an unlock.
+        val finance = FakeApp(SecretOwner.of(AppId.FINANCE), emptyMap(), store = mutableMapOf())
+        SecretSources.register(finance)
+
+        assertTrue(store.create(passphrase))
+
+        assertTrue(finance.store.isEmpty())
     }
 
     // --- The forgotten passphrase --------------------------------------------------------------

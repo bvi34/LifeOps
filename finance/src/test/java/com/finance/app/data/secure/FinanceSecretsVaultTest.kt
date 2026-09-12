@@ -223,6 +223,65 @@ class FinanceSecretsVaultTest {
         assertTrue(vault.items.isEmpty())
     }
 
+    // --- The push: what an unlock hands back --------------------------------------------------
+
+    @Test
+    fun `an unlock puts every connection's token back without anybody opening Finance`() {
+        // The old phone: two connections and the Plaid keys, all mirrored.
+        val old = freshInstall()
+        old.plaidKeys = FinanceSecrets.PlaidKeys(
+            clientId = "client-123",
+            secret = "secret-456",
+            environment = Endpoints.PlaidEnvironment.PRODUCTION
+        )
+        old.setToken("conn-1", "access-abc", label = "USAA")
+        old.setToken("conn-2", "access-def", label = "Mercury")
+
+        // The new phone: the database came back in the archive, so the connections are here; the
+        // Keystore-backed store did not, so none of their tokens are.
+        wipeLocalStoreOnly()
+        val newPhone = secrets()
+
+        // Which is what the ids are for: they come from the *database*, not from this store, which
+        // is the empty one. This is the call `FinanceApp`'s SecretSource makes on every unlock.
+        val restored = newPhone.restockFromVault(listOf("conn-1", "conn-2"))
+
+        assertEquals("three Plaid refs and two tokens", 5, restored)
+        assertEquals("access-abc", newPhone.token("conn-1"))
+        assertEquals("access-def", newPhone.token("conn-2"))
+        assertEquals("client-123", newPhone.plaidKeys?.clientId)
+        assertEquals(Endpoints.PlaidEnvironment.PRODUCTION, newPhone.plaidKeys?.environment)
+    }
+
+    @Test
+    fun `a second unlock the same day finds nothing left to do`() {
+        freshInstall().setToken("conn-1", "access-abc")
+        wipeLocalStoreOnly()
+        val newPhone = secrets()
+
+        assertEquals(1, newPhone.restockFromVault(listOf("conn-1")))
+        assertEquals("idempotent, which is what lets it run on every unlock", 0, newPhone.restockFromVault(listOf("conn-1")))
+    }
+
+    @Test
+    fun `an unlock never writes over a token this phone already has`() {
+        val secrets = freshInstall()
+        secrets.setToken("conn-1", "refreshed-this-morning")
+        // The vault's copy is the older one — the case a restock that preferred the vault would lose.
+        vault.items["finance/conn-1/access-token"] = "yesterdays"
+
+        assertEquals(0, secrets.restockFromVault(listOf("conn-1")))
+        assertEquals("refreshed-this-morning", secrets.token("conn-1"))
+    }
+
+    @Test
+    fun `a connection the vault knows nothing about costs nothing`() {
+        val secrets = freshInstall()
+
+        assertEquals(0, secrets.restockFromVault(listOf("conn-never-connected")))
+        assertNull(secrets.token("conn-never-connected"))
+    }
+
     @Test
     fun `this app's ref segment is its AppId key`() {
         // The Secrets list shows "managed by Finance" by resolving this string through AppId; a

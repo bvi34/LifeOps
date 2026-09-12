@@ -8,6 +8,13 @@
   device-transfer: its Tink keyset is wrapped by a hardware-bound Android Keystore key that never
   travels with a backup, so a restored copy can't be decrypted and crashes the app on launch with
   AEADBadTagException. The card/PIN are re-entered on the device instead.
+
+  The scheduled cloud backup's credential store is excluded for both of those reasons at once.
+  sandbox_cloud_backup_secrets.xml is EncryptedSharedPreferences, so a restored copy is a keyset no
+  key on the new phone can open; and its plain-file fallback (written only on a device whose keystore
+  is unusable) holds the shared access signature in the clear, which is not a thing to hand to
+  somebody else's backup transport. Neither is a loss: the signature is mirrored into the suite's own
+  vault and comes back from there — see docs/SECRETS.md.
 -->
 <data-extraction-rules>
     <cloud-backup>
@@ -15,11 +22,15 @@
         <include domain="database" path="citation.db" />
         <include domain="sharedpref" path="." />
         <exclude domain="sharedpref" path="oreilly_access.xml" />
+        <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
+        <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets_plain.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="lifeops.db" />
         <include domain="database" path="citation.db" />
         <include domain="sharedpref" path="." />
         <exclude domain="sharedpref" path="oreilly_access.xml" />
+        <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
+        <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets_plain.xml" />
     </device-transfer>
 </data-extraction-rules>
