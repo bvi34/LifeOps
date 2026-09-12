@@ -2,6 +2,9 @@ package com.operations.sandbox.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
+import android.content.pm.Signature
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -9,6 +12,7 @@ import androidx.core.content.FileProvider
 import com.operations.sandbox.BuildConfig
 import com.operations.sandbox.update.logic.AppVersion
 import com.operations.sandbox.update.logic.AvailableRelease
+import com.operations.sandbox.update.logic.InstallCompatibility
 import com.operations.sandbox.update.logic.ReleaseFeed
 import com.operations.sandbox.update.logic.ReleaseLookup
 import kotlinx.coroutines.CancellationException
@@ -17,6 +21,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
+import java.security.MessageDigest
 import java.net.URL
 import kotlin.coroutines.coroutineContext
 
@@ -198,6 +203,89 @@ class Updater(
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
+
+    /**
+     * Whether the installer will accept [apk] as a replacement for this build, or refuse it.
+     *
+     * Asked *before* the install intent is fired, because the refusal is otherwise a system dialog
+     * reading "App not installed as package conflicts with an existing package" — which is Android
+     * saying the two builds are signed with different keys, in words that mention neither signing
+     * nor what to do next. A developer build signed with the debug keystore and a release signed
+     * with the release keystore are exactly that pair, so the first release ever offered to a
+     * hand-built install is the one that cannot be installed over the top.
+     *
+     * Both reads are defensive: an unreadable package or an APK the platform won't parse answers
+     * [InstallCompatibility.UNKNOWN], which changes nothing and leaves the installer to decide.
+     */
+    fun compatibilityOf(apk: File): InstallCompatibility =
+        InstallCompatibility.of(installedSigners(), apkSigners(apk))
+
+    /** The certificates this running build is signed with — its rotation lineage included. */
+    @Suppress("DEPRECATION")
+    private fun installedSigners(): Set<String> = runCatching {
+        val packageManager = appContext.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            certificates(
+                packageManager.getPackageInfo(
+                    appContext.packageName,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+            )
+        } else {
+            fingerprints(
+                packageManager
+                    .getPackageInfo(appContext.packageName, PackageManager.GET_SIGNATURES)
+                    .signatures
+            )
+        }
+    }.getOrDefault(emptySet())
+
+    /** The same, read out of a file that is not installed yet. */
+    @Suppress("DEPRECATION")
+    private fun apkSigners(apk: File): Set<String> = runCatching {
+        val packageManager = appContext.packageManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            certificates(
+                packageManager.getPackageArchiveInfo(
+                    apk.absolutePath,
+                    PackageManager.GET_SIGNING_CERTIFICATES
+                )
+            )
+        } else {
+            fingerprints(
+                packageManager
+                    .getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNATURES)
+                    ?.signatures
+            )
+        }
+    }.getOrDefault(emptySet())
+
+    /**
+     * Every certificate a package's signing information knows about, on the Androids that have it.
+     *
+     * The history counts as much as the current signer: a package whose key has been rotated is
+     * still installable by an APK signed with an older certificate in its lineage, so reading only
+     * the current one would report a conflict the installer would have accepted. A package signed
+     * by several keys at once has no lineage to read, hence the branch.
+     */
+    private fun certificates(info: PackageInfo?): Set<String> {
+        if (info == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return emptySet()
+        val signing = info.signingInfo ?: return emptySet()
+        val current: Array<Signature> = signing.apkContentsSigners ?: emptyArray()
+        val history: Array<Signature> =
+            if (signing.hasMultipleSigners()) emptyArray() else signing.signingCertificateHistory ?: emptyArray()
+        return fingerprints(current + history)
+    }
+
+    /** SHA-256 of each certificate, which is the form these are compared in. */
+    private fun fingerprints(signatures: Array<Signature>?): Set<String> =
+        (signatures ?: emptyArray())
+            .map { signature ->
+                MessageDigest.getInstance("SHA-256")
+                    .digest(signature.toByteArray())
+                    .joinToString("") { byte -> "%02x".format(byte) }
+            }
+            .toSet()
 
     /** The release's page on GitHub, for reading the notes in a browser. */
     fun releasePageIntent(release: AvailableRelease): Intent =

@@ -1,5 +1,7 @@
 package com.operations.sandbox.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -133,16 +135,20 @@ internal fun UpdatesTab(updates: UpdateController) {
         is UpdateState.ReadyToInstall -> ReleaseCard(
             release = state.release,
             actions = {
-                Button(onClick = { updates.install(state.apk) }, modifier = Modifier.fillMaxWidth()) {
-                    Text("Install ${state.release.tag}")
+                if (state.signingConflict) {
+                    SigningConflictActions(updates, state)
+                } else {
+                    Button(onClick = { updates.install(state.apk) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Install ${state.release.tag}")
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Android will ask you to confirm, and may first ask you to allow Operations " +
+                            "Sandbox to install apps. Your data is kept — this installs over the top.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Android will ask you to confirm, and may first ask you to allow Operations " +
-                        "Sandbox to install apps. Your data is kept — this installs over the top.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             },
             updates = updates
         )
@@ -261,6 +267,68 @@ private fun ReleaseCard(
             TextButton(onClick = { updates.openReleasePage(release) }) { Text("View on GitHub") }
         }
     }
+}
+
+/**
+ * What to offer instead of an Install button that the system installer is certain to refuse.
+ *
+ * Android will not replace an app with one signed by a different key, and a developer build (debug
+ * keystore) and a release (the workflow's keystore) are exactly that pair. The system's own words
+ * for it — "App not installed as package conflicts with an existing package" — name neither the
+ * cause nor the way out, and arrive after a 90 MB download, so the card says both here.
+ *
+ * The order of the steps is not arbitrary, and the first one is the one that is easy to get wrong:
+ * the downloaded APK sits in this app's cache and is deleted along with it, and on a private
+ * repository it cannot simply be re-downloaded in a browser afterwards — the asset needs the token
+ * that was uninstalled with the app. So the file is saved out first, and only then is anything
+ * uninstalled.
+ */
+@Composable
+private fun SigningConflictActions(updates: UpdateController, state: UpdateState.ReadyToInstall) {
+    val saveApk = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.android.package-archive")
+    ) { uri -> updates.saveApkTo(uri, state.apk) }
+
+    Text(
+        "This APK can't be installed over the build you are running: they are signed with " +
+            "different keys, and Android refuses that swap — it is what \"package conflicts with " +
+            "an existing package\" means. Nothing is wrong with the release. " +
+            if (updates.installedVersion.startsWith("0.0.0")) {
+                "The build installed here was made on a machine, so it carries the debug key, " +
+                    "where everything the release workflow publishes carries the release keystore's."
+            } else {
+                "Both are real releases, so the signing keystore must have changed since " +
+                    "${updates.installedVersion} was built."
+            },
+        style = MaterialTheme.typography.bodyMedium
+    )
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "Moving across costs the app's data unless you carry it over, in this order:\n" +
+            "1. Save the APK below — it has to leave this app before the app goes.\n" +
+            "2. Back up on the Backups tab, to a file outside the app.\n" +
+            "3. Uninstall Operations Sandbox.\n" +
+            "4. Open the saved APK from Files and install it.\n" +
+            "5. Reopen the sandbox and restore the backup.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(12.dp))
+    Button(
+        onClick = { saveApk.launch("operations-sandbox-${state.release.tag}.apk") },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text("Save the APK…")
+    }
+    updates.saveStatus?.let { status ->
+        Spacer(Modifier.height(8.dp))
+        Text(status, style = MaterialTheme.typography.bodySmall)
+    }
+    Spacer(Modifier.height(4.dp))
+    // Left reachable on purpose: this reads the certificates rather than asking the installer, and
+    // if it has somehow read them wrong, the user should still be able to try the thing they came
+    // here to do.
+    TextButton(onClick = { updates.install(state.apk) }) { Text("Try installing anyway") }
 }
 
 /** " · 84 MB", or nothing when GitHub didn't report a size. */

@@ -158,6 +158,61 @@ Both workflows pin the NDK version (`NDK_VERSION`, passed to Gradle as `-Padviso
 rather than taking whatever the runner image ships, because that default changes without warning and
 llama.cpp is exactly the kind of code that notices. Bump it in both files at once.
 
+### Robolectric's Android runtimes
+
+The tests that need a real Android context — Finance's and Health's databases, the vault stores, the
+restore paths — run on Robolectric, which does not ship the framework itself. The first test at a
+given SDK level downloads a ~100 MB `android-all-instrumented` jar from Maven Central *during* the
+test run, into `~/.m2/repository`, and gives up on the first refused connection. A dropped handshake
+therefore arrives looking like a failing test:
+
+```
+FinanceSecretsVaultTest > a token set while the vault is shut lands the next time it is opened FAILED
+    java.lang.AssertionError at MavenArtifactFetcher.java:129
+        Caused by: java.net.ConnectException
+```
+
+Nothing is wrong with the code when that happens, so both workflows do two things about it. They
+cache `~/.m2/repository/org/robolectric` under a key derived from the things that decide which jars
+are needed — the Robolectric version, the SDK levels tests pin with `@Config`, the modules'
+compile/min/target SDKs (`.github/scripts/robolectric-cache-key.sh`) — so a normal run never goes
+near the network; and they run the tests through `.github/scripts/run-jvm-tests.sh`, which retries
+once, and only when the build printed `Failed to fetch maven artifact`. A failing assertion does not
+print that, so a genuinely broken test still fails the first time.
+
+The cache is saved even when the tests fail, and restored across branches from the one the default
+branch's CI writes, which is how a tag build gets a warm cache without ever having run before.
+
+## When the install says the package conflicts
+
+> App not installed as package conflicts with an existing package.
+
+Android identifies an app by its package name *and* the key it was signed with, and it will not let
+one be replaced by the other signed differently. A `./gradlew assembleDebug` build carries the debug
+keystore; every release carries the keystore the workflow decodes from `RELEASE_KEYSTORE_BASE64`.
+They share `com.operations.sandbox`, so the first published release a hand-built install is ever
+offered is the one install that cannot succeed. Nothing is wrong with the release, and re-downloading
+it changes nothing.
+
+The Updates tab now says this before handing the APK to the installer — it compares the certificates
+of the downloaded file against the running build's — and offers **Save the APK…** instead of an
+Install button that only leads to the system's own version of the sentence above.
+
+The order of the steps matters, because two of them are one-way:
+
+1. **Save the APK** somewhere outside the app. The download lives in the app's cache and is deleted
+   with the app; on a private repository it cannot simply be fetched again in a browser afterwards,
+   because the asset needs the token that went with the app.
+2. **Back up** from *Settings → Backups*, to a file. Uninstalling takes the databases with it.
+3. **Uninstall Operations Sandbox.**
+4. **Install the saved APK** from Files.
+5. **Restore the backup.**
+
+It is a one-time crossing: every release after this one is signed with the same keystore, so they
+install over the top with the data left alone. Keep the keystore — losing it means every future
+release conflicts with the installed app in exactly this way, and that is a bigger problem than this
+one.
+
 ## When the app finds no update
 
 *Settings → Updates → Check for updates* reports what it actually established, and the message
