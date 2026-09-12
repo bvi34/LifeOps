@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Icon
@@ -77,6 +78,14 @@ import java.util.Locale
  * the whole of the update's presence on this screen. Tapping it opens the Updates tab, which is
  * where anything actually happens; nothing downloads or installs from here.
  *
+ * A second line can appear on the same terms, and it is the only place in the suite that says this:
+ * **credentials are waiting for the vault.** An app that saves a token while Secrets is shut has it
+ * queued in memory rather than filed (see `SecretsAccess`), which is correct and was invisible — the
+ * queue does not survive the process, so a household that never happened to open Secrets lost the
+ * mirror silently, on exactly the credentials the vault exists to carry onto the next phone. The
+ * line says how many and opens Secrets; the tile carries the same count, so it is still visible
+ * after the banner has been read past.
+ *
  * The backdrop is the user's: a shipped design, their own gradient, or the suite's own colours (the
  * default). Whichever it is, the text on top is written in the ink that wallpaper resolved to, so a
  * bright wallpaper cannot swallow the clock.
@@ -94,6 +103,9 @@ fun SandboxHomeScreen(
     onOpenUpdates: () -> Unit = {}
 ) {
     val appearance = LocalSuiteAppearance.current
+
+    // Two facts about the vault, or ABSENT/0 on a phone where nothing has ever registered a broker.
+    val vault = rememberVaultStatus()
 
     // Whatever the user chose in the gear. The default still mixes itself from the suite's own
     // colours, so an install that never opens the wallpaper picker looks exactly as it always did.
@@ -135,6 +147,16 @@ fun SandboxHomeScreen(
                 UpdateBanner(tag = availableUpdateTag, ink = ink, onClick = onOpenUpdates)
             }
 
+            if (vault.needsAttention) {
+                Spacer(Modifier.height(12.dp))
+                NoticeLine(
+                    icon = Icons.Filled.LockClock,
+                    text = vault.message(),
+                    ink = ink,
+                    onClick = { onOpenApp(AppId.SECRETS) }
+                )
+            }
+
             if (weather != null) {
                 LaunchedEffect(weather) { weather.start() }
                 Spacer(Modifier.height(16.dp))
@@ -160,6 +182,8 @@ fun SandboxHomeScreen(
                                 onCustomize = { onCustomizeApp(info.appId) },
                                 ink = ink,
                                 onDark = wallpaper.isDark,
+                                // Only Secrets can have one; zero draws nothing.
+                                badge = if (info.appId == AppId.SECRETS) vault.pending else null,
                                 modifier = Modifier.weight(1f)
                             )
                         }
@@ -181,13 +205,36 @@ private const val COLUMNS = 3
  * "v1.4.2 is available — tap to update", written on the wallpaper.
  *
  * A line rather than a card or a dialog. This is a home screen, and the update is the least urgent
- * thing on it: it must be noticeable on the way past and ignorable indefinitely, so it takes one
- * row, carries no dismiss button (the next release replaces it; installing removes it), and is
- * drawn in the wallpaper's own ink over a faint wash of it so it reads on a light or a dark
- * backdrop without introducing a colour of its own.
+ * thing on it: it must be noticeable on the way past and ignorable indefinitely, so it carries no
+ * dismiss button — the next release replaces it, installing removes it.
  */
 @Composable
 private fun UpdateBanner(tag: String, ink: Color, onClick: () -> Unit) {
+    NoticeLine(
+        icon = Icons.Filled.SystemUpdateAlt,
+        text = "$tag is available — tap to update",
+        ink = ink,
+        onClick = onClick
+    )
+}
+
+/**
+ * One row of "you might want to know", drawn under the clock.
+ *
+ * Shared by the update banner and the vault's waiting-credentials line because they are the same
+ * kind of thing and should not look like two: a fact the shell noticed, one tap to the screen that
+ * can act on it, and no way to dismiss it — both conditions end by being dealt with rather than by
+ * being acknowledged.
+ *
+ * Drawn in the wallpaper's own ink over a faint wash of it, so it reads on a light or a dark
+ * backdrop without introducing a colour of its own. A notice that wanted attention through colour
+ * would be a notice competing with eleven app tiles that have earned theirs.
+ *
+ * The text wraps to two lines rather than ellipsing: "3 credentials are waiting for your vault —
+ * tap to unlock" truncated at the dash is a sentence that has lost the half that says what to do.
+ */
+@Composable
+private fun NoticeLine(icon: ImageVector, text: String, ink: Color, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -198,17 +245,17 @@ private fun UpdateBanner(tag: String, ink: Color, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
-            Icons.Filled.SystemUpdateAlt,
+            icon,
             contentDescription = null,
             tint = ink,
             modifier = Modifier.size(18.dp)
         )
         Spacer(Modifier.width(10.dp))
         Text(
-            "$tag is available — tap to update",
+            text,
             style = MaterialTheme.typography.bodyMedium,
             color = ink,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis
         )
     }
@@ -260,7 +307,15 @@ private fun StatusHeader(ink: Color) {
     }
 }
 
-/** One app: its glyph in its colour, its name under it. */
+/**
+ * One app: its glyph in its colour, its name under it.
+ *
+ * [badge] is a count drawn on the corner of the mark, in the manner of every launcher the household
+ * has ever used. Exactly one app can currently have one — Secrets, when credentials are queued for
+ * a vault that is shut — and the parameter is deliberately a plain number rather than a hook other
+ * apps can start hanging their own counts on: a home screen where every tile has a red circle is a
+ * home screen where none of them mean anything.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AppTile(
@@ -270,6 +325,7 @@ private fun AppTile(
     onCustomize: () -> Unit,
     ink: Color,
     onDark: Boolean,
+    badge: Int? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -279,7 +335,12 @@ private fun AppTile(
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        AppGlyph(appId = info.appId, argb = accent, onDark = onDark)
+        Box {
+            AppGlyph(appId = info.appId, argb = accent, onDark = onDark)
+            if (badge != null && badge > 0) {
+                TileBadge(count = badge, modifier = Modifier.align(Alignment.TopEnd))
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Text(
             info.label,
@@ -288,6 +349,35 @@ private fun AppTile(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * The count on the corner of a tile.
+ *
+ * Drawn in the theme's error colour, which is the one role in the palette that already means "this
+ * is not resolved" and is legible against every wallpaper the suite ships — an accent would have to
+ * be chosen against eleven app colours and would lose to at least one of them.
+ *
+ * A count over nine reads as "9+": the number stops being useful past that point, and a three-digit
+ * badge on a 54dp mark is a smear.
+ */
+@Composable
+private fun TileBadge(count: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.error),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            if (count > 9) "9+" else count.toString(),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onError,
+            maxLines = 1
         )
     }
 }

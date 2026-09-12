@@ -10,6 +10,7 @@ import com.finance.app.data.repository.FinanceSync
 import com.finance.app.data.secure.FinanceSecrets
 import com.lifeops.app.connection.TaskCompletionBus
 import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
 import kotlinx.coroutines.CoroutineScope
@@ -103,7 +104,7 @@ class FinanceApp private constructor(private val app: Application) {
      */
     private fun registerAsSecretSource() {
         SecretSources.register(object : SecretSource {
-            override val owner = AppId.FINANCE
+            override val owner = SecretOwner.of(AppId.FINANCE)
 
             override suspend fun refile(): Int {
                 val names = runCatching { repository.connections().associate { it.id to it.displayName } }

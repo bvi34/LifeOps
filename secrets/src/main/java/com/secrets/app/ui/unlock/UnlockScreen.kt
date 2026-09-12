@@ -46,7 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.operations.suite.ui.fields.SuiteTextField
 import com.operations.vaultkit.PasswordGenerator
-import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretSources
 import com.operations.vaultkit.SecretsAccess
 import com.secrets.app.data.VaultStore
@@ -83,7 +83,7 @@ class UnlockViewModel(private val store: VaultStore) : ViewModel() {
         val canUseDevice: Boolean = false,
         val pendingMirrors: Int = 0,
         /** Which apps could refill a rebuilt vault, so the reset screen can name them. */
-        val refillable: List<AppId> = emptyList(),
+        val refillable: List<SecretOwner> = emptyList(),
         /** What the last reset actually filed. Shown once, on the way into the new vault. */
         val refill: SecretSources.Refill? = null
     )
@@ -470,7 +470,7 @@ private fun ResetReport(refill: SecretSources.Refill, onContinue: () -> Unit) {
  */
 @Composable
 private fun ResetDialog(
-    refillable: List<AppId>,
+    refillable: List<SecretOwner>,
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String, String) -> Unit
@@ -503,7 +503,7 @@ private fun ResetDialog(
                         "Nothing, on this phone. No other app has anything filed here to give back."
                     } else {
                         "The credentials the other apps still hold on this phone — " +
-                            refillable.joinToString(", ") { it.defaultDisplayName } +
+                            refillable.joinToString(", ") { it.displayName } +
                             " — are filed again automatically. Their own stores kept working copies " +
                             "all along; the vault was the spare."
                     },

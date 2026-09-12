@@ -1,6 +1,6 @@
 package com.operations.vaultkit
 
-import com.operations.backupkit.AppId
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * What state the vault is in, from the point of view of an app that wants a secret out of it.
@@ -31,9 +31,10 @@ interface SecretsBroker {
      * File [value] at [ref], creating the item if it is new.
      *
      * [label] is what a person will see in the Secrets list ("USAA — access token"), and [owner] is
-     * the app the item is shown as belonging to. Returns false if the vault could not take it.
+     * who the item is shown as belonging to — a hosted app, or the container itself (see
+     * [SecretOwner]). Returns false if the vault could not take it.
      */
-    fun write(ref: SecretRef, value: String, label: String, owner: AppId): Boolean
+    fun write(ref: SecretRef, value: String, label: String, owner: SecretOwner): Boolean
 
     /** Forget what is filed at [ref]. Returns false if the vault could not be written to. */
     fun forget(ref: SecretRef): Boolean
@@ -72,6 +73,23 @@ interface SecretsBroker {
  * A household with no vault at all queues too, and that is on purpose rather than an oversight:
  * making a vault flushes the queue, so somebody who connects a bank in the morning and creates a
  * vault in the afternoon gets that connection filed without having to touch Finance again.
+ *
+ * ## Saying so
+ *
+ * The queue above is correct and, for a long time, invisible. A credential written while the vault
+ * was shut sat in memory until somebody happened to open Secrets — and if the process died first it
+ * was simply gone, silently, which is the exact outcome the queue exists to prevent. Nothing asked
+ * anybody to unlock, because nothing outside Secrets could see that there was a reason to.
+ *
+ * So the queue is observable: [watch] takes a listener that is told the vault's state and how many
+ * writes are waiting, every time either changes. The sandbox's home screen uses it to put a line
+ * under the clock — the one place in the suite somebody is guaranteed to pass on the way to
+ * anything else.
+ *
+ * The shape is LifeOps' completion bus, for the same reasons: facts rather than requests, a listener
+ * cannot break a write, and registration lasts as long as the process. Listeners are called on
+ * whichever thread moved the vault, so they must be cheap and must not block — the home screen's
+ * hands its two numbers to Compose and returns.
  */
 object SecretsAccess {
 
@@ -94,12 +112,56 @@ object SecretsAccess {
         val value: String?,
         val label: String,
         /** Null for a forgetting, which does not need to know who owned the item. */
-        val owner: AppId?
+        val owner: SecretOwner?
     )
 
     /** Called once by :secrets. Passing null (tests, or a teardown) leaves every app back where it was. */
     fun register(broker: SecretsBroker?) {
         this.broker = broker
+        announceChanged()
+    }
+
+    /**
+     * Told when the vault opens, shuts, appears, goes away, or when the number of writes waiting on
+     * it changes.
+     *
+     * Deliberately carries the two facts and nothing else. A watcher is not handed the broker, the
+     * refs that are queued, or their values — a listener list is exactly the wrong place to widen a
+     * seam whose whole design is "no listing" — and "the vault is shut and three things are waiting"
+     * is the entirety of what anything outside Secrets needs in order to say something useful.
+     */
+    fun interface VaultWatcher {
+        fun onVaultChanged(state: VaultState, pending: Int)
+    }
+
+    private val watchers = CopyOnWriteArrayList<VaultWatcher>()
+
+    /** Start listening. Idempotent; the caller gets the current state immediately. */
+    fun watch(watcher: VaultWatcher) {
+        if (watcher !in watchers) watchers += watcher
+        runCatching { watcher.onVaultChanged(state, pendingCount) }
+    }
+
+    fun unwatch(watcher: VaultWatcher) {
+        watchers -= watcher
+    }
+
+    /**
+     * Tell every watcher where things stand.
+     *
+     * Called from here whenever the queue moves, and from :secrets' store whenever the vault's state
+     * does — the store owns that transition and this object only reads it, so it cannot notice one
+     * on its own.
+     *
+     * Each watcher is called inside `runCatching`, for the same reason the completion bus does it: a
+     * home screen mid-recomposition must not be able to turn Finance saving a token into a crash in
+     * Finance.
+     */
+    fun announceChanged() {
+        if (watchers.isEmpty()) return
+        val current = state
+        val waiting = pendingCount
+        watchers.forEach { watcher -> runCatching { watcher.onVaultChanged(current, waiting) } }
     }
 
     val state: VaultState get() = broker?.state ?: VaultState.ABSENT
@@ -129,10 +191,11 @@ object SecretsAccess {
      * queue is that they do not have to — but a settings screen that wants to say "saved to your
      * vault" versus "will be saved when you next unlock" has the answer here.
      */
-    fun remember(ref: SecretRef, value: String, label: String, owner: AppId): Boolean {
+    fun remember(ref: SecretRef, value: String, label: String, owner: SecretOwner): Boolean {
         val landed = broker?.write(ref, value, label, owner) == true
         if (landed) synchronized(pending) { pending.remove(ref.format()) }
         else enqueue(Pending(ref, value, label, owner))
+        announceChanged()
         return landed
     }
 
@@ -141,6 +204,7 @@ object SecretsAccess {
         val landed = broker?.forget(ref) == true
         if (landed) synchronized(pending) { pending.remove(ref.format()) }
         else enqueue(Pending(ref, null, "", null))
+        announceChanged()
         return landed
     }
 
@@ -160,7 +224,7 @@ object SecretsAccess {
             val owner = op.owner
             if (value == null || owner == null) current.forget(op.ref)
             else current.write(op.ref, value, op.label, owner)
-        }
+        }.also { announceChanged() }
     }
 
     /** How many writes are waiting for an unlock. Shown on the unlock screen, so the queue is visible. */
@@ -177,9 +241,10 @@ object SecretsAccess {
         }
     }
 
-    /** Test seam: forget the broker and everything queued. */
+    /** Test seam: forget the broker, everything queued, and everybody listening. */
     fun reset() {
         broker = null
         synchronized(pending) { pending.clear() }
+        watchers.clear()
     }
 }

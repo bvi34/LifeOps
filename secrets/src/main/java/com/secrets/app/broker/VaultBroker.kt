@@ -1,6 +1,6 @@
 package com.secrets.app.broker
 
-import com.operations.backupkit.AppId
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretsBroker
 import com.operations.vaultkit.VaultDocument
@@ -53,7 +53,7 @@ class VaultBroker(private val store: VaultStore) : SecretsBroker {
     override fun read(ref: SecretRef): String? =
         store.document.value?.managed(ref)?.secret?.takeIf { it.isNotEmpty() }
 
-    override fun write(ref: SecretRef, value: String, label: String, owner: AppId): Boolean {
+    override fun write(ref: SecretRef, value: String, label: String, owner: SecretOwner): Boolean {
         if (value.isEmpty()) return forget(ref)
         val now = System.currentTimeMillis()
         return store.mutateBlocking { document ->
@@ -79,7 +79,7 @@ class VaultBroker(private val store: VaultStore) : SecretsBroker {
         ref: SecretRef,
         value: String,
         label: String,
-        owner: AppId,
+        owner: SecretOwner,
         now: Long
     ) = VaultItem(
         id = UUID.randomUUID().toString(),

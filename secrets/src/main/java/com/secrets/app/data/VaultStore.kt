@@ -95,12 +95,15 @@ class VaultStore(context: Context) {
             if (vaultKey != null) return
             val bytes = files.read()
             envelope = bytes?.let { VaultEnvelope.decode(it) }
-            _state.value = when {
-                bytes == null -> VaultState.ABSENT
-                // A file that will not parse is still a vault as far as the household is concerned —
-                // saying "no vault" would invite them to make a new one over the top of it.
-                else -> VaultState.LOCKED
-            }
+            publishState(
+                when {
+                    bytes == null -> VaultState.ABSENT
+                    // A file that will not parse is still a vault as far as the household is
+                    // concerned — saying "no vault" would invite them to make a new one over the
+                    // top of it.
+                    else -> VaultState.LOCKED
+                }
+            )
         }
     }
 
@@ -137,7 +140,7 @@ class VaultStore(context: Context) {
             envelope = file
             vaultKey = key
             _document.value = document
-            _state.value = VaultState.UNLOCKED
+            publishState(VaultState.UNLOCKED)
             touch()
             true
         }
@@ -198,7 +201,7 @@ class VaultStore(context: Context) {
             VaultCrypto.wipe(vaultKey)
             vaultKey = null
             _document.value = null
-            _state.value = if (files.exists()) VaultState.LOCKED else VaultState.ABSENT
+            publishState(if (files.exists()) VaultState.LOCKED else VaultState.ABSENT)
         }
     }
 
@@ -341,7 +344,7 @@ class VaultStore(context: Context) {
             vaultKey = null
             envelope = null
             _document.value = null
-            _state.value = VaultState.ABSENT
+            publishState(VaultState.ABSENT)
             true
         }
     }
@@ -400,10 +403,30 @@ class VaultStore(context: Context) {
             VaultCrypto.wipe(vaultKey)
             vaultKey = key
             _document.value = document
-            _state.value = VaultState.UNLOCKED
+            publishState(VaultState.UNLOCKED)
             _saveFailed.value = false
             touch()
         }
+    }
+
+    /**
+     * Move the vault to [next] and tell the rest of the suite.
+     *
+     * Every state transition goes through here, and the announcement is the reason it exists. The
+     * [StateFlow] is what *this app's* screens read; it is invisible to the other ten, and the one
+     * fact they most need is the one it was hiding. A credential Finance wrote while the vault was
+     * shut sits in [SecretsAccess]'s queue until somebody unlocks — and nothing anywhere was in a
+     * position to mention that there was a reason to.
+     *
+     * The announcement happens inside [lockObject], which is safe because a watcher is forbidden
+     * from blocking (see [SecretsAccess.VaultWatcher]) and because the two values it reads —
+     * the broker's state and the queue depth — are a `StateFlow` read and a small `synchronized`
+     * block, neither of which comes back through this monitor.
+     */
+    private fun publishState(next: VaultState) {
+        val changed = _state.value != next
+        _state.value = next
+        if (changed) SecretsAccess.announceChanged()
     }
 
     /** [refreshState]'s body, for callers already holding [lockObject]. */
@@ -411,7 +434,7 @@ class VaultStore(context: Context) {
         if (vaultKey != null) return
         val bytes = files.read()
         envelope = bytes?.let { VaultEnvelope.decode(it) }
-        _state.value = if (bytes == null) VaultState.ABSENT else VaultState.LOCKED
+        publishState(if (bytes == null) VaultState.ABSENT else VaultState.LOCKED)
     }
 
     private companion object {

@@ -435,13 +435,21 @@ the receipts.
 
 > **Secrets** (the suite's vault) is a peer module — see **[docs/SECRETS.md](docs/SECRETS.md)**.
 > It is a **1Password-shaped password manager** for the household's own logins, cards, keys and
-> notes — and, under the same lock, **every credential the other apps hold**: Finance's Plaid keys
-> and bank access tokens, Citation's catalogue sign-ins and library card. That second half is why it
+> notes — and, under the same lock, **every credential the rest of the suite holds**: Finance's Plaid
+> keys and bank access tokens, Citation's catalogue sign-ins and library card, and the Operations
+> Sandbox's own GitHub update token. That second half is why it
 > exists. Every app here keeps its credentials in `EncryptedSharedPreferences` behind an Android
 > Keystore key and deliberately leaves them out of the backup, which is right — a zip in a cloud
 > drive carrying a bank access token would be the worst thing this suite could produce — and which
 > cost one thing every contributor states plainly: **restore onto a new phone and every credential is
 > gone**, because a key held in one phone's hardware cannot be carried to the next one.
+>
+> That included the **shell itself**, which is the case that shows the pattern is not an app-by-app
+> courtesy: the container holds the token its updater checks releases with, kept the same way for the
+> same good reason, and lost on the same restore — after which the suite quietly stopped being able
+> to say a new version existed. So a secret's owner is a `SecretOwner`, either a hosted app or the
+> container, rather than an `AppId`; the shell files at `sandbox/self/github-token`, mirrors, reads
+> through and refills like any app, and appears in the household's own vault list under its own name.
 >
 > The vault changes what the key *is*. One file, sealed with **AES-256-GCM** under a key derived from
 > a **master passphrase** (PBKDF2-HMAC-SHA256, 310,000 rounds) that wraps a random vault key — a
@@ -453,6 +461,16 @@ the receipts.
 > once, and then never again. Nine reconnections become one passphrase, and a phone with no vault
 > behaves exactly as it did before.
 >
+> A write that arrives while the vault is shut is queued in memory and filed on the next unlock,
+> which was correct and used to be invisible — and the queue does not survive the process, so a
+> household that never happened to open Secrets that day lost the mirror silently. The vault is now
+> **watchable**: the sandbox's home screen puts one line under the clock — *"3 credentials are
+> waiting for your vault — tap to unlock"* — and a count on the Secrets tile. A locked vault on its
+> own is deliberately **not** news: it comes up shut on every process start, so saying so would be a
+> permanent badge nobody reads. The line appears only when a credential is actually stranded, and on
+> a phone with no vault it offers to make one rather than to unlock one, because the queue lands the
+> moment a vault exists.
+>
 > It is the one app whose restore refuses to restore: an archived vault is not swapped over a live
 > one — that would delete every password added since the backup, with nowhere to fetch them from — it
 > is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
@@ -461,7 +479,7 @@ the receipts.
 > forgotten passphrase — nothing can, which is the point — but the unlock screen offers to **delete
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
-> the audit and the merge are the pure-JVM `:vaultkit` under **74 JVM tests**, most of which assert
+> the audit and the merge are the pure-JVM `:vaultkit` under **94 JVM tests**, most of which assert
 > that the vault *fails* to open — wrong passphrase, flipped bit, a header edited to claim a cheaper
 > KDF, a spliced key, a truncated file.
 

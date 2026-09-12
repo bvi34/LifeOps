@@ -66,12 +66,23 @@ object ManagedSecrets {
      * the write is queued in memory and lands on the next unlock (see [SecretsAccess]); if there is
      * no vault at all it is dropped, and the app is exactly where it was before this module existed.
      */
-    fun remember(ref: SecretRef, value: String, label: String, owner: AppId) {
+    fun remember(ref: SecretRef, value: String, label: String, owner: SecretOwner) {
         if (value.isBlank()) {
             forget(ref)
             return
         }
         SecretsAccess.remember(ref, value, label, owner)
+    }
+
+    /**
+     * The same, for the ten cases out of eleven where the owner is a hosted app.
+     *
+     * Kept as an overload rather than making every call site write `SecretOwner.of(AppId.FINANCE)`:
+     * the apps were here first, an [AppId] is what they have, and the widening exists for the one
+     * caller that is not an app (see [SecretOwner]).
+     */
+    fun remember(ref: SecretRef, value: String, label: String, owner: AppId) {
+        remember(ref, value, label, SecretOwner.of(owner))
     }
 
     /**
@@ -92,5 +103,8 @@ object ManagedSecrets {
      * separates the app from what the secret is; [what] should be the human name of the connection
      * and the credential, not an id, because the id is already in the ref shown underneath.
      */
-    fun label(owner: AppId, what: String): String = "${owner.defaultDisplayName} — $what"
+    fun label(owner: SecretOwner, what: String): String = "${owner.displayName} — $what"
+
+    /** The [AppId] form, for the same reason the [remember] overload exists. */
+    fun label(owner: AppId, what: String): String = label(SecretOwner.of(owner), what)
 }

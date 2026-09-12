@@ -19,7 +19,7 @@ import org.junit.Test
 class SecretSourcesTest {
 
     private class FakeSource(
-        override val owner: AppId,
+        override val owner: SecretOwner,
         private val count: Int,
         private val explode: Boolean = false
     ) : SecretSource {
@@ -36,39 +36,39 @@ class SecretSourcesTest {
 
     @Test
     fun `every registered app is asked, and the counts are kept apart`() = runTest {
-        SecretSources.register(FakeSource(AppId.FINANCE, 3))
-        SecretSources.register(FakeSource(AppId.CITATION, 2))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 3))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.CITATION), 2))
 
         val refill = SecretSources.refileAll()
 
         assertEquals(5, refill.filed)
-        assertEquals(mapOf(AppId.FINANCE to 3, AppId.CITATION to 2), refill.byApp)
+        assertEquals(mapOf(SecretOwner.of(AppId.FINANCE) to 3, SecretOwner.of(AppId.CITATION) to 2), refill.byOwner)
         assertEquals("Finance 3, Citation 2", refill.summary())
         assertFalse(refill.empty)
     }
 
     @Test
     fun `a source that throws counts as nothing and does not stop the others`() = runTest {
-        SecretSources.register(FakeSource(AppId.FINANCE, 0, explode = true))
-        val citation = FakeSource(AppId.CITATION, 2)
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 0, explode = true))
+        val citation = FakeSource(SecretOwner.of(AppId.CITATION), 2)
         SecretSources.register(citation)
 
         val refill = SecretSources.refileAll()
 
         assertEquals(1, citation.asked)
         assertEquals(2, refill.filed)
-        assertEquals(0, refill.byApp[AppId.FINANCE])
+        assertEquals(0, refill.byOwner[SecretOwner.of(AppId.FINANCE)])
     }
 
     @Test
     fun `an app with nothing stored is reported as nothing rather than left out`() = runTest {
-        SecretSources.register(FakeSource(AppId.FINANCE, 0))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 0))
 
         val refill = SecretSources.refileAll()
 
         assertTrue(refill.empty)
-        assertEquals(setOf(AppId.FINANCE), refill.byApp.keys)
-        assertEquals(emptyList<AppId>(), refill.contributed)
+        assertEquals(setOf(SecretOwner.of(AppId.FINANCE)), refill.byOwner.keys)
+        assertEquals(emptyList<SecretOwner>(), refill.contributed)
         assertEquals("", refill.summary())
     }
 
@@ -77,29 +77,29 @@ class SecretSourcesTest {
         val refill = SecretSources.refileAll()
 
         assertTrue(refill.empty)
-        assertTrue(refill.byApp.isEmpty())
-        assertEquals(emptyList<AppId>(), SecretSources.owners)
+        assertTrue(refill.byOwner.isEmpty())
+        assertEquals(emptyList<SecretOwner>(), SecretSources.owners)
     }
 
     @Test
     fun `registering twice replaces rather than doubling`() = runTest {
-        SecretSources.register(FakeSource(AppId.FINANCE, 3))
-        SecretSources.register(FakeSource(AppId.FINANCE, 1))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 3))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 1))
 
         val refill = SecretSources.refileAll()
 
-        assertEquals(listOf(AppId.FINANCE), SecretSources.owners)
+        assertEquals(listOf(SecretOwner.of(AppId.FINANCE)), SecretSources.owners)
         assertEquals(1, refill.filed)
     }
 
     @Test
     fun `only the apps that gave something are named in the summary`() = runTest {
-        SecretSources.register(FakeSource(AppId.FINANCE, 0))
-        SecretSources.register(FakeSource(AppId.CITATION, 4))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.FINANCE), 0))
+        SecretSources.register(FakeSource(SecretOwner.of(AppId.CITATION), 4))
 
         val refill = SecretSources.refileAll()
 
         assertEquals("Citation 4", refill.summary())
-        assertEquals(listOf(AppId.CITATION), refill.contributed)
+        assertEquals(listOf(SecretOwner.of(AppId.CITATION)), refill.contributed)
     }
 }

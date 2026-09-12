@@ -3,6 +3,7 @@ package com.secrets.app.data
 import androidx.test.core.app.ApplicationProvider
 import com.operations.backupkit.AppId
 import com.operations.vaultkit.ManagedSecrets
+import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
@@ -64,12 +65,12 @@ class VaultStoreTest {
      * lost them, the app did not.
      */
     private class FakeApp(
-        override val owner: AppId,
+        override val owner: SecretOwner,
         private val holds: Map<SecretRef, String>
     ) : SecretSource {
         override suspend fun refile(): Int {
             holds.forEach { (ref, value) ->
-                SecretsAccess.remember(ref, value, "${owner.defaultDisplayName} — refiled", owner)
+                SecretsAccess.remember(ref, value, "${owner.displayName} — refiled", owner)
             }
             return holds.size
         }
@@ -193,7 +194,7 @@ class VaultStoreTest {
         SecretsAccess.register(VaultBroker(store))
         val ref = SecretRef("finance", "usaa", "access-token")
 
-        assertTrue(SecretsAccess.remember(ref, "access-abc", "Finance — USAA token", AppId.FINANCE))
+        assertTrue(SecretsAccess.remember(ref, "access-abc", "Finance — USAA token", SecretOwner.of(AppId.FINANCE)))
 
         assertEquals("access-abc", SecretsAccess.read(ref))
         val item = store.document.value!!.managed(ref)!!
@@ -206,11 +207,11 @@ class VaultStoreTest {
         store.create(passphrase)
         SecretsAccess.register(VaultBroker(store))
         val ref = SecretRef("finance", "usaa", "access-token")
-        SecretsAccess.remember(ref, "access-abc", "t", AppId.FINANCE)
+        SecretsAccess.remember(ref, "access-abc", "t", SecretOwner.of(AppId.FINANCE))
 
         store.lock()
         assertNull(SecretsAccess.read(ref))
-        assertFalse(SecretsAccess.remember(ref, "access-def", "t", AppId.FINANCE))
+        assertFalse(SecretsAccess.remember(ref, "access-def", "t", SecretOwner.of(AppId.FINANCE)))
         assertEquals(1, SecretsAccess.pendingCount)
 
         store.unlock(passphrase)
@@ -224,13 +225,13 @@ class VaultStoreTest {
         store.create(passphrase)
         val broker = VaultBroker(store)
         val ref = SecretRef("finance", "usaa", "access-token")
-        broker.write(ref, "one", "Finance — USAA token", AppId.FINANCE)
+        broker.write(ref, "one", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
         val id = store.document.value!!.managed(ref)!!.id
         store.mutate { document ->
             document.upsert(document.item(id)!!.copy(title = "The joint account"), 20)
         }
 
-        broker.write(ref, "two", "Finance — USAA token", AppId.FINANCE)
+        broker.write(ref, "two", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
 
         val item = store.document.value!!.managed(ref)!!
         assertEquals("two", item.secret)
@@ -242,7 +243,7 @@ class VaultStoreTest {
         store.create(passphrase)
         val broker = VaultBroker(store)
         val ref = SecretRef("citation", "calibre", "password")
-        broker.write(ref, "abc", "Citation — Calibre", AppId.CITATION)
+        broker.write(ref, "abc", "Citation — Calibre", SecretOwner.of(AppId.CITATION))
 
         assertTrue(broker.forget(ref))
 
@@ -294,11 +295,11 @@ class VaultStoreTest {
         val card = SecretRef("citation", "oreilly", "library-card")
         store.create(passphrase)
         SecretsAccess.register(VaultBroker(store))
-        SecretsAccess.remember(token, "access-abc", "Finance — USAA", AppId.FINANCE)
+        SecretsAccess.remember(token, "access-abc", "Finance — USAA", SecretOwner.of(AppId.FINANCE))
         // And something only a person could have put there.
         store.mutate { it.upsert(item("Allotment gate", "elderflower"), 10) }
-        SecretSources.register(FakeApp(AppId.FINANCE, mapOf(token to "access-abc")))
-        SecretSources.register(FakeApp(AppId.CITATION, mapOf(card to "31234-5678")))
+        SecretSources.register(FakeApp(SecretOwner.of(AppId.FINANCE), mapOf(token to "access-abc")))
+        SecretSources.register(FakeApp(SecretOwner.of(AppId.CITATION), mapOf(card to "31234-5678")))
 
         val refill = store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
 
@@ -345,7 +346,7 @@ class VaultStoreTest {
     fun `a reset works with no vault at all - the corrupt file case`() = runTest {
         // Nothing was ever created, or what was there could not be parsed and was thrown away. The
         // reset is the same operation either way: delete whatever is there, build, refill.
-        SecretSources.register(FakeApp(AppId.FINANCE, mapOf(SecretRef("finance", "usaa", "access-token") to "abc")))
+        SecretSources.register(FakeApp(SecretOwner.of(AppId.FINANCE), mapOf(SecretRef("finance", "usaa", "access-token") to "abc")))
 
         val refill = store.resetForgottenPassphrase("a completely new passphrase".toCharArray())
 
