@@ -14,9 +14,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.AddToHomeScreen
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.LockClock
 import androidx.compose.material.icons.filled.Palette
@@ -558,7 +558,7 @@ private fun AppTileMenu(
             )
             if (canPin) {
                 MenuRow(
-                    icon = Icons.Filled.AddToHomeScreen,
+                    icon = Icons.AutoMirrored.Filled.AddToHomeScreen,
                     label = "Add to phone home screen",
                     subtitle = "Its own icon, outside the suite.",
                     onClick = {

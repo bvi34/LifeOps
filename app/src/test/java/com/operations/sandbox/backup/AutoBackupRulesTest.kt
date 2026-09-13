@@ -61,6 +61,15 @@ class AutoBackupRulesTest {
 
     @Before
     fun setUp() {
+        // Drop every cached singleton first.
+        //
+        // Room keeps its database in a static field and Robolectric hands each *test method* its
+        // own data directory, so the instance built during the first method points at a directory
+        // the second one cannot see. `getInstance` then cheerfully returns it, no database is
+        // created where this test is looking, and the census comes back empty — which is how this
+        // test failed on a set of rules that were perfectly correct.
+        closeEveryDatabase()
+
         // Every app's database, created the way the app itself creates it.
         LifeOpsDatabase.getInstance(context).openHelper.writableDatabase
         CitationDatabase.get(context).openHelper.writableDatabase
@@ -73,6 +82,21 @@ class AutoBackupRulesTest {
         MaintenanceDatabase.getInstance(context).openHelper.writableDatabase
         FinanceDatabase.getInstance(context).openHelper.writableDatabase
         RepositoryDatabase.getInstance(context).openHelper.writableDatabase
+    }
+
+    /** The same eleven `closeInstance` calls `BackupCoverageTest` makes before a restore. */
+    private fun closeEveryDatabase() {
+        LifeOpsDatabase.closeInstance()
+        CitationDatabase.closeInstance()
+        LogisticsDatabase.closeInstance()
+        AdvisorDatabase.closeInstance()
+        AdvisorMemoryDatabase.closeInstance()
+        HealthDatabase.closeInstance()
+        PeopleDatabase.closeInstance()
+        ProjectDatabase.closeInstance()
+        MaintenanceDatabase.closeInstance()
+        FinanceDatabase.closeInstance()
+        RepositoryDatabase.closeInstance()
     }
 
     @Test
