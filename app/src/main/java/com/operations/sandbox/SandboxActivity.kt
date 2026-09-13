@@ -1,5 +1,6 @@
 package com.operations.sandbox
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -7,6 +8,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import com.operations.sandbox.ui.rememberCloudBackupController
 import com.operations.sandbox.ui.rememberUpdateController
 import com.operations.sandbox.ui.rememberWeatherWidgetController
 import com.operations.sandbox.ui.theme.SandboxTheme
+import com.operations.suite.ui.SuiteNotifications
 
 /**
  * The Operations Sandbox: the suite's single launcher entry point, and the only screen that is
@@ -42,6 +45,20 @@ import com.operations.sandbox.ui.theme.SandboxTheme
  * hoisted here so returning to it is predictable.
  */
 class SandboxActivity : ComponentActivity() {
+
+    /**
+     * The suite's notification permission, asked for here and nowhere else.
+     *
+     * Nothing is done with the answer. A refusal is not an error and there is nothing on a home
+     * screen it should change — the apps that schedule reminders are the ones that can say what a
+     * refusal costs, on the screen where the reminder is being set up. What matters is that the
+     * question is *asked*, once, of everybody: it is granted to the package rather than to an app,
+     * and until now only LifeOps ever asked, so a household that lived in Health had medication
+     * reminders that were posted and never delivered. See [SuiteNotifications].
+     */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -53,6 +70,18 @@ class SandboxActivity : ComponentActivity() {
                 SandboxShell(center)
             }
         }
+        askAboutNotificationsOnce()
+    }
+
+    /**
+     * Marked as asked *before* the dialog goes up rather than in the result callback: the callback
+     * arrives whenever the household gets round to answering, and an activity that was recreated in
+     * the meantime would ask a second time on the way back.
+     */
+    private fun askAboutNotificationsOnce() {
+        if (!SuiteNotifications.shouldAsk(this)) return
+        SuiteNotifications.markAsked(this)
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 

@@ -1,35 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android 12+ (API 31+) backup/transfer rules for the container app. Mirrors backup_rules.xml:
-  both databases and shared prefs are backed up; Citation's large owned files are left to the
-  Operations Sandbox zip.
+  Android 12+ (API 31+) backup and device-transfer rules for the container app.
 
-  oreilly_access.xml (Citation's EncryptedSharedPreferences) is excluded from both cloud-backup and
-  device-transfer: its Tink keyset is wrapped by a hardware-bound Android Keystore key that never
-  travels with a backup, so a restored copy can't be decrypted and crashes the app on launch with
-  AEADBadTagException. The card/PIN are re-entered on the device instead.
+  Deliberately word for word the same set as backup_rules.xml, in all three places: what a cloud
+  restore is allowed to bring back, what a phone-to-phone transfer is allowed to carry, and what the
+  older rules say are one policy, and a policy that disagrees with itself across two files is a bug
+  waiting for the one restore nobody rehearsed. `AutoBackupRulesTest` asserts the three sections are
+  identical rather than trusting this comment.
 
-  The scheduled cloud backup's credential store is excluded for both of those reasons at once.
-  sandbox_cloud_backup_secrets.xml is EncryptedSharedPreferences, so a restored copy is a keyset no
-  key on the new phone can open; and its plain-file fallback (written only on a device whose keystore
-  is unusable) holds the shared access signature in the clear, which is not a thing to hand to
-  somebody else's backup transport. Neither is a loss: the signature is mirrored into the suite's own
-  vault and comes back from there — see docs/SECRETS.md.
+  Read backup_rules.xml for why the domains are taken whole, why `filesDir` is in neither list, and
+  why every credential store is excluded; the reasoning is the same and is written down once.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <include domain="database" path="lifeops.db" />
-        <include domain="database" path="citation.db" />
+        <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+
         <exclude domain="sharedpref" path="oreilly_access.xml" />
+        <exclude domain="sharedpref" path="opds_catalog_access.xml" />
+        <exclude domain="sharedpref" path="secure_finance_access.xml" />
+        <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+        <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />
+        <exclude domain="sharedpref" path="sandbox_update_secrets_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets_plain.xml" />
     </cloud-backup>
     <device-transfer>
-        <include domain="database" path="lifeops.db" />
-        <include domain="database" path="citation.db" />
+        <include domain="database" path="." />
         <include domain="sharedpref" path="." />
+
+        <!-- A transfer is phone-to-phone rather than through a transport, but the Keystore key
+             still does not travel, so a restored credential store is just as unreadable here. -->
         <exclude domain="sharedpref" path="oreilly_access.xml" />
+        <exclude domain="sharedpref" path="opds_catalog_access.xml" />
+        <exclude domain="sharedpref" path="secure_finance_access.xml" />
+        <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+        <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />
+        <exclude domain="sharedpref" path="sandbox_update_secrets_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets_plain.xml" />
     </device-transfer>

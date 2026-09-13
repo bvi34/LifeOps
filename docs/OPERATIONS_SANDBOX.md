@@ -81,6 +81,30 @@ would put the *same* app on the chooser twice. One module owns each type outrigh
 Citation sniffs the opened file's **magic number** (`%PDF`, `PK`) rather than trusting the intent's
 MIME type, which senders get wrong routinely (an EPUB commonly arrives as `application/octet-stream`).
 
+### Who asks for a permission
+
+The same merge that makes one launcher icon makes **one package**, and a runtime permission is
+granted to a package rather than to an app. That is easy to forget in a repository laid out as
+eleven apps, and it had already been forgotten once.
+
+`POST_NOTIFICATIONS` was asked for by LifeOps, on the first launch of LifeOps, because that is where
+it lived when LifeOps was an app you installed. Health declares the same permission and posts
+medication reminders from `MedicationReminderWorker`; Citation's narrator declares it too. So a
+household that used Health and never opened LifeOps was **never asked**, and every reminder they set
+up was posted into a void — nothing failed, nothing was logged, and the only symptom was a reminder
+that did not arrive.
+
+The ask therefore belongs to the container, which owns the one screen everybody passes through.
+`SandboxActivity` puts the question once and does nothing with the answer: a refusal is not an error
+and there is nothing on a home screen it should change. The record of having asked is
+`SuiteNotifications` in `:suiteui` — not in `:app`, because every hosted app must be able to read it
+and none of them may depend on the container. LifeOps still asks if it is somehow opened first (a
+notification tap, the widget) and consults the same record, so the household sees one prompt
+whichever door they came in by.
+
+An app that needs the permission *now* is a different question and keeps asking it for itself:
+Citation's Listen screen asks in context, where a refusal has something concrete to say.
+
 ---
 
 ## The backup archive (`:backupkit`)
@@ -240,6 +264,38 @@ own preferences — and two that are worth knowing about:
 | `logistics_prefs` | a display toggle; `LogisticsBackupContributor` says so in its own words |
 | `repository_prefs` | the last drive and folder a transfer used — SAF grants that do not survive a reinstall |
 | `operations_suite_appearance` | **the suite's whole look** — preset, palette, per-app accents, wallpaper. It belongs to the container rather than to any hosted app, and the archive has no slice for the container, so it is re-chosen after a restore. The one gap here that is a *choice* rather than a reason |
+
+### The other backup (Android Auto Backup)
+
+Everything above is the archive somebody **takes**. Android runs one of its own that simply *happens*
+to them — off a charger, onto Google's transport — and it is the one that actually restores this
+suite when a household sets up a new phone and taps "restore from backup" long before they hear the
+app has an archive of its own. What it carries is `app/src/main/res/xml/backup_rules.xml` (and
+`data_extraction_rules.xml` for API 31+, which must say the same thing for a cloud restore and for a
+phone-to-phone transfer).
+
+Those rules named **files**, and the files they named were `lifeops.db` and `citation.db` — true when
+the container held two apps. Nine databases arrived afterwards and not one was added, because nothing
+anywhere failed when one wasn't. Preferences were swept by domain the whole time, so a restored phone
+came up with everybody's settings, LifeOps' and Citation's data, and nine apps that had forgotten
+everything: the worst shape this failure can take, because it looks like a working restore.
+
+So the rules now take the `database` domain **whole**. A rule that names a domain cannot fall behind
+the apps the way a rule that names files did, and `AutoBackupRulesTest` is what proves it hasn't — it
+makes every app create its real database, through the app's own singleton, and evaluates the shipped
+rules against what is on the disk.
+
+What stays out, and why:
+
+| Left out | Why |
+|---|---|
+| `filesDir` | Citation's books, Advisor's models, the household's documents — hundreds of megabytes against Auto Backup's 25 MB quota, and an app over the quota is not trimmed, it is **skipped**. These are the sandbox zip's job |
+| every credential store | `EncryptedSharedPreferences`, whose Keystore key never travels: the restored file meets a key that cannot open it. The `_plain` fallbacks fail the other way, holding the credential in the clear. The vault carries these onto the new phone — see [SECRETS.md](SECRETS.md) |
+
+The second half of `AutoBackupRulesTest` asserts that, because "back up everything" and "never back
+up a key" are one policy, and a change that widened the first at the cost of the second would
+otherwise pass unnoticed. It also asserts the three rule sections are identical: a policy that
+disagrees with itself across two files is a bug waiting for the one restore nobody rehearsed.
 
 ---
 
@@ -702,6 +758,14 @@ its own rather than the fallback, no mark exists for an app that doesn't, none i
 the 24×24 viewport that makes stroke weights comparable, and no two carry the same geometry — plus
 LifeOps' ring-ticks-needle weight ladder, which is the part of its inherited mark that a well-meaning
 tidy-up would flatten.
+
+The platform's own backup is held to the same bar in the same place: `AutoBackupRulesTest` makes
+every app create its database and evaluates the shipped `backup_rules.xml` and
+`data_extraction_rules.xml` against the disk, so a database added next year fails here rather than
+on somebody's new phone; it also pins that no credential store is carried and that the three rule
+sections still say the same thing. `SuiteNotificationsTest` pins the one prompt: a household that
+already granted the permission is never asked, nobody is asked twice, and a phone too old to have
+the permission is never asked at all.
 
 The rest of the Android glue (contributors, the home screen and settings, the module surgery) is
 verified by building and running the container app.

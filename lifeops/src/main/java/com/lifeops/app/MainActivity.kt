@@ -27,6 +27,7 @@ import com.lifeops.app.ui.components.AppHeaderViewModelFactory
 import com.lifeops.app.ui.components.LocalGlobalSearch
 import com.lifeops.app.ui.components.LocalSardonicMessage
 import com.lifeops.app.ui.components.WelcomeDialog
+import com.operations.suite.ui.SuiteNotifications
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -109,11 +110,14 @@ class MainActivity : ComponentActivity() {
 
         val prefs = getSharedPreferences("lifeops_prefs", MODE_PRIVATE)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (!prefs.getBoolean("notification_permission_requested", false)) {
-                prefs.edit().putBoolean("notification_permission_requested", true).apply()
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        // The suite asks for notifications once, whichever door the household came in by — the
+        // container asks on its home screen, and this is the same question against the same record
+        // for the case where LifeOps is opened first (a notification tap, a widget). The permission
+        // belongs to the package rather than to this app, so asking it twice would be asking the
+        // same question twice. See SuiteNotifications.
+        if (SuiteNotifications.shouldAsk(this)) {
+            SuiteNotifications.markAsked(this)
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
 
         // SCHEDULE_EXACT_ALARM is a special permission on Android 12+ that requires the user

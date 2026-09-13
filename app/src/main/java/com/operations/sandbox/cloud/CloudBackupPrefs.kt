@@ -52,13 +52,13 @@ class CloudBackupPrefs internal constructor(context: Context, private val overri
         val key = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         EncryptedSharedPreferences.create(
             app,
-            "sandbox_cloud_backup_secrets",
+            SECRETS_PREFS,
             key,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }.getOrElse {
-        app.getSharedPreferences("sandbox_cloud_backup_secrets_plain", Context.MODE_PRIVATE)
+        app.getSharedPreferences(SECRETS_PREFS_PLAIN, Context.MODE_PRIVATE)
     }
 
     /**
@@ -235,6 +235,17 @@ class CloudBackupPrefs internal constructor(context: Context, private val overri
     }
 
     companion object {
+
+        /**
+         * The two files the signature can end up in, named here for the reason
+         * [com.operations.sandbox.update.UpdatePrefs.SECRETS_PREFS] gives: `AutoBackupRulesTest`
+         * reads them and fails if the platform's backup rules would carry either off the phone.
+         */
+        const val SECRETS_PREFS = "sandbox_cloud_backup_secrets"
+
+        /** The unencrypted fallback, for a device whose keystore is unusable. */
+        const val SECRETS_PREFS_PLAIN = "sandbox_cloud_backup_secrets_plain"
+
         private const val KEY_ENABLED = "enabled"
         private const val KEY_ACCOUNT = "account"
         private const val KEY_CONTAINER = "container"
