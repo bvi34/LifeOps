@@ -78,8 +78,14 @@ class AutoBackupRulesTest {
     @Test
     fun `every database the suite creates is carried by the platform's backup`() {
         val databases = databasesOnDisk()
-        // If this is ever empty the test has stopped testing anything, which is worse than failing.
-        assertTrue("no app created a database — the seeding above has stopped working", databases.size >= 11)
+        // A census of nothing would pass every assertion below, so an empty one is a failure rather
+        // than a pass: it means the seeding stopped working, or the suite is being measured in the
+        // wrong place. The directory is named because that is the question a reader will have.
+        assertTrue(
+            "no app created a database in ${databasesDir()} — the seeding above has stopped " +
+                "working, and a census of nothing proves nothing",
+            databases.size >= 11
+        )
 
         allSections().forEach { (section, rules) ->
             val dropped = databases.filterNot { rules.carries(DATABASE, it) }
@@ -170,8 +176,19 @@ class AutoBackupRulesTest {
         return sections
     }
 
+    /**
+     * Where this app's databases live, asked of the framework rather than assembled from
+     * `applicationInfo.dataDir`: `getDatabasePath` is the call Room itself makes to decide where to
+     * put a database, so it is the one answer that cannot disagree with reality. The assembled path
+     * did disagree — under Robolectric it names a directory nothing is written to, and the census
+     * came back empty while every app had in fact created its database.
+     */
+    private fun databasesDir(): File =
+        context.getDatabasePath("census-probe.db").parentFile
+            ?: error("the platform gave a database path with no directory above it")
+
     private fun databasesOnDisk(): List<String> =
-        File(context.applicationInfo.dataDir, "databases").listFiles().orEmpty()
+        databasesDir().listFiles().orEmpty()
             .filter { it.isFile }
             // A journal beside a database is not a file anybody backs up; it is checkpointed into
             // the database before the copy, which is what makes the copy whole.
