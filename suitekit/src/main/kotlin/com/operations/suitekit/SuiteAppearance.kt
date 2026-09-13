@@ -92,7 +92,24 @@ data class SuiteAppearance(
      */
     val iconPaints: Map<String, SuiteIconPaint> = emptyMap(),
     /** The Operations Sandbox home screen's backdrop; nothing inside a hosted app reads this. */
-    val wallpaper: SuiteWallpaper = SuiteWallpaper()
+    val wallpaper: SuiteWallpaper = SuiteWallpaper(),
+    /**
+     * The household's own arrangement of the home screen: [AppId.key]s in the order their tiles are
+     * laid out. Empty — the default — is the order the suite ships in.
+     *
+     * Keys rather than indices, and a *partial* list rather than an authoritative one, for the
+     * reason [SuiteHomeLayout] spells out: an app added in a later update has to arrive on the home
+     * screen rather than be hidden by an order written before it existed.
+     */
+    val homeOrder: List<String> = emptyList(),
+    /**
+     * The apps whose tiles the household has taken off the home screen, by [AppId.key].
+     *
+     * Only the grid is affected. A hidden app keeps its data, its reminders, its place in the
+     * order and its slice of the backup; it is reachable from the Settings list it is switched
+     * off in, and from anything that opens it by name.
+     */
+    val hiddenApps: Set<String> = emptySet()
 ) {
     /** The accent hex chosen for [appId], or that app's shipped default. */
     fun accentHex(appId: AppId): String =
@@ -167,6 +184,30 @@ data class SuiteAppearance(
 
     fun withWallpaper(transform: (SuiteWallpaper) -> SuiteWallpaper): SuiteAppearance =
         copy(wallpaper = transform(wallpaper))
+
+    /** Every hosted app in the household's order, hidden ones included. */
+    val arrangedApps: List<SuiteAppInfo> get() = SuiteHomeLayout.order(homeOrder)
+
+    /** The tiles the home screen draws. */
+    val homeApps: List<SuiteAppInfo> get() = SuiteHomeLayout.visible(homeOrder, hiddenApps)
+
+    fun isHidden(appId: AppId): Boolean = appId.key in hiddenApps
+
+    fun withHidden(appId: AppId, hidden: Boolean): SuiteAppearance = copy(
+        hiddenApps = if (hidden) hiddenApps + appId.key else hiddenApps - appId.key
+    )
+
+    /**
+     * [appId] swapped past its nearest visible neighbour. The whole order is written back, not just
+     * the pair, because the document stores an order rather than a set of positions.
+     */
+    fun withMoved(appId: AppId, forward: Boolean): SuiteAppearance =
+        copy(homeOrder = SuiteHomeLayout.moved(homeOrder, hiddenApps, appId, forward))
+
+    fun canMove(appId: AppId, forward: Boolean): Boolean =
+        SuiteHomeLayout.canMove(homeOrder, hiddenApps, appId, forward)
+
+    fun canHide(appId: AppId): Boolean = SuiteHomeLayout.canHide(homeOrder, hiddenApps, appId)
 }
 
 /**
@@ -194,7 +235,12 @@ object SuiteAppearanceCodec {
                 iconPaints = (parsed.iconPaints ?: emptyMap())
                     .filterValues { it != null }
                     .mapValues { (_, paint) -> sanitize(paint) },
-                wallpaper = sanitize(parsed.wallpaper)
+                wallpaper = sanitize(parsed.wallpaper),
+                // Written by a build older than the home-screen arrangement: absent keys, and so
+                // null fields whatever their declared type. Empty means "the order we ship in",
+                // which is exactly right for a document that predates the choice.
+                homeOrder = (parsed.homeOrder ?: emptyList()).filterNotNull(),
+                hiddenApps = (parsed.hiddenApps ?: emptySet()).filterNotNull().toSet()
             )
         } catch (_: Exception) {
             null

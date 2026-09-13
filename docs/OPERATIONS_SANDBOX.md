@@ -395,8 +395,8 @@ is: seven apps behind one icon.
   "the thermometer" and "the green basket" mean something before you have read a word. The mark is
   drawn straight onto the wallpaper, with no block behind it. Tapping a tile
   launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
-  jumps straight to where that app's colour is chosen. The marks are the suite's own — see *Seven
-  marks* below.
+  opens the tile's menu — move it, hide it, put it on the *phone's* home screen, or repaint it. The
+  marks are the suite's own — see *Seven marks* below.
 - A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
   container rather than to any app: **Settings** (the gear) and **Backups**.
 - A **weather tile** between the clock and the grid — see *Weather on the home screen* below.
@@ -419,6 +419,74 @@ screen's state — which tab, which app is being recoloured — is hoisted into 
 `BackupController`: an archive can take a while, and backing out to the home screen mid-backup must
 not cancel it. The `WeatherWidgetController` is hoisted for the same reason — a location fix or a
 forecast fetch must survive a trip to the gear.
+
+### Whose screen it is (`SuiteHomeLayout`)
+
+The grid shipped in the order `SuiteApps.all` declares. That is a reasonable order and it is nobody
+in particular's: with eleven apps, a household that lives in Logistics and Health reaches past nine
+tiles to get to them, and three apps they have never opened take the same room as the two they open
+daily.
+
+So the arrangement is theirs. A tile can be **moved** past its neighbours and **hidden** from the
+screen entirely, from the tile's own long-press menu or from **Settings → Appearance → Home screen**,
+and both live in the appearance document as `homeOrder` (app keys) and `hiddenApps`.
+
+Three things are deliberate, and all three are in `:suitekit` with unit tests rather than in the
+Compose file:
+
+- **A stored order is partial, not authoritative.** An app the order has never heard of is *appended*,
+  not dropped. This is the case that matters: a household arranges their screen today, an update
+  adds an app next spring, and an order treated as the whole truth would hide it with nothing to say
+  so. The same tolerance drops a key naming an app this build does not have, and collapses a key
+  stored twice.
+- **Hiding is not deleting.** A hidden app keeps its place in the order, its data, its reminders and
+  its slice of the backup; only the tile goes. It comes back where it was rather than at the end.
+  Moving skips hidden neighbours, so a "move right" never swaps a tile past something invisible and
+  appears to do nothing.
+- **The last tile cannot be hidden.** An empty grid reads as a broken app rather than as a choice,
+  and the person staring at it has no reason to look in Settings.
+
+Settings lists *every* app, hidden ones included and drawn faintly, because a gesture that takes
+something off the screen has to have somewhere obvious that undoes it — and "long-press the tile
+that is no longer there" is not somewhere.
+
+### The phone's launcher (`SuiteShortcuts`)
+
+Eleven apps ship behind one icon. That is the point of the container and also its one concession:
+on the phone's own home screen there is a single *Operations Sandbox*, and everything inside it is
+two taps away at best. The suite had no shortcuts at all — long-pressing its icon offered nothing —
+so it now publishes both kinds:
+
+- **Dynamic** shortcuts are what that long-press offers: the four most recently opened apps, which
+  is the only ranking that needs no setup and is right more often than any fixed list. A phone where
+  nothing has been opened yet falls back to the household's own home-screen order, so a fresh
+  install has a full set rather than none. An app they have **hidden** is offered by neither half —
+  hiding is the more recent instruction, even for an app they used constantly last week.
+- **Pinned** shortcuts are the household putting an app on the phone's home screen themselves, from
+  the tile menu. This is the one that undoes the concession outright: Logistics gets its own icon,
+  in its own colour, beside everything else they use.
+
+Both route through `SandboxActivity` carrying an `EXTRA_OPEN_APP`, rather than naming a hosted
+activity. The hosted activities are **not exported** — there is one launcher entry point, deliberately
+— so a shortcut naming one would be a shortcut the launcher is not allowed to start. Routing through
+the container also means backing out of a shortcut lands on the home screen rather than on nothing.
+
+**The icons had to be rasterised by hand** (`SuiteMarkRaster`). The marks are Compose `ImageVector`s
+and Compose is the only thing that draws one; a launcher shortcut is a `Bitmap` handed to another
+process long after any composition has ended. Without it the eleven hand-drawn silhouettes would
+stop at the edge of the app and every pinned shortcut would look like the same anonymous square. So
+the renderer walks the vector's paths and strokes them with the width, cap, join and alpha the
+vector declares — the same drawing, a different renderer. Two details are worth knowing:
+
+- The mark sits on a **field of the app's accent**, where the suite's own home screen deliberately
+  draws no tile behind it. The home screen can, because it owns what is behind it; a pinned shortcut
+  lands on a wallpaper this app has never seen, where an untinted line drawing is one photograph
+  away from invisible. It is drawn in one colour even for an app with icon colours of its own —
+  LifeOps' purple dial on a field of LifeOps' purple would be nothing at all.
+- **Group transforms are ignored rather than implemented**, because no mark uses one.
+  `SuiteMarkRasterTest` fails the day a mark starts to, which is the day the renderer needs the
+  other twenty lines — the failure mode otherwise is invisible from inside the app, where Compose's
+  own renderer draws it perfectly.
 
 ### Weather on the home screen
 
@@ -758,6 +826,16 @@ its own rather than the fallback, no mark exists for an app that doesn't, none i
 the 24×24 viewport that makes stroke weights comparable, and no two carry the same geometry — plus
 LifeOps' ring-ticks-needle weight ladder, which is the part of its inherited mark that a well-meaning
 tidy-up would flatten.
+
+The home screen's arrangement is pure and tested as such (`gradle :suitekit:test`):
+`SuiteHomeLayoutTest` covers an order that predates half the suite, one naming an app this build
+does not have, one naming the same app twice, that hiding holds a tile's place and gives it back,
+that a move skips a hidden neighbour, that the ends run out, and that the last tile standing cannot
+be hidden. `SuiteMarkRasterTest` holds the launcher icons to what `SuiteGlyphsTest` holds the marks
+to — every mark has paths to draw, none hides inside a group transform the renderer would ignore,
+and no two rasterise to the same geometry. `SuiteShortcutsTest` pins the ranking: a full set on a
+phone with no history, no duplicates, nothing from a build that knew an app this one does not, and
+nothing the household has hidden.
 
 The platform's own backup is held to the same bar in the same place: `AutoBackupRulesTest` makes
 every app create its database and evaluates the shipped `backup_rules.xml` and

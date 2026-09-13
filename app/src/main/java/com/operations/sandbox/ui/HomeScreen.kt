@@ -14,20 +14,30 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.LockClock
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,7 +54,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import com.operations.backupkit.AppId
+import com.operations.sandbox.shortcuts.SuiteShortcuts
 import com.operations.suite.ui.LocalSuiteAppearance
+import com.operations.suite.ui.SuiteAppearanceStore
 import com.operations.suite.ui.SuiteIcons
 import com.operations.suite.ui.accentArgb
 import com.operations.suite.ui.inkColor
@@ -68,7 +80,14 @@ import java.util.Locale
  * what belongs to the container rather than to any app: the settings that paint the whole suite,
  * and the backup that archives all of it at once.
  *
- * Tap a tile to open the app; press and hold to jump to where its colour is chosen.
+ * Tap a tile to open the app; press and hold for the things a launcher's long-press offers — move
+ * it, take it off the screen, put it on the *phone's* home screen, or repaint it.
+ *
+ * The grid is the household's, not the suite's. Eleven apps is past the point where a shipped order
+ * is anybody's order, so the tiles are drawn in the arrangement the appearance document holds and
+ * an app they never open can be taken off the screen entirely (it keeps its data, its reminders and
+ * its place in the order — Settings is where it comes back from). [SuiteHomeLayout] settles what
+ * happens when an app arrives in an update, which is that it appears.
  *
  * Above the grid sits the one piece of live information the shell shows on its own: a weather tile
  * for wherever the phone is, on the theory that "is it raining?" is asked more often than any app
@@ -103,6 +122,9 @@ fun SandboxHomeScreen(
     onOpenUpdates: () -> Unit = {}
 ) {
     val appearance = LocalSuiteAppearance.current
+
+    // The tile whose long-press menu is open, if any.
+    var menuFor by remember { mutableStateOf<AppId?>(null) }
 
     // Two facts about the vault, or ABSENT/0 on a phone where nothing has ever registered a broker.
     val vault = rememberVaultStatus()
@@ -172,14 +194,14 @@ fun SandboxHomeScreen(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
-                SuiteApps.all.chunked(COLUMNS).forEach { row ->
+                appearance.homeApps.chunked(COLUMNS).forEach { row ->
                     Row(modifier = Modifier.fillMaxWidth()) {
                         row.forEach { info ->
                             AppTile(
                                 info = info,
                                 accent = appearance.accentArgb(info.appId),
                                 onOpen = { onOpenApp(info.appId) },
-                                onCustomize = { onCustomizeApp(info.appId) },
+                                onMenu = { menuFor = info.appId },
                                 ink = ink,
                                 onDark = wallpaper.isDark,
                                 // Only Secrets can have one; zero draws nothing.
@@ -195,6 +217,18 @@ fun SandboxHomeScreen(
             }
 
             Dock(onOpenSettings = onOpenSettings, onOpenBackups = onOpenBackups)
+        }
+
+        menuFor?.let { appId ->
+            AppTileMenu(
+                appId = appId,
+                appearance = appearance,
+                onDismiss = { menuFor = null },
+                onCustomize = {
+                    menuFor = null
+                    onCustomizeApp(appId)
+                }
+            )
         }
     }
 }
@@ -322,7 +356,7 @@ private fun AppTile(
     info: SuiteAppInfo,
     accent: Long,
     onOpen: () -> Unit,
-    onCustomize: () -> Unit,
+    onMenu: () -> Unit,
     ink: Color,
     onDark: Boolean,
     badge: Int? = null,
@@ -331,7 +365,7 @@ private fun AppTile(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onOpen, onLongClick = onCustomize)
+            .combinedClickable(onClick = onOpen, onLongClick = onMenu)
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -440,6 +474,143 @@ fun AppGlyph(
         tint = Color(SuiteColors.fitForMode(argb, onDark)),
         modifier = modifier.size(size)
     )
+}
+
+/**
+ * What a long-press on a tile offers.
+ *
+ * A menu, where a long-press used to jump straight to the app's colour. That was one useful action
+ * hidden behind a gesture with no way to discover it and no way to find out what else it might do —
+ * and there is now more it can do than one action's worth. A sheet says what the gesture is for,
+ * which is the whole reason every launcher's long-press opens one.
+ *
+ * The moves are stated as left and right rather than up and down because that is how the grid
+ * flows, and a tile at the end of a row moves into the next one exactly as reading does. Each is
+ * offered only when it would change something: a greyed-out row is an honest answer to "can this go
+ * further left?" where a row that does nothing is not.
+ *
+ * Everything here writes through [SuiteAppearanceStore], which is the same store the settings write
+ * through, so the grid behind the sheet has already rearranged itself by the time it closes.
+ */
+@Composable
+private fun AppTileMenu(
+    appId: AppId,
+    appearance: SuiteAppearance,
+    onDismiss: () -> Unit,
+    onCustomize: () -> Unit
+) {
+    val context = LocalContext.current
+    val store = remember(context) { SuiteAppearanceStore.get(context) }
+    val info = remember(appId) { SuiteApps.of(appId) }
+    // Asked once: whether the phone's launcher does pinning at all. A few do not, and offering a
+    // row that silently does nothing would be worse than not offering it.
+    val canPin = remember(context) { SuiteShortcuts.isPinSupported(context) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AppGlyph(appId = appId, argb = appearance.accentArgb(appId), size = 40.dp)
+                Spacer(Modifier.width(14.dp))
+                Column {
+                    Text(info.label, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        info.tagline,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider()
+            Spacer(Modifier.height(4.dp))
+
+            MenuRow(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                label = "Move left",
+                enabled = appearance.canMove(appId, forward = false),
+                onClick = { store.moveApp(appId, forward = false) }
+            )
+            MenuRow(
+                icon = Icons.AutoMirrored.Filled.ArrowForward,
+                label = "Move right",
+                enabled = appearance.canMove(appId, forward = true),
+                onClick = { store.moveApp(appId, forward = true) }
+            )
+            MenuRow(
+                icon = Icons.Filled.VisibilityOff,
+                label = "Hide from this screen",
+                // The last tile standing cannot go: an empty grid reads as a broken app rather
+                // than as a choice somebody made. Settings is where hidden apps come back from,
+                // and the subtitle is where somebody finds that out.
+                subtitle = if (appearance.canHide(appId)) {
+                    "Keeps its data and reminders. Settings → Appearance brings it back."
+                } else {
+                    "The last app on the screen has to stay."
+                },
+                enabled = appearance.canHide(appId),
+                onClick = {
+                    store.setHidden(appId, true)
+                    onDismiss()
+                }
+            )
+            if (canPin) {
+                MenuRow(
+                    icon = Icons.Filled.AddToHomeScreen,
+                    label = "Add to phone home screen",
+                    subtitle = "Its own icon, outside the suite.",
+                    onClick = {
+                        SuiteShortcuts.pin(context, appId)
+                        onDismiss()
+                    }
+                )
+            }
+            MenuRow(
+                icon = Icons.Filled.Palette,
+                label = "Customise colour",
+                onClick = onCustomize
+            )
+        }
+    }
+}
+
+/** One line of the tile menu. */
+@Composable
+private fun MenuRow(
+    icon: ImageVector,
+    label: String,
+    subtitle: String? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit
+) {
+    val tint = if (enabled) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(label, style = MaterialTheme.typography.bodyLarge, color = tint)
+            if (subtitle != null) {
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (enabled) 1f else 0.38f
+                    )
+                )
+            }
+        }
+    }
 }
 
 /** The container's own two entries: everything here is about the suite, not about one app. */

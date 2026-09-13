@@ -18,12 +18,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -33,6 +36,7 @@ import com.operations.backupkit.AppId
 import com.operations.suite.ui.SuiteAppearanceStore
 import com.operations.suite.ui.accentArgb
 import com.operations.suite.ui.suiteWallpaper
+import com.operations.suitekit.SuiteAppInfo
 import com.operations.suitekit.SuiteAppearance
 import com.operations.suitekit.SuiteApps
 import com.operations.suitekit.SuiteColors
@@ -207,6 +211,8 @@ private fun AppearanceTab(
 
     WallpaperSection(appearance, store)
 
+    HomeScreenSection(appearance, store)
+
     SectionCard(
         title = "App colours",
         subtitle = "Each app's identity. Home icons always wear it; the switch decides whether the " +
@@ -270,6 +276,94 @@ private fun AppearanceTab(
         TextButton(onClick = { store.resetAllAppColors() }) {
             Text("Reset every app to its original colours")
         }
+    }
+}
+
+/**
+ * The home screen's own arrangement: which tiles, in what order.
+ *
+ * This exists as a settings card and not only as a long-press menu for one reason above the others:
+ * **it is where a hidden app comes back from.** A gesture that can take something off the screen
+ * has to have somewhere obvious that undoes it, and "long-press the tile that is no longer there"
+ * is not somewhere. So every app is listed here, hidden ones included, and the switch is the only
+ * control in the suite that can put one back.
+ *
+ * The order is the same order the grid draws, so the list reads as the screen rather than as a
+ * catalogue of it — an app moved here moves there, and the arrows run out at the ends for the same
+ * reason the menu's do.
+ */
+@Composable
+private fun HomeScreenSection(appearance: SuiteAppearance, store: SuiteAppearanceStore) {
+    SectionCard(
+        title = "Home screen",
+        subtitle = "Which apps the home screen shows, and the order it shows them in. Hiding an " +
+            "app only takes its tile away — its data, its reminders and its place in the backup " +
+            "are untouched, and it still opens from anywhere else that names it."
+    ) {
+        appearance.arrangedApps.forEach { info ->
+            key(info.appId) {
+                HomeAppRow(info = info, appearance = appearance, store = store)
+            }
+        }
+
+        Spacer(Modifier.height(4.dp))
+        TextButton(onClick = { store.resetHomeLayout() }) {
+            Text("Show every app, in the original order")
+        }
+    }
+}
+
+/** One app in the home-screen list: where it sits, and whether it is on the screen at all. */
+@Composable
+private fun HomeAppRow(
+    info: SuiteAppInfo,
+    appearance: SuiteAppearance,
+    store: SuiteAppearanceStore
+) {
+    val hidden = appearance.isHidden(info.appId)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        AppGlyph(
+            appId = info.appId,
+            argb = appearance.accentArgb(info.appId),
+            size = 26.dp,
+            // A hidden app is drawn faintly rather than left out, so the list reads at a glance as
+            // "these three are off" rather than as a list somebody has to compare against the grid.
+            modifier = Modifier.alpha(if (hidden) 0.4f else 1f)
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            info.label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (hidden) {
+                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier.weight(1f)
+        )
+        // Moving a hidden app is not offered: it has no position on the screen to move within, and
+        // its place in the order is held for it until it comes back.
+        IconButton(
+            onClick = { store.moveApp(info.appId, forward = false) },
+            enabled = !hidden && appearance.canMove(info.appId, forward = false)
+        ) {
+            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Move ${info.label} earlier")
+        }
+        IconButton(
+            onClick = { store.moveApp(info.appId, forward = true) },
+            enabled = !hidden && appearance.canMove(info.appId, forward = true)
+        ) {
+            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Move ${info.label} later")
+        }
+        Switch(
+            checked = !hidden,
+            // The last one showing cannot be switched off, for the reason the tile menu gives.
+            enabled = hidden || appearance.canHide(info.appId),
+            onCheckedChange = { store.setHidden(info.appId, !it) }
+        )
     }
 }
 
