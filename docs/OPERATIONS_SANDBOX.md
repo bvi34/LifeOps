@@ -81,6 +81,30 @@ would put the *same* app on the chooser twice. One module owns each type outrigh
 Citation sniffs the opened file's **magic number** (`%PDF`, `PK`) rather than trusting the intent's
 MIME type, which senders get wrong routinely (an EPUB commonly arrives as `application/octet-stream`).
 
+### Who asks for a permission
+
+The same merge that makes one launcher icon makes **one package**, and a runtime permission is
+granted to a package rather than to an app. That is easy to forget in a repository laid out as
+eleven apps, and it had already been forgotten once.
+
+`POST_NOTIFICATIONS` was asked for by LifeOps, on the first launch of LifeOps, because that is where
+it lived when LifeOps was an app you installed. Health declares the same permission and posts
+medication reminders from `MedicationReminderWorker`; Citation's narrator declares it too. So a
+household that used Health and never opened LifeOps was **never asked**, and every reminder they set
+up was posted into a void — nothing failed, nothing was logged, and the only symptom was a reminder
+that did not arrive.
+
+The ask therefore belongs to the container, which owns the one screen everybody passes through.
+`SandboxActivity` puts the question once and does nothing with the answer: a refusal is not an error
+and there is nothing on a home screen it should change. The record of having asked is
+`SuiteNotifications` in `:suiteui` — not in `:app`, because every hosted app must be able to read it
+and none of them may depend on the container. LifeOps still asks if it is somehow opened first (a
+notification tap, the widget) and consults the same record, so the household sees one prompt
+whichever door they came in by.
+
+An app that needs the permission *now* is a different question and keeps asking it for itself:
+Citation's Listen screen asks in context, where a refusal has something concrete to say.
+
 ---
 
 ## The backup archive (`:backupkit`)
@@ -241,6 +265,38 @@ own preferences — and two that are worth knowing about:
 | `repository_prefs` | the last drive and folder a transfer used — SAF grants that do not survive a reinstall |
 | `operations_suite_appearance` | **the suite's whole look** — preset, palette, per-app accents, wallpaper. It belongs to the container rather than to any hosted app, and the archive has no slice for the container, so it is re-chosen after a restore. The one gap here that is a *choice* rather than a reason |
 
+### The other backup (Android Auto Backup)
+
+Everything above is the archive somebody **takes**. Android runs one of its own that simply *happens*
+to them — off a charger, onto Google's transport — and it is the one that actually restores this
+suite when a household sets up a new phone and taps "restore from backup" long before they hear the
+app has an archive of its own. What it carries is `app/src/main/res/xml/backup_rules.xml` (and
+`data_extraction_rules.xml` for API 31+, which must say the same thing for a cloud restore and for a
+phone-to-phone transfer).
+
+Those rules named **files**, and the files they named were `lifeops.db` and `citation.db` — true when
+the container held two apps. Nine databases arrived afterwards and not one was added, because nothing
+anywhere failed when one wasn't. Preferences were swept by domain the whole time, so a restored phone
+came up with everybody's settings, LifeOps' and Citation's data, and nine apps that had forgotten
+everything: the worst shape this failure can take, because it looks like a working restore.
+
+So the rules now take the `database` domain **whole**. A rule that names a domain cannot fall behind
+the apps the way a rule that names files did, and `AutoBackupRulesTest` is what proves it hasn't — it
+makes every app create its real database, through the app's own singleton, and evaluates the shipped
+rules against what is on the disk.
+
+What stays out, and why:
+
+| Left out | Why |
+|---|---|
+| `filesDir` | Citation's books, Advisor's models, the household's documents — hundreds of megabytes against Auto Backup's 25 MB quota, and an app over the quota is not trimmed, it is **skipped**. These are the sandbox zip's job |
+| every credential store | `EncryptedSharedPreferences`, whose Keystore key never travels: the restored file meets a key that cannot open it. The `_plain` fallbacks fail the other way, holding the credential in the clear. The vault carries these onto the new phone — see [SECRETS.md](SECRETS.md) |
+
+The second half of `AutoBackupRulesTest` asserts that, because "back up everything" and "never back
+up a key" are one policy, and a change that widened the first at the cost of the second would
+otherwise pass unnoticed. It also asserts the three rule sections are identical: a policy that
+disagrees with itself across two files is a bug waiting for the one restore nobody rehearsed.
+
 ---
 
 ## Scheduled backups to Azure (`:backupkit/cloud` + `:app/cloud`)
@@ -363,6 +419,85 @@ screen's state — which tab, which app is being recoloured — is hoisted into 
 `BackupController`: an archive can take a while, and backing out to the home screen mid-backup must
 not cancel it. The `WeatherWidgetController` is hoisted for the same reason — a location fix or a
 forecast fetch must survive a trip to the gear.
+
+### Whose screen it is (`SuiteHomeLayout`)
+
+The grid shipped in the order `SuiteApps.all` declares. That is a reasonable order and it is nobody
+in particular's: with eleven apps, a household that lives in Logistics and Health reaches past nine
+tiles to get to them, and three apps they have never opened take the same room as the two they open
+daily.
+
+So the arrangement is theirs. A tile can be **moved** past its neighbours and **hidden** from the
+screen entirely, in **Settings → Appearance → Home screen**; both live in the appearance document as
+`homeOrder` (app keys) and `hiddenApps`.
+
+**Not from a long-press on the tile**, which is the obvious place to put it and was briefly where it
+went. A long-press is one gesture, it already means *jump to this app's colour*, and a menu taking
+it over would trade a shortcut used whenever somebody dislikes a colour for one used the handful of
+times a home screen gets rearranged. Arranging is a settings job; it is done rarely, deliberately,
+and with the whole list in view — which is also the only shape in which a *hidden* app can be given
+back. The long-press keeps its meaning and gains an `onLongClickLabel`, so TalkBack can offer the
+gesture instead of leaving it undiscoverable.
+
+Three things are deliberate, and all three are in `:suitekit` with unit tests rather than in the
+Compose file:
+
+- **A stored order is partial, not authoritative.** An app the order has never heard of is *appended*,
+  not dropped. This is the case that matters: a household arranges their screen today, an update
+  adds an app next spring, and an order treated as the whole truth would hide it with nothing to say
+  so. The same tolerance drops a key naming an app this build does not have, and collapses a key
+  stored twice.
+- **Hiding is not deleting.** A hidden app keeps its place in the order, its data, its reminders and
+  its slice of the backup; only the tile goes. It comes back where it was rather than at the end.
+  Moving skips hidden neighbours, so a "move right" never swaps a tile past something invisible and
+  appears to do nothing.
+- **The last tile cannot be hidden.** An empty grid reads as a broken app rather than as a choice,
+  and the person staring at it has no reason to look in Settings.
+
+Settings lists *every* app, hidden ones included and drawn faintly, because hiding has to have
+somewhere obvious that undoes it — and there is no tile left to act on once an app is off the
+screen.
+
+### The phone's launcher (`SuiteShortcuts`)
+
+Eleven apps ship behind one icon. That is the point of the container and also its one concession:
+on the phone's own home screen there is a single *Operations Sandbox*, and everything inside it is
+two taps away at best. The suite had no shortcuts at all — long-pressing its icon offered nothing —
+so it now publishes both kinds:
+
+- **Dynamic** shortcuts are what that long-press offers: the four most recently opened apps, which
+  is the only ranking that needs no setup and is right more often than any fixed list. A phone where
+  nothing has been opened yet falls back to the household's own home-screen order, so a fresh
+  install has a full set rather than none. An app they have **hidden** is offered by neither half —
+  hiding is the more recent instruction, even for an app they used constantly last week.
+- **Pinned** shortcuts are the household putting an app on the phone's home screen themselves, from
+  the same settings card the arrangement lives in. This is the one that undoes the concession
+  outright: Logistics gets its own icon, in its own colour, beside everything else they use. Every
+  app is offered there, **including ones hidden from the suite's own grid** — the opposite of what
+  the recent list does, and deliberately so: that list is a guess, and this is somebody pointing at
+  an app. "Not on that screen, yes on this one" is a coherent thing to want.
+
+Both route through `SandboxActivity` carrying an `EXTRA_OPEN_APP`, rather than naming a hosted
+activity. The hosted activities are **not exported** — there is one launcher entry point, deliberately
+— so a shortcut naming one would be a shortcut the launcher is not allowed to start. Routing through
+the container also means backing out of a shortcut lands on the home screen rather than on nothing.
+
+**The icons had to be rasterised by hand** (`SuiteMarkRaster`). The marks are Compose `ImageVector`s
+and Compose is the only thing that draws one; a launcher shortcut is a `Bitmap` handed to another
+process long after any composition has ended. Without it the eleven hand-drawn silhouettes would
+stop at the edge of the app and every pinned shortcut would look like the same anonymous square. So
+the renderer walks the vector's paths and strokes them with the width, cap, join and alpha the
+vector declares — the same drawing, a different renderer. Two details are worth knowing:
+
+- The mark sits on a **field of the app's accent**, where the suite's own home screen deliberately
+  draws no tile behind it. The home screen can, because it owns what is behind it; a pinned shortcut
+  lands on a wallpaper this app has never seen, where an untinted line drawing is one photograph
+  away from invisible. It is drawn in one colour even for an app with icon colours of its own —
+  LifeOps' purple dial on a field of LifeOps' purple would be nothing at all.
+- **Group transforms are ignored rather than implemented**, because no mark uses one.
+  `SuiteMarkRasterTest` fails the day a mark starts to, which is the day the renderer needs the
+  other twenty lines — the failure mode otherwise is invisible from inside the app, where Compose's
+  own renderer draws it perfectly.
 
 ### Weather on the home screen
 
@@ -702,6 +837,24 @@ its own rather than the fallback, no mark exists for an app that doesn't, none i
 the 24×24 viewport that makes stroke weights comparable, and no two carry the same geometry — plus
 LifeOps' ring-ticks-needle weight ladder, which is the part of its inherited mark that a well-meaning
 tidy-up would flatten.
+
+The home screen's arrangement is pure and tested as such (`gradle :suitekit:test`):
+`SuiteHomeLayoutTest` covers an order that predates half the suite, one naming an app this build
+does not have, one naming the same app twice, that hiding holds a tile's place and gives it back,
+that a move skips a hidden neighbour, that the ends run out, and that the last tile standing cannot
+be hidden. `SuiteMarkRasterTest` holds the launcher icons to what `SuiteGlyphsTest` holds the marks
+to — every mark has paths to draw, none hides inside a group transform the renderer would ignore,
+and no two rasterise to the same geometry. `SuiteShortcutsTest` pins the ranking: a full set on a
+phone with no history, no duplicates, nothing from a build that knew an app this one does not, and
+nothing the household has hidden.
+
+The platform's own backup is held to the same bar in the same place: `AutoBackupRulesTest` makes
+every app create its database and evaluates the shipped `backup_rules.xml` and
+`data_extraction_rules.xml` against the disk, so a database added next year fails here rather than
+on somebody's new phone; it also pins that no credential store is carried and that the three rule
+sections still say the same thing. `SuiteNotificationsTest` pins the one prompt: a household that
+already granted the permission is never asked, nobody is asked twice, and a phone too old to have
+the permission is never asked at all.
 
 The rest of the Android glue (contributors, the home screen and settings, the module surgery) is
 verified by building and running the container app.

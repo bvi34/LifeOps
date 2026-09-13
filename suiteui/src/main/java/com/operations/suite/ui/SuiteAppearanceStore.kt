@@ -96,6 +96,15 @@ class SuiteAppearanceStore private constructor(context: Context) {
      */
     fun resetAllAppColors() = update { it.copy(accents = emptyMap(), iconPaints = emptyMap()) }
 
+    /** Take [appId]'s tile off the home screen, or put it back. Only the grid is affected. */
+    fun setHidden(appId: AppId, hidden: Boolean) = update { it.withHidden(appId, hidden) }
+
+    /** Swap [appId]'s tile past its nearest visible neighbour. */
+    fun moveApp(appId: AppId, forward: Boolean) = update { it.withMoved(appId, forward) }
+
+    /** Back to the grid the suite ships: every app showing, in the order it declares them. */
+    fun resetHomeLayout() = update { it.copy(homeOrder = emptyList(), hiddenApps = emptySet()) }
+
     private fun load(): SuiteAppearance {
         SuiteAppearanceCodec.fromJson(prefs.getString(KEY_DOCUMENT, null))?.let { return it }
         val migrated = migrateFromLifeOps()

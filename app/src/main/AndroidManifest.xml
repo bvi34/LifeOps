@@ -5,6 +5,11 @@
          merger (they're library dependencies), so they are not repeated here. That includes
          INTERNET, which the updater below and the scheduled backup upload both rely on. -->
 
+    <!-- Declared here as well as by the apps that post notifications, because this is where the
+         permission is now *asked* for: it is granted to the package, and the container's home
+         screen is the one screen every household passes through. See SandboxActivity. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- The suite is sideloaded — built from a git tag by GitHub Actions and published as a
          release — so the container has to be able to install its own successor. This permission
          does not grant the install; since Android 8 it only makes the app *eligible* to ask, and

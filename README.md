@@ -20,7 +20,10 @@ the receipts.
 > single installed application and the central hub the whole suite opens through. It opens on a
 > **phone-style home screen**: a tile per app in that app's own hand-drawn mark and colour — no two
 > share a silhouette, so a tile is recognisable before its colour registers — over a dock holding
-> the gear and the backups, with a **weather tile** under the clock for wherever the phone is. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
+> the gear and the backups, with a **weather tile** under the clock for wherever the phone is. The
+> grid is **yours**: the gear rearranges it, hides the apps you never open, and can give any of them
+> an icon of its own on your *phone's* home screen — and long-pressing the suite's launcher icon now
+> offers the apps you opened most recently. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), Project (`:project`), Maintenance (`:maintenance`), Finance (`:finance`), Repository
 > (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it —

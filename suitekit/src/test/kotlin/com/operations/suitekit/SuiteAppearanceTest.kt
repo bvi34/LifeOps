@@ -19,9 +19,23 @@ class SuiteAppearanceTest {
             appAccentsEnabled = false,
             accents = mapOf(AppId.HEALTH.key to "#2C7A7B"),
             sandboxWins = false,
-            iconPaints = mapOf(AppId.HEALTH.key to SuiteIconPaint("#112233", "#445566"))
+            iconPaints = mapOf(AppId.HEALTH.key to SuiteIconPaint("#112233", "#445566")),
+            homeOrder = listOf(AppId.LOGISTICS.key, AppId.HEALTH.key),
+            hiddenApps = setOf(AppId.ADVISOR.key)
         )
         assertEquals(appearance, SuiteAppearanceCodec.fromJson(SuiteAppearanceCodec.toJson(appearance)))
+    }
+
+    @Test
+    fun `a document written before the home screen could be arranged keeps the shipped grid`() {
+        // Every install upgrading into this feature is this case: the stored JSON has no
+        // `homeOrder` and no `hiddenApps` at all, and Gson leaves both fields null however
+        // non-null their declared types are. Empty is the right answer - it means "as shipped".
+        val decoded = SuiteAppearanceCodec.fromJson("{\"darkMode\":false,\"preset\":\"OCEAN\"}")!!
+
+        assertEquals(emptyList<String>(), decoded.homeOrder)
+        assertEquals(emptySet<String>(), decoded.hiddenApps)
+        assertEquals(SuiteApps.all.map { it.key }, decoded.homeApps.map { it.key })
     }
 
     @Test

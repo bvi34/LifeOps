@@ -1,5 +1,6 @@
 package com.operations.sandbox
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -7,8 +8,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,7 +29,10 @@ import com.operations.sandbox.ui.rememberBackupController
 import com.operations.sandbox.ui.rememberCloudBackupController
 import com.operations.sandbox.ui.rememberUpdateController
 import com.operations.sandbox.ui.rememberWeatherWidgetController
+import com.operations.sandbox.shortcuts.SuiteShortcuts
 import com.operations.sandbox.ui.theme.SandboxTheme
+import com.operations.suite.ui.SuiteAppearanceStore
+import com.operations.suite.ui.SuiteNotifications
 
 /**
  * The Operations Sandbox: the suite's single launcher entry point, and the only screen that is
@@ -42,17 +48,69 @@ import com.operations.sandbox.ui.theme.SandboxTheme
  * hoisted here so returning to it is predictable.
  */
 class SandboxActivity : ComponentActivity() {
+
+    /**
+     * The suite's notification permission, asked for here and nowhere else.
+     *
+     * Nothing is done with the answer. A refusal is not an error and there is nothing on a home
+     * screen it should change — the apps that schedule reminders are the ones that can say what a
+     * refusal costs, on the screen where the reminder is being set up. What matters is that the
+     * question is *asked*, once, of everybody: it is granted to the package rather than to an app,
+     * and until now only LifeOps ever asked, so a household that lived in Health had medication
+     * reminders that were posted and never delivered. See [SuiteNotifications].
+     */
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    /**
+     * The app a launcher shortcut asked for, or null on an ordinary launch. Consumed by the shell
+     * once it has opened it — the same shape LifeOps' own deep links use, and for the same reason:
+     * an intent acted on twice opens an app the household has already backed out of.
+     */
+    private var requestedApp by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestedApp = intent?.getStringExtra(SuiteShortcuts.EXTRA_OPEN_APP)
         // The archive records the build that wrote it; now that the version is the release tag
         // rather than a hardcoded "1.0", a restore can say what it came from.
         val center = BackupCenter(this, sandboxVersion = BuildConfig.VERSION_NAME)
         setContent {
             SandboxTheme {
-                SandboxShell(center)
+                SandboxShell(
+                    center = center,
+                    requestedApp = requestedApp,
+                    onRequestConsumed = { requestedApp = null }
+                )
             }
         }
+        askAboutNotificationsOnce()
+        // Only on a real launch, not on a rotation: republishing costs four icons being drawn, and
+        // a configuration change has not changed which apps the household has or what colour
+        // they are.
+        if (savedInstanceState == null) SuiteShortcuts.publish(this)
+    }
+
+    /**
+     * A shortcut tapped while the suite is already running arrives here rather than through
+     * `onCreate`, because the shortcut's own `CLEAR_TASK` reuses the task it is clearing.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra(SuiteShortcuts.EXTRA_OPEN_APP)?.let { requestedApp = it }
+    }
+
+    /**
+     * Marked as asked *before* the dialog goes up rather than in the result callback: the callback
+     * arrives whenever the household gets round to answering, and an activity that was recreated in
+     * the meantime would ask a second time on the way back.
+     */
+    private fun askAboutNotificationsOnce() {
+        if (!SuiteNotifications.shouldAsk(this)) return
+        SuiteNotifications.markAsked(this)
+        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 }
 
@@ -60,7 +118,11 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_SETTINGS = "settings"
 
 @Composable
-private fun SandboxShell(center: BackupCenter) {
+private fun SandboxShell(
+    center: BackupCenter,
+    requestedApp: String? = null,
+    onRequestConsumed: () -> Unit = {}
+) {
     val context = LocalContext.current
     // The scheduled upload's settings are read first because the Backups tab's ticks start from
     // them: the apps a scheduled archive includes are the apps the tab shows ticked, so the two
@@ -79,6 +141,22 @@ private fun SandboxShell(center: BackupCenter) {
     // six-hour throttle has expired. Keyed on the controller so it runs once per process, not once
     // per recomposition: a check on every navigation would be both wasteful and rate-limited.
     LaunchedEffect(updates) { updates.checkOnLaunch() }
+
+    // A shortcut asked for an app. Opening it from here rather than from `onCreate` means the home
+    // screen is underneath it, so backing out of the app lands where backing out always lands.
+    LaunchedEffect(requestedApp) {
+        requestedApp?.let { key ->
+            AppId.fromKey(key)?.let { openApp(context, it) }
+            onRequestConsumed()
+        }
+    }
+
+    // What the phone's own launcher offers when the suite's icon is long-pressed. Keyed on the
+    // arrangement rather than on the whole appearance: hiding an app or moving it changes the list,
+    // and re-rendering four icons on every keystroke in a colour field would not.
+    val appearance by SuiteAppearanceStore.get(context).state.collectAsState()
+    val arrangement = appearance.homeApps.joinToString(",") { it.key }
+    LaunchedEffect(arrangement) { SuiteShortcuts.publish(context) }
 
     var route by rememberSaveable { mutableStateOf(ROUTE_HOME) }
     var tabName by rememberSaveable { mutableStateOf(SettingsTab.APPEARANCE.name) }
@@ -131,8 +209,14 @@ private fun openWeather(context: Context) {
     )
 }
 
-/** Open a hosted app's UI in this same process by launching its (now non-launcher) activity. */
+/**
+ * Open a hosted app's UI in this same process by launching its (now non-launcher) activity.
+ *
+ * Every open is recorded, because "recently opened" is what the phone's launcher offers when the
+ * suite's icon is long-pressed, and this is the one place an app is opened from.
+ */
 private fun openApp(context: Context, appId: AppId) {
+    SuiteShortcuts.recordOpened(context, appId)
     val target = when (appId) {
         AppId.LIFEOPS -> com.lifeops.app.MainActivity::class.java
         AppId.CITATION -> com.citation.app.MainActivity::class.java

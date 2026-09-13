@@ -52,7 +52,6 @@ import com.operations.suite.ui.rememberSuiteWallpaper
 import com.operations.suite.ui.suiteWallpaper
 import com.operations.suitekit.SuiteAppInfo
 import com.operations.suitekit.SuiteAppearance
-import com.operations.suitekit.SuiteApps
 import com.operations.suitekit.SuiteColors
 import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
@@ -69,6 +68,14 @@ import java.util.Locale
  * and the backup that archives all of it at once.
  *
  * Tap a tile to open the app; press and hold to jump to where its colour is chosen.
+ *
+ * The grid is the household's, not the suite's. Eleven apps is past the point where a shipped order
+ * is anybody's order, so the tiles are drawn in the arrangement the appearance document holds, and
+ * an app they never open can be taken off the screen entirely. Arranging it is done in Settings
+ * rather than from here: the long-press is one gesture and it already means something, and a menu
+ * that took it over would have cost a shortcut that is used far more often than the screen is
+ * rearranged. `SuiteHomeLayout` settles what happens when an app arrives in an update, which is
+ * that it appears.
  *
  * Above the grid sits the one piece of live information the shell shows on its own: a weather tile
  * for wherever the phone is, on the theory that "is it raining?" is asked more often than any app
@@ -172,7 +179,7 @@ fun SandboxHomeScreen(
                     .weight(1f)
                     .verticalScroll(rememberScrollState())
             ) {
-                SuiteApps.all.chunked(COLUMNS).forEach { row ->
+                appearance.homeApps.chunked(COLUMNS).forEach { row ->
                     Row(modifier = Modifier.fillMaxWidth()) {
                         row.forEach { info ->
                             AppTile(
@@ -331,7 +338,14 @@ private fun AppTile(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
-            .combinedClickable(onClick = onOpen, onLongClick = onCustomize)
+            .combinedClickable(
+                onClick = onOpen,
+                onLongClick = onCustomize,
+                // The gesture's one weakness, and it costs a parameter to fix: a long-press that
+                // announces nothing is a long-press TalkBack cannot offer. Everything else the
+                // home screen can be arranged into lives in Settings, where it can be read.
+                onLongClickLabel = "Customise ${info.label}"
+            )
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

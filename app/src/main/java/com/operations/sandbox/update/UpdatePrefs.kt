@@ -49,13 +49,13 @@ class UpdatePrefs internal constructor(context: Context, private val override: S
         val key = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
         EncryptedSharedPreferences.create(
             app,
-            "sandbox_update_secrets",
+            SECRETS_PREFS,
             key,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
         )
     }.getOrElse {
-        app.getSharedPreferences("sandbox_update_secrets_plain", Context.MODE_PRIVATE)
+        app.getSharedPreferences(SECRETS_PREFS_PLAIN, Context.MODE_PRIVATE)
     }
 
     /**
@@ -167,6 +167,19 @@ class UpdatePrefs internal constructor(context: Context, private val override: S
         UpdateSchedule.isCheckDue(enabled = autoCheck, lastCheckedAt = lastCheckedAt, now = now)
 
     companion object {
+
+        /**
+         * The two files the token can end up in, named here rather than inline because they are
+         * facts about this class that something outside it has to agree with: `AutoBackupRulesTest`
+         * reads them and fails if the platform's backup rules would carry either off the phone. A
+         * credential store the rules have never heard of is exactly the file that gets backed up by
+         * accident, and naming it in one place is what stops the two drifting apart.
+         */
+        const val SECRETS_PREFS = "sandbox_update_secrets"
+
+        /** The unencrypted fallback, for a device whose keystore is unusable. */
+        const val SECRETS_PREFS_PLAIN = "sandbox_update_secrets_plain"
+
         private const val KEY_AUTO_CHECK = "auto_check"
         private const val KEY_LAST_CHECKED = "last_checked_at"
         private const val KEY_TOKEN = "github_token"

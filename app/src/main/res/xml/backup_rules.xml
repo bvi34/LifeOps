@@ -1,28 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Android Auto Backup rules for the container app. Both hosted apps' databases and the shared prefs
-  ride along. Citation's owned files (filesDir/sovereign) are intentionally excluded here — they can
-  be large and would blow the OS backup quota; the Operations Sandbox zip is where those are kept.
+  Android Auto Backup rules for the container app — what Google's backup transport carries off the
+  phone on its own. This is a different thing from the Operations Sandbox's own zip
+  (docs/OPERATIONS_SANDBOX.md): that archive is one somebody *takes*, and this one happens to them.
+
+  ## Why these name domains rather than files
+
+  They used to name files. When the container held two apps they read `lifeops.db` and
+  `citation.db`, and that was the whole truth. Nine databases arrived afterwards — health, people,
+  project, maintenance, finance, logistics, repository, advisor and advisor's memory — and not one
+  of them was ever added here, because nothing failed when it wasn't. A cloud restore therefore
+  brought back two apps' data, *everybody's* preferences, and nine empty apps sitting behind
+  settings that described data that was gone.
+
+  So the database domain is taken whole. A rule that names the domain cannot fall behind the apps
+  the way a rule that names files did, and `AutoBackupRulesTest` is what proves it hasn't: it makes
+  every app create its real database and fails if the rules here would leave one on the phone.
+
+  `filesDir` is deliberately in neither list. Citation's books, Advisor's models and the household's
+  documents live there, they are measured in hundreds of megabytes, and Auto Backup's quota is 25 —
+  an app over it is not trimmed, it is skipped. Those files are the sandbox zip's job.
+
+  ## Why anything is excluded
+
+  Every credential store in the suite, and for two reasons that both end the same way.
+
+  They are `EncryptedSharedPreferences`: a Tink keyset wrapped by a hardware-bound Android Keystore
+  key that is never part of a backup and is regenerated on reinstall. Restore the file and the
+  surviving keyset meets a key that cannot open it — `AEADBadTagException`, straight out of
+  `EncryptedSharedPreferences.create`. Citation and the container rebuild the store empty rather
+  than dying on launch, but an unreadable file is still worth nothing, and it is worth nothing on
+  purpose. The two `_plain` fallbacks (written only on a device whose keystore is unusable) fail the
+  other way: they hold the credential in the clear, which is not a thing to hand to somebody else's
+  backup transport.
+
+  Neither is a loss. The suite's own vault carries these onto the new phone — see docs/SECRETS.md —
+  which is the whole reason it exists.
+
   A WAL checkpoint runs when the app is backgrounded (see LifeOpsApp) so lifeops.db is current;
   Citation's db is checkpointed at backup time by its contributor.
-
-  oreilly_access.xml is Citation's EncryptedSharedPreferences file. Its Tink keyset is wrapped by a
-  hardware-bound Android Keystore key that is never part of a backup and is regenerated on reinstall,
-  so restoring the file leaves a keyset no key can decrypt — a fatal AEADBadTagException on launch.
-  Encrypted prefs must therefore stay out of backup; it is re-entered on the device instead.
-
-  The scheduled cloud backup's credential store is excluded for both of those reasons at once.
-  sandbox_cloud_backup_secrets.xml is EncryptedSharedPreferences, so a restored copy is a keyset no
-  key on the new phone can open; and its plain-file fallback (written only on a device whose keystore
-  is unusable) holds the shared access signature in the clear, which is not a thing to hand to
-  somebody else's backup transport. Neither is a loss: the signature is mirrored into the suite's own
-  vault and comes back from there — see docs/SECRETS.md.
 -->
 <full-backup-content>
-    <include domain="database" path="lifeops.db" />
-    <include domain="database" path="citation.db" />
+    <include domain="database" path="." />
     <include domain="sharedpref" path="." />
+
+    <!-- Citation: the O'Reilly library card and PIN, and the OPDS catalogue sign-ins. -->
     <exclude domain="sharedpref" path="oreilly_access.xml" />
+    <exclude domain="sharedpref" path="opds_catalog_access.xml" />
+    <!-- Finance: the bank and aggregator tokens. -->
+    <exclude domain="sharedpref" path="secure_finance_access.xml" />
+    <!-- Secrets: the vault key wrapped by *this* phone's Keystore for the fingerprint shortcut. A
+         backup holding both it and the vault would be a backup holding the vault in plaintext. -->
+    <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+    <!-- The container's own: the updater's GitHub token, and the signature the scheduled archive
+         uploads with. Both are mirrored into the vault and come back from there. -->
+    <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />
+    <exclude domain="sharedpref" path="sandbox_update_secrets_plain.xml" />
     <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
     <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets_plain.xml" />
 </full-backup-content>
