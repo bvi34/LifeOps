@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -492,6 +493,7 @@ fun AppGlyph(
  * Everything here writes through [SuiteAppearanceStore], which is the same store the settings write
  * through, so the grid behind the sheet has already rearranged itself by the time it closes.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppTileMenu(
     appId: AppId,
