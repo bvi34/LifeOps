@@ -31,8 +31,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.operations.backupkit.AppId
+import com.operations.sandbox.shortcuts.SuiteShortcuts
 import com.operations.suite.ui.SuiteAppearanceStore
 import com.operations.suite.ui.accentArgb
 import com.operations.suite.ui.suiteWallpaper
@@ -282,11 +285,14 @@ private fun AppearanceTab(
 /**
  * The home screen's own arrangement: which tiles, in what order.
  *
- * This exists as a settings card and not only as a long-press menu for one reason above the others:
- * **it is where a hidden app comes back from.** A gesture that can take something off the screen
- * has to have somewhere obvious that undoes it, and "long-press the tile that is no longer there"
- * is not somewhere. So every app is listed here, hidden ones included, and the switch is the only
- * control in the suite that can put one back.
+ * All of it lives here rather than behind a long-press on the tile, which is where it first went.
+ * A long-press is one gesture and it already means *jump to this app's colour*; a menu taking it
+ * over would trade a shortcut used whenever somebody dislikes a colour for one used the handful of
+ * times a home screen is rearranged.
+ *
+ * It is also the only shape that works. **This is where a hidden app comes back from**, and there
+ * is no tile left to long-press once an app is off the screen — so every app is listed, hidden ones
+ * included, and the switch is the only control in the suite that can put one back.
  *
  * The order is the same order the grid draws, so the list reads as the screen rather than as a
  * catalogue of it — an app moved here moves there, and the arrows run out at the ends for the same
@@ -309,6 +315,67 @@ private fun HomeScreenSection(appearance: SuiteAppearance, store: SuiteAppearanc
         Spacer(Modifier.height(4.dp))
         TextButton(onClick = { store.resetHomeLayout() }) {
             Text("Show every app, in the original order")
+        }
+
+        PinToPhoneRow(appearance)
+    }
+}
+
+/**
+ * Putting one app on the *phone's* home screen, outside the suite.
+ *
+ * The suite is eleven apps behind one launcher icon; this is the household taking one of them back
+ * out. It sits under the arrangement because it is the same question asked of the other home
+ * screen — which apps do you want to see, and where.
+ *
+ * Every app is offered, **including the ones hidden from the suite's own grid**. That is not an
+ * oversight and it is the opposite of what the launcher's *recent* shortcuts do: those are a guess,
+ * so an app somebody has hidden is left out of them, while this is somebody pointing at an app and
+ * asking for it. "Not on that screen, yes on this one" is a coherent thing to want.
+ *
+ * The whole row is absent on a launcher that does not do pinning — a few do not, and a control that
+ * silently does nothing is worse than one that was never offered.
+ */
+@Composable
+private fun PinToPhoneRow(appearance: SuiteAppearance) {
+    val context = LocalContext.current
+    val canPin = remember(context) { SuiteShortcuts.isPinSupported(context) }
+    if (!canPin) return
+
+    Spacer(Modifier.height(8.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(12.dp))
+    Text("On your phone's home screen", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Tap an app to give it an icon of its own, next to everything else you use. Your launcher " +
+            "asks before it adds one.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    Spacer(Modifier.height(10.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        appearance.arrangedApps.forEach { info ->
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { SuiteShortcuts.pin(context, info.appId) }
+                    .padding(horizontal = 6.dp, vertical = 8.dp)
+                    .width(64.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                AppGlyph(appId = info.appId, argb = appearance.accentArgb(info.appId), size = 30.dp)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    info.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }

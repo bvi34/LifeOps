@@ -395,8 +395,8 @@ is: seven apps behind one icon.
   "the thermometer" and "the green basket" mean something before you have read a word. The mark is
   drawn straight onto the wallpaper, with no block behind it. Tapping a tile
   launches that app's (now non-launcher) `MainActivity` in the same process; **pressing and holding**
-  opens the tile's menu — move it, hide it, put it on the *phone's* home screen, or repaint it. The
-  marks are the suite's own — see *Seven marks* below.
+  jumps straight to where that app's colour is chosen. The marks are the suite's own — see *Seven
+  marks* below.
 - A **clock strip** above the grid and a **dock** below it. The dock holds what belongs to the
   container rather than to any app: **Settings** (the gear) and **Backups**.
 - A **weather tile** between the clock and the grid — see *Weather on the home screen* below.
@@ -428,8 +428,16 @@ tiles to get to them, and three apps they have never opened take the same room a
 daily.
 
 So the arrangement is theirs. A tile can be **moved** past its neighbours and **hidden** from the
-screen entirely, from the tile's own long-press menu or from **Settings → Appearance → Home screen**,
-and both live in the appearance document as `homeOrder` (app keys) and `hiddenApps`.
+screen entirely, in **Settings → Appearance → Home screen**; both live in the appearance document as
+`homeOrder` (app keys) and `hiddenApps`.
+
+**Not from a long-press on the tile**, which is the obvious place to put it and was briefly where it
+went. A long-press is one gesture, it already means *jump to this app's colour*, and a menu taking
+it over would trade a shortcut used whenever somebody dislikes a colour for one used the handful of
+times a home screen gets rearranged. Arranging is a settings job; it is done rarely, deliberately,
+and with the whole list in view — which is also the only shape in which a *hidden* app can be given
+back. The long-press keeps its meaning and gains an `onLongClickLabel`, so TalkBack can offer the
+gesture instead of leaving it undiscoverable.
 
 Three things are deliberate, and all three are in `:suitekit` with unit tests rather than in the
 Compose file:
@@ -446,9 +454,9 @@ Compose file:
 - **The last tile cannot be hidden.** An empty grid reads as a broken app rather than as a choice,
   and the person staring at it has no reason to look in Settings.
 
-Settings lists *every* app, hidden ones included and drawn faintly, because a gesture that takes
-something off the screen has to have somewhere obvious that undoes it — and "long-press the tile
-that is no longer there" is not somewhere.
+Settings lists *every* app, hidden ones included and drawn faintly, because hiding has to have
+somewhere obvious that undoes it — and there is no tile left to act on once an app is off the
+screen.
 
 ### The phone's launcher (`SuiteShortcuts`)
 
@@ -463,8 +471,11 @@ so it now publishes both kinds:
   install has a full set rather than none. An app they have **hidden** is offered by neither half —
   hiding is the more recent instruction, even for an app they used constantly last week.
 - **Pinned** shortcuts are the household putting an app on the phone's home screen themselves, from
-  the tile menu. This is the one that undoes the concession outright: Logistics gets its own icon,
-  in its own colour, beside everything else they use.
+  the same settings card the arrangement lives in. This is the one that undoes the concession
+  outright: Logistics gets its own icon, in its own colour, beside everything else they use. Every
+  app is offered there, **including ones hidden from the suite's own grid** — the opposite of what
+  the recent list does, and deliberately so: that list is a guess, and this is somebody pointing at
+  an app. "Not on that screen, yes on this one" is a coherent thing to want.
 
 Both route through `SandboxActivity` carrying an `EXTRA_OPEN_APP`, rather than naming a hosted
 activity. The hosted activities are **not exported** — there is one launcher entry point, deliberately
