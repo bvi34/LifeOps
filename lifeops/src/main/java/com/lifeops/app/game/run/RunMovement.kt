@@ -12,7 +12,7 @@ import kotlin.math.sin
 
 /**
  * Movement, and everything that holds still while things move past it.
-
+ *
  * The player's step, the enemies' beeline, and the structures they walk into: turrets, mines,
  * decoys and the outpost. Grouped by *who is moving where* rather than by what each thing is,
  * because a frame's movement has to resolve as one pass — a turret that fired before the enemy

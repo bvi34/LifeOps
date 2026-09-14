@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Scanned paperwork: the rows that name the files, never the files themselves.
-
+ *
  * Disk is the host app's, reached through [onDocumentDiscarded], so this class stays JVM-testable
  * for the same reason the rest of the package does.
  */

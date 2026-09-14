@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * A person's course of a medicine: what they are on, at what dose, and whether it should nudge.
-
+ *
  * The bottle it comes out of is [CabinetStore]'s; the individual doses taken are [DoseStore]'s.
  * This class owns the prescription, not the stock and not the history.
  */

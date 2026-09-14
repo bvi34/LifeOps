@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.map
 /**
  * Who Health keeps records for, and the People sync seam that keeps that roster agreeing with
  * the rest of the suite.
-
+ *
  * The seam is here rather than beside the readings because a profile is the only thing in Health
  * that also exists somewhere else. Everything else in this package is Health's alone.
  */

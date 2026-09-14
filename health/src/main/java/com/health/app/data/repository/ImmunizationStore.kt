@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The vaccination record, and the series `logic/Immunizations` groups it into.
-
+ *
  * Separate from [StandingRecordStore] because a vaccination is an event with a date rather than a
  * standing fact, even though both end up on the same screen.
  */

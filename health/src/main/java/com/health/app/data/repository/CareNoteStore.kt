@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The free-text half of the record — what a nurse said, what was tried, what to watch for.
-
+ *
  * Filed against an open illness on the same rule everything else is, so that an episode summary
  * reads as the whole story rather than only its numbers.
  */

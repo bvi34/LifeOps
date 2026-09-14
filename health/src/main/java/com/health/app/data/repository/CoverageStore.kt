@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Insurance as it is printed on the card: the policies, and who in the house is on which.
-
+ *
  * Stores what the card says and nothing about what the policy actually covers — the moment a health
  * app starts inferring coverage it starts being wrong at a reception desk.
  */

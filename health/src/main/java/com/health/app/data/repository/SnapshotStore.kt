@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * One person, right now — the single answer the Today screen exists to give.
-
+ *
  * Assembled here rather than at the screen so that two renderers cannot derive two different care
  * levels from the same four tables.
  */

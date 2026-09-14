@@ -11,7 +11,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Measured numbers — temperatures, weights, anything with a value and a unit.
-
+ *
  * Filing against an open illness is [EpisodeFiling]'s judgement, not this class's: a reading knows
  * when it was taken and nothing about what was going round at the time.
  */

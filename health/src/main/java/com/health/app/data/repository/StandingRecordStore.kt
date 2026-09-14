@@ -23,7 +23,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The facts that are true between illnesses: allergies and ongoing conditions.
-
+ *
  * Ordered worst-first here rather than in SQL, for the reason the DAO's own note gives — severity
  * is a judgement about what a reception desk needs to see first, and the database has no opinion.
  */

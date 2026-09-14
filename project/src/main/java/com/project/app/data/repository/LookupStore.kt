@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.map
 /**
  * What a route asks for before it can act: resolving a name said out loud, or an id handed
  * over on its own, to the thing it names.
-
+ *
  * Reads only. Nothing here writes, which is what makes it safe for a route to call before it has
  * decided whether the request is valid.
  */

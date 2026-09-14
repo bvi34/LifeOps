@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * What was observed rather than measured — a cough, a rash, a refusal to eat.
-
+ *
  * Separate from [ReadingStore] because a symptom has a span rather than a value: it starts, runs,
  * and is at some point declared over, and none of that is arithmetic.
  */

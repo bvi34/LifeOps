@@ -32,7 +32,7 @@ import kotlinx.coroutines.flow.map
 /**
  * Capture from outside Citation: a PROCESS_TEXT selection, a share, the floating bubble, and a
  * Kindle export import.
-
+ *
  * The hard part is not the text — it is deciding which book it belongs to, and doing so without
  * asking, which is what `BindOrCreate` is handed the candidates for.
  */

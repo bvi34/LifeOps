@@ -27,7 +27,7 @@ import kotlinx.coroutines.flow.map
 /**
  * Everything the screens read: the asset list, one asset in full, and the upkeep due across
  * the household.
-
+ *
  * Reads only. Six tables are read whole and folded by [AssetFolding] rather than queried per asset —
  * a household has a dozen assets, and a query per asset per table would be seventy round trips to
  * draw one list.

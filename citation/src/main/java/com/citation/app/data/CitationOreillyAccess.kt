@@ -16,7 +16,7 @@ import com.citation.core.sync.NotePacket
 /**
  * O'Reilly library access: the encrypted card number, PIN and proxy host that reach a library's
  * subscription.
-
+ *
  * Never synced and never in the database in the clear — a library card is a credential, and the one
  * that opens a subscription is the one most worth not leaking.
  */

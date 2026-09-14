@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The shelf: the projects themselves, and what is true of a project as a whole.
-
+ *
  * Renaming one is the only write here that reaches outside the module — a project's name is baked
  * into every drawer label its records own, so [RecordLabels] re-stamps all of them.
  */

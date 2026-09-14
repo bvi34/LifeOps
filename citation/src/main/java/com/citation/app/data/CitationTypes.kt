@@ -6,7 +6,7 @@ import com.citation.core.speech.SavedPlace
 /**
  * The vocabulary the repository answers in: what opening a book gave you, what a read-in-place
  * session is, what a download or a re-read came back with, and the one-line summary a shelf shows.
-
+ *
  * Top-level in this package rather than nested in [CitationRepository], because they are the
  * language the whole module speaks — a `BookSummary` is what the shelf renders and what the view
  * model holds, and reaching it through the class that happens to build one said nothing true about

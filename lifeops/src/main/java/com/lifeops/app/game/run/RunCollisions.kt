@@ -9,7 +9,7 @@ import com.lifeops.app.game.core.Vec2
 /**
  * What happens when two things touch: a shot landing, a body meeting the player, a splash going
  * off, and the death that follows.
-
+ *
  * Every combat moment in here goes through the [com.lifeops.app.game.core.EventBus] and every
  * effect through the [com.lifeops.app.game.core.EffectResolver] budget — DESIGN.md invariants #2
  * and #3 live in this file more than anywhere else.

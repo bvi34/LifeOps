@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.map
 /**
  * The medicine cabinet: the bottles themselves, household-scoped, and the drug facts looked up
  * about what is in them.
-
+ *
  * Household-scoped deliberately — one bottle of paracetamol is one bottle however many people in
  * the house are taking from it, and a cabinet that counted it twice would be lying about the stock.
  */

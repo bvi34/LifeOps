@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
 
 /**
  * The wave director: what to spawn, when, and where the arena's edge lets it in.
-
+ *
  * Also the bosses on the final wave and the breather between sets. Nothing here touches combat —
  * a wave's job ends the moment the enemy exists.
  *

@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The record read back as a timeline — one day per row, everything that happened on it.
-
+ *
  * Reads across every other store's table and writes to none of them. It is the one place in this
  * package that is allowed to be nosy, because "what happened that week" is not any single table's
  * question.

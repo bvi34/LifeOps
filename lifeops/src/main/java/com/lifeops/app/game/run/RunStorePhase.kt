@@ -11,7 +11,7 @@ import com.lifeops.app.game.core.Modifier
 /**
  * The between-set store (DESIGN.md §9): rolling its offers, spending on them, and the mutators a
  * purchase applies to the rest of the run.
-
+ *
  * Also where a run ends, because ending it is the other thing that can happen when a set closes.
  *
  * Extensions on [RunEngine] rather than a class of their own: one frame is one pass over one

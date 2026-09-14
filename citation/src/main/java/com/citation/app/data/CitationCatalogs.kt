@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.map
 /**
  * OPDS catalogs: browsing a server, downloading from it, and folding what it says about a book
  * into what Citation already knew.
-
+ *
  * The only part of Citation that talks to a catalog server, and it does so through `OpdsClient` —
  * nothing here opens a socket itself.
  */

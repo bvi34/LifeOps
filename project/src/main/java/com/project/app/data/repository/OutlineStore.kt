@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * The outline: the tree of parts, chapters and scenes a project is planned as.
-
+ *
  * Moves and deletes are computed against the whole tree rather than left to the database, because
  * `parentId` carries no foreign key and because the screen has to be able to say "this will also
  * delete 14 scenes" *before* doing it.

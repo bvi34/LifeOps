@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.combine
 
 /**
  * How the reader looks, and how fast it is being read.
-
+ *
  * Settings and pace together because both are facts about the reading rather than about the book:
  * neither survives a re-import, and neither means anything to another reader.
  */

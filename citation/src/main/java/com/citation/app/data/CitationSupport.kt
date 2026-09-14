@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.map
 /**
  * The plumbing several concerns share: minting a source descriptor, anchoring a quote back
  * into a book, stamping the sync checkpoint, draining the outbox, and storing a book's images.
-
+ *
  * Here rather than in whichever file happened to need it first. Every one of these is called from
  * two or more of the concerns around it, and a copy in each is a copy that drifts — an outbox
  * flushed one way from a capture and another way from a catalog import is two sync behaviours

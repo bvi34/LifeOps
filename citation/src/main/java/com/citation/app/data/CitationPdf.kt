@@ -21,7 +21,7 @@ import kotlinx.coroutines.flow.map
 /**
  * PDFs, over two tracks on the same file: the page renderer, and the reflowed text pulled out
  * of it.
-
+ *
  * Two tracks rather than one because a PDF is both a picture of a page and the words on it: a reader
  * that offers only the first cannot resize type, and one that offers only the second loses the
  * figures.

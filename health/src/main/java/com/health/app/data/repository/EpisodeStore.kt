@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Illnesses: when one started, what happened during it, and when it was over.
-
+ *
  * The class that makes "how long has this been going on" have a single answer. Deciding which
  * episode a *new* record belongs to is [EpisodeFiling]'s narrower job; re-filing records when an
  * episode's own dates move is this one's.

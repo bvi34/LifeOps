@@ -14,7 +14,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Saved versions of a document, and restoring one.
-
+ *
  * Separate from [DocStore] because a version is a snapshot rather than a draft: nothing here is
  * edited, only taken, kept, restored from, or thrown away.
  */

@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Documents and the blocks they are written in.
-
+ *
  * Word counts are [DocCounts]' job rather than this class's: a block edit changes a document's
  * count, a scene's count, and nothing else, and that fan-out is the same from here and from
  * [DocVersionStore].

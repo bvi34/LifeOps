@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 /**
  * The seam to the LifeOps week: publishing a card as a task, and hearing back when the
  * task is ticked.
-
+ *
  * Implements [CardStore] because `logic/CardRound` drives the hand-off and should not know that a
  * database is on the other side of it.
  */

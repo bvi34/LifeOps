@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Whether a provider was in network, each time anyone checked.
-
+ *
  * Append-only: the earlier answers are what let `logic/NetworkStatus` tell "has left the network"
  * apart from "was never in it", and those need different phone calls.
  */

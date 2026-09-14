@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.map
 /**
  * The seam to the LifeOps week: publishing owed upkeep as a task, hearing back when the
  * task is ticked, and writing the service record that results.
-
+ *
  * Implements [UpkeepStore] because `logic/UpkeepTasks` drives the hand-off and should not know that
  * a database is on the other side of it.
  */

@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Providers, and how each person is attached to them.
-
+ *
  * A provider is household-scoped and the link to a person is not, the same shape [CabinetStore]
  * uses for a bottle and [DoseStore] for a dose of it.
  */

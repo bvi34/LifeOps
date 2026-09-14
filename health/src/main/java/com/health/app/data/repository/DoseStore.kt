@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.map
 
 /**
  * Doses actually taken.
-
+ *
  * A dose is the one write in Health that moves two things at once: the history gains a row and the
  * bottle loses some of its contents. The second half is [CabinetStock]'s, under its own same-unit
  * rule, so that this class stays a record of what happened rather than a stock-keeping system.

@@ -11,7 +11,7 @@ import com.citation.core.sync.ReadingState
 /**
  * Reading in place on somebody else's site — O'Reilly and Kindle — and the capture context that
  * says which book a highlight taken there belongs to.
-
+ *
  * Nothing here downloads a book. What it captures is what the reader selected, filed against a
  * record Citation keeps of a book it does not own.
  */
