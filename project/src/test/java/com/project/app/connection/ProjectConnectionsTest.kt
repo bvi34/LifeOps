@@ -142,7 +142,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a project is found by name or by id`() = runTest {
-        val id = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val id = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         assertTrue(call("/v1/Project/local/card/create", "project" to "the kestrel", "title" to "a").isSuccess)
         assertTrue(call("/v1/Project/local/card/create", "project" to id, "title" to "b").isSuccess)
@@ -150,7 +150,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a name that matches nothing is a NOT_FOUND rather than a new project`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val result = call("/v1/Project/local/card/create", "project" to "The Peregrine", "title" to "a")
 
@@ -160,8 +160,8 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a name that matches two projects writes to neither, and says which`() = runTest {
-        repo.addProject("Draft", ProjectKind.WRITING, null)
-        repo.addProject("draft", ProjectKind.WRITING, null)
+        repo.shelf.addProject("Draft", ProjectKind.WRITING, null)
+        repo.shelf.addProject("draft", ProjectKind.WRITING, null)
 
         val result = call("/v1/Project/local/card/create", "project" to "Draft", "title" to "a")
 
@@ -174,7 +174,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a card with no column named starts where work starts`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
 
         val cardId = call(
             "/v1/Project/local/card/create", "project" to "The app", "title" to "Fix the thing"
@@ -186,7 +186,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a card can be created with a deadline, which reaches the LifeOps week`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val cardId = call(
             "/v1/Project/local/card/create",
@@ -200,7 +200,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a date that will not parse is refused rather than dropped`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val result = call(
             "/v1/Project/local/card/create",
@@ -215,7 +215,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a named column is used, and an unknown one is refused`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val review = dao.getColumns(projectId).first { it.name == "Review" }
 
         val cardId = call(
@@ -235,7 +235,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a card can be moved, finished and deleted by id alone`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val cardId = call("/v1/Project/local/card/create", "project" to "The app", "title" to "Fix it").id()
 
@@ -252,9 +252,9 @@ class ProjectConnectionsTest {
 
     @Test
     fun `finishing a card through a route leaves its published task for the round to retire`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columnId = dao.getColumns(projectId).first().id
-        val cardId = repo.addCard(projectId, columnId, "Fix it", dueOn = 20_000L)
+        val cardId = repo.board.addCard(projectId, columnId, "Fix it", dueOn = 20_000L)
         repo.setCardLink(cardId, taskId = "task-1", publishedDue = 20_000L)
 
         call("/v1/Project/local/card/complete", "id" to cardId)
@@ -277,7 +277,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `an outline row can be added and given a status`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val chapter = call(
             "/v1/Project/local/outline/add", "project" to "The Kestrel", "title" to "Chapter one"
@@ -304,7 +304,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a document is created empty, ready to write in`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val docId = call(
             "/v1/Project/local/doc/create", "project" to "The Kestrel", "title" to "Scene — the docks"
@@ -339,7 +339,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a lore entry can be created with a line about it`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val id = call(
             "/v1/Project/local/lore/create",
@@ -355,7 +355,7 @@ class ProjectConnectionsTest {
 
     @Test
     fun `a timeline event keeps the free-text when it was given`() = runTest {
-        repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
 
         val id = call(
             "/v1/Project/local/timeline/add",

@@ -25,7 +25,7 @@ object LocalLoreConnection {
             when (val found = repo.resolveProject(p.requireString("project"))) {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
-                    val id = repo.addLoreEntry(
+                    val id = repo.lore.addLoreEntry(
                         projectId = found.value.id,
                         name = p.requireString("name"),
                         // Unknown reads as Other, which is what Other is for: nothing has to be

@@ -172,7 +172,7 @@ private fun ProjectNavGraph(
      * rarely, and sharing the path means the rare one is not the untested one.
      */
     suspend fun goTo(destination: ProjectDestination): Boolean {
-        val resolved = repo.resolve(destination) ?: return false
+        val resolved = repo.shelf.resolve(destination) ?: return false
 
         when (resolved) {
             // Asked for by name, so it means "show me the shelf" rather than "stay wherever you

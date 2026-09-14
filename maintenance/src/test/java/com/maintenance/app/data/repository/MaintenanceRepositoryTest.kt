@@ -55,7 +55,7 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `adding an asset stores what was filled in, tidied, and nothing that was not`() = runTest {
-        val id = repo.addAsset(
+        val id = repo.assets.addAsset(
             name = "  The truck  ",
             kind = AssetKind.VEHICLE,
             make = "Jeep",
@@ -85,13 +85,13 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `clearing a field deletes it, so absent and blank cannot both mean no VIN`() = runTest {
-        val id = repo.addAsset(
+        val id = repo.assets.addAsset(
             name = "The truck",
             kind = AssetKind.VEHICLE,
             attributes = mapOf("vin" to "1HGCM82633A004352", "color" to "Blue")
         )
 
-        repo.updateAsset(asset(id).copy(name = "The truck"), mapOf("vin" to "", "color" to "Blue"))
+        repo.assets.updateAsset(asset(id).copy(name = "The truck"), mapOf("vin" to "", "color" to "Blue"))
 
         val stored = db.maintenanceDao().attributesOf(id).associate { it.key to it.value }
         assertFalse("a cleared VIN was kept as an empty string", stored.containsKey("vin"))
@@ -100,14 +100,14 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `a decode fills what is blank and argues with nothing you typed`() = runTest {
-        val id = repo.addAsset(
+        val id = repo.assets.addAsset(
             name = "The truck",
             kind = AssetKind.VEHICLE,
             make = "Jeep",
             attributes = mapOf("trim" to "Rubicon")
         )
 
-        repo.applyVehicleFacts(
+        repo.week.applyVehicleFacts(
             id,
             com.maintenance.app.logic.VehicleFacts(
                 make = "Chrysler",
@@ -141,11 +141,11 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `a reading satisfies the odometer prompt and hands back its task`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
-        val planId = repo.addPlan(id, "Odometer reading", everyDays = 7, everyMeter = null, kind = PlanKind.METER_READING)
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        val planId = repo.upkeep.addPlan(id, "Odometer reading", everyDays = 7, everyMeter = null, kind = PlanKind.METER_READING)
         db.maintenanceDao().setPlanLink(planId, "task-odo", 19_000L)
 
-        val toTick = repo.addReading(id, value = 42_100, readAt = now)
+        val toTick = repo.meter.addReading(id, value = 42_100, readAt = now)
 
         assertEquals(listOf("task-odo"), toTick)
         val plan = db.maintenanceDao().getPlan(planId)!!
@@ -155,13 +155,13 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `running the recall check satisfies its prompt and hands back its task`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
-        val planId = repo.addPlan(
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        val planId = repo.upkeep.addPlan(
             id, "Check recalls", everyDays = 180, everyMeter = null, kind = PlanKind.RECALL_CHECK
         )
         db.maintenanceDao().setPlanLink(planId, "task-recall", 19_000L)
 
-        val toTick = repo.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
+        val toTick = repo.recalls.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
 
         assertEquals(listOf("task-recall"), toTick)
         assertEquals(now, db.maintenanceDao().getPlan(planId)!!.lastDoneAt)
@@ -172,13 +172,13 @@ class MaintenanceRepositoryTest {
     fun `no open recalls still counts as having checked`() = runTest {
         // The result you most want to be able to trust. A prompt that only moved on when something
         // was wrong would ask again next week for having had nothing wrong.
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
-        val planId = repo.addPlan(
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        val planId = repo.upkeep.addPlan(
             id, "Check recalls", everyDays = 180, everyMeter = null, kind = PlanKind.RECALL_CHECK
         )
         db.maintenanceDao().setPlanLink(planId, "task-recall", 19_000L)
 
-        val toTick = repo.saveRecalls(id, emptyList(), fetchedAt = now)
+        val toTick = repo.recalls.saveRecalls(id, emptyList(), fetchedAt = now)
 
         assertEquals(listOf("task-recall"), toTick)
         assertEquals(now, db.maintenanceDao().getPlan(planId)!!.lastDoneAt)
@@ -187,12 +187,12 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `a recall you have dealt with stays dealt with when the list is fetched again`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
-        repo.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
-        repo.setRecallAcknowledged(id, "24V-123", acknowledged = true)
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        repo.recalls.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
+        repo.recalls.setRecallAcknowledged(id, "24V-123", acknowledged = true)
 
         // NHTSA re-sends every open campaign every time; the campaign is the identity.
-        repo.saveRecalls(id, listOf(recall("24V-123"), recall("25V-001")), fetchedAt = now + 1)
+        repo.recalls.saveRecalls(id, listOf(recall("24V-123"), recall("25V-001")), fetchedAt = now + 1)
 
         assertNotNull(db.maintenanceDao().getRecall(id, "24V-123")!!.acknowledgedAt)
         assertNull(db.maintenanceDao().getRecall(id, "25V-001")!!.acknowledgedAt)
@@ -200,11 +200,11 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `ticking a prompt off in the week moves it on without writing a service record`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
-        val prompt = repo.addPlan(
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        val prompt = repo.upkeep.addPlan(
             id, "Check recalls", everyDays = 180, everyMeter = null, kind = PlanKind.RECALL_CHECK
         )
-        val work = repo.addPlan(id, "Engine oil & filter", everyDays = 365, everyMeter = null)
+        val work = repo.upkeep.addPlan(id, "Engine oil & filter", everyDays = 365, everyMeter = null)
 
         assertTrue(repo.completeFromWeek(prompt, now))
         assertTrue(repo.completeFromWeek(work, now))
@@ -218,13 +218,13 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `deleting an asset hands back its published tasks and takes everything else with it`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE, attributes = mapOf("color" to "Blue"))
-        val planId = repo.addPlan(id, "Engine oil & filter", everyDays = 365, everyMeter = null)
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE, attributes = mapOf("color" to "Blue"))
+        val planId = repo.upkeep.addPlan(id, "Engine oil & filter", everyDays = 365, everyMeter = null)
         db.maintenanceDao().setPlanLink(planId, "task-oil", 19_000L)
-        repo.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
-        repo.addReading(id, value = 42_100, readAt = now)
+        repo.recalls.saveRecalls(id, listOf(recall("24V-123")), fetchedAt = now)
+        repo.meter.addReading(id, value = 42_100, readAt = now)
 
-        val stranded = repo.deleteAsset(id)
+        val stranded = repo.assets.deleteAsset(id)
 
         // The cascade cannot reach into LifeOps, so the caller is handed what to take off the week.
         assertEquals(listOf("task-oil"), stranded)
@@ -237,11 +237,11 @@ class MaintenanceRepositoryTest {
 
     @Test
     fun `applying a pack twice adds nothing the second time`() = runTest {
-        val id = repo.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
+        val id = repo.assets.addAsset(name = "The truck", kind = AssetKind.VEHICLE)
 
-        val first = repo.applyPack(id, SchedulePacks.GENERIC_VEHICLE)
+        val first = repo.week.applyPack(id, SchedulePacks.GENERIC_VEHICLE)
         val after = db.maintenanceDao().plansOf(id)
-        val second = repo.applyPack(id, SchedulePacks.GENERIC_VEHICLE)
+        val second = repo.week.applyPack(id, SchedulePacks.GENERIC_VEHICLE)
 
         assertEquals(SchedulePacks.GENERIC_VEHICLE.items.size, first.toCreate.size)
         assertEquals(SchedulePacks.GENERIC_VEHICLE.items.size, after.size)

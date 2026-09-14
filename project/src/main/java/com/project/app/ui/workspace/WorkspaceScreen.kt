@@ -97,7 +97,7 @@ class WorkspaceViewModel(
 ) : ViewModel() {
 
     val project: StateFlow<Project?> =
-        repo.observeProject(projectId)
+        repo.shelf.observeProject(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     class Factory(

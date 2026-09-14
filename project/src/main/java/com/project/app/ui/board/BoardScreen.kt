@@ -106,10 +106,10 @@ class BoardViewModel(
 ) : ViewModel() {
 
     val state: StateFlow<BoardState> = combine(
-        repo.observeColumns(projectId),
-        repo.observeCards(projectId),
-        repo.observeOutline(projectId),
-        repo.observeDocs(projectId)
+        repo.board.observeColumns(projectId),
+        repo.board.observeCards(projectId),
+        repo.outline.observeOutline(projectId),
+        repo.docs.observeDocs(projectId)
     ) { columns, cards, outline, docs ->
         BoardState(
             lanes = Board.lanes(columns, cards),
@@ -120,36 +120,36 @@ class BoardViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), BoardState())
 
     fun addCard(columnId: String, title: String) =
-        viewModelScope.launch { repo.addCard(projectId, columnId, title) }
+        viewModelScope.launch { repo.board.addCard(projectId, columnId, title) }
 
     fun updateCard(card: BoardCard) = viewModelScope.launch {
-        repo.updateCard(projectId, card)
+        repo.board.updateCard(projectId, card)
         sync()
     }
 
     fun deleteCard(id: String) = viewModelScope.launch {
         // The task goes with the card, and the round works that out for itself: the card is gone,
         // so the next snapshot has nothing asking for it and the link it left behind is retired.
-        repo.deleteCard(projectId, id)
+        repo.board.deleteCard(projectId, id)
         sync()
     }
 
     fun moveCard(cardId: String, toColumnId: String, toIndex: Int) = viewModelScope.launch {
-        repo.moveCard(projectId, cardId, toColumnId, toIndex)
+        repo.board.moveCard(projectId, cardId, toColumnId, toIndex)
         // Moving into the finished column is how a card is done here, which is the moment its task
         // should come off the week — and moving back out is the moment it should return.
         sync()
     }
 
-    fun addColumn(name: String) = viewModelScope.launch { repo.addColumn(projectId, name) }
+    fun addColumn(name: String) = viewModelScope.launch { repo.board.addColumn(projectId, name) }
 
-    fun updateColumn(column: BoardColumn) = viewModelScope.launch { repo.updateColumn(projectId, column) }
+    fun updateColumn(column: BoardColumn) = viewModelScope.launch { repo.board.updateColumn(projectId, column) }
 
-    fun moveColumn(id: String, delta: Int) = viewModelScope.launch { repo.moveColumn(projectId, id, delta) }
+    fun moveColumn(id: String, delta: Int) = viewModelScope.launch { repo.board.moveColumn(projectId, id, delta) }
 
-    fun deleteColumn(id: String) = viewModelScope.launch { repo.deleteColumn(projectId, id) }
+    fun deleteColumn(id: String) = viewModelScope.launch { repo.board.deleteColumn(projectId, id) }
 
-    fun refileOrphans(columnId: String) = viewModelScope.launch { repo.refileOrphans(projectId, columnId) }
+    fun refileOrphans(columnId: String) = viewModelScope.launch { repo.board.refileOrphans(projectId, columnId) }
 
     class Factory(
         private val repo: ProjectRepository,

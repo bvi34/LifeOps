@@ -68,7 +68,7 @@ class DocHistoryViewModel(
 ) : ViewModel() {
 
     val revisions: StateFlow<List<DocRevision>> =
-        repo.observeRevisions(docId)
+        repo.versions.observeRevisions(docId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
@@ -85,13 +85,13 @@ class DocHistoryViewModel(
     fun open(revisionId: String) {
         if (_opened.value.containsKey(revisionId)) return
         viewModelScope.launch {
-            val blocks = repo.revisionBlocks(revisionId)
+            val blocks = repo.versions.revisionBlocks(revisionId)
             _opened.update { it + (revisionId to blocks) }
         }
     }
 
     fun restore(revisionId: String, onDone: (Boolean) -> Unit) {
-        viewModelScope.launch { onDone(repo.restoreRevision(docId, revisionId)) }
+        viewModelScope.launch { onDone(repo.versions.restoreRevision(docId, revisionId)) }
     }
 
     class Factory(

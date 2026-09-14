@@ -77,7 +77,7 @@ class OutlineViewModel(
 ) : ViewModel() {
 
     val rows: StateFlow<List<OutlineRow>> =
-        repo.observeOutline(projectId)
+        repo.outline.observeOutline(projectId)
             .map { Outline.flatten(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -85,18 +85,18 @@ class OutlineViewModel(
     val pendingDelete: StateFlow<Pair<OutlineNode, Int>?> = _pendingDelete.asStateFlow()
 
     fun add(parentId: String?, title: String) =
-        viewModelScope.launch { repo.addOutlineNode(projectId, parentId, title) }
+        viewModelScope.launch { repo.outline.addOutlineNode(projectId, parentId, title) }
 
-    fun update(node: OutlineNode) = viewModelScope.launch { repo.updateOutlineNode(node) }
+    fun update(node: OutlineNode) = viewModelScope.launch { repo.outline.updateOutlineNode(node) }
 
     fun setStatus(id: String, status: OutlineStatus) =
-        viewModelScope.launch { repo.setOutlineStatus(id, status) }
+        viewModelScope.launch { repo.outline.setOutlineStatus(id, status) }
 
-    fun move(id: String, delta: Int) = viewModelScope.launch { repo.moveOutlineNode(projectId, id, delta) }
+    fun move(id: String, delta: Int) = viewModelScope.launch { repo.outline.moveOutlineNode(projectId, id, delta) }
 
-    fun indent(id: String) = viewModelScope.launch { repo.indentOutlineNode(projectId, id) }
+    fun indent(id: String) = viewModelScope.launch { repo.outline.indentOutlineNode(projectId, id) }
 
-    fun outdent(id: String) = viewModelScope.launch { repo.outdentOutlineNode(projectId, id) }
+    fun outdent(id: String) = viewModelScope.launch { repo.outline.outdentOutlineNode(projectId, id) }
 
     /**
      * Ask before deleting, and say how much goes.
@@ -105,7 +105,7 @@ class OutlineViewModel(
      * that is to count them first — "delete 14 pieces" is a decision; "delete" is a trap.
      */
     fun askDelete(node: OutlineNode) = viewModelScope.launch {
-        _pendingDelete.value = node to repo.subtreeSize(projectId, node.id)
+        _pendingDelete.value = node to repo.outline.subtreeSize(projectId, node.id)
     }
 
     fun cancelDelete() {
@@ -115,7 +115,7 @@ class OutlineViewModel(
     fun confirmDelete() = viewModelScope.launch {
         val (node, _) = _pendingDelete.value ?: return@launch
         _pendingDelete.value = null
-        repo.deleteOutlineSubtree(projectId, node.id)
+        repo.outline.deleteOutlineSubtree(projectId, node.id)
     }
 
     class Factory(

@@ -64,7 +64,7 @@ class CostsViewModel(private val repo: MaintenanceRepository) : ViewModel() {
     // The window is state rather than a parameter because switching it re-asks the same question of
     // the same rows; the fold is cheap and the alternative is holding two ledgers.
     val ledger: StateFlow<Ledger?> = _window
-        .flatMapLatest { repo.observeLedger(since = it.since(System.currentTimeMillis())) }
+        .flatMapLatest { repo.board.observeLedger(since = it.since(System.currentTimeMillis())) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun setWindow(window: CostWindow) {

@@ -67,15 +67,15 @@ import kotlinx.coroutines.launch
 class ShelfViewModel(private val repo: ProjectRepository) : ViewModel() {
 
     val shelf: StateFlow<List<Pair<Project, ProjectPulse>>> =
-        repo.observeShelf().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.shelf.observeShelf().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addProject(name: String, kind: ProjectKind, summary: String?, onCreated: (String) -> Unit) =
-        viewModelScope.launch { onCreated(repo.addProject(name, kind, summary)) }
+        viewModelScope.launch { onCreated(repo.shelf.addProject(name, kind, summary)) }
 
     fun setArchived(projectId: String, archived: Boolean) =
-        viewModelScope.launch { repo.setArchived(projectId, archived) }
+        viewModelScope.launch { repo.shelf.setArchived(projectId, archived) }
 
-    fun deleteProject(projectId: String) = viewModelScope.launch { repo.deleteProject(projectId) }
+    fun deleteProject(projectId: String) = viewModelScope.launch { repo.shelf.deleteProject(projectId) }
 
     class Factory(private val repo: ProjectRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
@@ -186,7 +186,7 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
                     // exists and no way to tell where they came from.
                     scope.launch {
                         val app = ProjectApp.get(context)
-                        app.retireTasks(app.repository.publishedTaskIdsOf(going.id))
+                        app.retireTasks(app.repository.week.publishedTaskIdsOf(going.id))
                     }
                     vm.deleteProject(going.id)
                     // The files attached to it go too, and Repository does not cascade on somebody
@@ -197,7 +197,7 @@ fun ShelfScreen(vm: ShelfViewModel, onOpenProject: (Project) -> Unit) {
                     // which nothing is left to say which drawers on the shelf belonged to it.
                     scope.launch {
                         val app = ProjectApp.get(context)
-                        val keys = app.repository.attachableRecordKeys(going.id)
+                        val keys = app.repository.files.attachableRecordKeys(going.id)
                         val documents = com.repository.app.RepositoryApp.get(context).documents
                         keys.forEach { documents.deleteFiledOn(AppId.PROJECT.key, it) }
                     }

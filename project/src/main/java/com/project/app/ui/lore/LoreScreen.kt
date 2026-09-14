@@ -65,20 +65,20 @@ class LoreViewModel(
 ) : ViewModel() {
 
     val entries: StateFlow<List<LoreEntryView>> =
-        repo.observeLore(projectId)
+        repo.lore.observeLore(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val brokenLinks: StateFlow<List<String>> =
-        repo.observeBrokenLinks(projectId)
+        repo.lore.observeBrokenLinks(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun add(name: String, category: LoreCategory) =
-        viewModelScope.launch { repo.addLoreEntry(projectId, name, category) }
+        viewModelScope.launch { repo.lore.addLoreEntry(projectId, name, category) }
 
     fun update(entry: LoreEntry, category: LoreCategory) =
-        viewModelScope.launch { repo.updateLoreEntry(projectId, entry, category) }
+        viewModelScope.launch { repo.lore.updateLoreEntry(projectId, entry, category) }
 
-    fun delete(id: String) = viewModelScope.launch { repo.deleteLoreEntry(projectId, id) }
+    fun delete(id: String) = viewModelScope.launch { repo.lore.deleteLoreEntry(projectId, id) }
 
     class Factory(
         private val repo: ProjectRepository,

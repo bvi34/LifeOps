@@ -17,7 +17,7 @@ object LocalProjectConnection {
 
         registry.register("local", "project", "create") { request ->
             val p = request.params
-            val id = repo.addProject(
+            val id = repo.shelf.addProject(
                 name = p.requireString("name"),
                 // An unknown kind reads as General rather than failing: kind is vocabulary, and
                 // refusing to make a project because somebody said "novel" would be pedantry.
@@ -32,7 +32,7 @@ object LocalProjectConnection {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
                     val archived = request.params.getBoolean("archived", default = true)
-                    repo.setArchived(found.value.id, archived)
+                    repo.shelf.setArchived(found.value.id, archived)
                     ConnectionResult.ok("id" to found.value.id, "archived" to archived)
                 }
             }

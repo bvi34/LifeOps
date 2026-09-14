@@ -91,7 +91,7 @@ class DocEditorViewModel(
 ) : ViewModel() {
 
     val content: StateFlow<DocContent?> =
-        repo.observeDocContent(docId)
+        repo.docs.observeDocContent(docId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -129,7 +129,7 @@ class DocEditorViewModel(
      * one — an empty history screen is a worse answer than no way to reach it.
      */
     val revisionCount: StateFlow<Int> =
-        repo.observeRevisionCount(docId)
+        repo.versions.observeRevisionCount(docId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     /**
@@ -139,38 +139,38 @@ class DocEditorViewModel(
      * cannot know about — the rewrite you are about to do yourself, a paragraph at a time.
      */
     fun saveRevision(onDone: (Boolean) -> Unit) = viewModelScope.launch {
-        onDone(repo.saveRevision(docId, RevisionReason.MANUAL) != null)
+        onDone(repo.versions.saveRevision(docId, RevisionReason.MANUAL) != null)
     }
 
-    fun updateBlock(block: DocBlock) = viewModelScope.launch { repo.updateBlock(docId, block) }
+    fun updateBlock(block: DocBlock) = viewModelScope.launch { repo.docs.updateBlock(docId, block) }
 
     /** Change a block's type, converting its text where the two shapes disagree. */
     fun retypeBlock(block: DocBlock, type: BlockType) =
-        viewModelScope.launch { repo.updateBlock(docId, DocBlocks.retype(block, type)) }
+        viewModelScope.launch { repo.docs.updateBlock(docId, DocBlocks.retype(block, type)) }
 
     fun addBlock(type: BlockType, after: String?) =
-        viewModelScope.launch { repo.addBlock(docId, type, after) }
+        viewModelScope.launch { repo.docs.addBlock(docId, type, after) }
 
-    fun deleteBlock(blockId: String) = viewModelScope.launch { repo.deleteBlock(docId, blockId) }
+    fun deleteBlock(blockId: String) = viewModelScope.launch { repo.docs.deleteBlock(docId, blockId) }
 
     fun moveBlock(blockId: String, delta: Int) =
-        viewModelScope.launch { repo.moveBlock(docId, blockId, delta) }
+        viewModelScope.launch { repo.docs.moveBlock(docId, blockId, delta) }
 
     fun rename(title: String) = viewModelScope.launch {
         val doc = content.value?.doc ?: return@launch
-        repo.updateDoc(doc.copy(title = title))
+        repo.docs.updateDoc(doc.copy(title = title))
     }
 
     /** Rebuild the tables in this document that arrived as flattened paragraphs. */
     fun repairTables(onDone: (Int) -> Unit) =
-        viewModelScope.launch { onDone(repo.repairTables(docId)) }
+        viewModelScope.launch { onDone(repo.docs.repairTables(docId)) }
 
     fun replaceFromMarkdown(markdown: String) =
-        viewModelScope.launch { repo.replaceDocFromMarkdown(docId, markdown) }
+        viewModelScope.launch { repo.docs.replaceDocFromMarkdown(docId, markdown) }
 
     /** The document as Markdown, handed to whoever asked — the clipboard or the share sheet. */
     fun exportMarkdown(onReady: (String) -> Unit) =
-        viewModelScope.launch { onReady(repo.docAsMarkdown(docId)) }
+        viewModelScope.launch { onReady(repo.docs.docAsMarkdown(docId)) }
 
     class Factory(
         private val repo: ProjectRepository,

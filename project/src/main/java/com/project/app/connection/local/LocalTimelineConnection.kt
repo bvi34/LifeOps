@@ -23,7 +23,7 @@ object LocalTimelineConnection {
             when (val found = repo.resolveProject(p.requireString("project"))) {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
-                    val id = repo.addEvent(
+                    val id = repo.timeline.addEvent(
                         projectId = found.value.id,
                         title = p.requireString("title"),
                         whenLabel = p.getString("when"),

@@ -24,7 +24,7 @@ object LocalDocConnection {
             when (val found = repo.resolveProject(p.requireString("project"))) {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
-                    val id = repo.addDoc(
+                    val id = repo.docs.addDoc(
                         projectId = found.value.id,
                         title = p.requireString("title"),
                         outlineNodeId = p.getString("outlineNodeId")
