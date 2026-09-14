@@ -8,6 +8,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.captureInOpenReader
+import com.citation.app.data.captureManual
+import com.citation.app.data.captureQuoted
+import com.citation.app.data.importKindleNotebook
 import com.citation.core.capture.RawCapture
 import kotlinx.coroutines.launch
 

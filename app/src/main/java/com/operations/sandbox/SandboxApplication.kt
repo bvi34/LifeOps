@@ -3,21 +3,22 @@ package com.operations.sandbox
 import android.app.Application
 import com.advisor.app.AdvisorApp
 import com.citation.app.CitationApplication
+import com.citation.app.data.sync
+import com.finance.app.FinanceApp
 import com.health.app.HealthApp
 import com.lifeops.app.LifeOpsApp
-import com.maintenance.app.MaintenanceApp
-import com.people.app.PeopleApp
-import com.repository.app.RepositoryApp
-import com.secrets.app.SecretsApp
-import com.project.app.ProjectApp
-import com.finance.app.FinanceApp
 import com.logistics.app.LogisticsApp
+import com.maintenance.app.MaintenanceApp
 import com.operations.sandbox.cloud.CloudBackupPrefs
 import com.operations.sandbox.cloud.ScheduledCloudBackupWorker
 import com.operations.sandbox.update.UpdatePrefs
 import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
+import com.people.app.PeopleApp
+import com.project.app.ProjectApp
+import com.repository.app.RepositoryApp
+import com.secrets.app.SecretsApp
 
 /**
  * The single [Application] for the whole suite. LifeOps and Citation are library modules now, so

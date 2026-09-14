@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.PdfSession
+import com.citation.app.data.capturePdfNote
 
 /**
  * The **PDF render track**: positioned glyphs don't reflow, so a PDF is rendered *page by page* as a
@@ -69,7 +71,7 @@ import com.citation.app.data.CitationRepository
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PdfReaderScreen(session: CitationRepository.PdfSession, vm: ReaderViewModel) {
+fun PdfReaderScreen(session: PdfSession, vm: ReaderViewModel) {
     // Open the renderer once for the session; close it on dispose.
     val renderer = remember(session.file.path) {
         runCatching {

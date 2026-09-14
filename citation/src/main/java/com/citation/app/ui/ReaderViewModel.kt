@@ -2,22 +2,82 @@ package com.citation.app.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.citation.app.data.CitationRepository
-import com.citation.app.data.opds.OpdsClient
-import com.citation.app.data.OreillyAccess
 import com.citation.app.audio.Narrator
-import com.citation.core.speech.CustomVoice
-import com.citation.core.speech.InstalledVoice
-import com.citation.core.speech.NarrationState
-import com.citation.core.speech.Resume
-import com.citation.core.speech.SavedPlace
-import com.citation.core.speech.NarrationStatus
-import com.citation.core.speech.SkipGranularity
-import com.citation.core.speech.SleepMode
-import com.citation.core.speech.SpeechSettings
-import com.citation.core.speech.VoiceCatalog
-import com.citation.core.speech.VoiceDraft
-import com.citation.core.speech.VoiceModel
+import com.citation.app.data.AcquireResult
+import com.citation.app.data.BookSummary
+import com.citation.app.data.CitationRepository
+import com.citation.app.data.KindleLibrary
+import com.citation.app.data.KindleSession
+import com.citation.app.data.OreillyAccess
+import com.citation.app.data.OreillyCatalog
+import com.citation.app.data.OreillySession
+import com.citation.app.data.PdfSession
+import com.citation.app.data.ReflowResult
+import com.citation.app.data.RefreshResult
+import com.citation.app.data.acquire
+import com.citation.app.data.addBookmark
+import com.citation.app.data.addCatalog
+import com.citation.app.data.addKindleBook
+import com.citation.app.data.addOreillyBook
+import com.citation.app.data.addToCollection
+import com.citation.app.data.beginReaderContext
+import com.citation.app.data.bookAsset
+import com.citation.app.data.bookmarks
+import com.citation.app.data.captureExternalNote
+import com.citation.app.data.captureNote
+import com.citation.app.data.capturePdfNote
+import com.citation.app.data.captureSynthesis
+import com.citation.app.data.catalogImage
+import com.citation.app.data.clearOreillyCredentials
+import com.citation.app.data.clearReaderSettings
+import com.citation.app.data.coverFile
+import com.citation.app.data.createCollection
+import com.citation.app.data.deleteBookmark
+import com.citation.app.data.deleteCatalog
+import com.citation.app.data.deleteCollection
+import com.citation.app.data.deleteReaderFont
+import com.citation.app.data.editNoteBody
+import com.citation.app.data.endReaderContext
+import com.citation.app.data.hasOwnReaderSettings
+import com.citation.app.data.hasPdfFlow
+import com.citation.app.data.importKindleNotebook
+import com.citation.app.data.importPdf
+import com.citation.app.data.kindleLibrary
+import com.citation.app.data.kindleSession
+import com.citation.app.data.linkNoteToBook
+import com.citation.app.data.opds.OpdsClient
+import com.citation.app.data.openCatalog
+import com.citation.app.data.oreillyAccessConfig
+import com.citation.app.data.oreillyCatalog
+import com.citation.app.data.oreillySession
+import com.citation.app.data.oreillyWarmCacheStale
+import com.citation.app.data.paceFor
+import com.citation.app.data.pdfSession
+import com.citation.app.data.readerFonts
+import com.citation.app.data.readerSettingsFor
+import com.citation.app.data.recordPace
+import com.citation.app.data.recordReadingTelemetry
+import com.citation.app.data.reflowPdf
+import com.citation.app.data.refreshFromFile
+import com.citation.app.data.removeFromCollection
+import com.citation.app.data.renameCollection
+import com.citation.app.data.renameReaderFont
+import com.citation.app.data.resolveNote
+import com.citation.app.data.saveExternalPosition
+import com.citation.app.data.saveReaderSettings
+import com.citation.app.data.searchCatalog
+import com.citation.app.data.seedCatalogsIfEmpty
+import com.citation.app.data.setBookmarkLabel
+import com.citation.app.data.setCatalogCredentials
+import com.citation.app.data.setFavorite
+import com.citation.app.data.setNoteHighlight
+import com.citation.app.data.setNoteTags
+import com.citation.app.data.setOreillyCredentials
+import com.citation.app.data.setOreillyProxyHost
+import com.citation.app.data.setReadingState
+import com.citation.app.data.storageReport
+import com.citation.app.data.storeReaderFont
+import com.citation.app.data.sync
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.capture.CaptureTriage
 import com.citation.core.library.BookCollection
@@ -26,10 +86,6 @@ import com.citation.core.library.LibraryEntry
 import com.citation.core.library.LibraryFilter
 import com.citation.core.library.LibraryQuery
 import com.citation.core.library.LibrarySort
-import com.citation.core.opds.CatalogPage
-import com.citation.core.opds.CatalogSource
-import com.citation.core.opds.OpdsEntry
-import com.citation.core.opds.OpdsFeed
 import com.citation.core.model.Book
 import com.citation.core.model.SourceType
 import com.citation.core.model.TocEntry
@@ -37,21 +93,38 @@ import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
 import com.citation.core.note.NoteSearch
-import com.citation.core.pdf.PdfFlow
-import com.citation.core.reader.ReadingMeter
-import com.citation.core.reader.BookSearch
-import com.citation.core.reader.Bookmark
-import com.citation.core.reader.Bookmarks
-import com.citation.core.reader.ReadingPace
-import com.citation.core.reader.ReaderFont
-import com.citation.core.reader.ReaderSettings
-import com.citation.core.reader.ReaderTypeface
-import com.citation.core.reader.ReadingProgress
-import com.citation.core.reader.TimeLeft
-import com.citation.core.reader.VolumeKeys
 import com.citation.core.note.NoteType
 import com.citation.core.note.TagCount
 import com.citation.core.note.Tags
+import com.citation.core.opds.CatalogPage
+import com.citation.core.opds.CatalogSource
+import com.citation.core.opds.OpdsEntry
+import com.citation.core.opds.OpdsFeed
+import com.citation.core.pdf.PdfFlow
+import com.citation.core.reader.BookSearch
+import com.citation.core.reader.Bookmark
+import com.citation.core.reader.Bookmarks
+import com.citation.core.reader.ReaderFont
+import com.citation.core.reader.ReaderSettings
+import com.citation.core.reader.ReaderTypeface
+import com.citation.core.reader.ReadingMeter
+import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReadingProgress
+import com.citation.core.reader.TimeLeft
+import com.citation.core.reader.VolumeKeys
+import com.citation.core.speech.CustomVoice
+import com.citation.core.speech.InstalledVoice
+import com.citation.core.speech.NarrationState
+import com.citation.core.speech.NarrationStatus
+import com.citation.core.speech.Resume
+import com.citation.core.speech.SavedPlace
+import com.citation.core.speech.SkipGranularity
+import com.citation.core.speech.SleepMode
+import com.citation.core.speech.SpeechSettings
+import com.citation.core.speech.VoiceCatalog
+import com.citation.core.speech.VoiceDraft
+import com.citation.core.speech.VoiceModel
+import kotlin.math.abs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -61,7 +134,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /**
  * Drives the library + reader. Kept thin: it holds UI state as [StateFlow]s and delegates all
@@ -82,7 +154,7 @@ class ReaderViewModel(
     private val narrator: Narrator? = null
 ) : ViewModel() {
 
-    val books: StateFlow<List<CitationRepository.BookSummary>> =
+    val books: StateFlow<List<BookSummary>> =
         repository.books.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Every captured note, newest first, for the Notes screen. */
@@ -90,7 +162,7 @@ class ReaderViewModel(
         repository.notes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** The most recently opened book, driving the Read tab's resume card. */
-    val lastOpened: StateFlow<CitationRepository.BookSummary?> =
+    val lastOpened: StateFlow<BookSummary?> =
         repository.lastOpened.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /**
@@ -540,12 +612,12 @@ class ReaderViewModel(
     fun refreshFromFile(bookKey: String) {
         viewModelScope.launch {
             _status.value = when (val result = repository.refreshFromFile(bookKey)) {
-                is CitationRepository.RefreshResult.Refreshed ->
+                is RefreshResult.Refreshed ->
                     if (result.unchanged == 0) "Refreshed ${result.chapters} chapters from the file."
                     else "Refreshed ${result.chapters} chapters; ${result.unchanged} were left as they were."
-                CitationRepository.RefreshResult.NotRefreshable -> "This one has no stored file to re-read."
-                CitationRepository.RefreshResult.FileMissing -> "The original file isn’t in the store any more."
-                CitationRepository.RefreshResult.Unreadable -> "Couldn’t re-read the file."
+                RefreshResult.NotRefreshable -> "This one has no stored file to re-read."
+                RefreshResult.FileMissing -> "The original file isn’t in the store any more."
+                RefreshResult.Unreadable -> "Couldn’t re-read the file."
             }
         }
     }
@@ -729,11 +801,11 @@ class ReaderViewModel(
             _acquiring.value = _acquiring.value + id
             val result = repository.acquire(source, entry)
             _status.value = when (result) {
-                is CitationRepository.AcquireResult.Added -> "Added “${result.title}” to your library."
-                is CitationRepository.AcquireResult.AlreadyHave -> "“${result.title}” is already in your library."
-                is CitationRepository.AcquireResult.UnsupportedFormat ->
+                is AcquireResult.Added -> "Added “${result.title}” to your library."
+                is AcquireResult.AlreadyHave -> "“${result.title}” is already in your library."
+                is AcquireResult.UnsupportedFormat ->
                     "Citation can’t read ${result.label} files yet."
-                is CitationRepository.AcquireResult.Failed -> "Couldn’t download it: ${result.reason}"
+                is AcquireResult.Failed -> "Couldn’t download it: ${result.reason}"
             }
             _acquiring.value = _acquiring.value - id
         }
@@ -913,24 +985,24 @@ class ReaderViewModel(
 
     // The PDF paged reader and the O'Reilly read-in-place reader are separate tracks from the
     // flowing reader; when one is set the UI shows that track instead.
-    private val _pdfSession = MutableStateFlow<CitationRepository.PdfSession?>(null)
-    val pdfSession: StateFlow<CitationRepository.PdfSession?> = _pdfSession.asStateFlow()
+    private val _pdfSession = MutableStateFlow<PdfSession?>(null)
+    val pdfSession: StateFlow<PdfSession?> = _pdfSession.asStateFlow()
 
-    private val _oreillySession = MutableStateFlow<CitationRepository.OreillySession?>(null)
-    val oreillySession: StateFlow<CitationRepository.OreillySession?> = _oreillySession.asStateFlow()
+    private val _oreillySession = MutableStateFlow<OreillySession?>(null)
+    val oreillySession: StateFlow<OreillySession?> = _oreillySession.asStateFlow()
 
-    private val _kindleSession = MutableStateFlow<CitationRepository.KindleSession?>(null)
-    val kindleSession: StateFlow<CitationRepository.KindleSession?> = _kindleSession.asStateFlow()
+    private val _kindleSession = MutableStateFlow<KindleSession?>(null)
+    val kindleSession: StateFlow<KindleSession?> = _kindleSession.asStateFlow()
 
     // Non-null while browsing the O'Reilly catalog (proxied through your library); the catalog surface
     // preempts the home shell, mirroring Browse Royal Road.
-    private val _oreillyCatalog = MutableStateFlow<CitationRepository.OreillyCatalog?>(null)
-    val oreillyCatalog: StateFlow<CitationRepository.OreillyCatalog?> = _oreillyCatalog.asStateFlow()
+    private val _oreillyCatalog = MutableStateFlow<OreillyCatalog?>(null)
+    val oreillyCatalog: StateFlow<OreillyCatalog?> = _oreillyCatalog.asStateFlow()
 
     // Non-null while browsing your Kindle library on read.amazon.com; the browse surface preempts the
     // home shell, exactly like the O'Reilly catalog — you skim the shelf and tap a book to open it.
-    private val _kindleLibrary = MutableStateFlow<CitationRepository.KindleLibrary?>(null)
-    val kindleLibrary: StateFlow<CitationRepository.KindleLibrary?> = _kindleLibrary.asStateFlow()
+    private val _kindleLibrary = MutableStateFlow<KindleLibrary?>(null)
+    val kindleLibrary: StateFlow<KindleLibrary?> = _kindleLibrary.asStateFlow()
 
     /**
      * Imports an EPUB. [openAfter] is set when the file arrived as an "open this book" intent from
@@ -1047,15 +1119,15 @@ class ReaderViewModel(
         if (_reflowing.value) return false // an extraction is already running; don't start a second
         _reflowing.value = true
         val result = try { repository.reflowPdf(bookKey) } finally { _reflowing.value = false }
-        val ready = result is CitationRepository.ReflowResult.Reflowed
+        val ready = result is ReflowResult.Reflowed
         _pdfFlowReady.value = ready
         if (announce) {
             _status.value = when (result) {
-                is CitationRepository.ReflowResult.Reflowed ->
+                is ReflowResult.Reflowed ->
                     "Text extracted — ${result.pages} page${if (result.pages == 1) "" else "s"} readable as text."
-                CitationRepository.ReflowResult.NoTextLayer ->
+                ReflowResult.NoTextLayer ->
                     "No text layer in this PDF (it's a scan) — pages only."
-                CitationRepository.ReflowResult.Unreadable ->
+                ReflowResult.Unreadable ->
                     "Couldn't read that PDF's text."
             }
         }
@@ -1357,7 +1429,7 @@ class ReaderViewModel(
      * cached chapter bodies (the "uncache" the user wants); if it happens to be the one open in the
      * reader, the reader is closed too. Notes on it are kept (they hold their own frozen snapshots).
      */
-    fun deleteBook(book: CitationRepository.BookSummary) = deleteBook(book.key, book.title)
+    fun deleteBook(book: BookSummary) = deleteBook(book.key, book.title)
 
     /** Remove a book by key, for surfaces that hold a library entry rather than a summary. */
     fun deleteBook(bookKey: String, title: String) {

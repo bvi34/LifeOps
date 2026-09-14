@@ -96,8 +96,8 @@ object CitationMappers {
             toc = BlockCodec.decodeToc(book.tocJson)
         )
 
-    fun summaryFromEntity(book: BookEntity): CitationRepository.BookSummary =
-        CitationRepository.BookSummary(
+    fun summaryFromEntity(book: BookEntity): BookSummary =
+        BookSummary(
             key = book.key,
             title = book.title,
             author = book.author,

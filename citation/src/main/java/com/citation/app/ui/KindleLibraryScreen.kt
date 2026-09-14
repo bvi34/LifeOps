@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.KindleLibrary
 import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
 
@@ -57,7 +58,7 @@ import kotlinx.coroutines.delay
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun KindleLibraryScreen(
-    library: CitationRepository.KindleLibrary,
+    library: KindleLibrary,
     onOpenBook: (asin: String, title: String) -> Unit,
     onBack: () -> Unit
 ) {

@@ -47,9 +47,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -57,7 +57,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.data.BookSummary
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.addKindleBook
+import com.citation.app.data.addOreillyBook
+import com.citation.app.data.clearOreillyCredentials
+import com.citation.app.data.importPdf
+import com.citation.app.data.sync
 import com.citation.core.capture.CaptureClusterer
 import com.citation.core.model.SourceType
 import com.citation.core.sync.ReadingState
@@ -453,7 +459,7 @@ private fun ReadTab(vm: ReaderViewModel, onGoToLibrary: () -> Unit) {
 }
 
 /** A small human hint about where "continue" will land, from what the summary knows. */
-private fun resumeHint(book: CitationRepository.BookSummary): String = when {
+private fun resumeHint(book: BookSummary): String = when {
     book.lastChapterOrdinal > 0 -> "Resumes at chapter ${book.lastChapterOrdinal + 1}"
     book.readingState == ReadingState.DONE.name -> "Finished — reopen to reread"
     else -> "Opens where you left off"

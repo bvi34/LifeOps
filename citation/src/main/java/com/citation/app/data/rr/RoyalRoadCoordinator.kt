@@ -3,6 +3,7 @@ package com.citation.app.data.rr
 import com.citation.app.data.db.RoyalRoadDao
 import com.citation.app.data.db.RrChapterMetaEntity
 import com.citation.app.data.db.RrFictionEntity
+import com.citation.app.data.setFavorite
 import com.citation.app.data.store.FileStores
 import com.citation.core.model.Book
 import com.citation.core.model.BookMetadata
