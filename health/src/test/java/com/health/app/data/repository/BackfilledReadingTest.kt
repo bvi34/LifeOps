@@ -49,15 +49,15 @@ class BackfilledReadingTest {
     @After
     fun tearDown() = db.close()
 
-    private suspend fun person() = repo.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
+    private suspend fun person() = repo.profiles.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
 
     @Test
     fun `a weight taken during a past illness is filed against that illness`() = runTest {
         val profileId = person()
-        val flu = repo.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
-        repo.endEpisode(flu, endedAt = now - 7 * day)
+        val flu = repo.episodes.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
+        repo.episodes.endEpisode(flu, endedAt = now - 7 * day)
 
-        val id = repo.logReading(
+        val id = repo.readings.logReading(
             profileId = profileId,
             type = ReadingType.WEIGHT,
             value = 17.4,
@@ -70,12 +70,12 @@ class BackfilledReadingTest {
     @Test
     fun `and not against the illness that happens to be open now`() = runTest {
         val profileId = person()
-        val flu = repo.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
-        repo.endEpisode(flu, endedAt = now - 7 * day)
-        val cold = repo.startEpisode(profileId, "Cold", startedAt = now - day)
+        val flu = repo.episodes.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
+        repo.episodes.endEpisode(flu, endedAt = now - 7 * day)
+        val cold = repo.episodes.startEpisode(profileId, "Cold", startedAt = now - day)
 
         // Typed up today, taken during the flu: the story it belongs to is the flu's.
-        val backfilled = repo.logReading(
+        val backfilled = repo.readings.logReading(
             profileId = profileId,
             type = ReadingType.OXYGEN,
             value = 97.0,
@@ -83,7 +83,7 @@ class BackfilledReadingTest {
         )
         assertEquals(flu, db.healthDao().getReading(backfilled)!!.episodeId)
 
-        val today = repo.logReading(profileId, ReadingType.OXYGEN, 96.0, takenAt = now)
+        val today = repo.readings.logReading(profileId, ReadingType.OXYGEN, 96.0, takenAt = now)
         assertEquals(cold, db.healthDao().getReading(today)!!.episodeId)
     }
 
@@ -92,10 +92,10 @@ class BackfilledReadingTest {
         // Not everything worth recording happened during a declared episode, and a reading with no
         // illness around it is a real reading rather than an orphan to be adopted by the nearest one.
         val profileId = person()
-        val flu = repo.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
-        repo.endEpisode(flu, endedAt = now - 7 * day)
+        val flu = repo.episodes.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
+        repo.episodes.endEpisode(flu, endedAt = now - 7 * day)
 
-        val id = repo.logReading(profileId, ReadingType.HEART_RATE, 88.0, takenAt = now - 3 * day)
+        val id = repo.readings.logReading(profileId, ReadingType.HEART_RATE, 88.0, takenAt = now - 3 * day)
 
         assertNull(db.healthDao().getReading(id)!!.episodeId)
     }

@@ -73,35 +73,35 @@ class CoverageViewModel(
 ) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** Every policy the household holds — not scoped to the selected person, because a policy isn't. */
     val plans: StateFlow<List<InsurancePlan>> =
-        repo.observeInsurancePlans().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.coverage.observeInsurancePlans().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Every provider the household sees, for putting an existing doctor on somebody else's team. */
     val providers: StateFlow<List<Provider>> =
-        repo.observeProviders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.careTeam.observeProviders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val coverage: StateFlow<List<CoverageCard>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeCoverage(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.coverage.observeCoverage(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val careTeam: StateFlow<List<CareTeamMember>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeCareTeam(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.careTeam.observeCareTeam(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _directoryState = MutableStateFlow(DirectoryState())
     val directoryState: StateFlow<DirectoryState> = _directoryState.asStateFlow()
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     fun dismissMessage() {
         _directoryState.value = _directoryState.value.copy(message = null)
@@ -114,7 +114,7 @@ class CoverageViewModel(
     // --- the cards ----------------------------------------------------------------------------------
 
     fun addPlan(draft: PlanDraft, alsoForProfile: MembershipDraft? = null) = viewModelScope.launch {
-        val planId = repo.addInsurancePlan(
+        val planId = repo.coverage.addInsurancePlan(
             carrierName = draft.carrierName,
             planName = draft.planName,
             coverageKind = draft.coverageKind,
@@ -134,12 +134,12 @@ class CoverageViewModel(
         alsoForProfile?.let { membership -> saveMembership(planId, membership) }
     }
 
-    fun updatePlan(plan: InsurancePlan) = viewModelScope.launch { repo.updateInsurancePlan(plan) }
+    fun updatePlan(plan: InsurancePlan) = viewModelScope.launch { repo.coverage.updateInsurancePlan(plan) }
 
     fun setPlanArchived(planId: String, archived: Boolean) =
-        viewModelScope.launch { repo.setInsurancePlanArchived(planId, archived) }
+        viewModelScope.launch { repo.coverage.setInsurancePlanArchived(planId, archived) }
 
-    fun deletePlan(planId: String) = viewModelScope.launch { repo.deleteInsurancePlan(planId) }
+    fun deletePlan(planId: String) = viewModelScope.launch { repo.coverage.deleteInsurancePlan(planId) }
 
     /** Put the selected person on a policy — the second half of "a card came in the post". */
     fun addMembership(planId: String, draft: MembershipDraft) = viewModelScope.launch {
@@ -148,7 +148,7 @@ class CoverageViewModel(
 
     private suspend fun saveMembership(planId: String, draft: MembershipDraft) {
         val profile = selected.value ?: return
-        repo.addMembership(
+        repo.coverage.addMembership(
             profileId = profile.id,
             planId = planId,
             memberId = draft.memberId,
@@ -163,10 +163,10 @@ class CoverageViewModel(
     }
 
     fun updateMembership(membership: InsuranceMembership) =
-        viewModelScope.launch { repo.updateMembership(membership) }
+        viewModelScope.launch { repo.coverage.updateMembership(membership) }
 
     fun deleteMembership(membershipId: String) =
-        viewModelScope.launch { repo.deleteMembership(membershipId) }
+        viewModelScope.launch { repo.coverage.deleteMembership(membershipId) }
 
     /**
      * Save a photographed card — which is what makes the PDF possible later without asking for the
@@ -189,13 +189,13 @@ class CoverageViewModel(
             return@launch
         }
         if (toPlan || membershipId == null) {
-            repo.setPlanCardImages(
+            repo.coverage.setPlanCardImages(
                 planId = planId,
                 frontFileName = fileName.takeIf { front },
                 backFileName = fileName.takeIf { !front }
             )
         } else {
-            repo.setMembershipCardImages(
+            repo.coverage.setMembershipCardImages(
                 membershipId = membershipId,
                 frontFileName = fileName.takeIf { front },
                 backFileName = fileName.takeIf { !front }
@@ -206,9 +206,9 @@ class CoverageViewModel(
     fun clearCardImage(planId: String, membershipId: String?, front: Boolean, fromPlan: Boolean) =
         viewModelScope.launch {
             if (fromPlan || membershipId == null) {
-                repo.setPlanCardImages(planId = planId, clearFront = front, clearBack = !front)
+                repo.coverage.setPlanCardImages(planId = planId, clearFront = front, clearBack = !front)
             } else {
-                repo.setMembershipCardImages(
+                repo.coverage.setMembershipCardImages(
                     membershipId = membershipId,
                     clearFront = front,
                     clearBack = !front
@@ -242,7 +242,7 @@ class CoverageViewModel(
 
     fun addProvider(draft: ProviderDraft, role: CareRole) = viewModelScope.launch {
         val profile = selected.value ?: return@launch
-        repo.addProvider(
+        repo.careTeam.addProvider(
             name = draft.name,
             npi = draft.npi,
             specialty = draft.specialty,
@@ -256,20 +256,20 @@ class CoverageViewModel(
         )
     }
 
-    fun updateProvider(provider: Provider) = viewModelScope.launch { repo.updateProvider(provider) }
+    fun updateProvider(provider: Provider) = viewModelScope.launch { repo.careTeam.updateProvider(provider) }
 
-    fun deleteProvider(providerId: String) = viewModelScope.launch { repo.deleteProvider(providerId) }
+    fun deleteProvider(providerId: String) = viewModelScope.launch { repo.careTeam.deleteProvider(providerId) }
 
     /** Put a doctor the household already sees on this person's team too. */
     fun linkExistingProvider(providerId: String, role: CareRole) = viewModelScope.launch {
         val profile = selected.value ?: return@launch
-        repo.linkProvider(profile.id, providerId, role)
+        repo.careTeam.linkProvider(profile.id, providerId, role)
     }
 
     fun setRole(link: ProviderLink, role: CareRole) =
-        viewModelScope.launch { repo.updateProviderLink(link.copy(role = role)) }
+        viewModelScope.launch { repo.careTeam.updateProviderLink(link.copy(role = role)) }
 
-    fun unlink(linkId: String) = viewModelScope.launch { repo.unlinkProvider(linkId) }
+    fun unlink(linkId: String) = viewModelScope.launch { repo.careTeam.unlinkProvider(linkId) }
 
     // --- the directory ------------------------------------------------------------------------------
 
@@ -291,7 +291,7 @@ class CoverageViewModel(
         }
         _directoryState.value = _directoryState.value.copy(probingPlanId = plan.id, message = null)
         val probe = probeOnce(plan)
-        repo.recordDirectoryProbe(plan.id, probe)
+        repo.coverage.recordDirectoryProbe(plan.id, probe)
         _directoryState.value = _directoryState.value.copy(probingPlanId = null, message = describe(probe))
     }
 
@@ -336,11 +336,11 @@ class CoverageViewModel(
         )
         try {
             val probe = probeOnce(plan)
-            repo.recordDirectoryProbe(plan.id, probe)
+            repo.coverage.recordDirectoryProbe(plan.id, probe)
 
             val base = probe.baseUrl
             if (!probe.searchable || base == null) {
-                repo.recordNetworkCheck(
+                repo.networkChecks.recordNetworkCheck(
                     providerId = provider.id,
                     planId = plan.id,
                     outcome = CheckOutcome.UNAVAILABLE,
@@ -355,7 +355,7 @@ class CoverageViewModel(
             val result = runCatching { directory.findPractitioner(base, provider.name, provider.npi) }
                 .rethrowCancellation()
                 .getOrElse { failure ->
-                    repo.recordNetworkCheck(
+                    repo.networkChecks.recordNetworkCheck(
                         providerId = provider.id,
                         planId = plan.id,
                         outcome = CheckOutcome.UNAVAILABLE,
@@ -369,7 +369,7 @@ class CoverageViewModel(
 
             // A server that complained instead of searching has told us nothing about the doctor.
             result.message?.let { complaint ->
-                repo.recordNetworkCheck(
+                repo.networkChecks.recordNetworkCheck(
                     providerId = provider.id,
                     planId = plan.id,
                     outcome = CheckOutcome.UNAVAILABLE,
@@ -387,7 +387,7 @@ class CoverageViewModel(
                 results = result.practitioners,
                 byIdentifier = result.byIdentifier
             )
-            repo.recordNetworkCheck(
+            repo.networkChecks.recordNetworkCheck(
                 providerId = provider.id,
                 planId = plan.id,
                 outcome = verdict.outcome,
@@ -427,7 +427,7 @@ class CoverageViewModel(
         inNetwork: Boolean,
         note: String?
     ) = viewModelScope.launch {
-        repo.recordNetworkCheck(
+        repo.networkChecks.recordNetworkCheck(
             providerId = providerId,
             planId = plan?.id,
             outcome = if (inNetwork) CheckOutcome.CONFIRMED_BY_HAND else CheckOutcome.DECLINED_BY_HAND,
@@ -436,7 +436,7 @@ class CoverageViewModel(
         )
     }
 
-    fun deleteCheck(checkId: String) = viewModelScope.launch { repo.deleteNetworkCheck(checkId) }
+    fun deleteCheck(checkId: String) = viewModelScope.launch { repo.networkChecks.deleteNetworkCheck(checkId) }
 
     private fun describe(probe: DirectoryProbe): String = when {
         probe.searchable ->

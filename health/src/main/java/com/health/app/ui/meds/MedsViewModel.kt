@@ -65,23 +65,23 @@ class MedsViewModel(
 ) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The household's stock — not scoped to the selected person, because a bottle isn't. */
     val cabinet: StateFlow<List<CabinetEntry>> =
-        repo.observeCabinet().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.cabinet.observeCabinet().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val statuses: StateFlow<List<MedicationStatus>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeMedicationStatuses(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.medications.observeMedicationStatuses(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val doses: StateFlow<List<Dose>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeDoses(profile.id) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.doses.observeDoses(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _search = MutableStateFlow(DrugSearchState())
@@ -93,7 +93,7 @@ class MedsViewModel(
     private val undoable = UndoOffers()
     val undoOffers: SharedFlow<UndoOffer> = undoable.offers
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     // --- the allergy check ------------------------------------------------------------------------
 
@@ -115,7 +115,7 @@ class MedsViewModel(
         val profile = selected.value
         _allergyWarnings.value =
             if (profile == null || name.isBlank()) emptyList()
-            else repo.allergyWarnings(profile.id, name, rxcui)
+            else repo.standingRecord.allergyWarnings(profile.id, name, rxcui)
     }
 
     /** Dropped when the form closes, so the next one doesn't open showing the last one's answer. */
@@ -171,7 +171,7 @@ class MedsViewModel(
     fun pickCandidate(candidate: DrugCandidate, refresh: Boolean = false) {
         viewModelScope.launch {
             _search.value = _search.value.copy(fetchingRxcui = candidate.rxcui, error = null)
-            val cached = if (refresh) null else repo.getMonograph(candidate.rxcui)
+            val cached = if (refresh) null else repo.cabinet.getMonograph(candidate.rxcui)
             if (cached != null) {
                 _search.value = _search.value.copy(fetchingRxcui = null, picked = cached)
                 return@launch
@@ -180,7 +180,7 @@ class MedsViewModel(
                 .rethrowCancellation()
                 .fold(
                     onSuccess = { monograph ->
-                        repo.saveMonograph(monograph)
+                        repo.cabinet.saveMonograph(monograph)
                         _search.value = _search.value.copy(fetchingRxcui = null, picked = monograph)
                     },
                     onFailure = { failure ->
@@ -201,7 +201,7 @@ class MedsViewModel(
                 .rethrowCancellation()
                 .fold(
                     onSuccess = { monograph ->
-                        repo.saveMonograph(monograph)
+                        repo.cabinet.saveMonograph(monograph)
                         _search.value = _search.value.copy(fetchingRxcui = null)
                     },
                     onFailure = { failure ->
@@ -247,7 +247,7 @@ class MedsViewModel(
         lowStockThreshold: Double?,
         alsoForProfile: MedicationDraft?
     ) = viewModelScope.launch {
-        val itemId = repo.addCabinetItem(
+        val itemId = repo.cabinet.addCabinetItem(
             name = name,
             rxcui = rxcui,
             brandName = brandName,
@@ -262,15 +262,15 @@ class MedsViewModel(
         alsoForProfile?.let { draft -> saveMedication(draft, rxcui = rxcui, cabinetItemId = itemId) }
     }
 
-    fun updateCabinetItem(item: CabinetItem) = viewModelScope.launch { repo.updateCabinetItem(item) }
+    fun updateCabinetItem(item: CabinetItem) = viewModelScope.launch { repo.cabinet.updateCabinetItem(item) }
 
     fun restock(itemId: String, quantity: Double?, expiryDate: String?) =
-        viewModelScope.launch { repo.restockCabinetItem(itemId, quantity, expiryDate) }
+        viewModelScope.launch { repo.cabinet.restockCabinetItem(itemId, quantity, expiryDate) }
 
-    fun deleteCabinetItem(itemId: String) = viewModelScope.launch { repo.deleteCabinetItem(itemId) }
+    fun deleteCabinetItem(itemId: String) = viewModelScope.launch { repo.cabinet.deleteCabinetItem(itemId) }
 
     fun linkToCabinet(medicationId: String, cabinetItemId: String?) =
-        viewModelScope.launch { repo.linkMedicationToCabinet(medicationId, cabinetItemId) }
+        viewModelScope.launch { repo.cabinet.linkMedicationToCabinet(medicationId, cabinetItemId) }
 
     // --- one person's medicines -------------------------------------------------------------------
 
@@ -280,7 +280,7 @@ class MedsViewModel(
 
     private suspend fun saveMedication(draft: MedicationDraft, rxcui: String?, cabinetItemId: String?) {
         val profile = selected.value ?: return
-        repo.addMedication(
+        repo.medications.addMedication(
             profileId = profile.id,
             name = draft.name,
             strength = draft.strength,
@@ -298,7 +298,7 @@ class MedsViewModel(
         )
     }
 
-    fun give(medication: Medication) = viewModelScope.launch { repo.logDoseOf(medication) }
+    fun give(medication: Medication) = viewModelScope.launch { repo.doses.logDoseOf(medication) }
 
     fun logDose(
         medication: Medication?,
@@ -309,21 +309,21 @@ class MedsViewModel(
         at: Long
     ) = viewModelScope.launch {
         val profile = selected.value ?: return@launch
-        repo.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
+        repo.doses.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
     }
 
     fun setActive(medication: Medication, active: Boolean) = viewModelScope.launch {
-        repo.updateMedication(medication.copy(active = active))
+        repo.medications.updateMedication(medication.copy(active = active))
     }
 
     fun setReminder(medication: Medication, mode: ReminderMode, times: List<LocalTime>) =
-        viewModelScope.launch { repo.setMedicationReminder(medication.id, mode, times) }
+        viewModelScope.launch { repo.medications.setMedicationReminder(medication.id, mode, times) }
 
     /**
      * Stop tracking a medicine, and offer it back — the doses given from it are kept either way.
      */
     fun deleteMedication(medication: Medication) = viewModelScope.launch {
-        undoable.offer("${medication.name} removed", repo.deleteMedication(medication.id))
+        undoable.offer("${medication.name} removed", repo.medications.deleteMedication(medication.id))
     }
 
     /**
@@ -333,7 +333,7 @@ class MedsViewModel(
      * so a household that changes its mind is not left counting tablets by hand.
      */
     fun deleteDose(dose: Dose) = viewModelScope.launch {
-        undoable.offer("Dose of ${dose.medicationName} deleted", repo.deleteDose(dose.id))
+        undoable.offer("Dose of ${dose.medicationName} deleted", repo.doses.deleteDose(dose.id))
     }
 
     fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }

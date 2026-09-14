@@ -52,7 +52,7 @@ class MedicationReminderWorker(
         val targetMillis = inputData.getLong(KEY_TARGET_MILLIS, 0L)
 
         val repository = HealthApp.get(context).repository
-        val medication = repository.observeMedications(
+        val medication = repository.medications.observeMedications(
             inputData.getString(KEY_PROFILE_ID) ?: return Result.success()
         ).first().firstOrNull { it.id == medicationId }
 
@@ -60,10 +60,10 @@ class MedicationReminderWorker(
         // mean the same thing: say nothing, and don't queue another.
         if (medication == null || !medication.reminderArmed) return Result.success()
 
-        val status = repository.observeMedicationStatuses(medication.profileId).first()
+        val status = repository.medications.observeMedicationStatuses(medication.profileId).first()
             .firstOrNull { it.medication.id == medicationId }
 
-        val personName = repository.observeProfiles().first()
+        val personName = repository.profiles.observeProfiles().first()
             .firstOrNull { it.id == medication.profileId }
             ?.name
 
@@ -222,9 +222,9 @@ object MedicationReminderScheduler {
     suspend fun rescheduleAll(context: Context) {
         WorkManager.getInstance(context).cancelAllWorkByTag(TAG)
         val repository = HealthApp.get(context).repository
-        val profiles = repository.observeProfiles().first()
+        val profiles = repository.profiles.observeProfiles().first()
         for (profile in profiles) {
-            val statuses = repository.observeMedicationStatuses(profile.id).first()
+            val statuses = repository.medications.observeMedicationStatuses(profile.id).first()
             for (status in statuses) {
                 if (status.medication.reminderArmed) schedule(context, status.medication, status)
             }
@@ -240,9 +240,9 @@ object MedicationReminderScheduler {
      */
     suspend fun reschedule(context: Context, medicationId: String) {
         val repository = HealthApp.get(context).repository
-        val profiles = repository.observeProfiles().first()
+        val profiles = repository.profiles.observeProfiles().first()
         for (profile in profiles) {
-            val status = repository.observeMedicationStatuses(profile.id).first()
+            val status = repository.medications.observeMedicationStatuses(profile.id).first()
                 .firstOrNull { it.medication.id == medicationId }
                 ?: continue
             schedule(context, status.medication, status)
