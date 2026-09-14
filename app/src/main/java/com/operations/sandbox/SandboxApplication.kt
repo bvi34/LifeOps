@@ -3,7 +3,6 @@ package com.operations.sandbox
 import android.app.Application
 import com.advisor.app.AdvisorApp
 import com.citation.app.CitationApplication
-import com.citation.app.data.sync
 import com.finance.app.FinanceApp
 import com.health.app.HealthApp
 import com.lifeops.app.LifeOpsApp

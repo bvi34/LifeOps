@@ -1,10 +1,10 @@
 package com.citation.app.audio
 
 import android.content.Context
-import com.citation.app.CitationApplication
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import com.citation.app.CitationApplication
 import com.citation.core.model.Book
 import com.citation.core.reader.ReadingProgress
 import com.citation.core.speech.CustomVoice
@@ -27,6 +27,7 @@ import com.citation.core.speech.VoiceLibrary
 import com.citation.core.speech.VoiceModel
 import com.citation.core.speech.VoiceOrigin
 import com.citation.core.speech.VoiceSelection
+import java.io.InputStream
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -38,7 +39,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.InputStream
 
 /**
  * The narrator: one book, one voice, one position, held for as long as the reader is listening.
