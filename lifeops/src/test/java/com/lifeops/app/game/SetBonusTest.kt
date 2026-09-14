@@ -10,12 +10,15 @@ import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunStatus
+import com.lifeops.app.game.run.chooseOverflow
+import com.lifeops.app.game.run.chooseSetBonus
+import com.lifeops.app.game.run.skipStore
+import kotlin.math.cos
+import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.cos
-import kotlin.math.sin
 
 /** The per-set boon/bane draft (DESIGN.md §7) and the overflow micro-pick (§6). */
 class SetBonusTest {

@@ -22,6 +22,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,9 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Remove
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -67,13 +67,18 @@ import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunSnapshot
 import com.lifeops.app.game.run.RunStatus
+import com.lifeops.app.game.run.chooseOverflow
+import com.lifeops.app.game.run.chooseSetBonus
+import com.lifeops.app.game.run.reload
+import com.lifeops.app.game.run.revive
+import com.lifeops.app.game.run.skipStore
 import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
-import kotlinx.coroutines.isActive
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import kotlinx.coroutines.isActive
 
 @Composable
 fun RunScreen(viewModel: RunViewModel, onBack: () -> Unit) {

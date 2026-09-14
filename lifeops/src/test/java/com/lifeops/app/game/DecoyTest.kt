@@ -11,6 +11,9 @@ import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunStatus
 import com.lifeops.app.game.run.Structure
+import com.lifeops.app.game.run.applyStorePurchase
+import com.lifeops.app.game.run.chooseOverflow
+import com.lifeops.app.game.run.chooseSetBonus
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
