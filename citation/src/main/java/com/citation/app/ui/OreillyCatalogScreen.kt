@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.OreillyCatalog
 import com.citation.core.oreilly.EzproxyLogin
 import com.citation.core.oreilly.OreillyLink
 
@@ -49,7 +50,7 @@ import com.citation.core.oreilly.OreillyLink
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun OreillyCatalogScreen(
-    catalog: CitationRepository.OreillyCatalog,
+    catalog: OreillyCatalog,
     onOpenBook: (bookId: String, title: String) -> Unit,
     onBack: () -> Unit
 ) {

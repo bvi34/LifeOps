@@ -63,7 +63,7 @@ import com.operations.suite.ui.fields.SuiteTextField
 class AssetsViewModel(private val repo: MaintenanceRepository) : ViewModel() {
 
     val cards: StateFlow<List<AssetCard>> =
-        repo.observeAssetCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.board.observeAssetCards().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun addAsset(
         name: String,
@@ -73,7 +73,7 @@ class AssetsViewModel(private val repo: MaintenanceRepository) : ViewModel() {
         year: Int?,
         attributes: Map<String, String>,
         onAdded: (String) -> Unit
-    ) = viewModelScope.launch { onAdded(repo.addAsset(name, kind, make, model, year, attributes)) }
+    ) = viewModelScope.launch { onAdded(repo.assets.addAsset(name, kind, make, model, year, attributes)) }
 
     class Factory(private val repo: MaintenanceRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

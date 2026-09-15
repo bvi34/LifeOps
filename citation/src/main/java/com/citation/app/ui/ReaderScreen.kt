@@ -3,8 +3,8 @@ package com.citation.app.ui
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -13,8 +13,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -35,12 +35,14 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -73,13 +75,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -87,48 +89,52 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalTextToolbar
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.style.Hyphens
-import androidx.compose.ui.text.style.LineBreak
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.citation.app.ui.reader.ChapterRender
-import com.citation.app.ui.reader.ReaderTypography
-import com.citation.app.ui.reader.ReaderWindowEffects
-import com.citation.app.ui.reader.rememberReaderFontFamily
-import com.citation.app.ui.reader.RenderedChapter
-import com.citation.app.ui.reader.rememberChapterImages
-import com.citation.core.reader.PageTurn
-import com.citation.core.reader.Paginator
-import com.citation.core.reader.Lookup
-import com.citation.core.note.HighlightColor
-import com.citation.core.reader.ReaderColors
-import com.citation.core.reader.ReaderPalette
-import com.citation.core.reader.ReaderSettings
-import com.citation.core.reader.VolumeKeys
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.data.bookAsset
+import com.citation.app.data.captureSynthesis
+import com.citation.app.data.deleteBookmark
+import com.citation.app.data.setBookmarkLabel
+import com.citation.app.data.setNoteHighlight
+import com.citation.app.data.setNoteTags
+import com.citation.app.ui.reader.ChapterRender
+import com.citation.app.ui.reader.ReaderTypography
+import com.citation.app.ui.reader.ReaderWindowEffects
+import com.citation.app.ui.reader.RenderedChapter
+import com.citation.app.ui.reader.rememberChapterImages
+import com.citation.app.ui.reader.rememberReaderFontFamily
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
+import com.citation.core.model.Book
+import com.citation.core.model.SourceType
+import com.citation.core.model.TocEntry
+import com.citation.core.note.HighlightColor
+import com.citation.core.note.Note
+import com.citation.core.reader.Lookup
+import com.citation.core.reader.PageTurn
+import com.citation.core.reader.Paginator
+import com.citation.core.reader.ReaderColors
+import com.citation.core.reader.ReaderPalette
+import com.citation.core.reader.ReaderSettings
+import com.citation.core.reader.VolumeKeys
 import com.citation.core.speech.NarrationState
 import com.citation.core.speech.NarrationStatus
 import com.citation.core.speech.SleepTimer
-import com.citation.core.model.Book
-import com.citation.core.model.TocEntry
-import com.citation.core.model.SourceType
-import com.citation.core.note.Note
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
@@ -503,758 +509,8 @@ private fun FlowingReader(vm: ReaderViewModel) {
     }
 }
 
-/**
- * One chapter's flowing text, with your highlights drawn back into it. Two reading modes share this
- * entry point: **paged** (the default — the chapter is split into screen-pages you turn one at a time,
- * so page turns work *within* a chapter, not only at its boundaries) and **scroll** (one continuous
- * column). Both resolve the same highlights and feed the same capture/hint machinery; only the body
- * differs, so a note lit up in one mode lights up in the other.
- */
-@Composable
-private fun ChapterPage(
-    vm: ReaderViewModel,
-    book: Book,
-    ord: Int,
-    highlights: List<Note>,
-    /** Canonical ranges of the live search's matches in this chapter, lit while a search is open. */
-    searchRanges: List<IntRange>,
-    settings: ReaderSettings,
-    family: FontFamily,
-    /** Every colour the page is drawn in — the page itself included, since a mark is derived against it. */
-    colours: ReaderColors,
-    turnThreshold: Float,
-    onOpenNote: (Note) -> Unit,
-    onProvideHint: (() -> Int) -> Unit
-) {
-    val foreground = Color(colours.text)
-    val background = Color(colours.page)
-    val chapter = book.chapterAt(ord)
-    val text = chapter?.text ?: "(chapter unavailable)"
-    val title = chapter?.title ?: ""
-    val lastIndex = book.chapters.lastIndex
-    // A highlight is not drawn on a fixed page, so it cannot be a fixed colour: a translucent tint
-    // that reads as a highlighter on white goes muddy on a night page and near-invisible on one the
-    // reader tinted themselves. Each colour is resolved against the page it will actually sit on and
-    // against the text that sits on top of it — see ReaderPalette.highlight.
-    val shadeOf = remember(background, foreground) {
-        { color: HighlightColor ->
-            Color(ReaderPalette.highlight(color.tint, background.toArgb(), foreground.toArgb()))
-        }
-    }
-    // A different colour from a highlight on purpose: a search match is transient and not yours.
-    val searchColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.40f)
-    val bookKey = book.key?.toString()
-
-    // Size illustrations to the text column. sp rather than dp because the placeholder the renderer
-    // reserves is measured in text units, so a plate scales with the reader's font setting like
-    // everything else on the page.
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val columnWidthDp = (configuration.screenWidthDp - settings.marginDp * 2).coerceAtLeast(80f)
-    val imageWidthPx = with(density) { columnWidthDp.dp.toPx() }.toInt()
-    val imageWidthSp = columnWidthDp / density.fontScale
-    val imageHeightSp = (configuration.screenHeightDp * 0.55f) / density.fontScale
-
-    val blocks = chapter?.blocks.orEmpty()
-    val images = rememberChapterImages(blocks, imageWidthPx) { src ->
-        bookKey?.let { vm.bookAsset(it, src) }
-    }
-
-    // The drawable form of the chapter, and the map back to the canonical offsets everything is
-    // stored and anchored against. Rebuilt only when the text, its structure, the typography or the
-    // loaded plates change — never on a page turn.
-    val rendered = remember(text, blocks, settings, family, colours, images, imageWidthSp) {
-        ChapterRender.build(
-            text = text,
-            blocks = blocks,
-            typography = ReaderTypography(
-                fontSize = settings.fontSize,
-                lineSpacing = settings.lineSpacing,
-                family = family,
-                foreground = foreground,
-                heading = Color(colours.heading),
-                accent = Color(colours.link),
-                secondary = Color(colours.secondary),
-                letterSpacing = settings.letterSpacing,
-                justify = settings.justify,
-                hyphenate = settings.hyphenate,
-                paragraphs = settings.paragraphs
-            ),
-            images = images,
-            maxImageWidthSp = imageWidthSp,
-            maxImageHeightSp = imageHeightSp
-        )
-    }
-
-    // Resolve each passage-note's anchor into a live range in *this* chapter (quote + fuzzy match, so a
-    // re-fetched or edited chapter still lights up the right words). A deleted passage simply doesn't.
-    // Anchors are canonical offsets; the ranges are converted once into the rendered string's
-    // coordinates, which is what the highlight and the tap target both need.
-    val ranges = remember(rendered, highlights, ord) {
-        highlights.mapNotNull { note ->
-            val anchor = note.references.firstOrNull()?.anchor as? TextAnchor.Flowing ?: return@mapNotNull null
-            if (anchor.chapterOrdinal != ord) return@mapNotNull null
-            FuzzyAnchor.resolve(anchor, text).matchedRange
-                ?.let { rendered.displayRange(it) }
-                ?.takeIf { !it.isEmpty() }
-                ?.let { note to it }
-        }
-    }
-    // Search matches are canonical ranges like an anchor's, so they convert the same way.
-    val searchDisplayRanges = remember(rendered, searchRanges) {
-        searchRanges.map { rendered.displayRange(it) }.filter { !it.isEmpty() }
-    }
-    val annotated = remember(rendered, ranges, searchDisplayRanges, shadeOf, searchColor) {
-        if (ranges.isEmpty() && searchDisplayRanges.isEmpty()) {
-            rendered.display
-        } else {
-            buildAnnotatedString {
-                append(rendered.display)
-                ranges.forEach { (note, range) -> shade(range, shadeOf(note.highlightColor)) }
-                searchDisplayRanges.forEach { range -> shade(range, searchColor) }
-            }
-        }
-    }
-
-    if (settings.paged) {
-        PagedChapterBody(
-            vm, ord, lastIndex, rendered, annotated, title, ranges,
-            settings, family, foreground, turnThreshold, onOpenNote, onProvideHint
-        )
-    } else {
-        ScrollChapterBody(
-            vm, ord, lastIndex, title, rendered, annotated, ranges,
-            settings, family, foreground, turnThreshold, onOpenNote, onProvideHint
-        )
-    }
-}
-
-/**
- * The scrolling reader body: one continuous column, a horizontal swipe (or edge tap) turning to the
- * next/previous *chapter*. Turning back enters the previous chapter at its **end**, so reading
- * backwards is continuous rather than skipping over the chapter you just turned into. Scroll position
- * is restored on the first paint of a reopened book and saved as you read.
- */
-@Composable
-private fun ScrollChapterBody(
-    vm: ReaderViewModel,
-    ord: Int,
-    lastIndex: Int,
-    title: String,
-    rendered: RenderedChapter,
-    annotated: androidx.compose.ui.text.AnnotatedString,
-    ranges: List<Pair<Note, IntRange>>,
-    settings: ReaderSettings,
-    family: FontFamily,
-    foreground: Color,
-    turnThreshold: Float,
-    onOpenNote: (Note) -> Unit,
-    onProvideHint: (() -> Int) -> Unit
-) {
-    val scroll = rememberScrollState()
-    var layout by remember(ord) { mutableStateOf<TextLayoutResult?>(null) }
-
-    // Restore the saved scroll once (after the content is measured so maxValue is known), then persist
-    // scroll as you read, debounced so a flick doesn't hammer the DB.
-    LaunchedEffect(ord) {
-        // A place the *voice* reached is a canonical character offset, so it is resolved through the
-        // layout — find the line holding that character and scroll to its top — rather than being
-        // handed to scrollTo as though it were a pixel count, which is what the reading position on
-        // the older channel below actually is in this mode.
-        val canonical = vm.consumePendingCanonical(ord)
-        val restore = vm.consumePendingScroll(ord)
-        // Turned back into from the chapter after this one: continue reading backwards from its end
-        // rather than being thrown to its first line, which is nowhere near where the turn came from.
-        val landAtEnd = vm.consumePendingEnd(ord)
-        if (canonical > 0) {
-            withTimeoutOrNull(2000) { snapshotFlow { layout to scroll.maxValue }.first { it.first != null && it.second > 0 } }
-            layout?.let { l ->
-                val display = rendered.displayOf(canonical).coerceIn(0, l.layoutInput.text.length)
-                val top = l.getLineTop(l.getLineForOffset(display)).toInt()
-                scroll.scrollTo(top.coerceIn(0, scroll.maxValue))
-            }
-        } else if (restore > 0 || landAtEnd) {
-            withTimeoutOrNull(2000) { snapshotFlow { scroll.maxValue }.first { it > 0 } }
-            if (scroll.maxValue > 0) {
-                scroll.scrollTo(if (landAtEnd) scroll.maxValue else restore.coerceAtMost(scroll.maxValue))
-            }
-        }
-        snapshotFlow { scroll.value }.collectLatest { v ->
-            delay(400)
-            vm.savePosition(ord, v)
-            // Progress and pace are measured in canonical characters, so both reading modes report
-            // the same thing — the numbers must not jump when you switch between them.
-            layout?.let { l ->
-                vm.onPositionChanged(
-                    ord,
-                    rendered.canonicalOf(l.getLineStart(l.getLineForVerticalPosition(v.toFloat())))
-                )
-            }
-        }
-    }
-    // Publish a viewport-hint provider for capture disambiguation (reads current scroll/layout lazily).
-    LaunchedEffect(ord) {
-        onProvideHint {
-            val l = layout
-            // The disambiguator anchors against canonical text, so the visible line's display
-            // offset is converted before it leaves here.
-            if (l != null) {
-                rendered.canonicalOf(l.getLineStart(l.getLineForVerticalPosition(scroll.value.toFloat())))
-            } else {
-                0
-            }
-        }
-    }
-
-    SelectionContainer(
-        Modifier
-            .fillMaxSize()
-            .pointerInput(ord, lastIndex) {
-                var total = 0f
-                detectHorizontalDragGestures(
-                    onDragStart = { total = 0f },
-                    onDragCancel = { total = 0f },
-                    onDragEnd = {
-                        when {
-                            total <= -turnThreshold && ord < lastIndex -> vm.goToChapter(ord + 1)
-                            total >= turnThreshold && ord > 0 -> vm.goToChapterEnd(ord - 1)
-                        }
-                    }
-                ) { change, dragAmount ->
-                    total += dragAmount
-                    change.consume()
-                }
-            }
-    ) {
-        Column(Modifier.verticalScroll(scroll).padding(horizontal = settings.marginDp.dp, vertical = 20.dp)) {
-            Text(
-                text = title,
-                fontSize = (settings.fontSize + 6).sp,
-                fontFamily = family,
-                color = foreground
-            )
-            Text(
-                text = annotated,
-                style = readerTextStyle(settings, family, foreground),
-                inlineContent = rendered.inlineContent,
-                onTextLayout = { layout = it },
-                modifier = Modifier
-                    .padding(top = 12.dp)
-                    .fillMaxWidth()
-                    .pointerInput(ord, ranges, lastIndex) {
-                        detectTapGestures { pos ->
-                            val l = layout ?: return@detectTapGestures
-                            val offset = l.getOffsetForPosition(pos)
-                            val hit = ranges.firstOrNull { offset in it.second }
-                            if (hit != null) {
-                                onOpenNote(hit.first)
-                            } else {
-                                // Edge tap-zones page too, for readers who never swipe.
-                                val w = size.width.toFloat()
-                                when {
-                                    pos.x < w * 0.22f && ord > 0 -> vm.goToChapterEnd(ord - 1)
-                                    pos.x > w * 0.78f && ord < lastIndex -> vm.goToChapter(ord + 1)
-                                }
-                            }
-                        }
-                    }
-            )
-        }
-    }
-}
-
-/**
- * The **paged** reader body. The chapter text is measured against the live viewport and typography and
- * split into screen-pages ([Paginator]); you turn them one at a time with a swipe or an edge tap, and
- * only the last/first page of a chapter crosses into the next/previous chapter — a backward crossing
- * landing on the previous chapter's *last* page, so a page back is always one page ([PageTurn]).
- * Turns animate like the chapter-level ones so a within-chapter turn and a chapter turn feel the same.
- *
- * Position is persisted as the current page's start **character offset** (font-size independent), so a
- * reopened book lands on the same page. That offset shares the same stored slot as scroll mode's pixel
- * offset; since it's only read once at open, a book read consistently in one mode always resumes true.
- */
-@Composable
-private fun PagedChapterBody(
-    vm: ReaderViewModel,
-    ord: Int,
-    lastIndex: Int,
-    rendered: RenderedChapter,
-    annotated: androidx.compose.ui.text.AnnotatedString,
-    title: String,
-    ranges: List<Pair<Note, IntRange>>,
-    settings: ReaderSettings,
-    family: FontFamily,
-    foreground: Color,
-    turnThreshold: Float,
-    onOpenNote: (Note) -> Unit,
-    onProvideHint: (() -> Int) -> Unit
-) {
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    val textStyle = readerTextStyle(settings, family, foreground)
-    val titleStyle = TextStyle(fontSize = (settings.fontSize + 6).sp, fontFamily = family, color = foreground)
-
-    BoxWithConstraints(
-        Modifier.fillMaxSize().padding(horizontal = settings.marginDp.dp, vertical = 20.dp)
-    ) {
-        val widthPx = constraints.maxWidth
-        val heightPx = constraints.maxHeight
-        val titleGapPx = with(density) { 12.dp.toPx() }
-
-        // Measure the whole chapter once for the current width/typography, then break it into pages.
-        // Page 0 gives up room for the chapter title. Recomputed only when text, typography, or the
-        // viewport changes — a page turn is a cheap index change, not a re-measure.
-        val pageStarts = remember(rendered, settings, family, widthPx, heightPx) {
-            if (widthPx <= 0 || heightPx <= 0) {
-                listOf(0)
-            } else {
-                // Measured with the placeholders the renderer reserved, so a page that holds a
-                // plate accounts for its height instead of overflowing by exactly that much.
-                val layout = measurer.measure(
-                    rendered.display,
-                    style = textStyle,
-                    constraints = Constraints(maxWidth = widthPx),
-                    placeholders = rendered.placeholders
-                )
-                val titleBlock = if (title.isBlank()) 0f else {
-                    measurer.measure(
-                        androidx.compose.ui.text.AnnotatedString(title),
-                        style = titleStyle,
-                        constraints = Constraints(maxWidth = widthPx)
-                    ).size.height.toFloat() + titleGapPx
-                }
-                Paginator.pageStarts(
-                    lineCount = layout.lineCount,
-                    lineTop = { layout.getLineTop(it) },
-                    lineBottom = { layout.getLineBottom(it) },
-                    lineStartChar = { layout.getLineStart(it) },
-                    firstCapacityPx = heightPx - titleBlock,
-                    capacityPx = heightPx.toFloat()
-                )
-            }
-        }
-
-        // Entering this chapter *backwards* (a page back off the next chapter's first page) opens it
-        // at its end. Read during composition rather than from an effect so the last page is the
-        // first thing drawn — landing on page 0 and then animating to the end would show the reader
-        // a page they didn't ask for. Int.MAX_VALUE means "the end": the clamp below resolves it
-        // once the chapter has been measured, so it survives the first frame, when there is exactly
-        // one known page, and re-resolves if typography changes the page count.
-        val landAtEnd = remember(ord) { vm.consumePendingEnd(ord) }
-
-        // Page index survives font/margin changes (re-clamped below); it only resets per chapter.
-        var page by rememberSaveable(ord) { mutableStateOf(if (landAtEnd) Int.MAX_VALUE else 0) }
-        val safePage = page.coerceIn(0, pageStarts.lastIndex)
-        var turnDir by remember { mutableStateOf(1) }
-        val pageStartsState = rememberUpdatedState(pageStarts)
-
-        // Both turns read the live page and page breaks rather than the values captured when the
-        // gesture was wired up: a stale index here would read as a page back skipping the chapter.
-        fun turn(move: PageTurn.Move) {
-            when (move) {
-                is PageTurn.Move.Page -> page = move.page
-                is PageTurn.Move.Chapter -> when (move.landing) {
-                    PageTurn.Landing.FIRST_PAGE -> vm.goToChapter(move.chapter)
-                    PageTurn.Landing.LAST_PAGE -> vm.goToChapterEnd(move.chapter)
-                }
-                PageTurn.Move.Edge -> {}
-            }
-        }
-        fun turnNext() {
-            turnDir = 1
-            val starts = pageStartsState.value
-            turn(PageTurn.next(page.coerceIn(0, starts.lastIndex), starts.lastIndex, ord, lastIndex))
-        }
-        fun turnPrev() {
-            turnDir = -1
-            val starts = pageStartsState.value
-            turn(PageTurn.previous(page.coerceIn(0, starts.lastIndex), starts.lastIndex, ord, lastIndex))
-        }
-
-        // A volume key press is handled where the page boundaries are known — the paginator's page
-        // starts live in this composition, so the ViewModel records the intent and the surface that
-        // can act on it picks it up.
-        val volumeTurn by vm.pageTurns.collectAsStateWithLifecycle()
-        LaunchedEffect(volumeTurn) {
-            when (vm.consumePageTurn()) {
-                VolumeKeys.Action.NEXT_PAGE -> turnNext()
-                VolumeKeys.Action.PREVIOUS_PAGE -> turnPrev()
-                else -> {}
-            }
-        }
-
-        // Restore the saved page once the pages are known: find the page whose slice holds the saved
-        // character offset. Consumed once, so a turn doesn't snap back.
-        var restoreOffset by remember(ord) { mutableStateOf(-1) }
-        // Both channels are canonical in this mode, so either one restores the same way. The voice's
-        // is taken first: it is the more recent place by construction when both are staged.
-        LaunchedEffect(ord) {
-            restoreOffset = vm.consumePendingCanonical(ord).takeIf { it >= 0 } ?: vm.consumePendingScroll(ord)
-        }
-        LaunchedEffect(pageStarts, restoreOffset) {
-            if (restoreOffset > 0 && pageStarts.size > 1) {
-                // The stored offset is canonical, so it is translated into the rendered string's
-                // coordinates before looking for the page that holds it. That is what lets a
-                // position saved before this book had any structure still land on the right page.
-                val target = rendered.displayOf(restoreOffset)
-                page = pageStarts.indexOfLast { it <= target }.coerceAtLeast(0)
-                restoreOffset = 0
-            }
-        }
-        // Persist the page's start as a *canonical* offset — font-size independent, and independent
-        // of whether the chapter was rendered with structure at all.
-        LaunchedEffect(safePage, pageStarts) {
-            val canonical = rendered.canonicalOf(pageStarts.getOrElse(safePage) { 0 })
-            vm.onPositionChanged(ord, canonical)
-            delay(400)
-            vm.savePosition(ord, canonical)
-        }
-        // Capture disambiguation hint = where the current page starts, in canonical text.
-        LaunchedEffect(ord) {
-            onProvideHint {
-                val starts = pageStartsState.value
-                rendered.canonicalOf(starts.getOrElse(page.coerceIn(0, starts.lastIndex)) { 0 })
-            }
-        }
-
-        AnimatedContent(
-            targetState = safePage,
-            modifier = Modifier.fillMaxSize(),
-            transitionSpec = {
-                val dir = turnDir
-                (slideInHorizontally(tween(220)) { w -> dir * w } + fadeIn(tween(220))) togetherWith
-                    (slideOutHorizontally(tween(220)) { w -> -dir * w } + fadeOut(tween(220)))
-            },
-            label = "page"
-        ) { p ->
-            val start = pageStarts.getOrElse(p) { 0 }
-            val end = pageStarts.getOrElse(p + 1) { rendered.length }
-            val slice = annotated.subSequence(start.coerceIn(0, annotated.length), end.coerceIn(start, annotated.length))
-            var layout by remember(p, pageStarts) { mutableStateOf<TextLayoutResult?>(null) }
-
-            SelectionContainer(
-                Modifier
-                    .fillMaxSize()
-                    .clipToBounds()
-                    .pointerInput(p, lastIndex, pageStarts.size) {
-                        var total = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { total = 0f },
-                            onDragCancel = { total = 0f },
-                            onDragEnd = {
-                                when {
-                                    total <= -turnThreshold -> turnNext()
-                                    total >= turnThreshold -> turnPrev()
-                                }
-                            }
-                        ) { change, dragAmount ->
-                            total += dragAmount
-                            change.consume()
-                        }
-                    }
-            ) {
-                Column(Modifier.fillMaxSize()) {
-                    if (p == 0 && title.isNotBlank()) {
-                        Text(text = title, style = titleStyle)
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    Text(
-                        text = slice,
-                        style = textStyle,
-                        inlineContent = rendered.inlineContent,
-                        onTextLayout = { layout = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .pointerInput(p, ranges, start) {
-                                detectTapGestures { pos ->
-                                    val l = layout ?: return@detectTapGestures
-                                    val local = l.getOffsetForPosition(pos)
-                                    val global = start + local
-                                    val hit = ranges.firstOrNull { global in it.second }
-                                    if (hit != null) {
-                                        onOpenNote(hit.first)
-                                    } else {
-                                        val w = size.width.toFloat()
-                                        when {
-                                            pos.x < w * 0.30f -> turnPrev()
-                                            pos.x > w * 0.70f -> turnNext()
-                                        }
-                                    }
-                                }
-                            }
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * The chapter bar, and the one control listening needs on the page.
- *
- * The play button lives here rather than behind the tools menu because that is where a reader
- * already looks to move through the book, and because reading and listening are the same act on the
- * same position — the voice starts at the **top of the page you are looking at**, not at some other
- * place the book remembers. (It does: [ReaderViewModel.readAloud] uses the live position, which both
- * reading modes keep pointed at the first line on screen.)
- */
-@Composable
-private fun ReaderBottomBar(
-    ordinal: Int,
-    count: Int,
-    percent: Int?,
-    fraction: Float?,
-    timeLeft: String?,
-    narration: NarrationState,
-    canReadAloud: Boolean,
-    onPlayPause: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit
-) {
-    Surface(tonalElevation = 3.dp) {
-        Column(Modifier.fillMaxWidth()) {
-            // The bar tracks the whole book by characters. Chapters are not the same size, so a bar
-            // that filled by chapter count would lie about how much is left in exactly the books
-            // where it matters most.
-            LinearProgressIndicator(
-                progress = { fraction ?: if (count > 0) (ordinal + 1f) / count else 0f },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedButton(onClick = onPrev, enabled = ordinal > 0) { Text("Previous") }
-                if (canReadAloud) {
-                    val speaking = narration.status == NarrationStatus.SPEAKING
-                    val preparing = narration.status == NarrationStatus.PREPARING
-                    IconButton(onClick = onPlayPause) {
-                        Icon(
-                            imageVector = if (speaking) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                            // A neural voice takes a moment to load the first time; saying so beats a
-                            // button that looks like it did nothing.
-                            contentDescription = when {
-                                speaking -> "Pause reading aloud"
-                                preparing -> "Loading the voice"
-                                else -> "Read aloud from the top of this page"
-                            },
-                            tint = if (preparing) MaterialTheme.colorScheme.secondary
-                            else MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        buildString {
-                            percent?.let { append("$it%  ·  ") }
-                            append("Chapter ${ordinal + 1} / $count")
-                        },
-                        fontSize = 12.sp
-                    )
-                    // Shown only once the pace estimate has earned it; an invented number on the
-                    // first page is worse than none, because a reader cannot tell it was invented.
-                    // While the voice is going it says so instead — with the sleep timer when one is
-                    // armed, which is the number that matters to somebody falling asleep.
-                    val listening = narration.isActive
-                    when {
-                        listening -> Text(
-                            SleepTimer.label(narration.sleepRemainingMillis)?.let { "Reading aloud · $it" }
-                                ?: "Reading aloud",
-                            fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        timeLeft != null -> Text(
-                            timeLeft, fontSize = 11.sp, color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                }
-                OutlinedButton(onClick = onNext, enabled = ordinal < count - 1) { Text("Next") }
-            }
-        }
-    }
-}
-
-/**
- * The reader's text style.
- *
- * Shared by both reading modes deliberately: the paged mode *measures* with this style to decide
- * where pages break, and then draws with it. If measuring and drawing could disagree about
- * hyphenation or justification, pages would break in places the drawn text does not — which reads
- * as text mysteriously clipped at the bottom of a page.
- */
-private fun readerTextStyle(
-    settings: ReaderSettings,
-    family: FontFamily,
-    foreground: Color
-): TextStyle = TextStyle(
-    fontSize = settings.fontSize.sp,
-    lineHeight = (settings.fontSize * settings.lineSpacing).sp,
-    fontFamily = family,
-    color = foreground,
-    letterSpacing = settings.letterSpacing.em,
-    textAlign = if (settings.justify) TextAlign.Justify else TextAlign.Unspecified,
-    hyphens = if (settings.hyphenate) Hyphens.Auto else Hyphens.None,
-    lineBreak = if (settings.justify || settings.hyphenate) LineBreak.Paragraph else LineBreak.Simple
-)
-
-/**
- * The name a content provider gives a picked document, or null.
- *
- * Worth a query rather than reading the URI: `content://` paths carry a provider's internal document
- * id, so the file name is only available by asking, and it is the difference between a font the
- * reader can recognise in a list and one labelled by a digest of its bytes.
- */
-private fun documentName(context: Context, uri: Uri): String? = runCatching {
-    context.contentResolver
-        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
-        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }
-}.getOrNull()?.takeIf { it.isNotBlank() }
-
-/** Shade a display range, clipped to the string being built. */
-private fun androidx.compose.ui.text.AnnotatedString.Builder.shade(range: IntRange, color: Color) {
-    val start = range.first.coerceIn(0, length)
-    val end = (range.last + 1).coerceIn(start, length)
-    if (end > start) addStyle(SpanStyle(background = color), start, end)
-}
-
 // --- Reading themes ----------------------------------------------------------------------------
 
 /** The reader's background/text presets. SYSTEM defers to the app's Material colours. */
 // --- Format + chapters sheets ------------------------------------------------------------------
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TocSheet(
-    book: Book,
-    current: Int,
-    bookmarkCount: Int,
-    onOpenBookmarks: () -> Unit,
-    onSelect: (Int) -> Unit,
-    onSelectEntry: (TocEntry) -> Unit,
-    onDismiss: () -> Unit
-) {
-    // The publisher's own contents when the book has one, otherwise the spine — which is all the
-    // reader ever used to show. For anything longer than a novel the difference is the difference
-    // between "Part II › Chapter 7 › Consistent Hashing" and a hundred numbered files.
-    val entries = remember(book) { book.toc.flatten() }
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
-        Column(Modifier.fillMaxWidth()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    if (entries.isEmpty()) "Chapters" else "Contents",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 18.sp
-                )
-                // Contents and bookmarks answer the same question — take me somewhere in this book
-                // — so they share a route rather than each claiming a top-bar icon of their own.
-                TextButton(onClick = onOpenBookmarks) {
-                    Text(if (bookmarkCount > 0) "Bookmarks ($bookmarkCount)" else "Bookmarks")
-                }
-            }
-            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {
-                if (entries.isEmpty()) {
-                    itemsIndexed(book.chapters) { i, ch ->
-                        TocRow(
-                            label = "${i + 1}.  ${ch.title.ifBlank { "Chapter ${i + 1}" }}",
-                            depth = 0,
-                            selected = i == current,
-                            enabled = true,
-                            onClick = { onSelect(i) }
-                        )
-                    }
-                } else {
-                    itemsIndexed(entries) { _, (entry, depth) ->
-                        TocRow(
-                            label = entry.title,
-                            depth = depth,
-                            selected = entry.chapterOrdinal == current,
-                            // An entry whose target isn't in the spine is still shown — it is part
-                            // of the book's shape — but there is nowhere to send you.
-                            enabled = entry.chapterOrdinal != null,
-                            onClick = { onSelectEntry(entry) }
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.padding(bottom = 12.dp))
-        }
-    }
-}
-
-@Composable
-private fun TocRow(
-    label: String,
-    depth: Int,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit
-) {
-    Text(
-        text = label,
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(
-                start = (20 + depth * 16).dp,
-                end = 20.dp,
-                top = if (depth == 0) 12.dp else 8.dp,
-                bottom = if (depth == 0) 12.dp else 8.dp
-            ),
-        color = when {
-            selected -> MaterialTheme.colorScheme.primary
-            !enabled -> MaterialTheme.colorScheme.secondary
-            else -> MaterialTheme.colorScheme.onSurface
-        },
-        fontWeight = if (selected || depth == 0) FontWeight.SemiBold else FontWeight.Normal,
-        fontSize = if (depth == 0) 16.sp else 15.sp,
-        fontFamily = FontFamily.Serif
-    )
-}
-
-@Composable
-private fun NoteComposer(
-    quote: String,
-    body: String,
-    onQuote: (String) -> Unit,
-    onBody: (String) -> Unit,
-    onSave: () -> Unit,
-    onSaveSynthesis: () -> Unit,
-    onCancel: () -> Unit
-) {
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-        OutlinedTextField(
-            value = quote,
-            onValueChange = onQuote,
-            label = { Text("Passage to cite (select text to fill, or type it)") },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = body,
-            onValueChange = onBody,
-            label = { Text("Your note") },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        )
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
-            // Synthesis: your own artifact; the quote is an optional citation, so body is enough.
-            TextButton(
-                onClick = onSaveSynthesis,
-                enabled = body.isNotBlank(),
-                modifier = Modifier.padding(start = 8.dp)
-            ) { Text("Save as synthesis") }
-            // Passage-anchored: hangs off exactly one highlight, so the quote is required.
-            Button(
-                onClick = onSave,
-                enabled = quote.isNotBlank() && body.isNotBlank(),
-                modifier = Modifier.padding(start = 8.dp)
-            ) { Text("Save passage note") }
-        }
-    }
-}

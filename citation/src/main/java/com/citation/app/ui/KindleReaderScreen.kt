@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.KindleSession
 import com.citation.app.ui.reader.ReaderWebStyler
 import com.citation.core.kindle.KindleLink
 import kotlinx.coroutines.delay
@@ -56,7 +57,7 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun KindleReaderScreen(session: CitationRepository.KindleSession, vm: ReaderViewModel) {
+fun KindleReaderScreen(session: KindleSession, vm: ReaderViewModel) {
     // The reader's current position label ("Location 156 of 3866"), polled from the footer.
     var currentLocation by remember { mutableStateOf<String?>(null) }
     var showNote by remember { mutableStateOf(false) }

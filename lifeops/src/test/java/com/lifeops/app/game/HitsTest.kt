@@ -8,6 +8,7 @@ import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunStatus
+import com.lifeops.app.game.run.revive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

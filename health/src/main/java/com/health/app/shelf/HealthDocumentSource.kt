@@ -34,7 +34,7 @@ class HealthDocumentSource(private val health: HealthApp) : DocumentSource {
     override val label: String = AppId.HEALTH.defaultDisplayName
 
     override fun observeDocuments(): Flow<List<DocumentFacts>> =
-        health.repository.observeAllDocumentsWithOwner().map { rows ->
+        health.repository.documents.observeAllDocumentsWithOwner().map { rows ->
             rows.map { (document, person) ->
                 DocumentFacts(
                     id = document.id,
@@ -57,7 +57,7 @@ class HealthDocumentSource(private val health: HealthApp) : DocumentSource {
         }
 
     override suspend fun open(documentId: String): File? {
-        val document = health.repository.getDocument(documentId) ?: return null
+        val document = health.repository.documents.getDocument(documentId) ?: return null
         return health.documents.file(document.fileName)
     }
 

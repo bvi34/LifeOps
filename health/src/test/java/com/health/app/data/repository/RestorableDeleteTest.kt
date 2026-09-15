@@ -49,7 +49,7 @@ class RestorableDeleteTest {
     @After
     fun tearDown() = db.close()
 
-    private suspend fun person() = repo.addProfile(
+    private suspend fun person() = repo.profiles.addProfile(
         name = "Ada",
         relationship = "Daughter",
         birthDate = "2019-03-14",
@@ -59,9 +59,9 @@ class RestorableDeleteTest {
     @Test
     fun `an undone reading comes back as the same row, not a copy of it`() = runTest {
         val profileId = person()
-        val id = repo.logTemperature(profileId, 38.4, TempSite.ORAL, takenAt = 1_700_000_000_000L)
+        val id = repo.readings.logTemperature(profileId, 38.4, TempSite.ORAL, takenAt = 1_700_000_000_000L)
 
-        val restore = repo.deleteReading(id)
+        val restore = repo.readings.deleteReading(id)
         assertNull(db.healthDao().getReading(id))
 
         restore!!.undo()
@@ -77,8 +77,8 @@ class RestorableDeleteTest {
     @Test
     fun `an undone dose takes its stock back out of the bottle`() = runTest {
         val profileId = person()
-        val itemId = repo.addCabinetItem(name = "Calpol", quantity = 100.0, quantityUnit = "mL")
-        val medicationId = repo.addMedication(
+        val itemId = repo.cabinet.addCabinetItem(name = "Calpol", quantity = 100.0, quantityUnit = "mL")
+        val medicationId = repo.medications.addMedication(
             profileId = profileId,
             name = "Calpol",
             strength = null,
@@ -91,10 +91,10 @@ class RestorableDeleteTest {
             cabinetItemId = itemId
         )
 
-        val doseId = repo.logDose(profileId, medicationId, "Calpol", amount = 5.0, unit = "mL")
+        val doseId = repo.doses.logDose(profileId, medicationId, "Calpol", amount = 5.0, unit = "mL")
         assertEquals("the dose came out of the bottle", 95.0, db.healthDao().getCabinetItem(itemId)!!.quantity!!, 0.0001)
 
-        val restore = repo.deleteDose(doseId)
+        val restore = repo.doses.deleteDose(doseId)
         assertEquals("deleting it put the stock back", 100.0, db.healthDao().getCabinetItem(itemId)!!.quantity!!, 0.0001)
 
         restore!!.undo()
@@ -111,8 +111,8 @@ class RestorableDeleteTest {
     @Test
     fun `an undone condition is found again by the document filed against it`() = runTest {
         val profileId = person()
-        val conditionId = repo.addCondition(profileId, name = "Asthma", status = ConditionStatus.ACTIVE)
-        val documentId = repo.addDocument(
+        val conditionId = repo.standingRecord.addCondition(profileId, name = "Asthma", status = ConditionStatus.ACTIVE)
+        val documentId = repo.documents.addDocument(
             profileId = profileId,
             title = "Spirometry, March",
             kind = DocumentKind.LAB,
@@ -120,7 +120,7 @@ class RestorableDeleteTest {
             conditionId = conditionId
         )
 
-        val restore = repo.deleteCondition(conditionId)
+        val restore = repo.standingRecord.deleteCondition(conditionId)
         // The document is deliberately kept when its condition goes — a result is a fact about the
         // person, not about the row it was filed under — so it is still pointing at the old id.
         assertEquals(conditionId, db.healthDao().getDocument(documentId)!!.conditionId)
@@ -135,9 +135,9 @@ class RestorableDeleteTest {
         // Two people on two phones, or two taps on one: the second delete must not offer an undo for
         // a row it did not delete, because taking that offer up would put back nothing at all.
         val profileId = person()
-        val id = repo.logTemperature(profileId, 37.2, TempSite.ORAL)
+        val id = repo.readings.logTemperature(profileId, 37.2, TempSite.ORAL)
 
-        assertNotNull(repo.deleteReading(id))
-        assertNull(repo.deleteReading(id))
+        assertNotNull(repo.readings.deleteReading(id))
+        assertNull(repo.readings.deleteReading(id))
     }
 }

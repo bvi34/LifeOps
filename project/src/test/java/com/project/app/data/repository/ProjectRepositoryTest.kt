@@ -76,8 +76,8 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a new project arrives with a board named for the kind of work it is`() = runTest {
-        val writing = repo.addProject("The Kestrel", ProjectKind.WRITING, "  ")
-        val software = repo.addProject("The app", ProjectKind.SOFTWARE, " A thing. ")
+        val writing = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, "  ")
+        val software = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, " A thing. ")
 
         // Seeded on creation rather than lazily on first visit: a board screen that is empty until
         // you invent your own columns is a board screen most people close again.
@@ -102,7 +102,7 @@ class ProjectRepositoryTest {
         val doomed = fullyPopulatedProject("The Kestrel")
         val bystander = fullyPopulatedProject("The other one")
 
-        repo.deleteProject(doomed)
+        repo.shelf.deleteProject(doomed)
 
         assertNull(dao.getProject(doomed))
         assertTrue(dao.getOutline(doomed).isEmpty())
@@ -129,16 +129,16 @@ class ProjectRepositoryTest {
 
     @Test
     fun `deleting a scene keeps what was written for it, and cuts the links that pointed at it`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val chapter = repo.addOutlineNode(projectId, null, "Chapter one")
-        val scene = repo.addOutlineNode(projectId, chapter, "The docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val chapter = repo.outline.addOutlineNode(projectId, null, "Chapter one")
+        val scene = repo.outline.addOutlineNode(projectId, chapter, "The docks")
 
-        val docId = repo.addDoc(projectId, "Scene — the docks", outlineNodeId = scene)
-        val eventId = repo.addEvent(projectId, "The coronation", "Year 12", null, outlineNodeId = scene)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks", outlineNodeId = scene)
+        val eventId = repo.timeline.addEvent(projectId, "The coronation", "Year 12", null, outlineNodeId = scene)
         val columnId = dao.getColumns(projectId).first().id
-        val cardId = repo.addCard(projectId, columnId, "Rewrite it", outlineNodeId = scene, docId = docId)
+        val cardId = repo.board.addCard(projectId, columnId, "Rewrite it", outlineNodeId = scene, docId = docId)
 
-        repo.deleteOutlineSubtree(projectId, chapter)
+        repo.outline.deleteOutlineSubtree(projectId, chapter)
 
         assertTrue("the subtree is gone", dao.getOutline(projectId).isEmpty())
 
@@ -154,12 +154,12 @@ class ProjectRepositoryTest {
 
     @Test
     fun `deleting a document leaves the card that was about it, pointing at nothing`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Scene — the docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks")
         val columnId = dao.getColumns(projectId).first().id
-        val cardId = repo.addCard(projectId, columnId, "Rewrite it", docId = docId)
+        val cardId = repo.board.addCard(projectId, columnId, "Rewrite it", docId = docId)
 
-        repo.deleteDoc(docId)
+        repo.docs.deleteDoc(docId)
 
         assertNull(dao.getDoc(docId))
         assertTrue("the blocks outlived their document", dao.getBlocks(docId).isEmpty())
@@ -171,28 +171,28 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a document's count follows its blocks through every way of editing them`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Scene — the docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks")
         val seeded = dao.getBlocks(docId).single()
 
-        repo.updateBlock(docId, DocBlock(seeded.id, BlockType.PARAGRAPH, "The docks smelled of tar."))
+        repo.docs.updateBlock(docId, DocBlock(seeded.id, BlockType.PARAGRAPH, "The docks smelled of tar."))
         assertEquals(5, dao.getDoc(docId)?.wordCount)
 
-        val second = repo.addBlock(docId, BlockType.PARAGRAPH, seeded.id)
-        repo.updateBlock(docId, DocBlock(second, BlockType.PARAGRAPH, "She did not knock."))
+        val second = repo.docs.addBlock(docId, BlockType.PARAGRAPH, seeded.id)
+        repo.docs.updateBlock(docId, DocBlock(second, BlockType.PARAGRAPH, "She did not knock."))
         assertEquals(9, dao.getDoc(docId)?.wordCount)
 
         // Code is not prose, so it is not measured — a pasted config file cannot inflate a chapter.
-        val code = repo.addBlock(docId, BlockType.CODE, second)
-        repo.updateBlock(docId, DocBlock(code, BlockType.CODE, "val x = 1 + 2 + 3"))
+        val code = repo.docs.addBlock(docId, BlockType.CODE, second)
+        repo.docs.updateBlock(docId, DocBlock(code, BlockType.CODE, "val x = 1 + 2 + 3"))
         assertEquals(9, dao.getDoc(docId)?.wordCount)
 
-        repo.deleteBlock(docId, second)
+        repo.docs.deleteBlock(docId, second)
         assertEquals(5, dao.getDoc(docId)?.wordCount)
 
         // The one destructive path: pasting a chapter in replaces everything at once, and the count
         // has to be recomputed rather than added to.
-        repo.replaceDocFromMarkdown(docId, "# Chapter one\n\nShe did not knock at the door.")
+        repo.docs.replaceDocFromMarkdown(docId, "# Chapter one\n\nShe did not knock at the door.")
         assertEquals(
             listOf(BlockType.HEADING1.key, BlockType.PARAGRAPH.key),
             dao.getBlocks(docId).map { it.type }
@@ -202,43 +202,43 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a scene's length is the sum of the documents written for it, and follows them about`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
-        val other = repo.addOutlineNode(projectId, null, "The keep")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
+        val other = repo.outline.addOutlineNode(projectId, null, "The keep")
 
-        val draft = repo.addDoc(projectId, "Draft", outlineNodeId = scene)
-        repo.replaceDocFromMarkdown(draft, "One two three four five.")
+        val draft = repo.docs.addDoc(projectId, "Draft", outlineNodeId = scene)
+        repo.docs.replaceDocFromMarkdown(draft, "One two three four five.")
         assertEquals(5, dao.getOutlineNode(scene)?.actualWords)
 
         // Summed rather than taken from one document, because a scene can have a draft and its
         // rewrite, or the scene and the notes for it.
-        val notes = repo.addDoc(projectId, "Notes", outlineNodeId = scene)
-        repo.replaceDocFromMarkdown(notes, "Six seven eight.")
+        val notes = repo.docs.addDoc(projectId, "Notes", outlineNodeId = scene)
+        repo.docs.replaceDocFromMarkdown(notes, "Six seven eight.")
         assertEquals(8, dao.getOutlineNode(scene)?.actualWords)
 
         // Re-filing a document has to move its words off the scene it left as well as onto the one
         // it joined, or the outline reports the old scene as longer than anything written for it.
-        repo.updateDoc(dao.getDoc(notes)!!.toModel().copy(outlineNodeId = other))
+        repo.docs.updateDoc(dao.getDoc(notes)!!.toModel().copy(outlineNodeId = other))
         assertEquals(5, dao.getOutlineNode(scene)?.actualWords)
         assertEquals(3, dao.getOutlineNode(other)?.actualWords)
 
         // A scene with nothing written for it reads as zero rather than keeping the last number it
         // happened to be given.
-        repo.deleteDoc(draft)
+        repo.docs.deleteDoc(draft)
         assertEquals(0, dao.getOutlineNode(scene)?.actualWords)
     }
 
     @Test
     fun `renaming a scene leaves its length alone`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
-        val docId = repo.addDoc(projectId, "Draft", outlineNodeId = scene)
-        repo.replaceDocFromMarkdown(docId, "One two three four five.")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
+        val docId = repo.docs.addDoc(projectId, "Draft", outlineNodeId = scene)
+        repo.docs.replaceDocFromMarkdown(docId, "One two three four five.")
 
         val node = dao.getOutlineNode(scene)!!.toLogic()
         // Word counts arrive from the linked document, never from an edit box. The model carries a
         // count because the screen drew one; writing it back would let a rename reset the scene.
-        repo.updateOutlineNode(node.copy(title = "The harbour", actualWords = 0, targetWords = 1200))
+        repo.outline.updateOutlineNode(node.copy(title = "The harbour", actualWords = 0, targetWords = 1200))
 
         assertEquals("The harbour", dao.getOutlineNode(scene)?.title)
         assertEquals(1200, dao.getOutlineNode(scene)?.targetWords)
@@ -249,23 +249,23 @@ class ProjectRepositoryTest {
 
     @Test
     fun `pasting over a document keeps what it said, and the version restores it exactly`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Scene — the docks")
-        repo.replaceDocFromMarkdown(
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks")
+        repo.docs.replaceDocFromMarkdown(
             docId,
             "# The docks\n\nShe did not knock.\n\n- [x] Ticked\n- [ ] Not ticked"
         )
         val before = dao.getBlocks(docId).map { Triple(it.type, it.text, it.checked) }
 
         // The edit this whole feature exists for: one tap, and the morning's writing is gone.
-        repo.replaceDocFromMarkdown(docId, "Something else entirely.")
+        repo.docs.replaceDocFromMarkdown(docId, "Something else entirely.")
         assertEquals(listOf("Something else entirely."), dao.getBlocks(docId).map { it.text })
 
-        val kept = repo.observeRevisions(docId).first()
+        val kept = repo.versions.observeRevisions(docId).first()
         assertEquals(1, kept.size)
         assertEquals(RevisionReason.IMPORT, kept.single().reason)
 
-        assertTrue(repo.restoreRevision(docId, kept.single().id))
+        assertTrue(repo.versions.restoreRevision(docId, kept.single().id))
 
         // Restored exactly: the types, the text and the ticked states, in order. This is why a
         // version stores blocks rather than rendered Markdown — the round trip would have dropped
@@ -276,157 +276,157 @@ class ProjectRepositoryTest {
 
     @Test
     fun `restoring keeps the text it is about to replace, so going back is undoable`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
-        repo.replaceDocFromMarkdown(docId, "The first draft.")
-        repo.replaceDocFromMarkdown(docId, "The second draft.")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
+        repo.docs.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.docs.replaceDocFromMarkdown(docId, "The second draft.")
 
-        val toFirst = repo.observeRevisions(docId).first().single()
-        repo.restoreRevision(docId, toFirst.id)
+        val toFirst = repo.versions.observeRevisions(docId).first().single()
+        repo.versions.restoreRevision(docId, toFirst.id)
         assertEquals(listOf("The first draft."), dao.getBlocks(docId).map { it.text })
 
         // The restore filed the second draft on its way past, so the history is not a one-way door.
-        val after = repo.observeRevisions(docId).first()
+        val after = repo.versions.observeRevisions(docId).first()
         assertEquals(RevisionReason.RESTORE, after.first().reason)
-        assertEquals(listOf("The second draft."), repo.revisionBlocks(after.first().id).map { it.text })
+        assertEquals(listOf("The second draft."), repo.versions.revisionBlocks(after.first().id).map { it.text })
 
-        repo.restoreRevision(docId, after.first().id)
+        repo.versions.restoreRevision(docId, after.first().id)
         assertEquals(listOf("The second draft."), dao.getBlocks(docId).map { it.text })
     }
 
     @Test
     fun `a version is not consumed by being restored`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
-        repo.replaceDocFromMarkdown(docId, "The first draft.")
-        repo.replaceDocFromMarkdown(docId, "The second draft.")
-        val original = repo.observeRevisions(docId).first().single()
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
+        repo.docs.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.docs.replaceDocFromMarkdown(docId, "The second draft.")
+        val original = repo.versions.observeRevisions(docId).first().single()
 
-        repo.restoreRevision(docId, original.id)
-        repo.replaceDocFromMarkdown(docId, "A third thing.")
+        repo.versions.restoreRevision(docId, original.id)
+        repo.docs.replaceDocFromMarkdown(docId, "A third thing.")
         // The same version, a second time. Restoring reads a version rather than moving it.
-        assertTrue(repo.restoreRevision(docId, original.id))
+        assertTrue(repo.versions.restoreRevision(docId, original.id))
         assertEquals(listOf("The first draft."), dao.getBlocks(docId).map { it.text })
     }
 
     @Test
     fun `an empty document files no version, and neither does one that has not changed`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
 
         // A new document is one empty paragraph. Pasting into it must not file a version of nothing
         // and put it at the top of the list.
-        repo.replaceDocFromMarkdown(docId, "The first draft.")
-        assertTrue(repo.observeRevisions(docId).first().isEmpty())
+        repo.docs.replaceDocFromMarkdown(docId, "The first draft.")
+        assertTrue(repo.versions.observeRevisions(docId).first().isEmpty())
 
-        assertNotNull(repo.saveRevision(docId, RevisionReason.MANUAL))
+        assertNotNull(repo.versions.saveRevision(docId, RevisionReason.MANUAL))
         // Asked for twice with nothing typed in between: the second is a copy of the first, and
         // twenty copies of the same paragraph would push the versions that matter off the end.
-        assertNull(repo.saveRevision(docId, RevisionReason.MANUAL))
-        assertEquals(1, repo.observeRevisions(docId).first().size)
+        assertNull(repo.versions.saveRevision(docId, RevisionReason.MANUAL))
+        assertEquals(1, repo.versions.observeRevisions(docId).first().size)
 
         // Pasting now files nothing either, and that is the same rule rather than a hole in it: the
         // version at the top already holds exactly what is about to be replaced, which is the whole
         // reason to file one. A second copy of it would buy nothing and cost a slot.
-        repo.replaceDocFromMarkdown(docId, "Now it says something else.")
-        assertEquals(1, repo.observeRevisions(docId).first().size)
+        repo.docs.replaceDocFromMarkdown(docId, "Now it says something else.")
+        assertEquals(1, repo.versions.observeRevisions(docId).first().size)
 
         // Once the document says something no version holds, the next destructive edit files it.
-        repo.replaceDocFromMarkdown(docId, "And now something else again.")
-        val kept = repo.observeRevisions(docId).first()
+        repo.docs.replaceDocFromMarkdown(docId, "And now something else again.")
+        val kept = repo.versions.observeRevisions(docId).first()
         assertEquals(2, kept.size)
         assertEquals(
             listOf("Now it says something else."),
-            repo.revisionBlocks(kept.first().id).map { it.text }
+            repo.versions.revisionBlocks(kept.first().id).map { it.text }
         )
     }
 
     @Test
     fun `rebuilding tables keeps a version first`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Stats")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Stats")
         // A table that lost its line breaks — one paragraph of pipes, which `repairTables` rewrites
         // in bulk. Recoverable in principle; a version makes it recoverable in practice.
-        repo.replaceDocFromMarkdown(docId, "| a | b | | --- | --- | | 1 | 2 |")
+        repo.docs.replaceDocFromMarkdown(docId, "| a | b | | --- | --- | | 1 | 2 |")
 
-        val repaired = repo.repairTables(docId)
+        val repaired = repo.docs.repairTables(docId)
         if (repaired == 0) return@runTest
 
-        val kept = repo.observeRevisions(docId).first()
+        val kept = repo.versions.observeRevisions(docId).first()
         assertEquals(RevisionReason.REPAIR, kept.first().reason)
     }
 
     @Test
     fun `only the last few versions are kept, and the oldest are the ones that go`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
 
-        repeat(Revisions.KEEP + 5) { round -> repo.replaceDocFromMarkdown(docId, "Draft number $round.") }
+        repeat(Revisions.KEEP + 5) { round -> repo.docs.replaceDocFromMarkdown(docId, "Draft number $round.") }
 
-        val kept = repo.observeRevisions(docId).first()
+        val kept = repo.versions.observeRevisions(docId).first()
         assertEquals(Revisions.KEEP, kept.size)
         // Newest first, and the oldest drafts are the ones gone: the version filed before the last
         // paste holds the paste before it.
         assertEquals(
             listOf("Draft number ${Revisions.KEEP + 3}."),
-            repo.revisionBlocks(kept.first().id).map { it.text }
+            repo.versions.revisionBlocks(kept.first().id).map { it.text }
         )
-        val texts = kept.flatMap { repo.revisionBlocks(it.id).map { block -> block.text } }
+        val texts = kept.flatMap { repo.versions.revisionBlocks(it.id).map { block -> block.text } }
         assertTrue("an early draft survived the cap", texts.none { it == "Draft number 0." })
     }
 
     @Test
     fun `a version cannot be restored into another document`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val mine = repo.addDoc(projectId, "Mine")
-        val theirs = repo.addDoc(projectId, "Theirs")
-        repo.replaceDocFromMarkdown(mine, "Mine, first.")
-        repo.replaceDocFromMarkdown(mine, "Mine, second.")
-        repo.replaceDocFromMarkdown(theirs, "Theirs.")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val mine = repo.docs.addDoc(projectId, "Mine")
+        val theirs = repo.docs.addDoc(projectId, "Theirs")
+        repo.docs.replaceDocFromMarkdown(mine, "Mine, first.")
+        repo.docs.replaceDocFromMarkdown(mine, "Mine, second.")
+        repo.docs.replaceDocFromMarkdown(theirs, "Theirs.")
 
-        val mineRevision = repo.observeRevisions(mine).first().single()
+        val mineRevision = repo.versions.observeRevisions(mine).first().single()
 
         // A safety feature that can overwrite the wrong document is a data-loss bug in disguise.
-        assertFalse(repo.restoreRevision(theirs, mineRevision.id))
+        assertFalse(repo.versions.restoreRevision(theirs, mineRevision.id))
         assertEquals(listOf("Theirs."), dao.getBlocks(theirs).map { it.text })
     }
 
     @Test
     fun `versions go with the document they are versions of`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
-        repo.replaceDocFromMarkdown(docId, "The first draft.")
-        repo.replaceDocFromMarkdown(docId, "The second draft.")
-        val revisionId = repo.observeRevisions(docId).first().single().id
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
+        repo.docs.replaceDocFromMarkdown(docId, "The first draft.")
+        repo.docs.replaceDocFromMarkdown(docId, "The second draft.")
+        val revisionId = repo.versions.observeRevisions(docId).first().single().id
 
-        repo.deleteDoc(docId)
+        repo.docs.deleteDoc(docId)
 
         // These are versions *of a document*, not a wastebasket for deleted ones — so they cascade,
         // and their blocks cascade with them rather than being left with nothing to belong to.
-        assertTrue(repo.observeRevisions(docId).first().isEmpty())
-        assertTrue(repo.revisionBlocks(revisionId).isEmpty())
+        assertTrue(repo.versions.observeRevisions(docId).first().isEmpty())
+        assertTrue(repo.versions.revisionBlocks(revisionId).isEmpty())
     }
 
     // ------------------------------------------------------------------ the board
 
     @Test
     fun `deleting a column strands its cards rather than deleting them, and they can be re-filed`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val backlog = columns.first().id
         val inProgress = columns[1].id
 
-        val stranded = repo.addCard(projectId, backlog, "Rewrite the dock scene")
-        val kept = repo.addCard(projectId, inProgress, "Fix the thing")
+        val stranded = repo.board.addCard(projectId, backlog, "Rewrite the dock scene")
+        val kept = repo.board.addCard(projectId, inProgress, "Fix the thing")
 
-        repo.deleteColumn(projectId, backlog)
+        repo.board.deleteColumn(projectId, backlog)
 
         // Losing a column is an organisational decision; losing the work that was in it is never one
         // anybody made on purpose. So this is deliberately not a cascade.
         assertNotNull(dao.getCard(stranded))
         assertEquals(backlog, dao.getCard(stranded)?.columnId)
 
-        repo.refileOrphans(projectId, inProgress)
+        repo.board.refileOrphans(projectId, inProgress)
 
         assertEquals(inProgress, dao.getCard(stranded)?.columnId)
         assertEquals(inProgress, dao.getCard(kept)?.columnId)
@@ -436,31 +436,31 @@ class ProjectRepositoryTest {
 
     @Test
     fun `moving a card into the finished column stamps it, and moving it back unstamps it`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val backlog = columns.first().id
         val shipped = columns.last { it.isDone }.id
 
-        val cardId = repo.addCard(projectId, backlog, "Fix the thing")
+        val cardId = repo.board.addCard(projectId, backlog, "Fix the thing")
         assertNull(dao.getCard(cardId)?.doneAt)
 
-        repo.moveCard(projectId, cardId, shipped, 0)
+        repo.board.moveCard(projectId, cardId, shipped, 0)
         assertEquals(shipped, dao.getCard(cardId)?.columnId)
         assertNotNull("a card in the done column has no day it was finished", dao.getCard(cardId)?.doneAt)
 
-        repo.moveCard(projectId, cardId, backlog, 0)
+        repo.board.moveCard(projectId, cardId, backlog, 0)
         assertNull("dragging work back out left it looking finished", dao.getCard(cardId)?.doneAt)
     }
 
     @Test
     fun `a card can only be moved into a column of its own project`() = runTest {
-        val mine = repo.addProject("The app", ProjectKind.SOFTWARE, null)
-        val theirs = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val mine = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
+        val theirs = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val myColumn = dao.getColumns(mine).first().id
         val theirColumn = dao.getColumns(theirs).first().id
-        val cardId = repo.addCard(mine, myColumn, "Fix the thing")
+        val cardId = repo.board.addCard(mine, myColumn, "Fix the thing")
 
-        repo.moveCard(mine, cardId, theirColumn, 0)
+        repo.board.moveCard(mine, cardId, theirColumn, 0)
 
         assertEquals("a card crossed into another project's board", myColumn, dao.getCard(cardId)?.columnId)
     }
@@ -469,25 +469,25 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a card keeps its due date, and can have it taken away`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val columnId = dao.getColumns(projectId).first().id
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
 
-        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        val cardId = repo.board.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
         assertEquals(due, dao.getCard(cardId)?.dueOn)
 
         // Droppable in the same breath as settable: without this the only way to lose a deadline
         // that has been called off is to delete the card it was on.
-        repo.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(dueOn = null))
+        repo.board.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(dueOn = null))
         assertNull(dao.getCard(cardId)?.dueOn)
     }
 
     @Test
     fun `most cards have no due date, and that is stored as no date rather than as a zero`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val columnId = dao.getColumns(projectId).first().id
 
-        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene")
+        val cardId = repo.board.addCard(projectId, columnId, "Rewrite the dock scene")
 
         // Epoch day zero is a real date (1 Jan 1970), so "no deadline" has to be null — a zero here
         // would put every undated card fifty years overdue.
@@ -496,12 +496,12 @@ class ProjectRepositoryTest {
 
     @Test
     fun `moving a card between columns leaves its deadline alone`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
-        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
+        val cardId = repo.board.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
 
-        repo.moveCard(projectId, cardId, columns.last().id, 0)
+        repo.board.moveCard(projectId, cardId, columns.last().id, 0)
 
         // When a thing is due is a fact about the work; which lane it is in is a fact about your
         // progress through it. Finishing something early does not move its deadline.
@@ -513,65 +513,65 @@ class ProjectRepositoryTest {
 
     @Test
     fun `every kind of record can be found to file on, and reads project-first`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
-        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
-        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.lore.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.board.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
 
         assertEquals(
             "The Kestrel — The docks",
-            repo.attachTarget(projectId, AttachKind.OUTLINE, scene)?.shelfLabel
+            repo.files.attachTarget(projectId, AttachKind.OUTLINE, scene)?.shelfLabel
         )
         assertEquals(
             "The Kestrel — Kestrel",
-            repo.attachTarget(projectId, AttachKind.LORE, lore)?.shelfLabel
+            repo.files.attachTarget(projectId, AttachKind.LORE, lore)?.shelfLabel
         )
         assertEquals(
             "The Kestrel — Rewrite it",
-            repo.attachTarget(projectId, AttachKind.CARD, card)?.shelfLabel
+            repo.files.attachTarget(projectId, AttachKind.CARD, card)?.shelfLabel
         )
         // The project's own drawer is the project, with nothing appended to it.
         assertEquals(
             "The Kestrel",
-            repo.attachTarget(projectId, AttachKind.PROJECT, projectId)?.shelfLabel
+            repo.files.attachTarget(projectId, AttachKind.PROJECT, projectId)?.shelfLabel
         )
-        assertEquals("The docks", repo.attachTarget(projectId, AttachKind.OUTLINE, scene)?.name)
+        assertEquals("The docks", repo.files.attachTarget(projectId, AttachKind.OUTLINE, scene)?.name)
     }
 
     @Test
     fun `a record that has gone resolves to nothing`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
 
-        repo.deleteOutlineSubtree(projectId, scene)
+        repo.outline.deleteOutlineSubtree(projectId, scene)
 
         // A link to a record's files can outlive the record. Saying so beats an empty drawer that
         // looks like it lost somebody's paperwork.
-        assertNull(repo.attachTarget(projectId, AttachKind.OUTLINE, scene))
+        assertNull(repo.files.attachTarget(projectId, AttachKind.OUTLINE, scene))
     }
 
     @Test
     fun `a record cannot be reached through another project's id`() = runTest {
-        val mine = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val theirs = repo.addProject("The other one", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(mine, null, "The docks")
+        val mine = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val theirs = repo.shelf.addProject("The other one", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(mine, null, "The docks")
 
         // Both halves exist, so checking them separately would let this through — and the drawer
         // would be labelled with the wrong project's name.
-        assertNull(repo.attachTarget(theirs, AttachKind.OUTLINE, scene))
-        assertNotNull(repo.attachTarget(mine, AttachKind.OUTLINE, scene))
+        assertNull(repo.files.attachTarget(theirs, AttachKind.OUTLINE, scene))
+        assertNotNull(repo.files.attachTarget(mine, AttachKind.OUTLINE, scene))
     }
 
     @Test
     fun `everything in a project that can hold files is listed before it is deleted`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
-        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
-        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
-        val other = repo.addProject("The other one", ProjectKind.WRITING, null)
-        repo.addOutlineNode(other, null, "Not this one")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.lore.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.board.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        val other = repo.shelf.addProject("The other one", ProjectKind.WRITING, null)
+        repo.outline.addOutlineNode(other, null, "Not this one")
 
-        val keys = repo.attachableRecordKeys(projectId)
+        val keys = repo.files.attachableRecordKeys(projectId)
 
         // The project itself included: its own drawer has to go too.
         assertEquals(setOf(projectId, scene, lore, card), keys.toSet())
@@ -588,11 +588,11 @@ class ProjectRepositoryTest {
     @Test
     fun `renaming a record renames its drawer`() = runTest {
         val (repo, relabels) = withRecorder()
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
         relabels.clear()
 
-        repo.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(title = "The harbour"))
+        repo.outline.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(title = "The harbour"))
 
         assertEquals(listOf(scene to "The Kestrel — The harbour"), relabels)
     }
@@ -600,13 +600,13 @@ class ProjectRepositoryTest {
     @Test
     fun `an edit that is not a rename says nothing to the shelf`() = runTest {
         val (repo, relabels) = withRecorder()
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
         relabels.clear()
 
         // Changing the synopsis is not a rename, and a write to the shelf for every keystroke's
         // worth of editing would be a lot of writing for nothing.
-        repo.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(synopsis = "She arrives."))
+        repo.outline.updateOutlineNode(dao.getOutlineNode(scene)!!.toLogic().copy(synopsis = "She arrives."))
 
         assertTrue(relabels.isEmpty())
     }
@@ -614,13 +614,13 @@ class ProjectRepositoryTest {
     @Test
     fun `renaming a project renames every drawer in it`() = runTest {
         val (repo, relabels) = withRecorder()
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val scene = repo.addOutlineNode(projectId, null, "The docks")
-        val lore = repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
-        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val scene = repo.outline.addOutlineNode(projectId, null, "The docks")
+        val lore = repo.lore.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER)
+        val card = repo.board.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
         relabels.clear()
 
-        repo.updateProject(dao.getProject(projectId)!!.toModel().copy(name = "The Peregrine"))
+        repo.shelf.updateProject(dao.getProject(projectId)!!.toModel().copy(name = "The Peregrine"))
 
         // Every one of them, because a record's label leads with the project — otherwise renaming
         // the project leaves every scene and card in it saying the old name for ever.
@@ -638,11 +638,11 @@ class ProjectRepositoryTest {
     @Test
     fun `a card renamed by the hand-off's own title rules still renames one drawer`() = runTest {
         val (repo, relabels) = withRecorder()
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val card = repo.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val card = repo.board.addCard(projectId, dao.getColumns(projectId).first().id, "Rewrite it")
         relabels.clear()
 
-        repo.updateCard(projectId, dao.getCard(card)!!.toLogic().copy(title = "Rewrite the harbour"))
+        repo.board.updateCard(projectId, dao.getCard(card)!!.toLogic().copy(title = "Rewrite the harbour"))
 
         assertEquals(listOf(card to "The Kestrel — Rewrite the harbour"), relabels)
     }
@@ -651,22 +651,22 @@ class ProjectRepositoryTest {
 
     @Test
     fun `only cards a week could care about are put in front of the round`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val columnId = dao.getColumns(projectId).first().id
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
 
-        val dated = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
-        repo.addCard(projectId, columnId, "Someday, maybe")
+        val dated = repo.board.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        repo.board.addCard(projectId, columnId, "Someday, maybe")
 
         // Undated but still holding a live task: the deadline was dropped and the task has to come
         // off the week, which only happens if this card is looked at.
-        val undatedButOnTheWeek = repo.addCard(projectId, columnId, "Deadline called off")
+        val undatedButOnTheWeek = repo.board.addCard(projectId, columnId, "Deadline called off")
         repo.setCardLink(undatedButOnTheWeek, taskId = "task-1", publishedDue = due)
 
         // Undated, no task, but remembering a day it was once published for. There is nothing left
         // to decide — no date to publish and no task to take down — so it is dropped here rather
         // than carried through a decision that can only reach Idle.
-        val spent = repo.addCard(projectId, columnId, "Was on the week once")
+        val spent = repo.board.addCard(projectId, columnId, "Was on the week once")
         repo.setCardLink(spent, taskId = null, publishedDue = due)
 
         val snapshots = repo.cardSnapshots()
@@ -681,27 +681,27 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a card in the finished column is reported as finished`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
-        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
+        val cardId = repo.board.addCard(projectId, columns.first().id, "Fix the thing", dueOn = due)
 
         assertFalse(repo.cardSnapshots().single { it.card.id == cardId }.inDoneColumn)
 
-        repo.moveCard(projectId, cardId, columns.last { it.isDone }.id, 0)
+        repo.board.moveCard(projectId, cardId, columns.last { it.isDone }.id, 0)
 
         assertTrue(repo.cardSnapshots().single { it.card.id == cardId }.inDoneColumn)
     }
 
     @Test
     fun `a card stranded by a deleted column is not mistaken for finished`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val done = columns.last { it.isDone }
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
-        val cardId = repo.addCard(projectId, done.id, "Fix the thing", dueOn = due)
+        val cardId = repo.board.addCard(projectId, done.id, "Fix the thing", dueOn = due)
 
-        repo.deleteColumn(projectId, done.id)
+        repo.board.deleteColumn(projectId, done.id)
 
         // Its column id now names nothing. Stranded is not finished — the work still wants doing,
         // and reading "unknown column" as done would quietly take it off somebody's week.
@@ -710,13 +710,13 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a link survives editing the card it is on`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val columnId = dao.getColumns(projectId).first().id
         val due = LocalDate.of(2026, 3, 14).toEpochDay()
-        val cardId = repo.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
+        val cardId = repo.board.addCard(projectId, columnId, "Rewrite the dock scene", dueOn = due)
         repo.setCardLink(cardId, taskId = "task-1", publishedDue = due)
 
-        repo.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(title = "Rewrite the harbour"))
+        repo.board.updateCard(projectId, dao.getCard(cardId)!!.toLogic().copy(title = "Rewrite the harbour"))
 
         // `BoardCard` deliberately does not carry the link, so no edit made on a screen can wipe it
         // and strand a task on somebody's week with nothing pointing at it.
@@ -727,10 +727,10 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a tick moves the card into the finished column and lets go of the task`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
         val done = columns.last { it.isDone }
-        val cardId = repo.addCard(
+        val cardId = repo.board.addCard(
             projectId, columns.first().id, "Fix the thing",
             dueOn = LocalDate.of(2026, 3, 14).toEpochDay()
         )
@@ -746,9 +746,9 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a second tick over the same card changes nothing and says so`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
-        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing")
+        val cardId = repo.board.addCard(projectId, columns.first().id, "Fix the thing")
 
         assertTrue(repo.completeFromWeek(cardId, completedAt = 42L))
         // Reported false, so a round running twice over one tick counts it once.
@@ -758,10 +758,10 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a board with no finished column still takes the tick`() = runTest {
-        val projectId = repo.addProject("The app", ProjectKind.SOFTWARE, null)
+        val projectId = repo.shelf.addProject("The app", ProjectKind.SOFTWARE, null)
         val columns = dao.getColumns(projectId)
-        val cardId = repo.addCard(projectId, columns.first().id, "Fix the thing")
-        columns.filter { it.isDone }.forEach { repo.deleteColumn(projectId, it.id) }
+        val cardId = repo.board.addCard(projectId, columns.first().id, "Fix the thing")
+        columns.filter { it.isDone }.forEach { repo.board.deleteColumn(projectId, it.id) }
 
         assertTrue(repo.completeFromWeek(cardId, completedAt = 42L))
 
@@ -773,19 +773,19 @@ class ProjectRepositoryTest {
 
     @Test
     fun `the tasks of a project can be read before it is deleted`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
         val columnId = dao.getColumns(projectId).first().id
-        val a = repo.addCard(projectId, columnId, "One", dueOn = 20_000L)
-        val b = repo.addCard(projectId, columnId, "Two", dueOn = 20_001L)
-        repo.addCard(projectId, columnId, "Three")
+        val a = repo.board.addCard(projectId, columnId, "One", dueOn = 20_000L)
+        val b = repo.board.addCard(projectId, columnId, "Two", dueOn = 20_001L)
+        repo.board.addCard(projectId, columnId, "Three")
         repo.setCardLink(a, "task-a", 20_000L)
         repo.setCardLink(b, "task-b", 20_001L)
 
         // Read before the delete, because a project's cards cascade with it and no later round can
         // see them to work out that their tasks should come off the week.
-        assertEquals(setOf("task-a", "task-b"), repo.publishedTaskIdsOf(projectId).toSet())
+        assertEquals(setOf("task-a", "task-b"), repo.week.publishedTaskIdsOf(projectId).toSet())
 
-        repo.deleteProject(projectId)
+        repo.shelf.deleteProject(projectId)
         assertTrue(repo.cardSnapshots().none { it.card.id in setOf(a, b) })
     }
 
@@ -793,63 +793,63 @@ class ProjectRepositoryTest {
 
     @Test
     fun `an address for something that is still there resolves to itself`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Scene — the docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks")
 
         val workspace = ProjectDestination.Workspace(projectId)
         val section = ProjectDestination.Workspace(projectId, SearchSection.LORE)
         val document = ProjectDestination.Document(projectId, docId)
 
-        assertEquals(workspace, repo.resolve(workspace))
-        assertEquals(section, repo.resolve(section))
-        assertEquals(document, repo.resolve(document))
+        assertEquals(workspace, repo.shelf.resolve(workspace))
+        assertEquals(section, repo.shelf.resolve(section))
+        assertEquals(document, repo.shelf.resolve(document))
         // The shelf is always there — it is the fallback, so it cannot itself go stale.
-        assertEquals(ProjectDestination.Shelf, repo.resolve(ProjectDestination.Shelf))
+        assertEquals(ProjectDestination.Shelf, repo.shelf.resolve(ProjectDestination.Shelf))
     }
 
     @Test
     fun `an address for something that has been deleted resolves to nothing`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Scene — the docks")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks")
 
-        repo.deleteDoc(docId)
+        repo.docs.deleteDoc(docId)
         // Advisor answers from a snapshot of the data, so a document it quotes can be gone by the
         // time somebody taps through to it. Landing on an editor for nothing is worse than the
         // shelf.
-        assertNull(repo.resolve(ProjectDestination.Document(projectId, docId)))
+        assertNull(repo.shelf.resolve(ProjectDestination.Document(projectId, docId)))
 
-        repo.deleteProject(projectId)
-        assertNull(repo.resolve(ProjectDestination.Workspace(projectId)))
-        assertNull(repo.resolve(ProjectDestination.Workspace(projectId, SearchSection.BOARD)))
-        assertNull(repo.resolve(ProjectDestination.Document(projectId, docId)))
+        repo.shelf.deleteProject(projectId)
+        assertNull(repo.shelf.resolve(ProjectDestination.Workspace(projectId)))
+        assertNull(repo.shelf.resolve(ProjectDestination.Workspace(projectId, SearchSection.BOARD)))
+        assertNull(repo.shelf.resolve(ProjectDestination.Document(projectId, docId)))
     }
 
     @Test
     fun `a real document paired with the wrong project resolves to nothing`() = runTest {
-        val mine = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val theirs = repo.addProject("The other one", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(mine, "Scene — the docks")
+        val mine = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val theirs = repo.shelf.addProject("The other one", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(mine, "Scene — the docks")
 
         // Both halves exist, so checking them separately would let this through — and it would open
         // the editor with a back stack leading to a project the document was never filed in.
-        assertNull(repo.resolve(ProjectDestination.Document(theirs, docId)))
+        assertNull(repo.shelf.resolve(ProjectDestination.Document(theirs, docId)))
         assertEquals(
             ProjectDestination.Document(mine, docId),
-            repo.resolve(ProjectDestination.Document(mine, docId))
+            repo.shelf.resolve(ProjectDestination.Document(mine, docId))
         )
     }
 
     @Test
     fun `an archived project can still be opened at`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        repo.setArchived(projectId, true)
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        repo.shelf.setArchived(projectId, true)
 
         // Archiving takes a project off the shelf, not out of the app. A link to one still works,
         // and so does reopening it — otherwise archiving something would silently break every
         // reference to it rather than tidying it away.
         assertEquals(
             ProjectDestination.Workspace(projectId),
-            repo.resolve(ProjectDestination.Workspace(projectId))
+            repo.shelf.resolve(ProjectDestination.Workspace(projectId))
         )
     }
 
@@ -857,20 +857,20 @@ class ProjectRepositoryTest {
 
     @Test
     fun `a write in any section marks the project as worked on`() = runTest {
-        val projectId = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val docId = repo.addDoc(projectId, "Draft")
+        val projectId = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val docId = repo.docs.addDoc(projectId, "Draft")
         val columnId = dao.getColumns(projectId).first().id
 
         // "Last worked on" has to mean anything you did in the project rather than the last time you
         // renamed it, and the clock is too coarse to tell two writes in the same millisecond apart —
         // so each case starts from a stamp that is obviously stale.
         val writes: List<suspend () -> Unit> = listOf(
-            { repo.addOutlineNode(projectId, null, "Chapter one"); Unit },
-            { repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER); Unit },
-            { repo.addEvent(projectId, "The coronation", "Year 12", null); Unit },
-            { repo.addCard(projectId, columnId, "Rewrite it"); Unit },
-            { repo.addColumn(projectId, "Blocked"); Unit },
-            { repo.replaceDocFromMarkdown(docId, "She did not knock."); Unit }
+            { repo.outline.addOutlineNode(projectId, null, "Chapter one"); Unit },
+            { repo.lore.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER); Unit },
+            { repo.timeline.addEvent(projectId, "The coronation", "Year 12", null); Unit },
+            { repo.board.addCard(projectId, columnId, "Rewrite it"); Unit },
+            { repo.board.addColumn(projectId, "Blocked"); Unit },
+            { repo.docs.replaceDocFromMarkdown(docId, "She did not knock."); Unit }
         )
 
         writes.forEach { write ->
@@ -882,10 +882,10 @@ class ProjectRepositoryTest {
 
     @Test
     fun `the blocks of a project are its own, and stop at its edge`() = runTest {
-        val mine = repo.addProject("The Kestrel", ProjectKind.WRITING, null)
-        val theirs = repo.addProject("The other one", ProjectKind.WRITING, null)
-        repo.replaceDocFromMarkdown(repo.addDoc(mine, "Draft"), "Mine.")
-        repo.replaceDocFromMarkdown(repo.addDoc(theirs, "Draft"), "Theirs.")
+        val mine = repo.shelf.addProject("The Kestrel", ProjectKind.WRITING, null)
+        val theirs = repo.shelf.addProject("The other one", ProjectKind.WRITING, null)
+        repo.docs.replaceDocFromMarkdown(repo.docs.addDoc(mine, "Draft"), "Mine.")
+        repo.docs.replaceDocFromMarkdown(repo.docs.addDoc(theirs, "Draft"), "Theirs.")
 
         // Blocks carry no projectId of their own, so this is the one query that has to reach across
         // a join to scope itself — and both readers of it (search, compile) take the whole corpus.
@@ -897,14 +897,14 @@ class ProjectRepositoryTest {
 
     /** A project with something in every section, for the tests about what a delete takes with it. */
     private suspend fun fullyPopulatedProject(name: String): String {
-        val projectId = repo.addProject(name, ProjectKind.WRITING, null)
-        val chapter = repo.addOutlineNode(projectId, null, "Chapter one")
-        val scene = repo.addOutlineNode(projectId, chapter, "The docks")
-        val docId = repo.addDoc(projectId, "Scene — the docks", outlineNodeId = scene)
-        repo.replaceDocFromMarkdown(docId, "The docks smelled of tar.\n\nShe did not knock.")
-        repo.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER, body = "Sails the [[Straits]].")
-        repo.addEvent(projectId, "The coronation", "Year 12", "Before", outlineNodeId = scene)
-        repo.addCard(
+        val projectId = repo.shelf.addProject(name, ProjectKind.WRITING, null)
+        val chapter = repo.outline.addOutlineNode(projectId, null, "Chapter one")
+        val scene = repo.outline.addOutlineNode(projectId, chapter, "The docks")
+        val docId = repo.docs.addDoc(projectId, "Scene — the docks", outlineNodeId = scene)
+        repo.docs.replaceDocFromMarkdown(docId, "The docks smelled of tar.\n\nShe did not knock.")
+        repo.lore.addLoreEntry(projectId, "Kestrel", LoreCategory.CHARACTER, body = "Sails the [[Straits]].")
+        repo.timeline.addEvent(projectId, "The coronation", "Year 12", "Before", outlineNodeId = scene)
+        repo.board.addCard(
             projectId,
             dao.getColumns(projectId).first().id,
             "Rewrite the dock scene",

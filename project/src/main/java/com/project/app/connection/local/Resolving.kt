@@ -16,5 +16,5 @@ import com.project.app.data.repository.ProjectRepository
  * called in a sentence.
  */
 internal suspend fun ProjectRepository.resolveProject(reference: String): Resolution<Project> =
-    NameLookup.resolve(reference, allProjectsForLookup(), { it.id }, { it.name })
+    NameLookup.resolve(reference, lookups.allProjectsForLookup(), { it.id }, { it.name })
         .orProblem(noun = "project", reference = reference)

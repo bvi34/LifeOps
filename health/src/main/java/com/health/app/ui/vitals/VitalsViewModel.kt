@@ -34,29 +34,29 @@ import kotlinx.coroutines.launch
 class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val unit: StateFlow<TempUnit> =
-        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+        repo.profiles.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
 
     val weightUnit: StateFlow<WeightUnit> =
-        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
+        repo.profiles.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
     /** Deletes made on this tab, each with the way to put it back — see `ui/common/Undo`. */
     private val undoable = UndoOffers()
     val undoOffers: SharedFlow<UndoOffer> = undoable.offers
 
     val readings: StateFlow<List<Reading>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeReadings(profile.id) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.readings.observeReadings(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     fun logTemperature(celsius: Double, site: TempSite, note: String?, at: Long) = viewModelScope.launch {
-        selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
+        selected.value?.let { repo.readings.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
     /**
@@ -73,7 +73,7 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
         note: String?,
         at: Long
     ) = viewModelScope.launch {
-        selected.value?.let { repo.logReading(it.id, type, value, secondary, takenAt = at, note = note) }
+        selected.value?.let { repo.readings.logReading(it.id, type, value, secondary, takenAt = at, note = note) }
     }
 
     /**
@@ -83,11 +83,11 @@ class VitalsViewModel(private val repo: HealthRepository) : ViewModel() {
      * and the list this button sits in is scrolled with a thumb.
      */
     fun delete(reading: Reading) = viewModelScope.launch {
-        undoable.offer("${reading.type.label} deleted", repo.deleteReading(reading.id))
+        undoable.offer("${reading.type.label} deleted", repo.readings.deleteReading(reading.id))
     }
 
     /** Correct a reading already recorded — same checks as typing it, same row afterwards. */
-    fun update(reading: Reading) = viewModelScope.launch { repo.updateReading(reading) }
+    fun update(reading: Reading) = viewModelScope.launch { repo.readings.updateReading(reading) }
 
     fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
 

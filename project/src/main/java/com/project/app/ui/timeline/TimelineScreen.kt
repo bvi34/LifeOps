@@ -64,7 +64,7 @@ class TimelineViewModel(
     private val projectId: String
 ) : ViewModel() {
 
-    private val events = repo.observeTimeline(projectId)
+    private val events = repo.timeline.observeTimeline(projectId)
 
     val rows: StateFlow<List<TimelineRow>> =
         events.map { Timeline.rows(it) }
@@ -77,20 +77,20 @@ class TimelineViewModel(
 
     /** The outline, so an event can be told which piece of the work it happens in. */
     val outline: StateFlow<List<OutlineRow>> =
-        repo.observeOutline(projectId)
+        repo.outline.observeOutline(projectId)
             .map { Outline.flatten(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun add(title: String, whenLabel: String?, era: String?, detail: String?, outlineNodeId: String?) =
-        viewModelScope.launch { repo.addEvent(projectId, title, whenLabel, era, detail, outlineNodeId) }
+        viewModelScope.launch { repo.timeline.addEvent(projectId, title, whenLabel, era, detail, outlineNodeId) }
 
-    fun update(event: TimelineEvent) = viewModelScope.launch { repo.updateEvent(projectId, event) }
+    fun update(event: TimelineEvent) = viewModelScope.launch { repo.timeline.updateEvent(projectId, event) }
 
-    fun move(id: String, delta: Int) = viewModelScope.launch { repo.moveEvent(projectId, id, delta) }
+    fun move(id: String, delta: Int) = viewModelScope.launch { repo.timeline.moveEvent(projectId, id, delta) }
 
-    fun delete(id: String) = viewModelScope.launch { repo.deleteEvent(projectId, id) }
+    fun delete(id: String) = viewModelScope.launch { repo.timeline.deleteEvent(projectId, id) }
 
-    fun autoSort() = viewModelScope.launch { repo.autoSortTimeline(projectId) }
+    fun autoSort() = viewModelScope.launch { repo.timeline.autoSortTimeline(projectId) }
 
     class Factory(
         private val repo: ProjectRepository,

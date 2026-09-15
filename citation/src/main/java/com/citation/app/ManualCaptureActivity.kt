@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
+import com.citation.app.data.captureManual
 import com.citation.core.capture.RawCapture
 import kotlinx.coroutines.launch
 

@@ -36,14 +36,14 @@ private class HealthRoster(private val repository: HealthRepository) : PeerRoste
     private var cached: List<PersonBinder.Candidate>? = null
 
     override fun candidates(): List<PersonBinder.Candidate> =
-        cached ?: runBlocking { repository.bindingCandidates() }.also { cached = it }
+        cached ?: runBlocking { repository.profiles.bindingCandidates() }.also { cached = it }
 
     override fun read(localId: String): PersonPacket? = runBlocking {
-        repository.profileEntity(localId)?.toPacket()
+        repository.profiles.profileEntity(localId)?.toPacket()
     }
 
     override fun update(localId: String, packet: PersonPacket) = runBlocking {
-        repository.applyMergedProfile(localId, packet)
+        repository.profiles.applyMergedProfile(localId, packet)
         cached = null
     }
 
@@ -52,7 +52,7 @@ private class HealthRoster(private val repository: HealthRepository) : PeerRoste
      * directory has ticked as a household member. Everyone else never gets this far.
      */
     override fun create(packet: PersonPacket): String = runBlocking {
-        repository.createFromPacket(packet).also { cached = null }
+        repository.profiles.createFromPacket(packet).also { cached = null }
     }
 }
 
@@ -135,7 +135,7 @@ class HealthSyncService(
         // on the wire, and once every peer had acked it, it was gone for good — so a peer that later
         // changed what it holds had no way back to that person's record. A household is a handful of
         // rows; the cursors still suppress re-application, so a settled round is still a no-op.
-        val changes = repository.profileChangesSince(0L).map { (version, packet) ->
+        val changes = repository.profiles.profileChangesSince(0L).map { (version, packet) ->
             VersionedPacket(version, packet)
         }
         store.write(

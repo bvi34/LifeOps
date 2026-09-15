@@ -2,17 +2,21 @@ package com.lifeops.app.game
 
 import com.lifeops.app.game.content.StartingWeapon
 import com.lifeops.app.game.content.StoreCatalog
+import com.lifeops.app.game.core.Vec2
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
 import com.lifeops.app.game.run.RunStatus
-import com.lifeops.app.game.core.Vec2
+import com.lifeops.app.game.run.applyStorePurchase
+import com.lifeops.app.game.run.chooseOverflow
+import com.lifeops.app.game.run.chooseSetBonus
+import com.lifeops.app.game.run.skipStore
+import kotlin.math.cos
+import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
  * The between-set draft shop (DESIGN.md §9): four random offers, pick-one, banked-currency spend

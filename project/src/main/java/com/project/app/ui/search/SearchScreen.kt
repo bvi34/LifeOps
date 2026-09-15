@@ -66,7 +66,7 @@ class SearchViewModel(
      * instead of split between Kotlin and a pile of SQL `LIKE`s that could disagree with it.
      */
     private val corpus: StateFlow<SearchCorpus?> =
-        repo.observeSearchCorpus(projectId)
+        repo.search.observeSearchCorpus(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val hits: StateFlow<List<SearchHit>> =

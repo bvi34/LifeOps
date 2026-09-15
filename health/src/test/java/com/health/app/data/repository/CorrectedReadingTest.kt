@@ -51,19 +51,19 @@ class CorrectedReadingTest {
     @After
     fun tearDown() = db.close()
 
-    private suspend fun person() = repo.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
+    private suspend fun person() = repo.profiles.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
 
     private suspend fun reading(id: String) =
-        repo.observeReadings(db.healthDao().getReading(id)!!.profileId).first().first { it.id == id }
+        repo.readings.observeReadings(db.healthDao().getReading(id)!!.profileId).first().first { it.id == id }
 
     @Test
     fun `a corrected value keeps the row, its id and its illness`() = runTest {
         val profileId = person()
-        val id = repo.logTemperature(profileId, 384.0 / 10, TempSite.AXILLARY, takenAt = now - hour)
-        val flu = repo.startEpisode(profileId, "Flu", startedAt = now)
+        val id = repo.readings.logTemperature(profileId, 384.0 / 10, TempSite.AXILLARY, takenAt = now - hour)
+        val flu = repo.episodes.startEpisode(profileId, "Flu", startedAt = now)
         assertEquals("adopted into the illness declared after it", flu, db.healthDao().getReading(id)!!.episodeId)
 
-        repo.updateReading(reading(id).copy(value = 37.9, note = "after calpol"))
+        repo.readings.updateReading(reading(id).copy(value = 37.9, note = "after calpol"))
 
         val corrected = db.healthDao().getReading(id)!!
         assertEquals(37.9, corrected.value, 0.0001)
@@ -75,15 +75,15 @@ class CorrectedReadingTest {
     @Test
     fun `a corrected time re-files it against the illness it really happened in`() = runTest {
         val profileId = person()
-        val flu = repo.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
-        repo.endEpisode(flu, endedAt = now - 7 * day)
-        val cold = repo.startEpisode(profileId, "Cold", startedAt = now - day)
+        val flu = repo.episodes.startEpisode(profileId, "Flu", startedAt = now - 10 * day)
+        repo.episodes.endEpisode(flu, endedAt = now - 7 * day)
+        val cold = repo.episodes.startEpisode(profileId, "Cold", startedAt = now - day)
 
         // Recorded as today's, when it was really taken during the flu a week ago.
-        val id = repo.logReading(profileId, ReadingType.WEIGHT, 17.4, takenAt = now)
+        val id = repo.readings.logReading(profileId, ReadingType.WEIGHT, 17.4, takenAt = now)
         assertEquals(cold, db.healthDao().getReading(id)!!.episodeId)
 
-        repo.updateReading(reading(id).copy(takenAt = now - 8 * day))
+        repo.readings.updateReading(reading(id).copy(takenAt = now - 8 * day))
 
         assertEquals(flu, db.healthDao().getReading(id)!!.episodeId)
     }
@@ -91,11 +91,11 @@ class CorrectedReadingTest {
     @Test
     fun `correcting a reading that is no longer there changes nothing`() = runTest {
         val profileId = person()
-        val id = repo.logReading(profileId, ReadingType.HEART_RATE, 88.0)
+        val id = repo.readings.logReading(profileId, ReadingType.HEART_RATE, 88.0)
         val model = reading(id)
-        repo.deleteReading(id)
+        repo.readings.deleteReading(id)
 
-        repo.updateReading(model.copy(value = 92.0))
+        repo.readings.updateReading(model.copy(value = 92.0))
 
         assertEquals("a deleted row is not resurrected by an edit", null, db.healthDao().getReading(id))
     }

@@ -123,25 +123,25 @@ class RecordViewModel(
 ) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The care team, so a condition can point at the doctor who manages it. Household-scoped. */
     val providers: StateFlow<List<Provider>> =
-        repo.observeProviders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.careTeam.observeProviders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val record: StateFlow<StandingRecord> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(StandingRecord.EMPTY) else repo.observeStandingRecord(profile.id)
+            if (profile == null) flowOf(StandingRecord.EMPTY) else repo.standingRecord.observeStandingRecord(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StandingRecord.EMPTY)
 
     /** Grouped into series, most recently given first — see `logic/Immunizations`. */
     val vaccineSeries: StateFlow<List<VaccineSeries>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeVaccineSeries(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.immunizations.observeVaccineSeries(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -154,7 +154,7 @@ class RecordViewModel(
      */
     val immunizationsById: StateFlow<Map<String, Immunization>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeImmunizations(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.immunizations.observeImmunizations(profile.id)
         }
         .map { list -> list.associateBy { it.id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
@@ -168,26 +168,26 @@ class RecordViewModel(
      */
     val latestReadings: StateFlow<Map<ReadingType, Reading>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyMap()) else repo.observeLatestReadings(profile.id)
+            if (profile == null) flowOf(emptyMap()) else repo.readings.observeLatestReadings(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
     /** The units those readings are written in — see `logic/Temperature` and `logic/Weight`. */
     val unit: StateFlow<TempUnit> =
-        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+        repo.profiles.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
 
     val weightUnit: StateFlow<WeightUnit> =
-        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
+        repo.profiles.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
     val documents: StateFlow<List<Document>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeDocuments(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.documents.observeDocuments(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The paperwork that belongs to the house rather than to anybody in it — shown to everyone. */
     val householdDocuments: StateFlow<List<Document>> =
-        repo.observeHouseholdDocuments()
+        repo.documents.observeHouseholdDocuments()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _pendingDocument = MutableStateFlow<PendingDocument?>(null)
@@ -204,10 +204,10 @@ class RecordViewModel(
         _documentMessage.value = null
     }
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     fun addAllergy(profileId: String, draft: AllergyDraft) = viewModelScope.launch {
-        repo.addAllergy(
+        repo.standingRecord.addAllergy(
             profileId = profileId,
             substance = draft.substance,
             kind = draft.kind,
@@ -218,7 +218,7 @@ class RecordViewModel(
         )
     }
 
-    fun updateAllergy(allergy: Allergy) = viewModelScope.launch { repo.updateAllergy(allergy) }
+    fun updateAllergy(allergy: Allergy) = viewModelScope.launch { repo.standingRecord.updateAllergy(allergy) }
 
     /**
      * Delete an allergy, and offer it back.
@@ -227,11 +227,11 @@ class RecordViewModel(
      * mistake loses the warning, not just the record, and would never be told it had.
      */
     fun deleteAllergy(allergy: Allergy) = viewModelScope.launch {
-        undoable.offer("${allergy.substance} allergy deleted", repo.deleteAllergy(allergy.id))
+        undoable.offer("${allergy.substance} allergy deleted", repo.standingRecord.deleteAllergy(allergy.id))
     }
 
     fun addCondition(profileId: String, draft: ConditionDraft) = viewModelScope.launch {
-        repo.addCondition(
+        repo.standingRecord.addCondition(
             profileId = profileId,
             name = draft.name,
             status = draft.status,
@@ -243,14 +243,14 @@ class RecordViewModel(
         )
     }
 
-    fun updateCondition(condition: Condition) = viewModelScope.launch { repo.updateCondition(condition) }
+    fun updateCondition(condition: Condition) = viewModelScope.launch { repo.standingRecord.updateCondition(condition) }
 
     fun deleteCondition(condition: Condition) = viewModelScope.launch {
-        undoable.offer("${condition.name} deleted", repo.deleteCondition(condition.id))
+        undoable.offer("${condition.name} deleted", repo.standingRecord.deleteCondition(condition.id))
     }
 
     fun addImmunization(profileId: String, draft: ImmunizationDraft) = viewModelScope.launch {
-        repo.addImmunization(
+        repo.immunizations.addImmunization(
             profileId = profileId,
             vaccine = draft.vaccine,
             givenDate = draft.givenDate,
@@ -264,10 +264,10 @@ class RecordViewModel(
     }
 
     fun updateImmunization(immunization: Immunization) =
-        viewModelScope.launch { repo.updateImmunization(immunization) }
+        viewModelScope.launch { repo.immunizations.updateImmunization(immunization) }
 
     fun deleteImmunization(immunization: Immunization) = viewModelScope.launch {
-        undoable.offer("${immunization.vaccine} dose deleted", repo.deleteImmunization(immunization.id))
+        undoable.offer("${immunization.vaccine} dose deleted", repo.immunizations.deleteImmunization(immunization.id))
     }
 
     fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }
@@ -300,7 +300,7 @@ class RecordViewModel(
 
     fun filePendingDocument(draft: DocumentDraft) = viewModelScope.launch {
         val pending = _pendingDocument.value ?: return@launch
-        repo.addDocument(
+        repo.documents.addDocument(
             title = draft.title,
             kind = draft.kind,
             fileName = pending.stored.fileName,
@@ -313,9 +313,9 @@ class RecordViewModel(
         _pendingDocument.value = null
     }
 
-    fun updateDocument(document: Document) = viewModelScope.launch { repo.updateDocument(document) }
+    fun updateDocument(document: Document) = viewModelScope.launch { repo.documents.updateDocument(document) }
 
-    fun deleteDocument(id: String) = viewModelScope.launch { repo.deleteDocument(id) }
+    fun deleteDocument(id: String) = viewModelScope.launch { repo.documents.deleteDocument(id) }
 
     /**
      * Hand a document to whatever on the device can open it.

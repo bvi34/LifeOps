@@ -48,7 +48,7 @@ import kotlinx.coroutines.flow.stateIn
 class DueViewModel(repo: MaintenanceRepository) : ViewModel() {
 
     val docket: StateFlow<List<DocketEntry>> =
-        repo.observeDocket().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.board.observeDocket().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     class Factory(private val repo: MaintenanceRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

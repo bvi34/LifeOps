@@ -43,27 +43,27 @@ import kotlinx.coroutines.launch
 class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val unit: StateFlow<TempUnit> =
-        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+        repo.profiles.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
 
     val weightUnit: StateFlow<WeightUnit> =
-        repo.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
+        repo.profiles.observeWeightUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WeightUnit.KILOGRAMS)
 
     val episodes: StateFlow<List<Episode>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeEpisodes(profile.id) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.episodes.observeEpisodes(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val careNotes: StateFlow<List<CareNote>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeCareNotes(profile.id) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.careNotes.observeCareNotes(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val medications: StateFlow<List<Medication>> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.observeMedications(profile.id) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(emptyList()) else repo.medications.observeMedications(profile.id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _openSummary = MutableStateFlow<EpisodeSummary?>(null)
@@ -90,7 +90,7 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      */
     val openHistory: StateFlow<List<TimelineDay>> = _openHistory.asStateFlow()
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     /**
      * The display units live on this tab because this is where a person's *normal* is set.
@@ -106,14 +106,14 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      * happens to be open, which is the one place the difference matters most.
      */
     fun setUnit(unit: TempUnit) = viewModelScope.launch {
-        repo.setTemperatureUnit(unit)
-        summaryEpisodeId?.let { _openHistory.value = repo.episodeHistory(it) }
+        repo.profiles.setTemperatureUnit(unit)
+        summaryEpisodeId?.let { _openHistory.value = repo.history.episodeHistory(it) }
     }
 
     /** kg or lb — the same bargain as [setUnit], for the same reason, over stored kilograms. */
     fun setWeightUnit(unit: WeightUnit) = viewModelScope.launch {
-        repo.setWeightUnit(unit)
-        summaryEpisodeId?.let { _openHistory.value = repo.episodeHistory(it) }
+        repo.profiles.setWeightUnit(unit)
+        summaryEpisodeId?.let { _openHistory.value = repo.history.episodeHistory(it) }
     }
 
     /**
@@ -127,13 +127,13 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      */
     fun updateHealthDetails(profile: Profile, baselineTempC: Double?, notes: String?) =
         viewModelScope.launch {
-            repo.updateProfile(profile.copy(baselineTempC = baselineTempC, notes = notes))
+            repo.profiles.updateProfile(profile.copy(baselineTempC = baselineTempC, notes = notes))
         }
 
     fun loadSummary(episodeId: String) = viewModelScope.launch {
         summaryEpisodeId = episodeId
-        _openSummary.value = repo.summarizeEpisode(episodeId)
-        _openHistory.value = repo.episodeHistory(episodeId)
+        _openSummary.value = repo.episodes.summarizeEpisode(episodeId)
+        _openHistory.value = repo.history.episodeHistory(episodeId)
     }
 
     fun clearSummary() {
@@ -159,9 +159,9 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
         val profile = selected.value ?: return@launch
         when (record) {
             is BackfillRecord.Temperature ->
-                repo.logTemperature(profile.id, record.celsius, record.site, record.at, record.note)
+                repo.readings.logTemperature(profile.id, record.celsius, record.site, record.at, record.note)
             is BackfillRecord.Dose ->
-                repo.logDose(
+                repo.doses.logDose(
                     profileId = profile.id,
                     medicationId = record.medication?.id,
                     medicationName = record.name,
@@ -171,21 +171,21 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
                     note = record.note
                 )
             is BackfillRecord.Symptom ->
-                repo.addSymptom(profile.id, record.name, record.severity, record.at, record.note)
+                repo.symptoms.addSymptom(profile.id, record.name, record.severity, record.at, record.note)
             is BackfillRecord.Care ->
-                repo.addCareNote(profile.id, record.kind, record.text, record.at)
+                repo.careNotes.addCareNote(profile.id, record.kind, record.text, record.at)
         }
         summaryEpisodeId?.let { loadSummary(it) }
     }
 
     fun endEpisode(episode: Episode) = viewModelScope.launch {
-        repo.endEpisode(episode.id)
+        repo.episodes.endEpisode(episode.id)
         // Closing an episode changes its summary (it stops accruing, symptoms resolve), so refresh
         // it if that is the one on screen.
         if (summaryEpisodeId == episode.id) loadSummary(episode.id)
     }
 
-    fun reopenEpisode(episode: Episode) = viewModelScope.launch { repo.reopenEpisode(episode.id) }
+    fun reopenEpisode(episode: Episode) = viewModelScope.launch { repo.episodes.reopenEpisode(episode.id) }
 
     /**
      * Move an illness's dates — how one that was never recorded at the time gets entered at all.
@@ -195,7 +195,7 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
      * both can change substantially from moving one date.
      */
     fun setDates(episode: Episode, startedAt: Long, endedAt: Long?) = viewModelScope.launch {
-        repo.setEpisodeDates(episode.id, startedAt, endedAt)
+        repo.episodes.setEpisodeDates(episode.id, startedAt, endedAt)
         if (summaryEpisodeId == episode.id) loadSummary(episode.id)
     }
 
@@ -204,12 +204,12 @@ class InformationViewModel(private val repo: HealthRepository) : ViewModel() {
     val undoOffers: SharedFlow<UndoOffer> = undoable.offers
 
     fun deleteEpisode(episode: Episode) = viewModelScope.launch {
-        repo.deleteEpisode(episode.id)
+        repo.episodes.deleteEpisode(episode.id)
         clearSummary()
     }
 
     fun deleteCareNote(note: CareNote) = viewModelScope.launch {
-        undoable.offer("${note.kind.label} note deleted", repo.deleteCareNote(note.id))
+        undoable.offer("${note.kind.label} note deleted", repo.careNotes.deleteCareNote(note.id))
     }
 
     fun undo(offer: UndoOffer) = viewModelScope.launch { offer.restore.undo() }

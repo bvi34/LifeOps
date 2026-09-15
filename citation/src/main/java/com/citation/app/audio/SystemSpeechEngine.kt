@@ -6,11 +6,11 @@ import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import com.citation.core.speech.Utterance
-import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * The platform's own text-to-speech, wrapped to the [SpeechEngine] contract.

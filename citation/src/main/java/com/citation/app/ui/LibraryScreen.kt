@@ -27,9 +27,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -69,15 +69,20 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.data.coverFile
+import com.citation.app.data.createCollection
+import com.citation.app.data.refreshFromFile
+import com.citation.app.data.setFavorite
+import com.citation.app.data.setReadingState
 import com.citation.core.library.BookCollection
 import com.citation.core.library.LibraryEntry
 import com.citation.core.library.LibrarySort
 import com.citation.core.model.SourceType
 import com.citation.core.sync.AcquisitionState
 import com.citation.core.sync.ReadingState
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * The library.

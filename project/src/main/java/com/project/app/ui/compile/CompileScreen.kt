@@ -80,7 +80,7 @@ class CompileViewModel(
     }
 
     private fun recompile() = viewModelScope.launch {
-        _manuscript.value = repo.compile(projectId, _options.value)
+        _manuscript.value = repo.search.compile(projectId, _options.value)
     }
 
     class Factory(

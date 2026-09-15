@@ -2,12 +2,13 @@ package com.citation.app.data.pdf
 
 import android.content.Context
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.PdfTextSource
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.text.PDFTextStripper
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.File
 
 /**
  * The one Android-side step of the PDF reflow: pull the text layer out of an owned PDF, **one page
@@ -22,7 +23,7 @@ import java.io.File
  * Uses the PDFBox-Android port already in the app. Its font/resource loader must be initialized once
  * against a context before the first parse; [ensureInit] handles that idempotently.
  */
-class PdfPageText(context: Context) : CitationRepository.PdfTextSource {
+class PdfPageText(context: Context) : PdfTextSource {
 
     private val appContext = context.applicationContext
 

@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.OreillySession
 import com.citation.app.data.OreillyWebCache
 import com.citation.app.ui.reader.ReaderWebStyler
 import com.citation.core.oreilly.EzproxyLogin
@@ -56,7 +57,7 @@ import com.citation.core.oreilly.OreillyLink
 @OptIn(ExperimentalMaterial3Api::class)
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun OreillyReaderScreen(session: CitationRepository.OreillySession, vm: ReaderViewModel) {
+fun OreillyReaderScreen(session: OreillySession, vm: ReaderViewModel) {
     var currentLocation by remember { mutableStateOf<String?>(null) }
     var showNote by remember { mutableStateOf(false) }
     var quote by remember { mutableStateOf("") }

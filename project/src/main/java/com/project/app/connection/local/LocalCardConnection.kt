@@ -36,7 +36,7 @@ object LocalCardConnection {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
                     val projectId = found.value.id
-                    val columns = repo.columnsOf(projectId)
+                    val columns = repo.lookups.columnsOf(projectId)
 
                     val named = p.getString("column")
                     val column = if (named == null) {
@@ -67,7 +67,7 @@ object LocalCardConnection {
                             )
                     }
 
-                    val id = repo.addCard(
+                    val id = repo.board.addCard(
                         projectId = projectId,
                         columnId = column.id,
                         title = p.requireString("title"),
@@ -84,11 +84,11 @@ object LocalCardConnection {
         registry.register("local", "card", "move") { request ->
             val p = request.params
             val id = p.requireString("id")
-            val card = repo.cardWithProject(id)
+            val card = repo.lookups.cardWithProject(id)
                 ?: return@register ConnectionResult.fail(ConnectionError.NOT_FOUND, "No card with id '$id'")
 
             val named = p.requireString("column")
-            val columns = repo.columnsOf(card.projectId)
+            val columns = repo.lookups.columnsOf(card.projectId)
             val match = NameLookup.resolve(named, columns, { it.id }, { it.name })
             val target = when (val column = match.orProblem("column on that board", named)) {
                 is Resolution.Problem -> return@register column.failure
@@ -97,27 +97,27 @@ object LocalCardConnection {
 
             // Clamped to the end of the lane, which is where a card put there by somebody else's
             // sentence belongs — not on top of the thing you were about to pick up.
-            repo.moveCard(card.projectId, id, target.id, Int.MAX_VALUE)
+            repo.board.moveCard(card.projectId, id, target.id, Int.MAX_VALUE)
             ConnectionResult.ok("id" to id, "columnId" to target.id)
         }
 
         registry.register("local", "card", "complete") { request ->
             val id = request.params.requireString("id")
-            val card = repo.cardWithProject(id)
+            val card = repo.lookups.cardWithProject(id)
                 ?: return@register ConnectionResult.fail(ConnectionError.NOT_FOUND, "No card with id '$id'")
 
             // Moved into the board's finished column, which is what done means here. The LifeOps
             // task it may have published is deliberately *not* touched: the next hand-off round sees
             // a finished card and retires it, which is the one place that decision is made.
-            val moved = repo.completeCard(card.projectId, id)
+            val moved = repo.lookups.completeCard(card.projectId, id)
             ConnectionResult.ok("id" to id, "moved" to moved)
         }
 
         registry.register("local", "card", "delete") { request ->
             val id = request.params.requireString("id")
-            val card = repo.cardWithProject(id)
+            val card = repo.lookups.cardWithProject(id)
                 ?: return@register ConnectionResult.fail(ConnectionError.NOT_FOUND, "No card with id '$id'")
-            repo.deleteCard(card.projectId, id)
+            repo.board.deleteCard(card.projectId, id)
             ConnectionResult.ok("id" to id)
         }
     }

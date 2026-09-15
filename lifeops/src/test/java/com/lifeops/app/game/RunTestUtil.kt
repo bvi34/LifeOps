@@ -2,6 +2,9 @@ package com.lifeops.app.game
 
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunStatus
+import com.lifeops.app.game.run.chooseOverflow
+import com.lifeops.app.game.run.chooseSetBonus
+import com.lifeops.app.game.run.skipStore
 
 /**
  * Auto-resolve whichever pause the engine is sitting on by taking the first offered choice: a

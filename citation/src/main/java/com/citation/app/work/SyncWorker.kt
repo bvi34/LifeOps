@@ -7,6 +7,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.citation.app.CitationApplication
+import com.citation.app.data.sync
 import java.util.concurrent.TimeUnit
 
 /**

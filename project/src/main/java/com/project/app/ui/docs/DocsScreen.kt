@@ -65,23 +65,23 @@ class DocsViewModel(
 ) : ViewModel() {
 
     val docs: StateFlow<List<Doc>> =
-        repo.observeDocs(projectId)
+        repo.docs.observeDocs(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The outline, so a document can be told which piece of the work it is the text of. */
     val outline: StateFlow<List<OutlineNode>> =
-        repo.observeOutline(projectId)
+        repo.outline.observeOutline(projectId)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun add(title: String, onCreated: (String) -> Unit) =
-        viewModelScope.launch { onCreated(repo.addDoc(projectId, title)) }
+        viewModelScope.launch { onCreated(repo.docs.addDoc(projectId, title)) }
 
-    fun update(doc: Doc) = viewModelScope.launch { repo.updateDoc(doc) }
+    fun update(doc: Doc) = viewModelScope.launch { repo.docs.updateDoc(doc) }
 
-    fun delete(docId: String) = viewModelScope.launch { repo.deleteDoc(docId) }
+    fun delete(docId: String) = viewModelScope.launch { repo.docs.deleteDoc(docId) }
 
     fun move(docId: String, newParentId: String?) =
-        viewModelScope.launch { repo.moveDoc(projectId, docId, newParentId) }
+        viewModelScope.launch { repo.docs.moveDoc(projectId, docId, newParentId) }
 
     class Factory(
         private val repo: ProjectRepository,

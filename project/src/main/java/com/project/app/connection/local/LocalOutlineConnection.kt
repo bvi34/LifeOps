@@ -25,7 +25,7 @@ object LocalOutlineConnection {
             when (val found = repo.resolveProject(p.requireString("project"))) {
                 is Resolution.Problem -> found.failure
                 is Resolution.Ok -> {
-                    val id = repo.addOutlineNode(
+                    val id = repo.outline.addOutlineNode(
                         projectId = found.value.id,
                         parentId = p.getString("parentId"),
                         title = p.requireString("title")
@@ -43,8 +43,8 @@ object LocalOutlineConnection {
                     ConnectionError.INVALID_PARAMS,
                     "Unknown status. One of: " + OutlineStatus.entries.joinToString(", ") { it.key }
                 )
-            if (repo.outlineNodeExists(id)) {
-                repo.setOutlineStatus(id, status)
+            if (repo.lookups.outlineNodeExists(id)) {
+                repo.outline.setOutlineStatus(id, status)
                 ConnectionResult.ok("id" to id, "status" to status.key)
             } else {
                 ConnectionResult.fail(ConnectionError.NOT_FOUND, "No outline row with id '$id'")

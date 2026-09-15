@@ -37,28 +37,28 @@ import kotlinx.coroutines.launch
 class TodayViewModel(private val repo: HealthRepository) : ViewModel() {
 
     val profiles: StateFlow<List<Profile>> =
-        repo.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.profiles.observeProfiles().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val selected: StateFlow<Profile?> =
-        repo.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.profiles.observeSelectedProfile().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val unit: StateFlow<TempUnit> =
-        repo.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
+        repo.profiles.observeTemperatureUnit().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), TempUnit.CELSIUS)
 
     val snapshot: StateFlow<ProfileSnapshot?> = selected
-        .flatMapLatest { profile -> if (profile == null) flowOf(null) else repo.observeSnapshot(profile) }
+        .flatMapLatest { profile -> if (profile == null) flowOf(null) else repo.snapshots.observeSnapshot(profile) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val medications: StateFlow<List<Medication>> = selected
         .flatMapLatest { profile ->
-            if (profile == null) flowOf(emptyList()) else repo.observeMedications(profile.id)
+            if (profile == null) flowOf(emptyList()) else repo.medications.observeMedications(profile.id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun select(profile: Profile) = repo.selectProfile(profile.id)
+    fun select(profile: Profile) = repo.profiles.selectProfile(profile.id)
 
     fun logTemperature(celsius: Double, site: TempSite, note: String?, at: Long) = viewModelScope.launch {
-        selected.value?.let { repo.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
+        selected.value?.let { repo.readings.logTemperature(it.id, celsius, site, takenAt = at, note = note) }
     }
 
     fun logDose(
@@ -71,24 +71,24 @@ class TodayViewModel(private val repo: HealthRepository) : ViewModel() {
     ) =
         viewModelScope.launch {
             val profile = selected.value ?: return@launch
-            repo.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
+            repo.doses.logDose(profile.id, medication?.id, name, amount, unit, takenAt = at, note = note)
         }
 
     fun addSymptom(name: String, severity: Int, note: String?, startedAt: Long) = viewModelScope.launch {
-        selected.value?.let { repo.addSymptom(it.id, name, severity, startedAt = startedAt, note = note) }
+        selected.value?.let { repo.symptoms.addSymptom(it.id, name, severity, startedAt = startedAt, note = note) }
     }
 
-    fun resolveSymptom(symptomId: String) = viewModelScope.launch { repo.setSymptomEnded(symptomId) }
+    fun resolveSymptom(symptomId: String) = viewModelScope.launch { repo.symptoms.setSymptomEnded(symptomId) }
 
     fun addCareNote(kind: CareKind, text: String, at: Long) = viewModelScope.launch {
-        selected.value?.let { repo.addCareNote(it.id, kind, text, at = at) }
+        selected.value?.let { repo.careNotes.addCareNote(it.id, kind, text, at = at) }
     }
 
     fun startEpisode(title: String, startedAt: Long = System.currentTimeMillis()) = viewModelScope.launch {
-        selected.value?.let { repo.startEpisode(it.id, title, startedAt = startedAt) }
+        selected.value?.let { repo.episodes.startEpisode(it.id, title, startedAt = startedAt) }
     }
 
-    fun endEpisode(episodeId: String) = viewModelScope.launch { repo.endEpisode(episodeId) }
+    fun endEpisode(episodeId: String) = viewModelScope.launch { repo.episodes.endEpisode(episodeId) }
 
     class Factory(private val repo: HealthRepository) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

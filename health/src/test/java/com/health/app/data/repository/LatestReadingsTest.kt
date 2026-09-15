@@ -47,12 +47,12 @@ class LatestReadingsTest {
 
     @Test
     fun `the most recent of each kind, not the first one recorded`() = runTest {
-        val profileId = repo.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
-        repo.logReading(profileId, ReadingType.WEIGHT, 16.2, takenAt = now - 30 * day)
-        repo.logReading(profileId, ReadingType.WEIGHT, 17.4, takenAt = now - 3 * day)
-        repo.logReading(profileId, ReadingType.OXYGEN, 97.0, takenAt = now - day)
+        val profileId = repo.profiles.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
+        repo.readings.logReading(profileId, ReadingType.WEIGHT, 16.2, takenAt = now - 30 * day)
+        repo.readings.logReading(profileId, ReadingType.WEIGHT, 17.4, takenAt = now - 3 * day)
+        repo.readings.logReading(profileId, ReadingType.OXYGEN, 97.0, takenAt = now - day)
 
-        val latest = repo.observeLatestReadings(profileId).first()
+        val latest = repo.readings.observeLatestReadings(profileId).first()
 
         assertEquals(17.4, latest[ReadingType.WEIGHT]!!.value, 0.0001)
         assertEquals(now - 3 * day, latest[ReadingType.WEIGHT]!!.takenAt)
@@ -62,12 +62,12 @@ class LatestReadingsTest {
 
     @Test
     fun `one person's readings never answer for another's`() = runTest {
-        val ada = repo.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
-        val sam = repo.addProfile("Sam", "Son", "2016-01-09", 0xFF5D4037L)
-        repo.logReading(ada, ReadingType.WEIGHT, 17.4, takenAt = now - day)
-        repo.logReading(sam, ReadingType.WEIGHT, 24.8, takenAt = now)
+        val ada = repo.profiles.addProfile("Ada", "Daughter", "2019-03-14", 0xFF00796BL)
+        val sam = repo.profiles.addProfile("Sam", "Son", "2016-01-09", 0xFF5D4037L)
+        repo.readings.logReading(ada, ReadingType.WEIGHT, 17.4, takenAt = now - day)
+        repo.readings.logReading(sam, ReadingType.WEIGHT, 24.8, takenAt = now)
 
-        assertEquals(17.4, repo.observeLatestReadings(ada).first()[ReadingType.WEIGHT]!!.value, 0.0001)
-        assertEquals(24.8, repo.observeLatestReadings(sam).first()[ReadingType.WEIGHT]!!.value, 0.0001)
+        assertEquals(17.4, repo.readings.observeLatestReadings(ada).first()[ReadingType.WEIGHT]!!.value, 0.0001)
+        assertEquals(24.8, repo.readings.observeLatestReadings(sam).first()[ReadingType.WEIGHT]!!.value, 0.0001)
     }
 }

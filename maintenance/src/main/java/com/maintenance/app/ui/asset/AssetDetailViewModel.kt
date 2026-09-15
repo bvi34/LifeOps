@@ -43,7 +43,7 @@ class AssetDetailViewModel(
 ) : ViewModel() {
 
     val detail: StateFlow<AssetDetail?> =
-        repo.observeAssetDetail(assetId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repo.board.observeAssetDetail(assetId).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
      * Every service ever logged, on **every** asset — held only so the log dialog can offer back a
@@ -51,17 +51,17 @@ class AssetDetailViewModel(
      * the mower, so this deliberately reaches past the asset this page is about.
      */
     private val serviceEntries: StateFlow<List<ServiceEntry>> =
-        repo.observeServiceEntries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.board.observeServiceEntries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun suggestVendors(typed: String): List<String> = Vendors.suggestions(serviceEntries.value, typed)
 
     // --- the asset itself ---
 
     fun save(asset: Asset, attributes: Map<String, String>) =
-        viewModelScope.launch { repo.updateAsset(asset, attributes) }
+        viewModelScope.launch { repo.assets.updateAsset(asset, attributes) }
 
     fun setArchived(archived: Boolean) = viewModelScope.launch {
-        repo.setArchived(assetId, archived)
+        repo.assets.setArchived(assetId, archived)
         // An asset you no longer own has nothing owed on it: the round takes its tasks off the week.
         publisher.round()
     }
@@ -69,7 +69,7 @@ class AssetDetailViewModel(
     fun delete(onDeleted: () -> Unit) = viewModelScope.launch {
         // The cascade cannot reach into LifeOps, so the tasks come off the week here, before the
         // rows that name them are gone.
-        publisher.retire(repo.deleteAsset(assetId))
+        publisher.retire(repo.assets.deleteAsset(assetId))
         onDeleted()
     }
 
@@ -81,22 +81,22 @@ class AssetDetailViewModel(
 
     fun addPlan(title: String, everyDays: Int?, everyMeter: Long?, notes: String?, publishToLifeOps: Boolean) =
         viewModelScope.launch {
-            repo.addPlan(assetId, title, everyDays, everyMeter, notes, publishToLifeOps)
+            repo.upkeep.addPlan(assetId, title, everyDays, everyMeter, notes, publishToLifeOps)
             publisher.round()
         }
 
     fun updatePlan(plan: UpkeepPlan) = viewModelScope.launch {
-        repo.updatePlan(plan)
+        repo.upkeep.updatePlan(plan)
         publisher.round()
     }
 
     fun setPlanActive(planId: String, active: Boolean) = viewModelScope.launch {
-        repo.setPlanActive(planId, active)
+        repo.upkeep.setPlanActive(planId, active)
         publisher.round()
     }
 
     fun deletePlan(planId: String) = viewModelScope.launch {
-        repo.deletePlan(planId)?.let { publisher.retire(listOf(it)) }
+        repo.upkeep.deletePlan(planId)?.let { publisher.retire(listOf(it)) }
     }
 
     fun logService(
@@ -108,19 +108,19 @@ class AssetDetailViewModel(
         meterValue: Long?,
         notes: String?
     ) = viewModelScope.launch {
-        repo.logService(assetId, planId, title, vendor, performedAt, costCents, meterValue, notes)
+        repo.week.logService(assetId, planId, title, vendor, performedAt, costCents, meterValue, notes)
         // The clock moved: this occurrence's task comes off the week and the next one goes on.
         publisher.round()
     }
 
-    fun deleteRecord(recordId: String) = viewModelScope.launch { repo.deleteRecord(recordId) }
+    fun deleteRecord(recordId: String) = viewModelScope.launch { repo.week.deleteRecord(recordId) }
 
     // --- meter ---
 
     fun addReading(value: Long, readAt: Long) = viewModelScope.launch {
         // The reading is what satisfies a "read the odometer" prompt, so the tasks those prompts put
         // on the week tick themselves off — you have already done the thing they were asking for.
-        publisher.completeTasks(repo.addReading(assetId, value, readAt))
+        publisher.completeTasks(repo.meter.addReading(assetId, value, readAt))
         // A reading also changes the usage rate, and the rate is what dates a mileage interval — so
         // a task's date on the week can move because of a number typed at a petrol pump.
         publisher.round()
@@ -175,12 +175,12 @@ class AssetDetailViewModel(
      * transmission and drivetrain — filling only the fields that are still blank.
      */
     fun useFacts(facts: VehicleFacts) = viewModelScope.launch {
-        repo.applyVehicleFacts(assetId, facts)
+        repo.week.applyVehicleFacts(assetId, facts)
     }
 
     /** Add a schedule's items as plans, then put whatever is due onto the week. */
     fun applyPack(pack: SchedulePack) = viewModelScope.launch {
-        val application = repo.applyPack(assetId, pack)
+        val application = repo.week.applyPack(assetId, pack)
         _lookup.update { it.copy(applied = application) }
         publisher.round()
     }
@@ -198,7 +198,7 @@ class AssetDetailViewModel(
                 // The check is what satisfies the prompt that asked for it, so the task it put on
                 // the week ticks itself off — the same way a meter reading ticks off the odometer
                 // prompt. The round then dates the next check.
-                publisher.completeTasks(repo.saveRecalls(assetId, recalls))
+                publisher.completeTasks(repo.recalls.saveRecalls(assetId, recalls))
                 publisher.round()
                 _lookup.update {
                     it.copy(
@@ -213,7 +213,7 @@ class AssetDetailViewModel(
     }
 
     fun setRecallAcknowledged(campaign: String, acknowledged: Boolean) = viewModelScope.launch {
-        repo.setRecallAcknowledged(assetId, campaign, acknowledged)
+        repo.recalls.setRecallAcknowledged(assetId, campaign, acknowledged)
     }
 
     /**
@@ -227,7 +227,7 @@ class AssetDetailViewModel(
      */
     fun addRecallPrompt() = viewModelScope.launch {
         val item = SchedulePacks.RECALL_CHECK_ITEM
-        repo.addPlan(
+        repo.upkeep.addPlan(
             assetId = assetId,
             title = item.title,
             everyDays = item.everyDays,
@@ -250,7 +250,7 @@ class AssetDetailViewModel(
      * what an app worked out is an offer until somebody accepts it.
      */
     fun useRegion(region: Region) = viewModelScope.launch {
-        repo.setAttribute(assetId, ATTR_REGION, region.key)
+        repo.assets.setAttribute(assetId, ATTR_REGION, region.key)
         // The region decides which climate and hazard schedules fit, but applying one is still a
         // separate press: nothing goes onto anybody's week for having agreed with a guess.
     }
@@ -270,13 +270,13 @@ class AssetDetailViewModel(
         startEpochDay: Long?,
         notes: String?
     ) = viewModelScope.launch {
-        repo.upsertLoan(
+        repo.money.upsertLoan(
             loanId, assetId, label, lender, accountRef, principalCents,
             annualRateBps, termMonths, paymentCents, escrowCents, startEpochDay, notes
         )
     }
 
-    fun deleteLoan(loanId: String) = viewModelScope.launch { repo.deleteLoan(loanId) }
+    fun deleteLoan(loanId: String) = viewModelScope.launch { repo.money.deleteLoan(loanId) }
 
     fun saveCoverage(
         coverageId: String?,
@@ -289,10 +289,10 @@ class AssetDetailViewModel(
         expiresAt: Long?,
         notes: String?
     ) = viewModelScope.launch {
-        repo.upsertCoverage(coverageId, assetId, kind, provider, policyNumber, premiumCents, period, startsAt, expiresAt, notes)
+        repo.money.upsertCoverage(coverageId, assetId, kind, provider, policyNumber, premiumCents, period, startsAt, expiresAt, notes)
     }
 
-    fun deleteCoverage(coverageId: String) = viewModelScope.launch { repo.deleteCoverage(coverageId) }
+    fun deleteCoverage(coverageId: String) = viewModelScope.launch { repo.money.deleteCoverage(coverageId) }
 
     private companion object {
         const val ATTR_REGION = "region"

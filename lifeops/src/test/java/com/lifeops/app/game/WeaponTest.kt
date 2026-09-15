@@ -6,6 +6,7 @@ import com.lifeops.app.game.core.Vec2
 import com.lifeops.app.game.run.RunConfig
 import com.lifeops.app.game.run.RunEngine
 import com.lifeops.app.game.run.RunInput
+import com.lifeops.app.game.run.reload
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

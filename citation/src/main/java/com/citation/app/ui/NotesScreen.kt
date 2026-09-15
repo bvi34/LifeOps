@@ -10,10 +10,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -50,7 +50,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.citation.app.data.BookSummary
 import com.citation.app.data.CitationRepository
+import com.citation.app.data.linkNoteToBook
+import com.citation.app.data.setNoteHighlight
+import com.citation.app.data.setNoteTags
 import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
 import com.citation.core.note.NoteResolver
@@ -236,7 +240,7 @@ fun NoteDetailDialog(
     onDelete: (() -> Unit)? = null,
     onSaveTags: ((String) -> Unit)? = null,
     onSaveHighlight: ((HighlightColor) -> Unit)? = null,
-    linkTargets: List<CitationRepository.BookSummary> = emptyList(),
+    linkTargets: List<BookSummary> = emptyList(),
     onLink: ((String) -> Unit)? = null
 ) {
     var body by remember(note.key) { mutableStateOf(note.body) }
@@ -372,7 +376,7 @@ private fun HighlightColorRow(selected: HighlightColor, onPick: (HighlightColor)
  */
 @Composable
 private fun LinkBookPicker(
-    books: List<CitationRepository.BookSummary>,
+    books: List<BookSummary>,
     onPick: (String) -> Unit,
     onDismiss: () -> Unit
 ) {

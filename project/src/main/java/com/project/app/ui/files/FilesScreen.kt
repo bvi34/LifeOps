@@ -49,7 +49,7 @@ class FilesViewModel(
 
     fun load() {
         viewModelScope.launch {
-            val found = repo.attachTarget(projectId, kind, recordId)
+            val found = repo.files.attachTarget(projectId, kind, recordId)
             target = found
             missing = found == null
         }
