@@ -506,8 +506,10 @@ other fact like that — *is it raining, and will it be?* gets asked more often 
 gets tapped — so it sits directly beneath the clock as one glance-deep card: the current
 temperature, what the sky is doing, the day's high and low, and a line of place / chance of
 precipitation / wind. An active NWS watch or warning adds a strip across the top, tinted red at
-Severe and above. Tapping it opens LifeOps' full **Weather** screen, which is where the hourly
-strip, radar and outdoor-task windows live.
+Severe and above. Tapping it opens LifeOps' full **Weather** screen, and from there its two summary
+cards go one level deeper still: current conditions open a radar map pinned to wherever the phone
+is, and "Today's conditions" opens the hour-by-hour and day-by-day forecast with the outdoor-task
+windows.
 
 Two decisions are worth naming.
 
