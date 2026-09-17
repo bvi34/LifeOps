@@ -12,7 +12,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
@@ -21,13 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import android.content.Intent
 import com.lifeops.app.data.model.ActivityTemplate
 import com.lifeops.app.data.model.Task
 import com.lifeops.app.data.model.TaskWeatherRequirement
@@ -38,14 +37,25 @@ import com.lifeops.app.util.OutdoorRating
 import com.lifeops.app.util.WeatherCard
 import com.operations.suite.ui.fields.SuiteNumberField
 
+/**
+ * The weather screen: conditions for a tracked location, the cards LifeOps builds from them, and
+ * the per-task weather needs that drive best-time suggestions.
+ *
+ * Its two summary cards are each the top of something deeper, and both are pressable. The current
+ * conditions open [RadarScreen] — a map pinned to this very location, which for the device row is
+ * simply where you are. "Today's conditions" opens [WeatherDetailScreen], the hour-by-hour and
+ * day-by-day version of the one line it shows. Both destinations read the same cached report, so
+ * neither tap waits on the network.
+ */
 @Composable
 fun WeatherScreen(
     viewModel: WeatherViewModel,
+    onOpenRadar: (locationId: String) -> Unit,
+    onOpenDetail: (locationId: String) -> Unit,
     onBack: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
-    val context = LocalContext.current
 
     var showAddLocation by remember { mutableStateOf(false) }
     var editingTask by remember { mutableStateOf<Task?>(null) }
@@ -55,12 +65,6 @@ fun WeatherScreen(
         state.message?.let {
             snackbarHost.showSnackbar(it)
             viewModel.clearMessage()
-        }
-    }
-    LaunchedEffect(state.radarUrl) {
-        state.radarUrl?.let { url ->
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }
-            viewModel.clearRadarUrl()
         }
     }
 
@@ -89,7 +93,10 @@ fun WeatherScreen(
                             if (state.selectedLocationId != null) {
                                 DropdownMenuItem(
                                     text = { Text("View radar") },
-                                    onClick = { menuOpen = false; viewModel.openRadar() }
+                                    onClick = {
+                                        menuOpen = false
+                                        state.selectedLocationId?.let(onOpenRadar)
+                                    }
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Delete this location") },
@@ -139,8 +146,20 @@ fun WeatherScreen(
                     )
                 }
             } else {
-                item { CurrentConditionsCard(report, state.assessment?.rating) }
-                items(state.cards) { card -> WeatherCardView(card) }
+                val locationId = state.selectedLocationId
+                item {
+                    CurrentConditionsCard(
+                        report = report,
+                        rating = state.assessment?.rating,
+                        onClick = locationId?.let { id -> { onOpenRadar(id) } }
+                    )
+                }
+                items(state.cards) { card ->
+                    WeatherCardView(
+                        card = card,
+                        onOpenDetail = locationId?.let { id -> { onOpenDetail(id) } }
+                    )
+                }
             }
 
             // Per-task weather requirements.
@@ -206,10 +225,19 @@ private fun EmptyState(onAdd: () -> Unit) {
     }
 }
 
+/**
+ * Current conditions — and the way into the radar map, because "what is it doing right now?" and
+ * "where is that weather, exactly?" are the same question one step apart. [onClick] is null only
+ * while no location is selected, which is the one state where there is nowhere to go.
+ */
 @Composable
-private fun CurrentConditionsCard(report: WeatherReport, rating: OutdoorRating?) {
+private fun CurrentConditionsCard(
+    report: WeatherReport,
+    rating: OutdoorRating?,
+    onClick: (() -> Unit)?
+) {
     val c = report.current
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${c.temperatureF}°", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
@@ -234,12 +262,28 @@ private fun CurrentConditionsCard(report: WeatherReport, rating: OutdoorRating?)
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             )
+            if (onClick != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Map,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Tap for radar",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun RatingBadge(rating: OutdoorRating) {
+internal fun RatingBadge(rating: OutdoorRating) {
     val color = ratingColor(rating)
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -254,8 +298,13 @@ private fun RatingBadge(rating: OutdoorRating) {
     }
 }
 
+/**
+ * One dynamic card. Only the Morning ("Today's conditions") card is pressable: it is a summary of
+ * the whole forecast, so there is a whole forecast behind it. A warning or an advisory is already
+ * the complete thought, and a task recommendation belongs to its task, not to the weather.
+ */
 @Composable
-private fun WeatherCardView(card: WeatherCard) {
+private fun WeatherCardView(card: WeatherCard, onOpenDetail: (() -> Unit)?) {
     when (card) {
         is WeatherCard.Warning -> Card(
             Modifier.fillMaxWidth(),
@@ -289,7 +338,10 @@ private fun WeatherCardView(card: WeatherCard) {
                 }
             }
         }
-        is WeatherCard.Morning -> Card(Modifier.fillMaxWidth()) {
+        is WeatherCard.Morning -> Card(
+            Modifier.fillMaxWidth()
+                .then(if (onOpenDetail != null) Modifier.clickable(onClick = onOpenDetail) else Modifier)
+        ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Today's conditions", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
@@ -297,6 +349,22 @@ private fun WeatherCardView(card: WeatherCard) {
                 card.bestWindowLabel?.let {
                     Text("Best window: $it", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary)
+                }
+                if (onOpenDetail != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Tap for the hour-by-hour forecast",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                 }
             }
         }
@@ -343,7 +411,7 @@ private fun requirementSummary(req: TaskWeatherRequirement?): String {
     }.joinToString("  ")
 }
 
-private fun ratingColor(rating: OutdoorRating): Color = when (rating) {
+internal fun ratingColor(rating: OutdoorRating): Color = when (rating) {
     OutdoorRating.EXCELLENT -> Color(0xFF2E7D32)
     OutdoorRating.GOOD -> Color(0xFF558B2F)
     OutdoorRating.CAUTION -> Color(0xFFF9A825)

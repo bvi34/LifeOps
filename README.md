@@ -733,6 +733,36 @@ tapping through to the full Weather screen. `util/TodayOutlook.kt` is the pure p
 alternating day/night halves into "the rest of today"; `util/Geo.kt` is the pure distance check
 behind the move threshold.
 
+**Phase 7 — the two taps.** Both summary cards on the Weather screen are the top of something
+deeper, and both are now pressable.
+
+*Current conditions → radar.* A **map screen** pinned to the location the reading came from — which,
+for the device row, is literally where you are. The map is assembled from raster tiles rather than
+delegated to a maps SDK: no API key, no new dependency, and the same `HttpURLConnection` the
+forecast already travels over. `util/TileMath.kt` is the Web Mercator "slippy map" projection
+(lat/lon ↔ tile, EPSG:3857 tile bounds for a WMS `GetMap`, metres-per-pixel); `util/MapCamera.kt`
+holds the camera and turns it into the list of tiles a viewport needs, plus the scale bar. Both are
+pure and unit-tested, so pan, pinch and pin placement are JVM questions. `data/weather/MapTiles.kt`
+declares the layers — an OSM street base, and radar from either NOAA's own GeoServer (CONUS base
+reflectivity, WMS) or the Iowa State NEXRAD mosaic (XYZ), switchable from the top bar because a
+radar screen showing nothing is worse than one showing a second opinion. `data/weather/TileLoader.kt`
+is the only new thing that touches the network: an in-memory, byte-sized LRU that lives exactly as
+long as the screen, returns `null` rather than throwing (a tile that doesn't load is a square of
+empty map, not an error dialog), and writes nothing to disk — radar is a *now* picture, and a cached
+one would only ever be wrong. Zoom past what a radar product publishes and its deepest tiles are
+drawn larger rather than requesting a level that 404s. The old browser hand-off survives as **Open
+NWS radar site** in the layer menu.
+
+*Today's conditions → the full forecast.* A **detailed weather screen**: the next 24 hours as an
+hourly strip drawn against its own temperature range, the week as one row per day (NWS's day and
+night halves folded together, tap for the official prose), every reading the feed carries as a tile,
+the full text of any active alert *including its instruction*, the outdoor score broken into the
+reasons it came out that way, and the best daylight windows on weather alone. `util/WeatherDetail.kt`
+is the pure builder behind all of it — which hours count as "ahead", how the halves fold, when rain
+is worth a sentence — so the screen only renders. Everything it shows is already in the cache the
+card was built from, so the tap costs nothing and works offline; refresh is the only thing on either
+screen that reaches the network, and only when asked.
+
 ---
 
 ## People (Planning) — design note
@@ -951,6 +981,16 @@ JVM unit tests live in `app/src/test/`. Notable suites:
   precipitation across the window, and a missing half reported rather than guessed.
 - `GeoTest` — great-circle distance behind the device-location move threshold: known city pair,
   symmetry, a short hop staying under the threshold, and the antipodal arcsine guard.
+- `WeatherDetailTest` — the detailed screen's pure builder: the hourly window starting at the hour
+  you're standing in (and its stale-cache / unparseable-timestamp fallbacks), NWS day/night halves
+  folded into day rows including the evening night-only and trailing day-only cases, metric tiles
+  that omit a missing reading, and the rain call-out (arriving, already falling, storms, dry).
+- `TileMathTest` — Web Mercator tile math: the published slippy-map example, projection round-trip,
+  the Mercator latitude cutoff, columns that wrap where rows don't, EPSG:3857 tile bounds with their
+  y flip, and metres-per-pixel halving per zoom step.
+- `MapCameraTest` — the radar camera: fractional zoom as tile scale, clamped zoom (including a
+  degenerate pinch factor), pan direction and round-trip, tiles that cover the viewport, a layer
+  never asked past the zoom it publishes, WMS/XYZ URL shapes, and scale-bar step choice.
 - `PersonMapperTest` — Person ↔ entity round-trip and SunSensitivity fallback.
 
 The hosted apps keep their own JVM suites beside their logic — `maintenance/src/test/` covers the
@@ -975,8 +1015,12 @@ explicitly export or share it. Back up regularly from **Settings → Data**:
 Exports are written as plain text (no compression). The JSON is the only format that can
 be restored.
 
-**The one thing that goes out.** Weather is fetched from the US National Weather Service
+**What goes out.** Weather is fetched from the US National Weather Service
 (`api.weather.gov`) — no key, no account, and nothing sent but the coordinates a forecast needs.
+The radar map adds two more, and only while that one screen is open: map tiles from OpenStreetMap
+and radar tiles from NOAA's GeoServer or the Iowa State Mesonet. Those requests carry the map square
+being looked at — which is the pin, and therefore the same coordinates the forecast already used —
+and nothing else. Close the screen and they stop; nothing from them is written to disk.
 When you let the Operations Sandbox's weather tile use your location, those coordinates are your
 approximate position (`ACCESS_COARSE_LOCATION`, so already fuzzed by the OS) rather than a place you
 typed in. The fix itself is never stored anywhere but the local weather cache, and declining leaves

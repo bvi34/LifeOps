@@ -456,7 +456,36 @@ fun LifeOpsNavHost(
                             app.personRepository, app.activityTemplateRepository, app.busyBlockRepository
                         )
                     )
-                    WeatherScreen(vm) { navController.navigateUp() }
+                    WeatherScreen(
+                        viewModel = vm,
+                        onOpenRadar = { id -> navController.navigate("weather_radar/$id") },
+                        onOpenDetail = { id -> navController.navigate("weather_detail/$id") },
+                        onBack = { navController.navigateUp() }
+                    )
+                }
+                composable("weather_radar/{locationId}") { backStackEntry ->
+                    val locationId = backStackEntry.arguments?.getString("locationId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.weather.RadarViewModel>(
+                        key = "weather_radar_$locationId",
+                        factory = com.lifeops.app.ui.screens.weather.RadarViewModelFactory(
+                            locationId, app.weatherRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.weather.RadarScreen(vm) { navController.navigateUp() }
+                }
+                composable("weather_detail/{locationId}") { backStackEntry ->
+                    val locationId = backStackEntry.arguments?.getString("locationId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.weather.WeatherDetailViewModel>(
+                        key = "weather_detail_$locationId",
+                        factory = com.lifeops.app.ui.screens.weather.WeatherDetailViewModelFactory(
+                            locationId, app.weatherRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.weather.WeatherDetailScreen(
+                        viewModel = vm,
+                        onOpenRadar = { navController.navigate("weather_radar/$locationId") },
+                        onBack = { navController.navigateUp() }
+                    )
                 }
                 composable("activities") {
                     val vm = viewModel<com.lifeops.app.ui.screens.planning.ActivitiesViewModel>(
