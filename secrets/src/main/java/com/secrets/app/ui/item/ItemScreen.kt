@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -35,6 +36,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,6 +53,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteTextField
 import com.operations.vaultkit.PasswordGenerator
@@ -67,6 +71,7 @@ import com.secrets.app.ui.common.SecretClipboard
 import com.secrets.app.ui.common.SecretValue
 import com.secrets.app.ui.common.StrengthBar
 import com.secrets.app.ui.common.ownerLabel
+import com.secrets.app.ui.scan.SecureCaptureActivity
 import java.text.DateFormat
 import java.util.Date
 import java.util.UUID
@@ -606,34 +611,85 @@ private fun TotpCard(
  * field asking for a key is a field on every screen that most people have to read past to reach the
  * address box.
  *
- * It takes typed text rather than a photograph of a QR code, and it is worth being plain about why:
- * a scanner needs the camera, the camera needs a permission, and this module's manifest declares
- * none at all — that absence is the one promise it makes that nothing else in the suite makes. Every
- * site that shows a QR code also offers the same seed as text, usually behind a "can't scan it?"
- * link, and that text is what goes here.
+ * Two ways in, and both matter. **Scanning** is what a site expects — it puts a QR code on screen
+ * and assumes an authenticator is pointed at it — and it is the only one that does not involve
+ * somebody transcribing thirty-two characters of Base32 without a typo. **Typing** is the one that
+ * still works when the camera is declined, when the code is on the same screen as the scanner, or
+ * when the seed arrived in an email; every site that shows a QR code also offers the same key as
+ * text behind a "can't scan it?" link. Neither is a fallback for the other.
+ *
+ * The scanner is this module's only use of the camera, it opens only on a tap, nothing is recorded,
+ * and it runs behind `FLAG_SECURE` because what is in front of the lens is a picture of a seed (see
+ * [SecureCaptureActivity]). The decode is zxing's plain-Java one, in this process — a QR code is
+ * never uploaded anywhere to be read.
  */
 @Composable
 private fun AddTotpCard(onSet: (String) -> Boolean) {
     var open by remember { mutableStateOf(false) }
     var raw by remember { mutableStateOf("") }
     var rejected by remember { mutableStateOf(false) }
+    var scanRejected by remember { mutableStateOf(false) }
+
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        // A null payload is a cancelled scan — somebody backed out of the camera, or declined the
+        // permission, and neither is an error worth a message.
+        val contents = result.contents ?: return@rememberLauncherForActivityResult
+        if (onSet(contents)) {
+            open = false
+            raw = ""
+            rejected = false
+            scanRejected = false
+        } else {
+            // A QR code that scanned perfectly and is not a seed — a wifi code, a URL, somebody
+            // else's pairing code. Saying which of the two went wrong is the difference between
+            // "try again" and "you are pointing at the wrong thing".
+            open = true
+            scanRejected = true
+        }
+    }
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().clickable { open = !open },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Shield, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Add a second factor", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = "Scan the site's QR code, or type the key it shows beside it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = {
+                    scanRejected = false
+                    scanner.launch(
+                        ScanOptions()
+                            .setCaptureActivity(SecureCaptureActivity::class.java)
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt("Point the camera at the site's two-factor QR code")
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(false)
+                    )
+                }) {
+                    Icon(Icons.Filled.QrCodeScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan")
+                }
+                TextButton(onClick = { open = !open }) {
+                    Text(if (open) "Hide the key box" else "Type it instead")
+                }
+            }
+
+            if (scanRejected) {
                 Text(
-                    text = "Add a second factor",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (open) "Hide" else "Show"
+                    text = "That code scanned, but it is not a two-factor setup key. Make sure it " +
+                        "is the one on the site's two-factor page.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
 

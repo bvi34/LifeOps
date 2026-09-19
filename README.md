@@ -485,6 +485,19 @@ the receipts.
 > a phone with no vault it offers to make one rather than to unlock one, because the queue lands the
 > moment a vault exists.
 >
+> It also **fills passwords in other apps**, which is the one thing here that runs when the app is
+> not on screen and the one that talks to software the household did not choose — so it is the one
+> with the rules written down. An `AutofillService` must be bound by the system, so this module now
+> exports exactly one component, behind `BIND_AUTOFILL_SERVICE`: a permission the platform holds and
+> nothing installable does, inert until somebody picks Secrets in system settings. The matching is
+> in the pure-JVM `AutofillMatch` and is mostly a list of refusals — a **managed credential is never
+> offered to anything**, a match has to be **earned** by the item's own address, a subdomain matches
+> its parent while `bank.com.evil.example` does not (the suffix test is on label boundaries), and a
+> form nothing is filed under gets **no rows at all**, only a door into the vault's own list where
+> the person picks for themselves. A locked vault stays locked and offers a way in rather than an
+> answer, and it will not fill this suite's own package: a vault that fills its own passphrase box
+> is a vault with its key inside it.
+>
 > It is the one app whose restore refuses to restore: an archived vault is not swapped over a live
 > one — that would delete every password added since the backup, with nowhere to fetch them from — it
 > is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
@@ -492,8 +505,10 @@ the receipts.
 > sync, no account, and no breach lookup, not even the k-anonymous kind — which is a restriction
 > rather than a shortfall, and the **second factor** is the proof: a TOTP code is HMAC over the clock,
 > so it works here exactly as well as it would anywhere, and it replaces a separate authenticator app
-> whose seeds died with the phone. There is no camera permission either, so a seed is pasted from the
-> site's "can't scan the code?" text rather than scanned. An item also keeps **the ten passwords it
+> whose seeds died with the phone. Seeds are **scanned** from the site's QR code or typed from the
+> key beside it; the scanner is this module's one use of the camera, opens on a tap, keeps no image,
+> decodes in-process, and runs behind `FLAG_SECURE` because what is in front of the lens is a picture
+> of a seed. An item also keeps **the ten passwords it
 > used to have**, because the commonest way to lose an account is not forgetting a password but
 > changing one — a form that said it saved and stored something else, or a tablet still signed in on
 > the old one. The mirrored credentials get no such history: a rotated access token opens nothing, so
@@ -502,9 +517,10 @@ the receipts.
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
 > the audit, the merge and the one-time-password generator are the pure-JVM `:vaultkit` under
-> **142 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> **157 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
 > passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
-> the search box refusing to match a password or a seed somebody typed into it. The codes themselves
+> the search box refusing to match a password or a seed somebody typed into it; autofill refusing a
+> lookalike domain, an app with no address filed against it, and a mirrored bank token. The codes themselves
 > are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
 > worth having for a generator whose failure mode is six plausible digits that no site accepts.
 

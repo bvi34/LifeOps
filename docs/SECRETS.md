@@ -20,7 +20,9 @@ Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; star
                                                                              passwords it replaced)
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
-                                →  Settings   (auto-lock, passphrase, and finishing a restore)
+                                →  Settings   (auto-lock, passphrase, autofill, finishing a restore)
+
+Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  →  the form, filled
 ```
 
 ## The problem this app was built for
@@ -367,12 +369,22 @@ Three decisions, and the reasons:
   reveal button in front of it would be a tap between somebody and the only thing they came for.
   Copying it clears the clipboard when the code stops working rather than on the vault's general
   timer.
-- **There is no scanner.** Reading a QR code needs the camera, the camera needs a permission, and
-  this module's manifest declares none at all — that absence is the only promise here that nothing
-  else in the suite makes, and it is not being spent on a convenience. Every site that shows a QR
-  code offers the same seed as text behind a "can't scan it?" link. That text is what the field
-  takes, as either an `otpauth://` URI or a bare Base32 key, in whatever case and spacing it was
-  printed in.
+- **Two ways in, and neither is the other's fallback.** Scanning is what a site expects — it puts a
+  QR code on screen and assumes an authenticator is pointed at it — and it is the only one that
+  does not involve transcribing thirty-two characters of Base32 without a typo. Typing still works
+  when the camera is declined, when the code is on the same screen as the scanner, or when the seed
+  arrived by email; every site that shows a QR code offers the same key as text behind a "can't scan
+  it?" link. The field takes either an `otpauth://` URI or a bare Base32 key, in whatever case and
+  spacing it was printed in.
+
+  The camera is the one permission this module now holds, and the paragraph it replaced said it
+  never would. What changed the answer is what is *in* that QR code: a seed is the one credential a
+  household cannot reissue without a support line, and an app that makes it hard to file is an app
+  they file it somewhere else instead. The cost is bounded and stated — the scanner opens on a tap,
+  records nothing, keeps no image, decodes in this process with zxing's plain-Java decoder, and runs
+  behind `FLAG_SECURE` because what is in front of the lens is a picture of a seed. The container
+  already held `CAMERA` for People's partner pairing, so the app's permission set is unchanged;
+  what changed is that this module is now one of the two asking.
 
 Two honest limits. **The clock is the phone's** — a phone thirty seconds out of step produces codes
 a site rejects, and nothing here can tell that apart from a wrong seed, because asking a time server
@@ -409,6 +421,81 @@ schedule rather than when a person decides something, so a history of them would
 churn of useless plaintext inside the file. That is enforced in `keepingReplaced` rather than left to
 each writer to remember.
 
+## Filling it in elsewhere
+
+A vault whose only way out is the clipboard is a vault that spends its day in the clipboard. The
+copy-reveal-switch-paste dance is four steps, it puts the password in a buffer other apps can read,
+and the app's own defaults already bend around it — `lockOnLeave` is off by default precisely
+because locking on every app switch would make that dance five steps. Autofill is the answer to the
+thing those defaults were apologising for.
+
+It costs this module the other half of its old manifest promise. An `AutofillService` is bound by
+the system, and the system can only bind something exported, so "every component here is
+`exported="false"`" stopped being true. What makes that narrower than it sounds is the permission
+on the declaration: `BIND_AUTOFILL_SERVICE` is held by the platform and by nothing installable, so
+exported here means *the operating system may bind this* and still means *no app on this phone may*.
+It is inert until somebody picks Secrets as their autofill service in a system settings screen this
+app does not control, and the screen it authenticates through is not exported at all — the system
+opens that one through a `PendingIntent` this app created, which carries this app's identity rather
+than the caller's.
+
+### The part with the danger in it
+
+Everything about autofill is plumbing except one question: *whose password may be offered to what?*
+Answer it wrong and the vault has typed the bank password into whatever was pretending to be the
+bank, silently, on a phone whose owner has no way of noticing. So the answer lives in
+`AutofillMatch` — framework-free, in `:vaultkit`, under tests that are mostly about refusals, for
+exactly the reason the crypto lives there.
+
+Four rules:
+
+- **A managed credential is never offered to anything.** Finance's access token is not a login, no
+  sign-in page wants it, and the only thing filling one in could achieve is handing a bank token to
+  a form. Mirrored items are filtered out before anything else is considered.
+- **A match must be earned.** The asker names itself — a web domain for a browser, a package name
+  for an app — and an item is a candidate only if its own address says it belongs there. Nothing is
+  offered on a guess about the title, which means an item saved with no address is never offered
+  automatically, and that is the intended trade.
+- **A subdomain matches its parent and a lookalike does not.** `login.bank.com` may be filled from
+  an item filed under `bank.com`, because that is one site. `bank.com.evil.example` may not, because
+  the suffix test is on label boundaries rather than on characters. That one line is the difference,
+  and it has a test to itself.
+- **No match means no rows.** Not "show the whole vault and let them pick" from inside the dropdown,
+  which would abandon rule two. What an unrecognised form gets is a single entry that opens the
+  vault's own list to be searched, where the person picks the item themselves — a different and much
+  better-founded act than a service deciding on their behalf.
+
+Two more, which are about this app rather than about matching. It will not fill **its own package**:
+the unlock screen's passphrase box is a password field like any other, and a vault that offers to
+fill its own passphrase is a vault with its key inside it. And a **locked vault stays locked** — it
+cannot know whether it holds anything for the form in front of it, because that is what being locked
+means, so it offers a way in rather than an answer, and the entry that says so opens the unlock
+screen and comes back with the real datasets.
+
+### Reading somebody else's form
+
+Nothing in the view tree the system hands over is trustworthy or consistent. Some apps declare
+`autofillHints`, some declare an HTML input type, some a native input-type flag, and plenty declare
+a field called `et_pw_2` and nothing else. `AutofillForm.classify` reads all four, in order of how
+much the asker committed to, and the guesswork tier is last for the obvious reason.
+
+One decision in there is worth stating on its own: a **one-time-code field is recognised when it is
+declared and never guessed at**. "Code" appears on postcode, area code, country code and discount
+code fields, and a second factor pasted into a discount box is a code *spent* — they work once. The
+short abbreviations that are guessed at are matched on word boundaries rather than as substrings,
+which is what keeps `pw` from finding the middle of `upward`.
+
+### Saving
+
+A sign-in typed into a form by hand is offered to the vault, and only ever **added**. A form filled
+with a password the vault already holds is not a change worth recording; a form filled with a
+different one is more likely a second account than a rotation somebody wanted overwritten, and
+guessing wrongly would silently replace a working password. There is no queue for a save that
+arrives while the vault is shut, either — the pending-write queue exists for an app's own mirrored
+credential, which that app still holds and can re-file, whereas a sign-in typed into somebody else's
+form exists nowhere else, and holding it in memory until an unlock that may never come would be
+pretending to have saved it. It says so and declines.
+
 ## Two features, one format version
 
 Both of the above put something in the document that a build without them would silently drop —
@@ -434,8 +521,10 @@ working.
   those are the things that can be known without telling anyone anything. The second factor is the
   proof this is a restriction rather than a shortfall: it is arithmetic over a seed and a clock, so
   it works here exactly as well as it would anywhere.
-- **It cannot see through a camera.** No permission for one, so second-factor seeds are typed or
-  pasted rather than scanned. See *The second factor*.
+- **It uses the camera for one thing, on a tap.** Reading the QR code a site shows when it hands
+  over a second-factor seed, and nothing else — nothing recorded, no image kept, decoded in this
+  process by zxing's plain-Java decoder. Every screen that scans also takes the key as text, so
+  declining the permission costs convenience and no capability. See *The second factor*.
 - **It cannot recover a forgotten passphrase.** There is no reset link, no support address, no copy
   anybody else holds. The screen that creates a vault says so before it makes one. What it *can* do
   is start again and refill from the other apps — see below, and note that this is a rebuild rather
@@ -448,8 +537,14 @@ working.
   audit answers that question without anybody typing anything.
 - **It serves no connection routes.** Three apps answer on the suite's address contract; this one
   does not.
-- **It takes no screenshots of itself.** `FLAG_SECURE` for the life of the activity, so the recents
-  thumbnail the system writes to disk is never a picture of the vault.
+- **It exports exactly one component, and only the operating system can reach it.** The autofill
+  service, declared behind `BIND_AUTOFILL_SERVICE` — a permission the platform holds and nothing
+  installable does. Every other component here is still `exported="false"`, the screen autofill
+  authenticates through included. See *Filling it in elsewhere*.
+- **It takes no screenshots of itself.** `FLAG_SECURE` on every screen this module owns — the main
+  activity, the screen autofill authenticates through, and the scanner, which is a subclass of the
+  scanning library's activity existing for that one line. The recents thumbnail the system writes to
+  disk is never a picture of the vault, and never a picture of a seed's QR code either.
 
 ## The generator
 
@@ -464,7 +559,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 142 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 157 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -493,7 +588,16 @@ build is not quietly demoted into one this build would strip. And two on the aud
 exists for its second factor is not reported as an abandoned stub — the codes *are* what it holds —
 and a seed is never compared against a password for reuse.
 
-`:secrets` — 32 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+`AutofillMatch` is tested almost entirely on what it **refuses**, because that is where the damage
+is: a lookalike domain gets nothing, a mirrored credential gets nothing however well its address
+matches, an item with no address is never offered however well its title reads, an asker that names
+itself as nothing gets nothing, and a browser is not filled from the item filed under the browser.
+Then the ranking — an exact domain over a parent, a parent over a package read backwards, a
+favourite over a name — and the two primitives underneath: that the subdomain test is on label
+boundaries, and that a package match is by label rather than by string prefix, so `com.monzonian`
+does not collect `monzo.com`'s password.
+
+`:secrets` — 43 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
 longer exists, read back on the one that replaced it. Three of them run the new features through the
@@ -501,6 +605,12 @@ real sealed file rather than through the document alone: a seed and a replaced p
 seal and the reopen and still produce the right codes, a credential rotated three times by an app
 leaves no trail of dead tokens, and a vault that uses neither feature is still stamped version 1 on
 disk.
+
+The autofill field reader is tested on the JVM without Robolectric, because `AutofillForm.classify`
+takes its signals as plain values: a declared hint is believed and beats the input type under it,
+both Android's vocabulary and the web's are understood, a number field is not a password because its
+variation bits collide with one, a one-time-code field is recognised when declared and never guessed
+at from a field called `discount_code`, and `pw` is found in `et_pw` and not in `upward_scroll`.
 
 `:finance` — 14 more, on its half of the seam: which refs it uses, that a write reaches both stores,
 that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything
