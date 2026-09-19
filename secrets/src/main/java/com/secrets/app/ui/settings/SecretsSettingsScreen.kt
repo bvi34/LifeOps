@@ -47,17 +47,21 @@ import kotlinx.coroutines.launch
  * **finish a restore**.
  *
  * Everything else here is a preference — how long before the vault shuts, whether the clipboard is
- * cleared, whether the device lock can stand in for the passphrase. The merge card is different in
- * kind. When the sandbox restores an archive onto a phone that already has a vault, the archived one
- * is not applied: it is left beside the live one, because a wholesale swap would delete every
- * password added since the backup and there is nowhere to fetch those back from. It waits here until
- * somebody unlocks it — with *its* passphrase, which may be an older one — and then the two are
+ * cleared, whether the device lock can stand in for the passphrase — or a door to somewhere else,
+ * which is what the import card is: moving in from a browser or from 1Password is a screen of its
+ * own (see `ui/importer/ImportScreen`), and it starts here because this is where somebody looks for
+ * it on the day they install this app.
+ *
+ * The merge card is different in kind. When the sandbox restores an archive onto a phone that
+ * already has a vault, the archived one is not applied: it is left beside the live one, because a
+ * wholesale swap would delete every password added since the backup and there is nowhere to fetch
+ * those back from. It waits here until somebody unlocks it — with *its* passphrase, which may be an older one — and then the two are
  * merged item by item, newest wins, tombstones respected.
  *
  * That is the whole reason the restore of a vault is a conversation rather than a file copy.
  */
 @Composable
-fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs) {
+fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs, onImport: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var autoLock by remember { mutableStateOf(prefs.autoLockMinutes.toFloat()) }
@@ -117,6 +121,23 @@ fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs) {
                         }
                     }
                 }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Bring passwords in", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "From the file a browser or 1Password gives you when you ask for your " +
+                        "passwords back. Read on this phone, from a file you already have — this " +
+                        "app cannot reach the network, so there is no other way it could be done " +
+                        "and no other way it will be.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onImport) { Text("Import from a file") }
             }
         }
 

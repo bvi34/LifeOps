@@ -514,6 +514,22 @@ the receipts.
 > answer, and it will not fill this suite's own package: a vault that fills its own passphrase box
 > is a vault with its key inside it.
 >
+> Getting into it is the other half of leaving somewhere else, so it **imports** — from a browser's
+> exported CSV (Chrome, Edge, Brave, Firefox, Safari, Apple Passwords) and from 1Password, whose
+> `.1pux` brings the cards, notes, wifi keys, custom fields, extra addresses and password history a
+> CSV drops. It reads a file rather than an account, because it could not do otherwise: there is no
+> network here to ask a server with. Nothing is written until the household has seen a list — rows
+> that match nothing arrive ticked, and rows that would **overwrite a password already in the vault
+> arrive unticked**, because the export may be the older copy and taking it would replace June's
+> password with March's. Taking one anyway keeps the item itself — its tags, its fields, its second
+> factor — changes only the password, and keeps the one it replaced. Second factors arrive as seeds
+> that make codes rather than as text, a file that says when a password last changed is believed
+> rather than stamped with today (so **Check** still has something to say the morning after an
+> import), and the wrong file gets a sentence about what to pick instead — including this app's own
+> sealed vault, which is sent to the screen that can actually open it. What it cannot do is delete
+> the export afterwards: that file is every password the household has in plain text, and the screen
+> says so twice rather than reaching into shared storage.
+>
 > It is the one app whose restore refuses to restore: an archived vault is not swapped over a live
 > one — that would delete every password added since the backup, with nowhere to fetch them from — it
 > is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
@@ -532,8 +548,8 @@ the receipts.
 > forgotten passphrase — nothing can, which is the point — but the unlock screen offers to **delete
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
-> the audit, the merge and the one-time-password generator are the pure-JVM `:vaultkit` under
-> **185 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> the audit, the merge, the import readers and the one-time-password generator are the pure-JVM
+> `:vaultkit` under **242 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
 > passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
 > the search box refusing to match a password or a seed somebody typed into it; autofill refusing a
 > lookalike domain, an app with no address filed against it, and a mirrored bank token; a replayed

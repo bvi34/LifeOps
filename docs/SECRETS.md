@@ -21,6 +21,7 @@ Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; star
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
                                 →  Settings   (auto-lock, passphrase, autofill, finishing a restore)
+                                                →  Import  (a browser's or 1Password's export file)
 
 Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  →  the form, filled
 Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey
@@ -316,6 +317,125 @@ the day somebody loses their vault is the worst possible day to abandon eight ap
 because the ninth has a bug.
 
 The device shortcut goes with the vault it belonged to, since it held the old vault key.
+
+## Moving in from a browser, or from 1Password
+
+A vault nobody has moved into is a vault nobody uses, and the move is the part that stops people.
+Two hundred logins live in Chrome, or in a subscription somebody is paying for mostly because
+leaving it would cost a fortnight of evenings. Every commercial importer solves this by asking the
+other manager's *server* for them. This one cannot: there is no `INTERNET` permission in this
+module's manifest and no HTTP client on its classpath, and that is the property the rest of this
+document rests on.
+
+What is left is the honest half, and it turns out to be enough: **read the file the other manager
+already hands its owner.** Chrome, Edge, Brave, Firefox, Safari and Apple Passwords all export a
+CSV; 1Password exports a CSV and its own `.1pux`. Every one of those files is written locally, by
+software the household already trusts with these passwords, at their own request.
+
+```
+Settings → Bring passwords in → the system picker
+    → read           what the file is, and what it holds                (:vaultkit, no vault involved)
+    → plan           what each row would do to this vault
+    → review         new rows ticked, rows that would overwrite unticked
+    → one save       the whole document re-sealed once, for one item or six hundred
+    → "now delete the export"
+```
+
+### What it reads
+
+| Written by | What arrives |
+|---|---|
+| Chrome, Edge, Brave | title, address, username, password, note |
+| Firefox | address, username, password — and **when the password was last changed** |
+| Safari, Apple Passwords | the above, plus the second factor |
+| 1Password (CSV) | the above, plus tags and favourites |
+| 1Password (`.1pux`) | all of it: cards, notes, identities, wifi keys, custom fields, extra addresses, password history |
+
+The reader is column-driven rather than dialect-driven — it looks each thing up by a list of names
+in priority order — so a header nobody here has seen still imports as long as it calls its password
+column something recognisable. The dialect is worked out separately and used for exactly one thing:
+telling the household which of their exports they just picked, so that somebody who meant to import
+1Password and is looking at four hundred Chrome logins finds out before they tap the button.
+
+Two of those columns are worth naming because they are the ones a lossy import loses quietly:
+
+- **The second factor** arrives as a *seed*, not as a field. Kept as text it would be a string
+  nobody can turn into a code, in an app that can. An `otpauth://` URI and a bare Base32 key are
+  both understood, and a seed that will not decode is kept as a field rather than dropped — which
+  loses the codes and keeps the secret.
+- **When the password last changed**, where the file says so. `VaultAudit` scores an item's age from
+  `updatedAt`, so stamping every imported row with the moment of the import would report a vault of
+  decade-old passwords as uniformly fresh — on the very screen somebody opens *because* they have
+  just imported four hundred passwords they have not looked at in years.
+
+From a `.1pux`, whether a field was **concealed** survives with it, which is what decides whether
+this app masks it, keeps it out of the search box and audits it. A CVV that arrived as ordinary text
+would be a CVV shown in a list.
+
+### What it refuses, and what it says instead
+
+A file with no password, username or note column is not a password export, and is rejected outright
+rather than imported as four hundred empty items. Beyond that, every refusal is a sentence about
+what to do next rather than a `false`:
+
+| Picked | Answer |
+|---|---|
+| A photo, or anything with a NUL byte in it | "That file is not text" |
+| A spreadsheet of something else | "A browser's export has a column called password, username or note; this one has none of them" |
+| A zip that is not a `.1pux` | "The file to pick is the .1pux itself" |
+| **This app's own sealed vault, out of a backup** | "Restore the archive and Settings will offer to merge it — that needs the passphrase it was sealed with, which this screen does not ask for" |
+
+The last one is the reason the check is in that order. A `.vault` file has a home in this app and it
+is not the import screen; "nothing to import" would send somebody away from the screen that could
+actually have opened it.
+
+Items the other manager has **trashed or archived** are left where they were put and reported by
+name. So are attachments: a `.1pux` carries files, and a vault whose sealed body can hold a scanned
+passport is a vault whose every save rewrites several megabytes of ciphertext. Nothing is left out
+silently — "214 read, 198 imported" with no account of the other sixteen is how an importer earns a
+reputation for losing things.
+
+### Why it shows a list before it writes anything
+
+Because the household knows the one thing this app cannot work out: **which copy is newer.**
+
+A row is matched against the vault on its address and username together — `AutofillMatch.hostOf`
+does the address half, so `https://www.bank.com/login` and `bank.com` are one place, and it is the
+same normalisation autofill matches on rather than a second answer to the same question. An item
+with no address is matched on its title, which is all a secure note has. A mirrored credential is
+matched against *nothing*: it belongs to an app, it is addressed by a `SecretRef`, and a CSV row
+that happens to carry the same title must never be allowed to overwrite a bank token.
+
+That gives three verdicts, and the defaults follow from them:
+
+| Verdict | What it means | Ticked? |
+|---|---|---|
+| **New** | Nothing here is filed under this account | Yes — it takes nothing away |
+| **Already here, different password** | The export may be from a browser last opened in March | **No** |
+| **Already in the vault** | Same account, same password | Not offered — writing it would tell the audit the password changed today |
+
+The middle row is the whole reason this is a screen rather than a button. Taking it overwrites a
+password changed here in June with a dead one from March, and the only copy of the live one goes
+with it. Nothing in an import happens on a default that costs a working password.
+
+Taking one anyway is safe in the way that matters: the item **keeps its identity**. Its id, its
+tags, its extra fields, its favourite star, its second factor and everything else somebody did to it
+here all survive; what the import supplies is the password, plus anything the vault's copy was
+missing. And the replaced password is kept, because the change goes through `VaultDocument.upsert`
+like every other one — which is exactly why that rule lives there rather than at each call site.
+
+No password is shown on that screen, incoming or outgoing. It is a list of *accounts*: a screen
+showing two hundred passwords in the clear would be the one place in this app where a shoulder is
+worth more than the passphrase.
+
+### The export file is the dangerous part, and it is said twice
+
+For as long as it exists, that file is every password the household has, in plain text, in Downloads
+— readable by anything with storage access, and carried into whatever backs that folder up. This app
+cannot delete it: it is not this app's file, and a vault that could reach into shared storage would
+be a vault worth being nervous about. So the screen says so before the picker opens and again on the
+way out, and points at **Check** on the way past, since an import is the one moment a vault gains
+hundreds of passwords nobody has looked at in years.
 
 ## The device shortcut, and why it is not a contradiction
 
@@ -643,6 +763,10 @@ working.
   those are the things that can be known without telling anyone anything. The second factor is the
   proof this is a restriction rather than a shortfall: it is arithmetic over a seed and a clock, so
   it works here exactly as well as it would anywhere.
+- **It imports from a file, never from an account.** Moving in from a browser or from 1Password
+  reads the export those apps already hand their owner — on this phone, with no account, no sign-in
+  and nothing asked of anybody's server, because there is nothing here that could ask. See *Moving
+  in from a browser, or from 1Password*.
 - **It uses the camera for one thing, on a tap.** Reading the QR code a site shows when it hands
   over a second-factor seed, and nothing else — nothing recorded, no image kept, decoded in this
   process by zxing's plain-Java decoder. Every screen that scans also takes the key as text, so
@@ -685,7 +809,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 185 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 242 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -714,6 +838,19 @@ build is not quietly demoted into one this build would strip. And two on the aud
 exists for its second factor is not reported as an abandoned stub — the codes *are* what it holds —
 and a seed is never compared against a password for reuse.
 
+The import is tested on files shaped like the real exports — a Chrome header, a Firefox one with its
+nine columns and its timestamps, an Apple one with a second factor, a 1Password CSV with an archived
+row in it, and a `.1pux` document with a card, a note, a router, custom fields and a password
+history. The CSV reader is tested on the cells that break the afternoon version of it: a note with a
+comma, a note with a *newline*, a doubled quote, three line endings, a byte-order mark, and a
+semicolon file whose delimiter has to be sniffed without one note full of semicolons outvoting it.
+The plan is tested against a vault that is not empty — the same export imported twice adds nothing,
+a different password is a change rather than a duplicate, taking one keeps the item's tags and
+fields and records the password it replaced, two logins at one site stay two items, and a mirrored
+credential is never what a row matches. And the refusals: a spreadsheet of something else, a photo,
+a zip of holiday pictures, and this app's own sealed vault, which is sent to the screen that can
+actually open it.
+
 `AutofillMatch` is tested almost entirely on what it **refuses**, because that is where the damage
 is: a lookalike domain gets nothing, a mirrored credential gets nothing however well its address
 matches, an item with no address is never offered however well its title reads, an asker that names
@@ -723,14 +860,18 @@ favourite over a name — and the two primitives underneath: that the subdomain 
 boundaries, and that a package match is by label rather than by string prefix, so `com.monzonian`
 does not collect `monzo.com`'s password.
 
-`:secrets` — 44 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+`:secrets` — 49 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
 longer exists, read back on the one that replaced it. Three of them run the new features through the
 real sealed file rather than through the document alone: a seed and a replaced password survive the
 seal and the reopen and still produce the right codes, a credential rotated three times by an app
 leaves no trail of dead tokens, and a vault that uses neither feature is still stamped version 1 on
-disk.
+disk. Five more take the import the rest of the way: a picked file read through a `ContentResolver`,
+a plan that has written nothing yet, a confirmation that survives a lock and a reopen because it
+went into the sealed file rather than into memory, an empty selection that leaves the vault exactly
+as it was, and a vault that shut while the file was being read — which says so rather than losing
+the passwords quietly.
 
 The autofill field reader is tested on the JVM without Robolectric, because `AutofillForm.classify`
 takes its signals as plain values: a declared hint is believed and beats the input type under it,
