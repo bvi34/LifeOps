@@ -21,7 +21,10 @@ Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; star
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
                                 →  Settings   (auto-lock, passphrase, autofill, finishing a restore)
-                                                →  Import  (a browser's or 1Password's export file)
+                                                →  Import  (which manager, then its export file)
+
+Another password app  →  Credential Exchange  →  Secrets  (passkeys and all)  →  the review list
+Chrome, 1Password, anything  →  Export  →  the share sheet  →  Secrets  →  the same review list
 
 Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  →  the form, filled
 Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey
@@ -318,7 +321,7 @@ because the ninth has a bug.
 
 The device shortcut goes with the vault it belonged to, since it held the old vault key.
 
-## Moving in from a browser, or from 1Password
+## Moving in from another password manager
 
 A vault nobody has moved into is a vault nobody uses, and the move is the part that stops people.
 Two hundred logins live in Chrome, or in a subscription somebody is paying for mostly because
@@ -327,19 +330,33 @@ other manager's *server* for them. This one cannot: there is no `INTERNET` permi
 module's manifest and no HTTP client on its classpath, and that is the property the rest of this
 document rests on.
 
-What is left is the honest half, and it turns out to be enough: **read the file the other manager
+There are two honest answers, and this app has both.
+
+The first is the platform's: **Credential Exchange**, where another credential manager on this phone
+hands its contents over after the household authenticates to *it*. No file, no network, and it
+carries passkeys — which no export file does.
+
+The second is for everywhere that has not implemented the first: **read the file the other manager
 already hands its owner.** Chrome, Edge, Brave, Firefox, Safari and Apple Passwords all export a
 CSV; 1Password exports a CSV and its own `.1pux`. Every one of those files is written locally, by
 software the household already trusts with these passwords, at their own request.
 
 ```
-Settings → Bring passwords in → the system picker
+Settings → Bring passwords in → Straight from another app → the system selector → its unlock
+Chrome → Export passwords → screen lock → the share sheet → Secrets
+Settings → Bring passwords in → which manager → its exact steps → the system picker
     → read           what the file is, and what it holds                (:vaultkit, no vault involved)
     → plan           what each row would do to this vault
     → review         new rows ticked, rows that would overwrite unticked
     → one save       the whole document re-sealed once, for one item or six hundred
     → "now delete the export"
 ```
+
+Three ways in, and they are in order of preference. **Credential Exchange** is a transfer rather
+than a file and carries what no file can — passkeys and second factors included. Failing that, a
+browser's export ends in the **share sheet**, so Secrets is on it: export, pick Secrets, review,
+done, with the file never saved anywhere. The **picker** is last, for an export made on a computer
+and carried across.
 
 ### What it reads
 
@@ -350,6 +367,7 @@ Settings → Bring passwords in → the system picker
 | Safari, Apple Passwords | the above, plus the second factor |
 | 1Password (CSV) | the above, plus tags and favourites |
 | 1Password (`.1pux`) | all of it: cards, notes, identities, wifi keys, custom fields, extra addresses, password history |
+| Any manager, over Credential Exchange | all of that **and passkeys**, with no file anywhere |
 
 The reader is column-driven rather than dialect-driven — it looks each thing up by a list of names
 in priority order — so a header nobody here has seen still imports as long as it calls its password
@@ -371,6 +389,118 @@ Two of those columns are worth naming because they are the ones a lossy import l
 From a `.1pux`, whether a field was **concealed** survives with it, which is what decides whether
 this app masks it, keeps it out of the search box and audits it. A CVV that arrived as ordinary text
 would be a CVV shown in a list.
+
+### Credential Exchange: the transfer the platform now defines
+
+The best route in is not a file at all. **Credential Exchange** — FIDO's CXP/CXF, wired into Android
+through `androidx.credentials.providerevents` — is the sanctioned way for one credential manager to
+hand its contents to another on the same device:
+
+```
+Import → Straight from another app
+    → the system selector          every credential manager on the phone, listed by Android
+    → the household picks one      Google Password Manager · 1Password · Bitwarden · …
+    → that app authenticates them  its own lock, its own passphrase — this app never sees it
+    → CXF payload                  handed back through a content URI, not through a file
+    → the same plan and review list as every other import
+```
+
+It is better than an exported file in every way that matters, and the differences are not
+cosmetic:
+
+| | Exported file | Credential Exchange |
+|---|---|---|
+| Passkeys | Impossible — no CSV carries a private key | **Carried, and they still sign** |
+| Second factors | Only Apple's and 1Password's exports | Carried, as seeds |
+| Cards, custom fields, folders | Only a `.1pux` | Carried |
+| Plaintext on disk | The whole vault, until somebody deletes it | **None, ever** |
+| Authorisation | The other app's export dialog | The other app's own unlock, inside its own UI |
+
+The request asks for every credential type this vault can hold — a provider hands over what it has
+of them, and asking for a type nobody exports costs nothing while *not* asking for one is how a
+household silently loses their second factors in the one transfer designed to carry them.
+
+A transfer is a **copy, not a move**: the other manager still holds everything until somebody
+deletes it there, and until then two apps can offer the same passkey to the same site. That is how
+the protocol is specified — a transfer that deleted the far side would be a transfer that loses
+everything if it half-fails — and the card says so before it starts.
+
+Every refusal has a sentence rather than an error code, and the most common one is not a failure at
+all: a household whose other manager has not implemented this yet is told so, and pointed at the
+file routes below, which is why those stay on the screen rather than behind a "more options".
+
+### Passkeys arrive able to sign, which takes one piece of arithmetic
+
+CXF carries a passkey's **private** key as PKCS#8 and not its public one — correctly, since the
+public half is a function of the private half and a format carrying both could carry two that
+disagree. This app needs it anyway: the public key is what every later check verifies against.
+
+The JDK will not do that step. `KeyFactory` parses a PKCS#8 EC key into a scalar and a curve and
+exposes no way to multiply the generator by it, so `Passkeys.publicKeyFrom` does it — about thirty
+lines of `BigInteger` arithmetic over the prime field, the textbook double-and-add rather than a
+constant-time version, because it runs on a key the household already holds, on their own phone,
+once per imported passkey.
+
+Writing that by hand is only defensible because of the test beside it, and there are two. One
+generates twenty real key pairs with the platform's own generator, throws away each public half and
+recomputes it from the private half, and asserts the bytes come back identical — a mistake in that
+arithmetic does not produce a subtly wrong key, it produces a different point. The other takes a
+passkey through a whole CXF import and then **signs with it and verifies the signature against the
+computed public key**, which is the check a relying party's server runs. An imported passkey that
+cannot do that is an account nobody can get into, discovered at the worst possible moment.
+
+### Why the file routes are still here
+
+Because Credential Exchange only answers where it is implemented. For everything else an import
+cannot be a connection, and the reason is not effort:
+
+- **Nothing else enumerates another manager's vault.** Credential Manager's everyday surface answers
+  one credential at a time, to the app asking, for a sign-in it is performing. Credential Exchange
+  is the only sanctioned way to read the rest, and it exists precisely because the ordinary API
+  deliberately does not.
+- **A manager that has not implemented it cannot be reached.** Google Password Manager's store lives
+  inside Play Services' private data and Chrome's inside Chrome's — no exported provider, no intent,
+  no OAuth scope. 1Password has no consumer API either, by the same design that makes it worth
+  using: the account is unlocked by a passphrase and a Secret Key that never leave the device, and
+  the server holds ciphertext it cannot open.
+- **And this module holds no network.** No `INTERNET` permission, no HTTP client on the classpath.
+  Finance can talk to Plaid because banks are compelled to offer delegated access and because
+  Finance made a different bargain for a different job; the vault's bargain is the one that makes it
+  safe to put in a backup.
+
+What those places do offer is an export, made locally, behind the device's own lock screen — the
+same authorisation a hosted connection would ask for, handed over as a file instead of a token. So
+the import names the menu item in each app
+([`ImportSource`](../secrets/src/main/java/com/secrets/app/ui/importer/ImportSources.kt)) and is
+somewhere the file can be *sent*.
+
+### The share sheet, and the third exported component
+
+Being on the share sheet costs something this module has been careful about, and the manifest argues
+it rather than absorbing it. Until now two components were exported and both were behind permissions
+the platform holds and nothing installable does — `BIND_AUTOFILL_SERVICE` and
+`BIND_CREDENTIAL_PROVIDER_SERVICE` — so "exported" meant *the operating system may bind this*.
+`ImportShareActivity` is genuinely wider: any installed app can start it with a file.
+
+It is worth it because of what it removes. Without it, the household's next three steps after
+tapping Export are save, lose, and hunt for it in a picker — and the thing they are carrying through
+those three steps is a plaintext copy of every password they have, which then lives in Downloads
+until something backs it up. Being a share target deletes that file's entire life on disk.
+
+What keeps it narrow is its shape rather than a permission:
+
+| | |
+|---|---|
+| **It takes and never gives** | No result, no returned data, nothing it can be asked for. An app that sends a file learns nothing — not whether a vault exists, not whether it was unlocked, not what is in it |
+| **The vault still has to be opened** | On that screen, by the person holding the phone |
+| **Nothing is written without a review** | What arrives is a proposal. The worst a hostile share achieves is a screen offering to add items nobody asked for, declined by pressing Cancel |
+| **The payload is hostile input** | Bounded before it is read, turned into data and never into behaviour, refused with a sentence when it is not an export |
+| **It closes when the vault does** | What it holds until then is a plan made of plaintext, and the main activity's answer — collapse to the unlock screen — has nowhere to collapse to here |
+
+A share carrying *text* rather than a file is refused outright, and that refusal is tested. It is
+the shape the mistake takes: an app offering to send a password list as text is an app putting
+passwords through the clipboard and the notification log, and answering it with an import screen
+would be accepting that.
 
 ### What it refuses, and what it says instead
 
@@ -783,14 +913,17 @@ working.
   audit answers that question without anybody typing anything.
 - **It serves no connection routes.** Three apps answer on the suite's address contract; this one
   does not.
-- **It exports two components, and only the operating system can reach either.** The autofill
-  service behind `BIND_AUTOFILL_SERVICE`, and the credential provider service behind
-  `BIND_CREDENTIAL_PROVIDER_SERVICE` — permissions the platform holds and nothing installable does.
-  Both are inert until the household picks this app for that job in system settings, and neither can
-  hand over a secret while the vault is shut: what they return then is a way in, never an answer.
-  Every other component is still `exported="false"`, the two screens those services authenticate
-  through included. The list of exceptions is meant to stay short enough to read in one sitting.
-  See *Filling it in elsewhere* and *Passkeys*.
+- **It exports three components: two only the operating system can reach, and one that takes a file
+  and gives nothing back.** The autofill service behind `BIND_AUTOFILL_SERVICE` and the credential
+  provider service behind `BIND_CREDENTIAL_PROVIDER_SERVICE` — permissions the platform holds and
+  nothing installable does. Both are inert until the household picks this app for that job in system
+  settings, and neither can hand over a secret while the vault is shut: what they return then is a
+  way in, never an answer. The third is the share-sheet import, which any app can start and none can
+  learn anything from — it returns no result, requires the vault to be opened on the spot, writes
+  nothing without a review, and closes when the vault shuts. Every other component is still
+  `exported="false"`, the two screens those services authenticate through included. The list of
+  exceptions is meant to stay short enough to read in one sitting. See *Filling it in elsewhere*,
+  *Passkeys* and *The share sheet, and the third exported component*.
 - **It takes no screenshots of itself.** `FLAG_SECURE` on every screen this module owns — the main
   activity, the screen autofill authenticates through, and the scanner, which is a subclass of the
   scanning library's activity existing for that one line. The recents thumbnail the system writes to
@@ -809,7 +942,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 242 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 257 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -838,7 +971,16 @@ build is not quietly demoted into one this build would strip. And two on the aud
 exists for its second factor is not reported as an abandoned stub — the codes *are* what it holds —
 and a seed is never compared against a password for reuse.
 
-The import is tested on files shaped like the real exports — a Chrome header, a Firefox one with its
+The Credential Exchange payload is tested as a document, since that is what it is: a login with a
+second factor and custom fields, a card, a wifi network, a note, an API key, the other manager's
+folders becoming tags, a file left behind by name, a malformed item that does not take the rest of
+the transfer with it, and a credential type this reader has never heard of arriving as its values
+rather than vanishing. Two more are the ones with teeth. Twenty real key pairs have their public
+half thrown away and recomputed from the private half, asserting the bytes come back identical; and
+a passkey taken through a whole import then **signs, and its signature verifies against the public
+key that was computed rather than received** — the check a relying party's server runs.
+
+The import is also tested on files shaped like the real exports — a Chrome header, a Firefox one with its
 nine columns and its timestamps, an Apple one with a second factor, a 1Password CSV with an archived
 row in it, and a `.1pux` document with a card, a note, a router, custom fields and a password
 history. The CSV reader is tested on the cells that break the afternoon version of it: a note with a
@@ -860,7 +1002,7 @@ favourite over a name — and the two primitives underneath: that the subdomain 
 boundaries, and that a package match is by label rather than by string prefix, so `com.monzonian`
 does not collect `monzo.com`'s password.
 
-`:secrets` — 49 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+`:secrets` — 53 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
 longer exists, read back on the one that replaced it. Three of them run the new features through the
@@ -871,7 +1013,9 @@ disk. Five more take the import the rest of the way: a picked file read through 
 a plan that has written nothing yet, a confirmation that survives a lock and a reopen because it
 went into the sealed file rather than into memory, an empty selection that leaves the vault exactly
 as it was, and a vault that shut while the file was being read — which says so rather than losing
-the passwords quietly.
+the passwords quietly. Four more guard the share sheet, which is the one component any app can
+start: a shared file is the file, an intent that is not a share is nothing, and a share carrying a
+password list as *text* is nothing either.
 
 The autofill field reader is tested on the JVM without Robolectric, because `AutofillForm.classify`
 takes its signals as plain values: a declared hint is believed and beats the input type under it,

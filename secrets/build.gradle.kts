@@ -94,6 +94,11 @@ dependencies {
     // Credential Manager's provider half — how a third-party app holds passkeys. Android 14 only,
     // which is the floor for that feature and nothing else here; see passkey/.
     implementation(libs.androidx.credentials)
+    // Credential Exchange: the platform's own way for one credential manager to hand its contents
+    // to another, on the device, with the person choosing the provider in a system selector. See
+    // ui/importer/ and :vaultkit's CredentialExchange for what arrives and what is done with it.
+    implementation(libs.androidx.providerevents)
+    implementation(libs.androidx.providerevents.play.services)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

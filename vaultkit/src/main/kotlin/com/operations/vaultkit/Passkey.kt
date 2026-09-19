@@ -5,6 +5,7 @@ import java.security.KeyPairGenerator
 import java.security.PrivateKey
 import java.security.SecureRandom
 import java.security.Signature
+import java.security.interfaces.ECPrivateKey
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
@@ -210,6 +211,103 @@ object Passkeys {
             append("\",\"userHandle\":\"").append(passkey.userHandle)
             append("\"}}")
         }
+    }
+
+    /**
+     * The public half of a P-256 private key, as the X.509 bytes a [VaultPasskey] stores.
+     *
+     * ## Why this has to be computed rather than read
+     *
+     * A passkey arriving through Credential Exchange ([CredentialExchange]) carries its private key
+     * and *not* its public one — correctly, since the public half is a function of the private half
+     * and a format that carried both could carry two that disagree. This app needs it anyway: the
+     * public key is what a relying party is handed at registration and what [publicKeyOf] returns
+     * for every later check, so a credential imported without one would be a credential that cannot
+     * be verified against itself.
+     *
+     * The JDK will not do this step. `KeyFactory` parses a PKCS#8 EC key into a scalar and a curve
+     * and exposes no way to multiply the generator by it — the one operation needed — so it is done
+     * here, in about thirty lines of BigInteger arithmetic over the prime field.
+     *
+     * That sounds like the sort of thing nobody should write twice, and the test beside it is the
+     * reason it is safe to have written once: it generates real key pairs with the platform's own
+     * generator, throws away the public half, recomputes it from the private half, and asserts the
+     * bytes come back identical. A mistake in this arithmetic does not produce a subtly wrong key,
+     * it produces a different point, and that test sees it every time.
+     *
+     * Null for anything that is not a P-256 private key, which is the only curve this app issues or
+     * accepts — see the ES256 note in [Passkeys].
+     */
+    fun publicKeyFrom(pkcs8: ByteArray): ByteArray? = runCatching {
+        val factory = KeyFactory.getInstance("EC")
+        val private = factory.generatePrivate(PKCS8EncodedKeySpec(pkcs8)) as? ECPrivateKey
+            ?: return null
+        val parameters = private.params
+        val field = parameters.curve.field as? java.security.spec.ECFieldFp ?: return null
+        // P-256 and nothing else: 256 bits of prime field, and the group order to match.
+        if (field.fieldSize != 256 || parameters.order.bitLength() != 256) return null
+
+        val point = multiply(parameters.generator, private.s, field.p, parameters.curve.a)
+        if (point == java.security.spec.ECPoint.POINT_INFINITY) return null
+        factory.generatePublic(java.security.spec.ECPublicKeySpec(point, parameters)).encoded
+    }.getOrNull()
+
+    /** [generator] added to itself [scalar] times: double-and-add, most significant bit last. */
+    private fun multiply(
+        generator: java.security.spec.ECPoint,
+        scalar: java.math.BigInteger,
+        prime: java.math.BigInteger,
+        a: java.math.BigInteger
+    ): java.security.spec.ECPoint {
+        var result = java.security.spec.ECPoint.POINT_INFINITY
+        var addend = generator
+        var remaining = scalar
+        while (remaining.signum() > 0) {
+            if (remaining.testBit(0)) result = add(result, addend, prime, a)
+            addend = add(addend, addend, prime, a)
+            remaining = remaining.shiftRight(1)
+        }
+        return result
+    }
+
+    /**
+     * The group law on a short Weierstrass curve, doubling included.
+     *
+     * Deliberately the textbook version rather than a constant-time one. It runs on a key the
+     * household already holds, on a phone, once per imported passkey — there is no attacker
+     * measuring it, and a clever implementation here would be a clever implementation nobody in
+     * this project could check.
+     */
+    private fun add(
+        left: java.security.spec.ECPoint,
+        right: java.security.spec.ECPoint,
+        prime: java.math.BigInteger,
+        a: java.math.BigInteger
+    ): java.security.spec.ECPoint {
+        if (left == java.security.spec.ECPoint.POINT_INFINITY) return right
+        if (right == java.security.spec.ECPoint.POINT_INFINITY) return left
+
+        val x1 = left.affineX
+        val y1 = left.affineY
+        val x2 = right.affineX
+        val y2 = right.affineY
+
+        // A point plus its own negation is the point at infinity — including doubling one whose y
+        // is zero, which the tangent case below would divide by.
+        if (x1 == x2 && (y1 + y2).mod(prime).signum() == 0) {
+            return java.security.spec.ECPoint.POINT_INFINITY
+        }
+
+        val three = java.math.BigInteger.valueOf(3)
+        val slope = if (left == right) {
+            (three * x1 * x1 + a) * (java.math.BigInteger.TWO * y1).modInverse(prime)
+        } else {
+            (y2 - y1) * (x2 - x1).modInverse(prime)
+        }.mod(prime)
+
+        val x3 = (slope * slope - x1 - x2).mod(prime)
+        val y3 = (slope * (x1 - x3) - y1).mod(prime)
+        return java.security.spec.ECPoint(x3, y3)
     }
 
     /** The public half, for a test or for a check that a stored credential is still coherent. */

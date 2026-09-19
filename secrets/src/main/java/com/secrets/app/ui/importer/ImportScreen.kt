@@ -1,7 +1,10 @@
 package com.secrets.app.ui.importer
 
+import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,6 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -57,10 +63,15 @@ import com.operations.vaultkit.VaultItemKind
  * ## And why it keeps mentioning the file
  *
  * Because for as long as that export exists, the household's entire password list is sitting in
- * plaintext in their Downloads folder, readable by anything with storage access, backed up by
- * whatever backs that folder up. This screen cannot delete it — it is not that app's file and this
- * app has no business reaching into shared storage — so it says so before the picker opens and
- * again on the way out.
+ * plaintext wherever it was saved, readable by anything with storage access, backed up by whatever
+ * backs that folder up. This screen cannot delete it — it is not that app's file and this app has
+ * no business reaching into shared storage — so it says so before the picker opens and again on the
+ * way out.
+ *
+ * The better answer is for the file never to exist, which is what [ImportShareActivity] is for: an
+ * export sent straight from the share sheet is read out of the stream the sharing app opened and is
+ * never saved anywhere. The picker below stays for every export made on a computer and carried
+ * across, where there is a file whatever anybody prefers.
  */
 @Composable
 fun ImportScreen(vm: ImportViewModel, onDone: () -> Unit) {
@@ -76,7 +87,10 @@ fun ImportScreen(vm: ImportViewModel, onDone: () -> Unit) {
     }
 
     when (val current = state) {
-        is ImportViewModel.State.Idle -> Introduction(onPick = { picker.launch(arrayOf("*/*")) })
+        is ImportViewModel.State.Idle -> Introduction(
+            onPick = { picker.launch(arrayOf("*/*")) },
+            onTransfer = { vm.importFromProvider(context) }
+        )
         is ImportViewModel.State.Reading -> Reading()
         is ImportViewModel.State.Failed -> Failed(
             reason = current.reason,
@@ -94,8 +108,19 @@ fun ImportScreen(vm: ImportViewModel, onDone: () -> Unit) {
     }
 }
 
+/**
+ * Pick where the passwords are now, then read how to get them out of it.
+ *
+ * A list of sources rather than a bare "choose a file" for one reason: the step that loses people is
+ * not this screen, it is the twenty minutes in the other app looking for a menu item called Export.
+ * Naming the menu items is most of the help this app can give, since the alternative — signing in to
+ * the other manager and pulling everything across — is a door nobody on that side has built (the
+ * reasoning is in [ImportSource]).
+ */
 @Composable
-private fun Introduction(onPick: () -> Unit) {
+private fun Introduction(onPick: () -> Unit, onTransfer: () -> Unit) {
+    var chosen by remember { mutableStateOf<ImportSource?>(null) }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -103,51 +128,180 @@ private fun Introduction(onPick: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Where your passwords are now", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "This reads the file your browser or 1Password gives you when you ask " +
-                        "for your passwords back. Nothing is sent anywhere and nothing signs in to " +
-                        "anything — this app cannot reach the network at all. It reads a file you " +
-                        "already have.",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("Where to find it", style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(4.dp))
-                SOURCES.forEach { (where, how) ->
-                    Spacer(Modifier.height(6.dp))
-                    Text(where, style = MaterialTheme.typography.labelLarge)
+        val source = chosen
+        if (source == null) {
+            TransferCard(onTransfer = onTransfer)
+            SourceList(onChoose = { chosen = it })
+        } else {
+            SourceSteps(source = source, onBack = { chosen = null }, onPick = onPick)
+        }
+
+        ExportWarningCard()
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * The direct route: ask another credential manager to hand its vault over.
+ *
+ * First on the screen because it is better than everything under it in every way that matters — it
+ * carries passkeys, second factors, cards and custom fields, it authenticates against the other app
+ * rather than against a file, and it never puts a plaintext copy of anything on disk. It is not
+ * first *only* because not every manager implements it yet, which is why the file routes stay
+ * below rather than behind a "more options".
+ */
+@Composable
+private fun TransferCard(onTransfer: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Straight from another app", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "Android can move credentials between password apps on this phone. You pick " +
+                    "the app, it asks you to unlock it, and it hands everything over — passkeys, " +
+                    "second factors, cards and custom fields included, which no exported file " +
+                    "carries. Nothing is written to a file at any point.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "It copies rather than moves: the other app still has everything until you " +
+                    "delete it there.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onTransfer) { Text("Choose an app") }
+        }
+    }
+}
+
+@Composable
+private fun SourceList(onChoose: (ImportSource) -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Or from an exported file", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "For an app that does not offer the transfer above, or passwords kept on a " +
+                    "computer. This reads the file that app gives you when you ask for your " +
+                    "passwords back — nothing is sent anywhere and nothing signs in to anything, " +
+                    "because this app cannot reach the network at all.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    ImportSource.entries.forEach { source ->
+        Card(
+            modifier = Modifier.fillMaxWidth().clickable { onChoose(source) }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(source.label, style = MaterialTheme.typography.titleSmall)
                     Text(
-                        how,
+                        source.holds,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (source.onDevice) {
+                    Text(
+                        "on this phone",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
+    }
+}
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Delete the file afterwards", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "An export is every password you have, in plain text, in your Downloads " +
-                        "folder — readable by anything on the phone with storage access, and carried " +
-                        "into whatever backs that folder up. It is safe for the minute it takes to " +
-                        "import and it is a liability after that. This app cannot delete it for you: " +
-                        "it is not this app's file, and a vault that could reach into shared storage " +
-                        "would be a vault with a reason to be nervous about.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+@Composable
+private fun SourceSteps(source: ImportSource, onBack: () -> Unit, onPick: () -> Unit) {
+    val context = LocalContext.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(source.label, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                source.whereItIsMade,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            source.steps.forEachIndexed { index, step ->
+                Spacer(Modifier.height(8.dp))
+                Row {
+                    Text(
+                        "${index + 1}.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(step, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+
+            source.web?.let { address ->
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(onClick = {
+                    // Best effort, like every other place this app leaves for software nobody here
+                    // chose: a phone with nothing to open a web address fails to resolve rather
+                    // than taking the vault down with it.
+                    runCatching {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(address)))
+                    }
+                }) { Text("Open the password manager") }
             }
         }
+    }
 
-        Button(onClick = onPick) { Text("Choose the file") }
-        Spacer(Modifier.height(24.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Then send it here", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "When the export's share sheet appears, pick Secrets and it lands straight " +
+                    "on the review list. If the file is already on this phone, choose it instead.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onPick) { Text("Choose the file") }
+                TextButton(onClick = onBack) { Text("Somewhere else") }
+            }
+        }
+    }
+}
+
+/**
+ * The export file, which is the dangerous part of this whole feature.
+ *
+ * Shown on the way in and again on the way out, because it is the step everybody skips and the only
+ * one with a lasting cost.
+ */
+@Composable
+private fun ExportWarningCard() {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Delete the file afterwards", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "An export is every password you have, in plain text — readable by anything " +
+                    "on the phone with storage access, and carried into whatever backs that folder " +
+                    "up. It is safe for the minute it takes to import and it is a liability after " +
+                    "that. This app cannot delete it for you: it is not this app's file, and a " +
+                    "vault that could reach into shared storage would be a vault worth being " +
+                    "nervous about.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -212,7 +366,7 @@ private fun Review(
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
                         Text(
-                            "Read ${plan.entries.size} from ${plan.format.label}",
+                            "Read ${plan.entries.size} from ${plan.sourceLabel}",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(Modifier.height(4.dp))
@@ -378,17 +532,19 @@ private fun Done(state: ImportViewModel.State.Done, onAgain: () -> Unit, onDone:
                 Spacer(Modifier.height(4.dp))
                 Text(
                     text = when {
-                        state.updated == 0 -> "${state.added} added from ${state.format.label}."
-                        state.added == 0 -> "${state.updated} updated from ${state.format.label}."
-                        else -> "${state.added} added and ${state.updated} updated from " +
-                            "${state.format.label}."
+                        state.updated == 0 -> "${state.added} added from ${state.source}."
+                        state.added == 0 -> "${state.updated} updated from ${state.source}."
+                        else -> "${state.added} added and ${state.updated} updated from ${state.source}."
                     },
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Now delete the export. It is every password you have, in plain text, " +
-                        "wherever the picker found it — and it does not get safer by being forgotten.",
+                    text = "If that export was saved anywhere — Downloads, a cloud folder, the " +
+                        "computer it was made on — delete it now. It is every password you have, " +
+                        "in plain text, and it does not get safer by being forgotten. A file sent " +
+                        "straight here from a share sheet was never saved at all, which is the " +
+                        "whole reason that route exists.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -427,18 +583,5 @@ private fun extras(item: VaultItem): String? {
     )
     return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }
-
-/** Where each export lives, in the words its own menus use. */
-private val SOURCES = listOf(
-    "Chrome, Edge or Brave" to
-        "Settings → Passwords → the three dots → Export passwords. You get a .csv.",
-    "Firefox" to
-        "about:logins → the three dots → Export logins. You get a .csv.",
-    "Safari or Apple Passwords" to
-        "Passwords app → File → Export all passwords. You get a .csv.",
-    "1Password" to
-        "The desktop app → your account → Export → the .1pux file, which keeps the cards, the " +
-            "notes, the custom fields and the password history. Its .csv works too and keeps less."
-)
 
 private const val SKIPPED_SHOWN = 20

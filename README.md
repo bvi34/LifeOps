@@ -503,9 +503,9 @@ the receipts.
 >
 > It also **fills passwords in other apps**, which is the one thing here that runs when the app is
 > not on screen and the one that talks to software the household did not choose — so it is the one
-> with the rules written down. An `AutofillService` must be bound by the system, so this module now
-> exports exactly one component, behind `BIND_AUTOFILL_SERVICE`: a permission the platform holds and
-> nothing installable does, inert until somebody picks Secrets in system settings. The matching is
+> with the rules written down. An `AutofillService` must be bound by the system, so it is exported
+> behind `BIND_AUTOFILL_SERVICE`: a permission the platform holds and nothing installable does,
+> inert until somebody picks Secrets in system settings. The matching is
 > in the pure-JVM `AutofillMatch` and is mostly a list of refusals — a **managed credential is never
 > offered to anything**, a match has to be **earned** by the item's own address, a subdomain matches
 > its parent while `bank.com.evil.example` does not (the suffix test is on label boundaries), and a
@@ -514,11 +514,26 @@ the receipts.
 > answer, and it will not fill this suite's own package: a vault that fills its own passphrase box
 > is a vault with its key inside it.
 >
-> Getting into it is the other half of leaving somewhere else, so it **imports** — from a browser's
-> exported CSV (Chrome, Edge, Brave, Firefox, Safari, Apple Passwords) and from 1Password, whose
-> `.1pux` brings the cards, notes, wifi keys, custom fields, extra addresses and password history a
-> CSV drops. It reads a file rather than an account, because it could not do otherwise: there is no
-> network here to ask a server with. Nothing is written until the household has seen a list — rows
+> Getting into it is the other half of leaving somewhere else, so it **imports**, by three routes in
+> order of preference. First **Credential Exchange** — the FIDO CXP/CXF transfer Android now defines
+> — where the household picks another credential manager from a system selector, unlocks *that* app,
+> and it hands its contents straight across: **passkeys included**, which no exported file can
+> carry, with no plaintext written anywhere. Imported passkeys arrive able to sign; CXF ships the
+> private key without the public half, so the public key is recomputed from it in thirty lines of
+> `BigInteger` curve arithmetic, and the tests both recompute twenty real key pairs' public halves
+> and then sign with an imported credential and verify against the computed key — the check a
+> relying party runs. Second, for the managers that have not implemented the transfer, a **share
+> sheet** entry: Chrome → Export passwords → screen lock → share to Secrets → the review list, and
+> the plaintext file is never saved to disk at all. That share target is the module's third exported
+> component and the first one another app can reach, which the manifest argues rather than absorbs —
+> it returns no result and reveals nothing, the vault still has to be opened on the spot, nothing is
+> written without a review, and it closes when the vault does. Third, a file picker for an export
+> made on a computer, reading a browser's CSV (Chrome, Edge, Brave, Firefox, Safari, Apple
+> Passwords) or 1Password's `.1pux`, which brings the cards, notes, wifi keys, custom fields, extra
+> addresses and password history a CSV drops. Where a transfer is impossible the import **names the
+> menu item in each manager** rather than pretending to be a connection: no other API enumerates a
+> manager's vault, 1Password's server holds ciphertext it cannot open, and this module has no
+> network to ask with in any case. Nothing is written until the household has seen a list — rows
 > that match nothing arrive ticked, and rows that would **overwrite a password already in the vault
 > arrive unticked**, because the export may be the older copy and taking it would replace June's
 > password with March's. Taking one anyway keeps the item itself — its tags, its fields, its second
@@ -549,7 +564,7 @@ the receipts.
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
 > the audit, the merge, the import readers and the one-time-password generator are the pure-JVM
-> `:vaultkit` under **242 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> `:vaultkit` under **257 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
 > passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
 > the search box refusing to match a password or a seed somebody typed into it; autofill refusing a
 > lookalike domain, an app with no address filed against it, and a mirrored bank token; a replayed

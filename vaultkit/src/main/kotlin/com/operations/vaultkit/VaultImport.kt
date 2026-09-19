@@ -16,6 +16,11 @@ package com.operations.vaultkit
  *    Safari and the iCloud/Apple Passwords app all export a CSV; 1Password exports a CSV and its
  *    own `.1pux`. Every one of those files is produced locally, by software the household already
  *    trusts with these passwords, at their own request.
+ *  - **Or take the handover the platform now defines.** Credential Exchange ([CredentialExchange])
+ *    is the sanctioned version of the same act: the household picks another credential manager from
+ *    a system selector, authenticates to *it*, and it hands its vault across on the device. No file
+ *    exists at any point. It is the best route where it is offered, and it is offered by more
+ *    managers every year.
  *
  * So the import is a *file* import, and the one thing it costs is the thing this file says out loud
  * everywhere it can: for as long as that export exists, the household's entire password list is
@@ -41,17 +46,32 @@ object VaultImport {
         APPLE_CSV("Safari or Apple Passwords"),
         ONEPASSWORD_CSV("1Password"),
         ONEPASSWORD_1PUX("1Password"),
-        GENERIC_CSV("a password export")
+        GENERIC_CSV("a password export"),
+
+        /**
+         * Not a file at all: the payload of a Credential Exchange transfer, handed over by another
+         * credential manager on this phone. The exporter names itself, so [Read.from] usually has a
+         * better label than this one — see [CredentialExchange].
+         */
+        CREDENTIAL_EXCHANGE("another password app")
     }
 
     /** One row that did not become an item, and why — shown as a count and a list, never hidden. */
     data class Skipped(val what: String, val why: String)
 
-    /** What a file turned out to hold. [items] carry fresh ids and have not met the vault yet. */
+    /** What a file — or a transfer — turned out to hold. [items] have not met the vault yet. */
     data class Read(
         val format: Format,
         val items: List<VaultItem>,
-        val skipped: List<Skipped> = emptyList()
+        val skipped: List<Skipped> = emptyList(),
+        /**
+         * What the source called itself, where it said.
+         *
+         * Only a Credential Exchange transfer knows this, because only there does the other app
+         * get to speak: it names itself in the payload. A file has no such claim to make and the
+         * format's own label is the honest answer.
+         */
+        val from: String? = null
     )
 
     /** What a candidate would do to the vault. */
@@ -95,8 +115,13 @@ object VaultImport {
     data class Plan(
         val format: Format,
         val entries: List<Entry>,
-        val skipped: List<Skipped> = emptyList()
+        val skipped: List<Skipped> = emptyList(),
+        val from: String? = null
     ) {
+
+        /** What to call the source on screen: its own name where it gave one. */
+        val sourceLabel: String get() = from ?: format.label
+
         val newCount: Int get() = entries.count { it.verdict == Verdict.NEW }
         val changedCount: Int get() = entries.count { it.verdict == Verdict.CHANGED }
         val alreadyHereCount: Int get() = entries.count { it.verdict == Verdict.ALREADY_HERE }
@@ -154,11 +179,11 @@ object VaultImport {
                 ?: titleKey(candidate)?.let { byTitle[it] }
             when {
                 match == null -> Entry(candidate, Verdict.NEW)
-                match.secret == candidate.secret -> Entry(candidate, Verdict.ALREADY_HERE, match)
+                nothingToAdd(match, candidate) -> Entry(candidate, Verdict.ALREADY_HERE, match)
                 else -> Entry(candidate, Verdict.CHANGED, match)
             }
         }
-        return Plan(read.format, entries, read.skipped)
+        return Plan(read.format, entries, read.skipped, read.from)
     }
 
     /**
@@ -223,6 +248,18 @@ object VaultImport {
         updatedAt = candidate.updatedAt.takeIf { it > 0 } ?: now
     )
 
+    /**
+     * Does the vault's copy already have everything this candidate brings?
+     *
+     * The same password is not enough on its own. A transfer from another credential manager can
+     * arrive with a **passkey** or a **second factor** for an account this vault has held as a plain
+     * password for years, and calling that "already here" would drop the one thing worth importing.
+     */
+    private fun nothingToAdd(current: VaultItem, candidate: VaultItem): Boolean =
+        current.secret == candidate.secret &&
+            (candidate.passkey == null || current.passkey != null) &&
+            (candidate.totp == null || current.totp != null)
+
     /** The vault's copy of an item, taking the import's password and whatever it was missing. */
     private fun merged(current: VaultItem, candidate: VaultItem, now: Long): VaultItem = current.copy(
         secret = candidate.secret,
@@ -230,6 +267,9 @@ object VaultImport {
         username = current.username.ifBlank { candidate.username },
         note = current.note.ifBlank { candidate.note },
         totp = current.totp ?: candidate.totp,
+        // Never over the top of one that is already here: a passkey this vault holds is one it
+        // issued or already adopted, and the site has its public half.
+        passkey = current.passkey ?: candidate.passkey,
         updatedAt = now
     )
 
