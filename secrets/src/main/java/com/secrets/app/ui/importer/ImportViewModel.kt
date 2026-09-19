@@ -71,7 +71,9 @@ class ImportViewModel(private val store: VaultStore) : ViewModel() {
             /** What the passwords came from, by its own name where it gave one. */
             val source: String,
             val added: Int,
-            val updated: Int
+            val updated: Int,
+            /** Items that kept their password and gained a previous one. */
+            val recorded: Int
         ) : State
     }
 
@@ -218,7 +220,12 @@ class ImportViewModel(private val store: VaultStore) : ViewModel() {
                         "while the list was open, or the phone may be out of space."
                 )
             } else {
-                State.Done(reviewing.plan.sourceLabel, result.added, result.updated)
+                State.Done(
+                    source = reviewing.plan.sourceLabel,
+                    added = result.added,
+                    updated = result.updated,
+                    recorded = result.recorded
+                )
             }
         }
     }

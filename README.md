@@ -533,17 +533,38 @@ the receipts.
 > addresses and password history a CSV drops. Where a transfer is impossible the import **names the
 > menu item in each manager** rather than pretending to be a connection: no other API enumerates a
 > manager's vault, 1Password's server holds ciphertext it cannot open, and this module has no
-> network to ask with in any case. Nothing is written until the household has seen a list — rows
-> that match nothing arrive ticked, and rows that would **overwrite a password already in the vault
-> arrive unticked**, because the export may be the older copy and taking it would replace June's
-> password with March's. Taking one anyway keeps the item itself — its tags, its fields, its second
-> factor — changes only the password, and keeps the one it replaced. Second factors arrive as seeds
-> that make codes rather than as text, a file that says when a password last changed is believed
-> rather than stamped with today (so **Check** still has something to say the morning after an
-> import), and the wrong file gets a sentence about what to pick instead — including this app's own
-> sealed vault, which is sent to the screen that can actually open it. What it cannot do is delete
-> the export afterwards: that file is every password the household has in plain text, and the screen
-> says so twice rather than reaching into shared storage.
+> network to ask with in any case. Nothing is written until the household has seen a list, and
+> whatever is taken keeps the item itself — its tags, its fields, its second factor — changing only
+> what the import actually supplies.
+>
+> Which leaves the hard question of any import: when one account is already here with a *different*
+> password, which of the two is current? That is the day somebody has both Google's copy and
+> 1Password's and they have drifted apart, and it arrives four hundred rows at a time. So the plan
+> **resolves it from evidence** and shows its reasoning per row: a password already in this item's
+> history was replaced here and cannot be the newer one; an import whose own history holds what this
+> vault currently has is the later copy; failing those, the **modified timestamps** decide, which a
+> Credential Exchange transfer, a 1Password `.1pux` and a Firefox export all carry. An older copy is
+> neither discarded nor allowed to overwrite: it is filed as a **previous password**, which is what
+> a password history is for, because the account you get locked out of is the one whose password
+> changed on one device and not the other — and the item's own `updatedAt` is deliberately left
+> alone, since the password did not change today and **Check** reads that field to decide what is
+> stale. Only the genuinely undated collisions are left unticked, and an undated export never gets
+> to claim it is the newest copy: the readers leave the timestamp unset rather than stamping today,
+> which is the difference between an import and a silent overwrite of everything changed since.
+>
+> And because an import is also what fills a list past reading, the vault **groups by site**:
+> everything under one address is one row saying how many sign-ins are behind it, shut by default,
+> opening in place. Not folders — it is computed from each item's own address through the same
+> matcher autofill uses, so there is nothing to file and nothing to go stale; a site with one login
+> is never a folder of one, a group sorts where its best member would have so a favourite keeps its
+> place, an item with no address is left exactly where it was, and a search flattens the whole thing
+> because a match must never hide inside a shut group.
+>
+> Second factors arrive as seeds that make codes rather than as text, and the wrong file gets a
+> sentence about what to pick instead — including this app's own sealed vault, which is sent to the
+> screen that can actually open it. What it cannot do is delete the export afterwards: that file is
+> every password the household has in plain text, and the screen says so twice rather than reaching
+> into shared storage.
 >
 > It is the one app whose restore refuses to restore: an archived vault is not swapped over a live
 > one — that would delete every password added since the backup, with nowhere to fetch them from — it
@@ -564,7 +585,7 @@ the receipts.
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
 > the audit, the merge, the import readers and the one-time-password generator are the pure-JVM
-> `:vaultkit` under **257 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> `:vaultkit` under **274 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
 > passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
 > the search box refusing to match a password or a seed somebody typed into it; autofill refusing a
 > lookalike domain, an app with no address filed against it, and a mirrored bank token; a replayed

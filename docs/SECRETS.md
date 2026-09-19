@@ -536,17 +536,50 @@ with no address is matched on its title, which is all a secure note has. A mirro
 matched against *nothing*: it belongs to an app, it is addressed by a `SecretRef`, and a CSV row
 that happens to carry the same title must never be allowed to overwrite a bank token.
 
-That gives three verdicts, and the defaults follow from them:
+### Which of two passwords is the current one
 
-| Verdict | What it means | Ticked? |
-|---|---|---|
-| **New** | Nothing here is filed under this account | Yes — it takes nothing away |
-| **Already here, different password** | The export may be from a browser last opened in March | **No** |
-| **Already in the vault** | Same account, same password | Not offered — writing it would tell the audit the password changed today |
+That is the hard question of any import, and the one that arrives in bulk the day somebody has both
+Google's copy and 1Password's and they have drifted apart. Overwriting everything is wrong half the
+time; asking four hundred times is not a feature. So the plan **resolves what it can from evidence**,
+in this order, and says on each row which piece of evidence decided it:
 
-The middle row is the whole reason this is a screen rather than a button. Taking it overwrites a
-password changed here in June with a dead one from March, and the only copy of the live one goes
-with it. Nothing in an import happens on a default that costs a working password.
+1. **It is not a different password at all** — the import brings a passkey or a second factor for an
+   account already here. Nothing to weigh.
+2. **This vault already knows the incoming password, as an old one.** It is in the item's history,
+   which means it was replaced *here*. No date outranks that.
+3. **The import knows this vault's password as an old one** — its own history carries what is
+   current here, so its copy is the later one.
+4. **The dates.** Where both sides say when the password was last changed, the later one is current.
+   A Credential Exchange transfer carries `modifiedAt`; so do a 1Password `.1pux` and a Firefox CSV.
+5. **Otherwise nobody knows**, and the plan says so instead of guessing.
+
+That gives the verdicts, and the defaults follow from them:
+
+| Verdict | What it means | What taking it does | Ticked? |
+|---|---|---|---|
+| **New** | Nothing here is filed under this account | Adds it | Yes |
+| **A passkey or second factor to add** | Same password, plus something this vault lacks | Adds it, overwrites nothing | Yes |
+| **Newer than the copy here** | Dated later, or the import lists this vault's password as old | Becomes the password; the old one is kept in history | Yes |
+| **Older than the copy here** | The other app is behind | **Nothing is replaced** — the incoming one is filed as a *previous* password | Yes |
+| **Two passwords, nothing to tell them apart** | Neither side is dated | Replaces, if you tick it | **No** |
+| **Already in the vault** | Same account, same password — or one already recorded as previous | Nothing | Not offered |
+
+Two of those rows are worth pausing on.
+
+**Older is not a failure, it is a find.** A browser that has not been opened since March still holds
+what the password was then, and that is exactly what a password history is for: the account somebody
+gets locked out of is the one whose password changed on one device and not the other. So the older
+copy is kept as a previous password, the current one is not touched, and — deliberately —
+`updatedAt` is not moved either, because the password did not change today and the audit reads that
+field to decide what is stale.
+
+**An undated export does not get to claim it is newest.** The readers leave `updatedAt` at zero when
+the file said nothing, rather than stamping the moment of the import. A reader that stamped today
+would make every CSV newer than everything in the vault, and every import a silent overwrite of
+every password changed since. That is one of the tests.
+
+Nothing in an import happens on a default that costs a working password: the only unticked row is
+the only one where being wrong does.
 
 Taking one anyway is safe in the way that matters: the item **keeps its identity**. Its id, its
 tags, its extra fields, its favourite star, its second factor and everything else somebody did to it
@@ -566,6 +599,36 @@ cannot delete it: it is not this app's file, and a vault that could reach into s
 be a vault worth being nervous about. So the screen says so before the picker opens and again on the
 way out, and points at **Check** on the way past, since an import is the one moment a vault gains
 hundreds of passwords nobody has looked at in years.
+
+## One row per place
+
+An import changes what the list has to do. A vault somebody typed by hand has one item per site; a
+vault that has just taken four hundred logins out of a browser has three for the bank — the one they
+use, the one from the old email address, and the one the browser saved against the mobile site — and
+a flat list of those is a list nobody can read.
+
+So the list groups by site. Everything filed under one address collapses to one row saying how many
+sign-ins are behind it, shut by default, opening in place. A site with one credential is **not** a
+group and never looks like one, because a folder containing one thing is a tap for no reason.
+
+It is not folders, and the difference is the whole design:
+
+- **Nothing is filed.** The grouping is computed from the item's own address every time the list is
+  drawn, through the same `AutofillMatch.hostOf` that decides what autofill will offer — so a site
+  is one place here exactly when it is one place there. There is nothing to maintain, nothing to go
+  stale, nothing to restore, and nothing to migrate.
+- **Nothing moves.** A group takes the position its *best* member would have had, so a starred login
+  does not disappear into a folder halfway down the alphabet by acquiring a neighbour.
+- **A group is named after what its items agree on.** Three logins all called *Bank* make a row
+  called Bank with the address underneath; where the titles disagree, the address is the label,
+  because it is the only thing they actually have in common.
+- **Searching flattens it.** A search is a different act from browsing — the answer to "where did I
+  put the council login" is that login, not a folder it might be in — so a query returns items, and
+  a match is never hidden inside a shut group.
+- **An item with no address is untouched.** A secure note, the wifi password, a mirrored credential
+  filed under a `SecretRef`: no site, no group, same row it always had. That is most of a young
+  vault and all of the *From apps* filter, which is why the grouping has to be invisible when it has
+  nothing to do.
 
 ## The device shortcut, and why it is not a contradiction
 
@@ -942,7 +1005,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 257 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 274 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -980,6 +1043,21 @@ half thrown away and recomputed from the private half, asserting the bytes come 
 a passkey taken through a whole import then **signs, and its signature verifies against the public
 key that was computed rather than received** — the check a relying party's server runs.
 
+The resolution rules are tested as rules: the later date wins and the password it displaced is kept;
+the earlier one is filed as a previous password and changes nothing else, `updatedAt` included; a
+password already in the item's history is recognised as the older one with no dates at all, and so
+is an import whose own history holds what this vault currently has; the same stale export imported
+twice does not stack duplicates; a transfer carrying a passkey for an account held as a password
+adds it without touching the password; and an undated export does not get to claim it is the newest
+copy, which is the bug that would have made every import a silent overwrite.
+
+The grouping is tested mostly on what it refuses to do: one login at a site is not a folder, an item
+with no address is left exactly where it was, a subdomain is its own place, a deleted item is in no
+row, and a group sorts where its best member would have — so a favourite does not lose its place by
+gaining a neighbour. Four more in `:secrets` cover what only exists on screen: a site is shut until
+it is opened, a search flattens the list so a match is never inside a shut folder, and a site that
+has been filtered away stops being recorded as open.
+
 The import is also tested on files shaped like the real exports — a Chrome header, a Firefox one with its
 nine columns and its timestamps, an Apple one with a second factor, a 1Password CSV with an archived
 row in it, and a `.1pux` document with a card, a note, a router, custom fields and a password
@@ -1002,7 +1080,7 @@ favourite over a name — and the two primitives underneath: that the subdomain 
 boundaries, and that a package match is by label rather than by string prefix, so `com.monzonian`
 does not collect `monzo.com`'s password.
 
-`:secrets` — 53 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+`:secrets` — 57 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
 longer exists, read back on the one that replaced it. Three of them run the new features through the

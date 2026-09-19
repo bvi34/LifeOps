@@ -134,8 +134,12 @@ object CredentialCsv {
                 tags = cells(tags).toTags(),
                 totp = cells(otp).takeIf { it.isNotEmpty() }?.let { Totp.parse(it) },
                 favourite = favourite != null && cells(favourite).isTruthy(),
-                createdAt = created ?: changed ?: now,
-                updatedAt = changed ?: now
+                // Zero where the file said nothing, rather than the moment of the import. The
+                // difference decides whether a password that disagrees with the one in the vault
+                // can be resolved by date at all — see [VaultImport.plan] — and stamping every
+                // undated row with today would make every export claim to be the newest copy.
+                createdAt = created ?: changed ?: 0L,
+                updatedAt = changed ?: 0L
             )
         }
 

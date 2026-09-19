@@ -287,8 +287,9 @@ object CredentialExchange {
             totp = totp,
             passkey = passkey,
             favourite = item.bool("favorite") == true,
-            createdAt = created ?: modified ?: now,
-            updatedAt = modified ?: now
+            // Zero where the other manager said nothing: see the note in [CredentialCsv].
+            createdAt = created ?: modified ?: 0L,
+            updatedAt = modified ?: 0L
         )
     }
 

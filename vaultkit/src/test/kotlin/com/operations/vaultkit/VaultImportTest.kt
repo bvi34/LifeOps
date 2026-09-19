@@ -17,6 +17,8 @@ import org.junit.Test
 class VaultImportTest {
 
     private val now = 1_700_000_000_000L
+    private val MARCH = 1_678_000_000_000L
+    private val JUNE = 1_686_000_000_000L
 
     private fun candidate(
         id: String,
@@ -69,16 +71,143 @@ class VaultImportTest {
     }
 
     @Test
-    fun `a different password on the same account is a change, and is not ticked`() {
+    fun `a different password with nothing to date it is left to the household`() {
         val document = VaultDocument(items = listOf(candidate("here", "Bank", "bank.example", "me", "old")))
 
         val plan = VaultImport.plan(
             document,
-            read(candidate("a", "Bank", "https://bank.example", "me", "new"))
+            // A Chrome CSV carries no dates, so both sides are undated and neither can win.
+            read(candidate("a", "Bank", "https://bank.example", "me", "new").copy(updatedAt = 0))
         )
 
-        assertEquals(1, plan.changedCount)
+        assertEquals(1, plan.count(VaultImport.Verdict.UNDECIDED))
         assertFalse("a" in plan.defaultSelection)
+    }
+
+    @Test
+    fun `an undated import does not get to claim it is the newest copy`() {
+        // The bug this guards: a reader that stamped undated rows with the moment of the import
+        // would make every CSV newer than everything in the vault, and every import a silent
+        // overwrite of passwords changed since.
+        val document = VaultDocument(items = listOf(candidate("here", "Bank", "bank.example", "me", "old")))
+        val undated = candidate("a", "Bank", "https://bank.example", "me", "new")
+            .copy(createdAt = 0, updatedAt = 0)
+
+        val plan = VaultImport.plan(document, read(undated))
+
+        assertEquals(VaultImport.Verdict.UNDECIDED, plan.entries.single().verdict)
+    }
+
+    @Test
+    fun `the copy dated later wins, and the one it replaced is kept`() {
+        val mine = candidate("here", "Bank", "bank.example", "me", "march").copy(updatedAt = MARCH)
+        val document = VaultDocument(items = listOf(mine))
+        val theirs = candidate("a", "Bank", "https://bank.example", "me", "june").copy(updatedAt = JUNE)
+
+        val plan = VaultImport.plan(document, read(theirs))
+        assertEquals(VaultImport.Verdict.REPLACES, plan.entries.single().verdict)
+        // Ticked: the evidence is on the screen and the password it displaces is recoverable.
+        assertTrue("a" in plan.defaultSelection)
+
+        val outcome = VaultImport.apply(document, plan, plan.defaultSelection, now)
+        val item = outcome.document.live.single()
+        assertEquals("june", item.secret)
+        assertEquals(listOf("march"), item.history.map { it.secret })
+        assertEquals(1, outcome.updated)
+    }
+
+    @Test
+    fun `the copy dated earlier is filed as a previous password, and changes nothing else`() {
+        val mine = candidate("here", "Bank", "bank.example", "me", "june").copy(updatedAt = JUNE)
+        val document = VaultDocument(items = listOf(mine))
+        // The browser that has not been opened since March still holds what it was then.
+        val theirs = candidate("a", "Bank", "https://bank.example", "me", "march").copy(updatedAt = MARCH)
+
+        val plan = VaultImport.plan(document, read(theirs))
+        assertEquals(VaultImport.Verdict.PREVIOUS, plan.entries.single().verdict)
+        assertTrue("a" in plan.defaultSelection)
+
+        val outcome = VaultImport.apply(document, plan, plan.defaultSelection, now)
+        val item = outcome.document.live.single()
+        assertEquals("june", item.secret)
+        assertEquals(listOf("march"), item.history.map { it.secret })
+        assertEquals(1, outcome.recorded)
+        assertEquals(0, outcome.updated)
+        // The password did not change today, and the audit reads this field to decide what is old.
+        assertEquals(JUNE, item.updatedAt)
+    }
+
+    @Test
+    fun `a password this vault already replaced is recognised as the older one, undated`() {
+        val mine = candidate("here", "Bank", "bank.example", "me", "new").copy(
+            history = listOf(VaultSecretVersion("old", MARCH))
+        )
+        val document = VaultDocument(items = listOf(mine))
+
+        val plan = VaultImport.plan(
+            document,
+            read(candidate("a", "Bank", "https://bank.example", "me", "old").copy(updatedAt = 0))
+        )
+
+        // Nothing to do: it is already on the record as a previous password.
+        assertEquals(VaultImport.Verdict.ALREADY_HERE, plan.entries.single().verdict)
+    }
+
+    @Test
+    fun `an import that knows this vault's password as an old one is the newer copy, undated`() {
+        val document = VaultDocument(items = listOf(candidate("here", "Bank", "bank.example", "me", "old")))
+        val theirs = candidate("a", "Bank", "https://bank.example", "me", "new").copy(
+            updatedAt = 0,
+            history = listOf(VaultSecretVersion("old", MARCH))
+        )
+
+        val plan = VaultImport.plan(document, read(theirs))
+
+        assertEquals(VaultImport.Verdict.REPLACES, plan.entries.single().verdict)
+    }
+
+    @Test
+    fun `the same stale export imported twice does not stack duplicate history`() {
+        val mine = candidate("here", "Bank", "bank.example", "me", "june").copy(updatedAt = JUNE)
+        val document = VaultDocument(items = listOf(mine))
+        val stale = candidate("a", "Bank", "https://bank.example", "me", "march").copy(updatedAt = MARCH)
+
+        val first = VaultImport.apply(
+            document,
+            VaultImport.plan(document, read(stale)),
+            setOf("a"),
+            now
+        ).document
+
+        val again = VaultImport.plan(first, read(stale.copy(id = "b")))
+        assertEquals(VaultImport.Verdict.ALREADY_HERE, again.entries.single().verdict)
+        val outcome = VaultImport.apply(first, again, setOf("b"), now)
+        assertEquals(1, outcome.document.live.single().history.size)
+    }
+
+    @Test
+    fun `a transfer bringing a passkey for an account held as a password adds it`() {
+        val document = VaultDocument(items = listOf(candidate("here", "Bank", "bank.example", "me", "hunter2")))
+        val theirs = candidate("a", "Bank", "https://bank.example", "me", "hunter2").copy(
+            passkey = VaultPasskey(
+                credentialId = "Y3JlZA",
+                rpId = "bank.example",
+                privateKey = "cHJpdmF0ZQ",
+                publicKey = "cHVibGlj"
+            ),
+            totp = TotpConfig(secret = "JBSWY3DPEHPK3PXP")
+        )
+
+        val plan = VaultImport.plan(document, read(theirs))
+        assertEquals(VaultImport.Verdict.ADDS, plan.entries.single().verdict)
+        assertTrue("a" in plan.defaultSelection)
+
+        val item = VaultImport.apply(document, plan, setOf("a"), now).document.live.single()
+        assertNotNull(item.passkey)
+        assertNotNull(item.totp)
+        assertEquals("hunter2", item.secret)
+        // Untouched: nothing about the password changed, so nothing about its age did either.
+        assertTrue(item.history.isEmpty())
     }
 
     @Test

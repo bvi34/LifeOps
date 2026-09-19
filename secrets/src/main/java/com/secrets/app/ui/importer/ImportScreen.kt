@@ -35,6 +35,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import java.text.DateFormat
+import java.util.Date
 import com.operations.vaultkit.AutofillMatch
 import com.operations.vaultkit.VaultImport
 import com.operations.vaultkit.VaultItem
@@ -343,6 +345,20 @@ private fun Failed(reason: String, onRetry: () -> Unit, onBack: () -> Unit) {
  * of *accounts*, and a screen that showed two hundred passwords in the clear would be the one place
  * in the app where a shoulder is worth more than the passphrase.
  */
+/**
+ * The list, with the decisions on it.
+ *
+ * One section per verdict, in the order somebody reads them, and every section says what taking it
+ * would do. The three in the middle are the interesting ones: an account already here with a
+ * *different* password is the hard case of any import, and rather than asking four hundred times or
+ * overwriting silently, the plan resolves what it can from evidence and shows its reasoning — this
+ * copy is dated later, this one earlier, these two cannot be told apart. Only the last is left
+ * unticked, because it is the only one where a wrong guess costs a working password.
+ *
+ * No password is on this screen. Not the incoming one, not the one it would replace: this is a list
+ * of *accounts*, and a screen that showed two hundred passwords in the clear would be the one place
+ * in the app where a shoulder is worth more than the passphrase.
+ */
 @Composable
 private fun Review(
     state: ImportViewModel.State.Reviewing,
@@ -352,9 +368,6 @@ private fun Review(
     onCancel: () -> Unit
 ) {
     val plan = state.plan
-    val fresh = plan.entries.filter { it.verdict == VaultImport.Verdict.NEW }
-    val changed = plan.entries.filter { it.verdict == VaultImport.Verdict.CHANGED }
-    val known = plan.entries.filter { it.verdict == VaultImport.Verdict.ALREADY_HERE }
 
     Column(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -380,44 +393,33 @@ private fun Review(
                 }
             }
 
-            if (fresh.isNotEmpty()) {
-                item {
-                    GroupHeader(
-                        title = "New — ${fresh.size}",
-                        body = "Nothing in the vault is filed under these.",
-                        onAll = { onSetAll(VaultImport.Verdict.NEW, true) },
-                        onNone = { onSetAll(VaultImport.Verdict.NEW, false) }
-                    )
-                }
-                items(fresh, key = { it.key }) { entry ->
-                    EntryRow(entry, entry.key in state.selected) { onToggle(entry.key) }
-                }
-            }
+            for (section in SECTIONS) {
+                val entries = plan.entries.filter { it.verdict == section.verdict }
+                if (entries.isEmpty()) continue
 
-            if (changed.isNotEmpty()) {
-                item {
+                item(key = "head-${section.verdict}") {
                     GroupHeader(
-                        title = "Already here, with a different password — ${changed.size}",
-                        body = "Unticked, because the export may be the older copy. Taking one " +
-                            "keeps the item exactly as it is here — its tags, its fields, its " +
-                            "second factor — and changes the password, keeping the one it replaced.",
-                        onAll = { onSetAll(VaultImport.Verdict.CHANGED, true) },
-                        onNone = { onSetAll(VaultImport.Verdict.CHANGED, false) }
+                        title = "${section.title} — ${entries.size}",
+                        body = section.body,
+                        onAll = if (section.selectable) {
+                            { onSetAll(section.verdict, true) }
+                        } else {
+                            null
+                        },
+                        onNone = if (section.selectable) {
+                            { onSetAll(section.verdict, false) }
+                        } else {
+                            null
+                        }
                     )
                 }
-                items(changed, key = { it.key }) { entry ->
-                    EntryRow(entry, entry.key in state.selected) { onToggle(entry.key) }
-                }
-            }
-
-            if (known.isNotEmpty()) {
-                item {
-                    GroupHeader(
-                        title = "Already in the vault — ${known.size}",
-                        body = "The same account with the same password. Nothing to do."
+                items(entries, key = { it.key }) { entry ->
+                    EntryRow(
+                        entry = entry,
+                        selected = if (section.selectable) entry.key in state.selected else null,
+                        onToggle = { onToggle(entry.key) }
                     )
                 }
-                items(known, key = { it.key }) { entry -> EntryRow(entry, null) {} }
             }
 
             if (plan.skipped.isNotEmpty()) {
@@ -439,6 +441,56 @@ private fun Review(
         }
     }
 }
+
+/** A heading and its list, per verdict. The order is the order they are read. */
+private data class Section(
+    val verdict: VaultImport.Verdict,
+    val title: String,
+    val body: String,
+    val selectable: Boolean = true
+)
+
+private val SECTIONS = listOf(
+    Section(
+        verdict = VaultImport.Verdict.NEW,
+        title = "New",
+        body = "Nothing in the vault is filed under these."
+    ),
+    Section(
+        verdict = VaultImport.Verdict.ADDS,
+        title = "A passkey or second factor to add",
+        body = "The same password as the one here, plus something this vault does not have. " +
+            "Nothing is overwritten."
+    ),
+    Section(
+        verdict = VaultImport.Verdict.REPLACES,
+        title = "Newer than the copy here",
+        body = "Dated after the password in this vault — or the export itself lists that password " +
+            "as an old one. Taking it changes the password and keeps the one it replaced."
+    ),
+    Section(
+        verdict = VaultImport.Verdict.PREVIOUS,
+        title = "Older than the copy here",
+        body = "The app they came from is behind. The password here is left exactly as it is, and " +
+            "the older one is filed as a previous password — which is where it is worth having, " +
+            "because the account you get locked out of is the one whose password changed on one " +
+            "device and not the other."
+    ),
+    Section(
+        verdict = VaultImport.Verdict.UNDECIDED,
+        title = "Two passwords, and nothing to tell them apart",
+        body = "Neither side says when it was last changed, so which one is current is a question " +
+            "only you can answer. Unticked: taking one replaces what is here, and the export may " +
+            "be the older copy. The replaced password is kept either way."
+    ),
+    Section(
+        verdict = VaultImport.Verdict.ALREADY_HERE,
+        title = "Already in the vault",
+        body = "The same account with the same password, or one already recorded here as a " +
+            "previous password. Nothing to do.",
+        selectable = false
+    )
+)
 
 @Composable
 private fun GroupHeader(
@@ -481,9 +533,10 @@ private fun EntryRow(entry: VaultImport.Entry, selected: Boolean?, onToggle: () 
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                extras(entry.candidate)?.let {
+                val detail = listOfNotNull(dates(entry), extras(entry.candidate))
+                if (detail.isNotEmpty()) {
                     Text(
-                        it,
+                        detail.joinToString(" · "),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.outline
                     )
@@ -494,6 +547,24 @@ private fun EntryRow(entry: VaultImport.Entry, selected: Boolean?, onToggle: () 
             }
         }
     }
+}
+
+/**
+ * The evidence, on the row it decided.
+ *
+ * Only where a date actually settled the question: saying "no date" on four hundred rows would be
+ * noise, and the section heading has already said so once.
+ */
+private fun dates(entry: VaultImport.Entry): String? {
+    if (entry.verdict != VaultImport.Verdict.REPLACES &&
+        entry.verdict != VaultImport.Verdict.PREVIOUS
+    ) {
+        return null
+    }
+    val theirs = entry.candidate.updatedAt.takeIf { it > 0 } ?: return null
+    val mine = entry.existing?.updatedAt?.takeIf { it > 0 } ?: return null
+    val format = DateFormat.getDateInstance(DateFormat.MEDIUM)
+    return "changed ${format.format(Date(theirs))}, this one ${format.format(Date(mine))}"
 }
 
 @Composable
@@ -531,11 +602,13 @@ private fun Done(state: ImportViewModel.State.Done, onAgain: () -> Unit, onDone:
                 Text("In the vault", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = when {
-                        state.updated == 0 -> "${state.added} added from ${state.source}."
-                        state.added == 0 -> "${state.updated} updated from ${state.source}."
-                        else -> "${state.added} added and ${state.updated} updated from ${state.source}."
-                    },
+                    text = listOfNotNull(
+                        "${state.added} added".takeIf { state.added > 0 },
+                        "${state.updated} updated".takeIf { state.updated > 0 },
+                        "${state.recorded} kept as previous passwords".takeIf { state.recorded > 0 }
+                    ).ifEmpty { listOf("Nothing") }
+                        .joinToString(", ")
+                        .plus(" from ${state.source}."),
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Spacer(Modifier.height(8.dp))

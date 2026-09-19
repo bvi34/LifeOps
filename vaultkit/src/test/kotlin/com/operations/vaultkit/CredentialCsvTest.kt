@@ -78,7 +78,17 @@ class CredentialCsvTest {
                 "https://bank.example,me,hunter2,,3500000000000\n"
         )!!
 
-        assertEquals(now, read.items[0].updatedAt)
+        // Zero rather than the moment of the import: "the file did not say" is a fact the plan
+        // needs, and a row stamped with today would outrank every password in the vault.
+        assertEquals(0L, read.items[0].updatedAt)
+    }
+
+    @Test
+    fun `a file with no dates at all leaves them unset`() {
+        val read = read("name,url,username,password,note\nBank,https://b.example,me,x,\n")!!
+
+        assertEquals(0L, read.items[0].updatedAt)
+        assertEquals(0L, read.items[0].createdAt)
     }
 
     @Test

@@ -224,8 +224,9 @@ object OnePasswordExport {
             totp = totp,
             history = history(details, now),
             favourite = (item.number("favIndex") ?: 0.0) > 0,
-            createdAt = millis(item.number("createdAt"), now) ?: now,
-            updatedAt = millis(item.number("updatedAt"), now) ?: now
+            // Zero, not `now`, where the export said nothing: see the note in [CredentialCsv].
+            createdAt = millis(item.number("createdAt"), now) ?: 0L,
+            updatedAt = millis(item.number("updatedAt"), now) ?: 0L
         )
     }
 
