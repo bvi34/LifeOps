@@ -36,7 +36,7 @@ class GunPassivesTest {
         // A pierce-1 shot travelling straight through both bodies.
         val shot = Projectile(
             id = 90100, ownerId = RunEngine.PLAYER_ID, pos = Vec2(px + 20f, py), vel = Vec2(360f, 0f),
-            damage = 50f, crit = false, lifeRemaining = 5f, friendly = true, pierceLeft = 1,
+            damage = 50f, crit = false, lifeRemaining = 5f, friendly = true, pierce = 1,
         )
         e.projectiles.add(shot)
         repeat(40) { e.step(1f / 60f, RunInput()) }
@@ -59,6 +59,31 @@ class GunPassivesTest {
         repeat(60) { e.step(1f / 60f, RunInput()) }
         assertTrue("a ricochet should bounce from the first enemy to the off-axis one",
             shot.hitIds.containsAll(setOf(91001, 91002)))
+    }
+
+    /**
+     * A bounce spawns a *fresh* shot rather than turning the spent one around, so the shot that
+     * leaves the first target still has its full pierce budget: pierce-1 + ricochet-1 is two
+     * bodies on the way out and two more on the bounced leg, not two plus one.
+     */
+    @Test
+    fun aRicochetCarriesTheFullPierceBudgetIntoItsNewLeg() {
+        val e = mutedEngine()
+        val px = e.player.pos.x; val py = e.player.pos.y
+        e.enemies.clear()
+        e.enemies.add(enemy(93001, Vec2(px + 40f, py)))         // first leg: straight ahead
+        e.enemies.add(enemy(93002, Vec2(px + 80f, py)))         // first leg: pierced through
+        e.enemies.add(enemy(93003, Vec2(px + 80f, py + 60f)))   // the bounce target
+        e.enemies.add(enemy(93004, Vec2(px + 80f, py + 120f)))  // only a pierced bounce reaches this one
+        val shot = Projectile(
+            id = 93100, ownerId = RunEngine.PLAYER_ID, pos = Vec2(px + 20f, py), vel = Vec2(360f, 0f),
+            damage = 50f, crit = false, lifeRemaining = 5f, friendly = true, pierce = 1, bouncesLeft = 1,
+        )
+        e.projectiles.add(shot)
+        repeat(120) { e.step(1f / 60f, RunInput()) }
+        // The bounce chain shares one hit set, so the original shot's set records the whole chain.
+        assertTrue("pierce should still apply after a ricochet — all four enemies hit, got ${shot.hitIds}",
+            shot.hitIds.containsAll(setOf(93001, 93002, 93003, 93004)))
     }
 
     @Test

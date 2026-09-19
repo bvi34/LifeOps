@@ -37,7 +37,7 @@ enum class Stat {
     // each shot, so they transform *any* weapon's projectiles — the engine reads the stat, no
     // per-weapon code (the same "stat, not code" rule as TURRET_COUNT).
     PIERCE,          // extra enemies a shot passes through before it's spent
-    RICOCHET,        // times a spent shot bounces to a new nearby target
+    RICOCHET,        // times a spent shot spawns a fresh shot at a new nearby target
     EXPLOSION_RADIUS,// world-unit blast radius on impact (0 = no explosion)
 
     // Mines equipment (DESIGN.md §9). Dedicated keys so mine upgrades never bleed onto the turret

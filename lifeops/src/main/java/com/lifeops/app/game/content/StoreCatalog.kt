@@ -128,7 +128,7 @@ object StoreCatalog {
     // transform whatever gun is equipped (DESIGN.md §9). maxRank 3: each rank is a big swing.
     private val PENETRATION = passive("pierce", "Penetration", "Shots pass through +1 enemy per rank.",
         Stat.PIERCE, Scope.AIMED, 1f, op = Op.FLAT, maxRank = 3)
-    private val RICOCHET = passive("ricochet", "Ricochet", "Shots bounce to +1 more nearby enemy per rank.",
+    private val RICOCHET = passive("ricochet", "Ricochet", "On hit, fires a fresh shot at another nearby enemy — +1 bounce per rank.",
         Stat.RICOCHET, Scope.AIMED, 1f, op = Op.FLAT, maxRank = 3)
     private val EXPLOSIVE_ROUNDS = passive("explosive", "Explosive Rounds", "Shots detonate on impact — +22 blast radius per rank.",
         Stat.EXPLOSION_RADIUS, Scope.AIMED, 22f, op = Op.FLAT, maxRank = 3)
