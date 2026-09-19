@@ -21,6 +21,9 @@ import com.lifeops.app.game.core.Vec2
  */
 
 internal fun RunEngine.resolveProjectileHits() {
+    // Ricochets spawn new shots; they're collected here and added after the pass, since we're
+    // iterating the same list.
+    val ricochets = ArrayList<Projectile>()
     val pit = projectiles.iterator()
     while (pit.hasNext()) {
         val p = pit.next()
@@ -42,16 +45,20 @@ internal fun RunEngine.resolveProjectileHits() {
             if (!t.alive) killEnemy(t)
             if (p.explosionRadius > 0f) explode(p.pos, p.explosionRadius, p.damage * RunEngine.EXPLOSION_DAMAGE_FRAC, t.id)
         }
-        // Survive the hit via pierce first (straight through), then ricochet (bounce to a new
-        // target); a shot with neither budget is spent on impact.
+        // Survive the hit via pierce first (straight through), then ricochet — which retires this
+        // shot and fires a fresh one at a new target. A shot with neither budget is spent on impact.
         when {
             p.pierceLeft > 0 -> p.pierceLeft--
             p.bouncesLeft > 0 -> {
-                p.bouncesLeft--
-                if (!redirectToNearest(p)) pit.remove()
+                pit.remove()
+                spawnRicochet(p)?.let { ricochets.add(it) }
             }
             else -> pit.remove()
         }
+    }
+    for (r in ricochets) {
+        projectiles.add(r)
+        bus.emit(GameEvent.OnProjectileSpawn(r.id, r.ownerId))
     }
     enemies.removeAll { !it.alive }
 }
@@ -75,8 +82,19 @@ internal fun RunEngine.explode(center: Vec2, radius: Float, damage: Float, direc
     }
 }
 
-/** Point [p] at the nearest enemy it hasn't hit yet (a ricochet). Returns false if none remain. */
-internal fun RunEngine.redirectToNearest(p: Projectile): Boolean {
+/**
+ * A ricochet (DESIGN.md §9): the spent shot [p] is retired and a **new** shot is fired from where
+ * it landed at the nearest enemy the chain hasn't struck yet, carrying its damage, crit and on-hit
+ * passives with one bounce spent.
+ *
+ * Spawning rather than redirecting is what makes ricochet pay off next to the other on-hit
+ * passives: the new shot re-rolls the full [Projectile.pierce] budget (and still explodes, and
+ * still bounces), so a bounce is a whole extra shot's worth of behaviour instead of a shot that
+ * already spent itself passing through bodies. With ricochet alone it looks the same as a bounce.
+ *
+ * Returns null when no fresh target is left to bounce to — the chain simply ends there.
+ */
+internal fun RunEngine.spawnRicochet(p: Projectile): Projectile? {
     var best: Enemy? = null
     var bestDist = Float.MAX_VALUE
     for (e in enemies) {
@@ -84,12 +102,18 @@ internal fun RunEngine.redirectToNearest(p: Projectile): Boolean {
         val d = e.pos.distanceTo(p.pos)
         if (d < bestDist) { bestDist = d; best = e }
     }
-    val target = best ?: return false
+    val target = best ?: return null
     val speed = p.vel.length()
-    p.vel = (target.pos - p.pos).normalized() * speed
-    // A fresh leg of travel, so a bounced shot doesn't die to the previous target's range clock.
-    p.lifeRemaining = maxOf(p.lifeRemaining, RunEngine.RICOCHET_LIFE)
-    return true
+    return Projectile(
+        id = nextId++, ownerId = p.ownerId, pos = p.pos,
+        vel = (target.pos - p.pos).normalized() * speed,
+        damage = p.damage, crit = p.crit,
+        // A fresh leg of travel, so a bounced shot doesn't die to the previous target's range clock.
+        lifeRemaining = maxOf(p.lifeRemaining, RunEngine.RICOCHET_LIFE),
+        friendly = p.friendly, radius = p.radius,
+        pierce = p.pierce, bouncesLeft = p.bouncesLeft - 1, explosionRadius = p.explosionRadius,
+        hitIds = p.hitIds, // shared: the bounce chain never doubles back on an earlier leg's target
+    )
 }
 
 internal fun RunEngine.killEnemy(e: Enemy) {

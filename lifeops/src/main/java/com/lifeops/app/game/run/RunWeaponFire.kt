@@ -75,7 +75,7 @@ internal fun RunEngine.fireWeapon(dt: Float, input: RunInput) {
         val p = Projectile(
             id = nextId++, ownerId = RunEngine.PLAYER_ID, pos = player.pos, vel = vel,
             damage = dmg, crit = crit, lifeRemaining = life, friendly = true,
-            pierceLeft = pierce, bouncesLeft = bounces, explosionRadius = boom,
+            pierce = pierce, bouncesLeft = bounces, explosionRadius = boom,
         )
         projectiles.add(p)
         bus.emit(GameEvent.OnProjectileSpawn(p.id, RunEngine.PLAYER_ID))

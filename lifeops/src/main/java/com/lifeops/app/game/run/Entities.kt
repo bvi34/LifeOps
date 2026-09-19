@@ -144,8 +144,8 @@ class Projectile(
     val id: Int,
     val ownerId: Int,
     var pos: Vec2,
-    /** Heading × speed. Mutable so a ricochet can redirect the shot toward a new target. */
-    var vel: Vec2,
+    /** Heading × speed. Fixed for the life of the shot — a ricochet spawns a new one (§9). */
+    val vel: Vec2,
     val damage: Float,
     val crit: Boolean,
     var lifeRemaining: Float,
@@ -153,11 +153,20 @@ class Projectile(
     val friendly: Boolean = false,
     val radius: Float = 5f,
     /** On-hit passives (DESIGN.md §9), stamped from the shooter's stats at fire time. */
-    var pierceLeft: Int = 0,
+    val pierce: Int = 0,
     var bouncesLeft: Int = 0,
     val explosionRadius: Float = 0f,
-    /** Enemies this shot has already struck, so pierce/ricochet never double-hits the same body. */
+    /**
+     * Enemies this shot has already struck, so pierce/ricochet never double-hits the same body.
+     * A ricochet's new shot *shares* this set rather than copying it: one trigger-pull's bounce
+     * chain is one shot's worth of hits, so a later leg can't double back onto an earlier target.
+     */
     val hitIds: MutableSet<Int> = HashSet(),
+    /**
+     * Bodies this shot can still pass through before it's spent. Starts at the stamped [pierce];
+     * a ricochet spawns a *fresh* shot, so each bounce gets the full pierce budget again.
+     */
+    var pierceLeft: Int = pierce,
 )
 
 /**

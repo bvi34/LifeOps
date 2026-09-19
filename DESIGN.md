@@ -334,9 +334,17 @@ shot *behaves* for any gun. They follow the same "stat, not code" rule as the
 turret: each adds a stat (`PIERCE` / `RICOCHET` / `EXPLOSION_RADIUS`) resolved
 once at fire time and stamped onto every pellet, and the projectile-resolution
 step reads those fields — a shot survives a hit while it has pierce budget (goes
-straight through), then bounces to a fresh target while it has ricochet budget,
-and splashes `EXPLOSION_DAMAGE_FRAC` of its damage in-radius when explosive. New
-on-hit behaviours are a new stat + a few lines in the collision step.
+straight through), then, while it has ricochet budget, *spawns a new shot* at the
+nearest enemy the chain hasn't struck, and splashes `EXPLOSION_DAMAGE_FRAC` of its
+damage in-radius when explosive. New on-hit behaviours are a new stat + a few lines
+in the collision step.
+
+A bounce spawns rather than redirects so that the on-hit passives **compose**: the
+new shot is stamped with the parent's damage, crit and passives and re-rolls the
+full pierce budget, so Penetration + Ricochet is `(pierce+1) × (bounces+1)` bodies
+instead of a shot that already spent its pierce before it ever bounced. On its own
+Ricochet looks exactly as it did. The bounce chain shares one `hitIds` set, so no
+leg ever doubles back onto a body an earlier one struck.
 
 **Equipment upgrade pools.** Every combat-equipment artifact rolls a *variable*
 upgrade on each rank past the first (the turret's original trick, generalised).
