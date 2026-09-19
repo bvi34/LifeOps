@@ -441,7 +441,8 @@ the receipts.
 
 > **Secrets** (the suite's vault) is a peer module — see **[docs/SECRETS.md](docs/SECRETS.md)**.
 > It is a **1Password-shaped password manager** for the household's own logins, cards, keys and
-> notes — and, under the same lock, **every credential the rest of the suite holds**: Finance's Plaid
+> notes — their **second factors** and the **password each one had before this one** — and, under the
+> same lock, **every credential the rest of the suite holds**: Finance's Plaid
 > keys and bank access tokens, Citation's catalogue sign-ins and library card, and the Operations
 > Sandbox's own GitHub update token and Azure backup signature. That second half is why it
 > exists. Every app here keeps its credentials in `EncryptedSharedPreferences` behind an Android
@@ -488,13 +489,24 @@ the receipts.
 > one — that would delete every password added since the backup, with nowhere to fetch them from — it
 > is staged and **merged** item by item, newest wins, tombstones respected, with a report of what
 > changed. There is no `INTERNET` permission in the module and no HTTP client on its classpath: no
-> sync, no account, and no breach lookup, not even the k-anonymous kind. It cannot recover a
+> sync, no account, and no breach lookup, not even the k-anonymous kind — which is a restriction
+> rather than a shortfall, and the **second factor** is the proof: a TOTP code is HMAC over the clock,
+> so it works here exactly as well as it would anywhere, and it replaces a separate authenticator app
+> whose seeds died with the phone. There is no camera permission either, so a seed is pasted from the
+> site's "can't scan the code?" text rather than scanned. An item also keeps **the ten passwords it
+> used to have**, because the commonest way to lose an account is not forgetting a password but
+> changing one — a form that said it saved and stored something else, or a tablet still signed in on
+> the old one. The mirrored credentials get no such history: a rotated access token opens nothing, so
+> keeping it would be storing plaintext with no use for it. It cannot recover a
 > forgotten passphrase — nothing can, which is the point — but the unlock screen offers to **delete
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
-> the audit and the merge are the pure-JVM `:vaultkit` under **94 JVM tests**, most of which assert
-> that the vault *fails* to open — wrong passphrase, flipped bit, a header edited to claim a cheaper
-> KDF, a spliced key, a truncated file.
+> the audit, the merge and the one-time-password generator are the pure-JVM `:vaultkit` under
+> **142 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
+> the search box refusing to match a password or a seed somebody typed into it. The codes themselves
+> are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
+> worth having for a generator whose failure mode is six plausible digits that no site accepts.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

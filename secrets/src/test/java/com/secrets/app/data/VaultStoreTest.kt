@@ -8,6 +8,9 @@ import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
 import com.operations.vaultkit.SecretsAccess
+import com.operations.vaultkit.Totp
+import com.operations.vaultkit.TotpConfig
+import com.operations.vaultkit.VaultDocument
 import com.operations.vaultkit.VaultEnvelope
 import com.operations.vaultkit.VaultItem
 import com.operations.vaultkit.VaultState
@@ -442,4 +445,85 @@ class VaultStoreTest {
         createdAt = 1,
         updatedAt = 1
     )
+
+    // --- Second factors and previous passwords, through the real file ----------------------------
+
+    @Test
+    fun `a second factor and a replaced password survive the seal and the reopen`() = runTest {
+        store.create(passphrase)
+        val seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        val id = UUID.randomUUID().toString()
+        store.mutate { document ->
+            document.upsert(
+                VaultItem(
+                    id = id,
+                    title = "Bank",
+                    secret = "the-old-one",
+                    totp = TotpConfig(secret = seed, issuer = "Bank", account = "me"),
+                    createdAt = 1,
+                    updatedAt = 1
+                ),
+                now = 10
+            )
+        }
+        store.mutate { document -> document.upsert(document.item(id)!!.copy(secret = "the-new-one"), now = 20) }
+
+        store.lock()
+        val reopened = VaultStore(ApplicationProvider.getApplicationContext())
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, reopened.unlock(passphrase))
+
+        val item = reopened.document.value!!.item(id)!!
+        assertEquals("the-new-one", item.secret)
+        assertEquals("the-old-one", item.history.single().secret)
+        assertEquals("Bank", item.totp!!.issuer)
+        // The seed is the one that was filed, which is the only thing that makes the codes right.
+        assertEquals(
+            Totp.code(TotpConfig(secret = seed), 59_000L)!!.digits,
+            Totp.code(item.totp!!, 59_000L)!!.digits
+        )
+    }
+
+    @Test
+    fun `a rotated credential leaves no trail of dead tokens in the vault`() = runTest {
+        store.create(passphrase)
+        val broker = VaultBroker(store)
+        val ref = SecretRef("finance", "usaa", "access-token")
+
+        broker.write(ref, "token-one", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+        broker.write(ref, "token-two", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+        broker.write(ref, "token-three", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+
+        val item = store.document.value!!.managed(ref)!!
+        assertEquals("token-three", item.secret)
+        // These rotate on somebody else's schedule and none of the old ones opens anything, so a
+        // history of them would be an unbounded pile of plaintext with no use for it.
+        assertTrue(item.history.isEmpty())
+    }
+
+    @Test
+    fun `a vault using neither new feature stays writable by the older build`() = runTest {
+        store.create(passphrase)
+        val id = UUID.randomUUID().toString()
+
+        store.mutate { it.upsert(VaultItem(id = id, title = "Wifi", secret = "elderflower"), now = 10) }
+        assertEquals(
+            "nothing here a version-1 reader would drop",
+            VaultDocument.BASELINE_VERSION,
+            store.document.value!!.version
+        )
+
+        store.mutate { document ->
+            document.upsert(
+                document.item(id)!!.copy(totp = TotpConfig(secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")),
+                now = 20
+            )
+        }
+        assertEquals(VaultDocument.DOCUMENT_VERSION, store.document.value!!.version)
+
+        // And the file itself carries it, rather than only the copy in memory.
+        store.lock()
+        val reopened = VaultStore(ApplicationProvider.getApplicationContext())
+        reopened.unlock(passphrase)
+        assertEquals(VaultDocument.DOCUMENT_VERSION, reopened.document.value!!.version)
+    }
 }

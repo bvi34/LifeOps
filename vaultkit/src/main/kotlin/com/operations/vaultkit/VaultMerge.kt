@@ -87,10 +87,13 @@ object VaultMerge {
         }
 
         return Outcome(
+            // Stamped, because the winning items can have come from either side: merging an archive
+            // written by a build that keeps second factors into a vault that has never held one
+            // produces a document a version-1 reader would quietly strip.
             document = into.copy(
                 items = merged.sortedBy { it.id },
                 updatedAt = maxOf(now, into.updatedAt, from.updatedAt)
-            ),
+            ).stamped(),
             added = added,
             updated = updated,
             deleted = deleted,

@@ -61,6 +61,34 @@ object VaultJson {
             ?: emptyList(),
         note = note ?: "",
         url = url ?: "",
-        tags = tags?.filterNotNull() ?: emptyList()
+        tags = tags?.filterNotNull() ?: emptyList(),
+        totp = totp?.normalised(),
+        history = history?.filter { it != null && it.secret != null && it.secret.isNotEmpty() } ?: emptyList()
     )
+
+    /**
+     * A second factor, made safe to show.
+     *
+     * Gson allocates without running the constructor, so a document that predates this field — or
+     * one hand-edited during a recovery — arrives with nulls where enums and strings should be and
+     * zeroes where the digit count and the period should be. Defaulting them here rather than at
+     * every read site is what lets the rest of the module treat a stored [TotpConfig] as one that
+     * works.
+     *
+     * A seed that will not decode returns null outright: an item that quietly shows no codes is
+     * better than one that confidently shows wrong ones.
+     */
+    @Suppress("SENSELESS_COMPARISON")
+    private fun TotpConfig.normalised(): TotpConfig? {
+        if (secret == null || secret.isBlank()) return null
+        return copy(
+            algorithm = algorithm ?: TotpAlgorithm.SHA1,
+            digits = digits.takeIf { it in TotpConfig.MIN_DIGITS..TotpConfig.MAX_DIGITS }
+                ?: TotpConfig.DEFAULT_DIGITS,
+            periodSeconds = periodSeconds.takeIf { it in TotpConfig.MIN_PERIOD..TotpConfig.MAX_PERIOD }
+                ?: TotpConfig.DEFAULT_PERIOD_SECONDS,
+            issuer = issuer ?: "",
+            account = account ?: ""
+        ).takeIf { it.isUsable }
+    }
 }

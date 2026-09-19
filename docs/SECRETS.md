@@ -1,7 +1,8 @@
 # Secrets — one vault, and the credentials that survive a restore
 
 Secrets is the suite's password manager. It keeps the household's own logins, cards, licence keys
-and notes; and it keeps, under the same lock, **every credential the rest of the suite holds** —
+and notes — their second factors, and the password each one had before this one; and it keeps, under
+the same lock, **every credential the rest of the suite holds** —
 Finance's Plaid keys and bank access tokens, Citation's catalogue sign-ins and library card, and the
 Operations Sandbox's own GitHub update token and the signature its scheduled cloud backup uploads
 with — so that restoring a backup onto a new phone does not
@@ -15,6 +16,8 @@ audit, the merge — is `:vaultkit`, pure JVM and unit-tested without a device.
 ```
 Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; start again if it is forgotten)
                                 →  Vault      (everything, searchable)  →  one item
+                                                                            (its codes, and the
+                                                                             passwords it replaced)
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
                                 →  Settings   (auto-lock, passphrase, and finishing a restore)
@@ -327,18 +330,119 @@ unlock uses exactly that. The distinction that makes both true is between a **ro
 
 Revoking it, or losing the phone, costs nothing: type the passphrase.
 
+## The second factor
+
+A time-based one-time password is the rare second factor that is *arithmetic*: HMAC over a counter
+taken from the clock, truncated to six digits (RFC 6238, and RFC 4226 underneath it). There is no
+server to ask, no account to have, and nothing to sync — everything it needs is in `javax.crypto`,
+which is the same restriction the envelope accepts and for the same reason.
+
+So the app that promises it cannot phone anybody turns out to be the natural home for this. What it
+replaces is a separate authenticator app whose seeds live in *its* store, die with the phone, and
+are the one credential nobody can reissue without a support line — which is the failure this whole
+module exists to fix, arriving a second time in a different costume.
+
+The objection worth answering is that keeping both factors in one place collapses two into one. It
+is a real argument, and it is an argument about *where the vault is* rather than about what is in it.
+Two-factor authentication defends against somebody who has the password and is not here: a leaked
+database, a reused password, a phishing page. None of those gets them this file, and somebody who
+does have this file and its passphrase has the password anyway.
+
+```
+  Second factor                             Monzo · me@example.com
+  138 249                             17s   [copy]
+  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░
+  From this phone's clock.
+```
+
+Three decisions, and the reasons:
+
+- **The seed is stored; the code never is.** The code is a pure function of the seed and the clock,
+  so writing it down would mean putting a secret on disk in order to save one HMAC. The seed is
+  treated as what it is — never searched, never in the audit's reuse comparison, gone from a
+  tombstone like everything else, and never shown on screen at all. The only reason to look at a
+  seed is to move it to another authenticator, and the site that issued it still has the QR code.
+- **The code is *not* masked, unlike every other secret here.** It exists to be read off the screen
+  and typed into something else within half a minute, it is worthless the moment it expires, and a
+  reveal button in front of it would be a tap between somebody and the only thing they came for.
+  Copying it clears the clipboard when the code stops working rather than on the vault's general
+  timer.
+- **There is no scanner.** Reading a QR code needs the camera, the camera needs a permission, and
+  this module's manifest declares none at all — that absence is the only promise here that nothing
+  else in the suite makes, and it is not being spent on a convenience. Every site that shows a QR
+  code offers the same seed as text behind a "can't scan it?" link. That text is what the field
+  takes, as either an `otpauth://` URI or a bare Base32 key, in whatever case and spacing it was
+  printed in.
+
+Two honest limits. **The clock is the phone's** — a phone thirty seconds out of step produces codes
+a site rejects, and nothing here can tell that apart from a wrong seed, because asking a time server
+would mean the network permission this module does not have. The screen says so rather than leaving
+it to be worked out. And **counter-based `hotp` seeds are refused** rather than half-supported: the
+counter would advance every time a code was *looked at*, so opening the vault would desynchronise
+the second factor, which is a worse failure than not holding it.
+
+## The password you had before this one
+
+The most common way to lose an account is not forgetting a password — it is **changing** one. The
+form said it saved and stored something else; the change never committed; the tablet in the kitchen
+is still signed in on the old one and will ask for it the next time somebody opens it. Every one of
+those is ten seconds' work for a person who can see what the password was this morning, and an
+account-recovery phone call for a person who cannot.
+
+So an item keeps what its password used to be, newest first, capped at ten. Recording happens in
+`VaultDocument.upsert` rather than at the editor, because that is the one funnel every change goes
+through and a rule written at a call site is a rule the next call site forgets. Four cases record
+nothing, each because there was no *replacement*: a new item, one coming back from a tombstone, a
+password that did not change, and one that was blank — filling in the empty secret on a stub started
+last year should not file an empty string as a password somebody once used.
+
+This is the one place the argument against a database gets re-examined, because it sounds like the
+same thing. It is not. The objection to a write-ahead log was never "old passwords exist" — it was
+that they exist where nobody decided to put them and nobody can get them out. These are inside the
+sealed body, bounded, shown on the screen that owns the item, masked like any other secret, revealed
+one at a time, and thrown away from that screen by a button that says so — which, like every other
+edit here, takes effect on Save rather than under the finger.
+
+**The mirrored credentials do not get one.** An app's access token is dead the moment it rotates, so
+keeping it would be storing a secret that opens nothing; worse, those rotate on somebody else's
+schedule rather than when a person decides something, so a history of them would be an unbounded
+churn of useless plaintext inside the file. That is enforced in `keepingReplaced` rather than left to
+each writer to remember.
+
+## Two features, one format version
+
+Both of the above put something in the document that a build without them would silently drop —
+Gson keeps what it knows and discards the rest — so the document's own version had to move from 1
+to 2. What it does *not* do is move on every vault.
+
+`VaultDocument.stamped()` computes the version from the contents rather than asserting it: a vault
+holding no second factor and no replaced password contains nothing a version-1 reader would lose, so
+it stays at 1 and the previous build can still open **and edit** it. Stamping every vault as 2 the
+day this shipped would have locked those households out of their own vault on any phone running the
+older build, in exchange for nothing.
+
+It only ever goes up. Deleting the last seed does not walk the version back down — a version that
+flapped would be a version that meant nothing — and a document from a future build keeps whatever
+version it arrived with, which is what keeps `VaultStore.mutateBlocking`'s refusal to write it
+working.
+
 ## What the app will not do
 
 - **It cannot reach the network.** No `INTERNET` permission in its manifest, no HTTP client on its
   classpath. No sync, no account, no telemetry — and no breach check, not even the k-anonymous kind
   that sends a hash prefix to somebody else's server. The audit says weak, reused, old and empty, and
-  those are the things that can be known without telling anyone anything.
+  those are the things that can be known without telling anyone anything. The second factor is the
+  proof this is a restriction rather than a shortfall: it is arithmetic over a seed and a clock, so
+  it works here exactly as well as it would anywhere.
+- **It cannot see through a camera.** No permission for one, so second-factor seeds are typed or
+  pasted rather than scanned. See *The second factor*.
 - **It cannot recover a forgotten passphrase.** There is no reset link, no support address, no copy
   anybody else holds. The screen that creates a vault says so before it makes one. What it *can* do
   is start again and refill from the other apps — see below, and note that this is a rebuild rather
   than a recovery.
 - **It does not search secrets.** The search box reads titles, usernames, addresses, notes, tags and
-  refs, and never a secret. Typing a password into a search box to find where you used it is a
+  refs — never the password, never a password the item used to have, and never a second-factor
+  seed. Typing a password into a search box to find where you used it is a
   reasonable thing to want and a terrible thing to support — it puts the password into a text field,
   an input method's learned-word store, and whatever the keyboard app does with what it sees. The
   audit answers that question without anybody typing anything.
@@ -360,7 +464,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 94 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 142 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -368,10 +472,35 @@ build is nobody rather than somebody invented) and the watcher (told on registra
 write strands, told when a flush clears it, silent after unwatching, and a watcher that throws
 cannot take a write down with it).
 
-`:secrets` — 26 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+The second factor is checked against **RFC 6238's own test vectors**, all three hashes, and that is
+the only kind of test worth having for it: a generator that is subtly wrong produces six plausible
+digits that no site accepts, and no amount of reading the code catches that. If those pass, the
+arithmetic agrees with every authenticator app in the world. Around them: that six digits is the
+eight-digit code's *last* six rather than its first, that a leading zero survives being formatted,
+that a code holds for its period and changes at the boundary, that Base32 is lenient about spacing
+and case and strict about content, that an `otpauth://` URI's issuer, digits, period and hash are
+taken from it rather than guessed, that a `+` in an account name survives (which `URLDecoder` would
+not manage), and that an `hotp` URI is refused rather than half-supported.
+
+The history rules are tested as rules rather than as a feature: a changed password is kept, an
+unchanged one records nothing, a blank one is not a replacement, a mirrored credential never
+accumulates any, the cap holds at ten with the newest first, and a tombstone carries neither a
+previous password nor a seed. Two more on the search box, which is where a mistake would be
+invisible: neither a password used last year nor a seed can be matched by typing it. And the format
+version — that a vault using neither feature stays at 1 and remains writable by the older build,
+that either feature moves it to 2, that it never walks back down, and that a document from a future
+build is not quietly demoted into one this build would strip. And two on the audit: an item that
+exists for its second factor is not reported as an abandoned stub — the codes *are* what it holds —
+and a seed is never compared against a password for reuse.
+
+`:secrets` — 32 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
-longer exists, read back on the one that replaced it.
+longer exists, read back on the one that replaced it. Three of them run the new features through the
+real sealed file rather than through the document alone: a seed and a replaced password survive the
+seal and the reopen and still produce the right codes, a credential rotated three times by an app
+leaves no trail of dead tokens, and a vault that uses neither feature is still stamped version 1 on
+disk.
 
 `:finance` — 14 more, on its half of the seam: which refs it uses, that a write reaches both stores,
 that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything
