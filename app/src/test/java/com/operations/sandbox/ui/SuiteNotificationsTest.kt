@@ -22,11 +22,11 @@ import org.robolectric.annotation.Config
  *
  * What is worth pinning is the *shape* of the decision rather than androidx's permission plumbing:
  * a household that already granted the permission is never asked (which is what keeps this change
- * from re-prompting everybody who upgrades), a household that has been asked is never asked twice,
- * and a phone too old to have the permission is never asked at all.
+ * from re-prompting everybody who upgrades), and a household that has been asked is never asked
+ * twice, whatever they answered.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33], application = Application::class)
+@Config(sdk = [34], application = Application::class)
 class SuiteNotificationsTest {
 
     private val context: Application get() = ApplicationProvider.getApplicationContext()
@@ -55,10 +55,14 @@ class SuiteNotificationsTest {
     }
 
     @Test
-    @Config(sdk = [32])
-    fun `a phone without the permission at all is not asked for it`() {
-        // Before Android 13 notifications need no grant, so there is no question to put to anybody.
-        assertTrue(SuiteNotifications.granted(context))
+    fun `a phone that refused is not asked again`() {
+        // This replaces a test that pinned the pre-Android-13 case, where the permission did not
+        // exist and there was no question to put to anybody. The suite's floor is 34 now, so that
+        // device cannot run this app and the branch it covered is gone. What is still worth pinning
+        // is the case it shared a shape with: no grant, but an answer already given.
+        SuiteNotifications.markAsked(context)
+
+        assertFalse(SuiteNotifications.granted(context))
         assertFalse(SuiteNotifications.shouldAsk(context))
     }
 }

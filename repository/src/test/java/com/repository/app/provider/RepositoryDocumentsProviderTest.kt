@@ -167,7 +167,14 @@ class RepositoryDocumentsProviderTest {
         file("Manual", owner = truck)
         file("Passport")
 
-        val found = query(DocumentsContract.buildSearchDocumentsUri(AUTHORITY, "shelf", "wrangler"))
+        // From API 34 the platform takes the search term out of the *Bundle* and ignores the one
+        // embedded in the URI — `DocumentsProvider.query` routes a search to the Bundle overload,
+        // which reads QUERY_ARG_DISPLAY_NAME and hands it to the override below. The document UI
+        // has always sent both; a test that sent only the URI was relying on the older routing.
+        val found = query(
+            uri = DocumentsContract.buildSearchDocumentsUri(AUTHORITY, "shelf", "wrangler"),
+            args = Bundle().apply { putString(DocumentsContract.QUERY_ARG_DISPLAY_NAME, "wrangler") }
+        )
 
         // The owner's label is part of the haystack, which is how a word this module does not
         // understand finds the truck's manual.
@@ -269,8 +276,8 @@ class RepositoryDocumentsProviderTest {
      * A query as the document UI makes one — through the real resolver, and through the *Bundle*
      * form, because `DocumentsProvider` refuses the older selection/sortOrder shape outright.
      */
-    private fun query(uri: Uri): List<Map<String, Any?>> {
-        val cursor = context.contentResolver.query(uri, null, null as Bundle?, null)
+    private fun query(uri: Uri, args: Bundle? = null): List<Map<String, Any?>> {
+        val cursor = context.contentResolver.query(uri, null, args, null)
             ?: return emptyList()
         return cursor.use { it.rows() }
     }

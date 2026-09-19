@@ -23,7 +23,7 @@ Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; star
                                 →  Settings   (auto-lock, passphrase, autofill, finishing a restore)
 
 Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  →  the form, filled
-Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey  [Android 14+]
+Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey
 ```
 
 ## The problem this app was built for
@@ -515,12 +515,22 @@ The authenticator says so rather than leaving it to be inferred. The **backup el
 literally true here, and a relying party reads them to decide whether to keep offering a password as
 a fallback. Setting them falsely in either direction would make that decision wrong.
 
-### The Android 14 floor
+### The feature that moved the suite's floor
 
 A third-party app can hold passkeys **only** through Credential Manager's provider API, and that API
-is Android 14. There is no earlier route — not a hidden one, not a worse one. So this is the one
-feature in the suite with a floor above the app's own `minSdk` of 26; everything else keeps working
-below it, and the settings screen says that plainly instead of showing a switch that does nothing.
+is Android 14. There is no earlier route — not a hidden one, not a worse one.
+
+Everything else in this suite ran happily on API 26, so for a while this shipped as the one feature
+with a floor above the app's own: gated behind a version check, explained on the settings screen,
+absent on older phones. That was the worse of the two options. A vault that keeps passkeys on some
+phones and apologises on others is harder to own than one that asks for a phone from 2023 — the
+apology is a thing the household has to carry around in their head, and it is exactly the sort of
+half-present feature nobody trusts with an account they cannot recover.
+
+So the whole suite moved to `minSdk` 34 and the gate came out. Not higher: nothing here uses an API
+above 34, so 35 or 36 would buy no code and only narrow who can install. The suite compiles and
+targets **36** (Android 16), which is a different question — what it is built against, rather than
+what it will run on.
 
 ### What is in the pure module, and why almost all of it is
 

@@ -2,12 +2,10 @@ package com.secrets.app.passkey
 
 import android.content.Intent
 import android.content.pm.SigningInfo
-import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -64,7 +62,6 @@ import java.util.UUID
  * Not exported. The system starts it through a `PendingIntent` this app created, which carries this
  * app's identity rather than the caller's. `FLAG_SECURE` like every other screen here.
  */
-@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class PasskeyActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {

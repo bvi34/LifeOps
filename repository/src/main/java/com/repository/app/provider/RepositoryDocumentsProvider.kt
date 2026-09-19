@@ -147,6 +147,15 @@ class RepositoryDocumentsProvider : DocumentsProvider() {
 
     // ------------------------------------------------------------------ searching
 
+    /**
+     * Search, as the document UI asks for it.
+     *
+     * This is the deprecated three-argument form and it is still the right one to override: from
+     * API 34 the platform routes a search to the `Bundle` overload, whose own implementation pulls
+     * `QUERY_ARG_DISPLAY_NAME` out of the arguments and calls straight back into this. Overriding
+     * both would mean two copies of the same search with one of them unreachable.
+     */
+    @Suppress("DEPRECATION")
     override fun querySearchDocuments(
         rootId: String?,
         query: String?,

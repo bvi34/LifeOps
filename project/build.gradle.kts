@@ -26,10 +26,10 @@ val schemaRoot = "$projectDir/schemas"
 
 android {
     namespace = "com.project.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
         // Code shrinking is the consuming app's (:app) responsibility.
     }
 

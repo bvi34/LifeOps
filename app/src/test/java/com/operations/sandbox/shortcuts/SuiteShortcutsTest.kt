@@ -23,7 +23,7 @@ import org.robolectric.annotation.Config
  * gets wrong by default, by cheerfully offering the app they just took off their home screen.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33], application = Application::class)
+@Config(sdk = [34], application = Application::class)
 class SuiteShortcutsTest {
 
     private val context: Application get() = ApplicationProvider.getApplicationContext()

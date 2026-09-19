@@ -92,6 +92,15 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           "ndk;$NDK_VERSION" "cmake;3.22.1"
 
+      - name: Install the compile SDK platform
+        # Pinned for the same reason the NDK below is: a runner image ships whatever platforms it
+        # shipped with, and the suite compiles against a specific one. AGP would download a missing
+        # platform on its own, mid-build, with no retry — which is the failure mode the Robolectric
+        # cache below exists to prevent, arriving through a different door.
+        run: >-
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "platforms;android-36"
+
       - name: Work out the Robolectric runtime cache key
         id: robolectric-key
         run: echo "key=robolectric-sdks-$(.github/scripts/robolectric-cache-key.sh)" >> "$GITHUB_OUTPUT"

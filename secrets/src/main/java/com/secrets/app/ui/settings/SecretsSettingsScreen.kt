@@ -32,7 +32,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
 import android.view.autofill.AutofillManager
 import com.operations.suite.ui.fields.SuiteTextField
@@ -424,9 +423,7 @@ private fun ChangePassphraseDialog(
 @Composable
 private fun AutofillCard() {
     val context = LocalContext.current
-    val manager = remember {
-        if (Build.VERSION.SDK_INT >= 26) context.getSystemService(AutofillManager::class.java) else null
-    }
+    val manager = remember { context.getSystemService(AutofillManager::class.java) }
 
     // Read on every recomposition rather than remembered: the household leaves for system settings
     // and comes back, and a cached answer would still say "off" on the screen they came back to.
@@ -497,43 +494,34 @@ private fun AutofillCard() {
 @Composable
 private fun PasskeyCard() {
     val context = LocalContext.current
-    val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp)) {
             Text("Keep passkeys here", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
-                text = if (supported) {
-                    "A passkey signs you in with no password at all. Kept here, the private half " +
-                        "rides the vault into your backup — so it survives a new phone, which a " +
-                        "passkey kept in the phone itself does not."
-                } else {
-                    "Passkeys need Android 14. Below that, no app outside the system can hold one " +
-                        "at all — there is nothing here to switch on."
-                },
+                text = "A passkey signs you in with no password at all. Kept here, the private half " +
+                    "rides the vault into your backup — so it survives a new phone, which a passkey " +
+                    "kept in the phone itself does not.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
-            if (supported) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "The vault has to be unlocked to make or use one; a locked one offers a " +
-                        "way in rather than an answer. Android keeps the choice of provider in its " +
-                        "own settings, so this opens that screen.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(onClick = {
-                    // ACTION_CREDENTIAL_PROVIDER is Android 14, like the rest of this; a phone whose
-                    // vendor removed the screen fails to resolve rather than crashing the vault.
-                    val intent = Intent(Settings.ACTION_CREDENTIAL_PROVIDER)
-                        .setData(Uri.parse("package:" + context.packageName))
-                    runCatching { context.startActivity(intent) }
-                }) { Text("Choose Secrets in system settings") }
-            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "The vault has to be unlocked to make or use one; a locked one offers a way " +
+                    "in rather than an answer. Android keeps the choice of provider in its own " +
+                    "settings, so this opens that screen.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                // A phone whose vendor removed the screen fails to resolve rather than crashing the
+                // vault — this is the one control here that leaves for software nobody chose.
+                val intent = Intent(Settings.ACTION_CREDENTIAL_PROVIDER)
+                    .setData(Uri.parse("package:" + context.packageName))
+                runCatching { context.startActivity(intent) }
+            }) { Text("Choose Secrets in system settings") }
         }
     }
 }

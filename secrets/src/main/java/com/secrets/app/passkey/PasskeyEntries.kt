@@ -3,8 +3,6 @@ package com.secrets.app.passkey
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
-import androidx.annotation.RequiresApi
 import androidx.credentials.provider.BeginGetCredentialRequest
 import androidx.credentials.provider.BeginGetPublicKeyCredentialOption
 import androidx.credentials.provider.CredentialEntry
@@ -20,7 +18,6 @@ import java.util.concurrent.atomic.AtomicInteger
  * same list and the one that drifted would be the one nobody noticed — the service's list is what a
  * locked phone never shows, and the screen's is what it shows a second later.
  */
-@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 internal object PasskeyEntries {
 
     /**

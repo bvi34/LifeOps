@@ -519,7 +519,7 @@ high voice on an old phone can take longer to say a sentence than the sentence t
 **Android wiring:** `audio/SpeechEngine` is the whole seam — say this unit, tell me when you are
 done, tell me the words as you pass them if you can. `SystemSpeechEngine` implements it over the
 platform's own engine and is the one that always works; it is also the only one that reports word
-boundaries (`onRangeStart`, API 26 — exactly Citation's minimum), so it is the way to get a
+boundaries (`onRangeStart`, API 26 — well under the suite's floor of 34), so it is the way to get a
 word-by-word read-along rather than a sentence one. `NeuralSpeechEngine` runs a downloaded voice and
 plays its float samples through a plain `AudioTrack`, reaching the runtime only through
 `NeuralSynthesizer`/`NeuralSynthesizers` — so the engine, the planner and the player know nothing

@@ -33,7 +33,7 @@ import org.robolectric.annotation.Config
 // `SandboxApplication.onCreate`, which installs eleven apps and schedules their WorkManager jobs —
 // none of which this class is testing, and one of which (WorkManager, with no initializer on the
 // JVM) throws before the first assertion. The shell's token store needs a Context and nothing else.
-@Config(sdk = [33], application = android.app.Application::class)
+@Config(sdk = [34], application = android.app.Application::class)
 class UpdateTokenVaultTest {
 
     /**

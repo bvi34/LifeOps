@@ -54,7 +54,7 @@ import java.io.File
 @RunWith(RobolectricTestRunner::class)
 // A plain Application rather than the suite's own, for the reason BackupCoverageTest gives: what is
 // under test is a resource, not the start-up sequence.
-@Config(sdk = [33], application = android.app.Application::class)
+@Config(sdk = [34], application = android.app.Application::class)
 class AutoBackupRulesTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

@@ -485,8 +485,11 @@ the receipts.
 > a phone with no vault it offers to make one rather than to unlock one, because the queue lands the
 > moment a vault exists.
 >
-> It holds **passkeys**, too — on Android 14 and up, which is the floor for a third-party credential
-> provider and the one feature in the suite with a floor above the app's own. A passkey is a key
+> It holds **passkeys**, too, and they are why the whole suite now asks for **Android 14 or newer**:
+> a third-party app can hold one only through Credential Manager's provider API, which does not
+> exist below it. Shipping that as a gated feature — present on some phones, apologised for on
+> others — was the worse of the two options for a credential nobody can recover, so the floor moved
+> instead. A passkey is a key
 > pair, and where the private half lives decides what happens the day the phone does not come back:
 > a platform passkey sits in hardware-backed storage, which is the same binding this module exists
 > to work around. Kept here it rides the vault into the backup, so it **survives a new phone** — and
@@ -963,7 +966,7 @@ shows a *Reading* line with the points the open week has already banked
 The project targets the standard Android toolchain.
 
 **Android Studio (recommended):** open the project root; let it sync; **Debug ▶** the default
-`app` configuration on a device/emulator (API 26+) — `:app` is the **Operations Sandbox** container
+`app` configuration on a device/emulator (API 34+) — `:app` is the **Operations Sandbox** container
 (the only runnable app), and LifeOps and Citation open from its home screen.
 
 **Command line:** you need an Android SDK. Point the build at it via a `local.properties`

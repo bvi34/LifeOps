@@ -19,10 +19,10 @@ plugins {
 
 android {
     namespace = "com.repository.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
     }
 
     compileOptions {

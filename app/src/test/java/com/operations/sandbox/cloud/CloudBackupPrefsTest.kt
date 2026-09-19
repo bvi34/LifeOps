@@ -35,7 +35,7 @@ import org.robolectric.annotation.Config
 // A plain Application rather than the suite's own, for the reason `UpdateTokenVaultTest` gives:
 // `SandboxApplication.onCreate` installs eleven apps and registers background work, none of which
 // this class is testing.
-@Config(sdk = [33], application = android.app.Application::class)
+@Config(sdk = [34], application = android.app.Application::class)
 class CloudBackupPrefsTest {
 
     /** A vault that is nothing but a map — the real one is tested in :secrets. */

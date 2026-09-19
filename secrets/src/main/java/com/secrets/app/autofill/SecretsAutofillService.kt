@@ -1,7 +1,6 @@
 package com.secrets.app.autofill
 
 import android.app.PendingIntent
-import android.os.Build
 import android.os.CancellationSignal
 import android.service.autofill.AutofillService
 import android.service.autofill.FillCallback
@@ -55,9 +54,6 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class SecretsAutofillService : AutofillService() {
 
-    // `setAuthentication` with a RemoteViews was deprecated at API 33; see the note in
-    // AutofillDatasets for why the deprecated form is the right one at this module's API floor.
-    @Suppress("DEPRECATION")
     override fun onFillRequest(
         request: FillRequest,
         cancellationSignal: CancellationSignal,
@@ -89,10 +85,12 @@ class SecretsAutofillService : AutofillService() {
             response.setAuthentication(
                 form.ids,
                 authIntentSender(form, AutofillAuthActivity.MODE_UNLOCK),
-                AutofillDatasets.row(
-                    this,
-                    getString(R.string.secrets_autofill_locked),
-                    getString(R.string.secrets_autofill_locked_detail)
+                AutofillDatasets.presentation(
+                    AutofillDatasets.row(
+                        this,
+                        getString(R.string.secrets_autofill_locked),
+                        getString(R.string.secrets_autofill_locked_detail)
+                    )
                 )
             )
         } else {
@@ -108,10 +106,12 @@ class SecretsAutofillService : AutofillService() {
                 response.setAuthentication(
                     form.ids,
                     authIntentSender(form, AutofillAuthActivity.MODE_PICK),
-                    AutofillDatasets.row(
-                        this,
-                        getString(R.string.secrets_autofill_choose),
-                        getString(R.string.secrets_autofill_choose_detail)
+                    AutofillDatasets.presentation(
+                        AutofillDatasets.row(
+                            this,
+                            getString(R.string.secrets_autofill_choose),
+                            getString(R.string.secrets_autofill_choose_detail)
+                        )
                     )
                 )
             } else {
@@ -205,9 +205,8 @@ class SecretsAutofillService : AutofillService() {
             REQUESTS.incrementAndGet(),
             AutofillAuthActivity.intent(this, form, mode),
             // Mutable because the platform adds its own extras to this intent on the way out; an
-            // immutable one is rejected outright from API 31.
-            PendingIntent.FLAG_CANCEL_CURRENT or
-                if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
+            // immutable one is rejected outright.
+            PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_MUTABLE
         ).intentSender
 
     private companion object {

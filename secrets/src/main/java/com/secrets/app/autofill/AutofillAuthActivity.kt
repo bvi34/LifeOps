@@ -2,7 +2,6 @@ package com.secrets.app.autofill
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
 import android.view.WindowManager
@@ -165,13 +164,8 @@ class AutofillAuthActivity : ComponentActivity() {
         otpId = autofillId(EXTRA_OTP_ID)
     )
 
-    @Suppress("DEPRECATION")
     private fun autofillId(key: String): AutofillId? =
-        if (Build.VERSION.SDK_INT >= 33) {
-            intent.getParcelableExtra(key, AutofillId::class.java)
-        } else {
-            intent.getParcelableExtra(key)
-        }
+        intent.getParcelableExtra(key, AutofillId::class.java)
 
     companion object {
         const val MODE_UNLOCK = "unlock"

@@ -44,7 +44,7 @@ import org.robolectric.annotation.Config
  * keystore, so the file store and the broker run exactly as they do on a device.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [34])
 class VaultStoreTest {
 
     private lateinit var store: VaultStore

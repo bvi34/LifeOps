@@ -1,9 +1,7 @@
 package com.secrets.app.passkey
 
-import android.os.Build
 import android.os.CancellationSignal
 import android.os.OutcomeReceiver
-import androidx.annotation.RequiresApi
 import androidx.credentials.exceptions.ClearCredentialException
 import androidx.credentials.exceptions.CreateCredentialException
 import androidx.credentials.exceptions.CreateCredentialUnknownException
@@ -24,12 +22,17 @@ import com.secrets.app.SecretsApp
 /**
  * Secrets, answering the system when something asks for a passkey.
  *
- * ## The Android 14 floor, stated once
+ * ## The feature that set the suite's floor
  *
  * A third-party app can hold passkeys only through Credential Manager's provider API, and that API
- * is Android 14. There is no earlier route — not a hidden one, not a worse one — so this is the one
- * feature in the suite with a floor above the app's own `minSdk` of 26. Everything else keeps
- * working below it, and the settings screen says so rather than showing a switch that does nothing.
+ * is Android 14. There is no earlier route — not a hidden one, not a worse one. Everything else in
+ * this suite ran happily on API 26, so for a while this was the one feature with a floor above the
+ * app's own, gated behind a version check and explained on the settings screen.
+ *
+ * That was the worse of the two options. A vault that keeps passkeys on some phones and apologises
+ * on others is harder to reason about than one that requires a phone from 2023, so the suite's
+ * `minSdk` moved to 34 and the gate came out. The argument is written down in `:app`'s build file,
+ * next to the number.
  *
  * ## Why a vault is a good place for a passkey, and a strange one
  *
@@ -60,7 +63,6 @@ import com.secrets.app.SecretsApp
  * names its relying party, and they either agree or they do not. That is why nothing in this file
  * resembles `AutofillMatch` — the ambiguity that made that file dangerous does not exist here.
  */
-@RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
 class SecretsCredentialProviderService : CredentialProviderService() {
 
     override fun onBeginCreateCredentialRequest(
