@@ -63,8 +63,34 @@ object VaultJson {
         url = url ?: "",
         tags = tags?.filterNotNull() ?: emptyList(),
         totp = totp?.normalised(),
-        history = history?.filter { it != null && it.secret != null && it.secret.isNotEmpty() } ?: emptyList()
+        history = history?.filter { it != null && it.secret != null && it.secret.isNotEmpty() } ?: emptyList(),
+        passkey = passkey?.normalised()
     )
+
+    /**
+     * A passkey, made safe to use.
+     *
+     * Same reasoning as the second factor above: Gson allocates without the constructor, so a
+     * hand-edited document or one from a build that predates this field arrives with nulls where
+     * strings belong and a zero where the algorithm belongs. A credential that cannot sign is
+     * dropped rather than shown, because an item that offers a passkey and then fails at the sign-in
+     * page is worse than one that admits it has none.
+     */
+    @Suppress("SENSELESS_COMPARISON")
+    private fun VaultPasskey.normalised(): VaultPasskey? {
+        if (credentialId == null || rpId == null) return null
+        return copy(
+            rpName = rpName ?: "",
+            userHandle = userHandle ?: "",
+            userName = userName ?: "",
+            userDisplayName = userDisplayName ?: "",
+            privateKey = privateKey ?: "",
+            publicKey = publicKey ?: "",
+            // A zero here is Gson's "absent", not a real COSE algorithm — nothing is issued as
+            // anything but ES256, so an absent one is the one it must have been.
+            algorithm = algorithm.takeIf { it != 0L } ?: WebAuthn.ALG_ES256
+        ).takeIf { it.isUsable }
+    }
 
     /**
      * A second factor, made safe to show.

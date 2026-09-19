@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
@@ -64,6 +65,7 @@ import com.operations.vaultkit.TotpConfig
 import com.operations.vaultkit.VaultField
 import com.operations.vaultkit.VaultItem
 import com.operations.vaultkit.VaultItemKind
+import com.operations.vaultkit.VaultPasskey
 import com.operations.vaultkit.VaultSecretVersion
 import com.secrets.app.data.SecretsPrefs
 import com.secrets.app.data.VaultStore
@@ -286,34 +288,41 @@ fun ItemScreen(
             )
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecretValue(
-                    value = item.secret,
-                    label = item.kind.secretLabel,
-                    onCopy = { copy(item.kind.secretLabel, item.secret) }
-                )
-                SuiteTextField(
-                    label = "Set ${item.kind.secretLabel.lowercase()}",
-                    value = item.secret,
-                    onValueChange = vm::setSecret,
-                    capitalise = KeyboardCapitalization.None,
-                    trailing = {
-                        IconButton(onClick = vm::generate) {
-                            Icon(Icons.Filled.Casino, contentDescription = "Generate")
+        item.passkey?.let { PasskeyCard(it) }
+
+        // A passkey is the credential; there is no password beside it to set, and a "Set key" box
+        // under one would invite somebody to type over a private key.
+        if (!item.hasPasskey) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SecretValue(
+                        value = item.secret,
+                        label = item.kind.secretLabel,
+                        onCopy = { copy(item.kind.secretLabel, item.secret) }
+                    )
+                    SuiteTextField(
+                        label = "Set ${item.kind.secretLabel.lowercase()}",
+                        value = item.secret,
+                        onValueChange = vm::setSecret,
+                        capitalise = KeyboardCapitalization.None,
+                        trailing = {
+                            IconButton(onClick = vm::generate) {
+                                Icon(Icons.Filled.Casino, contentDescription = "Generate")
+                            }
                         }
+                    )
+                    if (item.secret.isNotEmpty()) {
+                        StrengthBar(secret = item.secret)
                     }
-                )
-                if (item.secret.isNotEmpty()) {
-                    StrengthBar(secret = item.secret)
                 }
             }
         }
 
         // Offered for anything a person owns. A mirrored credential is read back by the app that
         // filed it and by nothing else, so a second factor on one would be a seed nobody ever asks
-        // for — though one that somehow exists is still shown rather than hidden.
-        if (!item.isManaged || item.hasTotp) {
+        // for — though one that somehow exists is still shown rather than hidden. A second factor
+        // beside a passkey is a belt beside a belt: the passkey already is one.
+        if ((!item.isManaged && !item.hasPasskey) || item.hasTotp) {
             TotpSection(
                 config = item.totp,
                 clipboardClearSeconds = prefs.clipboardClearSeconds,
@@ -805,6 +814,69 @@ private fun HistoryCard(
                     color = MaterialTheme.colorScheme.outline
                 )
             }
+        }
+    }
+}
+
+/**
+ * A passkey, shown and not editable.
+ *
+ * Every other secret on this screen is a text box, because every other secret is something a person
+ * typed and may need to retype. A passkey is a key pair a site and this app agreed on: the private
+ * half is not a value anybody transcribes, retyping it is not a thing that can succeed, and the only
+ * meaningful edits are the two already on this screen — rename it, or delete it.
+ *
+ * So there is no reveal and no copy. Not out of caution about the person holding the phone, who has
+ * the vault open anyway, but because there is nowhere to paste it: a passkey is used by signing a
+ * challenge, which is what the system's own dialog asks this app to do. Putting the key on screen
+ * would be offering a value that cannot be used and can only leak.
+ *
+ * What is shown instead is what somebody actually needs to recognise it by — which site, which
+ * account, and when it was made — and the one fact that is genuinely load-bearing: deleting it here
+ * ends the ability to sign in with it, and unlike a password there is no copy anywhere to fall back
+ * on.
+ */
+@Composable
+private fun PasskeyCard(passkey: VaultPasskey) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Key, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Passkey", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = passkey.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Text(
+                text = "Signs you in without a password. The private half never leaves the vault — " +
+                    "it is used by signing what the site asks, not by being typed anywhere, which " +
+                    "is why there is nothing here to reveal or copy.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (passkey.createdAt > 0) {
+                Text(
+                    text = "Made ${DateFormat.getDateInstance().format(Date(passkey.createdAt))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            Text(
+                text = "Because it rides the vault into your backup, it survives a new phone — " +
+                    "which a passkey kept in the phone itself does not. Deleting it here is the end " +
+                    "of it: a passkey has no forgotten-password link behind it, so getting back in " +
+                    "would mean that site\'s account recovery.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }

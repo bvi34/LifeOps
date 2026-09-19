@@ -189,6 +189,9 @@ private fun ItemRow(item: VaultItem, onOpen: () -> Unit) {
  */
 private fun subtitleFor(item: VaultItem): String? = when {
     item.isManaged -> ownerLabel(item)?.let { "$it · ${item.kind.label}" } ?: item.kind.label
+    // A passkey is worth naming in the list rather than leaving to be discovered on the way in:
+    // it is the row where "what is my password here" has the answer "you do not have one".
+    item.hasPasskey -> listOf("Passkey", item.username).filter { it.isNotBlank() }.joinToString(" · ")
     item.username.isNotBlank() -> item.username
     item.kind != VaultItemKind.LOGIN -> item.kind.label
     else -> null

@@ -441,8 +441,8 @@ the receipts.
 
 > **Secrets** (the suite's vault) is a peer module — see **[docs/SECRETS.md](docs/SECRETS.md)**.
 > It is a **1Password-shaped password manager** for the household's own logins, cards, keys and
-> notes — their **second factors** and the **password each one had before this one** — and, under the
-> same lock, **every credential the rest of the suite holds**: Finance's Plaid
+> notes — their **second factors**, their **passkeys**, and the **password each one had before this
+> one** — and, under the same lock, **every credential the rest of the suite holds**: Finance's Plaid
 > keys and bank access tokens, Citation's catalogue sign-ins and library card, and the Operations
 > Sandbox's own GitHub update token and Azure backup signature. That second half is why it
 > exists. Every app here keeps its credentials in `EncryptedSharedPreferences` behind an Android
@@ -485,6 +485,19 @@ the receipts.
 > a phone with no vault it offers to make one rather than to unlock one, because the queue lands the
 > moment a vault exists.
 >
+> It holds **passkeys**, too — on Android 14 and up, which is the floor for a third-party credential
+> provider and the one feature in the suite with a floor above the app's own. A passkey is a key
+> pair, and where the private half lives decides what happens the day the phone does not come back:
+> a platform passkey sits in hardware-backed storage, which is the same binding this module exists
+> to work around. Kept here it rides the vault into the backup, so it **survives a new phone** — and
+> the authenticator says so honestly, setting the backup-eligible and backed-up flags a site reads to
+> decide whether to keep a password fallback. The WebAuthn half is pure JVM in `:vaultkit` — CBOR,
+> the COSE key, the authenticator data, the signature — and its tests build a registration, sign
+> against it, and **verify with the public key the site was given**, which is the check a relying
+> party's server runs. ES256 only, attestation `none`, no AAGUID claimed, and the signature counter
+> deliberately fixed at zero, because a credential that legitimately lives on two phones would
+> otherwise report itself cloned on every restore.
+>
 > It also **fills passwords in other apps**, which is the one thing here that runs when the app is
 > not on screen and the one that talks to software the household did not choose — so it is the one
 > with the rules written down. An `AutofillService` must be bound by the system, so this module now
@@ -517,10 +530,11 @@ the receipts.
 > the vault and refill it**: the managed credentials were never the vault's only copy, so each app
 > files what it still holds and the household is told exactly what came back and what did not. The format, the crypto, the generator,
 > the audit, the merge and the one-time-password generator are the pure-JVM `:vaultkit` under
-> **157 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
+> **185 JVM tests**, most of which assert that something *fails* — the vault refusing a wrong
 > passphrase, a flipped bit, a header edited to claim a cheaper KDF, a spliced key, a truncated file;
 > the search box refusing to match a password or a seed somebody typed into it; autofill refusing a
-> lookalike domain, an app with no address filed against it, and a mirrored bank token. The codes themselves
+> lookalike domain, an app with no address filed against it, and a mirrored bank token; a replayed
+> passkey signature failing to verify over client data it was not made for. The codes themselves
 > are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
 > worth having for a generator whose failure mode is six plausible digits that no site accepts.
 

@@ -7,13 +7,17 @@ import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
+import com.operations.vaultkit.PasskeyRequest
+import com.operations.vaultkit.Passkeys
 import com.operations.vaultkit.SecretsAccess
 import com.operations.vaultkit.Totp
 import com.operations.vaultkit.TotpConfig
 import com.operations.vaultkit.VaultDocument
 import com.operations.vaultkit.VaultEnvelope
 import com.operations.vaultkit.VaultItem
+import com.operations.vaultkit.VaultItemKind
 import com.operations.vaultkit.VaultState
+import com.operations.vaultkit.WebAuthn
 import com.secrets.app.broker.VaultBroker
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
@@ -501,7 +505,7 @@ class VaultStoreTest {
     }
 
     @Test
-    fun `a vault using neither new feature stays writable by the older build`() = runTest {
+    fun `the document version follows what the vault actually holds`() = runTest {
         store.create(passphrase)
         val id = UUID.randomUUID().toString()
 
@@ -518,12 +522,70 @@ class VaultStoreTest {
                 now = 20
             )
         }
-        assertEquals(VaultDocument.DOCUMENT_VERSION, store.document.value!!.version)
+        // Version 2, not the newest: a vault with a second factor and no passkey is still writable
+        // by the build that introduced second factors.
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, store.document.value!!.version)
 
         // And the file itself carries it, rather than only the copy in memory.
         store.lock()
         val reopened = VaultStore(ApplicationProvider.getApplicationContext())
         reopened.unlock(passphrase)
-        assertEquals(VaultDocument.DOCUMENT_VERSION, reopened.document.value!!.version)
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, reopened.document.value!!.version)
+    }
+
+    @Test
+    fun `a passkey survives the seal and still signs on the phone that replaced this one`() = runTest {
+        store.create(passphrase)
+        val options = PasskeyRequest.parseCreation(
+            """{"rp":{"id":"bank.com","name":"The Bank"},
+                 "user":{"id":"dXNlcg","name":"me@example.com","displayName":"Me"},
+                 "challenge":"Y2hhbGxlbmdl",
+                 "pubKeyCredParams":[{"type":"public-key","alg":-7}]}"""
+        )!!
+        val madeOn = Passkeys.register(
+            options = options,
+            clientDataJson = "{}",
+            clientDataHash = ByteArray(32),
+            now = 1_000L
+        )!!
+        val id = UUID.randomUUID().toString()
+        store.mutate {
+            it.upsert(
+                VaultItem(
+                    id = id,
+                    kind = VaultItemKind.PASSKEY,
+                    title = "The Bank",
+                    url = "bank.com",
+                    passkey = madeOn.passkey,
+                    createdAt = 1,
+                    updatedAt = 1
+                ),
+                now = 10
+            )
+        }
+        assertEquals(VaultDocument.DOCUMENT_VERSION, store.document.value!!.version)
+
+        // The phone is gone; the sealed file is what came back.
+        store.lock()
+        val newPhone = VaultStore(ApplicationProvider.getApplicationContext())
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, newPhone.unlock(passphrase))
+        val restored = newPhone.document.value!!.item(id)!!.passkey!!
+
+        // The credential still signs, and the signature still verifies against the public key the
+        // site was handed on the phone that no longer exists. That is the whole claim.
+        val clientDataHash = WebAuthn.sha256("client-data".toByteArray())
+        val assertionJson = Passkeys.assertion(restored, null, clientDataHash)!!
+        // org.json rather than Gson: Gson is :vaultkit's own implementation dependency and does
+        // not leak onto this module's test classpath, which is the arrangement working as intended.
+        val inner = org.json.JSONObject(assertionJson).getJSONObject("response")
+        val authData = WebAuthn.fromBase64Url(inner.getString("authenticatorData"))!!
+        val signature = WebAuthn.fromBase64Url(inner.getString("signature"))!!
+
+        val verifier = java.security.Signature.getInstance("SHA256withECDSA").apply {
+            initVerify(Passkeys.publicKeyOf(madeOn.passkey))
+            update(authData)
+            update(clientDataHash)
+        }
+        assertTrue("a passkey made on the old phone still signs on the new one", verifier.verify(signature))
     }
 }

@@ -13,6 +13,7 @@ navigationCompose = "2.8.2"
 glance = "1.1.0"
 coroutines = "1.9.0"
 securityCrypto = "1.1.0-alpha06"
+credentials = "1.3.0"
 zxing = "3.5.3"
 zxingAndroid = "4.3.0"
 uiGraphics = "1.11.4"
@@ -45,6 +46,10 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 # what lets the encoder live in People's JVM-tested `partner` package and be checked against a real
 # decoder; `zxing-android-embedded` is the camera half, and supplies the scanning activity and its
 # CAMERA permission through the manifest merger.
+# Credential Manager, for the *provider* half: Secrets answering the system when an app or a site
+# asks for a passkey. The provider API is Android 14 only — there is no earlier way for a
+# third-party app to hold passkeys — so everything that touches it is behind an API check.
+androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroid" }
 

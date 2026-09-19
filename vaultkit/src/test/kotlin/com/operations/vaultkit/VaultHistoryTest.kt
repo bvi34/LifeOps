@@ -187,12 +187,14 @@ class VaultHistoryTest {
     fun `a second factor or a replaced password moves the document forward`() {
         val withTotp = VaultDocument.EMPTY
             .upsert(login(secret = "p").copy(totp = TotpConfig(secret = seed)), now = 10)
-        assertEquals(VaultDocument.DOCUMENT_VERSION, withTotp.version)
+        // Version 2, not the newest one: a vault with a second factor and no passkey is still
+        // writable by the build that introduced second factors.
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, withTotp.version)
 
         val changed = VaultDocument.EMPTY.upsert(login(secret = "old"), now = 10)
         assertEquals(VaultDocument.BASELINE_VERSION, changed.version)
         val withHistory = changed.upsert(changed.item("a")!!.copy(secret = "new"), now = 20)
-        assertEquals(VaultDocument.DOCUMENT_VERSION, withHistory.version)
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, withHistory.version)
     }
 
     @Test
@@ -203,11 +205,11 @@ class VaultHistoryTest {
             .upsert(login(secret = "p").copy(totp = TotpConfig(secret = seed)), now = 10)
 
         val without = withTotp.upsert(withTotp.item("a")!!.copy(totp = null), now = 20)
-        assertEquals(VaultDocument.DOCUMENT_VERSION, without.version)
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, without.version)
 
-        val fromTheFuture = VaultDocument(version = 9, items = listOf(login(secret = "p")))
-        assertEquals(9, fromTheFuture.stamped().version)
-        assertEquals(9, fromTheFuture.upsert(login(id = "b", secret = "q"), now = 30).version)
+        val fromTheFuture = VaultDocument(version = 99, items = listOf(login(secret = "p")))
+        assertEquals(99, fromTheFuture.stamped().version)
+        assertEquals(99, fromTheFuture.upsert(login(id = "b", secret = "q"), now = 30).version)
     }
 
     @Test
@@ -221,7 +223,7 @@ class VaultHistoryTest {
         val merged = VaultMerge.merge(mine, archive, now = 30)
 
         assertEquals(1, merged.added)
-        assertEquals(VaultDocument.DOCUMENT_VERSION, merged.document.version)
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, merged.document.version)
         assertNotNull(merged.document.item("b")!!.totp)
     }
 

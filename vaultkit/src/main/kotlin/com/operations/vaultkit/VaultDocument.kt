@@ -60,7 +60,8 @@ data class VaultDocument(
      * A removed row is a row that comes back the moment an older copy of the vault is merged in, and
      * merging an older copy in is precisely what a restore does. The tombstone keeps the id and the
      * time and drops everything else it held, so what survives is the fact of the deletion rather
-     * than the secret — the previous passwords and the second-factor seed included.
+     * than the secret — the previous passwords, the second-factor seed and the passkey's private
+     * key included.
      */
     fun delete(id: String, now: Long): VaultDocument {
         val existing = items.firstOrNull { it.id == id } ?: return this
@@ -80,11 +81,13 @@ data class VaultDocument(
      *
      * Two properties are worth stating, because both are deliberate:
      *
-     *  - **It is computed from the contents, not asserted.** A vault that has never held a
-     *    second-factor seed or a previous password contains nothing a version-1 reader would lose,
-     *    so it stays version 1 and an older build can still open *and edit* it. Stamping every
-     *    document as 2 the day this shipped would have locked those households out of their own
-     *    vault on any phone running the previous build, in exchange for nothing.
+     *  - **It is computed from the contents, not asserted**, and per feature rather than per
+     *    release. A vault of plain logins is still version 1 and a build from before any of this
+     *    can open *and edit* it; one that has gained a second factor is version 2, which the build
+     *    that introduced those can still write; only a vault holding a passkey is version 3.
+     *    Stamping every document at the newest number on the day a feature shipped would have
+     *    locked households out of their own vault on any phone running the previous build, in
+     *    exchange for nothing.
      *  - **It only ever goes up.** Deleting the last TOTP seed does not walk the version back down.
      *    A version that flapped would be a version that meant nothing, and the cost of leaving it
      *    high is that an older build declines to write a file it could technically have handled.
@@ -92,14 +95,17 @@ data class VaultDocument(
     fun stamped(): VaultDocument = copy(version = maxOf(version, requiredVersion))
 
     private val requiredVersion: Int
-        get() = if (items.any { it.beyondBaselineFormat }) DOCUMENT_VERSION else BASELINE_VERSION
+        get() = items.maxOfOrNull { it.requiredVersion } ?: BASELINE_VERSION
 
     companion object {
-        /** The format before second factors and password history. */
+        /** Logins, cards, notes — the format before any of the later additions. */
         const val BASELINE_VERSION = 1
 
-        /** What this build writes, when the contents need it. See [stamped]. */
-        const val DOCUMENT_VERSION = 2
+        /** Second factors and password history. */
+        const val VERSION_WITH_SECOND_FACTORS = 2
+
+        /** Passkeys. What this build writes, when the contents need it. See [stamped]. */
+        const val DOCUMENT_VERSION = 3
 
         /** What a brand-new vault contains. */
         val EMPTY = VaultDocument()
@@ -161,6 +167,16 @@ data class VaultItem(
      * anything with a [ref] rather than leaving that to each writer to remember.
      */
     val history: List<VaultSecretVersion> = emptyList(),
+    /**
+     * A passkey, for an item that is one.
+     *
+     * An item holds a passkey *or* a password, in practice — the two are alternative ways to sign in
+     * to the same site and a site that offers both is a site you use one of. The field is separate
+     * rather than a variant of [secret] because a passkey is a key pair and a set of identifiers
+     * rather than a string, and flattening it into one would mean every screen that shows a password
+     * having to know not to.
+     */
+    val passkey: VaultPasskey? = null,
     /** The [com.operations.backupkit.AppId] key of the app that owns this, for mirrored secrets. */
     val managedBy: String? = null,
     /** The [SecretRef] address, for mirrored secrets. Null for anything a person typed in. */
@@ -178,11 +194,21 @@ data class VaultItem(
 
     val hasTotp: Boolean get() = totp != null
 
+    val hasPasskey: Boolean get() = passkey != null
+
     /**
-     * True when this item carries something a version-1 reader would silently drop on the way back
-     * out. Feeds [VaultDocument.stamped], which is where the consequence is explained.
+     * The lowest document version that can hold this item without losing part of it.
+     *
+     * Feeds [VaultDocument.stamped], which is where the consequence is explained. It is a ladder
+     * rather than a flag so that a vault of plain logins stays writable by the oldest build, and one
+     * that has only gained a second factor stays writable by the build that introduced those.
      */
-    val beyondBaselineFormat: Boolean get() = totp != null || history.isNotEmpty()
+    val requiredVersion: Int
+        get() = when {
+            passkey != null -> VaultDocument.DOCUMENT_VERSION
+            totp != null || history.isNotEmpty() -> VaultDocument.VERSION_WITH_SECOND_FACTORS
+            else -> VaultDocument.BASELINE_VERSION
+        }
 
     /** Strip everything but the identity and the fact of the deletion. */
     fun tombstone(now: Long): VaultItem =
@@ -210,9 +236,11 @@ data class VaultItem(
     fun matches(query: String): Boolean {
         val q = query.trim().lowercase()
         if (q.isEmpty()) return true
-        // [secret], [history] and [totp] are absent from this list on purpose and the absence is
-        // tested. A previous password is a password, and a second-factor seed is the one secret in
-        // here whose theft is silent — neither goes anywhere near a text field somebody types into.
+        // [secret], [history], [totp] and [passkey] are absent from this list on purpose and the
+        // absence is tested. A previous password is a password, a second-factor seed is the one
+        // secret here whose theft is silent, and a passkey's private key is the credential itself —
+        // none goes anywhere near a text field somebody types into. A passkey is still findable,
+        // because the item it lives on is titled and addressed after the site it belongs to.
         return title.lowercase().contains(q) ||
             username.lowercase().contains(q) ||
             url.lowercase().contains(q) ||
@@ -264,6 +292,7 @@ data class VaultField(
  */
 enum class VaultItemKind(val key: String, val label: String, val secretLabel: String) {
     LOGIN("login", "Login", "Password"),
+    PASSKEY("passkey", "Passkey", "Key"),
     CARD("card", "Card", "Number"),
     API_KEY("api-key", "API key", "Key"),
     NOTE("note", "Secure note", "Contents"),

@@ -172,6 +172,8 @@ fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs) {
 
         AutofillCard()
 
+        PasskeyCard()
+
         SettingsCard(
             title = "Open with the device lock",
             body = if (store.device.canOffer) {
@@ -472,6 +474,65 @@ private fun AutofillCard() {
                         runCatching { context.startActivity(intent) }
                     }) { Text("Choose Secrets in system settings") }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Turning Secrets into a passkey provider.
+ *
+ * Like autofill, the choice is not this app's to make — Android keeps it in its own settings, which
+ * is the right arrangement for the same reason: an app that could appoint itself the holder of your
+ * sign-ins would be an app worth being nervous about. Unlike autofill, the state is not reported
+ * back here. The platform does expose a way to ask, and it is not one this app can check honestly
+ * on every phone, so the card says where the switch lives rather than claiming to know which way it
+ * is set.
+ *
+ * The Android 14 floor is stated rather than hidden behind a disabled control. A third-party app can
+ * hold passkeys *only* through Credential Manager's provider API, which does not exist before 14 —
+ * so on an older phone there is no version of this feature to offer, and a greyed-out switch would
+ * imply there was one behind some other obstacle.
+ */
+@Composable
+private fun PasskeyCard() {
+    val context = LocalContext.current
+    val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Keep passkeys here", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (supported) {
+                    "A passkey signs you in with no password at all. Kept here, the private half " +
+                        "rides the vault into your backup — so it survives a new phone, which a " +
+                        "passkey kept in the phone itself does not."
+                } else {
+                    "Passkeys need Android 14. Below that, no app outside the system can hold one " +
+                        "at all — there is nothing here to switch on."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (supported) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "The vault has to be unlocked to make or use one; a locked one offers a " +
+                        "way in rather than an answer. Android keeps the choice of provider in its " +
+                        "own settings, so this opens that screen.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = {
+                    // ACTION_CREDENTIAL_PROVIDER is Android 14, like the rest of this; a phone whose
+                    // vendor removed the screen fails to resolve rather than crashing the vault.
+                    val intent = Intent(Settings.ACTION_CREDENTIAL_PROVIDER)
+                        .setData(Uri.parse("package:" + context.packageName))
+                    runCatching { context.startActivity(intent) }
+                }) { Text("Choose Secrets in system settings") }
             }
         }
     }

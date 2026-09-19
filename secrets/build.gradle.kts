@@ -91,6 +91,9 @@ dependencies {
     // library's, adding FLAG_SECURE (see ui/scan/SecureCaptureActivity).
     implementation(libs.zxing.core)
     implementation(libs.zxing.android.embedded)
+    // Credential Manager's provider half — how a third-party app holds passkeys. Android 14 only,
+    // which is the floor for that feature and nothing else here; see passkey/.
+    implementation(libs.androidx.credentials)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")
