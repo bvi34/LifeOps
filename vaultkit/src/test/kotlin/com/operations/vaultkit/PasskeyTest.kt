@@ -1,9 +1,12 @@
 package com.operations.vaultkit
 
 import com.google.gson.JsonParser
+import java.security.KeyPairGenerator
 import java.security.MessageDigest
+import java.security.SecureRandom
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
+import java.security.spec.ECGenParameterSpec
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -69,6 +72,31 @@ class PasskeyTest {
             update(clientDataHash)
         }
         assertTrue("the assertion must verify against the registered public key", verifier.verify(signature))
+    }
+
+    @Test
+    fun `the public half of a key can be recomputed from the private half`() {
+        // The one check that matters for Credential Exchange: a passkey arrives as a private key
+        // alone, so the public key this app stores is one it worked out. Twenty real key pairs,
+        // public half thrown away and recomputed — a mistake in that arithmetic does not produce a
+        // subtly wrong key, it produces a different point, and this sees it every time.
+        val generator = KeyPairGenerator.getInstance("EC")
+        generator.initialize(ECGenParameterSpec("secp256r1"), SecureRandom())
+
+        repeat(20) {
+            val pair = generator.generateKeyPair()
+            val recomputed = Passkeys.publicKeyFrom(pair.private.encoded)
+            assertArrayEquals(pair.public.encoded, recomputed)
+        }
+    }
+
+    @Test
+    fun `anything that is not a P-256 private key recomputes to nothing`() {
+        assertNull(Passkeys.publicKeyFrom(ByteArray(32)))
+        assertNull(Passkeys.publicKeyFrom("not a key at all".toByteArray()))
+
+        val rsa = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+        assertNull(Passkeys.publicKeyFrom(rsa.private.encoded))
     }
 
     @Test

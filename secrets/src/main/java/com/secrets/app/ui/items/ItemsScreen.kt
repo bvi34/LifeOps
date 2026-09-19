@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
@@ -29,6 +31,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.operations.suite.ui.fields.SuiteTextField
+import com.operations.vaultkit.VaultGroups
 import com.operations.vaultkit.VaultItem
 import com.operations.vaultkit.VaultItemKind
 import com.operations.vaultkit.VaultSearch
@@ -59,10 +62,23 @@ class ItemsViewModel(
     data class State(
         val query: String = "",
         val filter: Filter = Filter.ALL,
-        val items: List<VaultItem> = emptyList(),
+        /**
+         * What the list draws: one row per site, or per item where a site has only one.
+         *
+         * Flat while somebody is searching. A search is a different act from browsing — the answer
+         * to "where did I put the council login" is that login, not a folder it might be in — and a
+         * collapsed group would hide the thing that matched.
+         */
+        val rows: List<VaultGroups.Row> = emptyList(),
+        /** Which sites are open, by host. Kept here so scrolling and redrawing do not close them. */
+        val expanded: Set<String> = emptySet(),
         val total: Int = 0,
         val managedCount: Int = 0
-    )
+    ) {
+
+        /** Every item on screen, which is what "nothing matches" has to be decided from. */
+        val items: List<VaultItem> get() = VaultGroups.flatten(rows)
+    }
 
     private val _state = MutableStateFlow(State(filter = if (prefs.showManaged) Filter.ALL else Filter.MINE))
     val state: StateFlow<State> = _state.asStateFlow()
@@ -76,10 +92,27 @@ class ItemsViewModel(
             Filter.MINE -> live.filterNot { it.isManaged }
             Filter.MANAGED -> live.filter { it.isManaged }
         }
+        val query = _state.value.query
+        val found = VaultSearch.search(filtered, query)
+        val rows = if (query.isBlank()) {
+            VaultGroups.group(found)
+        } else {
+            found.map { VaultGroups.Row(site = null, items = listOf(it)) }
+        }
         _state.value = _state.value.copy(
-            items = VaultSearch.search(filtered, _state.value.query),
+            rows = rows,
+            // A site that is no longer on screen is not an open folder waiting to be found again.
+            expanded = _state.value.expanded.intersect(rows.mapNotNull { it.site }.toSet()),
             total = live.size,
             managedCount = live.count { it.isManaged }
+        )
+    }
+
+    /** Open or close a site. */
+    fun onToggleSite(site: String) {
+        val expanded = _state.value.expanded
+        _state.value = _state.value.copy(
+            expanded = if (site in expanded) expanded - site else expanded + site
         )
     }
 
@@ -137,12 +170,32 @@ fun ItemsScreen(vm: ItemsViewModel, store: VaultStore, onOpen: (String) -> Unit)
 
         Spacer(Modifier.height(8.dp))
 
-        if (state.items.isEmpty()) {
+        if (state.rows.isEmpty()) {
             EmptyList(query = state.query, total = state.total)
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(state.items, key = { it.id }) { item ->
-                    ItemRow(item = item, onOpen = { onOpen(item.id) })
+                for (row in state.rows) {
+                    if (!row.isGroup) {
+                        item(key = row.lead.id) {
+                            ItemRow(item = row.lead, onOpen = { onOpen(row.lead.id) })
+                        }
+                        continue
+                    }
+
+                    val site = row.site.orEmpty()
+                    val open = site in state.expanded
+                    item(key = "site-$site") {
+                        SiteRow(row = row, open = open, onToggle = { vm.onToggleSite(site) })
+                    }
+                    if (open) {
+                        items(row.items, key = { it.id }) { item ->
+                            ItemRow(
+                                item = item,
+                                onOpen = { onOpen(item.id) },
+                                inset = true
+                            )
+                        }
+                    }
                 }
                 item { Spacer(Modifier.height(80.dp)) }
             }
@@ -150,9 +203,56 @@ fun ItemsScreen(vm: ItemsViewModel, store: VaultStore, onOpen: (String) -> Unit)
     }
 }
 
+/**
+ * Everything filed at one address, as one line.
+ *
+ * Shut by default, which is the whole point: the household has one bank, not three, and a list that
+ * says so is a list they can read. What it shows instead of a username is how many sign-ins are
+ * behind it — because the question the row has to answer before it is opened is *is what I want in
+ * here*, and a count answers that better than the first of three usernames would.
+ */
 @Composable
-private fun ItemRow(item: VaultItem, onOpen: () -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen)) {
+private fun SiteRow(row: VaultGroups.Row, open: Boolean, onToggle: () -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth().clickable(onClick = onToggle)) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(row.label, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    text = listOfNotNull(
+                        "${row.items.size} sign-ins",
+                        row.subtitle,
+                        "passkey".takeIf { row.hasPasskey }
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (row.favourite) {
+                Icon(
+                    Icons.Filled.Star,
+                    contentDescription = "Favourite",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Icon(
+                imageVector = if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "Close ${row.label}" else "Open ${row.label}"
+            )
+        }
+    }
+}
+
+@Composable
+private fun ItemRow(item: VaultItem, onOpen: () -> Unit, inset: Boolean = false) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = if (inset) 24.dp else 0.dp)
+            .clickable(onClick = onOpen)
+    ) {
         Row(
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically

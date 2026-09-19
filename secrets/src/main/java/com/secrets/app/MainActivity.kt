@@ -42,6 +42,8 @@ import androidx.navigation.navArgument
 import com.operations.vaultkit.VaultState
 import com.secrets.app.ui.audit.AuditScreen
 import com.secrets.app.ui.generator.GeneratorScreen
+import com.secrets.app.ui.importer.ImportScreen
+import com.secrets.app.ui.importer.ImportViewModel
 import com.secrets.app.ui.item.ItemScreen
 import com.secrets.app.ui.item.ItemViewModel
 import com.secrets.app.ui.items.ItemsScreen
@@ -98,6 +100,7 @@ private const val ROUTE_ITEMS = "items"
 private const val ROUTE_GENERATOR = "generator"
 private const val ROUTE_AUDIT = "audit"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_IMPORT = "import"
 private const val ROUTE_ITEM = "item/{itemId}"
 private const val ROUTE_NEW_ITEM = "item/new"
 
@@ -142,6 +145,7 @@ private fun SecretsShell(app: SecretsApp) {
                                 ROUTE_GENERATOR -> "Generate"
                                 ROUTE_AUDIT -> "Check"
                                 ROUTE_SETTINGS -> "Settings"
+                                ROUTE_IMPORT -> "Import"
                                 ROUTE_ITEM, ROUTE_NEW_ITEM -> "Item"
                                 else -> "Secrets"
                             }
@@ -231,7 +235,15 @@ private fun SecretsShell(app: SecretsApp) {
                 AuditScreen(store = app.vault, onOpen = { nav.navigate("item/$it") })
             }
             composable(ROUTE_SETTINGS) {
-                SecretsSettingsScreen(store = app.vault, prefs = prefs)
+                SecretsSettingsScreen(
+                    store = app.vault,
+                    prefs = prefs,
+                    onImport = { nav.navigate(ROUTE_IMPORT) }
+                )
+            }
+            composable(ROUTE_IMPORT) {
+                val vm: ImportViewModel = viewModel(factory = ImportViewModel.Factory(app.vault))
+                ImportScreen(vm = vm, onDone = { nav.popBackStack() })
             }
             composable(ROUTE_NEW_ITEM) {
                 val vm: ItemViewModel = viewModel(factory = ItemViewModel.Factory(app.vault, null))
