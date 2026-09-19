@@ -41,7 +41,7 @@ val advisorMmap = (providers.gradleProperty("advisor.mmap").orNull ?: "false").t
 
 android {
     namespace = "com.advisor.app"
-    compileSdk = 35
+    compileSdk = 36
 
     // Pin the NDK only when someone asks for a specific one. Left unset — the normal case on a
     // developer machine — AGP uses whatever NDK it defaults to and installs it if it has to, so a
@@ -51,7 +51,7 @@ android {
     providers.gradleProperty("advisor.ndkVersion").orNull?.let { ndkVersion = it }
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
         // Code shrinking is the consuming app's (:app) responsibility — but two things in this module
         // are reached only from native code, by name, and a shrinker cannot see that. These rules
         // travel with the module so :app keeps them without having to know why.

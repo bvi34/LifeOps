@@ -1,7 +1,8 @@
 # Secrets — one vault, and the credentials that survive a restore
 
 Secrets is the suite's password manager. It keeps the household's own logins, cards, licence keys
-and notes; and it keeps, under the same lock, **every credential the rest of the suite holds** —
+and notes — their second factors, and the password each one had before this one; and it keeps, under
+the same lock, **every credential the rest of the suite holds** —
 Finance's Plaid keys and bank access tokens, Citation's catalogue sign-ins and library card, and the
 Operations Sandbox's own GitHub update token and the signature its scheduled cloud backup uploads
 with — so that restoring a backup onto a new phone does not
@@ -15,9 +16,14 @@ audit, the merge — is `:vaultkit`, pure JVM and unit-tested without a device.
 ```
 Operations Sandbox  →  Secrets  →  Unlock     (make one the first time; start again if it is forgotten)
                                 →  Vault      (everything, searchable)  →  one item
+                                                                            (its codes, and the
+                                                                             passwords it replaced)
                                 →  Generate   (characters, or words)
                                 →  Check      (weak, reused, old, empty)
-                                →  Settings   (auto-lock, passphrase, and finishing a restore)
+                                →  Settings   (auto-lock, passphrase, autofill, finishing a restore)
+
+Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  →  the form, filled
+Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey
 ```
 
 ## The problem this app was built for
@@ -327,25 +333,344 @@ unlock uses exactly that. The distinction that makes both true is between a **ro
 
 Revoking it, or losing the phone, costs nothing: type the passphrase.
 
+## The second factor
+
+A time-based one-time password is the rare second factor that is *arithmetic*: HMAC over a counter
+taken from the clock, truncated to six digits (RFC 6238, and RFC 4226 underneath it). There is no
+server to ask, no account to have, and nothing to sync — everything it needs is in `javax.crypto`,
+which is the same restriction the envelope accepts and for the same reason.
+
+So the app that promises it cannot phone anybody turns out to be the natural home for this. What it
+replaces is a separate authenticator app whose seeds live in *its* store, die with the phone, and
+are the one credential nobody can reissue without a support line — which is the failure this whole
+module exists to fix, arriving a second time in a different costume.
+
+The objection worth answering is that keeping both factors in one place collapses two into one. It
+is a real argument, and it is an argument about *where the vault is* rather than about what is in it.
+Two-factor authentication defends against somebody who has the password and is not here: a leaked
+database, a reused password, a phishing page. None of those gets them this file, and somebody who
+does have this file and its passphrase has the password anyway.
+
+```
+  Second factor                             Monzo · me@example.com
+  138 249                             17s   [copy]
+  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░
+  From this phone's clock.
+```
+
+Three decisions, and the reasons:
+
+- **The seed is stored; the code never is.** The code is a pure function of the seed and the clock,
+  so writing it down would mean putting a secret on disk in order to save one HMAC. The seed is
+  treated as what it is — never searched, never in the audit's reuse comparison, gone from a
+  tombstone like everything else, and never shown on screen at all. The only reason to look at a
+  seed is to move it to another authenticator, and the site that issued it still has the QR code.
+- **The code is *not* masked, unlike every other secret here.** It exists to be read off the screen
+  and typed into something else within half a minute, it is worthless the moment it expires, and a
+  reveal button in front of it would be a tap between somebody and the only thing they came for.
+  Copying it clears the clipboard when the code stops working rather than on the vault's general
+  timer.
+- **Two ways in, and neither is the other's fallback.** Scanning is what a site expects — it puts a
+  QR code on screen and assumes an authenticator is pointed at it — and it is the only one that
+  does not involve transcribing thirty-two characters of Base32 without a typo. Typing still works
+  when the camera is declined, when the code is on the same screen as the scanner, or when the seed
+  arrived by email; every site that shows a QR code offers the same key as text behind a "can't scan
+  it?" link. The field takes either an `otpauth://` URI or a bare Base32 key, in whatever case and
+  spacing it was printed in.
+
+  The camera is the one permission this module now holds, and the paragraph it replaced said it
+  never would. What changed the answer is what is *in* that QR code: a seed is the one credential a
+  household cannot reissue without a support line, and an app that makes it hard to file is an app
+  they file it somewhere else instead. The cost is bounded and stated — the scanner opens on a tap,
+  records nothing, keeps no image, decodes in this process with zxing's plain-Java decoder, and runs
+  behind `FLAG_SECURE` because what is in front of the lens is a picture of a seed. The container
+  already held `CAMERA` for People's partner pairing, so the app's permission set is unchanged;
+  what changed is that this module is now one of the two asking.
+
+Two honest limits. **The clock is the phone's** — a phone thirty seconds out of step produces codes
+a site rejects, and nothing here can tell that apart from a wrong seed, because asking a time server
+would mean the network permission this module does not have. The screen says so rather than leaving
+it to be worked out. And **counter-based `hotp` seeds are refused** rather than half-supported: the
+counter would advance every time a code was *looked at*, so opening the vault would desynchronise
+the second factor, which is a worse failure than not holding it.
+
+## The password you had before this one
+
+The most common way to lose an account is not forgetting a password — it is **changing** one. The
+form said it saved and stored something else; the change never committed; the tablet in the kitchen
+is still signed in on the old one and will ask for it the next time somebody opens it. Every one of
+those is ten seconds' work for a person who can see what the password was this morning, and an
+account-recovery phone call for a person who cannot.
+
+So an item keeps what its password used to be, newest first, capped at ten. Recording happens in
+`VaultDocument.upsert` rather than at the editor, because that is the one funnel every change goes
+through and a rule written at a call site is a rule the next call site forgets. Four cases record
+nothing, each because there was no *replacement*: a new item, one coming back from a tombstone, a
+password that did not change, and one that was blank — filling in the empty secret on a stub started
+last year should not file an empty string as a password somebody once used.
+
+This is the one place the argument against a database gets re-examined, because it sounds like the
+same thing. It is not. The objection to a write-ahead log was never "old passwords exist" — it was
+that they exist where nobody decided to put them and nobody can get them out. These are inside the
+sealed body, bounded, shown on the screen that owns the item, masked like any other secret, revealed
+one at a time, and thrown away from that screen by a button that says so — which, like every other
+edit here, takes effect on Save rather than under the finger.
+
+**The mirrored credentials do not get one.** An app's access token is dead the moment it rotates, so
+keeping it would be storing a secret that opens nothing; worse, those rotate on somebody else's
+schedule rather than when a person decides something, so a history of them would be an unbounded
+churn of useless plaintext inside the file. That is enforced in `keepingReplaced` rather than left to
+each writer to remember.
+
+## Filling it in elsewhere
+
+A vault whose only way out is the clipboard is a vault that spends its day in the clipboard. The
+copy-reveal-switch-paste dance is four steps, it puts the password in a buffer other apps can read,
+and the app's own defaults already bend around it — `lockOnLeave` is off by default precisely
+because locking on every app switch would make that dance five steps. Autofill is the answer to the
+thing those defaults were apologising for.
+
+It costs this module the other half of its old manifest promise. An `AutofillService` is bound by
+the system, and the system can only bind something exported, so "every component here is
+`exported="false"`" stopped being true. What makes that narrower than it sounds is the permission
+on the declaration: `BIND_AUTOFILL_SERVICE` is held by the platform and by nothing installable, so
+exported here means *the operating system may bind this* and still means *no app on this phone may*.
+It is inert until somebody picks Secrets as their autofill service in a system settings screen this
+app does not control, and the screen it authenticates through is not exported at all — the system
+opens that one through a `PendingIntent` this app created, which carries this app's identity rather
+than the caller's.
+
+### The part with the danger in it
+
+Everything about autofill is plumbing except one question: *whose password may be offered to what?*
+Answer it wrong and the vault has typed the bank password into whatever was pretending to be the
+bank, silently, on a phone whose owner has no way of noticing. So the answer lives in
+`AutofillMatch` — framework-free, in `:vaultkit`, under tests that are mostly about refusals, for
+exactly the reason the crypto lives there.
+
+Four rules:
+
+- **A managed credential is never offered to anything.** Finance's access token is not a login, no
+  sign-in page wants it, and the only thing filling one in could achieve is handing a bank token to
+  a form. Mirrored items are filtered out before anything else is considered.
+- **A match must be earned.** The asker names itself — a web domain for a browser, a package name
+  for an app — and an item is a candidate only if its own address says it belongs there. Nothing is
+  offered on a guess about the title, which means an item saved with no address is never offered
+  automatically, and that is the intended trade.
+- **A subdomain matches its parent and a lookalike does not.** `login.bank.com` may be filled from
+  an item filed under `bank.com`, because that is one site. `bank.com.evil.example` may not, because
+  the suffix test is on label boundaries rather than on characters. That one line is the difference,
+  and it has a test to itself.
+- **No match means no rows.** Not "show the whole vault and let them pick" from inside the dropdown,
+  which would abandon rule two. What an unrecognised form gets is a single entry that opens the
+  vault's own list to be searched, where the person picks the item themselves — a different and much
+  better-founded act than a service deciding on their behalf.
+
+Two more, which are about this app rather than about matching. It will not fill **its own package**:
+the unlock screen's passphrase box is a password field like any other, and a vault that offers to
+fill its own passphrase is a vault with its key inside it. And a **locked vault stays locked** — it
+cannot know whether it holds anything for the form in front of it, because that is what being locked
+means, so it offers a way in rather than an answer, and the entry that says so opens the unlock
+screen and comes back with the real datasets.
+
+### Reading somebody else's form
+
+Nothing in the view tree the system hands over is trustworthy or consistent. Some apps declare
+`autofillHints`, some declare an HTML input type, some a native input-type flag, and plenty declare
+a field called `et_pw_2` and nothing else. `AutofillForm.classify` reads all four, in order of how
+much the asker committed to, and the guesswork tier is last for the obvious reason.
+
+One decision in there is worth stating on its own: a **one-time-code field is recognised when it is
+declared and never guessed at**. "Code" appears on postcode, area code, country code and discount
+code fields, and a second factor pasted into a discount box is a code *spent* — they work once. The
+short abbreviations that are guessed at are matched on word boundaries rather than as substrings,
+which is what keeps `pw` from finding the middle of `upward`.
+
+### Saving
+
+A sign-in typed into a form by hand is offered to the vault, and only ever **added**. A form filled
+with a password the vault already holds is not a change worth recording; a form filled with a
+different one is more likely a second account than a rotation somebody wanted overwritten, and
+guessing wrongly would silently replace a working password. There is no queue for a save that
+arrives while the vault is shut, either — the pending-write queue exists for an app's own mirrored
+credential, which that app still holds and can re-file, whereas a sign-in typed into somebody else's
+form exists nowhere else, and holding it in memory until an unlock that may never come would be
+pretending to have saved it. It says so and declines.
+
+## Passkeys
+
+A passkey is a key pair. The site keeps the public half; the private half **is** the credential, and
+where it lives decides what happens the day the phone does not come back.
+
+A platform passkey lives in the phone's hardware-backed keystore. That is excellent protection and it
+is the same hardware binding this entire module exists to work around — the key cannot leave, so it
+dies with the device unless somebody else's cloud is holding a copy. Kept here, it lives in the
+sealed document, under a passphrase that is in somebody's head rather than in a TEE, in a file that
+rides the sandbox archive. The same bargain as everything else in this vault, applied to an
+unusually unforgiving credential: a passkey has no forgotten-password link behind it, so losing one
+means a site's account recovery flow, per site, with a support queue at the end of it.
+
+The authenticator says so rather than leaving it to be inferred. The **backup eligible** and
+**backed up** flags are both set in every authenticator data this app produces, because both are
+literally true here, and a relying party reads them to decide whether to keep offering a password as
+a fallback. Setting them falsely in either direction would make that decision wrong.
+
+### The feature that moved the suite's floor
+
+A third-party app can hold passkeys **only** through Credential Manager's provider API, and that API
+is Android 14. There is no earlier route — not a hidden one, not a worse one.
+
+Everything else in this suite ran happily on API 26, so for a while this shipped as the one feature
+with a floor above the app's own: gated behind a version check, explained on the settings screen,
+absent on older phones. That was the worse of the two options. A vault that keeps passkeys on some
+phones and apologises on others is harder to own than one that asks for a phone from 2023 — the
+apology is a thing the household has to carry around in their head, and it is exactly the sort of
+half-present feature nobody trusts with an account they cannot recover.
+
+So the whole suite moved to `minSdk` 34 and the gate came out. Not higher: nothing here uses an API
+above 34, so 35 or 36 would buy no code and only narrow who can install. The suite compiles and
+targets **36** (Android 16), which is a different question — what it is built against, rather than
+what it will run on.
+
+### What is in the pure module, and why almost all of it is
+
+Everything except the service and the screen: the CBOR encoder, the COSE key, the authenticator
+data, the attestation object, the client data, the signature, and the parsing of the request the
+site sent. None of it needs a phone, and the reason it is worth insisting on that is the test it
+buys — the tests beside it **build a registration, produce an assertion against it, and verify the
+signature with the public key the registration handed over**, which is precisely the check a relying
+party's server performs. A passkey that is subtly wrong produces a sign-in that fails on somebody's
+phone for a reason no log will explain, and that is not a thing to find out on a device.
+
+Four decisions live in there, and each is a place a plausible implementation goes wrong:
+
+- **ES256 only.** ECDSA over P-256, COSE `-7`: what every relying party accepts, and what
+  `java.security` has had for a decade. The same rule the envelope's key derivation follows, for the
+  same reason — a credential that only opens on a build with a particular native library is not one
+  a household can carry to their next phone. A site whose `pubKeyCredParams` leaves ES256 out is
+  **refused**, because issuing a key of an algorithm it did not ask for produces a credential it
+  rejects at first use, discovered much later and diagnosable by nobody.
+- **The AAGUID is all zeroes.** It identifies the make and model of an authenticator, and vendors
+  register one. This app has not, so the honest value is the one reserved for not saying. Inventing
+  sixteen bytes would be claiming an identity nobody issued; borrowing another vendor's would be
+  worse.
+- **Attestation is `none`,** and that is the right answer rather than a shortcut. Attestation is a
+  signed claim about which hardware holds the key, made by a certificate a manufacturer issued. A
+  vault whose whole purpose is that the key is *not* bound to hardware has nothing true to say
+  there, and every self-signed alternative amounts to asserting your own trustworthiness.
+- **The signature counter is fixed at zero.** The counter exists so a site can notice a *cloned*
+  authenticator: one that goes backwards means two copies of a key that should exist once. A
+  credential held in a vault that deliberately travels in a backup may legitimately be used from two
+  phones, so an incrementing counter would report a clone every time somebody restored. A counter
+  that never moves says "this authenticator does not keep one", which is true, rather than something
+  false that happens to increase.
+
+And one detail that is worth a line because it fails rarely enough to be a mystery: the EC
+coordinates in the COSE key are padded to exactly 32 bytes. A `BigInteger` drops leading zeroes, so
+a coordinate whose top byte happens to be zero is 31 bytes and a rejected credential — about one
+registration in two hundred and fifty-six.
+
+### Who is asking
+
+A web sign-in has an origin like `https://bank.com`. A native app has no URL, so WebAuthn names it by
+the hash of the certificate its APK was signed with — `android:apk-key-hash:…` — which a relying
+party matches against its own `assetlinks.json`. That check is what stops an app which merely claims
+to be the bank from being handed the bank's passkey, so this app does not get to skip building it
+honestly: the certificate comes from the platform's own `SigningInfo` for the caller, never from
+anything the caller said about itself.
+
+A **privileged** caller — a browser the platform vouches for — is the other case. It has already
+built the client data for the page it is showing and hands over only the hash; this app signs that
+and never sees the JSON, which is correct, because the origin in it is the page's and only the
+browser can honestly state it.
+
+### Matching needs no judgement here
+
+`AutofillMatch` is a careful file because a password has no idea which site it belongs to. A passkey
+does: it names its relying party, the request names its relying party, and they either agree or they
+do not. So the rule is **exact match on the rpId** — not by subdomain, not by anything clever, since
+a signature is scoped to the rpId it was created under and a credential offered to a different one
+produces a signature that site rejects. The looseness that is a convenience for a password would be
+a broken sign-in here. An empty `allowCredentials` means "whatever you hold for this site", which is
+the discoverable-credential flow passkeys are normally used in.
+
+Two more refusals, in the screen rather than the service. A site's `excludeCredentials` is honoured,
+so a second passkey is not quietly made for an account that already has one. And the request is
+**re-read** when the credential is used rather than trusted from the entry that was tapped: an entry
+and a request that disagree would mean signing a challenge for a site this credential does not
+belong to.
+
+### Nothing to reveal, nothing to copy
+
+The item screen shows a passkey and does not offer to edit it. Every other secret here is a text box
+because every other secret is something a person typed and may need to retype; a private key is not
+a value anybody transcribes, and retyping it is not a thing that can succeed. There is nowhere to
+paste it either — a passkey is used by signing a challenge, which is what the system's own dialog
+asks this app to do. Putting it on screen would be offering a value that cannot be used and can only
+leak. What is shown is what somebody needs to recognise it by, and the one load-bearing fact:
+deleting it ends the ability to sign in with it, and there is no copy anywhere to fall back on.
+
+## Three features, one format version, counted honestly
+
+Each of the additions above puts something in the document that a build without it would silently
+drop — Gson keeps what it knows and discards the rest — so the document's own version has climbed
+twice: second factors and password history took it to 2, passkeys to 3. What it does *not* do is
+move on every vault.
+
+`VaultDocument.stamped()` computes the version from the contents rather than asserting it, **per
+feature rather than per release**:
+
+| What the vault holds | Version | Which builds can still write it |
+|---|---|---|
+| Logins, cards, notes | 1 | every build there has ever been |
+| A second factor, or a replaced password | 2 | every build since those shipped |
+| A passkey | 3 | this one |
+
+A household that never makes a passkey keeps a file the previous build can open **and edit**.
+Stamping every vault at the newest number on the day a feature shipped would have locked those
+households out of their own vault on any phone running the older build, in exchange for nothing.
+
+It only ever goes up. Deleting the last seed does not walk the version back down — a version that
+flapped would be a version that meant nothing — and a document from a future build keeps whatever
+version it arrived with, which is what keeps `VaultStore.mutateBlocking`'s refusal to write it
+working.
+
 ## What the app will not do
 
 - **It cannot reach the network.** No `INTERNET` permission in its manifest, no HTTP client on its
   classpath. No sync, no account, no telemetry — and no breach check, not even the k-anonymous kind
   that sends a hash prefix to somebody else's server. The audit says weak, reused, old and empty, and
-  those are the things that can be known without telling anyone anything.
+  those are the things that can be known without telling anyone anything. The second factor is the
+  proof this is a restriction rather than a shortfall: it is arithmetic over a seed and a clock, so
+  it works here exactly as well as it would anywhere.
+- **It uses the camera for one thing, on a tap.** Reading the QR code a site shows when it hands
+  over a second-factor seed, and nothing else — nothing recorded, no image kept, decoded in this
+  process by zxing's plain-Java decoder. Every screen that scans also takes the key as text, so
+  declining the permission costs convenience and no capability. See *The second factor*.
 - **It cannot recover a forgotten passphrase.** There is no reset link, no support address, no copy
   anybody else holds. The screen that creates a vault says so before it makes one. What it *can* do
   is start again and refill from the other apps — see below, and note that this is a rebuild rather
   than a recovery.
 - **It does not search secrets.** The search box reads titles, usernames, addresses, notes, tags and
-  refs, and never a secret. Typing a password into a search box to find where you used it is a
+  refs — never the password, never a password the item used to have, and never a second-factor
+  seed. Typing a password into a search box to find where you used it is a
   reasonable thing to want and a terrible thing to support — it puts the password into a text field,
   an input method's learned-word store, and whatever the keyboard app does with what it sees. The
   audit answers that question without anybody typing anything.
 - **It serves no connection routes.** Three apps answer on the suite's address contract; this one
   does not.
-- **It takes no screenshots of itself.** `FLAG_SECURE` for the life of the activity, so the recents
-  thumbnail the system writes to disk is never a picture of the vault.
+- **It exports two components, and only the operating system can reach either.** The autofill
+  service behind `BIND_AUTOFILL_SERVICE`, and the credential provider service behind
+  `BIND_CREDENTIAL_PROVIDER_SERVICE` — permissions the platform holds and nothing installable does.
+  Both are inert until the household picks this app for that job in system settings, and neither can
+  hand over a secret while the vault is shut: what they return then is a way in, never an answer.
+  Every other component is still `exported="false"`, the two screens those services authenticate
+  through included. The list of exceptions is meant to stay short enough to read in one sitting.
+  See *Filling it in elsewhere* and *Passkeys*.
+- **It takes no screenshots of itself.** `FLAG_SECURE` on every screen this module owns — the main
+  activity, the screen autofill authenticates through, and the scanner, which is a subclass of the
+  scanning library's activity existing for that one line. The recents thumbnail the system writes to
+  disk is never a picture of the vault, and never a picture of a seed's QR code either.
 
 ## The generator
 
@@ -360,7 +685,7 @@ nothing, because the entropy is in the dice rather than in the vocabulary.
 
 ## Tests
 
-`:vaultkit` — 94 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
+`:vaultkit` — 185 JVM tests. The ones that matter are the failures: wrong passphrase, flipped bit in
 the body, a header edited to claim a cheaper KDF, a wrapped key spliced from another vault, a
 truncated file, a version from the future, and an old archive merged over a newer vault. Plus the
 owner (`sandbox` collides with no app; every owner round-trips through its key; a key from a newer
@@ -368,10 +693,68 @@ build is nobody rather than somebody invented) and the watcher (told on registra
 write strands, told when a flush clears it, silent after unwatching, and a watcher that throws
 cannot take a write down with it).
 
-`:secrets` — 26 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
+The second factor is checked against **RFC 6238's own test vectors**, all three hashes, and that is
+the only kind of test worth having for it: a generator that is subtly wrong produces six plausible
+digits that no site accepts, and no amount of reading the code catches that. If those pass, the
+arithmetic agrees with every authenticator app in the world. Around them: that six digits is the
+eight-digit code's *last* six rather than its first, that a leading zero survives being formatted,
+that a code holds for its period and changes at the boundary, that Base32 is lenient about spacing
+and case and strict about content, that an `otpauth://` URI's issuer, digits, period and hash are
+taken from it rather than guessed, that a `+` in an account name survives (which `URLDecoder` would
+not manage), and that an `hotp` URI is refused rather than half-supported.
+
+The history rules are tested as rules rather than as a feature: a changed password is kept, an
+unchanged one records nothing, a blank one is not a replacement, a mirrored credential never
+accumulates any, the cap holds at ten with the newest first, and a tombstone carries neither a
+previous password nor a seed. Two more on the search box, which is where a mistake would be
+invisible: neither a password used last year nor a seed can be matched by typing it. And the format
+version — that a vault using neither feature stays at 1 and remains writable by the older build,
+that either feature moves it to 2, that it never walks back down, and that a document from a future
+build is not quietly demoted into one this build would strip. And two on the audit: an item that
+exists for its second factor is not reported as an abandoned stub — the codes *are* what it holds —
+and a seed is never compared against a password for reuse.
+
+`AutofillMatch` is tested almost entirely on what it **refuses**, because that is where the damage
+is: a lookalike domain gets nothing, a mirrored credential gets nothing however well its address
+matches, an item with no address is never offered however well its title reads, an asker that names
+itself as nothing gets nothing, and a browser is not filled from the item filed under the browser.
+Then the ranking — an exact domain over a parent, a parent over a package read backwards, a
+favourite over a name — and the two primitives underneath: that the subdomain test is on label
+boundaries, and that a package match is by label rather than by string prefix, so `com.monzonian`
+does not collect `monzo.com`'s password.
+
+`:secrets` — 44 Robolectric/JVM tests: the file store, the lock states, the broker, what the archive
 does and does not contain, both restore paths, the reset (including that it cannot bring back what
 only the old vault held), and the one this app exists for — a credential mirrored on a phone that no
-longer exists, read back on the one that replaced it.
+longer exists, read back on the one that replaced it. Three of them run the new features through the
+real sealed file rather than through the document alone: a seed and a replaced password survive the
+seal and the reopen and still produce the right codes, a credential rotated three times by an app
+leaves no trail of dead tokens, and a vault that uses neither feature is still stamped version 1 on
+disk.
+
+The autofill field reader is tested on the JVM without Robolectric, because `AutofillForm.classify`
+takes its signals as plain values: a declared hint is believed and beats the input type under it,
+both Android's vocabulary and the web's are understood, a number field is not a password because its
+variation bits collide with one, a one-time-code field is recognised when declared and never guessed
+at from a field called `discount_code`, and `pw` is found in `et_pw` and not in `upward_scroll`.
+
+The passkey tests are the ones that would be worthless on a device and are worth a great deal on the
+JVM. The centre of them builds a registration, produces an assertion against it, and **verifies the
+signature with the public key the registration handed over** — the same check a relying party's
+server runs — and then does it again over different client data to prove a replayed signature fails,
+which is the attack the whole protocol is about. Around that: the attestation object says `none` and
+carries the authenticator data; the authenticator data is laid out as the spec lays it out, with the
+rpId hash over the relying party and nothing else, with backup-eligible and backed-up set, with a
+zero counter and no AAGUID claimed; an assertion carries no attested credential data; the public key
+the site is given is the one the vault kept; a coordinate with a leading zero is still thirty-two
+bytes; and a site that will not take ES256 is refused rather than issued something it will reject.
+The CBOR encoder is checked against RFC 8949's own example bytes and round-tripped through a reader
+that lives in the test source set for exactly that purpose — so the encoder is checked against
+something other than itself.
+
+`:secrets`' list ends where the app's argument does: a passkey made on one phone, sealed, and read
+back on the phone that replaced it — where it still signs, and the signature still verifies against
+the public key the site was given by a device that no longer exists.
 
 `:finance` — 14 more, on its half of the seam: which refs it uses, that a write reaches both stores,
 that a read prefers the local copy, that a restore rehydrates, that a refill hands over everything

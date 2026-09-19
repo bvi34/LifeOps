@@ -17,10 +17,10 @@ plugins {
 // ingestion jobs on top.
 android {
     namespace = "com.citation.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
         // Code shrinking is the consuming app's (:app) responsibility.
     }
 

@@ -36,7 +36,7 @@ import org.robolectric.annotation.Config
  *    not overwrite it.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [34])
 class SecretsBackupTest {
 
     private lateinit var context: Context

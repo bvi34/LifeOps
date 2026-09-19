@@ -7,10 +7,17 @@ import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretSource
 import com.operations.vaultkit.SecretSources
+import com.operations.vaultkit.PasskeyRequest
+import com.operations.vaultkit.Passkeys
 import com.operations.vaultkit.SecretsAccess
+import com.operations.vaultkit.Totp
+import com.operations.vaultkit.TotpConfig
+import com.operations.vaultkit.VaultDocument
 import com.operations.vaultkit.VaultEnvelope
 import com.operations.vaultkit.VaultItem
+import com.operations.vaultkit.VaultItemKind
 import com.operations.vaultkit.VaultState
+import com.operations.vaultkit.WebAuthn
 import com.secrets.app.broker.VaultBroker
 import java.util.UUID
 import kotlinx.coroutines.test.runTest
@@ -37,7 +44,7 @@ import org.robolectric.annotation.Config
  * keystore, so the file store and the broker run exactly as they do on a device.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [34])
 class VaultStoreTest {
 
     private lateinit var store: VaultStore
@@ -442,4 +449,143 @@ class VaultStoreTest {
         createdAt = 1,
         updatedAt = 1
     )
+
+    // --- Second factors and previous passwords, through the real file ----------------------------
+
+    @Test
+    fun `a second factor and a replaced password survive the seal and the reopen`() = runTest {
+        store.create(passphrase)
+        val seed = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        val id = UUID.randomUUID().toString()
+        store.mutate { document ->
+            document.upsert(
+                VaultItem(
+                    id = id,
+                    title = "Bank",
+                    secret = "the-old-one",
+                    totp = TotpConfig(secret = seed, issuer = "Bank", account = "me"),
+                    createdAt = 1,
+                    updatedAt = 1
+                ),
+                now = 10
+            )
+        }
+        store.mutate { document -> document.upsert(document.item(id)!!.copy(secret = "the-new-one"), now = 20) }
+
+        store.lock()
+        val reopened = VaultStore(ApplicationProvider.getApplicationContext())
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, reopened.unlock(passphrase))
+
+        val item = reopened.document.value!!.item(id)!!
+        assertEquals("the-new-one", item.secret)
+        assertEquals("the-old-one", item.history.single().secret)
+        assertEquals("Bank", item.totp!!.issuer)
+        // The seed is the one that was filed, which is the only thing that makes the codes right.
+        assertEquals(
+            Totp.code(TotpConfig(secret = seed), 59_000L)!!.digits,
+            Totp.code(item.totp!!, 59_000L)!!.digits
+        )
+    }
+
+    @Test
+    fun `a rotated credential leaves no trail of dead tokens in the vault`() = runTest {
+        store.create(passphrase)
+        val broker = VaultBroker(store)
+        val ref = SecretRef("finance", "usaa", "access-token")
+
+        broker.write(ref, "token-one", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+        broker.write(ref, "token-two", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+        broker.write(ref, "token-three", "Finance — USAA token", SecretOwner.of(AppId.FINANCE))
+
+        val item = store.document.value!!.managed(ref)!!
+        assertEquals("token-three", item.secret)
+        // These rotate on somebody else's schedule and none of the old ones opens anything, so a
+        // history of them would be an unbounded pile of plaintext with no use for it.
+        assertTrue(item.history.isEmpty())
+    }
+
+    @Test
+    fun `the document version follows what the vault actually holds`() = runTest {
+        store.create(passphrase)
+        val id = UUID.randomUUID().toString()
+
+        store.mutate { it.upsert(VaultItem(id = id, title = "Wifi", secret = "elderflower"), now = 10) }
+        assertEquals(
+            "nothing here a version-1 reader would drop",
+            VaultDocument.BASELINE_VERSION,
+            store.document.value!!.version
+        )
+
+        store.mutate { document ->
+            document.upsert(
+                document.item(id)!!.copy(totp = TotpConfig(secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")),
+                now = 20
+            )
+        }
+        // Version 2, not the newest: a vault with a second factor and no passkey is still writable
+        // by the build that introduced second factors.
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, store.document.value!!.version)
+
+        // And the file itself carries it, rather than only the copy in memory.
+        store.lock()
+        val reopened = VaultStore(ApplicationProvider.getApplicationContext())
+        reopened.unlock(passphrase)
+        assertEquals(VaultDocument.VERSION_WITH_SECOND_FACTORS, reopened.document.value!!.version)
+    }
+
+    @Test
+    fun `a passkey survives the seal and still signs on the phone that replaced this one`() = runTest {
+        store.create(passphrase)
+        val options = PasskeyRequest.parseCreation(
+            """{"rp":{"id":"bank.com","name":"The Bank"},
+                 "user":{"id":"dXNlcg","name":"me@example.com","displayName":"Me"},
+                 "challenge":"Y2hhbGxlbmdl",
+                 "pubKeyCredParams":[{"type":"public-key","alg":-7}]}"""
+        )!!
+        val madeOn = Passkeys.register(
+            options = options,
+            clientDataJson = "{}",
+            clientDataHash = ByteArray(32),
+            now = 1_000L
+        )!!
+        val id = UUID.randomUUID().toString()
+        store.mutate {
+            it.upsert(
+                VaultItem(
+                    id = id,
+                    kind = VaultItemKind.PASSKEY,
+                    title = "The Bank",
+                    url = "bank.com",
+                    passkey = madeOn.passkey,
+                    createdAt = 1,
+                    updatedAt = 1
+                ),
+                now = 10
+            )
+        }
+        assertEquals(VaultDocument.DOCUMENT_VERSION, store.document.value!!.version)
+
+        // The phone is gone; the sealed file is what came back.
+        store.lock()
+        val newPhone = VaultStore(ApplicationProvider.getApplicationContext())
+        assertEquals(VaultStore.UnlockResult.UNLOCKED, newPhone.unlock(passphrase))
+        val restored = newPhone.document.value!!.item(id)!!.passkey!!
+
+        // The credential still signs, and the signature still verifies against the public key the
+        // site was handed on the phone that no longer exists. That is the whole claim.
+        val clientDataHash = WebAuthn.sha256("client-data".toByteArray())
+        val assertionJson = Passkeys.assertion(restored, null, clientDataHash)!!
+        // org.json rather than Gson: Gson is :vaultkit's own implementation dependency and does
+        // not leak onto this module's test classpath, which is the arrangement working as intended.
+        val inner = org.json.JSONObject(assertionJson).getJSONObject("response")
+        val authData = WebAuthn.fromBase64Url(inner.getString("authenticatorData"))!!
+        val signature = WebAuthn.fromBase64Url(inner.getString("signature"))!!
+
+        val verifier = java.security.Signature.getInstance("SHA256withECDSA").apply {
+            initVerify(Passkeys.publicKeyOf(madeOn.passkey))
+            update(authData)
+            update(clientDataHash)
+        }
+        assertTrue("a passkey made on the old phone still signs on the new one", verifier.verify(signature))
+    }
 }

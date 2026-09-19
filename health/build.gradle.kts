@@ -19,10 +19,10 @@ plugins {
 
 android {
     namespace = "com.health.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
         // Code shrinking is the consuming app's (:app) responsibility.
     }
 

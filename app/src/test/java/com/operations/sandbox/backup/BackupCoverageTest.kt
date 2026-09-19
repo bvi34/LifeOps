@@ -71,7 +71,7 @@ import java.util.zip.ZipInputStream
 @RunWith(RobolectricTestRunner::class)
 // A plain Application rather than the suite's own: installing eleven apps would schedule their
 // background work, and what is under test is the contributors, not the start-up sequence.
-@Config(sdk = [33], application = android.app.Application::class)
+@Config(sdk = [34], application = android.app.Application::class)
 class BackupCoverageTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()

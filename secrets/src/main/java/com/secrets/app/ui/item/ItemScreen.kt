@@ -1,5 +1,6 @@
 package com.secrets.app.ui.item
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -24,12 +31,15 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,26 +47,37 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.operations.suite.ui.fields.SuiteNoteField
 import com.operations.suite.ui.fields.SuiteTextField
 import com.operations.vaultkit.PasswordGenerator
 import com.operations.vaultkit.PasswordRecipe
+import com.operations.vaultkit.Totp
+import com.operations.vaultkit.TotpConfig
 import com.operations.vaultkit.VaultField
 import com.operations.vaultkit.VaultItem
 import com.operations.vaultkit.VaultItemKind
+import com.operations.vaultkit.VaultPasskey
+import com.operations.vaultkit.VaultSecretVersion
 import com.secrets.app.data.SecretsPrefs
 import com.secrets.app.data.VaultStore
 import com.secrets.app.ui.common.SecretClipboard
 import com.secrets.app.ui.common.SecretValue
 import com.secrets.app.ui.common.StrengthBar
 import com.secrets.app.ui.common.ownerLabel
+import com.secrets.app.ui.scan.SecureCaptureActivity
+import java.text.DateFormat
+import java.util.Date
 import java.util.UUID
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -131,6 +152,31 @@ class ItemViewModel(
     fun generate() = edit { it.copy(secret = PasswordGenerator.password(PasswordRecipe.DEFAULT).value) }
 
     /**
+     * Take a second-factor seed, in either shape a site hands one over.
+     *
+     * Returns false for anything that will not produce codes, so the screen can say so while it is
+     * still fixable. Storing an unusable seed would mean an item that shows nothing, or worse shows
+     * six confident and wrong digits, and finding that out at a sign-in page is finding it out at
+     * the worst possible moment.
+     */
+    fun setTotp(raw: String): Boolean {
+        val parsed = Totp.parse(raw) ?: return false
+        edit { it.copy(totp = parsed) }
+        return true
+    }
+
+    fun clearTotp() = edit { it.copy(totp = null) }
+
+    /**
+     * Throw away the passwords this item used to have.
+     *
+     * Like every other edit on this screen it takes effect on Save, which is the behaviour somebody
+     * pressing a button labelled "forget" in a vault should get: a chance to leave without it having
+     * happened.
+     */
+    fun clearHistory() = edit { it.copy(history = emptyList()) }
+
+    /**
      * Write the item back, if anything changed and there is anything to write.
      *
      * An untouched new item is discarded rather than saved: opening "add", thinking better of it and
@@ -143,7 +189,9 @@ class ItemViewModel(
             return
         }
         val item = current.item
-        if (item.title.isBlank() && item.secret.isBlank() && item.username.isBlank()) {
+        // A second factor on its own is a real item — a seed with no password beside it is exactly
+        // what somebody adds when the password lives in their head and the codes do not.
+        if (item.title.isBlank() && item.secret.isBlank() && item.username.isBlank() && !item.hasTotp) {
             onDone()
             return
         }
@@ -240,28 +288,47 @@ fun ItemScreen(
             )
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SecretValue(
-                    value = item.secret,
-                    label = item.kind.secretLabel,
-                    onCopy = { copy(item.kind.secretLabel, item.secret) }
-                )
-                SuiteTextField(
-                    label = "Set ${item.kind.secretLabel.lowercase()}",
-                    value = item.secret,
-                    onValueChange = vm::setSecret,
-                    capitalise = KeyboardCapitalization.None,
-                    trailing = {
-                        IconButton(onClick = vm::generate) {
-                            Icon(Icons.Filled.Casino, contentDescription = "Generate")
+        item.passkey?.let { PasskeyCard(it) }
+
+        // A passkey is the credential; there is no password beside it to set, and a "Set key" box
+        // under one would invite somebody to type over a private key.
+        if (!item.hasPasskey) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SecretValue(
+                        value = item.secret,
+                        label = item.kind.secretLabel,
+                        onCopy = { copy(item.kind.secretLabel, item.secret) }
+                    )
+                    SuiteTextField(
+                        label = "Set ${item.kind.secretLabel.lowercase()}",
+                        value = item.secret,
+                        onValueChange = vm::setSecret,
+                        capitalise = KeyboardCapitalization.None,
+                        trailing = {
+                            IconButton(onClick = vm::generate) {
+                                Icon(Icons.Filled.Casino, contentDescription = "Generate")
+                            }
                         }
+                    )
+                    if (item.secret.isNotEmpty()) {
+                        StrengthBar(secret = item.secret)
                     }
-                )
-                if (item.secret.isNotEmpty()) {
-                    StrengthBar(secret = item.secret)
                 }
             }
+        }
+
+        // Offered for anything a person owns. A mirrored credential is read back by the app that
+        // filed it and by nothing else, so a second factor on one would be a seed nobody ever asks
+        // for — though one that somehow exists is still shown rather than hidden. A second factor
+        // beside a passkey is a belt beside a belt: the passkey already is one.
+        if ((!item.isManaged && !item.hasPasskey) || item.hasTotp) {
+            TotpSection(
+                config = item.totp,
+                clipboardClearSeconds = prefs.clipboardClearSeconds,
+                onSet = vm::setTotp,
+                onClear = vm::clearTotp
+            )
         }
 
         if (item.kind == VaultItemKind.LOGIN) {
@@ -327,6 +394,15 @@ fun ItemScreen(
             value = item.note,
             onValueChange = vm::setNote
         )
+
+        if (item.history.isNotEmpty()) {
+            HistoryCard(
+                history = item.history,
+                secretLabel = item.kind.secretLabel,
+                onCopy = { value -> copy("Previous ${item.kind.secretLabel.lowercase()}", value) },
+                onForget = vm::clearHistory
+            )
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(onClick = { vm.save(onDone) }) { Text(if (state.isNew) "Add" else "Save") }
@@ -395,6 +471,412 @@ private fun ManagedBanner(item: VaultItem) {
                 Spacer(Modifier.height(4.dp))
                 Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
+        }
+    }
+}
+
+/**
+ * The second factor: the seed if there is one, the offer to add one if there is not.
+ *
+ * ## Why a password manager holds these at all
+ *
+ * The usual objection is that keeping both factors in one place collapses two factors into one, and
+ * it is a real objection — but it is an argument about *where the vault is*, not about what is in
+ * it. This vault is on a phone, behind a passphrase that is not on the phone, in an app that cannot
+ * reach the network. The thing two-factor authentication defends against is somebody who has the
+ * password and is not here: a leaked database, a reused password, a phishing page. None of those
+ * gets them this file, and somebody who *does* have this file and its passphrase has the password
+ * anyway.
+ *
+ * What the household actually had before this existed was a separate authenticator app whose seeds
+ * live in its own store, die with the phone, and are the one credential that cannot be reissued
+ * without a support line. That is the comparison this replaces, and it is not close.
+ */
+@Composable
+private fun TotpSection(
+    config: TotpConfig?,
+    clipboardClearSeconds: Int,
+    onSet: (String) -> Boolean,
+    onClear: () -> Unit
+) {
+    if (config == null) {
+        AddTotpCard(onSet = onSet)
+    } else {
+        TotpCard(config = config, clipboardClearSeconds = clipboardClearSeconds, onClear = onClear)
+    }
+}
+
+/**
+ * Six digits and the seconds they have left.
+ *
+ * The code is **not masked**, unlike every other secret on this screen, and that is the right way
+ * round rather than an oversight: it exists to be read off the screen and typed into something else
+ * within half a minute, it is worthless the moment it expires, and a reveal button in front of it
+ * would be a tap between somebody and the only thing they came here for. What stays masked is the
+ * seed, which is never shown at all — there is no button here that puts it on screen, because the
+ * only reason to look at it is to move it to another authenticator, and that is what the QR code
+ * the site still has is for.
+ */
+@Composable
+private fun TotpCard(
+    config: TotpConfig,
+    clipboardClearSeconds: Int,
+    onClear: () -> Unit
+) {
+    val context = LocalContext.current
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    // Twice a second rather than once: at one tick per second the countdown visibly skips a number
+    // whenever the tick and the clock's second drift apart, which they do within a minute.
+    LaunchedEffect(config) {
+        while (true) {
+            now = System.currentTimeMillis()
+            delay(500)
+        }
+    }
+
+    val code = Totp.code(config, now)
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Shield, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Second factor", style = MaterialTheme.typography.titleSmall)
+                    val subtitle = listOfNotNull(
+                        config.label.takeIf { it.isNotBlank() },
+                        config.unusualSettings
+                    ).joinToString(" · ")
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                IconButton(onClick = onClear) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Remove the second factor")
+                }
+            }
+
+            if (code == null) {
+                // A seed that will not decode: hand-edited, or merged out of an odd archive. Saying
+                // so is the only useful thing left — silently showing nothing would look like a bug
+                // in the app rather than a problem with the seed.
+                Text(
+                    text = "This seed will not produce codes. Remove it and add the key again from " +
+                        "the site's own two-factor page.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = code.grouped,
+                        // Monospace and large: this is a number somebody reads off a screen while
+                        // looking at a different device, which is the worst possible reading
+                        // condition and the one every other choice on this row is made for.
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Text(
+                        text = "${code.secondsRemaining}s",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    IconButton(onClick = {
+                        // An expired code is neither a secret nor any use, so it leaves the
+                        // clipboard when it stops working rather than on the vault's general
+                        // timer — unless the household asked for the clipboard never to be cleared,
+                        // which is a setting rather than an oversight.
+                        val clearIn = if (clipboardClearSeconds == 0) 0 else code.secondsRemaining
+                        SecretClipboard.copy(context, "Code", code.digits, clearIn)
+                    }) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = "Copy the code")
+                    }
+                }
+                LinearProgressIndicator(
+                    progress = { code.fractionRemaining },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "From this phone's clock. If codes are refused, check the time is set " +
+                        "automatically — nothing here can ask a time server.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The offer to add one, folded away until it is wanted.
+ *
+ * Collapsed because most items have no second factor and never will, and a permanently open text
+ * field asking for a key is a field on every screen that most people have to read past to reach the
+ * address box.
+ *
+ * Two ways in, and both matter. **Scanning** is what a site expects — it puts a QR code on screen
+ * and assumes an authenticator is pointed at it — and it is the only one that does not involve
+ * somebody transcribing thirty-two characters of Base32 without a typo. **Typing** is the one that
+ * still works when the camera is declined, when the code is on the same screen as the scanner, or
+ * when the seed arrived in an email; every site that shows a QR code also offers the same key as
+ * text behind a "can't scan it?" link. Neither is a fallback for the other.
+ *
+ * The scanner is this module's only use of the camera, it opens only on a tap, nothing is recorded,
+ * and it runs behind `FLAG_SECURE` because what is in front of the lens is a picture of a seed (see
+ * [SecureCaptureActivity]). The decode is zxing's plain-Java one, in this process — a QR code is
+ * never uploaded anywhere to be read.
+ */
+@Composable
+private fun AddTotpCard(onSet: (String) -> Boolean) {
+    var open by remember { mutableStateOf(false) }
+    var raw by remember { mutableStateOf("") }
+    var rejected by remember { mutableStateOf(false) }
+    var scanRejected by remember { mutableStateOf(false) }
+
+    val scanner = rememberLauncherForActivityResult(ScanContract()) { result ->
+        // A null payload is a cancelled scan — somebody backed out of the camera, or declined the
+        // permission, and neither is an error worth a message.
+        val contents = result.contents ?: return@rememberLauncherForActivityResult
+        if (onSet(contents)) {
+            open = false
+            raw = ""
+            rejected = false
+            scanRejected = false
+        } else {
+            // A QR code that scanned perfectly and is not a seed — a wifi code, a URL, somebody
+            // else's pairing code. Saying which of the two went wrong is the difference between
+            // "try again" and "you are pointing at the wrong thing".
+            open = true
+            scanRejected = true
+        }
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Shield, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Add a second factor", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = "Scan the site's QR code, or type the key it shows beside it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = {
+                    scanRejected = false
+                    scanner.launch(
+                        ScanOptions()
+                            .setCaptureActivity(SecureCaptureActivity::class.java)
+                            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                            .setPrompt("Point the camera at the site's two-factor QR code")
+                            .setBeepEnabled(false)
+                            .setOrientationLocked(false)
+                    )
+                }) {
+                    Icon(Icons.Filled.QrCodeScanner, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan")
+                }
+                TextButton(onClick = { open = !open }) {
+                    Text(if (open) "Hide the key box" else "Type it instead")
+                }
+            }
+
+            if (scanRejected) {
+                Text(
+                    text = "That code scanned, but it is not a two-factor setup key. Make sure it " +
+                        "is the one on the site's two-factor page.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            if (open) {
+                SuiteTextField(
+                    label = "Setup key",
+                    value = raw,
+                    onValueChange = {
+                        raw = it
+                        rejected = false
+                    },
+                    capitalise = KeyboardCapitalization.None,
+                    isError = rejected,
+                    supporting = if (rejected) {
+                        "That is not a setup key. Look for “can't scan the code?” on the site's " +
+                            "two-factor page — it shows the same key as text."
+                    } else {
+                        "The key the site shows beside its QR code, or the whole otpauth:// link."
+                    }
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Button(
+                        onClick = {
+                            if (onSet(raw)) {
+                                raw = ""
+                                open = false
+                                rejected = false
+                            } else {
+                                rejected = true
+                            }
+                        },
+                        enabled = raw.isNotBlank()
+                    ) { Text("Add") }
+                    TextButton(onClick = {
+                        open = false
+                        raw = ""
+                        rejected = false
+                    }) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The passwords this item used to have.
+ *
+ * ## Why this is in a password manager and not an oversight in one
+ *
+ * The most common way to lose an account is not forgetting a password, it is *changing* one. The
+ * form said it saved and stored something else; the change never committed; the tablet in the
+ * kitchen is still signed in on the old one and will ask for it the next time somebody opens it.
+ * Each of those is ten seconds' work for a person who can see what the password was this morning,
+ * and an account-recovery phone call for a person who cannot.
+ *
+ * ## And why it is folded shut
+ *
+ * Because it is reference material, not the item. Somebody opening a login wants the password that
+ * works; the ones that no longer do are worth keeping and are not worth being in the way. Each is
+ * masked like any other secret and revealed one at a time, so a screenshot of this card open is not
+ * a screenshot of five passwords.
+ */
+@Composable
+private fun HistoryCard(
+    history: List<VaultSecretVersion>,
+    secretLabel: String,
+    onCopy: (String) -> Unit,
+    onForget: () -> Unit
+) {
+    var open by remember { mutableStateOf(false) }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().clickable { open = !open },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.History, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        text = if (history.size == 1) {
+                            "One previous ${secretLabel.lowercase()}"
+                        } else {
+                            "${history.size} previous ${secretLabel.lowercase()}s"
+                        },
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = "Kept here so a change that did not take can be undone.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (open) "Hide" else "Show"
+                )
+            }
+
+            if (open) {
+                history.forEach { version ->
+                    SecretValue(
+                        value = version.secret,
+                        label = "Replaced ${DateFormat.getDateInstance().format(Date(version.replacedAt))}",
+                        onCopy = { onCopy(version.secret) }
+                    )
+                }
+                TextButton(onClick = onForget) { Text("Forget these") }
+                Text(
+                    text = "Forgetting takes effect when you save.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+    }
+}
+
+/**
+ * A passkey, shown and not editable.
+ *
+ * Every other secret on this screen is a text box, because every other secret is something a person
+ * typed and may need to retype. A passkey is a key pair a site and this app agreed on: the private
+ * half is not a value anybody transcribes, retyping it is not a thing that can succeed, and the only
+ * meaningful edits are the two already on this screen — rename it, or delete it.
+ *
+ * So there is no reveal and no copy. Not out of caution about the person holding the phone, who has
+ * the vault open anyway, but because there is nowhere to paste it: a passkey is used by signing a
+ * challenge, which is what the system's own dialog asks this app to do. Putting the key on screen
+ * would be offering a value that cannot be used and can only leak.
+ *
+ * What is shown instead is what somebody actually needs to recognise it by — which site, which
+ * account, and when it was made — and the one fact that is genuinely load-bearing: deleting it here
+ * ends the ability to sign in with it, and unlike a password there is no copy anywhere to fall back
+ * on.
+ */
+@Composable
+private fun PasskeyCard(passkey: VaultPasskey) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Key, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Passkey", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        text = passkey.label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Text(
+                text = "Signs you in without a password. The private half never leaves the vault — " +
+                    "it is used by signing what the site asks, not by being typed anywhere, which " +
+                    "is why there is nothing here to reveal or copy.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (passkey.createdAt > 0) {
+                Text(
+                    text = "Made ${DateFormat.getDateInstance().format(Date(passkey.createdAt))}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+
+            Text(
+                text = "Because it rides the vault into your backup, it survives a new phone — " +
+                    "which a passkey kept in the phone itself does not. Deleting it here is the end " +
+                    "of it: a passkey has no forgotten-password link behind it, so getting back in " +
+                    "would mean that site\'s account recovery.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
         }
     }
 }

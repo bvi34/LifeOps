@@ -14,11 +14,15 @@ plugins {
     //  - **Networked.** There is no INTERNET permission in this module's manifest and no HTTP client
     //    on its classpath. No sync, no breach lookup, no "k-anonymous" hash prefix sent to anybody.
     //    A password manager that can talk to a server is a password manager whose worst day involves
-    //    somebody else's server.
-    //  - **Addressable.** It serves no connection routes. The suite has an address contract
-    //    (:connectkit) and three apps answer on it; this one does not, because a vault that can be
-    //    *called* is a vault with a surface. The only way in is [com.operations.vaultkit.SecretsBroker],
-    //    which reads back what an app itself filed and cannot list anything.
+    //    somebody else's server. The two features that arrived with a permission and an export —
+    //    the QR scanner and autofill — are both local: zxing decodes in this process, and autofill
+    //    answers the platform. Neither is a network feature wearing a hat.
+    //  - **Addressable by another app.** It serves no connection routes. The suite has an address
+    //    contract (:connectkit) and three apps answer on it; this one does not, because a vault that
+    //    can be *called* is a vault with a surface. The ways in are exactly two, and neither belongs
+    //    to another app: [com.operations.vaultkit.SecretsBroker], which reads back what an app itself
+    //    filed and cannot list anything, and the autofill service, which only the platform can bind
+    //    (BIND_AUTOFILL_SERVICE) and which answers nothing the rules in AutofillMatch did not earn.
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -26,10 +30,10 @@ plugins {
 
 android {
     namespace = "com.secrets.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
-        minSdk = 26
+        minSdk = 34
         // Code shrinking is the consuming app's (:app) responsibility.
     }
 
@@ -80,6 +84,16 @@ dependencies {
     // see data/DeviceUnlock, which is the file that explains why that distinction is the whole
     // point of this app.
     implementation(libs.androidx.security.crypto)
+    // Reading the QR code a site shows when it hands over a second-factor seed. `zxing-core` is
+    // plain Java — the decoder, with no Android in it and no network anywhere near it — and
+    // `zxing-android-embedded` is the camera half. People already takes both for partner pairing,
+    // which is why they are in the catalogue; the scanning activity here is a subclass of that
+    // library's, adding FLAG_SECURE (see ui/scan/SecureCaptureActivity).
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
+    // Credential Manager's provider half — how a third-party app holds passkeys. Android 14 only,
+    // which is the floor for that feature and nothing else here; see passkey/.
+    implementation(libs.androidx.credentials)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

@@ -3,7 +3,6 @@ package com.operations.suite.ui
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
-import android.os.Build
 import androidx.core.content.ContextCompat
 
 /**
@@ -46,15 +45,21 @@ object SuiteNotifications {
     private const val PREFS_NAME = "sandbox_notifications"
     private const val KEY_ASKED = "permission_asked"
 
-    /** Whether the suite may post notifications at all. Always true before Android 13. */
+    /**
+     * Whether the suite may post notifications at all.
+     *
+     * This used to answer `true` outright below Android 13, where the permission did not exist. The
+     * suite's floor is 34 now — passkeys took it there — so every phone that can install this has
+     * the permission to grant, and the branch that used to say "no question to put to anybody" was
+     * describing a device that can no longer run the app.
+     */
     fun granted(context: Context): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
     /**
-     * Is there a prompt to show? True at most once per install: on Android 13+, when the permission
-     * is not already held and nobody has been asked for it yet.
+     * Is there a prompt to show? True at most once per install: when the permission is not already
+     * held and nobody has been asked for it yet.
      *
      * Whoever acts on this must call [markAsked] — before launching the request, not in its result
      * callback, because the result arrives after the activity has been through a configuration

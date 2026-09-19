@@ -61,6 +61,60 @@ object VaultJson {
             ?: emptyList(),
         note = note ?: "",
         url = url ?: "",
-        tags = tags?.filterNotNull() ?: emptyList()
+        tags = tags?.filterNotNull() ?: emptyList(),
+        totp = totp?.normalised(),
+        history = history?.filter { it != null && it.secret != null && it.secret.isNotEmpty() } ?: emptyList(),
+        passkey = passkey?.normalised()
     )
+
+    /**
+     * A passkey, made safe to use.
+     *
+     * Same reasoning as the second factor above: Gson allocates without the constructor, so a
+     * hand-edited document or one from a build that predates this field arrives with nulls where
+     * strings belong and a zero where the algorithm belongs. A credential that cannot sign is
+     * dropped rather than shown, because an item that offers a passkey and then fails at the sign-in
+     * page is worse than one that admits it has none.
+     */
+    @Suppress("SENSELESS_COMPARISON")
+    private fun VaultPasskey.normalised(): VaultPasskey? {
+        if (credentialId == null || rpId == null) return null
+        return copy(
+            rpName = rpName ?: "",
+            userHandle = userHandle ?: "",
+            userName = userName ?: "",
+            userDisplayName = userDisplayName ?: "",
+            privateKey = privateKey ?: "",
+            publicKey = publicKey ?: "",
+            // A zero here is Gson's "absent", not a real COSE algorithm — nothing is issued as
+            // anything but ES256, so an absent one is the one it must have been.
+            algorithm = algorithm.takeIf { it != 0L } ?: WebAuthn.ALG_ES256
+        ).takeIf { it.isUsable }
+    }
+
+    /**
+     * A second factor, made safe to show.
+     *
+     * Gson allocates without running the constructor, so a document that predates this field — or
+     * one hand-edited during a recovery — arrives with nulls where enums and strings should be and
+     * zeroes where the digit count and the period should be. Defaulting them here rather than at
+     * every read site is what lets the rest of the module treat a stored [TotpConfig] as one that
+     * works.
+     *
+     * A seed that will not decode returns null outright: an item that quietly shows no codes is
+     * better than one that confidently shows wrong ones.
+     */
+    @Suppress("SENSELESS_COMPARISON")
+    private fun TotpConfig.normalised(): TotpConfig? {
+        if (secret == null || secret.isBlank()) return null
+        return copy(
+            algorithm = algorithm ?: TotpAlgorithm.SHA1,
+            digits = digits.takeIf { it in TotpConfig.MIN_DIGITS..TotpConfig.MAX_DIGITS }
+                ?: TotpConfig.DEFAULT_DIGITS,
+            periodSeconds = periodSeconds.takeIf { it in TotpConfig.MIN_PERIOD..TotpConfig.MAX_PERIOD }
+                ?: TotpConfig.DEFAULT_PERIOD_SECONDS,
+            issuer = issuer ?: "",
+            account = account ?: ""
+        ).takeIf { it.isUsable }
+    }
 }

@@ -55,12 +55,25 @@ val hasReleaseKeystore = listOf(keystorePath, keystorePassword, keystoreAlias, k
 
 android {
     namespace = "com.operations.sandbox"
-    compileSdk = 35
+    // Android 16. Every module in the suite is pinned to the same three numbers; they are repeated
+    // per module rather than centralised because AGP wants them in each `android` block, and a
+    // module that drifted would be a module whose Kotlin compiles against a different framework
+    // than the one it ships with.
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.operations.sandbox"
-        minSdk = 26
-        targetSdk = 35
+        // Android 14, and the reason is one feature: a third-party app can hold passkeys only
+        // through Credential Manager's provider API, which does not exist below it. Everything else
+        // here ran happily on 26, and for a long time that floor cost nothing — but a vault that
+        // keeps passkeys on some phones and explains why it cannot on others is a worse thing to
+        // own than one that simply requires a phone from 2023.
+        //
+        // Not higher than 34, deliberately. Nothing in this suite uses an API above it, so 35 or 36
+        // would buy no code and would only narrow who can install — and the household is more than
+        // one phone.
+        minSdk = 34
+        targetSdk = 36
         versionCode = versionCodeOf(releaseVersionName)
         versionName = releaseVersionName
 
@@ -78,9 +91,10 @@ android {
                 storePassword = keystorePassword
                 keyAlias = keystoreAlias
                 keyPassword = keystoreAliasPassword
-                // v1 is what lets the APK install on API 26-27 phones; v2/v3 are what modern
-                // Android verifies quickly. minSdk here is 26, so all three stay on.
-                enableV1Signing = true
+                // v1 was what let the APK install on API 26-27 phones. The floor is 34 now, where
+                // v2 has been mandatory for years, so v1 buys nothing and costs a second signature
+                // over every entry in the zip. v2/v3 are what the platform actually verifies.
+                enableV1Signing = false
                 enableV2Signing = true
                 enableV3Signing = true
             }

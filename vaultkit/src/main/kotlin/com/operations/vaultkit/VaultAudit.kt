@@ -69,8 +69,11 @@ object VaultAudit {
             if (item.secret.isEmpty()) {
                 // A login with no password is a stub somebody started and abandoned; a note is
                 // allowed to have nothing in the secret field, because for a note the contents *are*
-                // the note.
-                if (item.kind != VaultItemKind.NOTE) {
+                // the note. So is an item that exists for its second factor — the codes are the
+                // thing it holds, and the password is in somebody's head or in another row. Both
+                // exemptions are the same rule: report a finding its reader can act on, or report
+                // nothing.
+                if (item.kind != VaultItemKind.NOTE && !item.hasTotp) {
                     findings += Finding(item.id, item.title, Kind.NO_SECRET)
                 }
                 continue

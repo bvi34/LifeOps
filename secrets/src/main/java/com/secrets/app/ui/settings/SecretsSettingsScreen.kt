@@ -27,8 +27,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
+import android.view.autofill.AutofillManager
 import com.operations.suite.ui.fields.SuiteTextField
 import com.secrets.app.data.SecretsPrefs
 import com.secrets.app.data.VaultStore
@@ -163,6 +168,10 @@ fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs) {
                 steps = 9
             )
         }
+
+        AutofillCard()
+
+        PasskeyCard()
 
         SettingsCard(
             title = "Open with the device lock",
@@ -394,4 +403,125 @@ private fun ChangePassphraseDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/**
+ * Turning on autofill, and being straight about what it means.
+ *
+ * The switch is not this app's to flip. Android makes the autofill service a system-wide choice,
+ * made in system settings, of which there is exactly one at a time — so this card opens that screen
+ * and reports back rather than pretending to own the setting. That is a better arrangement than the
+ * alternative: a password manager that could appoint itself the thing which sees every form on the
+ * phone would be a password manager worth being nervous about.
+ *
+ * What the card has to say, it says here rather than in a help page nobody opens. Autofill is the
+ * one part of this app that runs when the app is not on screen, and the one that talks to software
+ * the household did not choose, so the two limits on it belong next to the button that enables it:
+ * the vault still has to be unlocked, and a credential is only ever offered to an app or a page the
+ * item's own address matches.
+ */
+@Composable
+private fun AutofillCard() {
+    val context = LocalContext.current
+    val manager = remember { context.getSystemService(AutofillManager::class.java) }
+
+    // Read on every recomposition rather than remembered: the household leaves for system settings
+    // and comes back, and a cached answer would still say "off" on the screen they came back to.
+    val supported = manager?.isAutofillSupported() == true
+    val enabled = manager?.hasEnabledAutofillServices() == true
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Fill passwords in other apps", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = when {
+                    !supported -> "This phone does not offer autofill, so there is nothing to turn on."
+                    enabled -> "On. Secrets offers a sign-in when an app or a page asks for one — " +
+                        "and only when the item's own address matches what is asking. The vault " +
+                        "still has to be unlocked; a locked one offers a way in rather than an answer."
+                    else -> "Off. Android picks one autofill service for the whole phone, in its " +
+                        "own settings, so this opens that screen rather than deciding for you."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (supported) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = "Nothing is offered to an app or page nothing is filed under. Where that " +
+                        "happens you can still open this list and pick one yourself — which is a " +
+                        "choice you made rather than one made for you.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                if (enabled) {
+                    OutlinedButton(onClick = { manager?.disableAutofillServices() }) {
+                        Text("Turn it off")
+                    }
+                } else {
+                    OutlinedButton(onClick = {
+                        // ACTION_REQUEST_SET_AUTOFILL_SERVICE needs the package as its data, and
+                        // is not present on every build — a phone whose vendor removed the screen
+                        // answers `resolveActivity` with null rather than crashing the vault.
+                        val intent = Intent(Settings.ACTION_REQUEST_SET_AUTOFILL_SERVICE)
+                            .setData(Uri.parse("package:" + context.packageName))
+                        runCatching { context.startActivity(intent) }
+                    }) { Text("Choose Secrets in system settings") }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Turning Secrets into a passkey provider.
+ *
+ * Like autofill, the choice is not this app's to make — Android keeps it in its own settings, which
+ * is the right arrangement for the same reason: an app that could appoint itself the holder of your
+ * sign-ins would be an app worth being nervous about. Unlike autofill, the state is not reported
+ * back here. The platform does expose a way to ask, and it is not one this app can check honestly
+ * on every phone, so the card says where the switch lives rather than claiming to know which way it
+ * is set.
+ *
+ * The Android 14 floor is stated rather than hidden behind a disabled control. A third-party app can
+ * hold passkeys *only* through Credential Manager's provider API, which does not exist before 14 —
+ * so on an older phone there is no version of this feature to offer, and a greyed-out switch would
+ * imply there was one behind some other obstacle.
+ */
+@Composable
+private fun PasskeyCard() {
+    val context = LocalContext.current
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text("Keep passkeys here", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "A passkey signs you in with no password at all. Kept here, the private half " +
+                    "rides the vault into your backup — so it survives a new phone, which a passkey " +
+                    "kept in the phone itself does not.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = "The vault has to be unlocked to make or use one; a locked one offers a way " +
+                    "in rather than an answer. Android keeps the choice of provider in its own " +
+                    "settings, so this opens that screen.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(onClick = {
+                // A phone whose vendor removed the screen fails to resolve rather than crashing the
+                // vault — this is the one control here that leaves for software nobody chose.
+                val intent = Intent(Settings.ACTION_CREDENTIAL_PROVIDER)
+                    .setData(Uri.parse("package:" + context.packageName))
+                runCatching { context.startActivity(intent) }
+            }) { Text("Choose Secrets in system settings") }
+        }
+    }
 }

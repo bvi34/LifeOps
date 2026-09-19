@@ -29,7 +29,7 @@ import org.robolectric.annotation.Config
  * finds nothing locally comes back from the vault and is written back down.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33])
+@Config(sdk = [34])
 class FinanceSecretsVaultTest {
 
     private class FakeVault(override var state: VaultState = VaultState.UNLOCKED) : SecretsBroker {

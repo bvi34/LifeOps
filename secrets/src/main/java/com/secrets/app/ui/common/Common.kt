@@ -4,7 +4,6 @@ import android.content.ClipData
 import android.content.ClipDescription
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.PersistableBundle
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,13 +42,12 @@ import kotlinx.coroutines.launch
 /**
  * Copying a secret, done properly.
  *
- * Android's clipboard is a shared buffer. Before API 33 anything in the foreground could read it;
- * from API 31 the system shows a toast every time something does. A password left in it until the
- * next copy is a password sitting in a place other apps can reach, so this does two things beyond
- * the obvious:
+ * Android's clipboard is a shared buffer: the system shows a toast every time something reads it,
+ * and a password left in it until the next copy is a password sitting in a place other apps can
+ * reach. So this does two things beyond the obvious:
  *
- *  - marks the clip **sensitive** (API 33+), which stops the system's paste preview showing the
- *    password on screen in a floating bubble;
+ *  - marks the clip **sensitive**, which stops the system's paste preview showing the password on
+ *    screen in a floating bubble;
  *  - **clears it** after [afterSeconds], comparing before it does — if the household copied
  *    something else in the meantime, clearing would throw away their work rather than their
  *    password.
@@ -64,10 +62,8 @@ object SecretClipboard {
     fun copy(context: Context, label: String, value: String, afterSeconds: Int) {
         val manager = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         val clip = ClipData.newPlainText(label, value).apply {
-            if (Build.VERSION.SDK_INT >= 33) {
-                description.extras = PersistableBundle().apply {
-                    putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
-                }
+            description.extras = PersistableBundle().apply {
+                putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
             }
         }
         manager.setPrimaryClip(clip)
