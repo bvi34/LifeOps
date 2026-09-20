@@ -29,6 +29,11 @@ import java.util.zip.ZipInputStream
  * `toc.ncx`), the cover, every illustration, and the shelf metadata — series, subjects, publisher,
  * date, blurb.
  *
+ * One source gets a shaping step of its own: an Archive of Our Own download states its tag record
+ * before the fic and repeats its fandom line in every document's head, so [Ao3Export] reorders it to
+ * open on the title page. That is the only source-specific branch here, and it changes no other
+ * book's text — see `docs/CITATION.md`.
+ *
  * The parser is deliberately lenient throughout: a missing OPF, an unreadable entry, an odd spine,
  * a contents document that doesn't parse — each degrades to whatever could be recovered rather than
  * throwing. "Degrade, don't crash".
@@ -73,8 +78,17 @@ object EpubParser {
             .filter { entries.containsKey(it) }
             .ifEmpty { entries.keys.filter { it.isContentDocument() }.sorted() }
 
+        // AO3's export repeats "fic - author - every fandom" in each document's <head>, which the
+        // reduction — having no notion of a head — would print above the first words of every
+        // chapter. Recognised here so the body-only document is what gets parsed and stored.
+        val ao3 = Ao3Export.isExport(
+            meta?.publisher,
+            orderedHrefs.take(3).mapNotNull { entries[it]?.toString(Charsets.UTF_8) }
+        )
+
         val chapters = orderedHrefs.mapIndexedNotNull { index, href ->
-            val html = entries[href]?.toString(Charsets.UTF_8) ?: return@mapIndexedNotNull null
+            val document = entries[href]?.toString(Charsets.UTF_8) ?: return@mapIndexedNotNull null
+            val html = if (ao3) Ao3Export.body(document) else document
             val parsed = HtmlDocument.parse(html)
             if (parsed.text.isBlank()) return@mapIndexedNotNull null
             Chapter(
@@ -95,6 +109,13 @@ object EpubParser {
         val coverPath = coverPath(opfXml, manifest, entries, chapters)
         val toc = tableOfContents(entries, manifest, opfXml, chapters)
 
+        // An Archive of Our Own export opens on its tag record rather than on the fic; reshaped,
+        // it opens on the title page and keeps the tags as a section of their own. Any other EPUB
+        // passes through untouched.
+        val reshaped = Ao3Export.reshape(chapters, toc, meta?.author, ao3)
+        val readingOrder = reshaped?.chapters ?: chapters
+        val readingToc = reshaped?.toc ?: toc
+
         val metadata = BookMetadata(
             title = meta?.title ?: "Untitled",
             author = meta?.author,
@@ -113,7 +134,7 @@ object EpubParser {
             ?: IdentitySet(emptyList())
 
         return ParsedEpub(
-            book = Book(key = null, metadata = metadata, chapters = chapters, toc = toc),
+            book = Book(key = null, metadata = metadata, chapters = readingOrder, toc = readingToc),
             identity = identity,
             resources = imageResources(entries, manifest, coverPath),
             coverPath = coverPath
