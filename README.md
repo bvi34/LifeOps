@@ -26,14 +26,14 @@ the receipts.
 > offers the apps you opened most recently. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), Project (`:project`), Maintenance (`:maintenance`), Finance (`:finance`), Repository
-> (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it —
+> (`:repository`), Secrets (`:secrets`) or Utilities (`:utilities`); one place to back the whole suite up into a single `.zip` and restore from it —
 > or to have that same archive **uploaded to your own Azure storage container on a schedule**, on
 > Wi-Fi, keeping the newest few, so the backup that saves you is the one nobody had to remember to
 > take; and one
 > place that decides what all of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
-> People, Project, Maintenance, Finance, Repository and Secrets are library modules hosted in that one process —
+> People, Project, Maintenance, Finance, Repository, Secrets and Utilities are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -592,6 +592,101 @@ the receipts.
 > passkey signature failing to verify over client data it was not made for. The codes themselves
 > are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
 > worth having for a generator whose failure mode is six plausible digits that no site accepts.
+
+> **Utilities** (the takeovers) is a peer module — see **[docs/UTILITIES.md](docs/UTILITIES.md)**.
+> Every other app here replaces a *service*; this one replaces pieces of the **phone**, and the reason
+> is the same each time: the stock component is fine, and it reports to somebody else. A keyboard
+> sees every password, message and search typed on the phone. A messaging app sees every
+> conversation. So Utilities is a **shelf of takeovers**: one row per part of the phone that leaks,
+> each showing whether it is on, half-done or off, and each with the one thing to do next. Two ship.
+>
+> The **keyboard** is a real input method — QWERTY with printed long-press alternates, a symbols page
+> you are not thrown out of after one character, a numeric pad for numeric fields, double-tap caps
+> lock, and sentence capitalisation — and the whole argument for it is a dependency it does not have:
+> **no `INTERNET` permission, and no HTTP client on the module's classpath.** What it remembers is a
+> word list with counts, capped at a few thousand, kept in a plain text file you can read, **listed
+> word by word on its own settings screen** with a Forget button on every row. Nothing is learned from
+> a password field, a field marked `noSuggestions`, or a browser's private window — those editors say
+> so and the keyboard listens. Turning learning off empties the list as well as stopping it growing.
+>
+> **Messages** has *two rungs*, which is the part worth knowing before you switch anything on.
+> **Reading** needs one permission and changes nothing else about the phone: the threads are already
+> in Android's own store, Utilities draws them, and your carrier's app keeps delivering and notifying.
+> That rung is worth having on its own — it is the one that answers "I want my own window" — and
+> because nothing moved, it costs nothing. **Default** is the whole job: texts *and picture messages*
+> arrive here, this app stores them and notifies. Switching the role back in system settings undoes it
+> immediately — nothing was moved or deleted, which is the property that makes every takeover here
+> reversible, and it is what the confirmation leads with.
+>
+> **Picture messages are handled end to end, and that is a subsystem rather than a field.** An MMS is
+> not a bigger SMS: what arrives over the radio is a WAP push announcing that something is waiting at
+> a URL on the carrier's own MMSC. `SmsManager` does the network half — it alone knows the MMSC
+> address and the APN — and hands back *bytes*, which nothing in Android will parse for an app. So
+> `messages/pdu/` is a **pure-JVM WAP codec** (WAP-230 primitives, WAP-209 encapsulation) under unit
+> test including a full encode-then-decode round trip, and `messages/mms/` is the thin Android layer
+> that moves its results in and out of the platform's own store. A placeholder row is written
+> *before* anything is fetched, so a failed download leaves a card with a Fetch button rather than
+> nothing; declining to auto-download sends the network a **deferred** response rather than silence,
+> because a network that hears nothing re-announces and the household sees the same photograph arrive
+> four times. Auto-download is on, and **off while roaming by default** — an automatic download abroad
+> is a charge nobody sees coming. Every picture sent is re-encoded to fit the carrier's cap (scale
+> first, then quality; an animated GIF that fits passes through untouched and one that does not is
+> refused rather than silently flattened), because a message over the cap is accepted by the radio and
+> dropped by the network with no error anywhere. The `content://` URI the platform insists on is
+> served by a provider that is **not exported** — the usual implementation exports it and makes every
+> picture on the phone readable by any installed app — and granted to the two system packages that do
+> the work for one transfer, then revoked. None of it is a network permission: this module still
+> declares no `INTERNET` and has no HTTP client.
+>
+> Both surfaces are set with the **same appearance sheet, borrowed in design from Citation's reader**:
+> four presets and a custom one, a page colour and a text colour you pick yourself, a **warmth slider
+> that cuts blue out of each colour rather than laying an orange sheet over them** (so the surface
+> warms without losing contrast), a face — including one loaded from your own font file, since the
+> ones people ask for are not ours to ship — a text scale, a roundness and an air setting. One button
+> on each screen takes the other's colours. An accent that cannot be read on the surface you chose is
+> moved toward the text colour until it can be, so a send button can never disappear; a received
+> bubble is derived from the surface and stepped up again when the first step vanishes into it.
+>
+> **Messages between two installs of Utilities are encrypted end to end, by default, with no setup.**
+> The obvious way to get that on Android is RCS, and a third-party app *cannot*: there is no API —
+> `RcsMessageStore` was removed from AOSP before it shipped, what remains is `@SystemApi` behind
+> carrier privilege, and the default-SMS role grants SMS and MMS and nothing else. Google Messages
+> does RCS because it ships Google's own client stack. So Utilities encrypts over the transport it
+> actually has: **X3DH and a Double Ratchet** — the Signal design — implemented in `messages/seal/`
+> as pure JVM, pinned against **RFC 7748** and **RFC 5869**'s own vectors, with the curve written out
+> rather than called so that the code CI exercises is the code the phone runs. Forward secrecy, so a
+> key recovered today says nothing about yesterday; post-compromise recovery, so a stolen state stops
+> working after one round trip; skipped keys kept and bounded, because SMS reorders and duplicates
+> and a ratchet that refused anything out of order would lose messages every other app shows.
+>
+> Two phones find each other over a **data SMS on a port** — never stored, never displayed, so
+> somebody without the app sees *nothing* rather than a line of base64 from a friend. That is what
+> makes automatic setup acceptable, and it still costs one message, so it is a setting that says so.
+> Trust is **on first use and verifiable afterwards**: a strip above each conversation says *not
+> encrypted*, *encrypted — not verified*, or *verified*, and tapping it shows a 60-digit safety
+> number with a QR code. Nothing nags anybody to check it. An identity key that changes is **refused,
+> not adopted** — it means a reinstall or somebody in the middle, nothing can tell those apart, and
+> quietly re-pinning would make the distinction unobservable.
+>
+> The scope is stated exactly, in the app and in the code: what is protected is the message **in
+> transit**. A received message is decrypted and stored in Android's own database like every other
+> message, because this app owns no data — which is the property that makes the takeover reversible.
+> The carrier still knows who, when and how long. And it is Utilities to Utilities; it is not Signal.
+> Everything in the sealed store is **encrypted with a key kept in the vault**, so the copy in a
+> backup does not open until Secrets does — and the peer records, including who you verified, come
+> back on a new phone. The live **ratchet state** is the one thing left out, and for correctness
+> rather than privacy: a ratchet is a counter that only goes forward, and restoring last week's copy
+> would rewind the sending chain and leave the conversation silently dead in both directions. Nothing
+> visible is lost — the first message after a restore re-handshakes by itself, and both ends heal
+> without being told to.
+
+> Utilities **owns no data**, and that is the design rather than a gap: the texts and the pictures stay
+> in the platform's provider where they have always been. Its backup slice is the appearance file, the
+> word list and any font you supplied — a few kilobytes. Its logic is pure JVM and unit-tested: the key
+> layouts and the shift/layer machine, the word list's refusals, the colour maths, the WAP codec both
+> ways, the MMS size budget, the rule for when a sent message has landed in the store, which protocol
+> a message should become, the whole of the sealed-messaging protocol, and what each takeover's state
+> adds up to.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

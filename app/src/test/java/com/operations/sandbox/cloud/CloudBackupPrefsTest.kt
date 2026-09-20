@@ -33,7 +33,7 @@ import org.robolectric.annotation.Config
  */
 @RunWith(RobolectricTestRunner::class)
 // A plain Application rather than the suite's own, for the reason `UpdateTokenVaultTest` gives:
-// `SandboxApplication.onCreate` installs eleven apps and registers background work, none of which
+// `SandboxApplication.onCreate` installs twelve apps and registers background work, none of which
 // this class is testing.
 @Config(sdk = [34], application = android.app.Application::class)
 class CloudBackupPrefsTest {

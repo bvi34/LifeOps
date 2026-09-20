@@ -8,7 +8,7 @@ import androidx.core.content.ContextCompat
 /**
  * The suite's one notification prompt, and the record of whether it has been shown.
  *
- * `POST_NOTIFICATIONS` is granted to a *package*, and since the eleven apps became library modules
+ * `POST_NOTIFICATIONS` is granted to a *package*, and since the twelve apps became library modules
  * there is exactly one package. That is easy to forget and expensive to forget: the permission was
  * asked for by LifeOps, on the first launch of LifeOps, and nowhere else — so a household that used
  * Health and never opened LifeOps was never asked, and the medication reminders they had set up

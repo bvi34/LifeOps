@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="utilities_app_name">Utilities</string>
+
+    <!-- Read outside this app, in the phone's own keyboard settings and in the keyboard picker, so
+         it says which app is speaking. "Operations" rather than "Utilities" alone because the list
+         it appears in is a list of installed keyboards, where a word that generic means nothing. -->
+    <string name="utilities_keyboard_name">Operations Keyboard</string>
+    <string name="utilities_keyboard_subtype">English</string>
+</resources>

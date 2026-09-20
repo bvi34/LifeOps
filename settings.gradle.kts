@@ -86,6 +86,24 @@ include(":finance")
 // registration the sandbox makes at start-up (SecretsAccess). A bank client that had to pull in a
 // password manager's UI to read its own token would be the wrong shape.
 include(":secrets")
+// Utilities is the app that replaces pieces of the *phone* rather than providing a service: the
+// keyboard, and the messaging app. Its reason for existing is a dependency it does not have — no
+// INTERNET permission and no HTTP client on its classpath — because a keyboard sees every password
+// typed on a phone and a messenger sees every conversation, and the reason anybody replaces the
+// ones a handset ships with is that those have somewhere to send what they see.
+//
+// It is not a peer on the sync spine, it serves no connection routes, and it owns no data: the
+// texts stay in Android's own Telephony provider, where they have always been, and this app draws a
+// window onto them. That is what makes each takeover reversible — handing Messages back to the
+// carrier's app loses nothing, because nothing moved — and it is why its backup slice is a few
+// kilobytes of appearance settings and a learned word list rather than a copy of a message history.
+//
+// The arrow points *out* of it and never in, like Secrets': it depends on :suiteui and :suitekit
+// for the shared theme and the one colour picker, and on :backupkit for its AppId and its slice.
+// Its own two surfaces deliberately do *not* follow the suite's theme — a keyboard is seen beside
+// everybody else's apps rather than beside Logistics — so it carries its own look, borrowed in
+// design from Citation's reader settings and copied rather than depended on (see UtilityLook).
+include(":utilities")
 include(":core")
 include(":backupkit")
 // The suite's address contract: `/v1/{application}/{connection}/{resource}/{action}`, the payload,

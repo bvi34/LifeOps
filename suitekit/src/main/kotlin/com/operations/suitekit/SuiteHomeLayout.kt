@@ -6,7 +6,7 @@ import com.operations.backupkit.AppId
  * How the Operations Sandbox home screen is laid out: which tiles it draws, and in what order.
  *
  * The grid shipped in the order [SuiteApps.all] declares, which is a reasonable order and nobody's
- * own. Eleven apps is past the point where that holds: a household that lives in Logistics and
+ * own. Twelve apps is past the point where that holds: a household that lives in Logistics and
  * Health reaches past nine tiles to get to them, and the three they have never opened take the same
  * room as the two they open daily. So the order is theirs, and so is whether a tile is there at all.
  *

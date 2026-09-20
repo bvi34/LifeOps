@@ -396,6 +396,37 @@ object SuiteGlyphs {
         }
 
     /**
+     * Utilities — two sliders, one pushed and one not.
+     *
+     * The app is a shelf of *takeovers*, each of which is on, half-done or off, and a slider is the
+     * only object that says "this is a thing with a state you set" without also saying what the
+     * thing is. A gear would have been the obvious drawing and would have been wrong twice: the
+     * sandbox already has one for the suite's own settings, and Utilities is not a settings screen —
+     * it is a keyboard and a messaging app.
+     *
+     * The silhouette is two parallel rails, which nothing else in the set has: the nearest neighbour
+     * is Citation's open book, and a book is two facing curves with a spine between them while this
+     * is two straight tracks with a knob on each. The knobs take the highlight, because the position
+     * of the knob is the entire information in the drawing — and they are deliberately at different
+     * positions, so the mark reads as "some of these are on" rather than as a pair of dashes.
+     */
+    private fun toggles(ink: Ink): ImageVector =
+        glyph("SuiteToggles") {
+            // The two tracks. Faint, like the dial's ring: they are what the knobs sit on.
+            line(width = 1.6f, alpha = 0.55f, ink = ink.line) {
+                moveTo(4.2f, 8.6f); lineTo(19.8f, 8.6f)
+                moveTo(4.2f, 15.4f); lineTo(19.8f, 15.4f)
+            }
+            // The knobs, at different positions along their rails.
+            solid(ink = ink.highlight) { circle(cx = 15.4f, cy = 8.6f, r = 2.7f) }
+            solid(ink = ink.highlight) { circle(cx = 8.6f, cy = 15.4f, r = 2.7f) }
+            // A ring around each, in the structural colour, so the knob reads as sitting on the
+            // rail rather than as a dot printed over it.
+            line(width = 1.5f, ink = ink.line) { circle(cx = 15.4f, cy = 8.6f, r = 2.7f) }
+            line(width = 1.5f, ink = ink.line) { circle(cx = 8.6f, cy = 15.4f, r = 2.7f) }
+        }
+
+    /**
      * How to draw each mark, by the [com.operations.suitekit.SuiteAppInfo.iconKey] that names it.
      * The drawing is a *function* of its ink rather than a finished vector, so the tintable form
      * and the two-colour one can never be different drawings.
@@ -411,7 +442,8 @@ object SuiteGlyphs {
         "wrench" to ::wrench,
         "folder-shelf" to ::folderShelf,
         "coin-stack" to ::coinStack,
-        "padlock" to ::padlock
+        "padlock" to ::padlock,
+        "toggles" to ::toggles
     )
 
     /** Every mark in its tintable form, by icon key — what an app with no icon colours is drawn with. */

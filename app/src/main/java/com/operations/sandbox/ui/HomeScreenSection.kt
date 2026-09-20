@@ -73,7 +73,7 @@ internal fun HomeScreenSection(appearance: SuiteAppearance, store: SuiteAppearan
 /**
  * Putting one app on the *phone's* home screen, outside the suite.
  *
- * The suite is eleven apps behind one launcher icon; this is the household taking one of them back
+ * The suite is twelve apps behind one launcher icon; this is the household taking one of them back
  * out. It sits under the arrangement because it is the same question asked of the other home
  * screen — which apps do you want to see, and where.
  *

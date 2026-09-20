@@ -100,6 +100,13 @@ object SuiteApps {
             defaultAccent = 0xFFBE185DL
         ),
         SuiteAppInfo(
+            appId = AppId.UTILITIES,
+            label = "Utilities",
+            tagline = "Your keyboard, your messages, your phone",
+            iconKey = "toggles",
+            defaultAccent = 0xFF1D4ED8L
+        ),
+        SuiteAppInfo(
             appId = AppId.REPOSITORY,
             label = "Repository",
             tagline = "Every document, filed once and findable",

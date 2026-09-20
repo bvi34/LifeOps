@@ -6,7 +6,7 @@ import com.operations.backupkit.AppId
  * Who a mirrored secret belongs to.
  *
  * This used to be an [AppId] and could not stay one. The suite's credentials are not all held by
- * *hosted apps*: the Operations Sandbox — the container the eleven apps live inside — holds one
+ * *hosted apps*: the Operations Sandbox — the container the twelve apps live inside — holds one
  * itself, the GitHub token its updater checks releases with, and it is the same kind of thing for
  * exactly the same reason. It sits in `EncryptedSharedPreferences` behind a Keystore key, it is
  * deliberately kept out of the archive, and so it dies on a restore. That is the failure this whole
@@ -72,7 +72,7 @@ class SecretOwner private constructor(
         /** The owner for a hosted app. */
         fun of(appId: AppId): SecretOwner = SecretOwner(appId.key, appId.defaultDisplayName)
 
-        /** Every owner that can file a secret: the eleven apps and the shell. */
+        /** Every owner that can file a secret: the twelve apps and the shell. */
         val all: List<SecretOwner> get() = AppId.entries.map { of(it) } + SHELL
 
         /**
