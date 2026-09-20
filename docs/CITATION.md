@@ -140,8 +140,40 @@ chapter with correct metadata in one fetch.
 | Area | Type(s) | What it does |
 |---|---|---|
 | **Download** | `data/ao3/Ao3Client` | Fetches `archiveofourown.org/downloads/{workId}/work.epub` (the slug and `updated_at` AO3 puts on its own links are optional). Redirects — including the hop to `download.archiveofourown.org` — are **followed manually** rather than via `HttpURLConnection`'s built-in handling, which proved unreliable (the scraping attempt landed on a pre-redirect page). |
-| **Parse** | `epub/EpubParser` (reused) | AO3's Calibre-produced EPUB 2.0 (root-level `content.opf`, split `*_split_NNN.xhtml` chapters, `toc.ncx`) parses through the existing EPUB producer with no AO3-specific code. Pinned by `Ao3EpubTest` against a real AO3 export in test resources. |
+| **Parse** | `epub/EpubParser` (reused) | AO3's Calibre-produced EPUB 2.0 (root-level `content.opf`, split `*_split_NNN.xhtml` chapters, `toc.ncx`) parses through the existing EPUB producer. Pinned by `Ao3EpubTest` against a real AO3 export in test resources. |
+| **Front matter** | `epub/Ao3Export` | The one AO3-shaped step in the parser — see below. Pinned by `Ao3FrontMatterTest`, on a synthetic export and on the same real download. |
 | **Identity** | `identity/IdentityKey.Ao3Id` | AO3 work id — **authoritative for AO3**, a distinct type from `RoyalRoadId` so an AO3 work and a Royal Road fiction sharing a number never dedup together. The imported book carries it, so re-opening the same work reuses the download instead of fetching twice. |
+
+### Opening on the fic rather than on its tags
+
+An AO3 download's *first* spine document is not the work: it is a `<dl class="tags">` record of
+Rating, Archive Warning, Category, Fandoms, Relationships, Characters, Additional Tags, Language and
+Stats. The title page — `<h1>` fic title, `by <author>` byline, Summary, the author's Notes — is the
+second. Taken literally, then, opening a fic landed you in a catalogue entry; and because `<dt>`/`<dd>`
+are not block elements to the canonical reduction, that entry flattened into one unbroken run of text
+("Rating: General Audiences Archive Warning: … Fandoms: …"). Every document also repeats
+`<head><title>fic - author - every fandom</title>`, and the reduction has no notion of a document
+head, so that line was printed above the first words of *every chapter*.
+
+`Ao3Export` reshapes what the parser recovered, discarding none of it:
+
+- the **title page comes first**, titled *fic title — author*, so the contents and the "where am I"
+  line name the work the way a reader would;
+- the tag record is **rewritten** into one labelled paragraph per group (`Stats` run together with
+  `·`, the work's URL kept as `Source:`) and **moved to the end** as a section titled **Work
+  Details** — plainly metadata, impossible to mistake for the fic;
+- the `toc.ncx` is remapped to the new order and **gains an entry for the title page**, which AO3's
+  own contents document omits entirely;
+- the document `<head>` is dropped before reduction, so no chapter opens on the fandom line.
+
+Two constraints shape where this lives. It is **AO3-only** — the reduction is the surface notes
+anchor against, so no other source's text moves a character — and it runs **during parsing**, before
+the book has a key, because a book that has not been imported yet can have no notes to strand. It is
+not something that may be applied to an already-imported book; a book already on the shelf keeps the
+chapters it was stored with until it is imported again. Detection is on the markup (a `tags`
+definition list plus an `archiveofourown.org` reference or the AO3 publisher line) rather than on
+which screen the file arrived through, so a manually-downloaded AO3 EPUB opened through the **Import
+EPUB** picker is reshaped too. Anything unrecognised is left exactly as the spine stated it.
 
 **Android glue** (`data/ao3/Ao3Client`, `ui/Ao3CatalogScreen`): a WebView **catalog** screen browses
 AO3 and intercepts a `/works/{id}` tap, handing the work id back so the app downloads + opens it

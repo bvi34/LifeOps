@@ -220,6 +220,122 @@ object EpubFixtures {
         return out.toByteArray()
     }
 
+    /**
+     * An **Archive of Our Own** download, in the shape AO3's Calibre export really has: a first
+     * spine document that is nothing but a `<dl class="tags">` record, a second that is the actual
+     * title page (fic title, `by` byline, Summary), the work, an afterword — and a `toc.ncx` that
+     * lists the record page and the work but never the title page.
+     */
+    fun ao3Epub(
+        title: String = "A Test Fic",
+        author: String = "anon_writes"
+    ): ByteArray {
+        val preface = xhtml(
+            """<div id="preface">
+                 <h2 class="toc-heading">Preface</h2>
+                 <p class="message"><b>$title</b><br/>
+                   Posted originally on the <a href="https://archiveofourown.org/">Archive of Our Own</a>
+                   at <a href="https://archiveofourown.org/works/12345">https://archiveofourown.org/works/12345</a>.
+                 </p>
+                 <dl class="tags">
+                   <dt>Rating:</dt>
+                   <dd><a href="https://archiveofourown.org/tags/General%20Audiences">General Audiences</a></dd>
+                   <dt>Fandoms:</dt>
+                   <dd><a href="https://archiveofourown.org/tags/A">Fandom A</a>, <a href="https://archiveofourown.org/tags/B">Fandom B</a></dd>
+                   <dt>Characters:</dt>
+                   <dd><a href="https://archiveofourown.org/tags/X">Bee &amp; Cee</a></dd>
+                   <dt>Stats:</dt>
+                   <dd class="calibre5">
+                     Published: 2026-08-24
+                     Words: 4,241
+                     Chapters: 1/1
+                   </dd>
+                 </dl>
+               </div>"""
+        )
+        val titlePage = xhtml(
+            """<div id="preface"><div>
+                 <h1>$title</h1>
+                 <div class="byline">by <a href="https://archiveofourown.org/users/$author" rel="author">$author</a></div>
+                 <p>Summary</p>
+                 <blockquote class="userstuff"><p>They meet. It goes badly.</p></blockquote>
+               </div></div>"""
+        )
+        val work = xhtml("""<div id="chapters"><h2>Chapter 1</h2><p>The door opened.</p></div>""")
+        val afterword = xhtml("""<div id="afterword"><h2>Afterword</h2><p>Thanks for reading.</p></div>""")
+
+        val docs = listOf(
+            Doc("html4", "fic_split_000.xhtml", preface),
+            Doc("html3", "fic_split_001.xhtml", titlePage),
+            Doc("html2", "fic_split_002.xhtml", work),
+            Doc("html1", "fic_split_003.xhtml", afterword)
+        )
+        val manifestItems = docs.joinToString("\n") {
+            """<item id="${it.id}" href="${it.href}" media-type="application/xhtml+xml"/>"""
+        }
+        val spine = docs.joinToString("\n") { """<itemref idref="${it.id}"/>""" }
+        val opf = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <package xmlns="http://www.idpf.org/2007/opf" version="2.0" unique-identifier="uuid_id">
+              <metadata xmlns:opf="http://www.idpf.org/2007/opf" xmlns:dc="http://purl.org/dc/elements/1.1/">
+                <dc:title>$title</dc:title>
+                <dc:creator opf:role="aut">$author</dc:creator>
+                <dc:language>en</dc:language>
+                <dc:publisher>Archive of Our Own</dc:publisher>
+                <dc:subject>Fanworks</dc:subject>
+                <dc:subject>General Audiences</dc:subject>
+                <dc:identifier id="uuid_id">urn:uuid:412f1033-a53b-4761-9b63-3c0723fc752d</dc:identifier>
+              </metadata>
+              <manifest>
+                $manifestItems
+                <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+              </manifest>
+              <spine toc="ncx">
+                $spine
+              </spine>
+            </package>
+        """.trimIndent()
+
+        val ncx = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+              <navMap>
+                <navPoint id="n1" playOrder="1">
+                  <navLabel><text>Preface</text></navLabel>
+                  <content src="fic_split_000.xhtml"/>
+                </navPoint>
+                <navPoint id="n2" playOrder="2">
+                  <navLabel><text>Chapter 1</text></navLabel>
+                  <content src="fic_split_002.xhtml"/>
+                </navPoint>
+                <navPoint id="n3" playOrder="3">
+                  <navLabel><text>Afterword</text></navLabel>
+                  <content src="fic_split_003.xhtml"/>
+                </navPoint>
+              </navMap>
+            </ncx>
+        """.trimIndent()
+
+        val container = """
+            <?xml version="1.0"?>
+            <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+              <rootfiles>
+                <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+              </rootfiles>
+            </container>
+        """.trimIndent()
+
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { zip ->
+            zip.putEntry("mimetype", "application/epub+zip")
+            zip.putEntry("META-INF/container.xml", container)
+            zip.putEntry("content.opf", opf)
+            zip.putEntry("toc.ncx", ncx)
+            docs.forEach { zip.putEntry(it.href, it.xhtml) }
+        }
+        return out.toByteArray()
+    }
+
     private fun ZipOutputStream.putEntry(name: String, content: String) {
         putNextEntry(ZipEntry(name))
         write(content.toByteArray(Charsets.UTF_8))
