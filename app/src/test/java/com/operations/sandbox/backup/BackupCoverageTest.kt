@@ -38,6 +38,7 @@ import com.secrets.app.data.VaultFileStore
 import com.utilities.app.data.FontFiles
 import com.utilities.app.data.LexiconStore
 import com.utilities.app.data.LookStore
+import com.utilities.app.messages.MessagePrefs
 import com.utilities.app.messages.OutboxStore
 import com.utilities.app.messages.logic.OutboxEntry
 import kotlinx.coroutines.runBlocking
@@ -210,6 +211,10 @@ class BackupCoverageTest {
         // the keyboard and the messaging app, and neither owns any data worth carrying beyond this
         // file and the word list below — the texts are Android's, in the platform's own provider.
         LookStore.get(context).updateKeyboard { it.copy(numberRow = true) }
+        // …and the picture-message settings, which are a second file under the same prefix. The
+        // prefix is the whole mechanism by which the contributor decides what travels, so a second
+        // file exercising it is worth having.
+        MessagePrefs(context).autoDownloadRoaming = true
 
         // Finance and Secrets keep their file names to themselves, so their preferences are written
         // the way the apps write them — through the class that owns the file. Repository's are here

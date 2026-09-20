@@ -62,14 +62,26 @@
            MainActivity itself is NOT exported, like every other hosted app's screen. The sandbox
            opens it in-process.
 
-         WHAT IS NOT WRITTEN, SAID HERE AS WELL AS IN THE APP
+         PICTURE MESSAGES
 
-           MMS. Becoming the default messenger means Android stops handing picture messages to the
-           carrier's app and starts handing them here, and the MMS half of this module does not
-           exist: text arrives and is stored, a picture message arrives as a notification this app
-           records and cannot fetch. The app says so in a dialog before the role picker opens (see
-           `Takeovers.mmsWarning`), the receiver says so in its own comment, and switching the role
-           back restores it immediately — nothing is moved or deleted by the takeover. -->
+           Handled, and the reason that is worth a paragraph in a manifest is that it is where the
+           permissions above stop being obvious. An MMS is not a bigger SMS: what arrives over the
+           radio is a WAP push announcing that something is waiting at a URL on the carrier's own
+           MMSC, reachable only over the carrier's data channel. `SmsManager` does that part; this
+           module parses the binary PDUs at either end (see messages/pdu/, which is pure JVM and
+           unit-tested) and moves the results into Android's own message store.
+
+           Three consequences, all of them visible above:
+
+             - RECEIVE_WAP_PUSH and RECEIVE_MMS exist for the announcement;
+             - there is a non-exported ContentProvider, because the platform will only take and
+               return the bytes through a content:// URI;
+             - the two result receivers are in the manifest rather than registered from a screen,
+               because a transfer can finish minutes later with the app long gone.
+
+           None of it is a network permission. This module still declares no INTERNET and still has
+           no HTTP client: the transfer is the platform's, over the carrier's own bearer, and what
+           this app does is encode and decode. -->
 
     <uses-permission android:name="android.permission.READ_SMS" />
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
@@ -125,8 +137,9 @@
             </intent-filter>
         </receiver>
 
-        <!-- The WAP push that announces a picture message. Declared because the role requires it;
-             what it can actually do is the honest part — see MmsDeliverReceiver. -->
+        <!-- The WAP push that announces a picture message. Not the message: a binary PDU with a
+             URL on the carrier's own server, which the mms/ package then fetches through the
+             platform. See MmsDeliverReceiver. -->
         <receiver
             android:name=".messages.MmsDeliverReceiver"
             android:exported="true"
@@ -161,6 +174,44 @@
                 <data android:scheme="mmsto" />
             </intent-filter>
         </service>
+
+        <!-- What the network says about a picture message afterwards. Neither is exported: what
+             reaches them is the PendingIntent the transport made, which names this package. A
+             transfer takes seconds when it is quick and minutes when it is not, and the app is
+             usually not on screen when the answer comes — so these are manifest receivers. -->
+        <receiver
+            android:name=".messages.mms.MmsDownloadedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.utilities.app.messages.MMS_DOWNLOADED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".messages.mms.MmsSentReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.utilities.app.messages.MMS_SENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The one file the part of the system that talks to the carrier is allowed to open.
+
+             `SmsManager` does the network half of MMS — it knows the MMSC address and the APN to
+             reach it on — but it will not take or return bytes in memory: both calls hand a
+             content:// URI across to the phone process. So there has to be a provider.
+
+             The usual implementation of this exports it and stops thinking, which makes every
+             picture message on the phone readable by any installed app for as long as its buffer is
+             in the cache. This one is NOT exported. It carries grantUriPermissions, and the
+             transport grants exactly one URI to exactly the two system packages that need it, for
+             the duration of one transfer, and revokes it afterwards. Everything else about the
+             provider is refusal: it cannot be queried, and insert, update and delete do nothing. -->
+        <provider
+            android:name=".messages.mms.MmsFileProvider"
+            android:authorities="${applicationId}.utilities.mms"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- The one component in this module any app can reach. See the block at the top for the
              five properties that keep it narrow. `excludeFromRecents` because it is an errand inside

@@ -7,60 +7,130 @@ import android.content.Intent
 import android.net.Uri
 import android.telephony.SmsManager
 import com.utilities.app.messages.logic.OutboxEntry
+import com.utilities.app.messages.logic.Routing
+import com.utilities.app.messages.logic.SendPlan
+import com.utilities.app.messages.logic.SendRefusal
+import com.utilities.app.messages.logic.SendRoute
+import com.utilities.app.messages.mms.MmsImages
+import com.utilities.app.messages.mms.MmsStore
+import com.utilities.app.messages.mms.MmsTransport
+import com.utilities.app.messages.pdu.MmsBudget
+import com.utilities.app.messages.pdu.MmsHeaders
+import com.utilities.app.messages.pdu.MmsMessage
+import com.utilities.app.messages.pdu.MmsPart
+import com.utilities.app.messages.pdu.PduEncoder
 
 /**
- * Sending a text.
+ * Sending — a text, or a picture message, or a refusal with a reason.
  *
- * ## Two paths, one method
+ * ## Which one
  *
- * When Utilities holds the default-SMS role it sends *and records*: the message goes into the
- * platform's store as sent, which is what makes it appear in every other app's view of the thread
- * too. When it does not hold the role it may still send — `SEND_SMS` is an ordinary runtime
- * permission — but it may not record, so the message is kept as an echo until whichever app is the
- * default writes it down. [Outbox][com.utilities.app.messages.logic.Outbox] is the whole of that
- * argument; this class is where the two branches are chosen between.
+ * [Routing] decides, from four facts, and it is pure so that the decision is tested rather than
+ * inferred from reading a `when`. This class carries out whichever answer it gets.
  *
- * ## Long messages
+ * ## The text path
  *
- * A text over 160 characters is several texts, and the radio needs them handed over as parts.
- * `divideMessage` does the splitting by the same rules the network does, so a long message arrives
- * as one message on the other phone rather than as three with words cut in half. A single part goes
- * through the single-part call, because the multipart one on some devices adds a header even to a
- * message that does not need one.
+ * When Utilities holds the default-SMS role it sends *and records*. When it does not it may still
+ * send — `SEND_SMS` is an ordinary runtime permission — but may not record, so the message is kept
+ * as an echo until whichever app is the default writes it down. See [com.utilities.app.messages.logic.Outbox].
  *
- * ## What comes back
+ * ## The picture path
  *
- * A send is not finished when the call returns — it is finished when the radio says so, which is a
- * broadcast that can arrive seconds later or not at all. The result intent updates the stored row
- * (or the echo) to failed, so the thread shows a message that did not go rather than one that
- * silently did not arrive.
+ * Needs the role, and says so rather than failing quietly: only the default app may write a sent
+ * MMS into the store, and there is no echo for a photograph. The message is written to the outbox
+ * *before* the radio is asked, so the thread shows it immediately and a failure has a row to be
+ * marked against; [com.utilities.app.messages.mms.MmsSentReceiver] moves it when the network answers.
+ *
+ * Every picture is re-encoded to fit the carrier's cap first — see [MmsBudget] and [MmsImages] —
+ * because a message over the cap is accepted by the radio and dropped by the network, with no error
+ * anywhere.
  */
 class MessageSender(context: Context) {
 
     private val app = context.applicationContext
     private val store = MessageStore(app)
     private val outbox = OutboxStore(app)
+    private val mms = MmsStore(app)
+    private val transport = MmsTransport(app)
+
+    /** What happened. A failure carries the sentence the composer shows. */
+    sealed interface Outcome {
+        data class Sent(val threadId: Long) : Outcome
+        data class Refused(val reason: String) : Outcome
+    }
 
     /**
-     * Send [body] to [address].
+     * Send [body] and [attachments] to [addresses].
      *
-     * Returns the thread it went to, or null when the text could not be handed to the radio at all —
-     * no permission, no SIM, a number the platform will not parse. The caller shows that; everything
-     * after it is reported through the result broadcast.
+     * One entry point for both protocols, because the composer should not have to know which one it
+     * is asking for — it has a draft and a list of pictures, and which of the two it becomes is a
+     * property of those and of the phone.
      */
-    fun send(address: String, body: String, isDefaultApp: Boolean): Long? {
-        if (address.isBlank() || body.isEmpty()) return null
+    fun send(
+        addresses: List<String>,
+        body: String,
+        attachments: List<Uri> = emptyList(),
+        subject: String? = null,
+        isDefaultApp: Boolean = MessagesRole.isDefault(app),
+        subscriptionId: Int = -1
+    ): Outcome {
+        val recipients = addresses.filter { it.isNotBlank() }
+        val prefs = MessagePrefs(app)
+        val plan: SendPlan = Routing.plan(
+            recipients = recipients.size,
+            attachments = attachments.size,
+            hasBody = body.isNotBlank(),
+            hasSubject = !subject.isNullOrBlank(),
+            groupAsPicture = prefs.groupAsMms,
+            canSend = MessagesRole.canSend(app),
+            isDefaultApp = isDefaultApp
+        )
+
+        return when (plan.route) {
+            SendRoute.REFUSE -> Outcome.Refused((plan.refusal ?: SendRefusal.EMPTY).reason)
+            SendRoute.TEXT -> text(recipients, body, isDefaultApp)
+            SendRoute.PICTURE -> picture(recipients, body, attachments, subject, prefs, subscriptionId)
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Text
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * A text, to one person or to each of several.
+     *
+     * Several recipients here means the household turned group messaging off, or Utilities is not
+     * the default app — in both cases the right behaviour is one text each, which is what every
+     * phone did before MMS existed.
+     */
+    private fun text(addresses: List<String>, body: String, isDefaultApp: Boolean): Outcome {
+        if (body.isEmpty()) return Outcome.Refused(SendRefusal.EMPTY.reason)
+        var threadId: Long? = null
+        var sentAny = false
+        addresses.forEach { address ->
+            val thread = sendOneText(address, body, isDefaultApp)
+            if (thread != null) {
+                sentAny = true
+                if (threadId == null) threadId = thread
+            }
+        }
+        // For a group sent as separate texts, the thread the composer returns to is the group's,
+        // not the first recipient's — otherwise replying lands in a one-to-one conversation.
+        val landing = if (addresses.size > 1) store.threadFor(addresses.first()) ?: threadId else threadId
+        return if (sentAny && landing != null) Outcome.Sent(landing)
+        else Outcome.Refused("That message could not be sent.")
+    }
+
+    private fun sendOneText(address: String, body: String, isDefaultApp: Boolean): Long? {
         val threadId = store.threadFor(address) ?: return null
         val at = System.currentTimeMillis()
 
         val stored: Uri? = if (isDefaultApp) store.storeSent(address, body, at) else null
-        if (stored == null) {
-            // Nothing recorded it, so this app remembers it until something does.
-            outbox.add(threadId, OutboxEntry(address = address, body = body, at = at))
-        }
+        if (stored == null) outbox.add(threadId, OutboxEntry(address = address, body = body, at = at))
 
         val manager = smsManager() ?: return null
-        val sentIntent = resultIntent(threadId, body, stored)
+        val sentIntent = textResultIntent(threadId, body, stored)
         val handed = runCatching {
             val parts = manager.divideMessage(body)
             if (parts.size <= 1) {
@@ -79,21 +149,108 @@ class MessageSender(context: Context) {
         }.getOrDefault(false)
 
         if (!handed) {
-            fail(threadId, body, stored)
+            if (stored != null) store.markFailed(stored) else outbox.markFailed(threadId, body)
             return null
         }
         return threadId
     }
 
+    // -------------------------------------------------------------------------------------
+    // Pictures
+    // -------------------------------------------------------------------------------------
+
+    /**
+     * A picture message.
+     *
+     * Four steps, in this order and for a reason each: work out the budget, squeeze the pictures
+     * into it, write the message to the outbox so the thread shows it, and only then hand it to the
+     * radio. Asking the radio first would mean a send in flight with nothing on screen and nothing
+     * to mark when it fails.
+     */
+    private fun picture(
+        addresses: List<String>,
+        body: String,
+        attachments: List<Uri>,
+        subject: String?,
+        prefs: MessagePrefs,
+        subscriptionId: Int
+    ): Outcome {
+        val threadId = mms.threadFor(addresses.toSet()) ?: return Outcome.Refused("That thread could not be opened.")
+
+        val textPart = body.takeIf { it.isNotBlank() }?.let { MmsImages.textPart(it) }
+        val budget = MmsBudget.plan(
+            maxBytes = transport.maxMessageBytes(subscriptionId),
+            textBytes = textPart?.data?.size ?: 0,
+            attachments = attachments.size
+        )
+        if (attachments.isNotEmpty() && budget == null) {
+            return Outcome.Refused(
+                "That will not fit in a picture message, even shrunk. Try sending fewer at once."
+            )
+        }
+
+        val pictures = attachments.mapIndexedNotNull { index, uri ->
+            MmsImages.attach(app, uri, budget ?: 0, index)
+        }
+        if (pictures.size != attachments.size) {
+            return Outcome.Refused("One of those could not be prepared for sending.")
+        }
+
+        val content = listOfNotNull(textPart) + pictures
+        if (content.isEmpty()) return Outcome.Refused(SendRefusal.EMPTY.reason)
+
+        val parts: List<MmsPart> = content + PduEncoder.smil(content)
+        val transactionId = PduEncoder.newTransactionId()
+
+        val message = MmsMessage(
+            type = MmsHeaders.TYPE_SEND_REQ,
+            to = addresses,
+            subject = subject?.takeIf { it.isNotBlank() },
+            transactionId = transactionId,
+            date = System.currentTimeMillis(),
+            parts = parts
+        )
+
+        val row = mms.storeOutgoing(message, threadId, subscriptionId)
+
+        val pdu = runCatching {
+            PduEncoder.sendReq(
+                to = addresses,
+                parts = parts,
+                subject = message.subject,
+                transactionId = transactionId,
+                deliveryReport = prefs.deliveryReports,
+                date = message.date
+            )
+        }.getOrNull() ?: return Outcome.Refused("That message could not be built.")
+
+        val handed = transport.send(pdu = pdu, storedRow = row, threadId = threadId, subscriptionId = subscriptionId)
+        if (!handed) {
+            row?.let { mms.markSent(it, sent = false) }
+            return Outcome.Refused("That picture message could not be handed to the network.")
+        }
+        return Outcome.Sent(threadId)
+    }
+
+    /** Fetch a picture message that was announced and not downloaded. */
+    fun download(mmsKey: Long): Boolean {
+        val messageId = MmsStore.messageIdOf(mmsKey) ?: return false
+        val pending = mms.pendingLocation(messageId) ?: return false
+        val location = pending.contentLocation?.takeIf { it.isNotBlank() } ?: return false
+        return transport.download(
+            contentLocation = location,
+            transactionId = pending.transactionId,
+            pendingRowId = messageId
+        )
+    }
+
+    // -------------------------------------------------------------------------------------
+
     private fun smsManager(): SmsManager? = runCatching {
         app.getSystemService(SmsManager::class.java) ?: SmsManager.getDefault()
     }.getOrNull()
 
-    private fun fail(threadId: Long, body: String, stored: Uri?) {
-        if (stored != null) store.markFailed(stored) else outbox.markFailed(threadId, body)
-    }
-
-    private fun resultIntent(threadId: Long, body: String, stored: Uri?): PendingIntent {
+    private fun textResultIntent(threadId: Long, body: String, stored: Uri?): PendingIntent {
         val intent = Intent(ACTION_SENT).apply {
             setPackage(app.packageName)
             putExtra(EXTRA_THREAD, threadId)
@@ -118,19 +275,18 @@ class MessageSender(context: Context) {
 }
 
 /**
- * What the radio says afterwards.
+ * What the radio says about a **text** afterwards.
  *
- * Declared in the manifest rather than registered from a screen, and that is the whole reason it is
- * a separate class: a send is not finished when the call returns, it is finished when the radio
- * reports, which can be seconds later — long enough for somebody to have left the app. A receiver
- * that only existed while a thread was on screen would miss exactly the failures worth recording.
+ * Declared in the manifest rather than registered from a screen: a send is not finished when the
+ * call returns, it is finished when the radio reports, which can be seconds later — long enough for
+ * somebody to have left the app. A receiver that only existed while a thread was on screen would
+ * miss exactly the failures worth recording.
  *
- * Not exported, and reachable anyway: the `PendingIntent` that carries this action sets this app's
- * package, which both makes the broadcast explicit and exempts it from the implicit-broadcast
- * restriction that would otherwise stop a manifest receiver hearing it at all.
+ * Picture messages report to their own receiver
+ * ([com.utilities.app.messages.mms.MmsSentReceiver]), because what has to be updated is a row in a
+ * different table.
  *
- * A success is ignored. The row was written as sent when it was handed over, which is what it is,
- * and the only thing worth acting on is the case where it did not go.
+ * A success is ignored: the row was written as sent when it was handed over, which is what it is.
  */
 class SmsSentReceiver : BroadcastReceiver() {
 

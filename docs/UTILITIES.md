@@ -188,29 +188,105 @@ nothing.
 It is granted through `RoleManager.ROLE_SMS`, all at once, and it is the rung where what this app
 does *not* do starts to matter.
 
-### What is not written: MMS
+### Picture messages
 
-Stated here as plainly as the app states it in the dialog before the role picker opens.
+MMS is not a bigger SMS, and the difference is the whole of why this is a subsystem rather than a
+field.
 
-MMS is not a bigger SMS. A text arrives over the radio. A picture message arrives as a **pointer** — a
-WAP push announcing that something is waiting at a URL on the carrier's own MMSC, reachable only over
-the carrier's data channel — and fetching it means parsing a binary PDU for that URL, handing it to
-`SmsManager.downloadMultimediaMessage`, parsing the reply PDU into parts, and writing those parts
-into a second provider. That is a subsystem, and it is not written.
+A text arrives over the radio. A picture message arrives as a **pointer**: a WAP push carrying a
+binary PDU that says something is waiting at a URL on the carrier's own MMSC, reachable only over
+the carrier's data channel. Fetching it means parsing that PDU for the URL, asking the platform to
+go and get it, parsing the reply into parts, and writing those parts into a second provider. Nothing
+in Android does any of that for an app — `SmsManager` does the **network** half, because it alone
+knows the MMSC address and the APN and can raise a cellular connection for one transfer while the
+phone sits on Wi-Fi, and it hands back bytes.
 
-So while Utilities holds the default-SMS role:
+So the bytes are ours, and that turns out to be good news: it makes the whole of MMS decidable
+without a phone. `messages/pdu/` is a **pure-JVM WAP codec** under unit test, and `messages/mms/` is
+the thin Android layer that moves its results between the platform and the store.
 
-- **text messages** arrive, are stored, are shown, and are notified about, exactly as they should be;
-- **picture and group messages** arrive as a notification this app records and cannot fetch.
-  `MmsDeliverReceiver` exists to make that visible rather than silent;
-- **switching the role back** in system settings makes them work again immediately, because nothing
-  was moved or deleted.
+#### What happens when one arrives
 
-The app refuses to send to a group thread for the same reason, rather than quietly sending to the
-first person in the list — which would be the worst available answer.
+1. `MmsDeliverReceiver` gets the WAP push and decodes the `m-notification-ind`. Delivery reports and
+   read receipts come down the same pipe; the decoder refuses to call one of those a notification,
+   which is how they are ignored rather than misread.
+2. A **placeholder row** goes into the message store — from whom, what about, how big, and where it
+   is waiting. This happens *before* anything is fetched, and three things follow from it: a failed
+   download leaves something visible with a button on it, a household with auto-download off gets
+   the same thing on purpose, and the notification can name the sender before a byte has moved.
+3. If auto-download applies, `MmsTransport` asks the platform to fetch it.
+4. `MmsDownloadedReceiver` decodes the `m-retrieve-conf`, files the message and its parts, and
+   **then** deletes the placeholder — in that order, so there is never a moment with neither.
 
-`Takeovers.mmsWarning` is a constant, asserted by a test, so the behaviour cannot be changed without
-walking past the sentence that explains it.
+If auto-download does not apply, the app does not simply ignore the announcement: it sends an
+`m-notifyresp-ind` saying **deferred**. A network that hears nothing re-pushes, which the household
+experiences as the same picture message arriving four times.
+
+#### When auto-download does not apply
+
+- **it is switched off** — every picture arrives as a card with a Fetch button;
+- **the phone is roaming** and roaming downloads are off, which is the default. An automatic
+  download abroad is a charge nobody sees coming and finds out about a month later;
+- **the message is advertising**. The class is in the notification, and auto-fetching one is
+  somebody paying to receive a leaflet. It is still announced and still one tap away.
+
+#### Sending one
+
+Which protocol a message becomes is decided by `Routing`, which is pure and tested, from four facts:
+attachments, recipient count, whether there is a subject, and whether Utilities holds the
+default-SMS role.
+
+**Pictures need the role.** Only the default app may write a sent MMS into the store, there is no
+echo for a photograph the way there is for a text, and a picture that vanished the instant it was
+sent would be worse than being told to switch. A **group** message without the role still goes — as
+a separate text to each person, which is what every phone did before group messaging existed and is
+better than not sending.
+
+Every picture is re-encoded before it goes. Carriers cap a message at about 300KB and a phone camera
+produces four megabytes a shot, so there is no path where the file somebody picked is the file that
+is sent. `MmsBudget` does the arithmetic — overhead off the top, an even split between attachments,
+a floor under which it refuses rather than sending a mosaic — and `MmsImages` runs the ladder:
+**scale first, then quality**, because halving the dimensions removes three quarters of the pixels
+and is nearly invisible on a phone, while JPEG quality under about 60 puts artefacts around text,
+and a photograph of a receipt or a screenshot is as common a thing to send as a face. An animated
+GIF that already fits passes through untouched; one that does not is refused rather than silently
+turned into a still frame.
+
+A message goes into the **outbox before the radio is asked**, so the thread shows it immediately and
+a failure has a row to be marked against. `MmsSentReceiver` moves it to sent or failed when the
+network answers.
+
+#### The provider, and the thing most implementations get wrong
+
+`SmsManager` will not take or return bytes in memory. Both calls hand a `content://` URI across to
+the phone process, so there has to be a provider — and the usual implementation declares it
+`exported="true"` and stops thinking about it, which makes every picture message on the phone
+readable by any installed app for as long as its buffer sits in the cache.
+
+`MmsFileProvider` is **not exported**. It carries `grantUriPermissions`, and the transport grants
+exactly one URI to exactly the two system packages that do the work, for one transfer, and revokes
+it in the result receiver on both paths. Everything else about it is refusal: it cannot be queried,
+`insert`, `update` and `delete` do nothing, and the filename is checked so that a URI naming
+`../../databases/lifeops.db` resolves to nothing. The buffers are a transfer buffer rather than
+storage — the message goes into the platform's provider the moment it is decoded — so they are
+deleted when the transfer ends and swept if one never does.
+
+None of this is a network permission. This module still declares no `INTERNET` and still has no HTTP
+client on its classpath: the transfer is the platform's, over the carrier's own bearer, and what
+this app does is encode and decode.
+
+#### Reading them back
+
+`content://sms` and `content://mms` are separate tables, keyed by the same `thread_id`, that keep
+their dates in **different units** — milliseconds and seconds. That is not a mistake anybody can
+fix, and the two halves of a thread appear in the wrong order the moment somebody forgets it. The
+conversion happens once, at the edge, in `MmsStore`, and everything above it is in milliseconds.
+
+Parts are read in one query for the whole thread rather than one per message: a thread of two
+hundred picture messages would otherwise be two hundred round trips into a provider that is not
+fast. The pictures themselves are never loaded into a message — what travels is the platform's own
+`content://mms/part/…` URI, and the screen decodes what it is about to draw, through a bitmap cache
+bounded by **memory** rather than by count.
 
 ### The four components, and why one of them is odd
 
@@ -394,6 +470,10 @@ All JVM, no Robolectric — nothing worth testing here touches Android.
 | `UtilityPalettesTest` | warming cuts blue and does not cost contrast; every preset is legible; an unreadable accent is rescued on any surface; sliders clamp; a transparent colour is made opaque |
 | `ChatPalettesTest` | a received bubble stands off every surface including mid-grey; text is readable in both bubbles everywhere; an avatar is the same colour for the same person however their number is written |
 | `OutboxTest` / `AddressesTest` | the settle rule in both directions — one copy when the store catches up, two when somebody deliberately said the same thing twice; a failed echo kept; number comparison across every format |
+| `WspTest` | every WAP primitive against the byte sequences the specification gives: uintvars, the length-quote rule, the text-string quote, encoded strings with a charset, content types with parameters, and the bounds checks that make a truncated download fail rather than crash |
+| `PduCodecTest` | hand-built notification PDUs decoded field by field; a full encode-then-decode round trip of a message with a caption, three pictures and a layout part; a delivery report refused as a notification; a part claiming more bytes than the message holds refused rather than clamped |
+| `MmsBudgetTest` | the size arithmetic: overhead taken off the top, an even split, a refusal below the useful floor, a carrier config of nonsense clamped, and a ladder that only ever goes downhill |
+| `RoutingTest` | which protocol a message becomes, including the two cases a `when` gets wrong: a picture without the role refused with a reason, and a group without the role sent as texts rather than refused |
 | `TakeoversTest` | the three states and, separately, the **next step** each one offers — including the case a state comparison would get wrong, where a takeover is `ON` and still has something to ask for |
 | `BackupCoverageTest` (in `:app`) | the census: the look, the word list and a font file are in the archive, and the outbox is on the excluded list with its reason |
 

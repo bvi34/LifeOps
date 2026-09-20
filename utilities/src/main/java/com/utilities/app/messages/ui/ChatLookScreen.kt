@@ -20,7 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.utilities.app.data.LookStore
 import com.utilities.app.look.UtilityPalette
+import com.utilities.app.messages.MessagePrefs
 import com.utilities.app.look.rememberPalette
 import com.utilities.app.look.toComposeColor
 import com.utilities.app.messages.logic.ChatPalettes
@@ -50,7 +53,15 @@ import kotlin.math.roundToInt
 fun ChatLookScreen(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val looks = remember { LookStore.get(context) }
+    val prefs = remember { MessagePrefs(context) }
     val chat by looks.chat.collectAsState()
+
+    // Plain preferences rather than a flow: nothing outside this screen reads them while it is open,
+    // and a store with a StateFlow for four booleans would be machinery in service of nothing.
+    var autoDownload by remember { mutableStateOf(prefs.autoDownload) }
+    var roaming by remember { mutableStateOf(prefs.autoDownloadRoaming) }
+    var groupTogether by remember { mutableStateOf(prefs.groupAsMms) }
+    var deliveryReports by remember { mutableStateOf(prefs.deliveryReports) }
     val base = rememberPalette(chat.look)
     val palette = remember(chat, base) {
         ChatPalettes.resolve(chat, base.surface, base.text, base.accent)
@@ -130,6 +141,60 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
                 "only ever to read the last message in it.",
             checked = chat.newestFirst,
             onChange = { value -> looks.updateChat { it.copy(newestFirst = value) } }
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Heading("Picture messages")
+        Text(
+            "A text arrives whether anybody likes it or not. A picture message has to be fetched — " +
+                "over cellular data, at a size the sender chose — so these are the settings where " +
+                "the right answer depends on what you are paying for.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+
+        SwitchRow(
+            title = "Fetch them automatically",
+            detail = "Off, a picture arrives as a card with a Fetch button and the network is told " +
+                "you will get it later, rather than being left to announce it again.",
+            checked = autoDownload,
+            onChange = { value ->
+                prefs.autoDownload = value
+                autoDownload = value
+            }
+        )
+        SwitchRow(
+            title = "…including while roaming",
+            detail = "Off by default. An automatic download abroad is a charge nobody sees coming " +
+                "and finds out about a month later.",
+            checked = roaming,
+            enabled = autoDownload,
+            onChange = { value ->
+                prefs.autoDownloadRoaming = value
+                roaming = value
+            }
+        )
+        SwitchRow(
+            title = "Group messages stay together",
+            detail = "On, everybody in a group sees one conversation. Off, each person gets a " +
+                "separate text with no idea the others were written to — which costs nothing and " +
+                "is what phones did before group messaging existed.",
+            checked = groupTogether,
+            onChange = { value ->
+                prefs.groupAsMms = value
+                groupTogether = value
+            }
+        )
+        SwitchRow(
+            title = "Ask for delivery reports",
+            detail = "Whether the network confirms a picture message arrived. Read receipts are a " +
+                "different thing and this app never asks for one.",
+            checked = deliveryReports,
+            onChange = { value ->
+                prefs.deliveryReports = value
+                deliveryReports = value
+            }
         )
     }
 }

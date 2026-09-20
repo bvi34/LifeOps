@@ -95,11 +95,11 @@ class TakeoversTest {
     }
 
     @Test
-    fun `the warning before the role picker says what is lost and that it is reversible`() {
-        // This constant is the app's one honest admission, and it must be impossible to change the
-        // behaviour without walking past it.
-        assertTrue(Takeovers.mmsWarning.contains("text messages only"))
-        assertTrue(Takeovers.mmsWarning.contains("picture"))
-        assertTrue(Takeovers.mmsWarning.contains("switch back", ignoreCase = true))
+    fun `what is said before the role picker leads with the fact that nothing moves`() {
+        // Taking over somebody's messaging is the most consequential thing this app does, and the
+        // one fact that makes the decision easy is the one nobody believes without being told.
+        assertTrue(Takeovers.defaultAppNote.contains("Nothing moves"))
+        assertTrue(Takeovers.defaultAppNote.contains("picture messages"))
+        assertTrue(Takeovers.defaultAppNote.contains("switching back", ignoreCase = true))
     }
 }

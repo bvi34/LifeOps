@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -119,6 +120,15 @@ class MainActivity : ComponentActivity() {
         const val OPEN_KEYBOARD = "keyboard"
     }
 }
+
+/**
+ * How many pictures may go in one message.
+ *
+ * Not a technical limit — the budget arithmetic would refuse long before this — but a practical
+ * one: past about four, each one has been squeezed so hard that sending two messages would look
+ * better, and the picker is the right place to say so.
+ */
+private const val MAX_ATTACHMENTS = 4
 
 private const val ROUTE_SHELF = "shelf"
 private const val ROUTE_KEYBOARD = "keyboard"
@@ -280,14 +290,14 @@ private fun UtilitiesShell(
         }
     }
 
-    // The one dialog in this app, and the reason it exists is in Takeovers.mmsWarning: making this
-    // app the default messenger costs picture messages until MMS is written, and nobody should find
-    // that out by missing a photograph.
+    // The one dialog in this app. Taking over somebody's messaging is the most consequential thing
+    // it does, and the sentence is a tested constant rather than a string here — see
+    // Takeovers.defaultAppNote.
     if (confirmDefault) {
         AlertDialog(
             onDismissRequest = { confirmDefault = false },
             title = { Text("Make Utilities your messaging app?") },
-            text = { Text(Takeovers.mmsWarning) },
+            text = { Text(Takeovers.defaultAppNote) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDefault = false
@@ -317,6 +327,14 @@ private fun MessagesRoute(
 
     val threads by messages.threads.collectAsState()
     val open by messages.open.collectAsState()
+    val staged by messages.staged.collectAsState()
+
+    // The system photo picker rather than a storage permission. It hands back exactly the pictures
+    // somebody chose, needs nothing granted, and is the only way to attach one here — this app
+    // never asks to read the gallery.
+    val pickPictures = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_ATTACHMENTS)
+    ) { picked -> picked.forEach { messages.attach(it) } }
 
     val view = open
     if (view != null) {
@@ -326,7 +344,15 @@ private fun MessagesRoute(
             palette = palette,
             onSend = { messages.send(it) },
             modifier = modifier,
-            fontFamily = font
+            fontFamily = font,
+            onDownload = { messages.download(it) },
+            staged = staged,
+            onAttach = {
+                pickPictures.launch(
+                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                )
+            },
+            onUnattach = { messages.unattach(it) }
         )
     } else {
         ConversationsScreen(

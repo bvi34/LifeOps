@@ -1,6 +1,7 @@
 package com.utilities.app.messages.ui
 
 import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -56,6 +57,16 @@ class MessagesViewModel(context: Context) : ViewModel() {
     private val _status = MutableStateFlow<String?>(null)
     val status: StateFlow<String?> = _status.asStateFlow()
 
+    /**
+     * Pictures staged for the next send.
+     *
+     * Held here rather than in the composer's own state so that they survive the screen being
+     * rotated with three photographs attached — which is exactly when somebody would be most
+     * annoyed to lose them.
+     */
+    private val _staged = MutableStateFlow<List<Uri>>(emptyList())
+    val staged: StateFlow<List<Uri>> = _staged.asStateFlow()
+
     /** Whether this app may write to the store — which decides how a send is recorded. */
     val isDefault: Boolean get() = MessagesRole.isDefault(app)
 
@@ -110,29 +121,61 @@ class MessagesViewModel(context: Context) : ViewModel() {
         _open.value = null
     }
 
-    /** Send [body] to whoever the open thread is with. */
+    /** Stage a picture for the next send. */
+    fun attach(uri: Uri) {
+        if (_staged.value.any { it == uri }) return
+        _staged.value = _staged.value + uri
+    }
+
+    fun unattach(uri: Uri) {
+        _staged.value = _staged.value.filterNot { it == uri }
+    }
+
+    /**
+     * Send [body], with whatever is staged, to whoever the open thread is with.
+     *
+     * Which protocol it becomes is not decided here — see
+     * [com.utilities.app.messages.logic.Routing]. What is decided here is that the pictures are
+     * cleared **only on success**: a refusal that threw away three attachments would make the
+     * household re-pick them to read the reason.
+     */
     fun send(body: String) {
         val view = _open.value ?: return
-        val address = view.thread.addresses.firstOrNull() ?: return
-        if (body.isBlank()) return
-        if (!MessagesRole.canSend(app)) {
-            _status.value = "Sending needs the SMS permission."
-            return
-        }
-        if (view.thread.group) {
-            // A group thread over SMS is several one-to-one sends the platform stitches together as
-            // MMS, and MMS is the half of this app that is not written. Refusing is the honest
-            // answer; quietly sending to the first person in the list would be the worst one.
-            _status.value = "Group messages need MMS, which Utilities cannot send yet."
-            return
-        }
+        val addresses = view.thread.addresses.filter { it.isNotBlank() }
+        if (addresses.isEmpty()) return
+        val attachments = _staged.value
+
         viewModelScope.launch {
-            val threadId = withContext(Dispatchers.IO) { sender.send(address, body, isDefault) }
-            if (threadId == null) {
-                _status.value = "That message could not be sent."
-            } else {
-                openThread(threadId)
+            val outcome = withContext(Dispatchers.IO) {
+                sender.send(
+                    addresses = addresses,
+                    body = body,
+                    attachments = attachments,
+                    isDefaultApp = isDefault
+                )
             }
+            when (outcome) {
+                is MessageSender.Outcome.Refused -> _status.value = outcome.reason
+                is MessageSender.Outcome.Sent -> {
+                    _staged.value = emptyList()
+                    openThread(outcome.threadId)
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch a picture message that was announced and not downloaded.
+     *
+     * The thread is re-read on the way out rather than when the download finishes: the fetch is
+     * handled by a manifest receiver and may complete after this screen is gone, so what this does
+     * is start it and show that it started.
+     */
+    fun download(messageKey: Long) {
+        viewModelScope.launch {
+            val started = withContext(Dispatchers.IO) { sender.download(messageKey) }
+            _status.value = if (started) "Fetching…" else "That picture message could not be fetched."
+            if (started) _open.value?.let { openThread(it.thread.id) }
         }
     }
 

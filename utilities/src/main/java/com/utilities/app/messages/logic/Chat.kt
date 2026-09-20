@@ -20,8 +20,68 @@ data class ChatMessage(
     /** Sent by this app and not yet in the provider's store. See [Outbox]. */
     val pending: Boolean = false,
     /** The carrier refused it, or the radio was off. */
-    val failed: Boolean = false
-)
+    val failed: Boolean = false,
+
+    /**
+     * The pictures, when this is a picture message.
+     *
+     * A reference rather than the bytes. A thread of two hundred messages holding its photographs in
+     * memory is a thread that runs a phone out of it, so what travels is the platform's own URI for
+     * the part and the screen decodes what it is about to draw.
+     */
+    val attachments: List<ChatAttachment> = emptyList(),
+
+    /**
+     * A picture message that was announced and never fetched.
+     *
+     * Its own state rather than an empty message, because there is something to *do* about it: the
+     * row carries the URL it is waiting at, and the thread offers a button. It happens when
+     * auto-download is off, when the phone was roaming, and when a fetch failed.
+     */
+    val awaitingDownload: Boolean = false,
+
+    /** Whether this came from the picture-message side of the store. */
+    val multimedia: Boolean = false,
+
+    /** A picture message may have one. A text may not. */
+    val subject: String? = null
+) {
+    /** Whether there is anything to draw beyond the words. */
+    val hasAttachments: Boolean get() = attachments.isNotEmpty()
+
+    /** A picture message with no words in it is normal, and must not render as a blank bubble. */
+    val empty: Boolean get() = body.isBlank() && attachments.isEmpty() && !awaitingDownload
+}
+
+/**
+ * One piece of a picture message, as the screen refers to it.
+ *
+ * [uri] is the platform's own address for the part — `content://mms/part/...` — which is what makes
+ * this cheap: the bytes stay where the provider put them, and nothing is copied to show a thread.
+ */
+data class ChatAttachment(
+    val uri: String,
+    val contentType: String,
+    val name: String? = null
+) {
+    val isImage: Boolean get() = contentType.startsWith("image/", ignoreCase = true)
+    val isVideo: Boolean get() = contentType.startsWith("video/", ignoreCase = true)
+    val isAudio: Boolean get() = contentType.startsWith("audio/", ignoreCase = true)
+
+    /**
+     * What to call it on screen when it cannot be drawn.
+     *
+     * A filename if the sender gave one, otherwise the kind of thing it is — "a video", not
+     * "video/3gpp", which is a MIME type and not a sentence.
+     */
+    fun label(): String = name?.takeIf { it.isNotBlank() } ?: when {
+        isImage -> "a picture"
+        isVideo -> "a video"
+        isAudio -> "a sound"
+        contentType.startsWith("text/x-vCard", ignoreCase = true) -> "a contact card"
+        else -> "an attachment"
+    }
+}
 
 /**
  * A conversation, as the list draws one.

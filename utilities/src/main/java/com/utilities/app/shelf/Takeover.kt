@@ -172,7 +172,8 @@ object Takeovers {
                 utility = Utility.MESSAGES,
                 state = TakeoverState.PARTIAL,
                 detail = if (canSend) {
-                    "Reading and replying here. Your carrier's app still delivers and notifies."
+                    "Reading and replying here. Your carrier's app still delivers and notifies, " +
+                        "and pictures cannot be sent until this app holds the job."
                 } else {
                     "Reading here. Sending needs one more permission."
                 },
@@ -189,18 +190,21 @@ object Takeovers {
     }
 
     /**
-     * The sentence shown before the role picker opens, and the reason it is a constant rather than
-     * a string in a Compose file: it is the honest statement of what this app cannot do yet, and it
-     * has to be impossible to change the behaviour without walking past it.
+     * What is said before the role picker opens.
      *
-     * Becoming the default SMS app means Android stops handing picture messages to the carrier's
-     * app and starts handing them here — and the MMS half of this module is not written. Text
-     * arrives, is stored and is shown. A picture message arrives as a notification this app records
-     * and cannot fetch. That is a real loss, it is reversible in one tap, and nobody should discover
-     * it by missing a photograph.
+     * A constant rather than a string in a Compose file, for the same reason the earlier version of
+     * it was: taking over somebody's messaging is the most consequential thing this app does, and it
+     * has to be impossible to change the behaviour without walking past the sentence that describes
+     * it.
+     *
+     * It leads with what is **reversible**, because that is the fact that makes the decision easy
+     * and the fact nobody believes without being told: nothing is moved, nothing is copied, and the
+     * messages stay in the same place the carrier's app keeps them. Switching back is one tap in
+     * system settings and loses nothing.
      */
-    const val mmsWarning: String =
-        "Utilities handles text messages only. If you make it the default, picture and group " +
-            "messages will not arrive until that is written — switch back in system settings and " +
-            "they resume. Reading and replying without being the default costs you nothing."
+    const val defaultAppNote: String =
+        "Utilities will receive your texts and picture messages, store them, and be the app that " +
+            "tells you when one arrives. Nothing moves: every message stays where Android keeps " +
+            "it, your old app keeps all of them, and switching back in system settings undoes " +
+            "this immediately."
 }

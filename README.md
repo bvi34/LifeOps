@@ -611,14 +611,32 @@ the receipts.
 >
 > **Messages** has *two rungs*, which is the part worth knowing before you switch anything on.
 > **Reading** needs one permission and changes nothing else about the phone: the threads are already
-> in Android's own store, Utilities draws them, and your carrier's app keeps delivering, notifying and
-> handling picture messages. That rung is worth having on its own — it is the one that answers "I want
-> my own window" — and because nothing moved, it costs nothing. **Default** is the whole job: texts
-> arrive here, this app stores them and notifies. It is behind a dialog that says plainly what it
-> costs, because **MMS is not written yet**: text arrives and is stored, a picture message arrives as a
-> notification this app records and cannot fetch. Switching the role back in system settings restores
-> it immediately — nothing was moved or deleted, which is the property that makes every takeover here
-> reversible.
+> in Android's own store, Utilities draws them, and your carrier's app keeps delivering and notifying.
+> That rung is worth having on its own — it is the one that answers "I want my own window" — and
+> because nothing moved, it costs nothing. **Default** is the whole job: texts *and picture messages*
+> arrive here, this app stores them and notifies. Switching the role back in system settings undoes it
+> immediately — nothing was moved or deleted, which is the property that makes every takeover here
+> reversible, and it is what the confirmation leads with.
+>
+> **Picture messages are handled end to end, and that is a subsystem rather than a field.** An MMS is
+> not a bigger SMS: what arrives over the radio is a WAP push announcing that something is waiting at
+> a URL on the carrier's own MMSC. `SmsManager` does the network half — it alone knows the MMSC
+> address and the APN — and hands back *bytes*, which nothing in Android will parse for an app. So
+> `messages/pdu/` is a **pure-JVM WAP codec** (WAP-230 primitives, WAP-209 encapsulation) under unit
+> test including a full encode-then-decode round trip, and `messages/mms/` is the thin Android layer
+> that moves its results in and out of the platform's own store. A placeholder row is written
+> *before* anything is fetched, so a failed download leaves a card with a Fetch button rather than
+> nothing; declining to auto-download sends the network a **deferred** response rather than silence,
+> because a network that hears nothing re-announces and the household sees the same photograph arrive
+> four times. Auto-download is on, and **off while roaming by default** — an automatic download abroad
+> is a charge nobody sees coming. Every picture sent is re-encoded to fit the carrier's cap (scale
+> first, then quality; an animated GIF that fits passes through untouched and one that does not is
+> refused rather than silently flattened), because a message over the cap is accepted by the radio and
+> dropped by the network with no error anywhere. The `content://` URI the platform insists on is
+> served by a provider that is **not exported** — the usual implementation exports it and makes every
+> picture on the phone readable by any installed app — and granted to the two system packages that do
+> the work for one transfer, then revoked. None of it is a network permission: this module still
+> declares no `INTERNET` and has no HTTP client.
 >
 > Both surfaces are set with the **same appearance sheet, borrowed in design from Citation's reader**:
 > four presets and a custom one, a page colour and a text colour you pick yourself, a **warmth slider
@@ -629,11 +647,12 @@ the receipts.
 > moved toward the text colour until it can be, so a send button can never disappear; a received
 > bubble is derived from the surface and stepped up again when the first step vanishes into it.
 >
-> Utilities **owns no data**, and that is the design rather than a gap: the texts stay in the
-> platform's provider where they have always been. Its backup slice is the appearance file, the word
-> list and any font you supplied — a few kilobytes. Its logic is pure JVM and unit-tested: the key
-> layouts and the shift/layer machine, the word list's refusals, the colour maths, the rule for when a
-> sent message has landed in the store, and what each takeover's state adds up to.
+> Utilities **owns no data**, and that is the design rather than a gap: the texts and the pictures stay
+> in the platform's provider where they have always been. Its backup slice is the appearance file, the
+> word list and any font you supplied — a few kilobytes. Its logic is pure JVM and unit-tested: the key
+> layouts and the shift/layer machine, the word list's refusals, the colour maths, the WAP codec both
+> ways, the MMS size budget, the rule for when a sent message has landed in the store, which protocol
+> a message should become, and what each takeover's state adds up to.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

@@ -10,6 +10,7 @@ import android.provider.Telephony
 import com.utilities.app.messages.logic.Addresses
 import com.utilities.app.messages.logic.ChatMessage
 import com.utilities.app.messages.logic.ChatThread
+import com.utilities.app.messages.mms.MmsStore
 
 /**
  * The phone's own message store, read.
@@ -40,6 +41,15 @@ class MessageStore(context: Context) {
 
     private val app = context.applicationContext
     private val resolver = app.contentResolver
+
+    /**
+     * The picture-message half of the same store.
+     *
+     * Two tables, one thread. `content://sms` and `content://mms` are separate, are keyed by the
+     * same `thread_id`, and — the detail that bites — keep their dates in **different units**. The
+     * merge happens here so nothing above this file has to know either fact.
+     */
+    private val mms = MmsStore(app)
 
     // -------------------------------------------------------------------------------------
     // Reading
@@ -85,8 +95,22 @@ class MessageStore(context: Context) {
         }.orEmpty().withUnreadCounts()
     }
 
-    /** One thread's texts, oldest first. */
-    fun messages(threadId: Long, limit: Int = 500): List<ChatMessage> = query(
+    /**
+     * One thread's messages, oldest first — texts and picture messages in one list.
+     *
+     * The two tables are read separately and merged on time, which is the only key they share. The
+     * limit is applied to each side and then to the result: a thread of five hundred texts and two
+     * photographs should still show the photographs.
+     */
+    fun messages(threadId: Long, limit: Int = 500): List<ChatMessage> {
+        val texts = textMessages(threadId, limit)
+        val pictures = runCatching { mms.messages(threadId, limit) }.getOrDefault(emptyList())
+        if (pictures.isEmpty()) return texts
+        return (texts + pictures).sortedBy { it.at }.takeLast(limit)
+    }
+
+    /** The text half. */
+    private fun textMessages(threadId: Long, limit: Int): List<ChatMessage> = query(
         uri = Telephony.Sms.CONTENT_URI,
         projection = arrayOf(
             Telephony.Sms._ID,
