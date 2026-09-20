@@ -20,7 +20,8 @@ class ExtensionTransferTest {
         val frames = ExtensionTransfer.frames(request, byteArrayOf(1, 2, 3))
         assertNull(ExtensionTransfer.open(request, frames.drop(1)))
         assertNull(ExtensionTransfer.open(request, frames.mapIndexed { i, f ->
-            if (i == 0) f.dropLast(1) + if (f.last() == 'A') "B" else "A" else f
+            if (i == 0) f.dropLast(1) + (if (f.last() == 'A') "B" else "A") else f
         }))
+        assertNull(ExtensionTransfer.open(request, frames + "not a transfer frame"))
     }
 }

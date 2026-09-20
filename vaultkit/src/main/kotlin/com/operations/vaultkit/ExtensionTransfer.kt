@@ -50,6 +50,10 @@ object ExtensionTransfer {
     /** Reassembles and authenticates frames. Null means a missing, mixed, or tampered transfer. */
     fun open(request: Request, frames: Collection<String>): ByteArray? = runCatching {
         val parsed = frames.mapNotNull(::parseFrame)
+        // An unrecognised frame must not be silently ignored. Otherwise an importer that has
+        // accidentally mixed two camera scans would report success for the valid subset, even
+        // though the person was not shown a complete, unambiguous transfer.
+        require(parsed.size == frames.size)
         require(parsed.isNotEmpty() && parsed.all { it.session == request.session })
         val count = parsed.first().count
         require(parsed.size == count && parsed.map { it.index }.toSet().size == count && parsed.all { it.count == count })
@@ -60,5 +64,17 @@ object ExtensionTransfer {
 
     private fun randomSession(): String = encode(VaultCrypto.randomBytes(16))
     private fun encode(bytes: ByteArray): String = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-    private fun decode(text: String): ByteArray = Base64.getUrlDecoder().decode(text)
+    /**
+     * Decode only the canonical unpadded base64url spelling we emit.
+     *
+     * Java's decoder accepts several final-character spellings that decode to the same bytes when
+     * the last base64 sextet has unused bits. That is convenient for a browser, but wrong for a
+     * QR transfer: a changed frame should be rejected, not accepted as an alternate spelling of
+     * the original ciphertext.
+     */
+    private fun decode(text: String): ByteArray {
+        val bytes = Base64.getUrlDecoder().decode(text)
+        require(encode(bytes) == text) { "non-canonical base64url" }
+        return bytes
+    }
 }

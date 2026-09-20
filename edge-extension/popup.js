@@ -2,7 +2,11 @@ const encoder = new TextEncoder(), decoder = new TextDecoder();
 let request, unlockedDocument;
 const $ = id => document.getElementById(id);
 const b64 = bytes => btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
-const fromB64 = text => Uint8Array.from(atob(text.replaceAll('-', '+').replaceAll('_', '/') + '==='.slice((text.length + 3) % 4)), c => c.charCodeAt(0));
+const fromB64 = text => {
+  const bytes = Uint8Array.from(atob(text.replaceAll('-', '+').replaceAll('_', '/') + '==='.slice((text.length + 3) % 4)), c => c.charCodeAt(0));
+  if (b64(bytes) !== text) throw Error('Non-canonical transfer encoding.');
+  return bytes;
+};
 const random = n => crypto.getRandomValues(new Uint8Array(n));
 
 $('new-request').onclick = () => {
