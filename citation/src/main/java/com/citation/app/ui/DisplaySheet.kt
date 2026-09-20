@@ -246,7 +246,7 @@ fun DisplaySheet(
             Divider(Modifier.padding(vertical = 12.dp))
             Section("Colour")
 
-            // The theme is where the page *starts*; each colour below either follows it or is the
+            // The theme is where the page *starts*; the colours below either follow it or are the
             // reader's own. Two choices rather than one, because wanting the page to follow the
             // system into dark mode and wanting the prose in a colour of your own are not the same
             // wish, and a single "Custom" theme made you give up the first to have the second.
@@ -275,55 +275,74 @@ fun DisplaySheet(
             // applied twice over. The app's own colours stand in wherever the theme is System, so a
             // row that says "Auto" shows the colour that is actually on screen rather than a guess.
             val shown = ReaderPalette.colors(settings.copy(warmth = 0f), systemPage, systemInk)
-            ColourRole(
-                role = ReaderColorRole.PAGE,
-                settings = settings,
-                shown = shown.page,
-                swatches = ReaderPalette.PAGE_SWATCHES,
-                autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
-                    "Follows the app, light and dark."
+            // The whole palette in one switch, because alternating between the app's colours and
+            // your own is how anybody decides they like them, and it has to stay one tap each way.
+            // Which roles are yours and what colour each one is both survive being switched off, so
+            // this is an A/B rather than a decision; switching it on for the first time takes over
+            // the page and the text in the colours already on screen, which is what the old
+            // "Custom" theme did and the reason it read as an adjustment rather than a blank page.
+            SwitchRow(
+                label = "My own colours",
+                caption = if (settings.useCustomColors) {
+                    "Off puts the page back to ${settings.theme.label}, and keeps these."
+                } else if (settings.hasOwnColors) {
+                    "The page is ${settings.theme.label}'s. Your colours are kept, ready to come back."
                 } else {
-                    "Follows ${settings.theme.label}."
+                    "Set the page, text, headings or links yourself."
                 },
-                onSettings = onSettings
-            )
-            ColourRole(
-                role = ReaderColorRole.TEXT,
-                settings = settings,
-                shown = shown.text,
-                swatches = ReaderPalette.TEXT_SWATCHES,
-                autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
-                    "Follows the app, light and dark."
-                } else {
-                    "Follows ${settings.theme.label}."
-                },
-                onSettings = onSettings
-            )
-            // Headings and links are their own roles because a book is not one colour of text: both
-            // used to be painted in the app's own accent, which is a colour nobody reading chose and
-            // the reason a chapter full of anchors came out purple over a page somebody had set.
-            // Left alone, a heading follows the prose — the printed convention — and a link is
-            // fitted to the page it lands on.
-            ColourRole(
-                role = ReaderColorRole.HEADING,
-                settings = settings,
-                shown = shown.heading,
-                swatches = ReaderPalette.TEXT_SWATCHES,
-                autoCaption = "Set in the text colour.",
-                onSettings = onSettings
-            )
-            ColourRole(
-                role = ReaderColorRole.LINK,
-                settings = settings,
-                shown = shown.link,
-                swatches = ReaderPalette.LINK_SWATCHES,
-                autoCaption = "Fitted to the page.",
-                onSettings = onSettings
-            )
-            // Shown once anything has been taken over — and under the System theme that includes
-            // the app's own page, which is the pairing most worth seeing: text chosen against a
-            // light page is the text that disappears when the system turns dark.
-            if (settings.customRoles.isNotEmpty()) {
+                checked = settings.useCustomColors
+            ) { on ->
+                onSettings { it.usingCustomColors(on, page = shown.page, text = shown.text) }
+            }
+            if (settings.useCustomColors) {
+                ColourRole(
+                    role = ReaderColorRole.PAGE,
+                    settings = settings,
+                    shown = shown.page,
+                    swatches = ReaderPalette.PAGE_SWATCHES,
+                    autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
+                        "Follows the app, light and dark."
+                    } else {
+                        "Follows ${settings.theme.label}."
+                    },
+                    onSettings = onSettings
+                )
+                ColourRole(
+                    role = ReaderColorRole.TEXT,
+                    settings = settings,
+                    shown = shown.text,
+                    swatches = ReaderPalette.TEXT_SWATCHES,
+                    autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
+                        "Follows the app, light and dark."
+                    } else {
+                        "Follows ${settings.theme.label}."
+                    },
+                    onSettings = onSettings
+                )
+                // Headings and links are their own roles because a book is not one colour of text: both
+                // used to be painted in the app's own accent, which is a colour nobody reading chose and
+                // the reason a chapter full of anchors came out purple over a page somebody had set.
+                // Left alone, a heading follows the prose — the printed convention — and a link is
+                // fitted to the page it lands on.
+                ColourRole(
+                    role = ReaderColorRole.HEADING,
+                    settings = settings,
+                    shown = shown.heading,
+                    swatches = ReaderPalette.TEXT_SWATCHES,
+                    autoCaption = "Set in the text colour.",
+                    onSettings = onSettings
+                )
+                ColourRole(
+                    role = ReaderColorRole.LINK,
+                    settings = settings,
+                    shown = shown.link,
+                    swatches = ReaderPalette.LINK_SWATCHES,
+                    autoCaption = "Fitted to the page.",
+                    onSettings = onSettings
+                )
+                // Under the System theme the preview includes the app's own page, which is the pairing
+                // most worth seeing: text chosen against a light page is the text that disappears when
+                // the system turns dark.
                 ColourPreview(
                     page = shown.page,
                     ink = shown.text,
