@@ -99,6 +99,7 @@ Three pieces, and only the last is Android:
 | `keyboard/logic/KeyLayouts.kt` | what is on each page | JVM |
 | `keyboard/logic/KeyboardMachine.kt` | what a press does to the keyboard | JVM |
 | `keyboard/logic/Lexicon.kt` | what is remembered, and what is refused | JVM |
+| `keyboard/logic/KeyboardFit.kt` | how much room the phone's own furniture needs around the keys | JVM |
 | `keyboard/KeyboardCanvas.kt` | geometry, paint, touch slop | — |
 | `keyboard/UtilitiesKeyboardService.kt` | translating effects into `InputConnection` calls | — |
 
@@ -141,6 +142,17 @@ keys most people press rarely. The households that want it want it badly enough 
 **Key edges are on by default.** Edgeless keyboards look better in a screenshot and are measurably
 worse to aim at, and the people most likely to be typing on a phone in poor light are the ones the
 edges help most.
+
+**The keys stop above the navigation bar.** An input method's window reaches the bottom edge of the
+screen — it is laid out behind the system bars, and nothing pads it on the keyboard's behalf. Left
+alone, the bottom row lands in the strip the phone keeps for the gesture handle and the
+keyboard-switch button: the system draws its own glyphs over the caps, and a press near the bottom of
+the space bar belongs to the gesture rather than to the keyboard. It reads as a keyboard sitting too
+low, because it is. So the window's insets become padding on the column and the surface colour shows
+through underneath, which is the shape every other keyboard on the phone has. Padding read from the
+window rather than a fixed margin, because the height is the phone's to say: it differs between
+gesture and three-button navigation, and it changes when somebody switches between them with the
+keyboard already open. See `KeyboardFit`.
 
 **The suggestion strip keeps its height when empty.** A bar that appears and disappears moves every
 key up and down by forty pixels while somebody is typing, which is the most disorienting thing a
@@ -663,6 +675,7 @@ All JVM, no Robolectric — nothing worth testing here touches Android.
 |---|---|
 | `KeyLayoutsTest` | every page has an escape and a backspace; only backspace repeats; the numeric pad has no letters; the alphabet appears once; sentence punctuation is on the letters page; every printed alternate types something new |
 | `KeyboardMachineTest` | the shift cycle and its double-tap lock; a held shift spent by one letter and a locked one not; long press typing the alternate unshifted; the symbols page not being left after one character; sentence capitalisation, including the case where the cursor sits right after the stop |
+| `KeyboardFitTest` | the pad that keeps the bottom row off the gesture handle: whichever of the navigation bar and the mandatory gesture strip asks for more, a bar down one side in landscape, a display cutout wider than the bar, a top that is never padded, and a negative inset floored rather than trusted |
 | `LexiconTest` | what is learned, what is suggested, the tie-break that stops the strip flickering — and, chiefly, every shape of thing that is **refused**: digits, symbols, too short, too long |
 | `UtilityPalettesTest` | warming cuts blue and does not cost contrast; every preset is legible; an unreadable accent is rescued on any surface; sliders clamp; a transparent colour is made opaque |
 | `ChatPalettesTest` | a received bubble stands off every surface including mid-grey; text is readable in both bubbles everywhere; an avatar is the same colour for the same person however their number is written |

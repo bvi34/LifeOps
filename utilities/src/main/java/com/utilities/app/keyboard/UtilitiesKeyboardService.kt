@@ -8,12 +8,15 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.LinearLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.utilities.app.data.LexiconStore
 import com.utilities.app.data.LookStore
 import com.utilities.app.keyboard.logic.Key
 import com.utilities.app.keyboard.logic.KeyAction
 import com.utilities.app.keyboard.logic.KeyEffect
 import com.utilities.app.keyboard.logic.KeyLayouts
+import com.utilities.app.keyboard.logic.KeyboardFit
 import com.utilities.app.keyboard.logic.KeyboardLook
 import com.utilities.app.keyboard.logic.KeyboardMachine
 import com.utilities.app.keyboard.logic.KeyboardState
@@ -120,6 +123,8 @@ class UtilitiesKeyboardService : InputMethodService() {
         strip = suggestions
         keys = canvas
 
+        fitToSystemBars(column)
+
         watching?.cancel()
         watching = scope.launch {
             looks.keyboard.collectLatest { next ->
@@ -130,6 +135,43 @@ class UtilitiesKeyboardService : InputMethodService() {
             }
         }
         return column
+    }
+
+    /**
+     * Keep the keys off the navigation bar.
+     *
+     * The input method's window reaches the bottom edge of the screen — it is laid out behind the
+     * system bars, and nothing pads it on the keyboard's behalf. Left alone, the bottom row lands in
+     * the strip the phone keeps for the gesture handle and the keyboard-switch button: the system
+     * draws its glyphs over the caps, and a press near the bottom of the space bar is the gesture's
+     * rather than the keyboard's. The keyboard reads as sitting too low because it is.
+     *
+     * So the window's insets become padding on the column, which pushes every row up by exactly the
+     * height of the furniture below it and leaves the surface colour showing through underneath —
+     * the same shape every other keyboard on the phone has. Padding rather than a fixed margin
+     * because the height is the phone's to say: it differs between gesture and three-button
+     * navigation, and it changes when somebody switches between them with the keyboard open.
+     *
+     * The insets are consumed rather than passed on. The two children below are a canvas and a
+     * strip that lay themselves out edge to edge inside whatever they are given; there is nothing
+     * further down to inset. What the arithmetic is, and why it takes the larger of two answers, is
+     * [KeyboardFit].
+     */
+    private fun fitToSystemBars(column: LinearLayout) {
+        ViewCompat.setOnApplyWindowInsetsListener(column) { view, insets ->
+            val fit = KeyboardFit.padding(
+                navigation = insets.edges(WindowInsetsCompat.Type.navigationBars()),
+                cutout = insets.edges(WindowInsetsCompat.Type.displayCutout()),
+                gestures = insets.edges(WindowInsetsCompat.Type.mandatorySystemGestures())
+            )
+            view.setPadding(fit.left, fit.top, fit.right, fit.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+    }
+
+    private fun WindowInsetsCompat.edges(type: Int): KeyboardFit.Edges {
+        val insets = getInsets(type)
+        return KeyboardFit.Edges(insets.left, insets.top, insets.right, insets.bottom)
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
