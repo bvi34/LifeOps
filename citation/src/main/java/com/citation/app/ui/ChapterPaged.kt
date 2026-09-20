@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.ui.reader.RenderedChapter
+import com.citation.app.ui.reader.RenderedReference
 import com.citation.core.note.Note
 import com.citation.core.reader.PageTurn
 import com.citation.core.reader.Paginator
@@ -79,6 +80,8 @@ internal fun PagedChapterBody(
     foreground: Color,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
+    /** A link or note reference the reader tapped; where it goes is decided above. */
+    onReference: (RenderedReference) -> Unit,
     onProvideHint: (() -> Int) -> Unit
 ) {
     val measurer = rememberTextMeasurer()
@@ -180,7 +183,10 @@ internal fun PagedChapterBody(
         var restoreOffset by remember(ord) { mutableStateOf(-1) }
         // Both channels are canonical in this mode, so either one restores the same way. The voice's
         // is taken first: it is the more recent place by construction when both are staged.
-        LaunchedEffect(ord) {
+        // Re-run on a jump as well as on a chapter change: a note two paragraphs down the page you
+        // are already on is the commonest reference there is, and the ordinal does not change.
+        val jump by vm.jumps.collectAsStateWithLifecycle()
+        LaunchedEffect(ord, jump) {
             restoreOffset = vm.consumePendingCanonical(ord).takeIf { it >= 0 } ?: vm.consumePendingScroll(ord)
         }
         LaunchedEffect(pageStarts, restoreOffset) {
@@ -262,14 +268,21 @@ internal fun PagedChapterBody(
                                     val l = layout ?: return@detectTapGestures
                                     val local = l.getOffsetForPosition(pos)
                                     val global = start + local
+                                    // A reference first: it is a few characters wide and names
+                                    // exactly one thing, where a highlight is a passage and the
+                                    // turn zones are a third of the screen. A note reference inside
+                                    // a sentence you have highlighted is still a note reference.
+                                    val reference = rendered.referenceAt(global)
                                     val hit = ranges.firstOrNull { global in it.second }
-                                    if (hit != null) {
-                                        onOpenNote(hit.first)
-                                    } else {
-                                        val w = size.width.toFloat()
-                                        when {
-                                            pos.x < w * 0.30f -> turnPrev()
-                                            pos.x > w * 0.70f -> turnNext()
+                                    when {
+                                        reference != null -> onReference(reference)
+                                        hit != null -> onOpenNote(hit.first)
+                                        else -> {
+                                            val w = size.width.toFloat()
+                                            when {
+                                                pos.x < w * 0.30f -> turnPrev()
+                                                pos.x > w * 0.70f -> turnNext()
+                                            }
                                         }
                                     }
                                 }

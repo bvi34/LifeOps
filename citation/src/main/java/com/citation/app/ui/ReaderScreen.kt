@@ -3,6 +3,7 @@ package com.citation.app.ui
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -98,6 +100,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.Hyphens
 import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -125,7 +128,9 @@ import com.citation.core.model.SourceType
 import com.citation.core.model.TocEntry
 import com.citation.core.note.HighlightColor
 import com.citation.core.note.Note
+import com.citation.core.reader.BookReferences
 import com.citation.core.reader.Lookup
+import com.citation.core.reader.ReferenceTarget
 import com.citation.core.reader.PageTurn
 import com.citation.core.reader.Paginator
 import com.citation.core.reader.ReaderColors
@@ -248,6 +253,19 @@ private fun FlowingReader(vm: ReaderViewModel) {
     var noteHint by remember { mutableStateOf(0) }
     var showNote by remember { mutableStateOf(false) }
     var openNote by remember { mutableStateOf<Note?>(null) }
+
+    // A note reference the reader tapped, held as the note to show and the place it lives, so
+    // "read the whole note" has somewhere to go. And an address the book points at, held until the
+    // reader says whether they want to leave for it.
+    var footnote by remember { mutableStateOf<Pair<String, ReferenceTarget.InBook>?>(null) }
+    var footnoteCut by remember { mutableStateOf(false) }
+    var leaving by remember { mutableStateOf<String?>(null) }
+    val returnTo by vm.returnTo.collectAsStateWithLifecycle()
+
+    // Back undoes the jump before it closes the book — the same order the bar above the page
+    // offers, and what every reader does with a footnote. Enabled only while there is somewhere to
+    // go back to, so back means what it always meant the rest of the time.
+    BackHandler(enabled = returnTo != null) { vm.returnFromJump() }
 
     // A pull-on-demand hint for where the reader is looking, set by the visible chapter. Capture uses
     // it to disambiguate a passage that repeats in the chapter — without recomposing on every scroll px.
@@ -414,6 +432,49 @@ private fun FlowingReader(vm: ReaderViewModel) {
                 )
             }
 
+            // Somewhere to come back to, stated rather than remembered. A jump you cannot undo is
+            // one people stop taking: following a note means losing the paragraph you were in, and
+            // hunting for it again costs more than the note was worth. It sits over the page like
+            // the search bar, for the same reason — you are still reading the sentence underneath.
+            returnTo?.let { place ->
+                val label = book.chapterAt(place.chapterOrdinal)?.title?.takeIf { it.isNotBlank() }
+                Surface(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { vm.returnFromJump() }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            if (label == null) "Back to where you were" else "Back to $label",
+                            Modifier.weight(1f).padding(start = 12.dp),
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        // For the jump that was not a peek: you went to the chapter you meant to
+                        // read, and the offer is now in the way.
+                        IconButton(onClick = { vm.forgetReturn() }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Stop offering to go back",
+                                tint = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             status?.let {
                 Text(
                     it,
@@ -450,6 +511,26 @@ private fun FlowingReader(vm: ReaderViewModel) {
                         colours = colours,
                         turnThreshold = turnThreshold,
                         onOpenNote = { openNote = it },
+                        onReference = { reference ->
+                            // Where it points is decided in :core, against this book. A reference
+                            // naming something the book does not contain resolves to nothing at
+                            // all rather than to the top of the file it named — so the reader is
+                            // told, instead of being dropped at note 1 in answer to note 17.
+                            when (val target = BookReferences.resolve(reference.href, book, ord)) {
+                                is ReferenceTarget.External -> leaving = target.url
+                                is ReferenceTarget.InBook ->
+                                    if (reference.isNote) {
+                                        val text = BookReferences.note(book, target)
+                                        if (text == null) vm.followReference(target) else {
+                                            footnote = text to target
+                                            footnoteCut = BookReferences.noteIsCut(book, target)
+                                        }
+                                    } else {
+                                        vm.followReference(target)
+                                    }
+                                null -> vm.reportBrokenReference()
+                            }
+                        },
                         onProvideHint = { hintProvider.value = it }
                     )
                 }
@@ -494,6 +575,19 @@ private fun FlowingReader(vm: ReaderViewModel) {
 
     lookup?.let { query ->
         LookupSheet(query = query, onDismiss = { lookup = null })
+    }
+
+    footnote?.let { (text, target) ->
+        FootnoteSheet(
+            text = text,
+            cut = footnoteCut,
+            onGoToNote = { footnote = null; vm.followReference(target) },
+            onDismiss = { footnote = null }
+        )
+    }
+
+    leaving?.let { url ->
+        LeaveBookDialog(url = url, onDismiss = { leaving = null })
     }
 
     openNote?.let { note ->

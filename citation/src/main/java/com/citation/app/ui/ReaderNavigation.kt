@@ -10,7 +10,9 @@ import com.citation.app.data.sync
 import com.citation.core.model.TocEntry
 import com.citation.core.note.Note
 import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReadingPlace
 import com.citation.core.reader.ReadingProgress
+import com.citation.core.reader.ReferenceTarget
 import kotlin.math.abs
 import kotlinx.coroutines.launch
 
@@ -30,6 +32,8 @@ internal fun ReaderViewModel.closeBook() {
     pendingCanonicalOffset = 0
     pendingEndChapter = -1
     closeSearch()
+    // The places in a book you have closed are places nowhere.
+    _history.value = _history.value.cleared()
     _perBookSettings.value = false
     _position.value = 0 to 0
     _pace.value = ReadingPace()
@@ -97,9 +101,18 @@ internal fun ReaderViewModel.goToChapterEnd(ordinal: Int) {
     goToChapter(target)
 }
 
-/** True when the reader is arriving somewhere other than [target]'s first word. */
+/**
+ * True when the reader is arriving somewhere other than [target]'s first word.
+ *
+ * All three landing channels, including the canonical one — a jump staged there and not counted
+ * here would let [goToChapter] write offset 0 for the moment before the reader saves the real
+ * place, and an app killed inside that moment reopens at the top of the chapter instead of at the
+ * note it was sent to.
+ */
 internal fun ReaderViewModel.hasLandingIntent(target: Int): Boolean =
-    pendingEndChapter == target || (pendingScrollChapter == target && pendingScrollOffset > 0)
+    pendingEndChapter == target ||
+        (pendingScrollChapter == target && pendingScrollOffset > 0) ||
+        (pendingCanonicalChapter == target && pendingCanonicalOffset > 0)
 
 /** The stored file behind an illustration reference, or null when it was not kept. */
 internal fun ReaderViewModel.bookAsset(bookKey: String, src: String): java.io.File? = repository.bookAsset(bookKey, src)
@@ -114,11 +127,77 @@ internal fun ReaderViewModel.goToTocEntry(entry: TocEntry) {
     val ordinal = entry.chapterOrdinal ?: return
     val book = _openBook.value ?: return
     val offset = entry.fragment?.let { book.chapterAt(ordinal)?.anchors?.get(it) } ?: 0
-    if (offset > 0) {
-        pendingScrollChapter = ordinal
-        pendingScrollOffset = offset
+    // Staged on the canonical channel because that is what the offset is. It used to go on the
+    // older one, which the paged reader reads as canonical and the scrolling reader reads as a
+    // pixel count — so a contents entry pointing inside a chapter landed correctly in one mode and
+    // some arbitrary distance down the page in the other.
+    //
+    // Remembered like any other jump: opening the contents to see what is coming and then wanting
+    // the page you were on back is the same wish as following a note and returning from it.
+    goToPlace(ordinal, offset, remember = true)
+}
+
+/**
+ * Follow a link or a note reference the text itself states, remembering where you were.
+ *
+ * The remembering is the point. A reader who follows a reference has not stopped reading the
+ * sentence they were in, and without a way back, coming back means hunting for the paragraph you
+ * just left — which is enough of a cost that people stop following references at all.
+ */
+internal fun ReaderViewModel.followReference(target: ReferenceTarget.InBook) =
+    goToPlace(target.chapterOrdinal, target.offset, remember = true)
+
+/**
+ * Say that a reference could not be followed.
+ *
+ * Said rather than swallowed: the reader tapped something the book drew as a thing you can tap, and
+ * a tap that does nothing reads as the app being broken. Naming what happened puts it back on the
+ * book, which is where it belongs — the producer pointed at something it did not ship.
+ */
+internal fun ReaderViewModel.reportBrokenReference() {
+    _status.value = "That reference doesn't point anywhere in this book."
+}
+
+/**
+ * Stop offering to go back.
+ *
+ * For the jump that was not a peek: you went to the chapter you meant to read, and a bar offering
+ * to undo that is in the way. Everything is forgotten rather than one step, because a reader
+ * dismissing this is saying they are reading *here* now.
+ */
+internal fun ReaderViewModel.forgetReturn() {
+    _history.value = _history.value.cleared()
+}
+
+/** Go back to where the last jump started, if there was one. */
+internal fun ReaderViewModel.returnFromJump() {
+    val (place, rest) = _history.value.popped()
+    place ?: return
+    _history.value = rest
+    goToPlace(place.chapterOrdinal, place.offset, remember = false)
+}
+
+/**
+ * Land at a canonical offset in a chapter, optionally remembering where the reader was first.
+ *
+ * Every landing channel is cleared before one is staged: they are mutually exclusive intents, and
+ * the newest is the one the reader asked for. [ReaderViewModel._jumps] is bumped last so a landing
+ * inside the chapter already open is noticed — the chapter ordinal does not change there, and the
+ * reading bodies stage their restore against it.
+ */
+internal fun ReaderViewModel.goToPlace(chapterOrdinal: Int, offset: Int, remember: Boolean) {
+    val book = _openBook.value ?: return
+    val target = chapterOrdinal.coerceIn(0, book.chapters.lastIndex)
+    if (remember) {
+        _history.value = _history.value.pushed(ReadingPlace(_position.value.first, _position.value.second))
     }
-    goToChapter(ordinal)
+    pendingScrollChapter = -1
+    pendingScrollOffset = 0
+    pendingEndChapter = -1
+    pendingCanonicalChapter = target
+    pendingCanonicalOffset = offset.coerceAtLeast(0)
+    _jumps.value += 1
+    goToChapter(target)
 }
 
 /** First index of [sub] in [text] closest to [near]; −1 if absent. */

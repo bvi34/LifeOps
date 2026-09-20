@@ -47,9 +47,14 @@ class RenderedChapter(
     val placeholders: List<AnnotatedString.Range<Placeholder>>,
     /** Inline content for `Text`, keyed by the ids embedded in [display]. */
     val inlineContent: Map<String, InlineTextContent>,
+    /** Every link and note reference in this chapter, as ranges of [display]. */
+    val references: List<RenderedReference> = emptyList(),
     private val displayToCanonical: IntArray,
     private val canonicalToDisplay: IntArray
 ) {
+
+    /** The reference a tap at [offset] in [display] landed on, if any. */
+    fun referenceAt(offset: Int): RenderedReference? = references.firstOrNull { offset in it.range }
 
     val length: Int get() = display.length
 
@@ -82,6 +87,26 @@ class RenderedChapter(
         }
     }
 }
+
+/**
+ * A link or a note reference, as a range of the **rendered** string.
+ *
+ * In display coordinates because the only thing that happens to one is a tap, and a tap arrives as
+ * a position in what was drawn. Where it *points* is a separate question, answered against the
+ * canonical text by `BookReferences` — which is why only the href travels here, uninterpreted.
+ */
+data class RenderedReference(
+    val range: IntRange,
+    val href: String,
+    /**
+     * A note reference rather than an ordinary link — the producer said so, or it is a
+     * same-document link sitting in a superscript.
+     *
+     * Kept apart because they want opposite things: a note is shown without leaving the sentence
+     * that cited it, and a link is a place to go.
+     */
+    val isNote: Boolean
+)
 
 /**
  * The reader's live typography, so block styling scales with the user's settings.
@@ -225,17 +250,28 @@ object ChapterRender {
         }
 
         // Inline emphasis last, so it layers over whatever block styling was applied.
+        val references = ArrayList<RenderedReference>()
         ordered.filterIsInstance<DocumentBlock.Text>().forEach { block ->
             block.spans.forEach { span ->
                 val start = emitter.displayOf(span.start)
                 val end = emitter.displayOf(span.end)
                 if (end > start) {
                     spanStyle(span.style, typography)?.let { emitter.builder.addStyle(it, start, end) }
+                    // A reference is painted as something you can act on — the accent colour, an
+                    // underline, a superscript — so it has to *be* something you can act on. The
+                    // range is kept here because this is the one place that knows where the span
+                    // landed after the renderer inserted bullets, separators and blank lines.
+                    span.href?.takeIf { it.isNotBlank() }?.let { href ->
+                        val note = span.style == InlineStyle.FOOTNOTE_REF
+                        if (note || span.style == InlineStyle.LINK) {
+                            references += RenderedReference(start until end, href, note)
+                        }
+                    }
                 }
             }
         }
 
-        return emitter.finish(placeholders, inline)
+        return emitter.finish(placeholders, inline, references)
     }
 
     // --- Block emission ---------------------------------------------------------------------------
@@ -565,7 +601,8 @@ object ChapterRender {
 
         fun finish(
             placeholders: List<AnnotatedString.Range<Placeholder>>,
-            inline: Map<String, InlineTextContent>
+            inline: Map<String, InlineTextContent>,
+            references: List<RenderedReference> = emptyList()
         ): RenderedChapter {
             val display = builder.toAnnotatedString()
             val d2c = IntArray(toCanonical.size + 1)
@@ -587,7 +624,7 @@ object ChapterRender {
                 }
             }
 
-            return RenderedChapter(display, placeholders, inline, d2c, c2d)
+            return RenderedChapter(display, placeholders, inline, references, d2c, c2d)
         }
     }
 }

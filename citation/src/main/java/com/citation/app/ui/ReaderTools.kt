@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +19,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -334,6 +337,78 @@ private fun launchDefine(context: Context, term: String): Boolean = runCatching 
     )
     true
 }.getOrElse { false }
+
+/**
+ * A note, over the sentence that cited it.
+ *
+ * A footnote is read *in* a sentence, not instead of it: the whole reason the producer marked it as
+ * a note reference rather than a link is that following it away and coming back costs more than the
+ * note is usually worth. So it arrives as a sheet over the page, and the page underneath does not
+ * move — which also means dismissing it needs no navigation at all.
+ *
+ * [cut] says the note is longer than a sheet should be, and the way to the rest is offered rather
+ * than the sheet growing into a chapter. Going there is a real jump, and the reader offers the way
+ * back from it like any other.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FootnoteSheet(text: String, cut: Boolean, onGoToNote: () -> Unit, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 24.dp)) {
+            Text(
+                "Note",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Text(
+                text,
+                // Serif and a reading size: this is the book's own prose, not a system message.
+                fontFamily = FontFamily.Serif,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
+                modifier = Modifier
+                    .padding(top = 8.dp)
+                    .heightIn(max = 320.dp)
+                    .verticalScroll(rememberScrollState())
+            )
+            if (cut) {
+                TextButton(onClick = onGoToNote, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Read the whole note")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Confirm leaving the book for an address the text points at.
+ *
+ * Asked rather than followed, because a link in a book is not a link on a page: tapping it hands
+ * the reader to a browser, and a reader who meant to turn the page has lost their book to an
+ * advert for it. The address is shown, since where it goes is the only thing that makes the answer
+ * obvious.
+ */
+@Composable
+fun LeaveBookDialog(url: String, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Leave the book?") },
+        text = {
+            Text(
+                url,
+                fontSize = 14.sp,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { openUrl(context, url); onDismiss() }) { Text("Open") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Stay") } }
+    )
+}
 
 private fun openUrl(context: Context, url: String) {
     runCatching {

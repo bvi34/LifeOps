@@ -154,6 +154,10 @@ internal fun ReaderViewModel.open(bookKey: String) {
                 pendingScrollOffset = 0
                 pendingCanonicalChapter = -1
                 pendingCanonicalOffset = 0
+                // Places to go back to belong to the book they were taken in. A book can be opened
+                // without the one before it being closed first, so this is cleared on the way in as
+                // well as on the way out — a chapter ordinal from another book is a wrong jump.
+                _history.value = _history.value.cleared()
                 // A listened place is *always* a canonical character offset, so it is staged on
                 // the channel the reader resolves rather than the one the scroll reader treats
                 // as pixels. A read place is staged exactly as it always was.
