@@ -609,8 +609,10 @@ the receipts.
 > word by word on its own settings screen** with a Forget button on every row. Nothing is learned from
 > a password field, a field marked `noSuggestions`, or a browser's private window — those editors say
 > so and the keyboard listens. Turning learning off empties the list as well as stopping it growing.
-> A correction is always undone by the very next backspace — and the word you put back is learned, so
-> it is never corrected again.
+> It also puts `alot` back into `a lot` — but only for the handful of little words people really do
+> glue to the next one, so `username` and `facebook` are left exactly as typed. A correction is
+> always undone by the very next backspace — and the word you put back is learned, so it is never
+> corrected again.
 >
 > **Messages** has *two rungs*, which is the part worth knowing before you switch anything on.
 > **Reading** needs one permission and changes nothing else about the phone: the threads are already

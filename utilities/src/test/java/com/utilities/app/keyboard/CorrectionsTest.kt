@@ -68,6 +68,39 @@ class CorrectionsTest {
     }
 
     @Test
+    fun `two words typed as one are put back into two`() {
+        assertEquals("a lot", correct("alot", book("lot" to 1, "alto" to 3, "slot" to 2)))
+        assertEquals("in fact", correct("infact", book("fact" to 1)))
+        assertEquals("thank you", correct("thankyou", book("you" to 1)))
+        assertEquals("every time", correct("everytime", book("time" to 1)))
+    }
+
+    @Test
+    fun `only the little words people actually glue are split off the front`() {
+        // `face`, `user` and `run` are every bit as common and short as `each` and `thank`; the
+        // difference is that nobody types `face book` as one word by accident. See Corrections.GLUED.
+        assertNull(correct("facebook", book("face" to 1, "book" to 1)))
+        assertNull(correct("username", book("user" to 1, "name" to 1)))
+        assertNull(correct("runtime", book("run" to 1, "time" to 1)))
+    }
+
+    @Test
+    fun `a split needs a real word on the other side of it`() {
+        // Nothing to split to, and nothing near it either.
+        assertNull(correct("inzzz", book("in" to 1, "zzz" to 3)))
+        // The long tail is not worth splitting to any more than it is worth correcting to.
+        assertNull(correct("atzither", book("at" to 1, "zither" to 3)))
+        // `a` and `i` lean forwards: a single letter is never the second half.
+        assertNull(correct("banda", book("band" to 1, "a" to 1)))
+    }
+
+    @Test
+    fun `a capitalised word is never split, which is what protects the brand names`() {
+        assertNull(correct("Alot", book("lot" to 1), startsSentence = true))
+        assertNull(correct("Facebook", book("face" to 1, "book" to 1), startsSentence = true))
+    }
+
+    @Test
     fun `a capital at the start of a sentence is a new sentence, and comes back capitalised`() {
         assertEquals("The", correct("Teh", book("the" to 1), startsSentence = true))
         assertEquals("THE", correct("TEH", book("the" to 1), startsSentence = true))
@@ -114,11 +147,11 @@ class CorrectionsTest {
 
     @Test
     fun `the long tail of the dictionary is recognised but is never a destination`() {
-        // `alto` is a word, so it is never corrected; it is also not a word anybody is likely to
-        // have been reaching for, so `alot` is left alone rather than turned into it.
-        val words = book("alto" to 3, "lot" to 1, "slot" to 2)
-        assertNull(correct("alto", words))
-        assertNull(correct("alot", words))
+        // `zebra` is a word, so it is never corrected; it is also not a word anybody is likely to
+        // have been reaching for, so the two letters swapped in `zebar` are left where they are.
+        val words = book("zebra" to 3, "zebras" to 3)
+        assertNull(correct("zebra", words))
+        assertNull(correct("zebar", words))
     }
 
     @Test

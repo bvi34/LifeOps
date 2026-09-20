@@ -25,14 +25,17 @@ data class Correction(val from: String, val to: String)
  *  - **anything shorter than [MIN_LENGTH]**. Two letters is not enough signal to overrule a thumb;
  *  - **a plural possessive.** `dogs'` is left alone whenever `dogs` is a word, because the
  *    cheapest-looking repair of it is `dog's`, which is a different thing to have said;
+ *  - **a compound noun.** `username` and `facebook` read as two ordinary words, exactly as `alot`
+ *    does, and the only thing that separates them is the word at the front — see [GLUED];
  *  - **anything that does not clear [ACCEPT]**, which is most of what gets this far.
  *
  * ## How far a typo is allowed to travel
  *
- * Every candidate is one edit away from what was typed, and is scored as *how good a word it is*
- * minus *how unlikely that edit is* — the word's standing from [Vocabulary], the edit's cost from
- * the constants below. Because the two are on one scale, the ladder falls out of the arithmetic
- * rather than having to be written down as rules:
+ * Every candidate is one edit away from what was typed — or is it read as two words, which is the
+ * one candidate that adds something rather than repairing something; see [SPLIT]. Each is scored as
+ * *how good a word it is* minus *how unlikely that edit is* — the word's standing from [Vocabulary],
+ * the edit's cost from the constants below. Because the two are on one scale, the ladder falls out
+ * of the arithmetic rather than having to be written down as rules:
  *
  *  - an ordinary slip — two letters swapped, a missing apostrophe, a doubled letter, the key next
  *    door — reaches any ordinary word;
@@ -120,6 +123,54 @@ object Corrections {
      */
     const val FIRST_LETTER = 15
 
+    /**
+     * A space put back between two words that were typed as one: `alot`, `infact`, `atleast`.
+     *
+     * The one correction here that adds a word rather than repairing one, and the one that needed a
+     * second idea before it was safe. Splitting anything that reads as two ordinary words turns
+     * `alot` into `a lot` — and `username` into `user name`, `runtime` into `run time` and
+     * `facebook` into `face book`, because a compound noun is also two ordinary words and no
+     * dictionary can tell the two cases apart.
+     *
+     * What tells them apart is *which word comes first*. The words people glue to the front of the
+     * next one are a closed class of little ones — `a`, `in`, `at`, `of`, `no`, `each`, `every`,
+     * `thank` — and they are the same handful every time, so they are written down in [GLUED]. The
+     * first halves of the compounds above are `user`, `run`, `face`: content words, and not on the
+     * list. That one rule is the difference between a feature and a nuisance.
+     *
+     * The rest of the hedging: the second half has to be an ordinary word in its own right and at
+     * least two letters, and the arithmetic here keeps a split under [CAPITALISED_ACCEPT], so
+     * `Facebook` and `YouTube` are never touched whatever else is true.
+     */
+    const val SPLIT = 12
+
+    /**
+     * The words people type stuck to the front of the next one.
+     *
+     * Deliberately a written-down list rather than anything cleverer. It is a closed class in the
+     * language and a short one — every one of them is a word that leans on what comes after it —
+     * and the alternative, some rule about how common or how short the first half is, lets
+     * `filename`, `backend` and `dropbox` straight through, since `file`, `back` and `drop` are
+     * every bit as common and short as `each` and `thank`.
+     *
+     * Left off on purpose: `you`, because `youtube`; `go`, because `google` would become `go ogle`;
+     * `i`, because `iphone` — and because `iam` and `ineed` are repaired to `aim` and `indeed` by
+     * an ordinary edit anyway; `on` and `one`, whose glued forms are rare and whose compounds
+     * (`onboarding`, `onetime`) are not; `off`, `over` and `under`, because `offset`, `overflow`
+     * and `underscore` are words somebody types all day. A word missing from this list costs one
+     * correction that does not happen, which is the cheap direction to be wrong in.
+     */
+    val GLUED: Set<String> = setOf(
+        "a",
+        "all", "along", "an", "and", "any", "as", "at", "by",
+        "each", "even", "ever", "every", "for", "from", "in", "into",
+        "no", "not", "of", "or", "out",
+        "so", "some", "thank", "that", "the", "this", "to", "too", "up", "we", "with"
+    )
+
+    /** Shorter than this and there are not two words in it. */
+    const val MIN_SPLIT_LENGTH = 4
+
     /** The letters a word can be built from, and the apostrophe, which behaves like one here. */
     private val ALPHABET: CharArray = (('a'..'z') + '\'').toCharArray()
 
@@ -149,12 +200,7 @@ object Corrections {
         // is a different thing to have said.
         if (word.endsWith("'") && vocabulary.knows(word.trimEnd('\''))) return null
 
-        val best = candidates(word, neighbours)
-            .asSequence()
-            .mapNotNull { (candidate, penalty) ->
-                val weight = vocabulary.weight(candidate)
-                if (weight == 0) null else Scored(candidate, weight - penalty - surcharge(word, candidate), weight)
-            }
+        val best = (repairs(word, neighbours, vocabulary) + splits(word, vocabulary))
             .sortedWith(
                 compareByDescending<Scored> { it.score }
                     .thenByDescending { it.weight }
@@ -166,6 +212,35 @@ object Corrections {
         val accept = if (casing == Casing.LOWER) ACCEPT else CAPITALISED_ACCEPT
         if (best.score < accept) return null
         return Correction(from = typed, to = casing.applyTo(best.word))
+    }
+
+    /** Every one-edit repair of [word] that is a word, scored. */
+    private fun repairs(word: String, neighbours: KeyNeighbours, vocabulary: Vocabulary): Sequence<Scored> =
+        candidates(word, neighbours).asSequence().mapNotNull { (candidate, penalty) ->
+            val weight = vocabulary.weight(candidate)
+            if (weight == 0) null else Scored(candidate, weight - penalty - surcharge(word, candidate), weight)
+        }
+
+    /**
+     * Every way of reading [word] as one of the [GLUED] words stuck to an ordinary one.
+     *
+     * The pair is worth what its second half is worth: the first half is off a list of words that
+     * are common by construction, so it is the other one that decides whether this is a phrase
+     * anybody would have written. The long tail is excluded here as it is everywhere else, and a
+     * one-letter second half is excluded outright — `a` and `i` lean forwards, so `banda` is not
+     * `band a`.
+     */
+    private fun splits(word: String, vocabulary: Vocabulary): Sequence<Scored> {
+        if (word.length < MIN_SPLIT_LENGTH) return emptySequence()
+        return (1 until word.length).asSequence().mapNotNull { at ->
+            val left = word.substring(0, at)
+            if (left !in GLUED) return@mapNotNull null
+            val right = word.substring(at)
+            if (right.length < 2) return@mapNotNull null
+            val weight = vocabulary.weight(right)
+            if (weight < Vocabulary.ORDINARY) return@mapNotNull null
+            Scored("$left $right", weight - SPLIT, weight)
+        }
     }
 
     /**

@@ -119,12 +119,38 @@ class WordBookAssetTest {
     }
 
     @Test
+    fun `the words people type stuck together`() {
+        mapOf(
+            "alot" to "a lot",
+            "infact" to "in fact",
+            "atleast" to "at least",
+            "aswell" to "as well",
+            "ofcourse" to "of course",
+            "incase" to "in case",
+            "everytime" to "every time",
+            "thankyou" to "thank you",
+            "eachother" to "each other",
+            "inorder" to "in order",
+            "alongwith" to "along with"
+        ).forEach { (typed, expected) -> assertEquals(expected, correct(typed)) }
+    }
+
+    @Test
+    fun `and the compounds that only look like them`() {
+        // Two common words each, and every one of them a word somebody types on purpose. What
+        // separates them from `alot` is the word at the front — see Corrections.GLUED.
+        listOf(
+            "facebook", "youtube", "google", "iphone", "dropbox", "linkedin", "wordpress",
+            "username", "filename", "hostname", "codebase", "dataset", "runtime", "timestamp",
+            "workflow", "backend", "frontend", "bitcoin", "notebook", "keyboard", "online",
+            "inbox", "website", "download", "screenshot", "laptop", "podcast", "backup"
+        ).forEach { assertNull("$it was pulled apart", correct(it)) }
+    }
+
+    @Test
     fun `and the words a keyboard has no business touching`() {
         // Not a word, but nothing near it is either.
         assertNull(correct("asdfgh"))
-        // `a lot` is two words and this corrects one, so `alot` is left alone rather than made into
-        // `alto` or `slot`, neither of which is what anybody meant.
-        assertNull(correct("alot"))
         // A name, at the start of a sentence, one far-away letter from `Add`.
         assertNull(correct("Ada", startsSentence = true))
         assertNull(correct("Wetherby", startsSentence = true))

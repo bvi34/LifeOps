@@ -1,4 +1,4 @@
-# The general dictionary: 49659 English words, each with how common it is —
+# The general dictionary: 49724 English words, each with how common it is —
 # 1 for the few thousand that make up most of what anybody writes, 2 for the next
 # few thousand, 3 for the ordinary rest. One word per line, the tier first, sorted
 # by character code so the keyboard can binary-search it without reading it all in.
@@ -1777,6 +1777,7 @@
 2apostrophe
 3apostrophe's
 3apostrophes
+2app
 2appall
 2appalled
 2appalling
@@ -1933,6 +1934,7 @@
 2approximation
 3approximation's
 3approximations
+2apps
 3apricot
 3apricot's
 3apricots
@@ -2899,6 +2901,8 @@
 3backtracked
 3backtracking
 3backtracks
+2backup
+2backups
 2backward
 1backwards
 3backwoods
@@ -5209,6 +5213,8 @@
 2browse
 3browse's
 2browsed
+2browser
+2browsers
 2browses
 2browsing
 3bruise
@@ -6846,6 +6852,8 @@
 3chastity's
 2chat
 3chat's
+2chatbot
+2chatbots
 2chats
 2chatted
 3chatter
@@ -7866,6 +7874,7 @@
 3codding
 1code
 1code's
+2codebase
 1coded
 1codes
 1coding
@@ -10777,6 +10786,8 @@
 1database
 2database's
 2databases
+2dataset
+2datasets
 1date
 1date's
 1dated
@@ -13245,6 +13256,8 @@
 3downier
 3downiest
 3downing
+2download
+2downloads
 3downpour
 3downpour's
 3downpours
@@ -13476,6 +13489,7 @@
 3droops
 1drop
 2drop's
+2dropdown
 3dropout
 3dropout's
 3dropouts
@@ -13861,6 +13875,8 @@
 3ebonies
 3ebony
 3ebony's
+2ebook
+2ebooks
 2eccentric
 3eccentric's
 3eccentricities
@@ -14223,11 +14239,11 @@
 3elusive
 3elves
 2em
-3email
+2email
 3email's
-3emailed
-3emailing
-3emails
+2emailed
+2emailing
+2emails
 3emanate
 3emanated
 3emanates
@@ -14358,6 +14374,8 @@
 3emits
 3emitted
 3emitting
+2emoji
+2emojis
 2emotion
 2emotion's
 2emotional
@@ -16500,6 +16518,8 @@
 1file
 1file's
 1filed
+2filename
+2filenames
 1files
 3filet
 1filing
@@ -20236,6 +20256,8 @@
 3hashed
 3hashes
 3hashing
+2hashtag
+2hashtags
 2hassle
 3hassle's
 3hassled
@@ -21239,6 +21261,7 @@
 3hostility
 3hostility's
 3hosting
+2hostname
 2hosts
 1hot
 3hotbed
@@ -22166,6 +22189,7 @@
 3inaugurations
 3inauspicious
 3inborn
+2inbox
 3inbred
 3inbreed
 3inbreeding
@@ -22846,6 +22870,7 @@
 3inlet
 3inlet's
 3inlets
+2inline
 3inmate
 3inmate's
 3inmates
@@ -24755,6 +24780,8 @@
 3lapsed
 3lapses
 3lapsing
+2laptop
+2laptops
 3larcenies
 3larceny
 3larceny's
@@ -25613,6 +25640,8 @@
 2livest
 3livestock
 3livestock's
+2livestream
+2livestreams
 3livid
 1living
 3living's
@@ -25749,7 +25778,10 @@
 1logical
 2logically
 3logician
+2login
+2logins
 2logo
+2logout
 1logs
 3loin
 3loin's
@@ -29763,6 +29795,7 @@
 3offing
 3offing's
 3offings
+2offline
 3offload
 3offs
 2offset
@@ -29858,6 +29891,7 @@
 2onion
 3onion's
 3onions
+2online
 3onlooker
 3onlooker's
 3onlookers
@@ -31435,6 +31469,7 @@
 3payroll's
 3payrolls
 1pays
+2paywall
 3pea
 3pea's
 1peace
@@ -32811,6 +32846,8 @@
 3pockmarks
 3pod
 3pod's
+2podcast
+2podcasts
 3podded
 3podding
 3podium
@@ -37889,6 +37926,7 @@
 1runs
 3runt
 3runt's
+2runtime
 3runts
 3runway
 3runway's
@@ -38666,6 +38704,9 @@
 3screened
 3screening
 1screens
+2screenshot
+2screenshots
+2screenshotted
 2screw
 2screw's
 3screwdriver
@@ -38996,6 +39037,8 @@
 1selects
 1self
 3self's
+2selfie
+2selfies
 2selfish
 3selfishness
 3selfishness's
@@ -39906,6 +39949,7 @@
 3signposting
 3signposts
 1signs
+2signup
 2silence
 3silence's
 3silenced
@@ -40593,7 +40637,10 @@
 3smartest
 3smarting
 3smartly
+2smartphone
+2smartphones
 3smarts
+2smartwatch
 2smash
 3smash's
 2smashed
@@ -45047,6 +45094,8 @@
 1times
 2timescale
 3timescales
+2timestamp
+2timestamps
 2timetable
 3timetable's
 3timetables
@@ -45430,6 +45479,7 @@
 3touchiest
 1touching
 3touchings
+2touchscreen
 3touchy
 2tough
 3tough's
@@ -46800,6 +46850,7 @@
 3unfolded
 3unfolding
 3unfolds
+2unfollow
 3unforeseen
 3unforgettable
 3unforgivable
@@ -47192,6 +47243,7 @@
 3uplifting
 3uplifts
 3upload
+2uploads
 1upon
 3upped
 1upper
@@ -47286,6 +47338,8 @@
 3uselessness's
 1user
 1user's
+2username
+2usernames
 1users
 1uses
 3usher
@@ -47977,6 +48031,7 @@
 1voice
 2voice's
 3voiced
+2voicemail
 2voices
 3voicing
 2void
@@ -48483,6 +48538,8 @@
 2weapons
 1wear
 3wear's
+2wearable
+2wearables
 3wearied
 3wearier
 3wearies
@@ -48518,6 +48575,8 @@
 3webbed
 3webbing
 3webs
+2website
+2websites
 2wed
 2wedded
 3wedder
@@ -48878,6 +48937,7 @@
 3wields
 1wife
 2wife's
+2wifi
 3wig
 3wig's
 3wigged
@@ -48893,6 +48953,7 @@
 3wigwams
 1wild
 3wild's
+2wildcard
 3wildcat
 3wildcat's
 3wildcats
@@ -49231,6 +49292,8 @@
 1work
 1work's
 2workable
+2workaround
+2workarounds
 3workbench
 3workbench's
 3workbenches
@@ -49241,6 +49304,8 @@
 1worker
 1worker's
 1workers
+2workflow
+2workflows
 3workforce
 1working
 2working's

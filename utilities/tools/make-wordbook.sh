@@ -75,6 +75,90 @@ for size in 10 20 35; do
   done
 done
 
+# WORDS THE LIST PREDATES
+#
+# SCOWL is a general word list from 2020 and English has moved. `online`, `inbox`, `website`,
+# `username`, `login`, `app`, `podcast`, `emoji`, `wifi`, `laptop`, `backup`, `screenshot` — all
+# ordinary words somebody types on a phone every week, none of them in it. A keyboard that does not
+# know a word does three unhelpful things with it: it will not suggest it, it may correct it into
+# something else, and it may split it in two. So they are added, as tier 2, which is what they are.
+#
+# What belongs here: ordinary English the general list is simply too old to have. What does not:
+# brand names. `facebook`, `google` and `iphone` are deliberately absent — a dictionary of English is
+# not a directory of companies, and the keyboard protects them another way, by refusing to touch a
+# capitalised word and by learning whatever you put back with a backspace.
+cat >>"${work}/tiered" <<'SUPPLEMENT'
+2	online
+2	offline
+2	inbox
+2	inline
+2	website
+2	websites
+2	username
+2	usernames
+2	filename
+2	filenames
+2	login
+2	logins
+2	logout
+2	uploads
+2	download
+2	downloads
+2	app
+2	apps
+2	email
+2	emails
+2	emailed
+2	emailing
+2	podcast
+2	podcasts
+2	emoji
+2	emojis
+2	selfie
+2	selfies
+2	hashtag
+2	hashtags
+2	smartphone
+2	smartphones
+2	wifi
+2	laptop
+2	laptops
+2	browser
+2	browsers
+2	backup
+2	backups
+2	screenshot
+2	screenshots
+2	screenshotted
+2	timestamp
+2	timestamps
+2	dataset
+2	datasets
+2	runtime
+2	workflow
+2	workflows
+2	codebase
+2	hostname
+2	signup
+2	dropdown
+2	ebook
+2	ebooks
+2	wearable
+2	wearables
+2	livestream
+2	livestreams
+2	chatbot
+2	chatbots
+2	unfollow
+2	paywall
+2	smartwatch
+2	touchscreen
+2	voicemail
+2	wildcard
+2	workaround
+2	workarounds
+SUPPLEMENT
+
 # A word in two buckets keeps the lowest tier — the commonest claim wins.
 sort -t$'\t' -k2,2 -k1,1n "${work}/tiered" | awk -F'\t' '$2 != last { print $1 $2; last = $2 }' >"${work}/body"
 
