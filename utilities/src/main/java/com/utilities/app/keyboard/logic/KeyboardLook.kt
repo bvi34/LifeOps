@@ -36,6 +36,19 @@ data class KeyboardLook(
     /** The row of completions above the keys. */
     val suggestions: Boolean = true,
 
+    /**
+     * Fix a word that is not a word when the space bar is pressed. See
+     * [com.utilities.app.keyboard.logic.Corrections].
+     *
+     * On by default, which is the one setting in this file that is a genuine argument rather than a
+     * preference. A keyboard that silently changes what somebody wrote is doing the thing people
+     * hate most about keyboards — so the refusals are strict, a correction is always undone by the
+     * very next backspace, and a word undone that way is learned, so it is never corrected again.
+     * With those three in place, on is the better default: the alternative is a keyboard that
+     * watches you type `teh` and says nothing.
+     */
+    val autoCorrect: Boolean = true,
+
     /** Remember the words typed here, to suggest them later. See [Lexicon]. */
     val learn: Boolean = true,
 
