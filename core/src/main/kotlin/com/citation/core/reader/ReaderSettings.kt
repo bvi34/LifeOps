@@ -252,7 +252,22 @@ enum class ReaderColorRole(val label: String) {
     PAGE("Page"),
     TEXT("Text"),
     HEADING("Heading"),
-    LINK("Links")
+    LINK("Links");
+
+    companion object {
+        /**
+         * The roles [names] names, dropping any that this build does not know.
+         *
+         * Dropping rather than failing: a role added in a later build and read back by an earlier
+         * one costs that one colour, not the reader's whole setup — the same rule every other field
+         * in a stored row follows. Here rather than in the storage layer because "what an unreadable
+         * name costs" is a decision, and decisions belong where they can be tested.
+         */
+        fun parse(names: Iterable<String>): Set<ReaderColorRole> =
+            names.mapNotNullTo(mutableSetOf()) { name ->
+                entries.firstOrNull { it.name == name.trim() }
+            }
+    }
 }
 
 /** The faces the reader can set text in. */

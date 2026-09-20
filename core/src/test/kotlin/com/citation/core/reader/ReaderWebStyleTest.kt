@@ -107,10 +107,20 @@ class ReaderWebStyleTest {
     }
 
     @Test
-    fun `margins are left to the host reader`() {
+    fun `the page's measure is left to the host reader`() {
         val css = ReaderWebStyle.stylesheet(ReaderSettings(marginDp = 60f, theme = ReaderTheme.PAPER))
-        assertFalse(css.contains("margin"))
+        // The *measure* — how wide the column is — is the setting most likely to break a
+        // fixed-layout reader and the least missed inside one that manages its own. The space
+        // between paragraphs is a different setting and is carried across on purpose, so this
+        // names what must not be here rather than banning the word "margin".
+        assertFalse("the reader's page margin has no business in someone else's reader", css.contains("60"))
         assertFalse(css.contains("padding"))
+        assertFalse(css.contains("margin-left"))
+        assertFalse(css.contains("margin-right"))
+        assertFalse(
+            "nothing resizes the page itself",
+            css.lines().any { it.startsWith("html, body") && it.contains("margin") }
+        )
     }
 
     @Test
@@ -168,6 +178,52 @@ class ReaderWebStyleTest {
     fun `line spacing is written as a number CSS will read`() {
         assertTrue(ReaderWebStyle.stylesheet(ReaderSettings(lineSpacing = 1.6f)).contains("line-height: 1.6"))
         assertTrue(ReaderWebStyle.stylesheet(ReaderSettings(lineSpacing = 2.0f)).contains("line-height: 2"))
+    }
+
+    @Test
+    fun `how a paragraph is marked off reaches the hosted readers too`() {
+        // The setting used to stop at the EPUB track, which made it a setting about EPUBs rather
+        // than about reading. Only `p` is touched: a first-line indent on a list item puts the
+        // bullet out of line with its own text, and on a table cell it is simply wrong.
+        fun paragraphRule(spacing: ParagraphSpacing): String =
+            ReaderWebStyle.stylesheet(ReaderSettings(paragraphs = spacing, lineSpacing = 1.6f))
+                .lines().first { it.startsWith("p {") }
+
+        val indented = paragraphRule(ParagraphSpacing.INDENT)
+        assertTrue(indented.contains("text-indent: 1.3em"))
+        assertTrue("indented paragraphs sit together", indented.contains("margin-top: 0"))
+
+        val spaced = paragraphRule(ParagraphSpacing.SPACED)
+        assertTrue(spaced.contains("text-indent: 0"))
+        // The same blank line Citation's own track draws, so a book read in one track and then the
+        // other is set the same way.
+        assertTrue(spaced.contains("margin-top: 1.6em"))
+        assertTrue(spaced.contains("margin-bottom: 1.6em"))
+
+        val both = paragraphRule(ParagraphSpacing.BOTH)
+        assertTrue(both.contains("text-indent: 1.3em"))
+        assertTrue(both.contains("margin-top: 1.6em"))
+    }
+
+    @Test
+    fun `the host's own answer is overridden in both directions`() {
+        // Half of it would be worse than none: leaving the host's margins alone under "Indented"
+        // means the reader's choice shows on some books and not others.
+        val indented = ReaderWebStyle.stylesheet(ReaderSettings(paragraphs = ParagraphSpacing.INDENT))
+        assertTrue(indented.lines().any { it.startsWith("p {") && it.contains("margin-bottom: 0 !important") })
+        val spaced = ReaderWebStyle.stylesheet(ReaderSettings(paragraphs = ParagraphSpacing.SPACED))
+        assertTrue(spaced.lines().any { it.startsWith("p {") && it.contains("text-indent: 0 !important") })
+    }
+
+    @Test
+    fun `the paragraph opening a section is excused the indent, as it is on Citation's own page`() {
+        val indented = ReaderWebStyle.stylesheet(ReaderSettings(paragraphs = ParagraphSpacing.BOTH))
+        assertTrue(indented.contains("h1 + p"))
+        assertTrue(indented.lines().any { it.startsWith("h1 + p") && it.contains("text-indent: 0") })
+        // Nothing to excuse when nothing is indented.
+        assertFalse(
+            ReaderWebStyle.stylesheet(ReaderSettings(paragraphs = ParagraphSpacing.SPACED)).contains("h1 + p")
+        )
     }
 
     @Test

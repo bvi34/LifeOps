@@ -19,8 +19,10 @@ import kotlin.math.roundToInt
  *    not a dark column inside a white frame.
  *  - **Typography** is applied to prose elements only, never to `div` or `*`. Restyling every box on
  *    the page resizes their toolbar, their menus and their page-turn controls along with the text.
- *  - **Margins are deliberately absent.** They are the setting most likely to break a fixed-layout
- *    reader and the least missed inside one that already manages its own measure.
+ *  - **The page's measure is deliberately absent.** The margin setting is the one most likely to
+ *    break a fixed-layout reader and the least missed inside one that already manages its own
+ *    column width. The space *between paragraphs* is a different setting — it is how the reader
+ *    asked prose to be set, not how wide the page is — and is carried; see [stylesheet].
  *
  * All of which is why it is worth generating here, in a module with no Android in it: what the CSS
  * says is a decision, and decisions belong somewhere they can be read and tested.
@@ -39,6 +41,19 @@ object ReaderWebStyle {
 
     /** The headings within [PROSE], for the reader's own heading colour. */
     private const val HEADINGS = "h1, h2, h3, h4, h5, h6"
+
+    /**
+     * Running prose, and only that.
+     *
+     * Paragraph setting is the one part of the typography that cannot go to [PROSE]: a first-line
+     * indent on a list item puts the bullet's text out of line with itself, and on a table cell it
+     * is simply wrong. A `p` is the only element on anybody's page that is reliably a paragraph.
+     */
+    private const val PARAGRAPHS = "p"
+
+    /** A paragraph opening a section, which carries no mark — see [paragraphRules]. */
+    private const val FIRST_PARAGRAPHS =
+        "h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p, hr + p, p:first-child"
 
     /**
      * Links, in every state. `:visited` is named explicitly because a browser's own visited colour
@@ -95,7 +110,39 @@ object ReaderWebStyle {
         prose += "-webkit-hyphens: $hyphens !important"
         prose += "hyphens: $hyphens !important"
         rules.append("$PROSE { ${prose.joinToString("; ")}; }\n")
+        rules.append(paragraphRules(settings))
 
+        return rules.toString()
+    }
+
+    /**
+     * How one paragraph is separated from the next, in somebody else's reader.
+     *
+     * Here because a setting that reaches one of four reading tracks is barely a setting: a reader
+     * who has decided their paragraphs are indented, spaced or both has decided it about *reading*,
+     * not about EPUBs. The host's own answer is overridden in both directions — the indent is set to
+     * zero when it is not wanted, and the space between paragraphs likewise — because leaving half
+     * of it alone means the reader's choice shows up on some books and not others, which is worse
+     * than not carrying it at all.
+     *
+     * The space is exactly the blank line Citation's own track draws: one line at the reader's line
+     * spacing, so a book read in one track and then the other is set the same way.
+     *
+     * Restricted to `p` (see [PARAGRAPHS]), and the paragraph opening a section is excused the
+     * indent as it is on Citation's own page — the convention every printed book follows, and the
+     * reason an indent does not read as a mistake.
+     */
+    private fun paragraphRules(settings: ReaderSettings): String {
+        val indent = if (settings.paragraphs.indents) "$PARAGRAPH_INDENT_EM" + "em" else "0"
+        val gap = if (settings.paragraphs.spaces) "${trim(settings.lineSpacing)}em" else "0"
+        val rules = StringBuilder()
+        rules.append(
+            "$PARAGRAPHS { text-indent: $indent !important; " +
+                "margin-top: $gap !important; margin-bottom: $gap !important; }\n"
+        )
+        if (settings.paragraphs.indents) {
+            rules.append("$FIRST_PARAGRAPHS { text-indent: 0 !important; }\n")
+        }
         return rules.toString()
     }
 
@@ -213,6 +260,12 @@ object ReaderWebStyle {
         val rounded = (value * 100f).roundToInt() / 100f
         return if (rounded == rounded.toInt().toFloat()) rounded.toInt().toString() else rounded.toString()
     }
+
+    /**
+     * The first-line indent, in em — the same measure the EPUB track sets, so the two tracks do not
+     * disagree about how deep an indent is.
+     */
+    private const val PARAGRAPH_INDENT_EM = 1.3f
 
     private const val DEFAULT_FONT_SIZE = 18f
     private const val MIN_ZOOM = 55

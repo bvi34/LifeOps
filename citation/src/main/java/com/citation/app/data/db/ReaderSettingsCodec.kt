@@ -108,16 +108,14 @@ object ReaderSettingsCodec {
     /**
      * The colours the reader has taken over from the theme.
      *
-     * An unknown name is dropped rather than failing the read: a role added in a later build and
-     * opened in an earlier one costs that one colour, not the whole row.
+     * What an unreadable name costs is decided in [ReaderColorRole.parse], where it is tested; this
+     * only gets the strings out of the array.
      */
     private fun JSONObject.roles(): Set<ReaderColorRole> {
         val array = optJSONArray("customRoles") ?: return emptySet()
-        return (0 until array.length())
-            .mapNotNull { index -> array.optString(index).takeIf { it.isNotBlank() } }
-            .mapNotNullTo(mutableSetOf()) { name ->
-                runCatching { ReaderColorRole.valueOf(name) }.getOrNull()
-            }
+        return ReaderColorRole.parse(
+            (0 until array.length()).mapNotNull { index -> array.optString(index).takeIf { it.isNotBlank() } }
+        )
     }
 
     /**
