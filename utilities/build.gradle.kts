@@ -83,6 +83,12 @@ dependencies {
     // the catalogue for People's partner pairing and Secrets' second-factor scanner.
     implementation(libs.zxing.core)
     implementation(libs.zxing.android.embedded)
+    // The Keystore, used for exactly one thing: holding the key the sealed-message store is
+    // encrypted with, so that reading a message needs nothing unlocked. It is never the root of
+    // trust — the vault's copy is the one a new phone recovers from, which is what makes the store
+    // in an archive unreadable until Secrets is. Secrets draws the same distinction for its own
+    // convenience unlock; see messages/seal/SessionCipher.
+    implementation(libs.androidx.security.crypto)
     implementation(libs.kotlinx.coroutines.android)
     // The appearance documents, stored as JSON rather than as thirty preference keys that have to
     // be kept in step with two data classes by hand. Pure JVM, and already in the catalogue.
