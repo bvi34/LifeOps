@@ -65,6 +65,34 @@ class MessagePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_DELIVERY_REPORTS, false)
         set(value) = prefs.edit().putBoolean(KEY_DELIVERY_REPORTS, value).apply()
 
+    // --- Sealed messages ------------------------------------------------------------------
+
+    /**
+     * Encrypt a message when the other end can read it.
+     *
+     * On by default, which is the whole point: encryption that has to be switched on per
+     * conversation is encryption most conversations do not get. It costs about one extra SMS segment
+     * per message and nothing else — and it applies only where it can, so a thread with somebody who
+     * does not have this app is unaffected and says so.
+     */
+    var sealMessages: Boolean
+        get() = prefs.getBoolean(KEY_SEAL, true)
+        set(value) = prefs.edit().putBoolean(KEY_SEAL, value).apply()
+
+    /**
+     * Offer our keys to people we message, so encryption can start on its own.
+     *
+     * On by default, and the one setting here that spends money without being asked: it sends a
+     * single invisible text per contact, once. Invisible is meant literally — it is a data message
+     * on a port, which no messaging app stores or displays, so somebody without this app sees
+     * nothing at all rather than a line of gibberish from a friend. See `KeyExchange`.
+     *
+     * Off, encryption still works: it just has to be started by scanning somebody's code.
+     */
+    var announceKeys: Boolean
+        get() = prefs.getBoolean(KEY_ANNOUNCE, true)
+        set(value) = prefs.edit().putBoolean(KEY_ANNOUNCE, value).apply()
+
     companion object {
         /** Carried by the archive: the prefix is what decides, and this one starts with it. */
         const val FILE_NAME = "utilities_messages"
@@ -73,5 +101,7 @@ class MessagePrefs(context: Context) {
         private const val KEY_AUTO_DOWNLOAD_ROAMING = "auto_download_roaming"
         private const val KEY_GROUP_MMS = "group_mms"
         private const val KEY_DELIVERY_REPORTS = "delivery_reports"
+        private const val KEY_SEAL = "seal_messages"
+        private const val KEY_ANNOUNCE = "announce_keys"
     }
 }

@@ -7,6 +7,7 @@ import com.operations.backupkit.BackupSink
 import com.operations.backupkit.BackupSource
 import com.utilities.app.data.LexiconStore
 import com.utilities.app.data.LookStore
+import com.utilities.app.messages.seal.SealStore
 import java.io.File
 
 /**
@@ -40,6 +41,19 @@ import java.io.File
  * (see `OutboxStore`). Restored onto a new phone, every one of those claims is false. It is kept in
  * a preferences file deliberately named outside the prefix swept below, so the exclusion is a
  * property of the name rather than a filter somebody could relax.
+ *
+ * **The sealed-messaging sessions**, and this is the one exclusion that is not merely tidy — putting
+ * them back would be *unsafe*. A Double Ratchet is a counter that only ever goes forward; restore
+ * yesterday's copy and the phone re-derives message keys it has already used, which is the one
+ * failure mode AES-GCM has no defence against. So `filesDir/utilities/seal` is skipped explicitly
+ * rather than by a naming rule, because a directory inside the swept one needs a filter that a
+ * reader will trip over. A restored phone re-establishes each conversation on its next message,
+ * which costs one round trip and is the correct price.
+ *
+ * The **identity key** behind those sessions is a different matter and does survive — through the
+ * vault rather than through the archive, on the same terms as Finance's bank tokens. See
+ * `SealStore`: an identity that changed on every restore would make every contact see *the keys
+ * changed*, which is the one alarm in this app that has to mean something.
  */
 class UtilitiesBackupContributor(private val context: Context) : BackupContributor {
 
@@ -107,6 +121,8 @@ class UtilitiesBackupContributor(private val context: Context) : BackupContribut
             .filter { it.isFile }
             // A half-written word list is not worth carrying; the real one is beside it.
             .filterNot { it.name.endsWith(".tmp") }
+            // And the ratchet state, which must NEVER be restored. See the class note.
+            .filterNot { it.toPath().any { part -> part.toString() == SealStore.SESSION_DIR } }
             .toList()
 
     private fun String.isSafeName(): Boolean = !contains('/') && !contains('\\') && !contains("..")

@@ -288,6 +288,158 @@ fast. The pictures themselves are never loaded into a message — what travels i
 `content://mms/part/…` URI, and the screen decodes what it is about to draw, through a bitmap cache
 bounded by **memory** rather than by count.
 
+### Encryption
+
+Messages between two installs of Utilities are encrypted end to end, by default, with no setup.
+
+#### What RCS has to do with this, and why it is not here
+
+The obvious way to get modern encrypted messaging on Android is RCS, and **a third-party app cannot
+do it.** Not "with difficulty" — there is no API. `android.telephony.ims.RcsMessageStore` landed in
+AOSP for Android 10 and was removed in Android 11 before it was ever usable; what remains in
+`android.telephony.ims` is `@SystemApi` behind `READ_PRIVILEGED_PHONE_STATE`, which is carrier-
+privileged apps only. The default-SMS role — the one this app takes — grants SMS and MMS and nothing
+else. Google Messages does RCS because it ships Google's Jibe client stack, not because it holds the
+role. RCS's end-to-end encryption as it exists today is Google's own Signal-protocol implementation
+between Google Messages clients, not part of the standard and not exposed to anybody.
+
+So the choice was to do nothing, or to encrypt over the transport this app actually has. It encrypts.
+
+#### The protocol
+
+**X3DH** to agree a secret, and a **Double Ratchet** to use it — the Signal design, implemented
+directly rather than through a library, in `messages/seal/` as pure JVM with no Android in it.
+
+| | |
+|---|---|
+| Key agreement | X25519, implemented here (see below), pinned against RFC 7748's vectors |
+| Key derivation | HKDF-SHA256, pinned against RFC 5869's vectors |
+| Encryption | AES-256-GCM, header bound in as associated data |
+| Session start | X3DH with identity, ephemeral and prekey — three DHs |
+| Ongoing | Double Ratchet: a symmetric step per message, a DH step per reply |
+| Verification | 60-digit safety number over both identity keys, Signal's construction |
+
+The curve is implemented rather than called, and that is a decision worth the paragraph it has in
+`Curve25519`: the JDK and recent Conscrypt both have `XDH`, and using it would mean the code CI
+exercises is not the code that runs on the phone — two implementations, one never executed by the
+tests, differing by Android version. The tradeoff taken is that the field arithmetic is `BigInteger`
+and therefore **not constant-time**, which is written down in the source rather than implied. The
+attacker that admits is one already running code on the phone, where the messages are readable from
+the screen anyway.
+
+#### What the three Diffie-Hellmans are each for
+
+Easy to "simplify" to one, so the reasons are in the source and here:
+
+- **identity × their prekey** authenticates *us* to them — only our identity private key computes it;
+- **ephemeral × their identity** authenticates *them* to us;
+- **ephemeral × their prekey** supplies freshness, without which two sessions between the same pair
+  of long-term keys would derive the same secret forever.
+
+X3DH as specified also signs the prekey. This does not, and that is a subtraction with an argument:
+the signature exists so a bundle fetched from a **server** can be tied to the identity key it claims.
+There is no server. A bundle arrives over the air from the same place the identity key arrived, in
+the same message — an attacker who can substitute one can substitute the other, and a signature by
+the substituted identity key verifies perfectly. What defends against that attacker is the safety
+number, which is a thing a person does. The cost avoided is an entire signature scheme (XEdDSA) that
+would have to be written and got right.
+
+#### Why the ratchet, and what each half buys
+
+- **The symmetric ratchet** steps a chain key forward once per message. Because the step is one-way,
+  a key recovered today says nothing about yesterday. That is what matters when a phone is lost.
+- **The DH ratchet** replaces the chain whenever the other side sends a new ratchet key. An attacker
+  holding a stolen copy of the state is locked out again after one round trip. That is what matters
+  when a phone was lost and got back.
+
+Both are tested as properties rather than as code paths: `SessionTest` restores a captured state and
+asserts it cannot open an earlier message, and asserts that a copy of Bob's state stops working once
+Alice and Bob exchange one more round.
+
+#### SMS is not a stream
+
+A ratchet that refused anything out of order would lose messages that every other app shows, because
+SMS segments are reordered routinely, deliveries are duplicated, and a message can be delayed for
+hours. So:
+
+- **skipped keys are kept**, bounded at 1000 per chain and 2000 overall, oldest evicted first;
+- **a key is used once** and removed as it is used, so a replayed delivery does not open twice;
+- **a message claiming to be two billion ahead is refused**, because without that bound one text
+  costs the receiving phone two billion HMACs.
+
+Each of those is a test with the failure in its name.
+
+#### How two phones find each other, with no server
+
+A **data SMS on a port** (17763). Not a marker appended to a real message, and the difference is the
+whole design: a data message is never stored by the platform and never displayed by any messaging
+app, so somebody without Utilities sees **nothing at all** rather than a line of base64 from a
+friend. That property is what makes automatic key exchange acceptable rather than rude.
+
+It costs one SMS segment per contact, once, so it is a setting that says so. Offers are rate-limited
+to one a day per contact, and a reply never triggers a reply — two installs would otherwise talk to
+each other forever.
+
+#### Trust on first use, verifiable afterwards
+
+Automatic exchange cannot rule out an attacker present at the very first handshake, so the app does
+not claim it can. Three states, and the middle one is the honest part:
+
+| | |
+|---|---|
+| **Not encrypted** | no keys — nearly everybody |
+| **Encrypted** | sealed, but the first exchange has not been checked |
+| **Verified** | somebody compared the safety number |
+
+The strip above a conversation says which, and tapping it opens the safety number: sixty digits in
+blocks of five, monospaced so they can be read down a phone line, with a QR code for when the two
+people are in the same room. Both ends compute the *same* number, sorted so neither has to know who
+the initiator was — the one failure that would make the feature worse than nothing.
+
+Nothing prompts anybody to verify. A security prompt that everybody dismisses trains everybody to
+dismiss security prompts.
+
+**An identity key that changes is refused, not adopted.** It means a reinstall or somebody in the
+middle, nothing can tell those apart, and quietly re-pinning would make the distinction unobservable.
+The thread says the keys changed and starting again is a deliberate act.
+
+#### What this protects, stated exactly
+
+**Protected: the message in transit.** What leaves the phone is ciphertext. The carrier, anyone with
+access to the carrier's systems, and anyone intercepting the air interface see a sealed blob.
+
+**Not protected: the message on this phone.** A received message is decrypted and stored, in
+plaintext, in Android's own message database — where every message has always been, readable by any
+app granted SMS access.
+
+That follows from the decision the whole app is built on: Utilities owns no data. Keeping sealed
+messages out of the platform's store would mean a private second copy of the household's history and
+a takeover that could no longer be undone — and it could not be done by storing the ciphertext
+either, because forward secrecy destroys the key as it is used, so a stored ciphertext would be
+unreadable forever after.
+
+**Not protected: who, when, and how much.** The carrier still records that these two numbers
+exchanged a message of about this length at this time. No encryption over SMS changes that.
+
+**Not interoperable.** This is Utilities to Utilities. It is not Signal and cannot talk to it.
+
+#### Cost
+
+Eighty-nine bytes of overhead on an ordinary message, 153 on the first, base64'd — about one extra
+SMS segment per message, two on the first. Cheaper than the alternative, which would be a picture
+message per text.
+
+#### What is backed up, and the one thing that must not be
+
+The **identity key** travels in the suite's vault, not in the archive — the same bargain Finance
+strikes with bank tokens. An identity that changed on every restore would make every contact see
+*the keys changed*, which is the one alarm that has to mean something.
+
+The **sessions** are excluded, and this is the only exclusion in the app that exists because
+restoring it would be *unsafe*: a ratchet is a counter that only goes forward, and yesterday's copy
+would re-derive message keys that have already been used — the one failure AES-GCM has no defence
+against. A restored phone re-establishes each conversation on its next message.
+
 ### The four components, and why one of them is odd
 
 Android will not offer an app in the default-SMS role picker unless its manifest declares all four
@@ -441,9 +593,13 @@ and it is why the backup slice is a few kilobytes:
 | | Carried? | Why |
 |---|---|---|
 | `utilities_look` (appearance) | **yes** | twenty minutes of somebody's afternoon |
+| `utilities_messages` (settings) | **yes** | four choices that depend on what you pay for |
 | `filesDir/utilities/lexicon.txt` | **yes** | the learned words, as readable text |
 | `filesDir/utilities/fonts/*` | **yes** | a grant does not survive a reinstall; the bytes do |
+| the encryption identity | **via the vault** | must survive a new phone, must not sit in a zip |
+| `filesDir/utilities/seal/*` | **no, and never** | a restored ratchet re-uses message keys |
 | `outbox_utilities` | no | claims about a store that, on a new phone, are all false |
+| `utilities_seal_adverts` | no | when we last silently texted each contact |
 | the messages themselves | no | Android's, not ours; a second copy could only drift |
 
 The look and the word list are both singletons that may already be open when a restore runs — the
@@ -474,6 +630,9 @@ All JVM, no Robolectric — nothing worth testing here touches Android.
 | `PduCodecTest` | hand-built notification PDUs decoded field by field; a full encode-then-decode round trip of a message with a caption, three pictures and a layout part; a delivery report refused as a notification; a part claiming more bytes than the message holds refused rather than clamped |
 | `MmsBudgetTest` | the size arithmetic: overhead taken off the top, an even split, a refusal below the useful floor, a carrier config of nonsense clamped, and a ladder that only ever goes downhill |
 | `RoutingTest` | which protocol a message becomes, including the two cases a `when` gets wrong: a picture without the role refused with a reason, and a group without the role sent as texts rather than refused |
+| `PrimitivesTest` | X25519 against RFC 7748 §5.2 and §6.1, HKDF against RFC 5869 A.1 and A.3, a small-order point refused, and every AEAD failure looking identical from outside |
+| `SessionTest` | Alice and Bob through the real protocol: out-of-order delivery, a message delayed across a reply, a replay refused, forward secrecy (a later state cannot open an earlier message), post-compromise recovery (a stolen state stops working after one round trip), an edited header refused, a message replayed into another conversation refused |
+| `SessionCodecTest` | a conversation surviving the process going away — including the skipped keys, which is the field a codec loses silently |
 | `TakeoversTest` | the three states and, separately, the **next step** each one offers — including the case a state comparison would get wrong, where a takeover is `ON` and still has something to ask for |
 | `BackupCoverageTest` (in `:app`) | the census: the look, the word list and a font file are in the archive, and the outbox is on the excluded list with its reason |
 

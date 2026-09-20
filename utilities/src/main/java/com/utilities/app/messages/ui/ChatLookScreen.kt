@@ -62,6 +62,8 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
     var roaming by remember { mutableStateOf(prefs.autoDownloadRoaming) }
     var groupTogether by remember { mutableStateOf(prefs.groupAsMms) }
     var deliveryReports by remember { mutableStateOf(prefs.deliveryReports) }
+    var seal by remember { mutableStateOf(prefs.sealMessages) }
+    var announce by remember { mutableStateOf(prefs.announceKeys) }
     val base = rememberPalette(chat.look)
     val palette = remember(chat, base) {
         ChatPalettes.resolve(chat, base.surface, base.text, base.accent)
@@ -186,6 +188,44 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
                 groupTogether = value
             }
         )
+        Spacer(Modifier.height(16.dp))
+        Heading("Encryption")
+        Text(
+            "Messages to anybody else using Utilities are encrypted end to end, automatically. " +
+                "What that protects is the message in transit — the carrier sees a sealed blob " +
+                "instead of your words. What it does not protect is the copy on this phone, which " +
+                "is stored where every message has always been stored, or the fact that you " +
+                "messaged somebody at all.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(8.dp))
+
+        SwitchRow(
+            title = "Encrypt when possible",
+            detail = "On by default. Encryption that has to be switched on per conversation is " +
+                "encryption most conversations never get.",
+            checked = seal,
+            onChange = { value ->
+                prefs.sealMessages = value
+                seal = value
+            }
+        )
+        SwitchRow(
+            title = "Set it up automatically",
+            detail = "Sends one invisible text per contact, once, offering your keys. It is a data " +
+                "message on a port: somebody without this app sees nothing at all rather than a " +
+                "line of gibberish. It does cost you one message.",
+            checked = announce,
+            enabled = seal,
+            onChange = { value ->
+                prefs.announceKeys = value
+                announce = value
+            }
+        )
+
+        Spacer(Modifier.height(16.dp))
+        Heading("Picture messages, continued")
         SwitchRow(
             title = "Ask for delivery reports",
             detail = "Whether the network confirms a picture message arrived. Read receipts are a " +

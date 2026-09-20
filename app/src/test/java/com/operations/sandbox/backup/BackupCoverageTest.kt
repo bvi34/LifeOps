@@ -40,6 +40,7 @@ import com.utilities.app.data.LexiconStore
 import com.utilities.app.data.LookStore
 import com.utilities.app.messages.MessagePrefs
 import com.utilities.app.messages.OutboxStore
+import com.utilities.app.messages.seal.SealStore
 import com.utilities.app.messages.logic.OutboxEntry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -246,6 +247,9 @@ class BackupCoverageTest {
         // reason `FontFiles` copies it in rather than keeping the picker's URI.
         write(File(context.filesDir, LexiconStore.DIR_NAME), LexiconStore.FILE_NAME)
         write(File(context.filesDir, FontFiles.DIR_NAME), "opendyslexic.font")
+        // A sealed-messaging session, which lives *inside* the swept directory and must not travel.
+        // Seeded so that the exclusion below is a fact this test establishes rather than a claim.
+        write(File(File(context.filesDir, SealStore.PARENT_DIR), SealStore.SESSION_DIR), "a1b2c3d4")
         // The vault, as a file: "OPSVAULT" is the magic its own reader sniffs for, and the sealed
         // body past it is :secrets' business rather than this test's.
         VaultFileStore(context).vaultFile.also { it.parentFile?.mkdirs() }
@@ -370,6 +374,19 @@ class BackupCoverageTest {
             "shared_prefs/logistics_prefs" to
                 "a display toggle — whether empty items are hidden — which `LogisticsBackupContributor` " +
                     "leaves out on purpose; nothing a household would miss on a new phone",
+            "files/utilities/seal/" to
+                "Utilities' sealed-messaging sessions. The only exclusion in this list that exists " +
+                    "because restoring it would be *unsafe*: a Double Ratchet is a counter that " +
+                    "only goes forward, and yesterday's copy would re-derive message keys that " +
+                    "have already been used. A restored phone re-establishes each conversation on " +
+                    "its next message. The identity key behind them does survive, through the " +
+                    "vault rather than the archive",
+            "shared_prefs/secure_utilities_seal" to
+                "Utilities' sealed-messaging identity: kept out of the archive and carried by the " +
+                    "vault instead, on the same terms as Finance's bank tokens",
+            "shared_prefs/utilities_seal_adverts" to
+                "when this phone last offered its keys to each contact — useless on a new " +
+                    "phone, and a slightly unpleasant thing to find in an archive",
             "shared_prefs/outbox_utilities" to
                 "Utilities' record of messages it sent that the platform's store did not have yet. " +
                     "Restored onto a new phone every entry is a claim that is false by the time it " +

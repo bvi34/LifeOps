@@ -200,7 +200,10 @@ fun ThreadScreen(
     /** Pictures staged for the next send, and the two things that can be done to them. */
     staged: List<Uri> = emptyList(),
     onAttach: () -> Unit = {},
-    onUnattach: (Uri) -> Unit = {}
+    onUnattach: (Uri) -> Unit = {},
+    /** Whether this conversation is encrypted, and whether anybody has checked. */
+    trust: com.utilities.app.messages.seal.Trust = com.utilities.app.messages.seal.Trust.NONE,
+    onOpenSafetyNumber: () -> Unit = {}
 ) {
     var draft by remember(view.thread.id) { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -218,6 +221,19 @@ fun ThreadScreen(
             .background(palette.base.surface.toComposeColor())
             .imePadding()
     ) {
+        // A strip rather than a per-bubble lock, and that is the honest shape: what is encrypted is
+        // the *conversation from now on*, and a padlock beside a message that predates the key
+        // exchange would be claiming something about it that is not true.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onOpenSafetyNumber)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            TrustBadge(trust = trust, compact = true)
+        }
+
         LazyColumn(
             state = listState,
             reverseLayout = !look.newestFirst,

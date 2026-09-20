@@ -13,6 +13,9 @@ import com.utilities.app.messages.mms.MmsTransport
 import com.utilities.app.messages.pdu.MmsHeaders
 import com.utilities.app.messages.pdu.PduDecoder
 import com.utilities.app.messages.pdu.PduEncoder
+import com.utilities.app.messages.seal.KeyExchange
+import com.utilities.app.messages.seal.SealedText
+import com.utilities.app.messages.seal.Sealing
 
 /**
  * The four components that make an app eligible to *be* the messenger.
@@ -57,9 +60,26 @@ class SmsDeliverReceiver : BroadcastReceiver() {
         val at = parts.first().timestampMillis.takeIf { it > 0 } ?: System.currentTimeMillis()
         if (body.isEmpty()) return
 
+        // Open it if it was sealed. What is stored is the plaintext, because the store is the
+        // platform's and a thread of unreadable base64 would be no thread at all — see `Sealing`,
+        // which sets out exactly what that does and does not protect.
+        val readable = when (val opened = Sealing(app).open(address, body)) {
+            is Sealing.Opened.Plain -> opened.body
+            is Sealing.Opened.Sealed -> opened.body
+            is Sealing.Opened.IdentityChanged ->
+                "\u26A0 A sealed message arrived from a different key than the one on file. It has " +
+                    "not been opened. They may have reinstalled, or somebody is in the middle."
+            is Sealing.Opened.Unreadable ->
+                "\u26A0 A sealed message arrived that could not be opened."
+        }
+
         val store = MessageStore(app)
-        store.storeIncoming(address, body, at)
-        MessageNotifier(app).arrived(address = address, body = body, threadId = store.threadFor(address))
+        store.storeIncoming(address, readable, at)
+        MessageNotifier(app).arrived(address = address, body = readable, threadId = store.threadFor(address))
+
+        // Somebody who sent us a sealed message has this app, so it is worth them having our keys —
+        // rate-limited and silent like every other offer.
+        if (SealedText.looksSealed(body)) KeyExchange.announce(app, address)
     }
 }
 

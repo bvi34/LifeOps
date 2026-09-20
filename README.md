@@ -647,12 +647,41 @@ the receipts.
 > moved toward the text colour until it can be, so a send button can never disappear; a received
 > bubble is derived from the surface and stepped up again when the first step vanishes into it.
 >
+> **Messages between two installs of Utilities are encrypted end to end, by default, with no setup.**
+> The obvious way to get that on Android is RCS, and a third-party app *cannot*: there is no API —
+> `RcsMessageStore` was removed from AOSP before it shipped, what remains is `@SystemApi` behind
+> carrier privilege, and the default-SMS role grants SMS and MMS and nothing else. Google Messages
+> does RCS because it ships Google's own client stack. So Utilities encrypts over the transport it
+> actually has: **X3DH and a Double Ratchet** — the Signal design — implemented in `messages/seal/`
+> as pure JVM, pinned against **RFC 7748** and **RFC 5869**'s own vectors, with the curve written out
+> rather than called so that the code CI exercises is the code the phone runs. Forward secrecy, so a
+> key recovered today says nothing about yesterday; post-compromise recovery, so a stolen state stops
+> working after one round trip; skipped keys kept and bounded, because SMS reorders and duplicates
+> and a ratchet that refused anything out of order would lose messages every other app shows.
+>
+> Two phones find each other over a **data SMS on a port** — never stored, never displayed, so
+> somebody without the app sees *nothing* rather than a line of base64 from a friend. That is what
+> makes automatic setup acceptable, and it still costs one message, so it is a setting that says so.
+> Trust is **on first use and verifiable afterwards**: a strip above each conversation says *not
+> encrypted*, *encrypted — not verified*, or *verified*, and tapping it shows a 60-digit safety
+> number with a QR code. Nothing nags anybody to check it. An identity key that changes is **refused,
+> not adopted** — it means a reinstall or somebody in the middle, nothing can tell those apart, and
+> quietly re-pinning would make the distinction unobservable.
+>
+> The scope is stated exactly, in the app and in the code: what is protected is the message **in
+> transit**. A received message is decrypted and stored in Android's own database like every other
+> message, because this app owns no data — which is the property that makes the takeover reversible.
+> The carrier still knows who, when and how long. And it is Utilities to Utilities; it is not Signal.
+> The identity key survives a restore through the **vault**; the ratchet sessions are the one thing
+> in the suite deliberately excluded from the archive *because restoring them would be unsafe*.
+
 > Utilities **owns no data**, and that is the design rather than a gap: the texts and the pictures stay
 > in the platform's provider where they have always been. Its backup slice is the appearance file, the
 > word list and any font you supplied — a few kilobytes. Its logic is pure JVM and unit-tested: the key
 > layouts and the shift/layer machine, the word list's refusals, the colour maths, the WAP codec both
 > ways, the MMS size budget, the rule for when a sent message has landed in the store, which protocol
-> a message should become, and what each takeover's state adds up to.
+> a message should become, the whole of the sealed-messaging protocol, and what each takeover's state
+> adds up to.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

@@ -19,6 +19,8 @@ import com.utilities.app.messages.pdu.MmsHeaders
 import com.utilities.app.messages.pdu.MmsMessage
 import com.utilities.app.messages.pdu.MmsPart
 import com.utilities.app.messages.pdu.PduEncoder
+import com.utilities.app.messages.seal.KeyExchange
+import com.utilities.app.messages.seal.Sealing
 
 /**
  * Sending — a text, or a picture message, or a refusal with a reason.
@@ -52,6 +54,7 @@ class MessageSender(context: Context) {
     private val outbox = OutboxStore(app)
     private val mms = MmsStore(app)
     private val transport = MmsTransport(app)
+    private val sealing = Sealing(app)
 
     /** What happened. A failure carries the sentence the composer shows. */
     sealed interface Outcome {
@@ -122,9 +125,29 @@ class MessageSender(context: Context) {
         else Outcome.Refused("That message could not be sent.")
     }
 
+    /**
+     * One text, to one person.
+     *
+     * ## The plaintext and the wire are different strings
+     *
+     * This is the only place in the app where that is true and it is the whole of how sealing works
+     * from the outside. What is **stored** — in our own sent box, and in the outbox echo — is what
+     * the household typed, because a sent-messages list they cannot read would be absurd. What is
+     * **handed to the radio** is the sealed form when the other end can open it. The two differ only
+     * in transit, which is exactly the property being claimed.
+     *
+     * Sealing is attempted per message rather than per conversation, because whether it is possible
+     * can change between one message and the next: the other end's keys may have arrived in between.
+     */
     private fun sendOneText(address: String, body: String, isDefaultApp: Boolean): Long? {
         val threadId = store.threadFor(address) ?: return null
         val at = System.currentTimeMillis()
+
+        // Offer our keys if we have never spoken. Silent, rate-limited to once a day per contact,
+        // and a no-op when the setting is off — see KeyExchange, which owns all of those rules.
+        KeyExchange.announce(app, address)
+
+        val wire = sealing.seal(address, body) ?: body
 
         val stored: Uri? = if (isDefaultApp) store.storeSent(address, body, at) else null
         if (stored == null) outbox.add(threadId, OutboxEntry(address = address, body = body, at = at))
@@ -132,9 +155,9 @@ class MessageSender(context: Context) {
         val manager = smsManager() ?: return null
         val sentIntent = textResultIntent(threadId, body, stored)
         val handed = runCatching {
-            val parts = manager.divideMessage(body)
+            val parts = manager.divideMessage(wire)
             if (parts.size <= 1) {
-                manager.sendTextMessage(address, null, body, sentIntent, null)
+                manager.sendTextMessage(address, null, wire, sentIntent, null)
             } else {
                 // Every part reports to the same intent. The platform's signature takes one per
                 // part, and handling that by passing the intent once and nulls for the rest would

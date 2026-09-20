@@ -62,6 +62,26 @@
            MainActivity itself is NOT exported, like every other hosted app's screen. The sandbox
            opens it in-process.
 
+         ENCRYPTION
+
+           Messages between two installs of this app are encrypted end to end, by default, with
+           X3DH and a Double Ratchet (messages/seal/, pure JVM and unit-tested against RFC 7748 and
+           RFC 5869). Three things about it are visible in this manifest:
+
+             - the identity key is the one credential this module holds that must survive a new
+               phone and must not sit in an archive, so it goes into the suite's vault. That is the
+               :vaultkit dependency, and it is the only reason for it;
+             - key exchange happens over a DATA SMS ON A PORT, which is the receiver below. A data
+               message is never stored by the platform and never displayed by any messaging app, so
+               somebody without this app sees nothing at all rather than a line of base64 from a
+               friend. That property is what makes automatic setup acceptable;
+             - it still needs no network permission. Everything travels over SMS.
+
+           What is protected is the message IN TRANSIT. A received message is decrypted and stored
+           in Android's own database like every other message, because this app owns no data — which
+           is what makes the takeover reversible. `messages/seal/Sealing` states that scope exactly,
+           and so does the settings screen.
+
          PICTURE MESSAGES
 
            Handled, and the reason that is worth a paragraph in a manifest is that it is where the
@@ -174,6 +194,24 @@
                 <data android:scheme="mmsto" />
             </intent-filter>
         </service>
+
+        <!-- Somebody's encryption keys arriving.
+
+             A data SMS on a port, which is the one channel that is invisible: the platform does not
+             store it and no messaging app displays it, so a person without this app sees nothing at
+             all rather than a line of base64 from a friend. That property is what makes automatic
+             key exchange acceptable — see messages/seal/KeyExchange. -->
+        <receiver
+            android:name=".messages.seal.KeyExchangeReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
+                <data
+                    android:scheme="sms"
+                    android:port="17763" />
+            </intent-filter>
+        </receiver>
 
         <!-- What the network says about a picture message afterwards. Neither is exported: what
              reaches them is the PendingIntent the transport made, which names this package. A

@@ -45,7 +45,9 @@ import com.utilities.app.messages.MessagesRole
 import com.utilities.app.messages.logic.ChatPalettes
 import com.utilities.app.messages.ui.ChatLookScreen
 import com.utilities.app.messages.ui.ConversationsScreen
+import com.utilities.app.messages.seal.Sealing
 import com.utilities.app.messages.ui.MessagesViewModel
+import com.utilities.app.messages.ui.SafetyNumberScreen
 import com.utilities.app.messages.ui.ThreadScreen
 import com.utilities.app.shelf.PhoneFacts
 import com.utilities.app.shelf.ShelfScreen
@@ -134,6 +136,7 @@ private const val ROUTE_SHELF = "shelf"
 private const val ROUTE_KEYBOARD = "keyboard"
 private const val ROUTE_MESSAGES = "messages"
 private const val ROUTE_CHAT_LOOK = "messages-look"
+private const val ROUTE_SAFETY = "messages-safety"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -206,6 +209,7 @@ private fun UtilitiesShell(
     // Back goes one step at a time: out of a thread, then out of the screen, then to the shelf.
     BackHandler(enabled = route != ROUTE_SHELF || openThread != null) {
         when {
+            route == ROUTE_SAFETY -> route = ROUTE_MESSAGES
             openThread != null -> messages.closeThread()
             route == ROUTE_CHAT_LOOK -> route = ROUTE_MESSAGES
             else -> route = ROUTE_SHELF
@@ -222,6 +226,7 @@ private fun UtilitiesShell(
                             openThread != null -> openThread?.thread?.title.orEmpty()
                             route == ROUTE_KEYBOARD -> "Keyboard"
                             route == ROUTE_MESSAGES -> "Messages"
+                            route == ROUTE_SAFETY -> "Safety number"
                             route == ROUTE_CHAT_LOOK -> "How threads look"
                             else -> "Utilities"
                         }
@@ -231,6 +236,7 @@ private fun UtilitiesShell(
                     if (route != ROUTE_SHELF || openThread != null) {
                         IconButton(onClick = {
                             when {
+                                route == ROUTE_SAFETY -> route = ROUTE_MESSAGES
                                 openThread != null -> messages.closeThread()
                                 route == ROUTE_CHAT_LOOK -> route = ROUTE_MESSAGES
                                 else -> route = ROUTE_SHELF
@@ -256,10 +262,21 @@ private fun UtilitiesShell(
 
             route == ROUTE_CHAT_LOOK -> ChatLookScreen(modifier)
 
+            route == ROUTE_SAFETY -> {
+                val thread = openThread?.thread
+                SafetyNumberScreen(
+                    address = thread?.addresses?.firstOrNull().orEmpty(),
+                    title = thread?.title.orEmpty().ifBlank { "them" },
+                    onBack = { route = ROUTE_MESSAGES },
+                    modifier = modifier
+                )
+            }
+
             route == ROUTE_MESSAGES -> MessagesRoute(
                 messages = messages,
                 modifier = modifier,
-                canRead = MessagesRole.canRead(context)
+                canRead = MessagesRole.canRead(context),
+                onOpenSafetyNumber = { route = ROUTE_SAFETY }
             )
 
             else -> ShelfScreen(
@@ -316,7 +333,8 @@ private fun UtilitiesShell(
 private fun MessagesRoute(
     messages: MessagesViewModel,
     modifier: Modifier,
-    canRead: Boolean
+    canRead: Boolean,
+    onOpenSafetyNumber: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val looks = remember { LookStore.get(context) }
@@ -338,6 +356,11 @@ private fun MessagesRoute(
 
     val view = open
     if (view != null) {
+        val address = view.thread.addresses.firstOrNull().orEmpty()
+        // Re-read on every thread change rather than held: the handshake happens in a broadcast
+        // receiver while this screen is open, so a value cached at composition would show "not
+        // encrypted" for a conversation that became encrypted a second ago.
+        val trust = remember(address, view.messages.size) { Sealing(context).trustFor(address) }
         ThreadScreen(
             view = view,
             look = chat,
@@ -352,7 +375,9 @@ private fun MessagesRoute(
                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                 )
             },
-            onUnattach = { messages.unattach(it) }
+            onUnattach = { messages.unattach(it) },
+            trust = trust,
+            onOpenSafetyNumber = onOpenSafetyNumber
         )
     } else {
         ConversationsScreen(

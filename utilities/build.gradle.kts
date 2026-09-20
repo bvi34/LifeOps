@@ -61,6 +61,11 @@ dependencies {
     implementation(project(":suitekit"))
     // AppId, and the backup contract this app's small slice implements.
     implementation(project(":backupkit"))
+    // The vault seam, for exactly one thing: the sealed-messaging identity key. It is the one
+    // credential this app holds that must survive a new phone and must not sit in an archive, which
+    // is the case the vault exists for — the same bargain Finance strikes with its bank tokens. See
+    // messages/seal/SealStore.
+    implementation(project(":vaultkit"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -73,6 +78,11 @@ dependencies {
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
     implementation(libs.androidx.material.icons.extended)
+    // Showing and scanning a safety number. `zxing-core` is plain Java — the encoder and decoder,
+    // with no Android in it — and `zxing-android-embedded` is the camera half. Both are already in
+    // the catalogue for People's partner pairing and Secrets' second-factor scanner.
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
     implementation(libs.kotlinx.coroutines.android)
     // The appearance documents, stored as JSON rather than as thirty preference keys that have to
     // be kept in step with two data classes by hand. Pure JVM, and already in the catalogue.
