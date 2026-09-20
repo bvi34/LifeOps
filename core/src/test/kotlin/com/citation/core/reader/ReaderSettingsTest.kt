@@ -36,6 +36,7 @@ class ReaderSettingsTest {
         assertFalse("justification without care opens rivers on a phone column", s.justify)
         assertTrue(s.hyphenate)
         assertTrue("nothing is taken over from the theme until a reader says so", s.customRoles.isEmpty())
+        assertFalse(s.useCustomColors)
     }
 
     // --- Paragraphs --------------------------------------------------------------------------
@@ -196,7 +197,11 @@ class ReaderSettingsTest {
 
     @Test
     fun `a role turned on with no colour behind it still leaves a readable page`() {
-        val s = ReaderSettings(theme = ReaderTheme.PAPER, customRoles = ReaderColorRole.entries.toSet())
+        val s = ReaderSettings(
+            theme = ReaderTheme.PAPER,
+            useCustomColors = true,
+            customRoles = ReaderColorRole.entries.toSet()
+        )
         val (bg, fg) = pageAndInk(s)!!
         assertEquals(ReaderPalette.PAPER_BG, bg)
         assertEquals(ReaderPalette.PAPER_FG, fg)
@@ -333,6 +338,72 @@ class ReaderSettingsTest {
         assertTrue(ReaderPalette.isLegible(c.link, c.page))
     }
 
+    // --- The whole palette, on and off ----------------------------------------------------------
+
+    @Test
+    fun `one switch takes every colour off the page and puts it back`() {
+        // The A/B the per-role choices cost until this existed: four roles handed back one at a
+        // time and taken again is not alternating between two pages, it is bookkeeping.
+        val mine = ReaderSettings(theme = ReaderTheme.SEPIA).taking(
+            ReaderColorRole.PAGE to 0xFF102030.toInt(),
+            ReaderColorRole.TEXT to 0xFFEEDDCC.toInt(),
+            ReaderColorRole.LINK to 0xFF00695C.toInt()
+        )
+        val off = mine.usingCustomColors(false, page = 0, text = 0)
+        val (bg, fg) = pageAndInk(off)!!
+        assertEquals("the page is the theme's again, entirely", ReaderPalette.SEPIA_BG, bg)
+        assertEquals(ReaderPalette.SEPIA_FG, fg)
+
+        // Nothing was thrown away on the way out, so coming back needs no retyping.
+        val back = off.usingCustomColors(true, page = 0, text = 0)
+        assertEquals(mine.customRoles, back.customRoles)
+        assertEquals(0xFF102030.toInt(), pageAndInk(back)!!.first)
+        assertEquals(0xFF00695C.toInt(), ReaderPalette.colors(back)!!.link)
+    }
+
+    @Test
+    fun `switched off, a role that is the reader's own still follows the theme`() {
+        val s = ReaderSettings(theme = ReaderTheme.PAPER)
+            .taking(ReaderColorRole.TEXT to 0xFF1A3A5C.toInt())
+            .usingCustomColors(false, page = 0, text = 0)
+        assertFalse(s.customizes(ReaderColorRole.TEXT))
+        assertNull(s.custom(ReaderColorRole.TEXT))
+        assertTrue("and the colour is still there", s.hasOwnColors)
+        assertEquals(0xFF1A3A5C.toInt(), s.held(ReaderColorRole.TEXT))
+        assertEquals(ReaderPalette.PAPER_FG, pageAndInk(s)!!.second)
+    }
+
+    @Test
+    fun `switching on for the first time starts from the page the reader is looking at`() {
+        // What the old "Custom" theme did, and the reason it read as an adjustment to the page you
+        // nearly liked rather than a fresh problem to solve.
+        val s = ReaderSettings().usingCustomColors(
+            on = true,
+            page = ReaderPalette.SEPIA_BG,
+            text = ReaderPalette.SEPIA_FG
+        )
+        assertEquals(setOf(ReaderColorRole.PAGE, ReaderColorRole.TEXT), s.customRoles)
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(ReaderPalette.SEPIA_BG, bg)
+        assertEquals(ReaderPalette.SEPIA_FG, fg)
+    }
+
+    @Test
+    fun `switching on again never overwrites colours already chosen`() {
+        val mine = ReaderSettings().taking(ReaderColorRole.PAGE to 0xFF102030.toInt())
+        val back = mine.usingCustomColors(false, page = 0, text = 0)
+            .usingCustomColors(true, page = 0xFFFFFFFF.toInt(), text = ReaderPalette.BLACK)
+        assertEquals(0xFF102030.toInt(), back.held(ReaderColorRole.PAGE))
+        assertFalse("and a role never taken is still the theme's", back.customizes(ReaderColorRole.TEXT))
+    }
+
+    @Test
+    fun `choosing a colour puts it on the page without a second switch`() {
+        val s = ReaderSettings().withCustom(ReaderColorRole.TEXT, 0xFF1A3A5C.toInt())
+        assertTrue(s.useCustomColors)
+        assertTrue(s.customizes(ReaderColorRole.TEXT))
+    }
+
     // --- Rows written before the page and the prose were separate -------------------------------
 
     @Test
@@ -342,6 +413,7 @@ class ReaderSettingsTest {
             customText = 0xFFEEDDCC.toInt()
         )
         val s = ReaderColorMigration.upgrade(stored, ReaderColorMigration.LEGACY_CUSTOM_THEME)
+        assertTrue("a reader who had chosen colours had them on the page", s.useCustomColors)
         assertEquals(setOf(ReaderColorRole.PAGE, ReaderColorRole.TEXT), s.customRoles)
         val (bg, fg) = pageAndInk(s)!!
         assertEquals(0xFF102030.toInt(), bg)
@@ -378,6 +450,7 @@ class ReaderSettingsTest {
             customHeading = 0xFF8B0000.toInt()
         )
         val s = ReaderColorMigration.upgrade(stored, "SEPIA")
+        assertFalse(s.useCustomColors)
         assertTrue(s.customRoles.isEmpty())
         val (bg, fg) = pageAndInk(s)!!
         assertEquals(ReaderPalette.SEPIA_BG, bg)

@@ -30,7 +30,9 @@ object ReaderColorMigration {
      * exactly as it was, with its held colours held and none of them in force.
      */
     fun upgrade(settings: ReaderSettings, storedTheme: String?): ReaderSettings {
-        if (storedTheme?.trim() != LEGACY_CUSTOM_THEME) return settings.copy(customRoles = emptySet())
+        if (storedTheme?.trim() != LEGACY_CUSTOM_THEME) {
+            return settings.copy(useCustomColors = false, customRoles = emptySet())
+        }
         val roles = mutableSetOf(ReaderColorRole.PAGE, ReaderColorRole.TEXT)
         if (settings.customHeading != null) roles += ReaderColorRole.HEADING
         if (settings.customLink != null) roles += ReaderColorRole.LINK
@@ -39,6 +41,7 @@ object ReaderColorMigration {
             // moment the reader chose their own colours — so what is left underneath is the app's
             // own, which is what a reader handing a role back should land on.
             theme = ReaderTheme.SYSTEM,
+            useCustomColors = true,
             customRoles = roles,
             customBackground = settings.customBackground ?: ReaderPalette.CUSTOM_BG,
             customText = settings.customText ?: ReaderPalette.CUSTOM_FG

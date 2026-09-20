@@ -33,6 +33,7 @@ object ReaderSettingsCodec {
         put("hyphenate", settings.hyphenate)
         put("paragraphs", settings.paragraphs.name)
         put("theme", settings.theme.name)
+        put("useCustomColors", settings.useCustomColors)
         // Always written, even when empty: its absence is what marks a row from before the page and
         // the prose became separate choices, and how one is recognised on the way back in.
         put("customRoles", JSONArray(settings.customRoles.map { it.name }))
@@ -69,6 +70,7 @@ object ReaderSettingsCodec {
             hyphenate = obj.optBoolean("hyphenate", defaults.hyphenate),
             paragraphs = obj.enum("paragraphs", defaults.paragraphs) { ParagraphSpacing.valueOf(it) },
             theme = obj.enum("theme", defaults.theme) { ReaderTheme.valueOf(it) },
+            useCustomColors = obj.usesCustomColors(),
             customRoles = obj.roles(),
             customBackground = obj.colour("customBackground"),
             customText = obj.colour("customText"),
@@ -92,6 +94,16 @@ object ReaderSettingsCodec {
         if (obj.has("customRoles")) return settings
         return ReaderColorMigration.upgrade(settings, obj.optString("theme").takeIf { it.isNotBlank() })
     }
+
+    /**
+     * Whether the reader's own colours are on the page.
+     *
+     * Falls back to "on if any role was taken over", which is what a row that has the roles but not
+     * this key means: the switch was added after them, and a reader who had chosen colours had them
+     * on the page.
+     */
+    private fun JSONObject.usesCustomColors(): Boolean =
+        if (has("useCustomColors")) optBoolean("useCustomColors") else roles().isNotEmpty()
 
     /**
      * The colours the reader has taken over from the theme.

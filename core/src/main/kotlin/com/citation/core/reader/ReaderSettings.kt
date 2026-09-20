@@ -55,12 +55,28 @@ data class ReaderSettings(
      */
     val theme: ReaderTheme = ReaderTheme.SYSTEM,
     /**
-     * Which colours the reader has taken over from [theme]. Everything else follows it.
+     * Whether the reader's own colours are on the page at all.
+     *
+     * The whole palette in one switch, and it is the reason this is a flag rather than something
+     * derived from [customRoles] being empty: *alternating* between the app's colours and your own
+     * is the commonest thing anybody does here — it is how you decide you like them — and it has to
+     * stay one tap in each direction, with nothing lost on the way. Handing four roles back one at
+     * a time and taking them again is not that, which is what turning the old `CUSTOM` theme into
+     * per-role choices cost before this was added back.
+     *
+     * Off, the page is entirely [theme]'s, exactly as if nothing had ever been chosen.
+     */
+    val useCustomColors: Boolean = false,
+    /**
+     * Which colours are the reader's own rather than [theme]'s, when [useCustomColors] is on.
      *
      * A set rather than a flag per colour because the colours themselves are *held* — see
      * [customBackground] — and the two facts are different: what a colour is, and whether it is in
      * force. Keeping them apart is what lets a reader hand the page back to Sepia to compare and
      * take it again without retyping a hex code.
+     *
+     * Read it through [customizes] rather than directly: a role in this set is only on the page
+     * while [useCustomColors] is on.
      */
     val customRoles: Set<ReaderColorRole> = emptySet(),
     /**
@@ -151,7 +167,10 @@ data class ReaderSettings(
     val followsSystemBrightness: Boolean get() = brightness < 0f
 
     /** Whether [role] is the reader's own colour rather than the theme's. */
-    fun customizes(role: ReaderColorRole): Boolean = role in customRoles
+    fun customizes(role: ReaderColorRole): Boolean = useCustomColors && role in customRoles
+
+    /** Whether anything at all has been taken over, in force or waiting for the switch. */
+    val hasOwnColors: Boolean get() = customRoles.isNotEmpty()
 
     /**
      * The colour the reader has taken over for [role], or `null` where it still follows the theme.
@@ -175,15 +194,22 @@ data class ReaderSettings(
         ReaderColorRole.LINK -> customLink
     }
 
-    /** Take [role] over, in [colour]. */
+    /**
+     * Take [role] over, in [colour].
+     *
+     * Turns [useCustomColors] on with it, because choosing a colour is how a reader says they want
+     * their own — being asked to choose one *and then* enable it would be a setting that does
+     * nothing when you set it.
+     */
     fun withCustom(role: ReaderColorRole, colour: Int): ReaderSettings {
         val opaque = ReaderPalette.opaque(colour)
         val roles = customRoles + role
+        val on = copy(useCustomColors = true, customRoles = roles)
         return when (role) {
-            ReaderColorRole.PAGE -> copy(customRoles = roles, customBackground = opaque)
-            ReaderColorRole.TEXT -> copy(customRoles = roles, customText = opaque)
-            ReaderColorRole.HEADING -> copy(customRoles = roles, customHeading = opaque)
-            ReaderColorRole.LINK -> copy(customRoles = roles, customLink = opaque)
+            ReaderColorRole.PAGE -> on.copy(customBackground = opaque)
+            ReaderColorRole.TEXT -> on.copy(customText = opaque)
+            ReaderColorRole.HEADING -> on.copy(customHeading = opaque)
+            ReaderColorRole.LINK -> on.copy(customLink = opaque)
         }
     }
 
@@ -194,6 +220,20 @@ data class ReaderSettings(
      * costs you the colour you had tuned is one nobody makes twice.
      */
     fun withoutCustom(role: ReaderColorRole): ReaderSettings = copy(customRoles = customRoles - role)
+
+    /**
+     * Put the reader's own colours on the page, or take all of them off at once.
+     *
+     * Which roles are theirs, and what colour each one is, both survive being switched off — that is
+     * what makes this an A/B rather than a decision. Switching on with nothing chosen yet takes over
+     * the page and the text in [page] and [text], the colours already on screen, so the first tap
+     * lands on an adjustment to the page the reader was looking at rather than on a blank white one.
+     */
+    fun usingCustomColors(on: Boolean, page: Int, text: Int): ReaderSettings = when {
+        !on -> copy(useCustomColors = false)
+        hasOwnColors -> copy(useCustomColors = true)
+        else -> withCustom(ReaderColorRole.PAGE, page).withCustom(ReaderColorRole.TEXT, text)
+    }
 
     companion object {
         const val SYSTEM_BRIGHTNESS = -1f
