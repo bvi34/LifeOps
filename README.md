@@ -672,8 +672,13 @@ the receipts.
 > transit**. A received message is decrypted and stored in Android's own database like every other
 > message, because this app owns no data — which is the property that makes the takeover reversible.
 > The carrier still knows who, when and how long. And it is Utilities to Utilities; it is not Signal.
-> The identity key survives a restore through the **vault**; the ratchet sessions are the one thing
-> in the suite deliberately excluded from the archive *because restoring them would be unsafe*.
+> Everything in the sealed store is **encrypted with a key kept in the vault**, so the copy in a
+> backup does not open until Secrets does — and the peer records, including who you verified, come
+> back on a new phone. The live **ratchet state** is the one thing left out, and for correctness
+> rather than privacy: a ratchet is a counter that only goes forward, and restoring last week's copy
+> would rewind the sending chain and leave the conversation silently dead in both directions. Nothing
+> visible is lost — the first message after a restore re-handshakes by itself, and both ends heal
+> without being told to.
 
 > Utilities **owns no data**, and that is the design rather than a gap: the texts and the pictures stay
 > in the platform's provider where they have always been. Its backup slice is the appearance file, the

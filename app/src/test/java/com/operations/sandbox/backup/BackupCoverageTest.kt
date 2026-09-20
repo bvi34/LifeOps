@@ -247,9 +247,12 @@ class BackupCoverageTest {
         // reason `FontFiles` copies it in rather than keeping the picker's URI.
         write(File(context.filesDir, LexiconStore.DIR_NAME), LexiconStore.FILE_NAME)
         write(File(context.filesDir, FontFiles.DIR_NAME), "opendyslexic.font")
-        // A sealed-messaging session, which lives *inside* the swept directory and must not travel.
-        // Seeded so that the exclusion below is a fact this test establishes rather than a claim.
-        write(File(File(context.filesDir, SealStore.PARENT_DIR), SealStore.SESSION_DIR), "a1b2c3d4")
+        // The sealed-messaging store, both halves. The peer record travels; the ratchet beside it
+        // must not, and they are distinguished by a filename prefix — so both are seeded and the
+        // exclusion below is a fact this test establishes rather than a claim.
+        val sealDir = File(File(context.filesDir, SealStore.PARENT_DIR), SealStore.SESSION_DIR)
+        write(sealDir, "${SealStore.PEER_PREFIX}a1b2c3d4")
+        write(sealDir, "${SealStore.RATCHET_PREFIX}a1b2c3d4")
         // The vault, as a file: "OPSVAULT" is the magic its own reader sniffs for, and the sealed
         // body past it is :secrets' business rather than this test's.
         VaultFileStore(context).vaultFile.also { it.parentFile?.mkdirs() }
@@ -374,16 +377,22 @@ class BackupCoverageTest {
             "shared_prefs/logistics_prefs" to
                 "a display toggle — whether empty items are hidden — which `LogisticsBackupContributor` " +
                     "leaves out on purpose; nothing a household would miss on a new phone",
-            "files/utilities/seal/" to
-                "Utilities' sealed-messaging sessions. The only exclusion in this list that exists " +
-                    "because restoring it would be *unsafe*: a Double Ratchet is a counter that " +
-                    "only goes forward, and yesterday's copy would re-derive message keys that " +
-                    "have already been used. A restored phone re-establishes each conversation on " +
-                    "its next message. The identity key behind them does survive, through the " +
-                    "vault rather than the archive",
+            "files/utilities/seal/ratchet-" to
+                "Utilities' live Double Ratchet state, and the only line on this list that is here " +
+                    "for correctness rather than privacy: a ratchet is a counter that only goes " +
+                    "forward, so restoring last week's copy would rewind the sending chain, make " +
+                    "every message unopenable at the other end, and return replay protection for " +
+                    "the window. The peer records beside it (seal/peer-) *are* carried, encrypted, " +
+                    "so a restored phone keeps who everybody is and who was verified and simply " +
+                    "re-handshakes on its next message",
             "shared_prefs/secure_utilities_seal" to
                 "Utilities' sealed-messaging identity: kept out of the archive and carried by the " +
                     "vault instead, on the same terms as Finance's bank tokens",
+            "shared_prefs/secure_utilities_seal_key" to
+                "the key the seal/ directory is encrypted with. An archive holding both it and the " +
+                    "files it opens would be an archive holding them in plaintext — so it " +
+                    "travels in the vault, which is what makes the sealed store in a backup " +
+                    "unreadable until Secrets is unlocked",
             "shared_prefs/utilities_seal_adverts" to
                 "when this phone last offered its keys to each contact — useless on a new " +
                     "phone, and a slightly unpleasant thing to find in an archive",

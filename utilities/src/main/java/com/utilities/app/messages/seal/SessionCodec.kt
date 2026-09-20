@@ -16,7 +16,6 @@ object SessionCodec {
     fun encode(snapshot: Session.Snapshot): String = buildString {
         appendLine(VERSION)
         appendLine("peer=${Bytes.encode(snapshot.peerIdentityKey)}")
-        appendLine("trust=${snapshot.trust.name}")
         snapshot.openingEphemeral?.let { appendLine("opening=${Bytes.encode(it)}") }
         val ratchet = snapshot.ratchet
         appendLine("root=${Bytes.encode(ratchet.rootKey)}")
@@ -64,7 +63,6 @@ object SessionCodec {
 
         return Session.Snapshot(
             peerIdentityKey = bytes("peer"),
-            trust = runCatching { Trust.valueOf(fields["trust"].orEmpty()) }.getOrDefault(Trust.FIRST_USE),
             openingEphemeral = optional("opening"),
             ratchet = Ratchet.Snapshot(
                 rootKey = bytes("root"),

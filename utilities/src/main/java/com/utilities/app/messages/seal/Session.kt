@@ -8,6 +8,17 @@ package com.utilities.app.messages.seal
  * it cannot rule out an attacker who was present for the very first exchange. So it does not claim
  * to. A session nobody has verified says *encrypted, unverified*, and the way to promote it is on
  * the screen next to it.
+ *
+ * ## Why this is not a property of a [Session]
+ *
+ * Trust belongs to a **person's identity key**, not to a ratchet. Ratchets are torn down and rebuilt
+ * routinely — after a restore, after the other end reinstalls, after a message that will not open —
+ * and verification is the one thing in this app that cost a human being something: a phone call, or
+ * standing next to somebody. Tying it to the ratchet would throw it away every time the plumbing
+ * restarted, and the household would be asked to verify Ada again for reasons they cannot see.
+ *
+ * So it is stored against the peer's identity key, in `SealStore`, and survives everything except
+ * that key changing — which is precisely the event it exists to make visible.
  */
 enum class Trust {
     /** No keys yet. Messages go in the clear and the thread says so. */
@@ -30,31 +41,23 @@ enum class Trust {
  *
  * If a peer's identity key turns up different from the one on file, one of two things has happened:
  * they reinstalled, or somebody is in the middle. The protocol cannot tell them apart and neither
- * can this class — so it refuses to silently adopt the new key. The session goes to
- * [Trust.NONE], the thread says the keys changed, and starting again is a deliberate act. Signal
- * learned this the hard way and so has everybody who quietly re-pinned.
+ * can this class — so `SealStore` refuses to silently adopt the new key, the thread says the keys
+ * changed, and starting again is a deliberate act. Signal learned this the hard way and so has
+ * everybody who quietly re-pinned.
  */
 class Session private constructor(
     val peerIdentityKey: ByteArray,
     private val ourIdentity: Identity,
     private var ratchet: Ratchet,
-    private var trust: Trust,
     /** Set until the opening message has been sent, because it has to carry these. */
     private var openingEphemeral: ByteArray?
 ) {
-
-    val trustLevel: Trust get() = trust
 
     /** Whether the other end has answered. Until then the session is ours alone. */
     val confirmed: Boolean get() = ratchet.established
 
     /** The sixty digits, for the verification screen. */
     fun safetyNumber(): String = SafetyNumber.of(ourIdentity.identityKey.publicKey, peerIdentityKey)
-
-    /** Somebody compared the number and it matched. */
-    fun markVerified() {
-        trust = Trust.VERIFIED
-    }
 
     /**
      * Seal a message.
@@ -100,21 +103,19 @@ class Session private constructor(
     /** Everything that has to survive the process. */
     fun snapshot(): Snapshot = Snapshot(
         peerIdentityKey = peerIdentityKey.copyOf(),
-        trust = trust,
         openingEphemeral = openingEphemeral?.copyOf(),
         ratchet = ratchet.snapshot()
     )
 
     data class Snapshot(
         val peerIdentityKey: ByteArray,
-        val trust: Trust,
         val openingEphemeral: ByteArray?,
         val ratchet: Ratchet.Snapshot
     ) {
         override fun equals(other: Any?): Boolean = other is Snapshot &&
-            peerIdentityKey.contentEquals(other.peerIdentityKey) && trust == other.trust
+            peerIdentityKey.contentEquals(other.peerIdentityKey)
 
-        override fun hashCode(): Int = 31 * peerIdentityKey.contentHashCode() + trust.ordinal
+        override fun hashCode(): Int = peerIdentityKey.contentHashCode()
     }
 
     companion object {
@@ -136,7 +137,6 @@ class Session private constructor(
                 peerIdentityKey = theirBundle.identityKey.copyOf(),
                 ourIdentity = ourIdentity,
                 ratchet = Ratchet.initiate(secret, theirBundle.signedPreKey),
-                trust = Trust.FIRST_USE,
                 openingEphemeral = ephemeral.publicKey
             )
         }
@@ -163,7 +163,6 @@ class Session private constructor(
                 peerIdentityKey = theirIdentity.copyOf(),
                 ourIdentity = ourIdentity,
                 ratchet = Ratchet.respond(secret, ourIdentity.signedPreKey),
-                trust = Trust.FIRST_USE,
                 openingEphemeral = null
             )
         }
@@ -172,7 +171,6 @@ class Session private constructor(
             peerIdentityKey = snapshot.peerIdentityKey.copyOf(),
             ourIdentity = ourIdentity,
             ratchet = Ratchet.restore(snapshot.ratchet),
-            trust = snapshot.trust,
             openingEphemeral = snapshot.openingEphemeral?.copyOf()
         )
     }

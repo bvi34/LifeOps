@@ -429,16 +429,55 @@ Eighty-nine bytes of overhead on an ordinary message, 153 on the first, base64'd
 SMS segment per message, two on the first. Cheaper than the alternative, which would be a picture
 message per text.
 
-#### What is backed up, and the one thing that must not be
+#### What is backed up
 
-The **identity key** travels in the suite's vault, not in the archive — the same bargain Finance
-strikes with bank tokens. An identity that changed on every restore would make every contact see
-*the keys changed*, which is the one alarm that has to mean something.
+Everything in `filesDir/utilities/seal` is **encrypted** with a portable 32-byte key that is kept two
+places for two reasons: locally, behind an Android Keystore key, so that reading a message needs
+nothing unlocked; and **in the vault**, because that is the only copy a new phone can get. So the
+sealed store in an archive does not open until Secrets does — the same bargain the vault's own
+payload strikes. See `SessionCipher`.
 
-The **sessions** are excluded, and this is the only exclusion in the app that exists because
-restoring it would be *unsafe*: a ratchet is a counter that only goes forward, and yesterday's copy
-would re-derive message keys that have already been used — the one failure AES-GCM has no defence
-against. A restored phone re-establishes each conversation on its next message.
+The **identity key** travels in the vault too, not in the archive. An identity that changed on every
+restore would make every contact see *the keys changed*, which is the one alarm that has to mean
+something.
+
+The **peer records** — who somebody is, and whether anybody verified them — are in the archive and
+are restored. This is the half with durable value: verification cost a human being a phone call, and
+losing it on every restore would mean being asked to verify the same person again for reasons they
+cannot see. Verification is stored against the **identity key**, not against a session, precisely so
+it survives the plumbing being rebuilt underneath it.
+
+#### The one thing that is not carried, and why
+
+The **ratchet state**, and this is about correctness rather than privacy.
+
+A Double Ratchet is a counter that only goes forward. Restore last week's copy and the sending chain
+is rewound: the next message out is encrypted with a key the other end consumed days ago and cannot
+get back to, so they cannot open it; their replies have moved the root key on, so the chain this
+phone derives for *receiving* is not the one they are sending under either. Nothing about that
+self-heals — it is a conversation silently dead in both directions, which is very much worse than one
+message of setup. It would also rewind the used-key store, quietly returning replay protection for
+every message in the window.
+
+Carrying it and refusing to put it back would be worse still: it would break the suite's own rule
+that everything in an archive comes back byte for byte, which `BackupCoverageTest` enforces. So
+`seal/ratchet-…` is left out by filename prefix, with the reason on the census's excluded list.
+
+**Nothing visible is lost.** The first message after a restore starts a fresh handshake, which costs
+one message and no interaction, and the peer record it starts from came back intact. The conversation
+is still encrypted, still verified, and the household notices nothing.
+
+#### Conversations heal themselves
+
+A ratchet can legitimately go missing at either end — the other person reinstalled, or somebody
+restored a backup. Both arrive as a message that will not open with the session on file, and both are
+answered the same way: if it is an *opening* message, accept a new session. The existing session is
+tried first and only written back on success, so a failed attempt leaves the stored ratchet exactly
+as it was, which is what makes the fallback safe to try.
+
+Without that, one reinstall would leave two people unable to write to each other with no way to tell
+why. It is two tests: one restores a backup and carries on, one proves a failed attempt does not
+half-turn the ratchet.
 
 ### The four components, and why one of them is odd
 
@@ -597,7 +636,9 @@ and it is why the backup slice is a few kilobytes:
 | `filesDir/utilities/lexicon.txt` | **yes** | the learned words, as readable text |
 | `filesDir/utilities/fonts/*` | **yes** | a grant does not survive a reinstall; the bytes do |
 | the encryption identity | **via the vault** | must survive a new phone, must not sit in a zip |
-| `filesDir/utilities/seal/*` | **no, and never** | a restored ratchet re-uses message keys |
+| `filesDir/utilities/seal/peer-*` | **yes, encrypted** | verification cost somebody a phone call |
+| the key that opens `seal/` | **via the vault** | in the archive it would make the rest pointless |
+| `filesDir/utilities/seal/ratchet-*` | no | a rewound ratchet kills the conversation outright |
 | `outbox_utilities` | no | claims about a store that, on a new phone, are all false |
 | `utilities_seal_adverts` | no | when we last silently texted each contact |
 | the messages themselves | no | Android's, not ours; a second copy could only drift |
@@ -632,7 +673,7 @@ All JVM, no Robolectric — nothing worth testing here touches Android.
 | `RoutingTest` | which protocol a message becomes, including the two cases a `when` gets wrong: a picture without the role refused with a reason, and a group without the role sent as texts rather than refused |
 | `PrimitivesTest` | X25519 against RFC 7748 §5.2 and §6.1, HKDF against RFC 5869 A.1 and A.3, a small-order point refused, and every AEAD failure looking identical from outside |
 | `SessionTest` | Alice and Bob through the real protocol: out-of-order delivery, a message delayed across a reply, a replay refused, forward secrecy (a later state cannot open an earlier message), post-compromise recovery (a stolen state stops working after one round trip), an edited header refused, a message replayed into another conversation refused |
-| `SessionCodecTest` | a conversation surviving the process going away — including the skipped keys, which is the field a codec loses silently |
+| `SessionCodecTest` | a conversation surviving the process going away — including the skipped keys, which is the field a codec loses silently — and that a stored session holds no verification, because that belongs to the person |
 | `TakeoversTest` | the three states and, separately, the **next step** each one offers — including the case a state comparison would get wrong, where a takeover is `ON` and still has something to ask for |
 | `BackupCoverageTest` (in `:app`) | the census: the look, the word list and a font file are in the archive, and the outbox is on the excluded list with its reason |
 

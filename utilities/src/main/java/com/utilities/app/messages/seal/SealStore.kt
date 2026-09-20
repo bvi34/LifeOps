@@ -11,34 +11,55 @@ import java.io.File
 /**
  * Where the keys live.
  *
- * ## Three kinds of thing, three different answers about backup
+ * ## Everything here is encrypted, and travels
  *
- * **The identity.** One long-term keypair per install, and the thing a safety number is computed
- * over. It goes into the **vault** — `SecretsAccess`, the same seam Finance mirrors its bank tokens
- * through — and is deliberately kept *out* of the archive. That is the suite's existing answer to
- * "a credential that must survive a new phone but must not sit in a zip", and it is exactly right
- * here: an identity that changed on every restore would make every contact see *the keys changed*,
- * which is the one alarm that must mean something.
+ * Every file in `filesDir/utilities/seal` is written under a portable key that is kept locally
+ * behind the Android Keystore *and* mirrored into the suite's vault — see [SessionCipher]. That is
+ * what makes the archive safe to carry them in: the sealed store in a backup **does not open until
+ * Secrets does**, on the same terms as the vault's own payload, while day-to-day reading needs
+ * nothing unlocked.
  *
- * **The peers' bundles.** Public keys somebody sent us. Not secret, and not backed up either —
- * because restoring a bundle without the session that goes with it produces a contact the app thinks
- * it can seal to and cannot.
+ * Two kinds of file, distinguished by a filename prefix because that is the mechanism the rest of
+ * this app already uses to decide what a backup carries:
  *
- * **The sessions.** Ratchet state, and the one thing here that must **never** be restored from a
- * backup. A ratchet is a counter that only goes forward; put yesterday's copy back and the phone
- * will re-derive message keys it has already used, which is the failure mode AES-GCM has no defence
- * against. So sessions live in a directory the backup contributor explicitly skips, and a restored
- * phone starts its conversations again — which costs one round trip per contact and is the correct
- * price.
+ * **`peer-…` — what is known about a person.** Their identity key, their prekey, and whether
+ * anybody has verified them. Carried by the archive and **restored**, because this is the part with
+ * durable value: verification cost a human being a phone call, and losing it on every restore would
+ * mean being asked to verify Ada again for reasons nobody can see.
  *
- * ## Why the sessions are not encrypted at rest
+ * **`ratchet-…` — the live chain state.** Deliberately **not carried**, and this is the one exclusion
+ * in the app that is about correctness rather than tidiness.
  *
- * They are in this app's private directory, which is already unreadable by other apps. Encrypting
- * them would need a key, and the only keys available are the Keystore (dies with the phone, which is
- * fine here) or the vault (which would mean no sealed message could be read until somebody unlocked
- * Secrets — a lock screen in front of the messaging app). The honest position is that a phone whose
- * private storage is readable has already lost, and that is the same position every messaging app
- * takes.
+ * ## Why a ratchet is not resumed
+ *
+ * Not squeamishness about key hygiene — it would break the conversation, permanently.
+ *
+ * A Double Ratchet is a counter that only goes forward. Restore last week's copy and the sending
+ * chain is rewound: the next message out is encrypted with a key the other end consumed days ago and
+ * has no way back to, so they cannot open it. Their replies have moved the root key on, so the chain
+ * this phone derives for *receiving* is not the one they are sending under either. Nothing about
+ * that self-heals — it is a conversation that is silently dead in both directions, which is very
+ * much worse than one round trip of setup. It would also rewind the used-key store, quietly
+ * returning replay protection for every message in the window.
+ *
+ * Carrying it and then refusing to put it back would be worse than leaving it out: it would break
+ * the suite's own rule that everything in an archive comes back byte for byte, which
+ * `BackupCoverageTest` enforces. So it is left out, by filename prefix, with the reason on the
+ * census's excluded list where a reader will find it.
+ *
+ * Nothing visible is lost. The first message after a restore starts a fresh handshake, which takes
+ * one message and no interaction, and the peer record it starts from came back intact — so the
+ * conversation is still encrypted, still verified, and the household notices nothing. Both ends heal
+ * without being told to: see `Sealing`, which accepts a new session when an opening message arrives
+ * for one it cannot open.
+ *
+ * ## The identity
+ *
+ * One long-term keypair per install, and the thing a safety number is computed over. It is **not**
+ * in `seal/`: it lives in a preferences file named outside the swept prefix and is carried by the
+ * vault instead, on the same terms Finance's bank tokens are. An identity that changed on every
+ * restore would make every contact see *the keys changed*, which is the one alarm in this app that
+ * has to mean something.
  */
 class SealStore private constructor(context: Context) {
 
@@ -46,7 +67,9 @@ class SealStore private constructor(context: Context) {
 
     private val prefs = app.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
 
-    private val sessionDir = File(File(app.filesDir, PARENT_DIR), SESSION_DIR).apply { mkdirs() }
+    private val cipher = SessionCipher(app)
+
+    private val sealDir = File(File(app.filesDir, PARENT_DIR), SESSION_DIR).apply { mkdirs() }
 
     /** This install's own keys, made on first use and never again. */
     @Volatile
@@ -83,6 +106,9 @@ class SealStore private constructor(context: Context) {
         val made = Identity.generate()
         writeLocal(made)
         mirror(made)
+        // The store key is made at the same moment, so a household that has a vault gets both
+        // mirrored in one go rather than the second one waiting for a message to be sent.
+        cipher.ensureMirrored()
         cached = made
         return made
     }
@@ -101,19 +127,43 @@ class SealStore private constructor(context: Context) {
     fun reset() {
         cached = null
         prefs.edit().clear().apply()
-        runCatching { sessionDir.listFiles()?.forEach { it.delete() } }
+        runCatching { sealDir.listFiles()?.forEach { it.delete() } }
         SecretsAccess.forget(IDENTITY_REF)
+        cipher.forget()
     }
 
     // -------------------------------------------------------------------------------------
     // What we know about other people
     // -------------------------------------------------------------------------------------
 
-    /** The bundle somebody advertised, or null if they never have. */
-    fun bundleFor(address: String): PreKeyBundle? {
-        val stored = prefs.getString(bundleKey(address), null) ?: return null
-        return runCatching { PreKeyBundle.decode(Bytes.decode(stored)) }.getOrNull()
+    /**
+     * What is known about one person: their keys, and whether anybody has checked them.
+     *
+     * Verification lives here rather than on a session because ratchets are torn down and rebuilt
+     * routinely and verification is the one thing in this app that cost a human being something.
+     */
+    data class Peer(val bundle: PreKeyBundle, val verified: Boolean) {
+        fun encode(): String = "${Bytes.encode(bundle.encode())}\n${if (verified) "verified" else "unverified"}"
+
+        companion object {
+            fun decode(text: String): Peer? = runCatching {
+                val lines = text.lineSequence().filter { it.isNotBlank() }.toList()
+                Peer(
+                    bundle = PreKeyBundle.decode(Bytes.decode(lines[0])),
+                    verified = lines.getOrNull(1) == "verified"
+                )
+            }.getOrNull()
+        }
     }
+
+    fun peer(address: String): Peer? =
+        readEncrypted(peerFile(address))?.let { Peer.decode(String(it, Charsets.UTF_8)) }
+
+    /** The bundle somebody advertised, or null if they never have. */
+    fun bundleFor(address: String): PreKeyBundle? = peer(address)?.bundle
+
+    /** Whether anybody has compared the safety number with this contact. */
+    fun isVerified(address: String): Boolean = peer(address)?.verified == true
 
     /**
      * Remember a bundle somebody sent.
@@ -124,22 +174,30 @@ class SealStore private constructor(context: Context) {
      * distinction unobservable. Starting again is [forget], which is a deliberate act.
      */
     fun rememberBundle(address: String, bundle: PreKeyBundle): Boolean {
-        val existing = bundleFor(address)
-        if (existing != null && !existing.identityKey.contentEquals(bundle.identityKey)) return false
-        prefs.edit().putString(bundleKey(address), Bytes.encode(bundle.encode())).apply()
+        val existing = peer(address)
+        if (existing != null && !existing.bundle.identityKey.contentEquals(bundle.identityKey)) return false
+        // Verification carries across a prekey rotation from the same identity, because it was the
+        // identity that was verified.
+        writeEncrypted(peerFile(address), Peer(bundle, existing?.verified == true).encode().toByteArray())
         return true
+    }
+
+    /** Somebody compared the safety number and it matched. */
+    fun markVerified(address: String) {
+        val existing = peer(address) ?: return
+        writeEncrypted(peerFile(address), existing.copy(verified = true).encode().toByteArray())
     }
 
     /** Whether a bundle on file disagrees with one just received — what the thread warns about. */
     fun identityChanged(address: String, bundle: PreKeyBundle): Boolean {
-        val existing = bundleFor(address) ?: return false
-        return !existing.identityKey.contentEquals(bundle.identityKey)
+        val existing = peer(address) ?: return false
+        return !existing.bundle.identityKey.contentEquals(bundle.identityKey)
     }
 
     /** Throw away everything about one contact, so the next exchange starts clean. */
     fun forget(address: String) {
-        prefs.edit().remove(bundleKey(address)).apply()
-        runCatching { sessionFile(address).delete() }
+        runCatching { peerFile(address).delete() }
+        runCatching { ratchetFile(address).delete() }
     }
 
     // -------------------------------------------------------------------------------------
@@ -147,9 +205,8 @@ class SealStore private constructor(context: Context) {
     // -------------------------------------------------------------------------------------
 
     fun session(address: String): Session? {
-        val stored = runCatching { sessionFile(address).takeIf { it.exists() }?.readText() }.getOrNull()
-            ?: return null
-        val snapshot = runCatching { SessionCodec.decode(stored) }.getOrNull() ?: return null
+        val stored = readEncrypted(ratchetFile(address)) ?: return null
+        val snapshot = runCatching { SessionCodec.decode(String(stored, Charsets.UTF_8)) }.getOrNull() ?: return null
         return runCatching { Session.restore(identity(), snapshot) }.getOrNull()
     }
 
@@ -162,31 +219,57 @@ class SealStore private constructor(context: Context) {
      * is a conversation nobody can read.
      */
     fun save(address: String, session: Session) {
-        runCatching {
-            val file = sessionFile(address)
-            val temp = File(file.parentFile, "${file.name}.tmp")
-            temp.writeText(SessionCodec.encode(session.snapshot()))
-            if (!temp.renameTo(file)) {
-                file.writeText(SessionCodec.encode(session.snapshot()))
-                temp.delete()
-            }
-        }
+        writeEncrypted(ratchetFile(address), SessionCodec.encode(session.snapshot()).toByteArray())
     }
 
-    /** How many conversations are sealed. For the settings screen. */
-    fun sessionCount(): Int = runCatching { sessionDir.listFiles()?.count { it.isFile && !it.name.endsWith(".tmp") } }
-        .getOrNull() ?: 0
+    /** Throw away one conversation's chain state, keeping what is known about the person. */
+    fun resetRatchet(address: String) {
+        runCatching { ratchetFile(address).delete() }
+    }
+
+    /** How many people this install can message privately. For the settings screen. */
+    fun peerCount(): Int =
+        runCatching { sealDir.listFiles()?.count { it.isFile && it.name.startsWith(PEER_PREFIX) } }.getOrNull() ?: 0
+
+    // -------------------------------------------------------------------------------------
+    // The files
+    // -------------------------------------------------------------------------------------
+
+    private fun peerFile(address: String): File = File(sealDir, PEER_PREFIX + handle(address))
+
+    private fun ratchetFile(address: String): File = File(sealDir, RATCHET_PREFIX + handle(address))
 
     /**
      * A file name for an address.
      *
-     * The comparable form of the number, hashed — so the directory listing is not a list of everyone
-     * the household messages privately, readable by anything that can see a file name.
+     * The comparable form of the number, keyed-hashed — so a directory listing is not a list of
+     * everyone the household messages privately, readable by anything that can see a file name.
      */
-    private fun sessionFile(address: String): File =
-        File(sessionDir, Bytes.hex(Kdf.hmac(FILE_NAME.toByteArray(), Addresses.key(address).toByteArray())).take(32))
+    private fun handle(address: String): String =
+        Bytes.hex(Kdf.hmac(FILE_NAME.toByteArray(), Addresses.key(address).toByteArray())).take(32)
 
-    private fun bundleKey(address: String): String = "bundle_${Addresses.key(address)}"
+    private fun readEncrypted(file: File): ByteArray? = runCatching {
+        if (!file.exists()) return null
+        cipher.decrypt(file.readBytes())
+    }.getOrNull()
+
+    /**
+     * Encrypt and write, through a temporary file and a rename.
+     *
+     * A phone that dies mid-write would otherwise come back with half a ratchet, and half a ratchet
+     * is a conversation nobody can read.
+     */
+    private fun writeEncrypted(file: File, plaintext: ByteArray) {
+        runCatching {
+            file.parentFile?.mkdirs()
+            val temp = File(file.parentFile, "${file.name}.tmp")
+            temp.writeBytes(cipher.encrypt(plaintext))
+            if (!temp.renameTo(file)) {
+                file.writeBytes(cipher.encrypt(plaintext))
+                temp.delete()
+            }
+        }
+    }
 
     // -------------------------------------------------------------------------------------
 
@@ -230,9 +313,15 @@ class SealStore private constructor(context: Context) {
          */
         const val FILE_NAME = "secure_utilities_seal"
 
-        /** Inside this app's own directory, and skipped by the sweep. See the class note. */
+        /** Inside this app's own directory. Carried by the archive, encrypted. See the class note. */
         const val PARENT_DIR = "utilities"
         const val SESSION_DIR = "seal"
+
+        /** What is known about a person: restored from a backup. */
+        const val PEER_PREFIX = "peer-"
+
+        /** A live chain: carried, and deliberately not restored. See the class note. */
+        const val RATCHET_PREFIX = "ratchet-"
 
         private const val KEY_IDENTITY = "identity"
 

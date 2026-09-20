@@ -321,14 +321,6 @@ class SessionTest {
     // -----------------------------------------------------------------------------------------
 
     @Test
-    fun `a new session is encrypted but unverified, and says so`() {
-        val session = Session.start(alice, bob.bundle())
-        assertEquals(Trust.FIRST_USE, session.trustLevel)
-        session.markVerified()
-        assertEquals(Trust.VERIFIED, session.trustLevel)
-    }
-
-    @Test
     fun `a session is not confirmed until the other end has answered`() {
         val aliceSession = Session.start(alice, bob.bundle())
         assertFalse(aliceSession.confirmed)
@@ -342,11 +334,53 @@ class SessionTest {
         assertTrue(aliceSession.confirmed)
     }
 
+    // -----------------------------------------------------------------------------------------
+    // Starting again
+    // -----------------------------------------------------------------------------------------
+
     @Test
-    fun `verification survives being stored`() {
-        val session = Session.start(alice, bob.bundle())
-        session.markVerified()
-        assertEquals(Trust.VERIFIED, Session.restore(alice, session.snapshot()).trustLevel)
+    fun `one end losing its ratchet does not kill the conversation`() {
+        // Two ways this happens and both are ordinary: the other person reinstalls, or somebody
+        // restores a backup — which throws the chain state away on purpose, because resuming a
+        // rewound ratchet would break the conversation permanently rather than briefly. Either way
+        // an opening message arrives at an end that already has a session, and accepting a fresh one
+        // is what makes it heal by itself.
+        val aliceSession = Session.start(alice, bob.bundle())
+        val first = aliceSession.send("before")
+        val bobSession = Session.accept(bob, Envelope.decode(first))
+        bobSession.open(Envelope.decode(first))
+        aliceSession.receive(bobSession.send("hello back"))
+
+        // Alice restores a backup: her peer record survives, her ratchet does not.
+        val aliceAgain = Session.start(alice, bob.bundle())
+        val reopened = aliceAgain.send("after the restore")
+
+        // Bob's existing session cannot open it — which is the signal, not a failure.
+        val envelope = Envelope.decode(reopened)
+        assertThrows(SealException::class.java) { bobSession.open(envelope) }
+
+        // Accepting a new one does, and the conversation runs again in both directions.
+        val bobAgain = Session.accept(bob, envelope)
+        assertEquals("after the restore", String(bobAgain.open(envelope)))
+        assertEquals("and on", aliceAgain.receive(bobAgain.send("and on")))
+    }
+
+    @Test
+    fun `a failed attempt leaves the stored session exactly as it was`() {
+        // What makes the recovery above safe to try: the caller attempts the existing session first
+        // and only writes it back on success, so a failure cannot half-turn the ratchet.
+        val aliceSession = Session.start(alice, bob.bundle())
+        val first = aliceSession.send("one")
+        val bobSession = Session.accept(bob, Envelope.decode(first))
+        bobSession.open(Envelope.decode(first))
+
+        val before = SessionCodec.encode(bobSession.snapshot())
+        val stranger = Session.start(Identity.generate(), bob.bundle()).send("not for this session")
+        assertThrows(SealException::class.java) { bobSession.receive(stranger) }
+
+        // The snapshot taken before the failure is the one that would have been saved.
+        val restored = Session.restore(bob, SessionCodec.decode(before))
+        assertEquals("two", restored.receive(aliceSession.send("two")))
     }
 }
 
@@ -494,8 +528,11 @@ class SafetyNumberTest {
         assertEquals(12, shown.split(" ").size)
         assertTrue(SafetyNumber.matches(number, shown))
         assertTrue(SafetyNumber.matches(number, number))
-        assertFalse(SafetyNumber.matches(number, number.dropLast(1) + "0".repeat(1).let { "9" }))
+        // One digit different, whichever digit it happens to end on.
+        val altered = number.dropLast(1) + if (number.last() == '9') '8' else '9'
+        assertFalse(SafetyNumber.matches(number, altered))
         assertFalse(SafetyNumber.matches(number, ""))
+        assertFalse(SafetyNumber.matches(number, number.dropLast(1)))
     }
 
     @Test

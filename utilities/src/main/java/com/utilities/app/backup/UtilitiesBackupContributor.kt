@@ -42,18 +42,29 @@ import java.io.File
  * a preferences file deliberately named outside the prefix swept below, so the exclusion is a
  * property of the name rather than a filter somebody could relax.
  *
- * **The sealed-messaging sessions**, and this is the one exclusion that is not merely tidy — putting
- * them back would be *unsafe*. A Double Ratchet is a counter that only ever goes forward; restore
- * yesterday's copy and the phone re-derives message keys it has already used, which is the one
- * failure mode AES-GCM has no defence against. So `filesDir/utilities/seal` is skipped explicitly
- * rather than by a naming rule, because a directory inside the swept one needs a filter that a
- * reader will trip over. A restored phone re-establishes each conversation on its next message,
- * which costs one round trip and is the correct price.
+ * **The sealed-messaging ratchets** — `seal/ratchet-…` — and this is the one exclusion here that is
+ * about correctness rather than tidiness. A Double Ratchet is a counter that only goes forward.
+ * Restore last week's copy and the sending chain is rewound: the next message out is encrypted with
+ * a key the other end consumed days ago, their replies have moved the root key on, and the
+ * conversation is silently dead in both directions with nothing to heal it. It would also rewind the
+ * used-key store, quietly returning replay protection for every message in the window. A restored
+ * phone starts each conversation again on its next message, which costs one message and no
+ * interaction.
  *
- * The **identity key** behind those sessions is a different matter and does survive — through the
- * vault rather than through the archive, on the same terms as Finance's bank tokens. See
- * `SealStore`: an identity that changed on every restore would make every contact see *the keys
- * changed*, which is the one alarm in this app that has to mean something.
+ * ## What the seal directory *does* carry, and why it is safe to
+ *
+ * `seal/peer-…`: who somebody is, and whether anybody verified them. Carried, because that is the
+ * half with durable value — verification cost a human being a phone call, and losing it on every
+ * restore would mean being asked to verify the same person again for reasons they cannot see.
+ *
+ * Every file under `seal/` is **encrypted** with a portable key kept in the suite's vault (see
+ * `SessionCipher`), so the archive's copy does not open until Secrets does. That is what makes it
+ * reasonable to put a list of everybody the household messages privately into a zip at all.
+ *
+ * The **identity key** is not in that directory: it is carried by the vault rather than the archive,
+ * on the same terms as Finance's bank tokens. An identity that changed on every restore would make
+ * every contact see *the keys changed*, which is the one alarm in this app that has to mean
+ * something.
  */
 class UtilitiesBackupContributor(private val context: Context) : BackupContributor {
 
@@ -121,8 +132,8 @@ class UtilitiesBackupContributor(private val context: Context) : BackupContribut
             .filter { it.isFile }
             // A half-written word list is not worth carrying; the real one is beside it.
             .filterNot { it.name.endsWith(".tmp") }
-            // And the ratchet state, which must NEVER be restored. See the class note.
-            .filterNot { it.toPath().any { part -> part.toString() == SealStore.SESSION_DIR } }
+            // …but not the live chain state, which must never come back. See the class note.
+            .filterNot { it.name.startsWith(SealStore.RATCHET_PREFIX) }
             .toList()
 
     private fun String.isSafeName(): Boolean = !contains('/') && !contains('\\') && !contains("..")

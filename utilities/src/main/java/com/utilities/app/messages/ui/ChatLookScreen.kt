@@ -16,7 +16,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import com.utilities.app.data.LookStore
 import com.utilities.app.look.UtilityPalette
 import com.utilities.app.messages.MessagePrefs
+import com.utilities.app.messages.seal.Sealing
 import com.utilities.app.look.rememberPalette
 import com.utilities.app.look.toComposeColor
 import com.utilities.app.messages.logic.ChatPalettes
@@ -64,6 +67,9 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
     var deliveryReports by remember { mutableStateOf(prefs.deliveryReports) }
     var seal by remember { mutableStateOf(prefs.sealMessages) }
     var announce by remember { mutableStateOf(prefs.announceKeys) }
+    val sealing = remember { Sealing(context) }
+    var peers by remember { mutableStateOf(sealing.peerCount()) }
+    var confirmReset by remember { mutableStateOf(false) }
     val base = rememberPalette(chat.look)
     val palette = remember(chat, base) {
         ChatPalettes.resolve(chat, base.surface, base.text, base.accent)
@@ -224,6 +230,16 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
             }
         )
 
+        Spacer(Modifier.height(12.dp))
+        Text(
+            if (peers == 0) "No keys exchanged yet."
+            else "$peers ${if (peers == 1) "person" else "people"} can be messaged privately. Open a " +
+                "conversation and tap the strip at the top to compare safety numbers.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        TextButton(onClick = { confirmReset = true }) { Text("Start again with new keys") }
+
         Spacer(Modifier.height(16.dp))
         Heading("Picture messages, continued")
         SwitchRow(
@@ -237,6 +253,35 @@ fun ChatLookScreen(modifier: Modifier = Modifier) {
             }
         )
     }
+
+    if (confirmReset) {
+        StartAgainDialog(
+            onConfirm = {
+                sealing.startAgain()
+                peers = sealing.peerCount()
+                confirmReset = false
+            },
+            onDismiss = { confirmReset = false }
+        )
+    }
+}
+
+@Composable
+private fun StartAgainDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Start again with new keys?") },
+        text = {
+            Text(
+                "Your encryption identity, every contact's keys and every verification are thrown " +
+                    "away. Conversations start again automatically, and everybody you have " +
+                    "verified will see that your keys changed — because they did. Nothing " +
+                    "already in your message history is affected."
+            )
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Start again") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Keep them") } }
+    )
 }
 
 @Composable

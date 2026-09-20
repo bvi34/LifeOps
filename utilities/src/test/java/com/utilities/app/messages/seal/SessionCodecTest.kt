@@ -27,7 +27,6 @@ class SessionCodecTest {
         val session = Session.start(alice, bob.bundle())
         val restored = Session.restore(alice, SessionCodec.decode(SessionCodec.encode(session.snapshot())))
         assertArrayEquals(session.peerIdentityKey, restored.peerIdentityKey)
-        assertEquals(session.trustLevel, restored.trustLevel)
         assertEquals(session.safetyNumber(), restored.safetyNumber())
     }
 
@@ -49,11 +48,12 @@ class SessionCodecTest {
     }
 
     @Test
-    fun `verification survives, because it is the one thing somebody did by hand`() {
-        val session = Session.start(alice, bob.bundle())
-        session.markVerified()
-        val restored = Session.restore(alice, SessionCodec.decode(SessionCodec.encode(session.snapshot())))
-        assertEquals(Trust.VERIFIED, restored.trustLevel)
+    fun `a session holds no verification, because that belongs to the person`() {
+        // Ratchets are torn down and rebuilt routinely; verification cost somebody a phone call.
+        // Tying the second to the first would throw it away every time the plumbing restarted.
+        val text = SessionCodec.encode(Session.start(alice, bob.bundle()).snapshot())
+        assertTrue(!text.contains("trust"))
+        assertTrue(!text.contains("verified"))
     }
 
     @Test
