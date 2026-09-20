@@ -2,10 +2,13 @@ package com.citation.app.data.db
 
 import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ParagraphSpacing
+import com.citation.core.reader.ReaderColorMigration
+import com.citation.core.reader.ReaderColorRole
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReaderTheme
 import com.citation.core.reader.ReaderTypeface
 import com.citation.core.reader.ScreenOrientation
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -30,6 +33,9 @@ object ReaderSettingsCodec {
         put("hyphenate", settings.hyphenate)
         put("paragraphs", settings.paragraphs.name)
         put("theme", settings.theme.name)
+        // Always written, even when empty: its absence is what marks a row from before the page and
+        // the prose became separate choices, and how one is recognised on the way back in.
+        put("customRoles", JSONArray(settings.customRoles.map { it.name }))
         settings.customBackground?.let { put("customBackground", it) }
         settings.customText?.let { put("customText", it) }
         settings.customHeading?.let { put("customHeading", it) }
@@ -52,7 +58,7 @@ object ReaderSettingsCodec {
         if (json.isNullOrBlank()) return ReaderSettings()
         val obj = runCatching { JSONObject(json) }.getOrNull() ?: return ReaderSettings()
         val defaults = ReaderSettings()
-        return ReaderSettings(
+        val settings = ReaderSettings(
             fontSize = obj.float("fontSize", defaults.fontSize),
             lineSpacing = obj.float("lineSpacing", defaults.lineSpacing),
             marginDp = obj.float("marginDp", defaults.marginDp),
@@ -63,6 +69,7 @@ object ReaderSettingsCodec {
             hyphenate = obj.optBoolean("hyphenate", defaults.hyphenate),
             paragraphs = obj.enum("paragraphs", defaults.paragraphs) { ParagraphSpacing.valueOf(it) },
             theme = obj.enum("theme", defaults.theme) { ReaderTheme.valueOf(it) },
+            customRoles = obj.roles(),
             customBackground = obj.colour("customBackground"),
             customText = obj.colour("customText"),
             customHeading = obj.colour("customHeading"),
@@ -79,14 +86,34 @@ object ReaderSettingsCodec {
             orientation = obj.enum("orientation", defaults.orientation) { ScreenOrientation.valueOf(it) },
             immersive = obj.optBoolean("immersive", defaults.immersive)
         ).sanitized()
+        // A row written before colours were taken over one at a time says which of them were in
+        // force only through the theme name `CUSTOM`, which is no longer a theme. What that meant is
+        // decided in :core, where it can be tested — see [ReaderColorMigration].
+        if (obj.has("customRoles")) return settings
+        return ReaderColorMigration.upgrade(settings, obj.optString("theme").takeIf { it.isNotBlank() })
+    }
+
+    /**
+     * The colours the reader has taken over from the theme.
+     *
+     * An unknown name is dropped rather than failing the read: a role added in a later build and
+     * opened in an earlier one costs that one colour, not the whole row.
+     */
+    private fun JSONObject.roles(): Set<ReaderColorRole> {
+        val array = optJSONArray("customRoles") ?: return emptySet()
+        return (0 until array.length())
+            .mapNotNull { index -> array.optString(index).takeIf { it.isNotBlank() } }
+            .mapNotNullTo(mutableSetOf()) { name ->
+                runCatching { ReaderColorRole.valueOf(name) }.getOrNull()
+            }
     }
 
     /**
      * A stored ARGB colour, or `null` when the reader never picked one.
      *
      * Absent has to stay distinguishable from black: `optInt` would hand back `0` for a key that was
-     * never written, which is a perfectly valid colour and would leave a reader who has never opened
-     * the custom theme with a transparent page. Read as a long so a value written out as one — an
+     * never written, which is a perfectly valid colour and would leave a reader who has never chosen
+     * one with a transparent page. Read as a long so a value written out as one — an
      * opaque colour is negative as a signed `Int` — still round-trips.
      */
     private fun JSONObject.colour(name: String): Int? {

@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.citation.core.note.HighlightColor
 import com.citation.core.reader.ParagraphSpacing
+import com.citation.core.reader.ReaderColorRole
 import com.citation.core.reader.ReaderFont
 import com.citation.core.reader.ReaderFontNames
 import com.citation.core.reader.ReaderPalette
@@ -207,6 +208,17 @@ fun DisplaySheet(
                     Spacer(Modifier.width(8.dp))
                 }
             }
+            // Said rather than discovered: the three options differ by two marks that are easy to
+            // mix up in a chip label, and "Both" is the one nobody goes looking for.
+            Text(
+                when (settings.paragraphs) {
+                    ParagraphSpacing.INDENT -> "First line indented, and nothing between."
+                    ParagraphSpacing.SPACED -> "A blank line between, and no indent."
+                    ParagraphSpacing.BOTH -> "A blank line between, and the first line indented."
+                },
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.secondary
+            )
             SwitchRow(
                 label = "Justify",
                 // Stated rather than left to be discovered: justification on a narrow column without
@@ -234,10 +246,10 @@ fun DisplaySheet(
             Divider(Modifier.padding(vertical = 12.dp))
             Section("Colour")
 
-            // Choosing "Custom" starts from the page the reader is already looking at rather than a
-            // blank white one, so it reads as an adjustment to the theme they nearly liked rather
-            // than a fresh problem to solve. Seeded once: colours they have tuned are never
-            // overwritten by dipping back into Sepia to compare.
+            // The theme is where the page *starts*; each colour below either follows it or is the
+            // reader's own. Two choices rather than one, because wanting the page to follow the
+            // system into dark mode and wanting the prose in a colour of your own are not the same
+            // wish, and a single "Custom" theme made you give up the first to have the second.
             val systemPage = MaterialTheme.colorScheme.background.toArgb()
             val systemInk = MaterialTheme.colorScheme.onBackground.toArgb()
             Row(
@@ -246,21 +258,7 @@ fun DisplaySheet(
             ) {
                 ReaderTheme.entries.forEach { theme ->
                     Choice(theme.label, settings.theme == theme) {
-                        onSettings { current ->
-                            if (theme != ReaderTheme.CUSTOM) {
-                                current.copy(theme = theme)
-                            } else {
-                                current.copy(
-                                    theme = theme,
-                                    customBackground = current.customBackground
-                                        ?: ReaderPalette.background(current.theme, current.trueBlack)
-                                        ?: systemPage,
-                                    customText = current.customText
-                                        ?: ReaderPalette.foreground(current.theme, current.trueBlack)
-                                        ?: systemInk
-                                )
-                            }
-                        }
+                        onSettings { it.copy(theme = theme) }
                     }
                 }
             }
@@ -271,58 +269,69 @@ fun DisplaySheet(
                     checked = settings.trueBlack
                 ) { on -> onSettings { it.copy(trueBlack = on) } }
             }
-            if (settings.theme == ReaderTheme.CUSTOM) {
-                // Four roles rather than two. Page and text are what a reader asks for first, but a
-                // book is not one colour of text: headings and links were being painted in the app's
-                // own accent, which is a colour nobody reading chose and the reason a chapter full of
-                // anchors came out purple over a page somebody had carefully set.
-                //
-                // Heading and link default to *derived* values rather than stored ones — headings
-                // follow the prose, a link is fitted to the page — so the rows always show what is
-                // actually on screen, and a reader who only wants two colours sets two.
-                val page = settings.customBackground ?: ReaderPalette.CUSTOM_BG
-                val ink = settings.customText ?: ReaderPalette.CUSTOM_FG
-                // Derived with warmth taken out, because every row and the preview below warm what
-                // they are given. The rows show the colours as chosen — the preview is where warmth
-                // is seen, and it is the only place it should be applied twice over.
-                val derived = ReaderPalette.colors(settings.copy(warmth = 0f), page, ink)
-                val clearHeading: (() -> Unit)? = settings.customHeading?.let {
-                    { onSettings { s -> s.copy(customHeading = null) } }
-                }
-                val clearLink: (() -> Unit)? = settings.customLink?.let {
-                    { onSettings { s -> s.copy(customLink = null) } }
-                }
-                ColourRow(
-                    label = "Page",
-                    colour = page,
-                    swatches = ReaderPalette.PAGE_SWATCHES
-                ) { picked -> onSettings { it.copy(customBackground = picked) } }
-                ColourRow(
-                    label = "Heading",
-                    colour = settings.customHeading ?: ink,
-                    swatches = ReaderPalette.TEXT_SWATCHES,
-                    // Offered only once it is set, because "follow the text" is the printed
-                    // convention and the state a reader who never wanted this should be able to
-                    // get back to without matching two hex codes by hand.
-                    onClear = clearHeading
-                ) { picked -> onSettings { it.copy(customHeading = picked) } }
-                ColourRow(
-                    label = "Text",
-                    colour = ink,
-                    swatches = ReaderPalette.TEXT_SWATCHES
-                ) { picked -> onSettings { it.copy(customText = picked) } }
-                ColourRow(
-                    label = "Links",
-                    colour = settings.customLink ?: derived.link,
-                    swatches = ReaderPalette.LINK_SWATCHES,
-                    onClear = clearLink
-                ) { picked -> onSettings { it.copy(customLink = picked) } }
+
+            // What the page is about to be drawn in, with warmth taken out: every row and the
+            // preview warm what they are given, and warmth should be seen in one place rather than
+            // applied twice over. The app's own colours stand in wherever the theme is System, so a
+            // row that says "Auto" shows the colour that is actually on screen rather than a guess.
+            val shown = ReaderPalette.colors(settings.copy(warmth = 0f), systemPage, systemInk)
+            ColourRole(
+                role = ReaderColorRole.PAGE,
+                settings = settings,
+                shown = shown.page,
+                swatches = ReaderPalette.PAGE_SWATCHES,
+                autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
+                    "Follows the app, light and dark."
+                } else {
+                    "Follows ${settings.theme.label}."
+                },
+                onSettings = onSettings
+            )
+            ColourRole(
+                role = ReaderColorRole.TEXT,
+                settings = settings,
+                shown = shown.text,
+                swatches = ReaderPalette.TEXT_SWATCHES,
+                autoCaption = if (settings.theme == ReaderTheme.SYSTEM) {
+                    "Follows the app, light and dark."
+                } else {
+                    "Follows ${settings.theme.label}."
+                },
+                onSettings = onSettings
+            )
+            // Headings and links are their own roles because a book is not one colour of text: both
+            // used to be painted in the app's own accent, which is a colour nobody reading chose and
+            // the reason a chapter full of anchors came out purple over a page somebody had set.
+            // Left alone, a heading follows the prose — the printed convention — and a link is
+            // fitted to the page it lands on.
+            ColourRole(
+                role = ReaderColorRole.HEADING,
+                settings = settings,
+                shown = shown.heading,
+                swatches = ReaderPalette.TEXT_SWATCHES,
+                autoCaption = "Set in the text colour.",
+                onSettings = onSettings
+            )
+            ColourRole(
+                role = ReaderColorRole.LINK,
+                settings = settings,
+                shown = shown.link,
+                swatches = ReaderPalette.LINK_SWATCHES,
+                autoCaption = "Fitted to the page.",
+                onSettings = onSettings
+            )
+            // Shown once anything has been taken over — and under the System theme that includes
+            // the app's own page, which is the pairing most worth seeing: text chosen against a
+            // light page is the text that disappears when the system turns dark.
+            if (settings.customRoles.isNotEmpty()) {
                 ColourPreview(
-                    page = page,
-                    ink = ink,
-                    heading = settings.customHeading ?: ink,
-                    link = settings.customLink ?: derived.link,
-                    warmth = settings.warmth
+                    page = shown.page,
+                    ink = shown.text,
+                    heading = shown.heading,
+                    link = shown.link,
+                    warmth = settings.warmth,
+                    followsSystem = settings.theme == ReaderTheme.SYSTEM &&
+                        !settings.customizes(ReaderColorRole.PAGE)
                 )
             }
             LabeledSlider("Warmth", settings.warmth, 0f..1f) { v ->
@@ -537,8 +546,65 @@ private fun RemoveFontDialog(font: ReaderFont, onRemove: () -> Unit, onDismiss: 
 }
 
 /**
- * One colour of the custom theme: a swatch strip for the common answers, a hex field for the exact
- * one.
+ * One colour of the page: whether it follows the theme or is the reader's own, and — once it is
+ * theirs — what it is.
+ *
+ * The choice comes first and the picker only appears under it, because the two questions are
+ * genuinely separate and the first one is the one most readers answer. It is also what keeps the
+ * sheet readable: four colour pickers permanently open is a wall, and a reader who wants the page to
+ * follow the system and the prose to be theirs should see that arrangement stated rather than
+ * inferred from which fields are filled in.
+ */
+@Composable
+private fun ColourRole(
+    role: ReaderColorRole,
+    settings: ReaderSettings,
+    /** The colour this role is drawn in right now, theme's or the reader's. */
+    shown: Int,
+    swatches: List<Int>,
+    /** What "Auto" means for this role, said rather than left to be discovered. */
+    autoCaption: String,
+    onSettings: ((ReaderSettings) -> ReaderSettings) -> Unit
+) {
+    val custom = settings.customizes(role)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(Color(shown))
+                .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                .semantics { contentDescription = "${role.label} is ${ReaderPalette.hex(shown)}" }
+        )
+        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+            Text(role.label, fontSize = 14.sp)
+            if (!custom) {
+                Text(autoCaption, fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
+            }
+        }
+        // Taking a role back starts from the colour it was last given, or from the one on screen if
+        // it never had one — an adjustment to the page they were looking at rather than a fresh
+        // problem to solve. Handing it to the theme keeps that colour for the next time.
+        Choice("Auto", !custom) { onSettings { it.withoutCustom(role) } }
+        Spacer(Modifier.width(8.dp))
+        Choice("Custom", custom) {
+            onSettings { it.withCustom(role, it.held(role) ?: shown) }
+        }
+    }
+    if (custom) {
+        ColourRow(
+            label = role.label,
+            colour = settings.custom(role) ?: shown,
+            swatches = swatches
+        ) { picked -> onSettings { it.withCustom(role, picked) } }
+    }
+}
+
+/**
+ * Choosing one colour: a swatch strip for the common answers, a hex field for the exact one.
  *
  * Both, rather than either, because they answer different questions. The strip is for a reader
  * trying tints to see which is easiest on their eyes — that is a comparison, and it wants to be one
@@ -550,8 +616,6 @@ private fun ColourRow(
     label: String,
     colour: Int,
     swatches: List<Int>,
-    /** Offered only where the colour has a sensible derived default to fall back to. */
-    onClear: (() -> Unit)? = null,
     onPick: (Int) -> Unit
 ) {
     // The field holds what has been typed, not the current colour, so a half-finished code like "#3f"
@@ -563,19 +627,8 @@ private fun ColourRow(
     }
     val typedIsColour = ReaderPalette.parseHex(typed) != null
 
-    Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(Color(colour))
-                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
-            )
-            Text(label, Modifier.weight(1f).padding(start = 12.dp), fontSize = 14.sp)
-            if (onClear != null) {
-                TextButton(onClick = onClear) { Text("Auto", fontSize = 13.sp) }
-            }
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             OutlinedTextField(
                 value = typed,
                 onValueChange = { entry ->
@@ -590,7 +643,9 @@ private fun ColourRow(
                     keyboardType = KeyboardType.Ascii,
                     capitalization = KeyboardCapitalization.Characters
                 ),
-                modifier = Modifier.width(132.dp)
+                modifier = Modifier
+                    .width(160.dp)
+                    .semantics { contentDescription = "$label colour, as a hex code" }
             )
         }
         Row(
@@ -614,6 +669,7 @@ private fun ColourRow(
                             shape = CircleShape
                         )
                         .clickable { onPick(swatch) }
+                        .semantics { contentDescription = "$label ${ReaderPalette.hex(swatch)}" }
                 )
             }
         }
@@ -630,7 +686,15 @@ private fun ColourRow(
  * closes over a page of text that has gone.
  */
 @Composable
-private fun ColourPreview(page: Int, ink: Int, heading: Int, link: Int, warmth: Float) {
+private fun ColourPreview(
+    page: Int,
+    ink: Int,
+    heading: Int,
+    link: Int,
+    warmth: Float,
+    /** The page shown is the app's own and will change with it — see below. */
+    followsSystem: Boolean = false
+) {
     val shownPage = ReaderPalette.warm(page, warmth)
     val shownInk = ReaderPalette.warm(ink, warmth)
     val shownHeading = ReaderPalette.warm(heading, warmth)
@@ -671,6 +735,18 @@ private fun ColourPreview(page: Int, ink: Int, heading: Int, link: Int, warmth: 
             Text(
                 "These two are close in brightness — text this low in contrast is hard to read for long.",
                 color = MaterialTheme.colorScheme.error,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp)
+            )
+        }
+        // The one thing a preview cannot show: the page it is drawn on is the app's, and the app
+        // follows the system. A colour picked against the light page is the colour that vanishes at
+        // sunset, and the reader is the only one who can decide whether that matters to them.
+        if (followsSystem) {
+            Text(
+                "The page follows the app, so this is how it reads in the mode you are in now. " +
+                    "Set the page too if you want the same pair in light and dark.",
+                color = MaterialTheme.colorScheme.secondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(top = 6.dp)
             )

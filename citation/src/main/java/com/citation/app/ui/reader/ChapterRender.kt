@@ -88,7 +88,7 @@ class RenderedChapter(
  *
  * Carries the setting choices as well as the sizes, because they change how a *block* is built and
  * not only how a run of characters is painted: justification and hyphenation belong to a paragraph,
- * and indented-versus-spaced paragraphs change what separates one from the next.
+ * and whether paragraphs are indented, spaced or both changes what separates one from the next.
  */
 data class ReaderTypography(
     val fontSize: Float,
@@ -168,9 +168,7 @@ object ChapterRender {
             if (block.start > cursor) {
                 val gap = text.substring(cursor, block.start)
                 if (gap.isNotBlank()) {
-                    emitter.paragraph(paragraphStyle(typography, indent = !first)) {
-                        emitter.real(gap, cursor)
-                    }
+                    bodyParagraph(emitter, typography, separated = !first, body = gap, at = cursor)
                     first = false
                 }
                 cursor = block.start
@@ -222,7 +220,7 @@ object ChapterRender {
         if (cursor < text.length) {
             val tail = text.substring(cursor, text.length)
             if (tail.isNotBlank()) {
-                emitter.paragraph(paragraphStyle(typography, indent = !first)) { emitter.real(tail, cursor) }
+                bodyParagraph(emitter, typography, separated = !first, body = tail, at = cursor)
             }
         }
 
@@ -342,15 +340,11 @@ object ChapterRender {
             }
 
             BlockKind.PARAGRAPH -> {
-                // No indent on the first paragraph of a section — the convention every printed book
+                // Nothing separates the first paragraph of a section from the heading above it —
+                // neither an indent nor a blank line. That is the convention every printed book
                 // follows, and the reason indented paragraphs don't look like a mistake.
-                val indent = !first && previousKind != BlockKind.HEADING
-                emitter.paragraph(paragraphStyle(typography, indent)) {
-                    if (typography.paragraphs == ParagraphSpacing.SPACED && indent) {
-                        emitter.synthetic("\n", block.start)
-                    }
-                    emitter.real(body, block.start)
-                }
+                val separated = !first && previousKind != BlockKind.HEADING
+                bodyParagraph(emitter, typography, separated, body, block.start)
             }
         }
     }
@@ -436,19 +430,49 @@ object ChapterRender {
         return width.sp to height.sp
     }
 
+    /**
+     * One paragraph of running prose, carrying whichever marks of a paragraph break the reader asked
+     * for — see [paragraphStyle].
+     *
+     * In one place because the marks belong together and body paragraphs arrive from more than one:
+     * the ones a document's structure declares, and the runs of text no block claimed, which are set
+     * as prose so they cannot be lost. A blank line that reached only the first of those is how a
+     * spaced page ends up with two paragraphs run together in the middle of a chapter.
+     *
+     * [separated] is false for the paragraph that opens a section, which carries no mark at all.
+     */
+    private fun bodyParagraph(
+        emitter: Emitter,
+        typography: ReaderTypography,
+        separated: Boolean,
+        body: String,
+        /** Where [body] starts in the canonical text, so every character maps back to it. */
+        at: Int
+    ) {
+        emitter.paragraph(paragraphStyle(typography, separated)) {
+            if (separated && typography.paragraphs.spaces) emitter.synthetic("\n", at)
+            emitter.real(body, at)
+        }
+    }
+
     // --- Styles -----------------------------------------------------------------------------------
 
     /**
      * Body-paragraph setting.
      *
-     * In [ParagraphSpacing.INDENT] the first line is indented and nothing separates paragraphs —
-     * the printed convention, and what makes a novel read like a novel. In
-     * [ParagraphSpacing.SPACED] the indent goes and a blank line does the separating instead; the
-     * blank line is a synthetic character, mapped like every other one the renderer inserts, so it
-     * cannot move an anchor.
+     * The two marks a paragraph break can carry are independent, and [ParagraphSpacing] says which
+     * of them this reader wants: the first line indented (the printed convention, and what makes a
+     * novel read like a novel), a blank line between paragraphs (the web's, and easier on some
+     * readers at large type), or both — the indent alone leaves the eye nowhere to rest at a tight
+     * line spacing, and the blank line alone loses the mark that says where a paragraph begins.
+     *
+     * [separated] is false for the paragraph that opens a section, which carries neither mark.
+     *
+     * The blank line is a synthetic character, mapped like every other one the renderer inserts, so
+     * it cannot move an anchor.
      */
-    private fun paragraphStyle(typography: ReaderTypography, indent: Boolean) = ParagraphStyle(
-        textIndent = if (indent && typography.paragraphs == ParagraphSpacing.INDENT) {
+    private fun paragraphStyle(typography: ReaderTypography, separated: Boolean) = ParagraphStyle(
+        textIndent = if (separated && typography.paragraphs.indents) {
             TextIndent(firstLine = 1.3.em)
         } else {
             TextIndent.None
