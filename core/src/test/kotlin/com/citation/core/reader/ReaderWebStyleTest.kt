@@ -61,7 +61,8 @@ class ReaderWebStyleTest {
             plain.lines().any { it.startsWith("h1,") }
         )
         val chosen = ReaderWebStyle.stylesheet(
-            ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = 0xFF8B0000.toInt())
+            ReaderSettings(theme = ReaderTheme.SEPIA)
+                .withCustom(ReaderColorRole.HEADING, 0xFF8B0000.toInt())
         )
         assertTrue(chosen.lines().any { it.startsWith("h1, h2, h3, h4, h5, h6 { color: #8B0000") })
     }
@@ -69,9 +70,24 @@ class ReaderWebStyleTest {
     @Test
     fun `the reader's link colour reaches the page`() {
         val css = ReaderWebStyle.stylesheet(
-            ReaderSettings(theme = ReaderTheme.CUSTOM, customLink = 0xFF00695C.toInt())
+            ReaderSettings(theme = ReaderTheme.SEPIA)
+                .withCustom(ReaderColorRole.LINK, 0xFF00695C.toInt())
         )
         assertTrue(css.contains("color: #00695C !important"))
+    }
+
+    @Test
+    fun `a prose colour alone is not carried into somebody else's reader`() {
+        // The page there is theirs, not Citation's, so a colour chosen against Citation's page
+        // would be landing on an unknown one — which is how text goes invisible in a reader we do
+        // not own. Everything that is not a colour still applies.
+        val css = ReaderWebStyle.stylesheet(
+            ReaderSettings(theme = ReaderTheme.SYSTEM)
+                .withCustom(ReaderColorRole.TEXT, 0xFF5B4636.toInt())
+        )
+        assertFalse(css.contains("#5B4636"))
+        assertFalse(css.contains("html, body"))
+        assertTrue(css.contains("line-height"))
     }
 
     @Test
@@ -119,11 +135,9 @@ class ReaderWebStyleTest {
     @Test
     fun `colours the reader chose reach the web readers too`() {
         val css = ReaderWebStyle.stylesheet(
-            ReaderSettings(
-                theme = ReaderTheme.CUSTOM,
-                customBackground = 0xFF102030.toInt(),
-                customText = 0xFFEEDDCC.toInt()
-            )
+            ReaderSettings()
+                .withCustom(ReaderColorRole.PAGE, 0xFF102030.toInt())
+                .withCustom(ReaderColorRole.TEXT, 0xFFEEDDCC.toInt())
         )
         assertTrue(css.contains("#102030"))
         assertTrue(css.contains("#EEDDCC"))

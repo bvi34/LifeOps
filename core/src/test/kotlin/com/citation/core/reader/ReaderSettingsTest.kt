@@ -20,6 +20,10 @@ class ReaderSettingsTest {
     private fun pageAndInk(settings: ReaderSettings): Pair<Int, Int>? =
         ReaderPalette.colors(settings)?.let { it.page to it.text }
 
+    /** Settings with some of the page's colours taken over from the theme, as the sheet does it. */
+    private fun ReaderSettings.taking(vararg colours: Pair<ReaderColorRole, Int>): ReaderSettings =
+        colours.fold(this) { settings, (role, colour) -> settings.withCustom(role, colour) }
+
     @Test
     fun `defaults are what a book should open as`() {
         val s = ReaderSettings()
@@ -31,6 +35,23 @@ class ReaderSettingsTest {
         assertTrue(s.followsSystemBrightness)
         assertFalse("justification without care opens rivers on a phone column", s.justify)
         assertTrue(s.hyphenate)
+        assertTrue("nothing is taken over from the theme until a reader says so", s.customRoles.isEmpty())
+    }
+
+    // --- Paragraphs --------------------------------------------------------------------------
+
+    @Test
+    fun `the three paragraph settings are the three combinations worth having`() {
+        assertTrue(ParagraphSpacing.INDENT.indents)
+        assertFalse(ParagraphSpacing.INDENT.spaces)
+        assertFalse(ParagraphSpacing.SPACED.indents)
+        assertTrue(ParagraphSpacing.SPACED.spaces)
+        // The one readers ask for: the indent says where a paragraph begins, the blank line gives
+        // the eye somewhere to rest, and at a tight line spacing the indent alone gives it neither.
+        assertTrue(ParagraphSpacing.BOTH.indents)
+        assertTrue(ParagraphSpacing.BOTH.spaces)
+        // Nothing at all is not an option: it would make a paragraph break invisible.
+        assertTrue(ParagraphSpacing.entries.all { it.indents || it.spaces })
     }
 
     @Test
@@ -121,39 +142,64 @@ class ReaderSettingsTest {
     // --- Colours the reader chose --------------------------------------------------------------
 
     @Test
-    fun `the custom theme uses the reader's own colours`() {
-        val s = ReaderSettings(
-            theme = ReaderTheme.CUSTOM,
-            customBackground = 0xFF102030.toInt(),
-            customText = 0xFFEEDDCC.toInt()
+    fun `a colour the reader took over is the one the page is drawn in`() {
+        val s = ReaderSettings().taking(
+            ReaderColorRole.PAGE to 0xFF102030.toInt(),
+            ReaderColorRole.TEXT to 0xFFEEDDCC.toInt()
         )
-        assertEquals(0xFF102030.toInt(), ReaderPalette.background(s.theme, s.trueBlack, s.customBackground))
-        assertEquals(0xFFEEDDCC.toInt(), ReaderPalette.foreground(s.theme, s.trueBlack, s.customText))
+        assertEquals(0xFF102030.toInt(), ReaderPalette.background(s.theme, s.trueBlack, s.custom(ReaderColorRole.PAGE)))
+        assertEquals(0xFFEEDDCC.toInt(), ReaderPalette.foreground(s.theme, s.trueBlack, s.custom(ReaderColorRole.TEXT)))
         val (bg, fg) = pageAndInk(s)!!
         assertEquals(0xFF102030.toInt(), bg)
         assertEquals(0xFFEEDDCC.toInt(), fg)
     }
 
     @Test
-    fun `a custom theme with nothing chosen yet is a readable page rather than nothing`() {
-        val (bg, fg) = pageAndInk(ReaderSettings(theme = ReaderTheme.CUSTOM))!!
-        assertEquals(ReaderPalette.CUSTOM_BG, bg)
-        assertEquals(ReaderPalette.CUSTOM_FG, fg)
-        assertTrue("the starting point must be legible", ReaderPalette.isLegible(fg, bg))
+    fun `the page can follow the theme while the prose is the reader's own`() {
+        // The arrangement the old single "Custom" theme could not express, and the reason for the
+        // split: keeping Sepia's page while setting the prose in a colour of your own.
+        val s = ReaderSettings(theme = ReaderTheme.SEPIA)
+            .taking(ReaderColorRole.TEXT to 0xFF1A3A5C.toInt())
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(ReaderPalette.SEPIA_BG, bg)
+        assertEquals(0xFF1A3A5C.toInt(), fg)
     }
 
     @Test
-    fun `colours the reader chose are kept but ignored under the other themes`() {
+    fun `a prose colour of the reader's own survives the page following the system`() {
+        // The other half of it: under System the page is the app's, and used to be unreachable
+        // without giving up the system page entirely.
+        val s = ReaderSettings(theme = ReaderTheme.SYSTEM)
+            .taking(ReaderColorRole.TEXT to 0xFF5B4636.toInt())
+        // Nothing to say to a web reader whose page Citation has not set...
+        assertNull(ReaderPalette.colors(s))
+        // ...but on Citation's own page the colour is the reader's and the page is still the app's.
+        val c = ReaderPalette.colors(s, fallbackPage = 0xFF111827.toInt(), fallbackText = 0xFFF9FAFB.toInt())
+        assertEquals(0xFF111827.toInt(), c.page)
+        assertEquals(0xFF5B4636.toInt(), c.text)
+    }
+
+    @Test
+    fun `colours the reader chose are kept but ignored once handed back to the theme`() {
         // Held across a switch so comparing against Sepia and coming back does not lose the work.
-        val s = ReaderSettings(
-            theme = ReaderTheme.SEPIA,
-            customBackground = 0xFF102030.toInt(),
-            customText = 0xFFEEDDCC.toInt()
+        val chosen = ReaderSettings(theme = ReaderTheme.SEPIA).taking(
+            ReaderColorRole.PAGE to 0xFF102030.toInt(),
+            ReaderColorRole.TEXT to 0xFFEEDDCC.toInt()
         )
+        val s = chosen.withoutCustom(ReaderColorRole.PAGE).withoutCustom(ReaderColorRole.TEXT)
         val (bg, fg) = pageAndInk(s)!!
         assertEquals(ReaderPalette.SEPIA_BG, bg)
         assertEquals(ReaderPalette.SEPIA_FG, fg)
-        assertEquals(0xFF102030.toInt(), s.customBackground)
+        assertEquals(0xFF102030.toInt(), s.held(ReaderColorRole.PAGE))
+        assertNull("a colour handed back is not in force", s.custom(ReaderColorRole.PAGE))
+    }
+
+    @Test
+    fun `a role turned on with no colour behind it still leaves a readable page`() {
+        val s = ReaderSettings(theme = ReaderTheme.PAPER, customRoles = ReaderColorRole.entries.toSet())
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(ReaderPalette.PAPER_BG, bg)
+        assertEquals(ReaderPalette.PAPER_FG, fg)
     }
 
     @Test
@@ -176,21 +222,23 @@ class ReaderSettingsTest {
     fun `headings follow the prose until the reader says otherwise`() {
         val paper = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.PAPER))!!
         assertEquals(paper.text, paper.heading)
-        assertNull(ReaderPalette.heading(ReaderTheme.PAPER))
+        assertNull(ReaderPalette.heading())
     }
 
     @Test
-    fun `a heading colour is the reader's own, and only under the custom theme`() {
+    fun `a heading colour of the reader's own sits on any theme`() {
         val chosen = 0xFF8B0000.toInt()
-        val custom = ReaderPalette.colors(
-            ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = chosen)
-        )!!
-        assertEquals(chosen, custom.heading)
-        // Held across a switch, like the page and text colours, but not applied to a preset.
         val sepia = ReaderPalette.colors(
-            ReaderSettings(theme = ReaderTheme.SEPIA, customHeading = chosen)
+            ReaderSettings(theme = ReaderTheme.SEPIA).taking(ReaderColorRole.HEADING to chosen)
         )!!
-        assertEquals(ReaderPalette.SEPIA_FG, sepia.heading)
+        assertEquals(chosen, sepia.heading)
+        // Held across a switch, like the page and text colours, but not applied once handed back.
+        val handedBack = ReaderPalette.colors(
+            ReaderSettings(theme = ReaderTheme.SEPIA)
+                .taking(ReaderColorRole.HEADING to chosen)
+                .withoutCustom(ReaderColorRole.HEADING)
+        )!!
+        assertEquals(ReaderPalette.SEPIA_FG, handedBack.heading)
     }
 
     @Test
@@ -202,8 +250,14 @@ class ReaderSettingsTest {
             ReaderSettings(theme = ReaderTheme.SEPIA),
             ReaderSettings(theme = ReaderTheme.NIGHT),
             ReaderSettings(theme = ReaderTheme.NIGHT, trueBlack = true),
-            ReaderSettings(theme = ReaderTheme.CUSTOM, customBackground = 0xFF102030.toInt(), customText = 0xFFEEDDCC.toInt()),
-            ReaderSettings(theme = ReaderTheme.CUSTOM, customBackground = 0xFFFFF3C4.toInt(), customText = 0xFF1A3A5C.toInt()),
+            ReaderSettings().taking(
+                ReaderColorRole.PAGE to 0xFF102030.toInt(),
+                ReaderColorRole.TEXT to 0xFFEEDDCC.toInt()
+            ),
+            ReaderSettings().taking(
+                ReaderColorRole.PAGE to 0xFFFFF3C4.toInt(),
+                ReaderColorRole.TEXT to 0xFF1A3A5C.toInt()
+            ),
             ReaderSettings(theme = ReaderTheme.PAPER, warmth = 1f),
             ReaderSettings(theme = ReaderTheme.NIGHT, warmth = 1f)
         )
@@ -227,7 +281,9 @@ class ReaderSettingsTest {
     @Test
     fun `a link colour the reader typed is used as typed`() {
         val chosen = 0xFF00695C.toInt()
-        val c = ReaderPalette.colors(ReaderSettings(theme = ReaderTheme.CUSTOM, customLink = chosen))!!
+        val c = ReaderPalette.colors(
+            ReaderSettings(theme = ReaderTheme.PAPER).taking(ReaderColorRole.LINK to chosen)
+        )!!
         assertEquals(chosen, c.link)
     }
 
@@ -253,7 +309,8 @@ class ReaderSettingsTest {
 
     @Test
     fun `every colour warms with the page`() {
-        val warm = ReaderSettings(theme = ReaderTheme.CUSTOM, customHeading = 0xFF3366FF.toInt(), warmth = 1f)
+        val warm = ReaderSettings(theme = ReaderTheme.PAPER, warmth = 1f)
+            .taking(ReaderColorRole.HEADING to 0xFF3366FF.toInt())
         val cold = warm.copy(warmth = 0f)
         val heated = ReaderPalette.colors(warm)!!
         val plain = ReaderPalette.colors(cold)!!
@@ -276,6 +333,65 @@ class ReaderSettingsTest {
         assertTrue(ReaderPalette.isLegible(c.link, c.page))
     }
 
+    // --- Rows written before the page and the prose were separate -------------------------------
+
+    @Test
+    fun `an old custom theme comes back as the page and the prose taken over`() {
+        val stored = ReaderSettings(
+            customBackground = 0xFF102030.toInt(),
+            customText = 0xFFEEDDCC.toInt()
+        )
+        val s = ReaderColorMigration.upgrade(stored, ReaderColorMigration.LEGACY_CUSTOM_THEME)
+        assertEquals(setOf(ReaderColorRole.PAGE, ReaderColorRole.TEXT), s.customRoles)
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(0xFF102030.toInt(), bg)
+        assertEquals(0xFFEEDDCC.toInt(), fg)
+    }
+
+    @Test
+    fun `an old custom theme with nothing chosen comes back as the page it was drawing`() {
+        val s = ReaderColorMigration.upgrade(ReaderSettings(), ReaderColorMigration.LEGACY_CUSTOM_THEME)
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(ReaderPalette.CUSTOM_BG, bg)
+        assertEquals(ReaderPalette.CUSTOM_FG, fg)
+        assertTrue("the starting point must be legible", ReaderPalette.isLegible(fg, bg))
+    }
+
+    @Test
+    fun `an old custom theme keeps the heading and link colours it had, and invents none`() {
+        val withHeading = ReaderColorMigration.upgrade(
+            ReaderSettings(customHeading = 0xFF8B0000.toInt()),
+            ReaderColorMigration.LEGACY_CUSTOM_THEME
+        )
+        assertTrue(withHeading.customizes(ReaderColorRole.HEADING))
+        assertFalse(withHeading.customizes(ReaderColorRole.LINK))
+    }
+
+    @Test
+    fun `an old preset keeps its page, and the colours it was holding stay held`() {
+        // The failure this rules out: a reader who tried a deep green page once, went back to
+        // Sepia, and opens their book months later in a colour they cannot account for.
+        val stored = ReaderSettings(
+            theme = ReaderTheme.SEPIA,
+            customBackground = 0xFF102030.toInt(),
+            customText = 0xFFEEDDCC.toInt(),
+            customHeading = 0xFF8B0000.toInt()
+        )
+        val s = ReaderColorMigration.upgrade(stored, "SEPIA")
+        assertTrue(s.customRoles.isEmpty())
+        val (bg, fg) = pageAndInk(s)!!
+        assertEquals(ReaderPalette.SEPIA_BG, bg)
+        assertEquals(ReaderPalette.SEPIA_FG, fg)
+        assertEquals(0xFF102030.toInt(), s.held(ReaderColorRole.PAGE))
+    }
+
+    @Test
+    fun `a theme that is missing or unreadable takes nothing over`() {
+        listOf(null, "", "MIDNIGHT").forEach { stored ->
+            assertTrue(ReaderColorMigration.upgrade(ReaderSettings(), stored).customRoles.isEmpty())
+        }
+    }
+
     @Test
     fun `not having chosen a colour survives sanitizing`() {
         val s = ReaderSettings().sanitized()
@@ -285,11 +401,9 @@ class ReaderSettingsTest {
 
     @Test
     fun `the reader's colours warm with everything else`() {
-        val s = ReaderSettings(
-            theme = ReaderTheme.CUSTOM,
-            customBackground = 0xFFFFFFFF.toInt(),
-            customText = 0xFF3366CC.toInt(),
-            warmth = 1f
+        val s = ReaderSettings(warmth = 1f).taking(
+            ReaderColorRole.PAGE to 0xFFFFFFFF.toInt(),
+            ReaderColorRole.TEXT to 0xFF3366CC.toInt()
         )
         val (bg, fg) = pageAndInk(s)!!
         assertTrue("a warmed page loses blue like any other", (bg and 0xFF) < 0xFF)

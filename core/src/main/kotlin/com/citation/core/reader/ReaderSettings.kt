@@ -43,20 +43,42 @@ data class ReaderSettings(
     val paragraphs: ParagraphSpacing = ParagraphSpacing.INDENT,
 
     // --- Colour ------------------------------------------------------------------------------
+    /**
+     * The page's starting point: the app's own colours, or one of the three presets.
+     *
+     * A *starting point* rather than the whole answer, which is the change from the theme this
+     * replaced. Each colour on the page — see [ReaderColorRole] — either follows the theme or is one
+     * the reader took over, and the two choices are independent. A reader who wants the page to
+     * follow the system into dark mode but wants the prose in their own colour used to have to
+     * abandon the theme entirely and name both, and then name them again the next time the system
+     * changed underneath them.
+     */
     val theme: ReaderTheme = ReaderTheme.SYSTEM,
     /**
-     * The page colour, as ARGB, when [theme] is [ReaderTheme.CUSTOM]; `null` falls back to
-     * [ReaderPalette.CUSTOM_BG] until the reader picks one.
+     * Which colours the reader has taken over from [theme]. Everything else follows it.
      *
-     * Held even while another theme is selected, so switching to Sepia to compare and back again
-     * does not throw away colours somebody sat and tuned.
+     * A set rather than a flag per colour because the colours themselves are *held* — see
+     * [customBackground] — and the two facts are different: what a colour is, and whether it is in
+     * force. Keeping them apart is what lets a reader hand the page back to Sepia to compare and
+     * take it again without retyping a hex code.
+     */
+    val customRoles: Set<ReaderColorRole> = emptySet(),
+    /**
+     * The page colour, as ARGB, used when [ReaderColorRole.PAGE] is among [customRoles].
+     *
+     * Held even while the page follows the theme, so switching to Sepia to compare and back again
+     * does not throw away colours somebody sat and tuned — which is exactly why it is `null` that
+     * means "never chosen one" here, and [customRoles] that decides whether this is on the page.
      */
     val customBackground: Int? = null,
-    /** The text colour, as ARGB, when [theme] is [ReaderTheme.CUSTOM]. See [customBackground]. */
+    /**
+     * The text colour, as ARGB, used when [ReaderColorRole.TEXT] is among [customRoles]. See
+     * [customBackground].
+     */
     val customText: Int? = null,
     /**
-     * The heading colour, as ARGB, when [theme] is [ReaderTheme.CUSTOM]; `null` sets headings in
-     * the body's own colour.
+     * The heading colour, as ARGB, used when [ReaderColorRole.HEADING] is among [customRoles];
+     * otherwise headings are set in the body's own colour.
      *
      * Its own setting because a heading is not simply large text. It is the one thing on the page a
      * reader navigates by, and readers who tint a page for visual stress routinely want the
@@ -65,8 +87,8 @@ data class ReaderSettings(
      */
     val customHeading: Int? = null,
     /**
-     * The colour of links and note references, as ARGB, when [theme] is [ReaderTheme.CUSTOM];
-     * `null` derives one that is legible on the chosen page.
+     * The colour of links and note references, as ARGB, used when [ReaderColorRole.LINK] is among
+     * [customRoles]; otherwise one is derived that is legible on the page.
      *
      * Separated out because it was the colour doing the most damage: links used to be painted in the
      * app's own accent, which is neither warmed with the page nor chosen by anybody reading, so a
@@ -128,9 +150,69 @@ data class ReaderSettings(
 
     val followsSystemBrightness: Boolean get() = brightness < 0f
 
+    /** Whether [role] is the reader's own colour rather than the theme's. */
+    fun customizes(role: ReaderColorRole): Boolean = role in customRoles
+
+    /**
+     * The colour the reader has taken over for [role], or `null` where it still follows the theme.
+     *
+     * `null` for a role that is in [customRoles] but has no colour stored against it, which is the
+     * same answer as "follows the theme" — a role turned on and never given a colour must not paint
+     * the page transparent.
+     */
+    fun custom(role: ReaderColorRole): Int? = if (customizes(role)) held(role) else null
+
+    /**
+     * The colour stored for [role], in force or not.
+     *
+     * The settings sheet asks for this when a reader takes a role back: the colour they tuned before
+     * handing it to the theme is the one they mean, not a fresh white page.
+     */
+    fun held(role: ReaderColorRole): Int? = when (role) {
+        ReaderColorRole.PAGE -> customBackground
+        ReaderColorRole.TEXT -> customText
+        ReaderColorRole.HEADING -> customHeading
+        ReaderColorRole.LINK -> customLink
+    }
+
+    /** Take [role] over, in [colour]. */
+    fun withCustom(role: ReaderColorRole, colour: Int): ReaderSettings {
+        val opaque = ReaderPalette.opaque(colour)
+        val roles = customRoles + role
+        return when (role) {
+            ReaderColorRole.PAGE -> copy(customRoles = roles, customBackground = opaque)
+            ReaderColorRole.TEXT -> copy(customRoles = roles, customText = opaque)
+            ReaderColorRole.HEADING -> copy(customRoles = roles, customHeading = opaque)
+            ReaderColorRole.LINK -> copy(customRoles = roles, customLink = opaque)
+        }
+    }
+
+    /**
+     * Give [role] back to the theme, keeping the colour for when the reader takes it again.
+     *
+     * Keeping it is the point: "Auto" is a thing readers press to *compare*, and a comparison that
+     * costs you the colour you had tuned is one nobody makes twice.
+     */
+    fun withoutCustom(role: ReaderColorRole): ReaderSettings = copy(customRoles = customRoles - role)
+
     companion object {
         const val SYSTEM_BRIGHTNESS = -1f
     }
+}
+
+/**
+ * A colour on the page that can either follow the theme or be one the reader chose.
+ *
+ * Four roles rather than two. Page and text are what a reader asks for first, but a book is not one
+ * colour of text: headings and links used to be painted in the app's own accent, which is a colour
+ * nobody reading chose and the reason a chapter full of anchors came out purple over a page somebody
+ * had carefully set.
+ */
+enum class ReaderColorRole(val label: String) {
+    PAGE("Page"),
+    TEXT("Text"),
+    HEADING("Heading"),
+    LINK("Links")
 }
 
 /** The faces the reader can set text in. */
@@ -147,34 +229,45 @@ enum class ReaderTypeface(val label: String) {
 }
 
 /**
- * How one paragraph is separated from the next.
+ * How one paragraph is separated from the next: by indenting its first line, by a blank line, or by
+ * both.
  *
- * Both are correct; they belong to different traditions. [INDENT] is how printed prose has always
- * done it and is what makes a novel read like a novel. [SPACED] is the web's convention and is
- * easier on some readers, particularly at large type.
+ * All three are correct; they belong to different traditions. [INDENT] is how printed prose has
+ * always done it and is what makes a novel read like a novel. [SPACED] is the web's convention and
+ * is easier on some readers, particularly at large type. [BOTH] is neither tradition and is the one
+ * readers keep asking for: the indent alone marks a new paragraph without giving the eye anywhere to
+ * rest, which at a tight line spacing reads as one unbroken column, and the blank line alone loses
+ * the mark that says where a paragraph begins — the case a line of dialogue ending flush right makes
+ * genuinely ambiguous.
  */
-enum class ParagraphSpacing(val label: String) {
-    INDENT("Indented"),
-    SPACED("Spaced")
+enum class ParagraphSpacing(
+    val label: String,
+    /** The first line of a paragraph is indented. */
+    val indents: Boolean,
+    /** A blank line separates one paragraph from the next. */
+    val spaces: Boolean
+) {
+    INDENT("Indented", indents = true, spaces = false),
+    SPACED("Spaced", indents = false, spaces = true),
+    BOTH("Both", indents = true, spaces = true)
 }
 
-/** Reading themes. [SYSTEM] follows the app's own light/dark colours. */
+/**
+ * Where a page's colours start. [SYSTEM] follows the app's own light/dark colours.
+ *
+ * The presets cover the usual answers, but not everybody's: readers with Irlen syndrome or a light
+ * sensitivity are routinely told a specific tint helps them, dyslexic readers are often given one
+ * too, and neither is a colour anybody could guess in advance. Rather than adding a preset per
+ * condition, any of the page's colours can be taken over one at a time — see [ReaderColorRole].
+ * There is deliberately no "Custom" theme among these: it was a fifth preset that happened to mean
+ * "now name everything yourself", and choosing it to change the prose colour also gave up following
+ * the system into dark mode.
+ */
 enum class ReaderTheme(val label: String) {
     SYSTEM("System"),
     PAPER("Paper"),
     SEPIA("Sepia"),
-    NIGHT("Night"),
-
-    /**
-     * Page and text colours the reader chose themselves, held in
-     * [ReaderSettings.customBackground] and [ReaderSettings.customText].
-     *
-     * The four presets cover the usual answers, but not everybody's: readers with Irlen syndrome or
-     * a light sensitivity are routinely told a specific tint helps them, dyslexic readers are often
-     * given one too, and neither is a colour anybody could guess in advance. Rather than adding a
-     * preset per condition, the reader names the two colours and Citation gets out of the way.
-     */
-    CUSTOM("Custom")
+    NIGHT("Night")
 }
 
 enum class ScreenOrientation(val label: String) {
@@ -192,43 +285,44 @@ enum class ScreenOrientation(val label: String) {
 object ReaderPalette {
 
     /**
-     * Base background for a theme, or `null` for [ReaderTheme.SYSTEM] (the app's own colours).
+     * The page colour: [custom] where the reader has taken the page over, otherwise the theme's own,
+     * or `null` for [ReaderTheme.SYSTEM] (the app's own colours).
      *
-     * [custom] is the reader's own page colour and is consulted only under [ReaderTheme.CUSTOM] —
-     * a colour they picked must not quietly repaint Sepia.
+     * [custom] wins over the theme rather than being reached through one, which is the whole point
+     * of splitting them: a reader can hold a page colour of their own *and* keep Night's text, or
+     * keep the system page and set only the prose. A colour that is merely held — stored but not in
+     * force — arrives here as `null`; that decision belongs to [ReaderSettings.custom], not to this.
      */
     fun background(theme: ReaderTheme, trueBlack: Boolean, custom: Int? = null): Int? = when {
+        custom != null -> opaque(custom)
         theme == ReaderTheme.NIGHT && trueBlack -> BLACK
         theme == ReaderTheme.NIGHT -> NIGHT_BG
         theme == ReaderTheme.PAPER -> PAPER_BG
         theme == ReaderTheme.SEPIA -> SEPIA_BG
-        theme == ReaderTheme.CUSTOM -> opaque(custom ?: CUSTOM_BG)
         else -> null
     }
 
-    /** Base foreground for a theme, or `null` for [ReaderTheme.SYSTEM]. See [background]. */
+    /** The prose colour, chosen the same way and just as independently. See [background]. */
     fun foreground(theme: ReaderTheme, trueBlack: Boolean, custom: Int? = null): Int? = when {
+        custom != null -> opaque(custom)
         theme == ReaderTheme.NIGHT && trueBlack -> TRUE_BLACK_FG
         theme == ReaderTheme.NIGHT -> NIGHT_FG
         theme == ReaderTheme.PAPER -> PAPER_FG
         theme == ReaderTheme.SEPIA -> SEPIA_FG
-        theme == ReaderTheme.CUSTOM -> opaque(custom ?: CUSTOM_FG)
         else -> null
     }
 
     /**
-     * The heading colour for a theme, or `null` when it simply follows the body text.
+     * The heading colour, or `null` when it simply follows the body text.
      *
-     * Only [ReaderTheme.CUSTOM] answers with anything: the presets set headings in the prose colour
-     * and let size and weight do the work, which is the printed convention and the one that never
-     * goes wrong on a page somebody else tinted.
+     * No theme answers with anything of its own: a preset sets headings in the prose colour and lets
+     * size and weight do the work, which is the printed convention and the one that never goes wrong
+     * on a page somebody else tinted. Only a reader taking the role over changes that.
      */
-    fun heading(theme: ReaderTheme, custom: Int? = null): Int? =
-        if (theme == ReaderTheme.CUSTOM) custom?.let { opaque(it) } else null
+    fun heading(custom: Int? = null): Int? = custom?.let { opaque(it) }
 
-    /** The link colour for a theme, or `null` to derive one against the page. See [readable]. */
-    fun link(theme: ReaderTheme, custom: Int? = null): Int? =
-        if (theme == ReaderTheme.CUSTOM) custom?.let { opaque(it) } else null
+    /** The link colour, or `null` to derive one against the page. See [readable]. */
+    fun link(custom: Int? = null): Int? = custom?.let { opaque(it) }
 
     /**
      * Warm a colour by cutting its blue.
@@ -252,12 +346,18 @@ object ReaderPalette {
     }
 
     /**
-     * Every colour the page is drawn in, for these settings, or `null` under [ReaderTheme.SYSTEM] —
-     * which means "the app's own colours" and is answered by the overload taking fallbacks.
+     * Every colour the page is drawn in, for these settings, or `null` where the page or the prose
+     * is still the app's to decide — which is what [ReaderTheme.SYSTEM] means, and is answered by
+     * the overload taking fallbacks.
+     *
+     * Both halves have to be decided here, not one: this is the call made by the styling carried
+     * into somebody else's web reader, and a prose colour applied over a page Citation has not set
+     * is a colour landing on an unknown background. That is how text goes invisible in a reader we
+     * do not own, so the honest answer there is to leave their colours alone.
      */
     fun colors(settings: ReaderSettings): ReaderColors? {
-        val page = background(settings.theme, settings.trueBlack, settings.customBackground) ?: return null
-        val text = foreground(settings.theme, settings.trueBlack, settings.customText) ?: return null
+        val page = background(settings.theme, settings.trueBlack, settings.pageOverride) ?: return null
+        val text = foreground(settings.theme, settings.trueBlack, settings.textOverride) ?: return null
         return derive(page, text, settings)
     }
 
@@ -272,10 +372,16 @@ object ReaderPalette {
      * how a book ends up set in the launcher's purple.
      */
     fun colors(settings: ReaderSettings, fallbackPage: Int, fallbackText: Int): ReaderColors {
-        val page = background(settings.theme, settings.trueBlack, settings.customBackground) ?: fallbackPage
-        val text = foreground(settings.theme, settings.trueBlack, settings.customText) ?: fallbackText
+        val page = background(settings.theme, settings.trueBlack, settings.pageOverride) ?: fallbackPage
+        val text = foreground(settings.theme, settings.trueBlack, settings.textOverride) ?: fallbackText
         return derive(page, text, settings)
     }
+
+    /** The page colour these settings ask for, or `null` where it is the app's own to decide. */
+    private val ReaderSettings.pageOverride: Int? get() = custom(ReaderColorRole.PAGE)
+
+    /** The prose colour these settings ask for, or `null`. See [pageOverride]. */
+    private val ReaderSettings.textOverride: Int? get() = custom(ReaderColorRole.TEXT)
 
     /**
      * Build the full palette from a page and a text colour.
@@ -288,10 +394,10 @@ object ReaderPalette {
     private fun derive(page: Int, text: Int, settings: ReaderSettings): ReaderColors {
         val warmedPage = warm(page, settings.warmth)
         val warmedText = warm(text, settings.warmth)
-        val heading = heading(settings.theme, settings.customHeading)
+        val heading = heading(settings.custom(ReaderColorRole.HEADING))
             ?.let { warm(it, settings.warmth) }
             ?: warmedText
-        val link = link(settings.theme, settings.customLink)
+        val link = link(settings.custom(ReaderColorRole.LINK))
             ?.let { warm(it, settings.warmth) }
             ?: readable(LINK_TINT, warmedPage, warmedText)
         return ReaderColors(
@@ -453,7 +559,7 @@ object ReaderPalette {
     const val NIGHT_FG = 0xFFD7D7D2.toInt()
     const val BLACK = 0xFF000000.toInt()
 
-    /** Where [ReaderTheme.CUSTOM] starts before the reader has chosen anything: plain paper. */
+    /** Where a colour the reader takes over starts, before they have chosen one: plain paper. */
     const val CUSTOM_BG = PAPER_BG
     const val CUSTOM_FG = PAPER_FG
 
