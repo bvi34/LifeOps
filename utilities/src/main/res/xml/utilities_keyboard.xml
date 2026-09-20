@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    What the system needs to know about this input method.
+
+    `supportsSwitchingToNextInputMethod` is what makes the long press on the space bar work — it is
+    the platform's own "hand back to the previous keyboard", and a keyboard that does not declare it
+    is a keyboard people cannot escape from. That gesture is the single most important thing about a
+    third-party keyboard's first hour.
+
+    One subtype, declared rather than left implicit: a keyboard with no subtype at all is shown in
+    some pickers without a name. There is no per-language layout behind it yet (the layouts are
+    QWERTY with printed alternates — see KeyLayouts), and adding one is a layout plus a subtype here.
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsSwitchingToNextInputMethod="true">
+    <subtype
+        android:label="@string/utilities_keyboard_subtype"
+        android:imeSubtypeLocale="en_US"
+        android:imeSubtypeMode="keyboard" />
+</input-method>

@@ -150,6 +150,12 @@ dependencies {
     // registers the broker every other app reads credentials through) and registers its backup
     // contributor. Nothing else in the suite depends on this module — see the note in settings.gradle.
     implementation(project(":secrets"))
+    // Utilities, the takeovers. Named here for the usual three reasons — the home tile opens its
+    // activity, the start-up installs it, and its backup contributor is registered — and for one
+    // that is only true of this module: the components the *platform* starts (the keyboard, the SMS
+    // receivers) arrive in the merged manifest through this dependency, which is what makes the
+    // suite's single APK offerable as a keyboard and as a messaging app at all.
+    implementation(project(":utilities"))
     implementation(project(":backupkit"))
 
     implementation(libs.androidx.core.ktx)

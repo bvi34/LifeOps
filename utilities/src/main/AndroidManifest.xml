@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- WHAT THIS MODULE ASKS FOR, AND THE ONE THING IT DELIBERATELY DOES NOT.
+
+         Utilities replaces pieces of the operating system rather than providing a service, so it is
+         the module in this suite with the widest *platform* surface — an input method the system
+         binds, and four components that make the app eligible to be the phone's messenger. That is
+         a lot of exported machinery, and the argument for each piece is below. What makes the whole
+         thing defensible is the line that is missing:
+
+           **NO INTERNET.** This module declares no network permission and has no HTTP client on its
+           classpath. It is not a switch, not a setting, and not a promise about what the code does
+           with a connection — there is no connection. That matters more here than anywhere else in
+           the suite, because a keyboard sees every password and every message typed on the phone
+           and a messenger sees every conversation, and the entire reason somebody would replace the
+           two that ship with a handset is that those *do* have a route off the device.
+
+           The word list the keyboard learns from is a text file in this app's own directory, capped
+           at a few thousand words, readable on the keyboard's settings screen, and carried only by
+           the suite's own archive.
+
+         THE PERMISSIONS
+
+           1. SMS — READ_SMS, RECEIVE_SMS, SEND_SMS, RECEIVE_MMS, RECEIVE_WAP_PUSH. The first three
+              are the *reading rung* of the Messages takeover: drawing the threads that are already
+              on the phone, and replying to them, while the carrier's app keeps delivering. All of
+              them are runtime permissions and every one can be declined; declining costs exactly
+              the feature it belongs to and nothing else. The last two are only ever exercised while
+              this app holds the default-SMS role.
+
+           2. READ_CONTACTS — so a thread says "Ada" rather than "(555) 010-9999". Optional in the
+              strongest sense: declining it is handled everywhere, and the shelf says plainly that
+              threads will be titled by number. It is read-only and never written back.
+
+           3. POST_NOTIFICATIONS — declared by the container for the whole package; this module
+              posts on the messages channel only while it is the default messenger, because a second
+              notification for every text the carrier's app already announced would be the most
+              obvious way to make the phone worse.
+
+         THE EXPORTED COMPONENTS — five, in two groups.
+
+           The KEYBOARD service is exported behind `BIND_INPUT_METHOD`, a permission held by the
+           platform and by nothing installable. "Exported" there does not mean reachable by another
+           app; it means the operating system can bind it, which is the only way an input method can
+           exist. It is inert until the household switches it on in system settings *and* selects
+           it, which are two separate deliberate acts Android makes them perform, and it can be
+           handed back with a long press on the space bar.
+
+           The FOUR MESSAGING COMPONENTS are the set Android requires before it will offer an app in
+           the default-SMS role picker: a receiver for delivered texts (`BROADCAST_SMS`, held by the
+           platform), a receiver for the WAP push that carries picture messages (`BROADCAST_WAP_PUSH`,
+           likewise), a service the call screen can reply through (`SEND_RESPOND_VIA_MESSAGE`,
+           likewise), and an activity that answers `sms:` links. The first three are reachable only
+           by the system. The fourth is reachable by any app, and is therefore deliberately the
+           narrowest thing in this module: `SendToActivity` has no layout, returns no result, reads
+           a number out of a URI and starts the real screen. An app that launches it learns nothing —
+           not whether the number is known, not whether a thread exists, not what is in one. It does
+           not even carry the `?body=` across, because a link that pre-fills a message is one
+           mistaken tap from sending somebody else's words from your number.
+
+           MainActivity itself is NOT exported, like every other hosted app's screen. The sandbox
+           opens it in-process.
+
+         WHAT IS NOT WRITTEN, SAID HERE AS WELL AS IN THE APP
+
+           MMS. Becoming the default messenger means Android stops handing picture messages to the
+           carrier's app and starts handing them here, and the MMS half of this module does not
+           exist: text arrives and is stored, a picture message arrives as a notification this app
+           records and cannot fetch. The app says so in a dialog before the role picker opens (see
+           `Takeovers.mmsWarning`), the receiver says so in its own comment, and switching the role
+           back restores it immediately — nothing is moved or deleted by the takeover. -->
+
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_MMS" />
+    <uses-permission android:name="android.permission.RECEIVE_WAP_PUSH" />
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <!-- A tablet with no radio can still use the keyboard, so the host app must not inherit a hard
+         requirement from half of this module. -->
+    <uses-feature
+        android:name="android.hardware.telephony"
+        android:required="false" />
+
+    <!-- Utilities is a library module: no app-level attributes here (name/icon/theme/label live on
+         the :app host). Only this app's own components are declared for the manifest merger. -->
+    <application>
+
+        <!-- Not a launcher, and not exported: the Operations Sandbox home opens this explicitly,
+             in-process. `singleTask` so that a notification or an `sms:` link arriving while the app
+             is already open reuses the screen instead of stacking a second copy behind it. -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- ================= The keyboard ================= -->
+
+        <service
+            android:name=".keyboard.UtilitiesKeyboardService"
+            android:label="@string/utilities_keyboard_name"
+            android:exported="true"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/utilities_keyboard" />
+        </service>
+
+        <!-- ================= Messages ================= -->
+
+        <!-- Delivered texts. Sent to exactly one app — the default one — so if this receiver does
+             not write the message down, no app on the phone has it. See SmsDeliverReceiver. -->
+        <receiver
+            android:name=".messages.SmsDeliverReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- The WAP push that announces a picture message. Declared because the role requires it;
+             what it can actually do is the honest part — see MmsDeliverReceiver. -->
+        <receiver
+            android:name=".messages.MmsDeliverReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_WAP_PUSH">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.WAP_PUSH_DELIVER" />
+                <data android:mimeType="application/vnd.wap.mms-message" />
+            </intent-filter>
+        </receiver>
+
+        <!-- What the radio says about a text this app handed it. Not exported: the only thing that
+             can reach it is the PendingIntent this app made, which names this package. -->
+        <receiver
+            android:name=".messages.SmsSentReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.utilities.app.messages.SMS_SENT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- "Reply with a message", from the call screen. Binds to nothing and shows nothing. -->
+        <service
+            android:name=".messages.RespondViaMessageService"
+            android:exported="true"
+            android:permission="android.permission.SEND_RESPOND_VIA_MESSAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.RESPOND_VIA_MESSAGE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </service>
+
+        <!-- The one component in this module any app can reach. See the block at the top for the
+             five properties that keep it narrow. `excludeFromRecents` because it is an errand inside
+             somebody else's task rather than a place to come back to. -->
+        <activity
+            android:name=".messages.SendToActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:stateNotNeeded="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.intent.action.SENDTO" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="sms" />
+                <data android:scheme="smsto" />
+                <data android:scheme="mms" />
+                <data android:scheme="mmsto" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>

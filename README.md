@@ -26,14 +26,14 @@ the receipts.
 > offers the apps you opened most recently. One launcher that opens LifeOps (`:lifeops`, the standard app), Citation
 > (`:citation`), Logistics (`:logistics`), Advisor (`:advisor`), Health (`:health`), People
 > (`:people`), Project (`:project`), Maintenance (`:maintenance`), Finance (`:finance`), Repository
-> (`:repository`) or Secrets (`:secrets`); one place to back the whole suite up into a single `.zip` and restore from it —
+> (`:repository`), Secrets (`:secrets`) or Utilities (`:utilities`); one place to back the whole suite up into a single `.zip` and restore from it —
 > or to have that same archive **uploaded to your own Azure storage container on a schedule**, on
 > Wi-Fi, keeping the newest few, so the backup that saves you is the one nobody had to remember to
 > take; and one
 > place that decides what all of them **look** like — a shared preset and light/dark mode, plus
 > an accent per app, applied by every hosted screen, and a **wallpaper** for its own home screen
 > (a shipped design, your own gradient, or the suite's colours). LifeOps, Citation, Logistics, Advisor, Health,
-> People, Project, Maintenance, Finance, Repository and Secrets are library modules hosted in that one process —
+> People, Project, Maintenance, Finance, Repository, Secrets and Utilities are library modules hosted in that one process —
 > see **[docs/OPERATIONS_SANDBOX.md](docs/OPERATIONS_SANDBOX.md)**. The backup format/engine is the
 > pure-JVM, unit-tested `:backupkit`; the appearance contract is the pure-JVM, unit-tested
 > `:suitekit`, with its Compose theme in `:suiteui`.
@@ -592,6 +592,48 @@ the receipts.
 > passkey signature failing to verify over client data it was not made for. The codes themselves
 > are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
 > worth having for a generator whose failure mode is six plausible digits that no site accepts.
+
+> **Utilities** (the takeovers) is a peer module — see **[docs/UTILITIES.md](docs/UTILITIES.md)**.
+> Every other app here replaces a *service*; this one replaces pieces of the **phone**, and the reason
+> is the same each time: the stock component is fine, and it reports to somebody else. A keyboard
+> sees every password, message and search typed on the phone. A messaging app sees every
+> conversation. So Utilities is a **shelf of takeovers**: one row per part of the phone that leaks,
+> each showing whether it is on, half-done or off, and each with the one thing to do next. Two ship.
+>
+> The **keyboard** is a real input method — QWERTY with printed long-press alternates, a symbols page
+> you are not thrown out of after one character, a numeric pad for numeric fields, double-tap caps
+> lock, and sentence capitalisation — and the whole argument for it is a dependency it does not have:
+> **no `INTERNET` permission, and no HTTP client on the module's classpath.** What it remembers is a
+> word list with counts, capped at a few thousand, kept in a plain text file you can read, **listed
+> word by word on its own settings screen** with a Forget button on every row. Nothing is learned from
+> a password field, a field marked `noSuggestions`, or a browser's private window — those editors say
+> so and the keyboard listens. Turning learning off empties the list as well as stopping it growing.
+>
+> **Messages** has *two rungs*, which is the part worth knowing before you switch anything on.
+> **Reading** needs one permission and changes nothing else about the phone: the threads are already
+> in Android's own store, Utilities draws them, and your carrier's app keeps delivering, notifying and
+> handling picture messages. That rung is worth having on its own — it is the one that answers "I want
+> my own window" — and because nothing moved, it costs nothing. **Default** is the whole job: texts
+> arrive here, this app stores them and notifies. It is behind a dialog that says plainly what it
+> costs, because **MMS is not written yet**: text arrives and is stored, a picture message arrives as a
+> notification this app records and cannot fetch. Switching the role back in system settings restores
+> it immediately — nothing was moved or deleted, which is the property that makes every takeover here
+> reversible.
+>
+> Both surfaces are set with the **same appearance sheet, borrowed in design from Citation's reader**:
+> four presets and a custom one, a page colour and a text colour you pick yourself, a **warmth slider
+> that cuts blue out of each colour rather than laying an orange sheet over them** (so the surface
+> warms without losing contrast), a face — including one loaded from your own font file, since the
+> ones people ask for are not ours to ship — a text scale, a roundness and an air setting. One button
+> on each screen takes the other's colours. An accent that cannot be read on the surface you chose is
+> moved toward the text colour until it can be, so a send button can never disappear; a received
+> bubble is derived from the surface and stepped up again when the first step vanishes into it.
+>
+> Utilities **owns no data**, and that is the design rather than a gap: the texts stay in the
+> platform's provider where they have always been. Its backup slice is the appearance file, the word
+> list and any font you supplied — a few kilobytes. Its logic is pure JVM and unit-tested: the key
+> layouts and the shift/layer machine, the word list's refusals, the colour maths, the rule for when a
+> sent message has landed in the store, and what each takeover's state adds up to.
 
 > **Repository** (the suite's shelf) is a peer module — see **[docs/REPOSITORY.md](docs/REPOSITORY.md)**.
 > Every app here eventually hits the same wall: a thing it tracks has a piece of paper attached to it.

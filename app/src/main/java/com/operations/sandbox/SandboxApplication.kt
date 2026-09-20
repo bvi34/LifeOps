@@ -18,6 +18,7 @@ import com.people.app.PeopleApp
 import com.project.app.ProjectApp
 import com.repository.app.RepositoryApp
 import com.secrets.app.SecretsApp
+import com.utilities.app.UtilitiesApp
 
 /**
  * The single [Application] for the whole suite. LifeOps and Citation are library modules now, so
@@ -27,8 +28,8 @@ import com.secrets.app.SecretsApp
  * Startup order is intentional but not coupled: LifeOps runs its heavy launch work (week rollover,
  * reminder scheduling, the WAL-checkpoint lifecycle callback, the sleep service); Citation builds
  * its repository asynchronously and registers its periodic jobs. Logistics, Advisor, Health, People,
- * Project, Maintenance and Repository are lazy containers that cost nothing until their screens are
- * opened — Maintenance creates no database file until somebody looks at the docket, and Repository
+ * Project, Maintenance, Repository and Utilities are lazy containers that cost nothing until their
+ * screens are opened — Maintenance creates no database file until somebody looks at the docket, and Repository
  * none until something asks the shelf a question. Each installs exactly once.
  *
  * Repository is installed last and is the one every other app may reach into: it is where the
@@ -68,6 +69,12 @@ class SandboxApplication : Application() {
         // one file's header being read. Nothing is unlocked by installing; the vault comes up shut
         // on every process start, always.
         SecretsApp.install(this)
+        // Utilities last, and it is the cheapest install in the suite: two stores opened, no worker,
+        // no service, no channel. It is here at all so that a restore has something to tell that the
+        // appearance file and the word list changed underneath it — the components the platform
+        // starts (the keyboard, the SMS receivers) each resolve their own store on the way in and do
+        // not need this to have run.
+        UtilitiesApp.install(this)
         registerShellAsSecretSource()
         // Re-register the scheduled cloud backup. WorkManager's own store survives a restart, but
         // not a reinstall or a "clear data", and this is also where a frequency or Wi-Fi-only

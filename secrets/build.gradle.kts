@@ -1,5 +1,5 @@
 plugins {
-    // Secrets — the suite's vault. Like the other ten it is a *library* module consumed by the
+    // Secrets — the suite's vault. Like the other eleven it is a *library* module consumed by the
     // Operations Sandbox container app (:app); it owns no launcher and no Application of its own.
     //
     // What it owns is the one store in this suite that is safe to put in a backup. Every other app

@@ -28,7 +28,15 @@ enum class AppId(val key: String, val defaultDisplayName: String) {
      * the archive or the phone contains. See `SecretsBackupContributor`, which is the one restore in
      * the suite that deliberately does not overwrite what it finds.
      */
-    SECRETS("secrets", "Secrets");
+    SECRETS("secrets", "Secrets"),
+
+    /**
+     * The takeovers. This app's slice is the smallest in the suite and deliberately so: it owns
+     * appearance settings and a learned word list, and *not* the messages — those are Android's,
+     * in the platform's own provider, and Utilities only draws a window onto them. See
+     * `UtilitiesBackupContributor`, which argues that at length.
+     */
+    UTILITIES("utilities", "Utilities");
 
     companion object {
         fun fromKey(key: String): AppId? = entries.firstOrNull { it.key == key }

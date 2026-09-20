@@ -61,7 +61,7 @@ import java.util.Locale
 /**
  * The Operations Sandbox home: a phone home screen for a suite that lives inside one app.
  *
- * The metaphor is doing real work, not decoration. Eight apps share a process and an installer, so a
+ * The metaphor is doing real work, not decoration. Twelve apps share a process and an installer, so a
  * launcher grid is the honest picture of them — each tile carries the app's own glyph and colour,
  * so "the green one" and "the teal one" mean something before you have read a word. The dock holds
  * what belongs to the container rather than to any app: the settings that paint the whole suite,
@@ -69,7 +69,7 @@ import java.util.Locale
  *
  * Tap a tile to open the app; press and hold to jump to where its colour is chosen.
  *
- * The grid is the household's, not the suite's. Eleven apps is past the point where a shipped order
+ * The grid is the household's, not the suite's. Twelve apps is past the point where a shipped order
  * is anybody's order, so the tiles are drawn in the arrangement the appearance document holds, and
  * an app they never open can be taken off the screen entirely. Arranging it is done in Settings
  * rather than from here: the long-press is one gesture and it already means something, and a menu
@@ -235,7 +235,7 @@ private fun UpdateBanner(tag: String, ink: Color, onClick: () -> Unit) {
  *
  * Drawn in the wallpaper's own ink over a faint wash of it, so it reads on a light or a dark
  * backdrop without introducing a colour of its own. A notice that wanted attention through colour
- * would be a notice competing with eleven app tiles that have earned theirs.
+ * would be a notice competing with twelve app tiles that have earned theirs.
  *
  * The text wraps to two lines rather than ellipsing: "3 credentials are waiting for your vault —
  * tap to unlock" truncated at the dash is a sentence that has lost the half that says what to do.
@@ -372,7 +372,7 @@ private fun AppTile(
  *
  * Drawn in the theme's error colour, which is the one role in the palette that already means "this
  * is not resolved" and is legible against every wallpaper the suite ships — an accent would have to
- * be chosen against eleven app colours and would lose to at least one of them.
+ * be chosen against twelve app colours and would lose to at least one of them.
  *
  * A count over nine reads as "9+": the number stops being useful past that point, and a three-digit
  * badge on a 54dp mark is a smear.

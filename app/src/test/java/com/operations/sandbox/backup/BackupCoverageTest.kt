@@ -35,6 +35,11 @@ import com.repository.app.data.prefs.RepositoryPrefs
 import com.repository.app.data.store.DocumentFiles
 import com.secrets.app.data.SecretsPrefs
 import com.secrets.app.data.VaultFileStore
+import com.utilities.app.data.FontFiles
+import com.utilities.app.data.LexiconStore
+import com.utilities.app.data.LookStore
+import com.utilities.app.messages.OutboxStore
+import com.utilities.app.messages.logic.OutboxEntry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -52,7 +57,7 @@ import java.util.zip.ZipInputStream
  * Does "Full Backup" actually mean *full*?
  *
  * Every contributor says it copies the app whole, and every one of them is written to. What nothing
- * checked until now is the claim across the suite: that the eleven slices together account for
+ * checked until now is the claim across the suite: that the twelve slices together account for
  * **everything the suite has put on this phone**. That is not a property any single contributor can
  * assert, because the failure mode is by definition the file nobody thought about — a database added
  * to an app whose contributor was never updated, a store that writes beside the one that is copied,
@@ -69,7 +74,7 @@ import java.util.zip.ZipInputStream
  * which is exactly the conversation that otherwise happens on the day of a restore.
  */
 @RunWith(RobolectricTestRunner::class)
-// A plain Application rather than the suite's own: installing eleven apps would schedule their
+// A plain Application rather than the suite's own: installing twelve apps would schedule their
 // background work, and what is under test is the contributors, not the start-up sequence.
 @Config(sdk = [34], application = android.app.Application::class)
 class BackupCoverageTest {
@@ -201,6 +206,11 @@ class BackupCoverageTest {
         ).forEach { name ->
             context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().putString("seeded", name).commit()
         }
+        // Utilities' appearance document, written the way the app writes it. Its two takeovers are
+        // the keyboard and the messaging app, and neither owns any data worth carrying beyond this
+        // file and the word list below — the texts are Android's, in the platform's own provider.
+        LookStore.get(context).updateKeyboard { it.copy(numberRow = true) }
+
         // Finance and Secrets keep their file names to themselves, so their preferences are written
         // the way the apps write them — through the class that owns the file. Repository's are here
         // for the same reason and one more: they are on the excluded list, and a line on that list
@@ -225,6 +235,12 @@ class BackupCoverageTest {
         // Citation's narrator settings: a file in `filesDir` beside the sovereign sweep rather than
         // inside it, which is precisely why it went uncarried until this census found it.
         File(context.filesDir, SpeechSettingsStore.FILE_NAME).writeText("""{"rate":1.4}""")
+        // Utilities' own directory: the keyboard's learned word list, and a font file the household
+        // pointed at. The font is here rather than assumed, because a copied font whose bytes did
+        // not travel is a face that silently stops working on the new phone — which is the entire
+        // reason `FontFiles` copies it in rather than keeping the picker's URI.
+        write(File(context.filesDir, LexiconStore.DIR_NAME), LexiconStore.FILE_NAME)
+        write(File(context.filesDir, FontFiles.DIR_NAME), "opendyslexic.font")
         // The vault, as a file: "OPSVAULT" is the magic its own reader sniffs for, and the sealed
         // body past it is :secrets' business rather than this test's.
         VaultFileStore(context).vaultFile.also { it.parentFile?.mkdirs() }
@@ -234,6 +250,10 @@ class BackupCoverageTest {
         // this test establishes rather than an assumption it makes.
         listOf("secure_finance_access", "oreilly_access", "opds_catalog_access", "secure_secrets_device")
             .forEach { context.getSharedPreferences(it, Context.MODE_PRIVATE).edit().putString("token", "SECRET").commit() }
+        // Utilities' outbox, which must not travel for a different reason than the credentials do:
+        // it is a list of claims that the platform's message store is missing something, and on a
+        // restored phone every one of those claims is false.
+        OutboxStore(context).add(42L, OutboxEntry(address = "5550109999", body = "on my way", at = 1L))
     }
 
     /** Delete everything the suite keeps, as a new phone would have it. */
@@ -345,6 +365,11 @@ class BackupCoverageTest {
             "shared_prefs/logistics_prefs" to
                 "a display toggle — whether empty items are hidden — which `LogisticsBackupContributor` " +
                     "leaves out on purpose; nothing a household would miss on a new phone",
+            "shared_prefs/outbox_utilities" to
+                "Utilities' record of messages it sent that the platform's store did not have yet. " +
+                    "Restored onto a new phone every entry is a claim that is false by the time it " +
+                    "arrives, so the file is deliberately named outside the prefix its contributor " +
+                    "sweeps",
             "shared_prefs/repository_prefs" to
                 "the last drive and folder a transfer used: SAF grants that do not survive a " +
                     "reinstall, so restoring them would name folders this phone cannot open"

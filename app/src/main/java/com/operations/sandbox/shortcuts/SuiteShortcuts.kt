@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
 /**
  * The suite's apps, as the *phone's* launcher sees them.
  *
- * Eleven apps ship behind one icon. That is the point of the container and it is also its one
+ * Twelve apps ship behind one icon. That is the point of the container and it is also its one
  * concession: on the phone's home screen there is a single "Operations Sandbox", and everything
  * inside it is two taps away at best. A launcher's own answer to that is shortcuts, and the suite
  * had none at all — long-pressing its icon offered nothing, and there was no way to put "Logistics"
