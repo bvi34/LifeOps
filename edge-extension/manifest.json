@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "LifeOps Secrets",
+  "version": "0.1.0",
+  "description": "Offline companion for a LifeOps Secrets vault.",
+  "action": { "default_popup": "popup.html", "default_title": "LifeOps Secrets" },
+  "permissions": ["storage", "activeTab", "scripting"],
+  "content_scripts": [{ "matches": ["http://*/*", "https://*/*"], "js": ["content.js"] }]
+}

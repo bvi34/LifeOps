@@ -41,6 +41,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.operations.vaultkit.VaultState
 import com.secrets.app.ui.audit.AuditScreen
+import com.secrets.app.ui.extension.ExtensionTransferScreen
 import com.secrets.app.ui.generator.GeneratorScreen
 import com.secrets.app.ui.importer.ImportScreen
 import com.secrets.app.ui.importer.ImportViewModel
@@ -101,6 +102,7 @@ private const val ROUTE_GENERATOR = "generator"
 private const val ROUTE_AUDIT = "audit"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_IMPORT = "import"
+private const val ROUTE_EXTENSION = "extension"
 private const val ROUTE_ITEM = "item/{itemId}"
 private const val ROUTE_NEW_ITEM = "item/new"
 
@@ -146,6 +148,7 @@ private fun SecretsShell(app: SecretsApp) {
                                 ROUTE_AUDIT -> "Check"
                                 ROUTE_SETTINGS -> "Settings"
                                 ROUTE_IMPORT -> "Import"
+                                ROUTE_EXTENSION -> "Connect Edge"
                                 ROUTE_ITEM, ROUTE_NEW_ITEM -> "Item"
                                 else -> "Secrets"
                             }
@@ -238,9 +241,11 @@ private fun SecretsShell(app: SecretsApp) {
                 SecretsSettingsScreen(
                     store = app.vault,
                     prefs = prefs,
-                    onImport = { nav.navigate(ROUTE_IMPORT) }
+                    onImport = { nav.navigate(ROUTE_IMPORT) },
+                    onExtension = { nav.navigate(ROUTE_EXTENSION) }
                 )
             }
+            composable(ROUTE_EXTENSION) { ExtensionTransferScreen(store = app.vault, onDone = { nav.popBackStack() }) }
             composable(ROUTE_IMPORT) {
                 val vm: ImportViewModel = viewModel(factory = ImportViewModel.Factory(app.vault))
                 ImportScreen(vm = vm, onDone = { nav.popBackStack() })

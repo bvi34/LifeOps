@@ -114,6 +114,17 @@ class VaultStore(context: Context) {
 
     val hasPreviousGeneration: Boolean get() = files.readPrevious() != null
 
+    /**
+     * A copy of the sealed vault for a deliberate extension hand-off.
+     *
+     * Requiring the open state is an explicit consent boundary: scanning an extension's request
+     * while the vault is locked can never turn into a prompt that exports a file somebody did not
+     * just open. The bytes are still the OPSVAULT envelope, not its plaintext document.
+     */
+    fun sealedVaultForExtension(): ByteArray? = synchronized(lockObject) {
+        if (vaultKey == null) null else files.read()?.copyOf()
+    }
+
     val stagedRestores: List<File> get() = files.stagedRestores()
 
     /** How the device unlock is configured, for the settings screen. */
