@@ -61,7 +61,7 @@ import kotlinx.coroutines.launch
  * That is the whole reason the restore of a vault is a conversation rather than a file copy.
  */
 @Composable
-fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs, onImport: () -> Unit) {
+fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs, onImport: () -> Unit, onExtension: () -> Unit) {
     val scope = rememberCoroutineScope()
 
     var autoLock by remember { mutableStateOf(prefs.autoLockMinutes.toFloat()) }
@@ -138,6 +138,21 @@ fun SecretsSettingsScreen(store: VaultStore, prefs: SecretsPrefs, onImport: () -
                 )
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onImport) { Text("Import from a file") }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("Edge extension", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Use a one-time QR exchange to move this encrypted vault into the Edge companion. " +
+                        "No account or network connection is used; the extension asks for your master passphrase before it can fill passwords.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(onClick = onExtension) { Text("Connect Edge") }
             }
         }
 

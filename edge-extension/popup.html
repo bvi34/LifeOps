@@ -1,0 +1,11 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><link rel="stylesheet" href="popup.css"></head>
+<body><main><h1>LifeOps Secrets</h1><p id="status">Create a one-time request, then show its QR code to Secrets.</p>
+<button id="new-request">New transfer request</button>
+<textarea id="request" readonly aria-label="Transfer request"></textarea>
+<p class="hint">The request is intentionally short enough for a QR encoder. This initial package has no network permission: scan it with Secrets, then scan the encrypted frames Secrets displays into the field below.</p>
+<textarea id="frames" placeholder="Paste scanned encrypted QR frames, one per line" aria-label="Encrypted frames"></textarea>
+<button id="import">Import encrypted vault</button>
+<label>Master passphrase <input id="passphrase" type="password" autocomplete="current-password"></label>
+<button id="unlock">Unlock for this session</button><button id="lock">Lock</button>
+</main><script src="popup.js"></script></body></html>
