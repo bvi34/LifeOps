@@ -167,6 +167,13 @@ fun KeyboardScreen(modifier: Modifier = Modifier) {
             onChange = { value -> looks.updateKeyboard { it.copy(suggestions = value) } }
         )
         SwitchRow(
+            title = "Correct my typing",
+            detail = "Fix a word that is not a word when you press space. Backspace puts it " +
+                "straight back — and a word you put back is learned, so it is never corrected again.",
+            checked = look.autoCorrect,
+            onChange = { value -> looks.updateKeyboard { it.copy(autoCorrect = value) } }
+        )
+        SwitchRow(
             title = "Remember what I type",
             detail = "Turning this off empties the list as well as stopping it growing.",
             checked = look.learn,
@@ -174,6 +181,16 @@ fun KeyboardScreen(modifier: Modifier = Modifier) {
                 looks.updateKeyboard { it.copy(learn = value) }
                 if (!value) lexicon.clear()
             }
+        )
+
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Suggestions and corrections also draw on a dictionary of about fifty thousand English " +
+                "words that ships inside the app. It is the same file in every copy, it is never " +
+                "added to, and it says nothing about anybody — your words always come first, and a " +
+                "word you have typed is never corrected.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
         Spacer(Modifier.height(12.dp))

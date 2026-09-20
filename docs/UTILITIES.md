@@ -82,6 +82,11 @@ It **does** mean:
   itself, not a guess this app makes;
 - turning learning off **empties the list** as well as stopping it growing. A switch that stopped
   only the future would do half of what its label says;
+- the **general dictionary is not a record of anything**. Autocorrect needs to know what an English
+  word is, and it knows from a fifty-thousand-word list generated from SCOWL and shipped inside the
+  app — the same file in every copy, never written to, never added to, not in the backup, and
+  saying nothing about anybody. What the keyboard knows about *you* remains the learned list above,
+  and that list always wins: a word you have typed is never corrected;
 - it can always be **escaped from**. A long press on the space bar hands back to whatever keyboard
   was there before.
 
@@ -99,6 +104,11 @@ Three pieces, and only the last is Android:
 | `keyboard/logic/KeyLayouts.kt` | what is on each page | JVM |
 | `keyboard/logic/KeyboardMachine.kt` | what a press does to the keyboard | JVM |
 | `keyboard/logic/Lexicon.kt` | what is remembered, and what is refused | JVM |
+| `keyboard/logic/WordBook.kt` | the fifty thousand words of English that ship with the app | JVM |
+| `keyboard/logic/Vocabulary.kt` | the learned list and the dictionary as one, and the order between them | JVM |
+| `keyboard/logic/Corrections.kt` | what a typo becomes, and the far longer list of what is left alone | JVM |
+| `keyboard/logic/KeyNeighbours.kt` | which keys touch, worked out from the layout | JVM |
+| `keyboard/logic/KeyboardFit.kt` | how much room the phone's own furniture needs around the keys | JVM |
 | `keyboard/KeyboardCanvas.kt` | geometry, paint, touch slop | — |
 | `keyboard/UtilitiesKeyboardService.kt` | translating effects into `InputConnection` calls | — |
 
@@ -108,6 +118,84 @@ every one of those is decidable from data without drawing anything. Which is why
 data, and why `KeyLayoutsTest` can assert that every page has a backspace, that only backspace
 repeats, that the numeric pad offers no letters and no way to reach them, and that every printed
 alternate types something the key does not already type.
+
+### Correcting what was typed
+
+Autocorrect is the one feature of a keyboard that is famous for being wrong, so it is worth setting
+out exactly what this one does. It runs when a word ends — a space, a comma, a full stop, the enter
+key, but never the apostrophe, which is inside words rather than after them — and never part-way
+through one. When it runs it asks three questions in order:
+
+1. **is this a word?** Anything in the dictionary, and anything this household has ever typed, is
+   left exactly as it is. There is no "did you mean" here: `cant` is a word, so `cant` stays;
+2. **is it a word we are allowed to touch?** Capitalised words are names unless they start a
+   sentence; a capital in the middle (`McGrath`, `iPhone`) is somebody being deliberate; anything
+   under three letters is too little to go on; a plural possessive (`dogs'`) is spelt correctly and
+   the cheap repair of it (`dog's`) means something else;
+3. **is there a candidate worth overruling a thumb for?** Every word one edit away — and every way of
+   reading it as one of the glued little words stuck to an ordinary one, which is what turns `alot`
+   into `a lot` — is scored as *how good a word it is* minus *how unlikely that edit is*, and the
+   best one has to clear a bar.
+
+The scoring is where the behaviour actually lives, and both halves of it are deliberate:
+
+- **how good a word it is** comes from `Vocabulary`: a word this household has typed outranks every
+  word in the dictionary, and inside the dictionary the three tiers rank themselves. The bottom tier
+  sits *below* the acceptance bar on purpose, so the long tail of English is recognised — and
+  therefore never corrected — without ever being somewhere a typo can be dragged to;
+- **how unlikely the edit is** comes from `KeyNeighbours`, which is geometry from the layout rather
+  than a table: two letters swapped and a missing apostrophe are nearly free, the key next door is
+  cheap, a letter from the other side of the keyboard is expensive, and rewriting the *first* letter
+  of a word costs so much that only a word you have typed yourself can pay for it.
+
+Out of those two numbers falls a ladder nobody had to write down. An ordinary slip — two letters
+swapped, a missing apostrophe, a doubled letter, the key next door — reaches any ordinary word. A
+letter from the other side of the keyboard, which is a misspelling rather than a slip, reaches only
+the few thousand commonest words. An extra letter that is neither doubled nor next door reaches
+nothing but a word this household has typed itself. And the long tail is never reached at all.
+
+A split is scored like any other candidate, and two consequences fall out of the arithmetic rather
+than out of a rule: it is worth what its *second* half is worth, since the first is off a list of
+words that are common by construction; and it sits below the bar a capitalised word has to clear,
+so `Facebook` and `YouTube` are never pulled apart whatever else is true.
+
+**The undo is the part that makes it acceptable.** The backspace immediately after a correction puts
+back exactly what was typed — and *learns it*, which means the same correction is never offered
+again, because the first question above now answers itself. Undoing a correction once is a household
+teaching the keyboard a word, not a household resigning itself to fixing the same word for ever.
+
+Two things it deliberately does not do. It does not correct in a field that refuses suggestions — a
+password field, `noSuggestions`, a numeric pad — for the same reason it does not learn from one. And
+it does not correct on the way out of a field: rewriting somebody's last word as the keyboard goes
+down is a change nobody gets the chance to see, let alone undo.
+
+### Where the dictionary comes from
+
+`utilities/src/main/assets/wordbook-en.txt`, generated by `utilities/tools/make-wordbook.sh` from
+[SCOWL](https://wordlist.aspell.net) and committed rather than built, because a build that reaches
+the network is a build that breaks when somebody else's server does. SCOWL because its licence
+permits use, modification and distribution provided the copyright notice travels with the words —
+that notice is in the head of the generated file, and `WordBookAssetTest` fails if it is ever
+removed — and because it is **graded**. The grading is the point: a dictionary that knows every word
+in English is a *worse* autocorrect than one that knows the common ones, since every obscure word is
+another thing an ordinary typo can be dragged towards. Nothing rarer than SCOWL's size-35 bucket is
+shipped, proper names and acronyms are dropped on the way in, and what arrives is about fifty
+thousand words in three tiers.
+
+One addition the generator makes on the way through: a short list of ordinary words a 2020 word list
+is simply too old to have — `online`, `inbox`, `website`, `username`, `login`, `app`, `podcast`,
+`emoji`, `wifi`, `laptop`, `backup`, `screenshot`. A keyboard that does not know a word does three
+unhelpful things with it: it will not suggest it, it may correct it into something else, and it may
+split it in two. Brand names are deliberately *not* in that list — a dictionary of English is not a
+directory of companies, and `facebook` and `iphone` are protected another way, by the refusal to
+touch a capitalised word and by learning whatever you put back with a backspace.
+
+It is stored as one long string with an index of where each word begins, and binary-searched in
+place. Fifty thousand `String` objects would be a couple of megabytes of heap held for the life of a
+process that exists to draw thirty rectangles over somebody else's app; the same words this way are
+a few hundred kilobytes and are faster to look up, because a search touches a handful of characters
+and allocates nothing. It is read on a background thread at startup, and until it lands the keyboard
+runs on the learned list alone rather than waiting for it.
 
 ### Why a `View` and not Compose
 
@@ -141,6 +229,39 @@ keys most people press rarely. The households that want it want it badly enough 
 **Key edges are on by default.** Edgeless keyboards look better in a screenshot and are measurably
 worse to aim at, and the people most likely to be typing on a phone in poor light are the ones the
 edges help most.
+
+**The keys stop above the navigation bar.** An input method's window reaches the bottom edge of the
+screen — it is laid out behind the system bars, and nothing pads it on the keyboard's behalf. Left
+alone, the bottom row lands in the strip the phone keeps for the gesture handle and the
+keyboard-switch button: the system draws its own glyphs over the caps, and a press near the bottom of
+the space bar belongs to the gesture rather than to the keyboard. It reads as a keyboard sitting too
+low, because it is. So the window's insets become padding on the column and the surface colour shows
+through underneath, which is the shape every other keyboard on the phone has. Padding read from the
+window rather than a fixed margin, because the height is the phone's to say: it differs between
+gesture and three-button navigation, and it changes when somebody switches between them with the
+keyboard already open. See `KeyboardFit`.
+
+**Autocorrect is on, and its undo is not a hidden gesture.** A keyboard that silently changes what
+somebody wrote is doing the thing people hate most about keyboards, and the honest response to that
+is not to ship the feature off — it is to make the refusals strict, make the undo the most obvious
+key on the board, and make an undone word one the keyboard has learned. With those three in place,
+on is the better default: the alternative is a keyboard that watches you type `teh` and says nothing.
+
+**`alot` becomes `a lot`, and `username` stays `username`.** Splitting a word that reads as two
+ordinary words is the fix for `alot`, `infact`, `thankyou` and `everytime` — and, applied as such,
+it is also how `username` becomes `user name` and `facebook` becomes `face book`, because a compound
+noun is also two ordinary words. No dictionary can separate those cases. What separates them is
+*which word comes first*: the words people glue to the front of the next one are a closed class of
+little ones — `a`, `in`, `at`, `of`, `no`, `each`, `every`, `thank` — and `user`, `run` and `face`
+are not among them. So the list is written down (`Corrections.GLUED`) rather than derived, and words
+are left off it deliberately: `you` because of `youtube`, `go` because `google` would become
+`go ogle`, `over` and `under` because `overflow` and `underscore` are words people type all day. A
+word missing from that list costs one correction that does not happen, which is the cheap direction
+to be wrong in.
+
+**A word you have typed is never corrected, ever.** Not the second time, not the first. It is the
+rule that decides most of the arguments in `Corrections`, and it is why undoing a correction is
+worth doing once: the word goes into the learned list and the question never comes up again.
 
 **The suggestion strip keeps its height when empty.** A bar that appears and disappears moves every
 key up and down by forty pixels while somebody is typing, which is the most disorienting thing a
@@ -642,6 +763,7 @@ and it is why the backup slice is a few kilobytes:
 | `outbox_utilities` | no | claims about a store that, on a new phone, are all false |
 | `utilities_seal_adverts` | no | when we last silently texted each contact |
 | the messages themselves | no | Android's, not ours; a second copy could only drift |
+| `assets/wordbook-en.txt` | no | the same English in every copy of the app; a reinstall brings it back |
 
 The look and the word list are both singletons that may already be open when a restore runs — the
 keyboard could literally be on screen over another app — so the contributor re-reads both afterwards.
@@ -663,6 +785,12 @@ All JVM, no Robolectric — nothing worth testing here touches Android.
 |---|---|
 | `KeyLayoutsTest` | every page has an escape and a backspace; only backspace repeats; the numeric pad has no letters; the alphabet appears once; sentence punctuation is on the letters page; every printed alternate types something new |
 | `KeyboardMachineTest` | the shift cycle and its double-tap lock; a held shift spent by one letter and a locked one not; long press typing the alternate unshifted; the symbols page not being left after one character; sentence capitalisation, including the case where the cursor sits right after the stop |
+| `KeyboardFitTest` | the pad that keeps the bottom row off the gesture handle: whichever of the navigation bar and the mandatory gesture strip asks for more, a bar down one side in landscape, a display cutout wider than the bar, a top that is never padded, and a negative inset floored rather than trusted |
+| `WordBookTest` | the dictionary read and searched: every word found including the first and the last, near-misses not found, completions ranked commonest-then-shortest, comments and malformed lines skipped, and a file in the wrong order repaired rather than half-searched |
+| `VocabularyTest` | the order between the two lists — a word typed once outranking the commonest word in English, at suggesting as well as correcting — and the two apostrophes being one letter |
+| `CorrectionsTest` | the four kinds of typo and what each becomes, two words typed as one being put back into two, and then every kind of word that is refused: a known word, a name, a capital mid-word, a plural possessive, a rewritten first letter, the long tail of the dictionary, a compound noun that only looks glued, and anything with nothing near it |
+| `KeyNeighboursTest` | the geometry: the row below counts, two keys over does not, touching is mutual, and the shift key's width moving `z` out from under the corner |
+| `WordBookAssetTest` | the file that actually ships — its size, its order as written, that it is only words, that the SCOWL copyright notice is still in it, and the whole feature end to end against it: the typos everybody makes, the words people type stuck together, and the twenty-eight compounds and brand names it must leave alone |
 | `LexiconTest` | what is learned, what is suggested, the tie-break that stops the strip flickering — and, chiefly, every shape of thing that is **refused**: digits, symbols, too short, too long |
 | `UtilityPalettesTest` | warming cuts blue and does not cost contrast; every preset is legible; an unreadable accent is rescued on any surface; sliders clamp; a transparent colour is made opaque |
 | `ChatPalettesTest` | a received bubble stands off every surface including mid-grey; text is readable in both bubbles everywhere; an avatar is the same colour for the same person however their number is written |

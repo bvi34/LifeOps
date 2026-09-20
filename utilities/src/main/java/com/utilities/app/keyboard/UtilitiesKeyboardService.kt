@@ -6,19 +6,27 @@ import android.inputmethodservice.InputMethodService
 import android.text.InputType
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.LinearLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.utilities.app.data.LexiconStore
 import com.utilities.app.data.LookStore
+import com.utilities.app.data.WordBookStore
+import com.utilities.app.keyboard.logic.Correction
+import com.utilities.app.keyboard.logic.Corrections
 import com.utilities.app.keyboard.logic.Key
 import com.utilities.app.keyboard.logic.KeyAction
 import com.utilities.app.keyboard.logic.KeyEffect
 import com.utilities.app.keyboard.logic.KeyLayouts
+import com.utilities.app.keyboard.logic.KeyboardFit
 import com.utilities.app.keyboard.logic.KeyboardLook
 import com.utilities.app.keyboard.logic.KeyboardMachine
 import com.utilities.app.keyboard.logic.KeyboardState
 import com.utilities.app.keyboard.logic.Layer
 import com.utilities.app.keyboard.logic.Lexicon
+import com.utilities.app.keyboard.logic.Vocabulary
 import com.utilities.app.look.UtilityPalette
 import com.utilities.app.look.UtilityPalettes
 import com.utilities.app.look.UtilityTypeface
@@ -66,6 +74,7 @@ class UtilitiesKeyboardService : InputMethodService() {
 
     private lateinit var looks: LookStore
     private lateinit var lexicon: LexiconStore
+    private lateinit var dictionary: WordBookStore
 
     private var root: LinearLayout? = null
     private var keys: KeyboardCanvas? = null
@@ -77,6 +86,15 @@ class UtilitiesKeyboardService : InputMethodService() {
     private var typeface: Typeface? = null
 
     private var lastShiftTap = 0L
+
+    /**
+     * The correction the last space bar made, if it was the last thing that happened.
+     *
+     * Held for exactly one keypress: backspace puts it back, anything else forgets it. See [revert],
+     * which is the feature — autocorrect without an undo is a keyboard arguing with somebody who
+     * cannot answer back.
+     */
+    private var undo: Undo? = null
 
     /** What the editor being typed into asks for. Re-read on every [onStartInputView]. */
     private var editorLayer = Layer.LETTERS
@@ -91,6 +109,7 @@ class UtilitiesKeyboardService : InputMethodService() {
         super.onCreate()
         looks = LookStore.get(this)
         lexicon = LexiconStore.get(this)
+        dictionary = WordBookStore.get(this)
     }
 
     /**
@@ -120,20 +139,65 @@ class UtilitiesKeyboardService : InputMethodService() {
         strip = suggestions
         keys = canvas
 
+        fitToSystemBars(column)
+
         watching?.cancel()
         watching = scope.launch {
-            looks.keyboard.collectLatest { next ->
-                look = next.sanitized()
-                typeface = loadTypeface(look)
-                repaint()
-                refreshSuggestions()
+            launch {
+                looks.keyboard.collectLatest { next ->
+                    look = next.sanitized()
+                    typeface = loadTypeface(look)
+                    repaint()
+                    refreshSuggestions()
+                }
             }
+            // The general dictionary arrives a moment after the keyboard does — see WordBookStore.
+            // Nothing waits for it; the strip just fills in when it lands.
+            launch { dictionary.words.collectLatest { refreshSuggestions() } }
         }
         return column
     }
 
+    /**
+     * Keep the keys off the navigation bar.
+     *
+     * The input method's window reaches the bottom edge of the screen — it is laid out behind the
+     * system bars, and nothing pads it on the keyboard's behalf. Left alone, the bottom row lands in
+     * the strip the phone keeps for the gesture handle and the keyboard-switch button: the system
+     * draws its glyphs over the caps, and a press near the bottom of the space bar is the gesture's
+     * rather than the keyboard's. The keyboard reads as sitting too low because it is.
+     *
+     * So the window's insets become padding on the column, which pushes every row up by exactly the
+     * height of the furniture below it and leaves the surface colour showing through underneath —
+     * the same shape every other keyboard on the phone has. Padding rather than a fixed margin
+     * because the height is the phone's to say: it differs between gesture and three-button
+     * navigation, and it changes when somebody switches between them with the keyboard open.
+     *
+     * The insets are consumed rather than passed on. The two children below are a canvas and a
+     * strip that lay themselves out edge to edge inside whatever they are given; there is nothing
+     * further down to inset. What the arithmetic is, and why it takes the larger of two answers, is
+     * [KeyboardFit].
+     */
+    private fun fitToSystemBars(column: LinearLayout) {
+        ViewCompat.setOnApplyWindowInsetsListener(column) { view, insets ->
+            val fit = KeyboardFit.padding(
+                navigation = insets.edges(WindowInsetsCompat.Type.navigationBars()),
+                cutout = insets.edges(WindowInsetsCompat.Type.displayCutout()),
+                gestures = insets.edges(WindowInsetsCompat.Type.mandatorySystemGestures())
+            )
+            view.setPadding(fit.left, fit.top, fit.right, fit.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+    }
+
+    private fun WindowInsetsCompat.edges(type: Int): KeyboardFit.Edges {
+        val insets = getInsets(type)
+        return KeyboardFit.Edges(insets.left, insets.top, insets.right, insets.bottom)
+    }
+
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        undo = null
         readEditor(info)
         state = KeyboardState(layer = editorLayer)
         syncShiftToCursor()
@@ -157,7 +221,10 @@ class UtilitiesKeyboardService : InputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // A word half-typed when the field loses focus is still a word that was typed.
+        undo = null
+        // A word half-typed when the field loses focus is still a word that was typed. It is not
+        // corrected, though: rewriting somebody's last word as they leave the field, with the
+        // keyboard already on its way down, is a change nobody gets the chance to see or undo.
         flushWord()
     }
 
@@ -172,6 +239,10 @@ class UtilitiesKeyboardService : InputMethodService() {
 
     private fun press(key: Key, longPress: Boolean) {
         val now = System.currentTimeMillis()
+        // Backspace is the one key that can undo a correction, so it is the one key that does not
+        // forget one. Everything else means the household has moved on and meant what is there.
+        val undoable = undo
+        if (key.action != KeyAction.BACKSPACE) undo = null
         val (next, effect) = KeyboardMachine.press(
             state = state,
             key = key,
@@ -184,7 +255,7 @@ class UtilitiesKeyboardService : InputMethodService() {
 
         when (effect) {
             is KeyEffect.Type -> type(effect.text)
-            KeyEffect.Delete -> delete()
+            KeyEffect.Delete -> delete(undoable)
             KeyEffect.Commit -> commit()
             KeyEffect.SwitchKeyboard -> switchKeyboard()
             KeyEffect.None -> Unit
@@ -195,14 +266,60 @@ class UtilitiesKeyboardService : InputMethodService() {
 
     private fun type(text: String) {
         val connection = currentInputConnection ?: return
-        // A word ends when something that is not part of one is typed. Learning happens here rather
-        // than on the space key alone, because a sentence ending in a full stop is a word too.
-        if (text.isNotEmpty() && !text[0].isLetter()) flushWord()
+        // A word ends when something that is not part of one is typed — and it is the end of a word
+        // that both correcting and learning hang off, rather than the space key alone, because a
+        // sentence ending in a full stop has a word in front of it too.
+        if (endsAWord(text)) {
+            val corrected = autocorrect(connection)
+            learnFinished(corrected)
+            connection.commitText(text, 1)
+            undo = corrected?.let { Undo(it, text) }
+            return
+        }
         connection.commitText(text, 1)
     }
 
-    private fun delete() {
+    /**
+     * Whether typing [text] finishes the word in front of the cursor.
+     *
+     * Anything that is not a letter, except the apostrophe, which is *inside* words rather than
+     * after them. Somebody typing `don't` is one letter into the second half of a word when they
+     * press it, and a keyboard that treated that as a finished word would be offering to correct
+     * `don` — and learning it — every time.
+     */
+    private fun endsAWord(text: String): Boolean =
+        text.isNotEmpty() && !text[0].isLetter() && text[0] != '\'' && text[0] != '\u2019'
+
+    /**
+     * Fix the word that has just been finished, if it is not a word.
+     *
+     * The decision is entirely [Corrections]' — what is here is the editor half of it: read the
+     * word back, ask, and if the answer is yes, take the letters out and put the other ones in.
+     * `startsSentence` is worked out from the text in *front* of the word, because a leading capital
+     * means "new sentence" there and "somebody's name" anywhere else.
+     *
+     * Refused outright in the editors that refuse suggestions — a password field, a field marked
+     * `noSuggestions`, a numeric pad. A keyboard silently rewriting a password is not a bug report
+     * anybody enjoys reading.
+     */
+    private fun autocorrect(connection: InputConnection): Correction? {
+        if (!look.autoCorrect || !editorAllowsSuggestions) return null
+        val before = textBeforeCursor()
+        val typed = Lexicon.wordBeforeCursor(before)
+        if (typed.isEmpty()) return null
+        val correction = Corrections.of(
+            typed = typed,
+            startsSentence = KeyboardMachine.startsASentence(before.dropLast(typed.length)),
+            vocabulary = vocabulary()
+        ) ?: return null
+        connection.deleteSurroundingText(typed.length, 0)
+        connection.commitText(correction.to, 1)
+        return correction
+    }
+
+    private fun delete(undoable: Undo?) {
         val connection = currentInputConnection ?: return
+        if (undoable != null && revert(connection, undoable)) return
         // A selection is deleted whole, which is what every other keyboard does and what somebody
         // who just selected a paragraph means. `deleteSurroundingText` would leave it there and take
         // a character off the end of it instead.
@@ -214,16 +331,51 @@ class UtilitiesKeyboardService : InputMethodService() {
         }
     }
 
+    /**
+     * Put back what was actually typed, and remember it.
+     *
+     * This is the whole of what makes autocorrect acceptable. The backspace immediately after a
+     * correction is somebody saying "no, that word" — so the word goes back, and it is *learned*,
+     * which means the same correction is never offered again: from then on it is in the vocabulary
+     * and [Corrections] refuses to touch a word it knows. Undoing a correction once is a household
+     * teaching the keyboard a word, not a household resigning itself to fixing it for ever.
+     *
+     * The text is checked before anything is changed. The cursor may have moved somewhere else
+     * entirely between the correction and the backspace, and a revert that fires on the wrong word
+     * would be a worse bug than the one it is here to fix.
+     */
+    private fun revert(connection: InputConnection, undoable: Undo): Boolean {
+        val written = undoable.correction.to + undoable.separator
+        val before = connection.getTextBeforeCursor(written.length, 0)?.toString()
+        if (before != written) return false
+        connection.deleteSurroundingText(written.length, 0)
+        connection.commitText(undoable.correction.from + undoable.separator, 1)
+        learn(undoable.correction.from)
+        undo = null
+        return true
+    }
+
+    /**
+     * The enter key: the editor's own action, or a newline where there is none.
+     *
+     * The last word is corrected here as well as on the space bar, because for a message field
+     * enter is how a sentence ends — and a keyboard that fixes `teh` when you carry on typing but
+     * not when you press send has fixed nothing. The undo survives a newline and not an action:
+     * once a message has gone, there is nothing left in the field to put back.
+     */
     private fun commit() {
-        flushWord()
         val connection = currentInputConnection ?: return
+        val corrected = autocorrect(connection)
+        learnFinished(corrected)
         val options = currentInputEditorInfo?.imeOptions ?: 0
         val action = options and EditorInfo.IME_MASK_ACTION
         val noAction = (options and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
         if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED && !noAction) {
             connection.performEditorAction(action)
+            undo = null
         } else {
             connection.commitText("\n", 1)
+            undo = corrected?.let { Undo(it, "\n") }
         }
     }
 
@@ -234,6 +386,7 @@ class UtilitiesKeyboardService : InputMethodService() {
         if (partial.isNotEmpty()) connection.deleteSurroundingText(partial.length, 0)
         // Picking a suggestion is typing that word, so it counts as having typed it.
         learn(word)
+        undo = null
         connection.commitText("$word ", 1)
         state = KeyboardMachine.released(state)
         repaint()
@@ -256,6 +409,17 @@ class UtilitiesKeyboardService : InputMethodService() {
     // ---------------------------------------------------------------------------------------
     // Learning and suggesting
     // ---------------------------------------------------------------------------------------
+
+    /**
+     * Learn the word that has just been finished — the corrected one where there was a correction.
+     *
+     * Taken from the correction rather than read back out of the field, because what is learned
+     * should be what was left there and asking the editor again is a round trip that can only
+     * disagree.
+     */
+    private fun learnFinished(corrected: Correction?) {
+        if (corrected != null) learn(corrected.to) else flushWord()
+    }
 
     /** Learn the word that was just finished, if this editor is one words may be learned from. */
     private fun flushWord() {
@@ -283,11 +447,21 @@ class UtilitiesKeyboardService : InputMethodService() {
         val show = look.suggestions && editorAllowsSuggestions
         val words = if (!show) emptyList() else {
             val partial = Lexicon.wordBeforeCursor(textBeforeCursor())
-            if (partial.isEmpty()) emptyList() else lexicon.lexicon.value.suggest(partial, SuggestionStrip.SLOTS)
+            if (partial.isEmpty()) emptyList() else vocabulary().suggest(partial, SuggestionStrip.SLOTS)
         }
         bar.show(words, palette, look.look.textScale, typeface)
         bar.visibility = if (show) View.VISIBLE else View.GONE
     }
+
+    /**
+     * The two lists the keyboard knows words from, as one.
+     *
+     * Built per call rather than held, because both halves are `StateFlow`s that change underneath
+     * a keyboard that is already on screen — a word learned two keystrokes ago, a dictionary that
+     * has just finished loading — and a wrapper around two references is cheaper than the bugs that
+     * come of caching one.
+     */
+    private fun vocabulary(): Vocabulary = Vocabulary(lexicon.lexicon.value, dictionary.words.value)
 
     private fun textBeforeCursor(): String =
         currentInputConnection?.getTextBeforeCursor(LOOKBACK, 0)?.toString().orEmpty()
@@ -369,6 +543,9 @@ class UtilitiesKeyboardService : InputMethodService() {
             ?.let { path -> runCatching { Typeface.createFromFile(File(path)) }.getOrNull() }
             ?: Typeface.SANS_SERIF
     }
+
+    /** A correction and the character typed after it, which together are what a revert puts back. */
+    private data class Undo(val correction: Correction, val separator: String)
 
     private companion object {
         /** How much of the field to read back. Enough for a word and the sentence it is starting. */

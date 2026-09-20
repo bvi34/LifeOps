@@ -602,12 +602,17 @@ the receipts.
 >
 > The **keyboard** is a real input method — QWERTY with printed long-press alternates, a symbols page
 > you are not thrown out of after one character, a numeric pad for numeric fields, double-tap caps
-> lock, and sentence capitalisation — and the whole argument for it is a dependency it does not have:
+> lock, sentence capitalisation, and autocorrect off your own words and a fifty-thousand-word English
+> dictionary that ships inside the app — and the whole argument for it is a dependency it does not have:
 > **no `INTERNET` permission, and no HTTP client on the module's classpath.** What it remembers is a
 > word list with counts, capped at a few thousand, kept in a plain text file you can read, **listed
 > word by word on its own settings screen** with a Forget button on every row. Nothing is learned from
 > a password field, a field marked `noSuggestions`, or a browser's private window — those editors say
 > so and the keyboard listens. Turning learning off empties the list as well as stopping it growing.
+> It also puts `alot` back into `a lot` — but only for the handful of little words people really do
+> glue to the next one, so `username` and `facebook` are left exactly as typed. A correction is
+> always undone by the very next backspace — and the word you put back is learned, so it is never
+> corrected again.
 >
 > **Messages** has *two rungs*, which is the part worth knowing before you switch anything on.
 > **Reading** needs one permission and changes nothing else about the phone: the threads are already
