@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.sp
 import com.citation.app.data.bookAsset
 import com.citation.app.ui.reader.ChapterRender
 import com.citation.app.ui.reader.ReaderTypography
+import com.citation.app.ui.reader.RenderedReference
 import com.citation.app.ui.reader.rememberChapterImages
 import com.citation.core.anchor.FuzzyAnchor
 import com.citation.core.anchor.TextAnchor
@@ -64,6 +65,8 @@ internal fun ChapterPage(
     colours: ReaderColors,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
+    /** A link or note reference the reader tapped. */
+    onReference: (RenderedReference) -> Unit,
     onProvideHint: (() -> Int) -> Unit
 ) {
     val foreground = Color(colours.text)
@@ -159,12 +162,12 @@ internal fun ChapterPage(
     if (settings.paged) {
         PagedChapterBody(
             vm, ord, lastIndex, rendered, annotated, title, ranges,
-            settings, family, foreground, turnThreshold, onOpenNote, onProvideHint
+            settings, family, foreground, turnThreshold, onOpenNote, onReference, onProvideHint
         )
     } else {
         ScrollChapterBody(
             vm, ord, lastIndex, title, rendered, annotated, ranges,
-            settings, family, foreground, turnThreshold, onOpenNote, onProvideHint
+            settings, family, foreground, turnThreshold, onOpenNote, onReference, onProvideHint
         )
     }
 }

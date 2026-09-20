@@ -25,7 +25,9 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.citation.app.ui.reader.RenderedChapter
+import com.citation.app.ui.reader.RenderedReference
 import com.citation.core.note.Note
 import com.citation.core.reader.ReaderSettings
 import kotlinx.coroutines.delay
@@ -58,6 +60,8 @@ internal fun ScrollChapterBody(
     foreground: Color,
     turnThreshold: Float,
     onOpenNote: (Note) -> Unit,
+    /** A link or note reference the reader tapped; where it goes is decided above. */
+    onReference: (RenderedReference) -> Unit,
     onProvideHint: (() -> Int) -> Unit
 ) {
     val scroll = rememberScrollState()
@@ -65,7 +69,10 @@ internal fun ScrollChapterBody(
 
     // Restore the saved scroll once (after the content is measured so maxValue is known), then persist
     // scroll as you read, debounced so a flick doesn't hammer the DB.
-    LaunchedEffect(ord) {
+    // Re-run on a jump as well as on a chapter change: a note two paragraphs down the page you are
+    // already on is the commonest reference there is, and the ordinal does not change for it.
+    val jump by vm.jumps.collectAsStateWithLifecycle()
+    LaunchedEffect(ord, jump) {
         // A place the *voice* reached is a canonical character offset, so it is resolved through the
         // layout — find the line holding that character and scroll to its top — rather than being
         // handed to scrollTo as though it were a pixel count, which is what the reading position on
@@ -154,15 +161,19 @@ internal fun ScrollChapterBody(
                         detectTapGestures { pos ->
                             val l = layout ?: return@detectTapGestures
                             val offset = l.getOffsetForPosition(pos)
+                            // A reference first — see the same decision in the paged body.
+                            val reference = rendered.referenceAt(offset)
                             val hit = ranges.firstOrNull { offset in it.second }
-                            if (hit != null) {
-                                onOpenNote(hit.first)
-                            } else {
-                                // Edge tap-zones page too, for readers who never swipe.
-                                val w = size.width.toFloat()
-                                when {
-                                    pos.x < w * 0.22f && ord > 0 -> vm.goToChapterEnd(ord - 1)
-                                    pos.x > w * 0.78f && ord < lastIndex -> vm.goToChapter(ord + 1)
+                            when {
+                                reference != null -> onReference(reference)
+                                hit != null -> onOpenNote(hit.first)
+                                else -> {
+                                    // Edge tap-zones page too, for readers who never swipe.
+                                    val w = size.width.toFloat()
+                                    when {
+                                        pos.x < w * 0.22f && ord > 0 -> vm.goToChapterEnd(ord - 1)
+                                        pos.x > w * 0.78f && ord < lastIndex -> vm.goToChapter(ord + 1)
+                                    }
                                 }
                             }
                         }

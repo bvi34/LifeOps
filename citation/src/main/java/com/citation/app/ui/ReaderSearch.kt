@@ -26,7 +26,7 @@ internal fun ReaderViewModel.search(query: String) {
 
 /** Land on a hit: its chapter, at its offset, with the match still lit. */
 internal fun ReaderViewModel.goToHit(hit: BookSearch.Hit) {
-    pendingScrollChapter = hit.chapterOrdinal
-    pendingScrollOffset = hit.offset
-    goToChapter(hit.chapterOrdinal)
+    // A hit's offset is a canonical character offset, so it is staged on the channel that means
+    // that in both reading modes rather than the one the scrolling reader treats as pixels.
+    goToPlace(hit.chapterOrdinal, hit.offset, remember = true)
 }

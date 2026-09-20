@@ -105,10 +105,12 @@ import com.citation.core.reader.BookSearch
 import com.citation.core.reader.Bookmark
 import com.citation.core.reader.Bookmarks
 import com.citation.core.reader.ReaderFont
+import com.citation.core.reader.ReaderHistory
 import com.citation.core.reader.ReaderSettings
 import com.citation.core.reader.ReaderTypeface
 import com.citation.core.reader.ReadingMeter
 import com.citation.core.reader.ReadingPace
+import com.citation.core.reader.ReadingPlace
 import com.citation.core.reader.ReadingProgress
 import com.citation.core.reader.TimeLeft
 import com.citation.core.reader.VolumeKeys
@@ -204,6 +206,29 @@ class ReaderViewModel(
     internal val _chapterOrdinal = MutableStateFlow(0)
 
     internal val _position = MutableStateFlow(0 to 0)
+
+    /**
+     * Where the reader was before it followed a reference, so it can go back.
+     *
+     * Held per open book and dropped when the book closes — the places in it mean nothing anywhere
+     * else. Deliberately *not* persisted: a jump you took yesterday is not one you are in the
+     * middle of, and offering to undo it on open would be offering to leave the page you asked for.
+     */
+    internal val _history = MutableStateFlow(ReaderHistory())
+
+    /** Where going back would land, or null when the reader has not jumped. */
+    val returnTo: StateFlow<ReadingPlace?> =
+        _history.map { it.last }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /**
+     * Bumped on every jump, so a landing inside the chapter already open still happens.
+     *
+     * The reading bodies stage their restore in an effect keyed by the chapter ordinal, which is
+     * exactly right for a chapter change and does nothing at all for a note two paragraphs down the
+     * page you are on — the commonest footnote there is.
+     */
+    internal val _jumps = MutableStateFlow(0)
+    val jumps: StateFlow<Int> get() = _jumps.asStateFlow()
 
     /** The pace to estimate the open book with; reloaded whenever a book is opened. */
     internal val _pace = MutableStateFlow(ReadingPace())

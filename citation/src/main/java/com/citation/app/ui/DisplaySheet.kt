@@ -607,11 +607,17 @@ private fun ColourRole(
         // Taking a role back starts from the colour it was last given, or from the one on screen if
         // it never had one — an adjustment to the page they were looking at rather than a fresh
         // problem to solve. Handing it to the theme keeps that colour for the next time.
-        Choice("Auto", !custom) { onSettings { it.withoutCustom(role) } }
+        Choice(
+            label = "Auto",
+            selected = !custom,
+            description = "${role.label}: $autoCaption"
+        ) { onSettings { it.withoutCustom(role) } }
         Spacer(Modifier.width(8.dp))
-        Choice("Custom", custom) {
-            onSettings { it.withCustom(role, it.held(role) ?: shown) }
-        }
+        Choice(
+            label = "Custom",
+            selected = custom,
+            description = "${role.label}: a colour you choose"
+        ) { onSettings { it.withCustom(role, it.held(role) ?: shown) } }
     }
     if (custom) {
         ColourRow(
@@ -829,11 +835,26 @@ private fun SwitchRow(label: String, caption: String?, checked: Boolean, onChang
     }
 }
 
+/**
+ * One option in a row of them.
+ *
+ * [description] is for the rows where the label alone does not say what is being chosen: four
+ * colours each offering "Auto" and "Custom" are eight buttons that read identically to a screen
+ * reader, and which colour you have landed on is the one thing you need to know.
+ */
 @Composable
-private fun Choice(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun Choice(
+    label: String,
+    selected: Boolean,
+    description: String? = null,
+    onClick: () -> Unit
+) {
+    val modifier = description
+        ?.let { text -> Modifier.semantics { contentDescription = text } }
+        ?: Modifier
     if (selected) {
-        Button(onClick = onClick) { Text(label, maxLines = 1) }
+        Button(onClick = onClick, modifier = modifier) { Text(label, maxLines = 1) }
     } else {
-        OutlinedButton(onClick = onClick) { Text(label, maxLines = 1) }
+        OutlinedButton(onClick = onClick, modifier = modifier) { Text(label, maxLines = 1) }
     }
 }

@@ -404,6 +404,19 @@ class ReaderSettingsTest {
         assertTrue(s.customizes(ReaderColorRole.TEXT))
     }
 
+    @Test
+    fun `a role name this build does not know costs that colour and nothing else`() {
+        // The rule every other field in a stored row follows: one unreadable value costs one
+        // setting, never the reader's whole setup.
+        val roles = ReaderColorRole.parse(listOf("PAGE", "BORDER", " TEXT ", ""))
+        assertEquals(setOf(ReaderColorRole.PAGE, ReaderColorRole.TEXT), roles)
+        assertTrue(ReaderColorRole.parse(emptyList()).isEmpty())
+        assertEquals(
+            ReaderColorRole.entries.toSet(),
+            ReaderColorRole.parse(ReaderColorRole.entries.map { it.name })
+        )
+    }
+
     // --- Rows written before the page and the prose were separate -------------------------------
 
     @Test
