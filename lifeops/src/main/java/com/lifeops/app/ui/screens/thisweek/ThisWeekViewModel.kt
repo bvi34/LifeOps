@@ -35,19 +35,6 @@ enum class SortOrder(val label: String) {
     PLANNING("Planning")
 }
 
-data class GroupedTasks(
-    val aspect: Aspect?,
-    val aspectColor: String,
-    val categories: List<CategoryGroup>
-)
-
-data class CategoryGroup(
-    val categoryId: String?,
-    val category: Category?,
-    val tasks: List<Task>,
-    val dominantPriority: Priority?
-)
-
 data class UndoEvent(val message: String, val taskId: String, val action: UndoEventAction)
 enum class UndoEventAction { UNSKIP, UN_CARRY_FORWARD, UN_UNSUCCESSFUL }
 
@@ -444,19 +431,8 @@ class ThisWeekViewModel(
         }
     }
 
-    private fun sortTasks(tasks: List<Task>, order: SortOrder): List<Task> = when (order) {
-        SortOrder.DEFAULT -> tasks
-        SortOrder.DUE_DATE_ASC -> tasks.sortedWith(
-            compareBy<Task> { it.dueDate == null }.thenBy { it.dueDate }
-        )
-        SortOrder.DUE_DATE_DESC -> tasks.sortedWith(
-            compareBy<Task> { it.dueDate == null }.thenByDescending { it.dueDate }
-        )
-        SortOrder.PRIORITY_HIGH -> tasks.sortedByDescending { it.priority.baseValue }
-        SortOrder.PRIORITY_LOW -> tasks.sortedBy { it.priority.baseValue }
-        SortOrder.PLANNING -> tasks.sortedBy { it.sortOrder }
-    }
-
+    // Grouping, filtering and sorting are pure and live in [WeekTaskGrouping], where they can be
+    // unit-tested on the JVM alongside the list keys derived from them.
     private fun groupAndFilterTasks(
         tasks: List<Task>,
         aspects: Map<String, Aspect>,
@@ -464,35 +440,8 @@ class ThisWeekViewModel(
         sortOrder: SortOrder,
         searchQuery: String,
         overdueOnly: Boolean = false
-    ): List<GroupedTasks> {
-        // Queued (future-week) tasks live in the Planning tab's Future Tasks screen, not here.
-        var filtered = tasks.filter { it.status != TaskStatus.QUEUED }
-        if (searchQuery.isNotBlank()) {
-            filtered = filtered.filter { it.title.contains(searchQuery, ignoreCase = true) }
-        }
-        if (overdueOnly) {
-            val today = java.time.LocalDate.now().toString()
-            filtered = filtered.filter { task ->
-                task.status == TaskStatus.PENDING &&
-                task.dueDate != null && task.dueDate <= today
-            }
-        }
-
-        val byAspect = filtered.groupBy { it.aspectId }
-        return byAspect.map { (aspectId, aspectTasks) ->
-            val aspect = aspectId?.let { aspects[it] }
-            val byCategory = aspectTasks.groupBy { it.categoryId }
-            val categoryGroups = byCategory.map { (catId, catTasks) ->
-                val sorted = sortTasks(catTasks, sortOrder)
-                val dominantPriority = catTasks
-                    .filter { it.status == TaskStatus.PENDING }
-                    .maxByOrNull { it.priority.baseValue }
-                    ?.priority
-                CategoryGroup(catId, catId?.let { categories[it] }, sorted, dominantPriority)
-            }
-            GroupedTasks(aspect, aspect?.color ?: "#6200EE", categoryGroups)
-        }
-    }
+    ): List<GroupedTasks> =
+        WeekTaskGrouping.group(tasks, aspects, categories, sortOrder, searchQuery, overdueOnly)
 
     private fun refreshWidget() {
         viewModelScope.launch { try { LifeOpsWidget().updateAll(appContext) } catch (_: Exception) {} }

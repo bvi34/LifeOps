@@ -218,10 +218,10 @@ fun ThisWeekScreen(
                 }
 
                 state.groupedTasks.forEach { group ->
-                    val aspectKey = group.aspect?.id ?: "none"
+                    val aspectKey = WeekTaskGrouping.aspectKey(group)
                     val hasActive = group.categories.any { c -> c.tasks.any { it.status == TaskStatus.PENDING } }
                     val expanded = aspectExpanded[aspectKey] ?: hasActive
-                    item(key = "aspect_$aspectKey") {
+                    item(key = aspectKey) {
                         AspectHeader(
                             name = group.aspect?.name ?: "Uncategorized",
                             color = group.aspectColor,
@@ -237,7 +237,7 @@ fun ThisWeekScreen(
                             ?: Color.Transparent
 
                         if (catGroup.category != null || group.categories.size > 1) {
-                            item(key = "cat_${catGroup.categoryId ?: catGroup.category?.id ?: "none"}") {
+                            item(key = WeekTaskGrouping.categoryKey(group, catGroup)) {
                                 CategoryHeader(
                                     name = catGroup.category?.name ?: "Uncategorized",
                                     priorityTint = basketColor
