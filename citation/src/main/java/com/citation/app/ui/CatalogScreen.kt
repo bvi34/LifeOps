@@ -546,6 +546,10 @@ private fun CatalogDialog(
     var url by remember { mutableStateOf(initialUrl) }
     var user by remember { mutableStateOf(initialUser) }
     var password by remember { mutableStateOf("") }
+    val pickSaved = rememberSavedPasswordPicker { id, secret ->
+        user = id
+        password = secret
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -589,6 +593,9 @@ private fun CatalogDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.padding(top = 8.dp)
                 )
+                TextButton(onClick = pickSaved, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Use a saved password")
+                }
             }
         },
         confirmButton = {
