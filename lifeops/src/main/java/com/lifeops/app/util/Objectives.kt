@@ -62,23 +62,21 @@ object Objectives {
     }
 
     /**
-     * Whether the step at [index] should be on the week ending [weekEnd] as a task: it is open
-     * (or overdue), and it is either due by the end of that week or already being worked on
-     * ([worked] — it has had a task in some week), so a step you've started stays on your week
-     * until it's done rather than vanishing when the week closes.
+     * Whether the step at [index] should be on this week as a task: whenever it is open (or
+     * overdue), due this week or not. An open step is work you can be doing now — studying for an
+     * exam two months out — so it is on the board to log time against. A step still waiting (on
+     * the step before it, or on its opening date) is not; the board shows it as what comes next.
      */
-    fun belongsOnWeek(
-        steps: List<ObjectiveStep>,
-        index: Int,
-        weekEnd: String,
-        today: String,
-        worked: Boolean
-    ): Boolean {
-        val state = stateOf(steps, index, today)
-        if (state != StepState.OPEN && state != StepState.OVERDUE) return false
-        val due = steps[index].dueDate
-        return worked || (due != null && due <= weekEnd)
-    }
+    fun belongsOnWeek(steps: List<ObjectiveStep>, index: Int, today: String): Boolean =
+        stateOf(steps, index, today).let { it == StepState.OPEN || it == StepState.OVERDUE }
+
+    /**
+     * Whether a week's task is early work on an objective step: a step task, still pending, that
+     * isn't due by [weekEnd]. That work is on the week to log time against, not owed to it — so it
+     * stays out of the week's done/total and isn't marked incomplete when the week closes.
+     */
+    fun isEarlyStepWork(objectiveStepId: String?, status: String, dueDate: String?, weekEnd: String): Boolean =
+        objectiveStepId != null && status == "pending" && (dueDate == null || dueDate > weekEnd)
 
     /** Days from [today] until [date], negative once it has passed; null when unparseable. */
     fun daysUntil(date: String, today: String): Long? = try {

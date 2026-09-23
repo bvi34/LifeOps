@@ -803,7 +803,7 @@ the receipts.
 - **Objective** — a forward-looking goal with a due date, reached through ordered steps that open
   now, on a date, or once the step before them is done. Set in Planning → Future → Objectives; shown
   under its aspect on This Week every week until success is reported or it's marked unsuccessful.
-  A step due that week becomes a task under it, so it takes notes, photos and time like any other.
+  Every open step is a task under it, due yet or not, so it takes notes, photos and time like any other.
 - **Commitment** — the handful of a week's tasks whose completion decides whether the week
   worked. Marked with a star, worth no extra points, and the one thing that lets the app say
   *"rest is earned"* rather than quote a percentage.
@@ -1038,13 +1038,18 @@ then the week's work on its steps as ordinary task rows, then a quiet line for t
 An aspect with an objective but no tasks that week still gets its header. The outcome is a line with
 *Report success* until the week the objective is due, when it becomes a task-like row of its own.
 
-**Steps are worked as tasks.** An open step due by the end of the week is put on that week as a
-task (linked by `tasks.objectiveStepId`), filed under the objective rather than its category. That
-is how a step gets **notes, photos, time and the timer** — the same way an operation's work does.
-Ticking the task ticks the step (and un-ticking re-opens it); ticking the step on its card ticks
-the week's task. A step you've started stays on your weeks until it's done; one not due yet can be
-pulled in early with **Start now**. Deleting a step or objective turns its tasks back into ordinary
-tasks, so nothing logged against them is lost.
+**Steps are worked as tasks.** Every open step — due this week or two months out — is put on the
+week as a task (linked by `tasks.objectiveStepId`), filed under the objective rather than its
+category. That is how a step gets **notes, photos, time and the timer**, the same way an operation's
+work does. This is the difference from a Future Task: a doctor's appointment in two months stays
+hidden until its week, but studying for an exam due in two months is work you're doing now. Steps
+still waiting (on the step before, or on their opening date) show as a quiet line instead.
+
+Early work isn't owed to the week: a pending step task not due by the week's end stays out of the
+week's done/total, and at close it is set aside as carried rather than marked incomplete; the step
+gets a fresh task on the new week. Finishing it early counts as done. Ticking the task ticks the
+step (and un-ticking re-opens it); ticking the step on its card ticks the week's task. Deleting a
+step or objective turns its tasks back into ordinary tasks, so nothing logged against them is lost.
 
 **Its own page.** Tap the objective's header (or *Notes, time & documents* on its card) to open it:
 each step with the time and notes put into its tasks, the objective's **documents** on the

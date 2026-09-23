@@ -125,10 +125,10 @@ class ObjectiveRepository(private val db: LifeOpsDatabase) {
     }
 
     /**
-     * Put an objective's open steps on [week] as tasks — the ones due by the week's end, and any
-     * already being worked on (see [Objectives.belongsOnWeek]). A task is how a step gets notes,
-     * photos, time and the timer, and how it sits under its objective on the board. Idempotent: a
-     * step with a task of any status in [week] already is left alone, so a skipped one stays skipped.
+     * Put every open step of an active objective on [week] as a task, due this week or not (see
+     * [Objectives.belongsOnWeek]). A task is how a step gets notes, photos, time and the timer, and
+     * how it sits under its objective on the board. Idempotent: a step with a task of any status in
+     * [week] already is left alone, so a skipped one stays skipped.
      */
     suspend fun syncWeek(week: Week, today: String = DateUtil.todayKey()) {
         if (week.isClosed) return
@@ -138,15 +138,14 @@ class ObjectiveRepository(private val db: LifeOpsDatabase) {
             val stepsByObjective = dao.getAllSteps().map { it.toModel() }.groupBy { it.objectiveId }
             val allStepIds = active.flatMap { o -> stepsByObjective[o.id].orEmpty().map { it.id } }
             if (allStepIds.isEmpty()) return@withTransaction
-            val linked = db.taskDao().getByObjectiveSteps(allStepIds)
-            val worked = linked.mapNotNull { it.objectiveStepId }.toSet()
-            val onWeek = linked.filter { it.weekId == week.id }.mapNotNull { it.objectiveStepId }.toSet()
+            val onWeek = db.taskDao().getByObjectiveSteps(allStepIds)
+                .filter { it.weekId == week.id }.mapNotNull { it.objectiveStepId }.toSet()
             val now = DateUtil.now()
             for (objective in active) {
                 val steps = stepsByObjective[objective.id].orEmpty().sortedBy { it.position }
                 steps.forEachIndexed { index, step ->
                     if (step.id in onWeek) return@forEachIndexed
-                    if (!Objectives.belongsOnWeek(steps, index, week.endDate, today, step.id in worked)) return@forEachIndexed
+                    if (!Objectives.belongsOnWeek(steps, index, today)) return@forEachIndexed
                     db.taskDao().upsert(stepTask(step, objective.aspectId, week.id, now))
                 }
             }

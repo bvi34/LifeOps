@@ -94,35 +94,33 @@ class ObjectivesTest {
     }
 
     @Test
-    fun `an open step due by the week's end belongs on that week`() {
+    fun `an open step belongs on the week whether or not it is due yet`() {
         val steps = itil()
-        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-03-31", "2026-03-27", worked = false))
+        // Enrolling is due Mar 31; in February it is still work you can be doing.
+        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-02-02"))
         // Overdue counts too — it's still owed.
-        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-04-05", "2026-04-01", worked = false))
-    }
-
-    @Test
-    fun `an open step due later stays off the week until work starts on it`() {
-        val steps = itil()
-        assertFalse(Objectives.belongsOnWeek(steps, 0, "2026-02-07", "2026-02-02", worked = false))
-        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-02-07", "2026-02-02", worked = true))
+        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-04-01"))
+        assertTrue(Objectives.belongsOnWeek(listOf(step(0)), 0, "2026-02-02"))
     }
 
     @Test
     fun `a locked, upcoming or done step never belongs on the week`() {
-        val steps = itil()
-        // Step 2 is due this week but waits on step 1.
-        assertFalse(Objectives.belongsOnWeek(steps, 1, "2026-08-01", "2026-07-28", worked = true))
+        // Training waits on enrolling.
+        assertFalse(Objectives.belongsOnWeek(itil(), 1, "2026-07-28"))
         val dated = listOf(step(0, opensOn = "2026-05-01", dueDate = "2026-05-03"))
-        assertFalse(Objectives.belongsOnWeek(dated, 0, "2026-05-03", "2026-04-28", worked = true))
-        val done = itil(enrolled = "2026-02-10T00:00:00Z")
-        assertFalse(Objectives.belongsOnWeek(done, 0, "2026-03-31", "2026-03-27", worked = true))
+        assertFalse(Objectives.belongsOnWeek(dated, 0, "2026-04-28"))
+        assertFalse(Objectives.belongsOnWeek(itil(enrolled = "2026-02-10T00:00:00Z"), 0, "2026-03-27"))
     }
 
     @Test
-    fun `an open step with no due date waits until work starts`() {
-        val steps = listOf(step(0))
-        assertFalse(Objectives.belongsOnWeek(steps, 0, "2026-02-07", "2026-02-02", worked = false))
-        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-02-07", "2026-02-02", worked = true))
+    fun `pending step work not due by the week's end is early work`() {
+        assertTrue(Objectives.isEarlyStepWork("s0", "pending", "2026-11-30", "2026-09-27"))
+        assertTrue(Objectives.isEarlyStepWork("s0", "pending", null, "2026-09-27"))
+        // Due this week (or overdue): owed to the week like any task.
+        assertFalse(Objectives.isEarlyStepWork("s0", "pending", "2026-09-27", "2026-09-27"))
+        assertFalse(Objectives.isEarlyStepWork("s0", "pending", "2026-09-01", "2026-09-27"))
+        // Done early counts as done; an ordinary task is never step work.
+        assertFalse(Objectives.isEarlyStepWork("s0", "completed", "2026-11-30", "2026-09-27"))
+        assertFalse(Objectives.isEarlyStepWork(null, "pending", "2026-11-30", "2026-09-27"))
     }
 }

@@ -146,6 +146,13 @@ class TaskRepository(
             taskDao.moveQueuedToWeek(weekId, newWeekId)
             newWeek?.let { taskDao.activateQueuedDueBy(it.id, it.endDate) }
             pending.forEach { task ->
+                // Early work on an objective step (open, not due this week) wasn't owed to this
+                // week: set it aside as carried rather than incomplete, so the week isn't marked
+                // down for it. The step's next task is put on the new week by ObjectiveRepository.syncWeek.
+                if (Objectives.isEarlyStepWork(task.objectiveStepId, task.status, task.dueDate, week.endDate)) {
+                    taskDao.updateStatus(task.id, TaskStatus.CARRIED_FORWARD.value)
+                    return@forEach
+                }
                 val newStatus = if (task.hardDeadline) TaskStatus.EXPIRED.value else TaskStatus.INCOMPLETE.value
                 taskDao.updateStatus(task.id, newStatus)
             }
