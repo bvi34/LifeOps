@@ -44,6 +44,7 @@ import com.lifeops.app.ui.screens.collection.FutureOperationViewModel
 import com.lifeops.app.ui.screens.collection.RecipeViewModel
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanScreen
 import com.lifeops.app.ui.screens.dailyplan.DailyPlanViewModel
+import com.lifeops.app.ui.screens.planning.ObjectivesViewModel
 import com.lifeops.app.ui.screens.thisweek.ThisWeekScreen
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModel
 import com.lifeops.app.util.DateUtil
@@ -67,6 +68,7 @@ enum class WeekHubTab(val label: String) {
 fun WeekHubScreen(
     dailyPlanViewModel: DailyPlanViewModel,
     taskManagerViewModel: ThisWeekViewModel,
+    objectivesViewModel: ObjectivesViewModel,
     recipeViewModel: RecipeViewModel,
     bookViewModel: BookViewModel,
     futureOperationViewModel: FutureOperationViewModel,
@@ -154,6 +156,7 @@ fun WeekHubScreen(
             when (selectedTab) {
                 WeekHubTab.TASK_MANAGER -> ThisWeekScreen(
                     taskManagerViewModel,
+                    objectivesViewModel = objectivesViewModel,
                     onOpenOperation = onOpenOperation,
                     onOpenPerson = onOpenPerson,
                     onOpenCounter = onOpenCounter,

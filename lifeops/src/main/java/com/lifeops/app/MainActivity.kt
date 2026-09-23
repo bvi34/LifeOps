@@ -296,9 +296,15 @@ fun LifeOpsNavHost(
                     val futureOperationVm = viewModel<com.lifeops.app.ui.screens.collection.FutureOperationViewModel>(
                         factory = com.lifeops.app.ui.screens.collection.FutureOperationViewModelFactory(app.futureOperationRepository)
                     )
+                    val objectivesVm = viewModel<com.lifeops.app.ui.screens.planning.ObjectivesViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.ObjectivesViewModelFactory(
+                            app.objectiveRepository, app.aspectRepository
+                        )
+                    )
                     com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
                         dailyPlanViewModel = dailyPlanVm,
                         taskManagerViewModel = taskManagerVm,
+                        objectivesViewModel = objectivesVm,
                         recipeViewModel = recipeVm,
                         bookViewModel = bookVm,
                         futureOperationViewModel = futureOperationVm,
@@ -389,7 +395,12 @@ fun LifeOpsNavHost(
                             app.taskRepository, app.aspectRepository
                         )
                     )
-                    com.lifeops.app.ui.screens.planning.FutureTasksScreen(vm) { navController.navigateUp() }
+                    val objectivesVm = viewModel<com.lifeops.app.ui.screens.planning.ObjectivesViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.ObjectivesViewModelFactory(
+                            app.objectiveRepository, app.aspectRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.FutureTasksScreen(vm, objectivesVm) { navController.navigateUp() }
                 }
                 composable("operations") {
                     val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)

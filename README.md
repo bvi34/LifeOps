@@ -800,6 +800,9 @@ the receipts.
 - **Week** — Monday→Sunday. The current week is open; you **close** it manually, which
   snapshots it, carries forward what you chose to keep, and starts the next one.
 - **Task** — a unit of work with a priority, optional estimate, due date, and logged time.
+- **Objective** — a forward-looking goal with a due date, reached through ordered steps that open
+  now, on a date, or once the step before them is done. Set in Planning → Future → Objectives; shown
+  above its aspect on This Week every week until success is reported or it's marked unsuccessful.
 - **Commitment** — the handful of a week's tasks whose completion decides whether the week
   worked. Marked with a star, worth no extra points, and the one thing that lets the app say
   *"rest is earned"* rather than quote a percentage.
@@ -1009,6 +1012,40 @@ part of the record. Like every mint in LifeOps the grant is **permanent** — de
 removes the record but never claws back already-granted points. The `milestones` table (migration
 44→45) is additive and **included in backup/restore** (backup v15); restore upserts the rows
 without re-running the grant, so restoring never double-mints.
+
+---
+
+## Objectives (Planning → Future) — design note
+
+An **Objective** is a goal that outlives any one week: *Obtain ITIL 4 Foundation cert, due 30 Sep*.
+It is set up in **Planning → Future → Objectives** with a title, an aspect, a due date, a **success
+criteria** (default *Success reported*, due with the objective) and an ordered list of **steps**.
+Each step opens one of three ways — **now**, **on a date**, or **after the previous step** is done —
+and may carry its own due date:
+
+| Step | Opens | Due |
+|---|---|---|
+| 1. Enroll in training | Now | 31 Mar |
+| 2. Complete training | After step 1 | 31 Jul |
+| 3. Complete exam | After step 2 | 30 Sep |
+| *Complete when:* Success reported | once every step is done | 30 Sep |
+
+Every **active** objective is drawn on **This Week above its aspect's header, every week** — it
+belongs to no week, so closing a week neither carries nor drops it. The card shows the open steps
+(or, when none is open, the next one waiting and why), a progress bar, and the success criteria.
+A step that hasn't opened can't be ticked; an open one past its due date reads *overdue*. An objective
+whose aspect has no tasks this week leads the list instead, labelled with its aspect.
+
+**It can't be dismissed.** The only ways off the board are the two outcomes: **Report success**
+(enabled once every step is done) or **Mark unsuccessful** (any time). Both are confirmed, stamp
+`closedAt`, and move the objective to the *Closed* list on the Future screen, where it can be
+reopened if either was a mistake. Deleting — from the editor, behind a confirmation — removes it
+with no record, and is offered for mistakes rather than as a way to close one out.
+
+The rules for opening and completing steps live in `util/Objectives.kt` (JVM-tested in
+`ObjectivesTest`). The `objectives` and `objective_steps` tables (migration 55→56; `aspectId` is a
+nullable FK with `ON DELETE SET NULL`, steps cascade with their objective) are additive and
+**included in backup/restore** (backup v18).
 
 ---
 

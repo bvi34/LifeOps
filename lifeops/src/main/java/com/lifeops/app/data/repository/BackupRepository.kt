@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 17,
+    val version: Int = 18,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -64,6 +64,9 @@ private data class BackupData(
     val milestones: List<MilestoneEntity> = emptyList(),
     // v16: people tagged on a busy block (calendar events), FK → busy_blocks/persons.
     val busyBlockPeople: List<BusyBlockPersonEntity> = emptyList(),
+    // v18: objectives (nullable FK aspectId → aspects) and their steps (FK → objectives).
+    val objectives: List<ObjectiveEntity> = emptyList(),
+    val objectiveSteps: List<ObjectiveStepEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -102,6 +105,8 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             busyBlocks = db.busyBlockDao().getAll(),
             milestones = db.milestoneDao().getAll(),
             busyBlockPeople = db.busyBlockDao().getAllPeopleLinks(),
+            objectives = db.objectiveDao().getAll(),
+            objectiveSteps = db.objectiveDao().getAllSteps(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -221,6 +226,9 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 // Milestones: after aspects and persons (nullable FKs, SET_NULL). Restore-only —
                 // upsert never re-runs the immediate point grant, so restoring can't double-mint.
                 for (m in data.milestones) db.milestoneDao().upsert(m)
+                // Objectives after aspects (nullable FK), their steps after them (FK).
+                for (o in data.objectives) db.objectiveDao().upsert(o)
+                for (os in data.objectiveSteps) db.objectiveDao().upsertStep(os)
                 // Backups written before v7 carried one long-form content blob per future
                 // operation; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring

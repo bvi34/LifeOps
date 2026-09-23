@@ -262,3 +262,15 @@ fun PhoneActivityEventEntity.toModel() = PhoneActivityEvent(
     id, PhoneActivityType.from(type) ?: PhoneActivityType.SCREEN_OFF, occurredAt, dayKey
 )
 fun PhoneActivityEvent.toEntity() = PhoneActivityEventEntity(id, type.value, occurredAt, dayKey)
+
+fun ObjectiveEntity.toModel() = Objective(
+    id, title, aspectId, dueDate, successCriteria, ObjectiveStatus.from(status), createdAt, updatedAt, closedAt
+)
+fun Objective.toEntity() = ObjectiveEntity(
+    id, title, aspectId, dueDate, successCriteria, status.value, createdAt, updatedAt, closedAt
+)
+
+fun ObjectiveStepEntity.toModel() =
+    ObjectiveStep(id, objectiveId, position, title, opensOn, afterPrevious, dueDate, completedAt)
+fun ObjectiveStep.toEntity() =
+    ObjectiveStepEntity(id, objectiveId, position, title, opensOn, afterPrevious, dueDate, completedAt)
