@@ -35,3 +35,11 @@ data class ObjectiveStep(
 
 /** An objective with its steps in position order. */
 data class ObjectiveWithSteps(val objective: Objective, val steps: List<ObjectiveStep>)
+
+/** A note on the objective itself; a step's notes live on its week tasks. */
+data class ObjectiveNote(
+    val id: String,
+    val objectiveId: String,
+    val content: String,
+    val createdAt: String
+)

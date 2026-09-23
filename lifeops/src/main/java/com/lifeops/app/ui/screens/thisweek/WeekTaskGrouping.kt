@@ -111,6 +111,44 @@ object WeekTaskGrouping {
         }
     }
 
+    /**
+     * The groups with a header added for every aspect in [objectiveAspectIds] that has no task this
+     * week — an objective sits under its aspect, so its aspect needs a header even on a quiet week.
+     * Added after the aspects that have tasks, with no categories.
+     */
+    fun withObjectiveAspects(
+        groups: List<GroupedTasks>,
+        objectiveAspectIds: Collection<String?>,
+        aspects: Map<String, Aspect>
+    ): List<GroupedTasks> {
+        val present = groups.map { it.aspectId }.toSet()
+        val extra = objectiveAspectIds.distinct().filter { it !in present }.map { id ->
+            val aspect = id?.let { aspects[it] }
+            GroupedTasks(id, aspect, aspect?.color ?: DEFAULT_ASPECT_COLOR, emptyList())
+        }
+        return groups + extra
+    }
+
+    /**
+     * Split the tasks that are work on one of [stepIds] out of [group]'s categories: they're shown
+     * under their objective instead, so they mustn't also appear (and be keyed twice) in their
+     * category. A category left with no tasks is dropped. Returns the step tasks and what's left.
+     */
+    fun splitStepTasks(group: GroupedTasks, stepIds: Set<String>): Pair<List<Task>, GroupedTasks> {
+        if (stepIds.isEmpty()) return emptyList<Task>() to group
+        val stepTasks = mutableListOf<Task>()
+        val categories = group.categories.mapNotNull { cat ->
+            val (mine, rest) = cat.tasks.partition { it.objectiveStepId != null && it.objectiveStepId in stepIds }
+            stepTasks += mine
+            when {
+                mine.isEmpty() -> cat
+                rest.isEmpty() -> null
+                else -> cat.copy(tasks = rest)
+            }
+        }
+        return stepTasks to group.copy(categories = categories)
+    }
+
     private const val DEFAULT_ASPECT_COLOR = "#6200EE"
 
     private fun sortTasks(tasks: List<Task>, order: SortOrder): List<Task> = when (order) {

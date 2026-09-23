@@ -48,10 +48,9 @@ import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
-import com.lifeops.app.ui.components.ObjectiveCard
 import com.lifeops.app.ui.screens.planning.ObjectiveEditorHost
 import com.lifeops.app.ui.screens.planning.ObjectivesViewModel
-import com.lifeops.app.data.model.ObjectiveWithSteps
+import com.lifeops.app.util.Objectives
 import com.lifeops.app.ui.screens.wellness.ChoiceRow
 import com.lifeops.app.ui.screens.wellness.RatingRow
 import com.lifeops.app.ui.theme.parseColor
@@ -67,15 +66,19 @@ fun ThisWeekScreen(
     onOpenOperation: (String) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
     onOpenCounter: (String) -> Unit = {},
-    onOpenTask: (String) -> Unit = {}
+    onOpenTask: (String) -> Unit = {},
+    onOpenObjective: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val objectivesState by objectivesViewModel.uiState.collectAsStateWithLifecycle()
-    // Every active objective sits above its aspect, every week, until it's closed. One whose aspect
-    // has no tasks this week has no header to sit above, so those lead the list instead.
+    // Every active objective sits under its aspect, every week, until it's closed — like one of the
+    // aspect's categories, with the week's work on its steps as task rows beneath it. An aspect
+    // with an objective but no tasks this week still gets its header, so there's somewhere to sit.
     val objectivesByAspect = objectivesState.active.groupBy { it.objective.aspectId }
-    val boardAspectIds = state.groupedTasks.map { it.aspectId }.toSet()
-    val leadingObjectives = objectivesState.active.filter { it.objective.aspectId !in boardAspectIds }
+    val boardGroups = WeekTaskGrouping.withObjectiveAspects(
+        state.groupedTasks, objectivesByAspect.keys, state.aspects.ifEmpty { objectivesState.aspects }
+    )
+    val weekEnd = state.week?.endDate ?: objectivesState.today
     // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
     // intentionally NOT read at this scope — it's read via a deferred lambda inside the active
     // row/sheet so the per-second tick doesn'sq`t recompose the whole screen.
@@ -115,6 +118,47 @@ fun ThisWeekScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // One week task row, as every list on this board draws it — under a category, or under an
+    // objective as the week's work on one of its steps.
+    val weekTaskRow: @Composable (Task, String, Color) -> Unit = { task, aspectColor, basketColor ->
+        val isTimerActive = activeTimer?.taskId == task.id
+        // The bar can only be set on the tasks it counts. A carried or queued
+        // task belongs to another week, so ticking it would change nothing —
+        // one already carrying the flag still shows it, read-only.
+        val canSetBar = task.status == TaskStatus.PENDING ||
+            task.status == TaskStatus.COMPLETED
+        TaskRow(
+            task = task,
+            aspectColor = aspectColor,
+            basketColor = basketColor,
+            notes = state.taskNotes[task.id] ?: emptyList(),
+            totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
+            isTimerActive = isTimerActive,
+            timerElapsedSeconds = { timerElapsedState.value },
+            isPlanningMode = false,
+            operationName = task.operationId?.let { pid -> state.operations.firstOrNull { it.id == pid }?.title },
+            weatherFit = state.taskWeatherFit[task.id],
+            counterName = task.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid }?.name },
+            peopleNames = (state.taskPeople[task.id] ?: emptyList())
+                .mapNotNull { pid -> state.people.firstOrNull { it.id == pid }?.name },
+            subtaskProgress = state.subtaskCounts[task.id],
+            onComplete = { viewModel.onCompleteTask(task) },
+            onUnComplete = { viewModel.onUnCompleteTask(task.id) },
+            onUnSkip = { viewModel.onUnSkipTask(task.id) },
+            onSkip = { viewModel.onSkipTask(task.id) },
+            onCarryForward = { },
+            onEdit = { viewModel.startEditTask(task) },
+            onStartTimer = { viewModel.startTimer(task.id) },
+            onStopTimer = { viewModel.stopTimer(saveEntry = true) },
+            onOpenDetail = { onOpenTask(task.id) },
+            onMoveUp = { viewModel.movePlanningTask(task.id, -1) },
+            onMoveDown = { viewModel.movePlanningTask(task.id, 1) },
+            onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) },
+            onToggleCommitment =
+                if (canSetBar) ({ viewModel.onToggleCommitment(task) }) else null
+        )
     }
 
     Scaffold(
@@ -228,42 +272,70 @@ fun ThisWeekScreen(
                     }
                 }
 
-                items(leadingObjectives, key = { "objective|${it.objective.id}" }) { item ->
-                    val aspect = item.objective.aspectId?.let { objectivesState.aspects[it] }
-                    BoardObjective(
-                        item = item,
-                        aspectName = aspect?.name,
-                        aspectColor = aspect?.color,
-                        today = objectivesState.today,
-                        viewModel = objectivesViewModel
+                boardGroups.forEach { fullGroup ->
+                    val aspectKey = WeekTaskGrouping.aspectKey(fullGroup)
+                    val groupObjectives = objectivesByAspect[fullGroup.aspectId].orEmpty()
+                    val (stepTasks, group) = WeekTaskGrouping.splitStepTasks(
+                        fullGroup,
+                        groupObjectives.flatMap { o -> o.steps.map { it.id } }.toSet()
                     )
-                }
-
-                state.groupedTasks.forEach { group ->
-                    val aspectKey = WeekTaskGrouping.aspectKey(group)
-                    items(
-                        objectivesByAspect[group.aspectId].orEmpty(),
-                        key = { "objective|${it.objective.id}" }
-                    ) { item ->
-                        BoardObjective(
-                            item = item,
-                            aspectName = null,
-                            aspectColor = group.aspectColor,
-                            today = objectivesState.today,
-                            viewModel = objectivesViewModel
-                        )
-                    }
-                    val hasActive = group.categories.any { c -> c.tasks.any { it.status == TaskStatus.PENDING } }
-                    val expanded = aspectExpanded[aspectKey] ?: hasActive
+                    val hasActive = fullGroup.categories.any { c -> c.tasks.any { it.status == TaskStatus.PENDING } }
+                    val expanded = aspectExpanded[aspectKey] ?: (hasActive || groupObjectives.isNotEmpty())
                     item(key = aspectKey) {
                         AspectHeader(
                             name = group.aspect?.name ?: "Uncategorized",
                             color = group.aspectColor,
                             isArchived = group.aspect?.isArchived == true,
                             isExpanded = expanded,
-                            isComplete = !hasActive,
+                            // An open objective is unfinished business, tasks or not.
+                            isComplete = !hasActive && groupObjectives.isEmpty(),
                             onToggle = { aspectExpanded[aspectKey] = !expanded }
                         )
+                    }
+                    if (expanded) groupObjectives.forEach { entry ->
+                        val objective = entry.objective
+                        val objectiveColor = parseColor(fullGroup.aspectColor)
+                        val today = objectivesState.today
+                        item(key = "objective|${objective.id}") {
+                            ObjectiveHeader(
+                                item = entry,
+                                aspectColor = objectiveColor,
+                                today = today,
+                                onOpen = { onOpenObjective(objective.id) },
+                                onEdit = { objectivesViewModel.startEdit(entry) },
+                                onMarkUnsuccessful = { objectivesViewModel.markUnsuccessful(objective.id) }
+                            )
+                        }
+                        // The week's work on this objective's steps, as task rows, in step order.
+                        val position = entry.steps.withIndex().associate { (i, step) -> step.id to i }
+                        val mine = stepTasks
+                            .filter { it.objectiveStepId in position }
+                            .sortedBy { position[it.objectiveStepId] }
+                        items(mine, key = { it.id }) { task -> weekTaskRow(task, fullGroup.aspectColor, Color.Transparent) }
+                        // What comes next, for steps with no task on this week.
+                        val onWeek = mine.mapNotNull { it.objectiveStepId }.toSet()
+                        val states = Objectives.states(entry.steps, today)
+                        Objectives.focusIndices(entry.steps, today)
+                            .filter { entry.steps[it].id !in onWeek }
+                            .forEach { index ->
+                                val step = entry.steps[index]
+                                item(key = "objective-step|${step.id}") {
+                                    ObjectiveStepHint(
+                                        number = index + 1,
+                                        step = step,
+                                        state = states[index],
+                                        onStartNow = { objectivesViewModel.workOnThisWeek(step.id) }
+                                    )
+                                }
+                            }
+                        item(key = "objective-outcome|${objective.id}") {
+                            ObjectiveOutcomeRow(
+                                item = entry,
+                                aspectColor = objectiveColor,
+                                dueThisWeek = objective.dueDate <= weekEnd,
+                                onReportSuccess = { objectivesViewModel.reportSuccess(objective.id) }
+                            )
+                        }
                     }
                     if (expanded) group.categories.forEach { catGroup ->
                         val basketColor = catGroup.dominantPriority
@@ -279,42 +351,7 @@ fun ThisWeekScreen(
                             }
                         }
                         items(catGroup.tasks, key = { it.id }) { task ->
-                            val isTimerActive = activeTimer?.taskId == task.id
-                            // The bar can only be set on the tasks it counts. A carried or queued
-                            // task belongs to another week, so ticking it would change nothing —
-                            // one already carrying the flag still shows it, read-only.
-                            val canSetBar = task.status == TaskStatus.PENDING ||
-                                task.status == TaskStatus.COMPLETED
-                            TaskRow(
-                                task = task,
-                                aspectColor = group.aspectColor,
-                                basketColor = basketColor,
-                                notes = state.taskNotes[task.id] ?: emptyList(),
-                                totalTimeMinutes = state.taskTimeMinutes[task.id] ?: 0,
-                                isTimerActive = isTimerActive,
-                                timerElapsedSeconds = { timerElapsedState.value },
-                                isPlanningMode = false,
-                                operationName = task.operationId?.let { pid -> state.operations.firstOrNull { it.id == pid }?.title },
-                                weatherFit = state.taskWeatherFit[task.id],
-                                counterName = task.counterId?.let { cid -> state.counters.firstOrNull { it.id == cid }?.name },
-                                peopleNames = (state.taskPeople[task.id] ?: emptyList())
-                                    .mapNotNull { pid -> state.people.firstOrNull { it.id == pid }?.name },
-                                subtaskProgress = state.subtaskCounts[task.id],
-                                onComplete = { viewModel.onCompleteTask(task) },
-                                onUnComplete = { viewModel.onUnCompleteTask(task.id) },
-                                onUnSkip = { viewModel.onUnSkipTask(task.id) },
-                                onSkip = { viewModel.onSkipTask(task.id) },
-                                onCarryForward = { },
-                                onEdit = { viewModel.startEditTask(task) },
-                                onStartTimer = { viewModel.startTimer(task.id) },
-                                onStopTimer = { viewModel.stopTimer(saveEntry = true) },
-                                onOpenDetail = { onOpenTask(task.id) },
-                                onMoveUp = { viewModel.movePlanningTask(task.id, -1) },
-                                onMoveDown = { viewModel.movePlanningTask(task.id, 1) },
-                                onQuickLogTime = { minutes -> viewModel.onLogTime(task.id, minutes, null) },
-                                onToggleCommitment =
-                                    if (canSetBar) ({ viewModel.onToggleCommitment(task) }) else null
-                            )
+                            weekTaskRow(task, group.aspectColor, basketColor)
                         }
                     }
                 }
@@ -532,37 +569,5 @@ private fun selfRatingMirror(selfRating: Int?, completionRate: Float?): String? 
         selfRating >= 8 && completionRate < 0.5f -> "You rated this a $selfRating. The board says $pct% done."
         selfRating <= 3 && completionRate >= 0.75f -> "You rated this a $selfRating, but $pct% shipped. Credit yourself."
         else -> null
-    }
-}
-
-/** An objective on the week board. [aspectName] labels it when it isn't sitting above its aspect's
- *  own header (its aspect has no tasks this week). */
-@Composable
-private fun BoardObjective(
-    item: ObjectiveWithSteps,
-    aspectName: String?,
-    aspectColor: String?,
-    today: String,
-    viewModel: ObjectivesViewModel
-) {
-    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
-        aspectName?.let {
-            Text(
-                it,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
-            )
-        }
-        ObjectiveCard(
-            item = item,
-            aspectColor = aspectColor?.let { parseColor(it) } ?: MaterialTheme.colorScheme.primary,
-            today = today,
-            onToggleStep = { stepId, done -> viewModel.setStepDone(item.objective.id, stepId, done) },
-            onReportSuccess = { viewModel.reportSuccess(item.objective.id) },
-            onMarkUnsuccessful = { viewModel.markUnsuccessful(item.objective.id) },
-            onReopen = { viewModel.reopen(item.objective.id) },
-            onEdit = { viewModel.startEdit(item) }
-        )
     }
 }

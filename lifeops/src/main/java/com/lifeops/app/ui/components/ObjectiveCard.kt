@@ -40,6 +40,8 @@ fun ObjectiveCard(
     onMarkUnsuccessful: () -> Unit,
     onReopen: () -> Unit,
     onEdit: () -> Unit,
+    /** Opens the objective — its notes, documents and the time and notes on its steps. */
+    onOpen: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     startExpanded: Boolean = false
 ) {
@@ -81,7 +83,7 @@ fun ObjectiveCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            dueLine(item, today),
+                            objectiveDueLine(item, today),
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isActive && Objectives.isOverdue(item, today)) MaterialTheme.colorScheme.error
                                     else muted
@@ -95,6 +97,12 @@ fun ObjectiveCard(
                             Icon(Icons.Default.MoreVert, contentDescription = "Objective actions")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            onOpen?.let { open ->
+                                DropdownMenuItem(
+                                    text = { Text("Notes, time & documents") },
+                                    onClick = { menuOpen = false; open() }
+                                )
+                            }
                             DropdownMenuItem(text = { Text("Edit") }, onClick = { menuOpen = false; onEdit() })
                             if (isActive) {
                                 DropdownMenuItem(
@@ -230,7 +238,7 @@ private fun StepLine(
                 textDecoration = if (step.isDone) TextDecoration.LineThrough else null,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (dim) 0.55f else 1f)
             )
-            stepDetail(number, step, state)?.let {
+            objectiveStepDetail(number, step, state)?.let {
                 Text(
                     it,
                     style = MaterialTheme.typography.labelSmall,
@@ -242,7 +250,8 @@ private fun StepLine(
     }
 }
 
-private fun stepDetail(number: Int, step: ObjectiveStep, state: StepState): String? {
+/** The line under a step: when it opens, when it's due, or when it was done. */
+fun objectiveStepDetail(number: Int, step: ObjectiveStep, state: StepState): String? {
     val due = step.dueDate?.let { "due ${DateUtil.formatDate(it)}" }
     return when (state) {
         StepState.DONE -> step.completedAt?.let { "done ${DateUtil.formatDate(DateUtil.localDateKey(it))}" }
@@ -253,7 +262,8 @@ private fun stepDetail(number: Int, step: ObjectiveStep, state: StepState): Stri
     }
 }
 
-private fun dueLine(item: ObjectiveWithSteps, today: String): String {
+/** "Objective · Due Dec 31 · 99 days left", or how it closed. */
+fun objectiveDueLine(item: ObjectiveWithSteps, today: String): String {
     val o = item.objective
     val due = "Due ${DateUtil.formatDate(o.dueDate)}"
     return when (o.status) {

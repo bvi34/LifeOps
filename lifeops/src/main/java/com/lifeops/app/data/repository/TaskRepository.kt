@@ -63,6 +63,10 @@ class TaskRepository(
             // Same transaction as the status flip: if anything fails the tick rolls back too,
             // so a half-completed task can never leave a phantom CounterEvent.
             current.counterId?.let { counterRepository.logEvent(it, occurredAt = nowMillis) }
+            // The week's work on an objective step is the step: finishing one finishes the other.
+            current.objectiveStepId?.let {
+                db.objectiveDao().setStepCompletedAt(it, DateUtil.isoFromEpoch(nowMillis))
+            }
             completion = TaskCompletionBus.Completion(current.id, current.title, nowMillis)
         }
         // Announced *after* the commit, and only when the tick actually happened — a task that was
@@ -470,7 +474,14 @@ class TaskRepository(
         }
     }
 
-    suspend fun unCompleteTask(taskId: String) = taskDao.unmarkCompleted(taskId)
+    suspend fun unCompleteTask(taskId: String) {
+        db.withTransaction {
+            val task = taskDao.getById(taskId)
+            taskDao.unmarkCompleted(taskId)
+            // Un-ticking the task re-opens its objective step (see completeTask).
+            task?.objectiveStepId?.let { db.objectiveDao().setStepCompletedAt(it, null) }
+        }
+    }
 
     suspend fun clearCategoryFromTasks(categoryId: String) = taskDao.nullifyCategoryId(categoryId)
 
@@ -599,7 +610,9 @@ class TaskRepository(
                     // essential says something about that week, not about every week the series
                     // will ever land in — inheriting it would quietly re-mark the same tasks
                     // forever until the bar covered the whole list and meant nothing.
-                    isCommitment = false
+                    isCommitment = false,
+                    // An objective step is worked once; a recurring copy of its task is not that step.
+                    objectiveStepId = null
                 )
                 taskDao.upsert(newTask)
             }

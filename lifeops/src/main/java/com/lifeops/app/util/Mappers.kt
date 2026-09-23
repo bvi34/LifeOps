@@ -19,7 +19,7 @@ fun TaskEntity.toModel() = Task(
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, operationId,
     TaskSource.from(source), slug,
     CarryForwardReason.from(carryForwardReason), counterId,
-    recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment
+    recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment, objectiveStepId
 )
 
 fun Task.toEntity() = TaskEntity(
@@ -29,7 +29,7 @@ fun Task.toEntity() = TaskEntity(
     isRecurring, estimatedMinutes, carriedCount, sortOrder, isManuallyAdded, operationId,
     source.name, slug.ifEmpty { title.toSlug() },
     carryForwardReason?.value, counterId,
-    recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment
+    recurrenceIntervalWeeks, recurrenceDayOfMonth, isCommitment, objectiveStepId
 )
 
 fun CounterEntity.toModel() = Counter(id, name, categoryId, isArchived, sortOrder, createdAt, isHabit, reminderHour)
@@ -274,3 +274,6 @@ fun ObjectiveStepEntity.toModel() =
     ObjectiveStep(id, objectiveId, position, title, opensOn, afterPrevious, dueDate, completedAt)
 fun ObjectiveStep.toEntity() =
     ObjectiveStepEntity(id, objectiveId, position, title, opensOn, afterPrevious, dueDate, completedAt)
+
+fun ObjectiveNoteEntity.toModel() = ObjectiveNote(id, objectiveId, content, createdAt)
+fun ObjectiveNote.toEntity() = ObjectiveNoteEntity(id, objectiveId, content, createdAt)

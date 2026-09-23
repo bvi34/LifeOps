@@ -44,3 +44,23 @@ internal val MIGRATION_55_56 = object : Migration(55, 56) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_objective_steps_objectiveId ON objective_steps(objectiveId)")
     }
 }
+
+internal val MIGRATION_56_57 = object : Migration(56, 57) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // A task can be the week's work on an objective step (TaskEntity.objectiveStepId), which
+        // is how a step gets notes, photos and time. Nullable, no default, no FK — like operationId.
+        db.execSQL("ALTER TABLE tasks ADD COLUMN objectiveStepId TEXT")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_tasks_objectiveStepId ON tasks(objectiveStepId)")
+        // Notes on the objective itself (ObjectiveNoteEntity). New table, nothing to backfill.
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS objective_notes (
+                id TEXT NOT NULL PRIMARY KEY,
+                objectiveId TEXT NOT NULL,
+                content TEXT NOT NULL,
+                createdAt TEXT NOT NULL,
+                FOREIGN KEY(objectiveId) REFERENCES objectives(id) ON DELETE CASCADE
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_objective_notes_objectiveId ON objective_notes(objectiveId)")
+    }
+}

@@ -31,7 +31,7 @@ import androidx.room.PrimaryKey
     indices = [
         Index("weekId"), Index("aspectId"), Index("categoryId"),
         Index("createdAt"), Index("completedAt"), Index("status"),
-        Index("operationId"), Index("source"), Index("counterId"),
+        Index("operationId"), Index("source"), Index("counterId"), Index("objectiveStepId"),
         // Backs the per-week slug dedup query (TaskDao.getSlugsByWeek) and matches the
         // index MIGRATION_14_15 creates as index_tasks_weekId_slug. Must be declared here
         // or Room's post-migration schema validation crashes on launch for upgrading users.
@@ -85,5 +85,10 @@ data class TaskEntity(
     // extra, or the flag would become a second economy and every task would end up wearing it.
     // It moves one thing only: what the week reads back as at close.
     @ColumnInfo(defaultValue = "0")
-    val isCommitment: Boolean = false
+    val isCommitment: Boolean = false,
+    // The objective step this task is the week's work on (no FK — mirrors operationId). Set when a
+    // step falls due in a week (or is pulled into it), so the step gets everything a task has:
+    // notes, photos, time, the timer. Completing the task ticks the step. A carried-forward copy
+    // keeps it; a step or objective deleted later unlinks rather than deletes (see ObjectiveRepository).
+    val objectiveStepId: String? = null
 )

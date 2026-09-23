@@ -61,6 +61,25 @@ object Objectives {
         return listOfNotNull(states.indices.firstOrNull { states[it] != StepState.DONE })
     }
 
+    /**
+     * Whether the step at [index] should be on the week ending [weekEnd] as a task: it is open
+     * (or overdue), and it is either due by the end of that week or already being worked on
+     * ([worked] — it has had a task in some week), so a step you've started stays on your week
+     * until it's done rather than vanishing when the week closes.
+     */
+    fun belongsOnWeek(
+        steps: List<ObjectiveStep>,
+        index: Int,
+        weekEnd: String,
+        today: String,
+        worked: Boolean
+    ): Boolean {
+        val state = stateOf(steps, index, today)
+        if (state != StepState.OPEN && state != StepState.OVERDUE) return false
+        val due = steps[index].dueDate
+        return worked || (due != null && due <= weekEnd)
+    }
+
     /** Days from [today] until [date], negative once it has passed; null when unparseable. */
     fun daysUntil(date: String, today: String): Long? = try {
         java.time.temporal.ChronoUnit.DAYS.between(

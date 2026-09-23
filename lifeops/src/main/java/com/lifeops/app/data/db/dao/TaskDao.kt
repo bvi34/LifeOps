@@ -97,6 +97,17 @@ interface TaskDao {
     @Query("UPDATE tasks SET status = 'pending', completedAt = NULL WHERE id = :id")
     suspend fun unmarkCompleted(id: String)
 
+    /** Every task, in any week, that is work on one of [stepIds] — the rows behind a step's notes and time. */
+    @Query("SELECT * FROM tasks WHERE objectiveStepId IN (:stepIds)")
+    suspend fun getByObjectiveSteps(stepIds: List<String>): List<TaskEntity>
+
+    @Query("SELECT * FROM tasks WHERE objectiveStepId IN (:stepIds)")
+    fun observeByObjectiveSteps(stepIds: List<String>): Flow<List<TaskEntity>>
+
+    /** Turn a deleted step's tasks back into ordinary tasks — their notes and time stay put. */
+    @Query("UPDATE tasks SET objectiveStepId = NULL WHERE objectiveStepId IN (:stepIds)")
+    suspend fun unlinkObjectiveSteps(stepIds: List<String>)
+
     @Query("UPDATE tasks SET categoryId = NULL WHERE categoryId = :categoryId")
     suspend fun nullifyCategoryId(categoryId: String)
 
