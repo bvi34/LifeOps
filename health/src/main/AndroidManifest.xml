@@ -52,6 +52,73 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- HEALTH CONNECT — read-only, and the answer to the test above is that none of it leaves.
+
+         Health Connect is the phone's own health store: Android 14 and later keep it in the
+         platform, and the watch, scale and running apps a household already uses write into it.
+         Health reads what it holds about the household's PRIMARY USER — the one person this phone
+         belongs to, chosen in Health — into health.db, where it sits beside everything typed by
+         hand. It is read on this device, kept on this device, and backed up only where the rest of
+         Health's records are. Health writes nothing to Health Connect and sends nothing anywhere.
+
+         Every data type is listed because Health imports every data type; Health Connect's own
+         screen is where the household picks which of them to allow, and a type left off is simply
+         not read. `connect/ConnectTypes` is the code's copy of this list; ConnectTypesTest checks the
+         two agree. HISTORY lifts the thirty-day limit on the first import; IN_BACKGROUND lets the
+         scheduled import run while Health is closed. -->
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_BODY_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_GLUCOSE" />
+    <uses-permission android:name="android.permission.health.READ_BLOOD_PRESSURE" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.READ_BODY_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_BODY_WATER_MASS" />
+    <uses-permission android:name="android.permission.health.READ_BONE_MASS" />
+    <uses-permission android:name="android.permission.health.READ_CERVICAL_MUCUS" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_HEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_HYDRATION" />
+    <uses-permission android:name="android.permission.health.READ_INTERMENSTRUAL_BLEEDING" />
+    <uses-permission android:name="android.permission.health.READ_LEAN_BODY_MASS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_ALLERGIES_INTOLERANCES" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_CONDITIONS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_LABORATORY_RESULTS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_MEDICATIONS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PERSONAL_DETAILS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PRACTITIONER_DETAILS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PREGNANCY" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_PROCEDURES" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_SOCIAL_HISTORY" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VACCINES" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VISITS" />
+    <uses-permission android:name="android.permission.health.READ_MEDICAL_DATA_VITAL_SIGNS" />
+    <uses-permission android:name="android.permission.health.READ_MENSTRUATION" />
+    <uses-permission android:name="android.permission.health.READ_MINDFULNESS" />
+    <uses-permission android:name="android.permission.health.READ_NUTRITION" />
+    <uses-permission android:name="android.permission.health.READ_OVULATION_TEST" />
+    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
+    <uses-permission android:name="android.permission.health.READ_PLANNED_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_POWER" />
+    <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_SEXUAL_ACTIVITY" />
+    <uses-permission android:name="android.permission.health.READ_SKIN_TEMPERATURE" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_SPEED" />
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_WHEELCHAIR_PUSHES" />
+
     <!-- Health is a library module: no app-level attributes here (name/icon/theme/label live on the
          :app host). Only Health's own components are declared for the manifest merger. -->
     <application>
@@ -63,6 +130,30 @@
             android:exported="true"
             android:theme="@style/Theme.Health"
             android:windowSoftInputMode="adjustResize" />
+
+        <!-- What Health does with Health Connect data, in words. Health Connect links to it from the
+             permission screen, and will not show that screen to an app that has no such page: on
+             Android 14 and later it finds it through the alias below, which only the platform can
+             start (START_VIEW_PERMISSION_USAGE is a signature permission). -->
+        <activity
+            android:name=".connect.HealthConnectPrivacyActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Health">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".connect.ViewPermissionUsageActivity"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity=".connect.HealthConnectPrivacyActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- Hands the exported insurance-card PDF to a share sheet, and nothing else: the paths file
              exposes cacheDir/exports only. The card PHOTOGRAPHS live in filesDir/insurance-cards and

@@ -93,4 +93,5 @@ class HealthRepository(
     val coverage = CoverageStore(dao, onCardImageDiscarded)
     val careTeam = CareTeamStore(dao)
     val networkChecks = NetworkCheckStore(dao)
+    val connect = ConnectStore(dao, filing)
 }

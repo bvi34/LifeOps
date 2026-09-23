@@ -151,6 +151,11 @@ the receipts.
 > device**: the drug lookup asks what a medicine *is*, never who takes it, and the directory check
 > asks about a *doctor*, never about anybody in the household — no member number, no profile, ever.
 > That is the line it holds. It records; it does not give medical advice.
+>
+> It also reads **Health Connect** — every kind of data the phone's own health store holds, from
+> steps and sleep stages to lab results — for the household's **primary user**, the one person the
+> phone belongs to, chosen before anything is read. Read-only, kept in `health.db`, and weight,
+> blood pressure, temperature and resting heart rate land on the Vitals tab like typed readings.
 
 > **Project** (the document and planning repository) is a peer module — see **[docs/PROJECT.md](docs/PROJECT.md)**.
 > It owns *the work you are making*: a shelf of projects, and inside each one five ways of looking at

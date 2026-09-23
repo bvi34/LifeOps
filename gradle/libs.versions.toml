@@ -15,6 +15,7 @@ coroutines = "1.9.0"
 securityCrypto = "1.1.0-alpha06"
 credentials = "1.3.0"
 providerevents = "1.0.0-beta01"
+healthConnect = "1.1.0"
 zxing = "3.5.3"
 zxingAndroid = "4.3.0"
 uiGraphics = "1.11.4"
@@ -53,6 +54,10 @@ androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graph
 androidx-credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 androidx-providerevents = { group = "androidx.credentials.providerevents", name = "providerevents", version.ref = "providerevents" }
 androidx-providerevents-play-services = { group = "androidx.credentials.providerevents", name = "providerevents-play-services", version.ref = "providerevents" }
+# Health Connect, for Health's import of what the phone's own health store holds — steps, sleep,
+# heart rate, weight, medical records. On Android 14+ Health Connect is part of the platform, so this
+# is a client library over a system service, not a dependency on an app somebody has to install.
+androidx-health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroid" }
 

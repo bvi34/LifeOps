@@ -2,6 +2,8 @@ package com.health.app
 
 import android.app.Application
 import android.content.Context
+import com.health.app.connect.HealthConnectImporter
+import com.health.app.connect.HealthConnectSyncWorker
 import com.health.app.data.db.HealthDatabase
 import com.health.app.data.prefs.HealthPrefs
 import com.health.app.data.repository.HealthRepository
@@ -28,9 +30,10 @@ import java.io.File
  * owns the Health database, its two preferences, and the repository. Everything is lazy, so bringing
  * Health up is essentially free until its screen is opened.
  *
- * The one thing it does schedule is medication reminders, and only ones the user set: the repository
- * calls [rearmReminder] after an edit that moves one, and nothing is queued for a household that has
- * never turned a reminder on. Health still watches no sensors and wakes the device for nothing else.
+ * The two things it schedules are medication reminders, and only ones the user set — the repository
+ * calls [rearmReminder] after an edit that moves one — and the Health Connect import, only while the
+ * household has it switched on. Health still watches no sensors and wakes the device for nothing
+ * else.
  */
 class HealthApp private constructor(private val app: Application) {
 
@@ -128,6 +131,38 @@ class HealthApp private constructor(private val app: Application) {
         )
     }
 
+    /**
+     * The Health Connect import — what the phone's own health store holds about the primary user.
+     * Lazy and idle like everything else here: it reads nothing until the household switches it on
+     * and grants permissions, and then only when Health is opened or the scheduled import runs.
+     */
+    val connectImporter by lazy {
+        HealthConnectImporter(
+            context = app,
+            prefs = prefs,
+            store = repository.connect,
+            profileExists = { id -> database.healthDao().getProfile(id)?.archived == false }
+        )
+    }
+
+    /**
+     * Import from Health Connect because Health came to the foreground — at most every
+     * [CONNECT_FOREGROUND_INTERVAL_MS], since walking between tabs and suite apps restarts the
+     * activity far more often than anything new reaches Health Connect. [force] is the Import now
+     * button, which always runs.
+     */
+    fun importFromHealthConnect(force: Boolean = false) {
+        if (!prefs.connectEnabled) return
+        if (!force && System.currentTimeMillis() - prefs.connectLastSyncAt < CONNECT_FOREGROUND_INTERVAL_MS) return
+        scope.launch { runCatching { connectImporter.sync(inForeground = true) } }
+    }
+
+    /** Switch the import on or off, with the schedule that goes with it. */
+    fun setConnectEnabled(enabled: Boolean) {
+        prefs.connectEnabled = enabled
+        if (enabled) HealthConnectSyncWorker.schedule(app) else HealthConnectSyncWorker.cancel(app)
+    }
+
     /** The peers Health reconciles with. It binds to people they hold; it never creates from them. */
     val peers: List<String> = listOf(Peers.PEOPLE, Peers.LIFEOPS)
 
@@ -152,6 +187,8 @@ class HealthApp private constructor(private val app: Application) {
     }
 
     companion object {
+        private const val CONNECT_FOREGROUND_INTERVAL_MS = 15 * 60 * 1000L
+
         @Volatile
         private var instance: HealthApp? = null
 

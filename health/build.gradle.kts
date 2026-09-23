@@ -89,6 +89,10 @@ dependencies {
     // eight" nudge that must survive a reboot, not a to-the-second alarm, and the sandbox host
     // already carries the dependency for LifeOps' own reminders.
     implementation(libs.androidx.work.runtime.ktx)
+    // Health Connect: reading what the phone's own health store holds — every record type it
+    // offers, and medical records where the platform has them — into the primary user's profile.
+    // Import only; Health never writes back. See `connect/`.
+    implementation(libs.androidx.health.connect.client)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

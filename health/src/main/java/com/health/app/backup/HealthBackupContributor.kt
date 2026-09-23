@@ -16,9 +16,9 @@ import java.io.File
 
 /**
  * Health's hook into the Operations Sandbox backup, modeled on LifeOps' and Logistics': it copies
- * the whole `health.db` — every profile, reading, symptom, medicine, dose, illness, care note, and
- * the medicine cabinet with the drug facts cached for it — so a "full backup" is complete by
- * construction and stays complete as the schema grows.
+ * the whole `health.db` — every profile, reading, symptom, medicine, dose, illness, care note, the
+ * medicine cabinet with the drug facts cached for it, and what was imported from Health Connect — so
+ * a "full backup" is complete by construction and stays complete as the schema grows.
  *
  * Health's preferences go with it, but only Health's: the hosted apps share one process and
  * therefore one `shared_prefs/` directory, so this contributor touches only files named `health_*`,

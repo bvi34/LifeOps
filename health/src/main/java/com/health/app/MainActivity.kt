@@ -11,7 +11,9 @@ import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -24,6 +26,10 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.health.app.logic.ConnectKind
+import com.health.app.ui.connect.ConnectKindScreen
+import com.health.app.ui.connect.ConnectScreen
+import com.health.app.ui.connect.ConnectViewModel
 import com.health.app.ui.coverage.CoverageScreen
 import com.health.app.ui.coverage.CoverageViewModel
 import com.health.app.ui.information.InformationScreen
@@ -81,10 +87,14 @@ class MainActivity : ComponentActivity() {
      * the edit the user just made next door. The round is idempotent and best-effort (a missing or
      * half-written envelope must never block the screen), and it is what brings a person's birth
      * date over from People, which is what the age-aware fever rules need.
+     *
+     * The Health Connect import runs here too, for the same reason, and throttles itself — see
+     * [HealthApp.importFromHealthConnect].
      */
     override fun onStart() {
         super.onStart()
         HealthApp.get(this).syncPeople()
+        HealthApp.get(this).importFromHealthConnect()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,7 +123,15 @@ class MainActivity : ComponentActivity() {
                 }
 
                 Scaffold(
-                    topBar = { TopAppBarTitle(current?.route) },
+                    topBar = {
+                        TopAppBarTitle(
+                            route = current?.route,
+                            kindLabel = backStack?.arguments?.getString(CONNECT_KIND_ARG)
+                                ?.let { ConnectKind.fromKey(it)?.label },
+                            onBack = { nav.popBackStack() },
+                            onOpenConnect = { nav.navigate(CONNECT_ROUTE) { launchSingleTop = true } }
+                        )
+                    },
                     bottomBar = {
                         NavigationBar {
                             navItems.forEach { dest ->
@@ -172,6 +190,19 @@ class MainActivity : ComponentActivity() {
                             )
                             CoverageScreen(vm, onOpenPeople = { openPeople() })
                         }
+                        // Health Connect: reached from the top bar on every tab rather than being a
+                        // seventh tab — it is where data comes from, not a kind of question asked.
+                        composable(CONNECT_ROUTE) {
+                            val vm: ConnectViewModel = viewModel(factory = ConnectViewModel.Factory(app))
+                            ConnectScreen(vm, onOpenKind = { kind -> nav.navigate("$CONNECT_ROUTE/${kind.key}") })
+                        }
+                        composable("$CONNECT_ROUTE/{$CONNECT_KIND_ARG}") { entry ->
+                            // Scoped to the Health Connect screen's entry, so the two share one model.
+                            val parent = remember(entry) { nav.getBackStackEntry(CONNECT_ROUTE) }
+                            val vm: ConnectViewModel = viewModel(parent, factory = ConnectViewModel.Factory(app))
+                            val kind = entry.arguments?.getString(CONNECT_KIND_ARG)?.let { ConnectKind.fromKey(it) }
+                            if (kind != null) ConnectKindScreen(vm, kind)
+                        }
                     }
                 }
             }
@@ -179,9 +210,39 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private const val CONNECT_ROUTE = "connect"
+private const val CONNECT_KIND_ARG = "kind"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun TopAppBarTitle(route: String?) {
-    val title = navItems.firstOrNull { it.route == route }?.label ?: "Health"
-    TopAppBar(title = { Text(if (title == "Today") "Health" else title) })
+private fun TopAppBarTitle(
+    route: String?,
+    kindLabel: String?,
+    onBack: () -> Unit,
+    onOpenConnect: () -> Unit
+) {
+    val tab = navItems.firstOrNull { it.route == route }
+    val title = when {
+        tab != null -> if (tab == Dest.Today) "Health" else tab.label
+        route == CONNECT_ROUTE -> "Health Connect"
+        kindLabel != null -> kindLabel
+        else -> "Health"
+    }
+    TopAppBar(
+        title = { Text(title) },
+        navigationIcon = {
+            if (tab == null && route != null) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            }
+        },
+        actions = {
+            if (tab != null) {
+                IconButton(onClick = onOpenConnect) {
+                    Icon(Icons.Default.Sync, contentDescription = "Health Connect")
+                }
+            }
+        }
+    )
 }
