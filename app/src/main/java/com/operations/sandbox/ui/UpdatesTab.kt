@@ -138,13 +138,20 @@ internal fun UpdatesTab(updates: UpdateController) {
                 if (state.signingConflict) {
                     SigningConflictActions(updates, state)
                 } else {
-                    Button(onClick = { updates.install(state.apk) }, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { updates.install(state) }, modifier = Modifier.fillMaxWidth()) {
                         Text("Install ${state.release.tag}")
                     }
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "Android will ask you to confirm, and may first ask you to allow Operations " +
-                            "Sandbox to install apps. Your data is kept — this installs over the top.",
+                        if (updates.installsWithoutPrompt) {
+                            "Installs straight away — the sandbox installed the version you are " +
+                                "running, so Android doesn't ask again. The app closes when it's " +
+                                "done; open it again from the launcher. Your data is kept."
+                        } else {
+                            "Android will ask you to confirm this once, and may first ask you to " +
+                                "allow Operations Sandbox to install apps. Updates after this one " +
+                                "install without asking. Your data is kept — this installs over the top."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -161,6 +168,20 @@ internal fun UpdatesTab(updates: UpdateController) {
                 TextButton(onClick = { updates.dismiss() }) { Text("Dismiss") }
             }
         }
+
+        is UpdateState.Installing -> ReleaseCard(
+            release = state.ready.release,
+            actions = {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Installing ${state.ready.release.tag}. If Android asks, confirm — the app " +
+                        "closes when the install finishes.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            },
+            updates = updates
+        )
 
         UpdateState.Idle, UpdateState.Checking -> Unit
     }
@@ -328,7 +349,7 @@ private fun SigningConflictActions(updates: UpdateController, state: UpdateState
     // Left reachable on purpose: this reads the certificates rather than asking the installer, and
     // if it has somehow read them wrong, the user should still be able to try the thing they came
     // here to do.
-    TextButton(onClick = { updates.install(state.apk) }) { Text("Try installing anyway") }
+    TextButton(onClick = { updates.install(state) }) { Text("Try installing anyway") }
 }
 
 /** " · 84 MB", or nothing when GitHub didn't report a size. */

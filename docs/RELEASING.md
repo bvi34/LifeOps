@@ -138,6 +138,11 @@ the home screen. Tap it, then *Download*, then *Install*. The first install will
 Operations Sandbox to install apps — that is Android's per-app "install unknown apps" setting, which
 cannot be granted from inside the app.
 
+The first update installed this way also asks you to confirm it. From then on the sandbox is the app
+that installed itself, and Android lets it update without the confirmation screen: *Install* installs,
+and the app closes when it's done. (It goes through a `PackageInstaller` session asking for
+`USER_ACTION_NOT_REQUIRED`; see `update/SelfInstaller`.)
+
 The suite checks at launch, at most once every six hours, and only ever *tells* you: it never
 downloads and never installs on its own. That check can be switched off entirely on the Updates tab.
 

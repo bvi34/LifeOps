@@ -6,9 +6,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.content.pm.Signature
 import android.net.Uri
-import android.os.Build
 import android.provider.Settings
-import androidx.core.content.FileProvider
 import com.operations.sandbox.BuildConfig
 import com.operations.sandbox.update.logic.AppVersion
 import com.operations.sandbox.update.logic.AvailableRelease
@@ -33,7 +31,7 @@ import kotlin.coroutines.coroutineContext
  * *manual*. Nothing here runs on a schedule, nothing installs anything on its own, and no telemetry
  * leaves the phone: it reads one public JSON document, and only when asked. The decision-making —
  * which asset, which version, whether it's newer — lives next door in `logic/`, unit-tested off the
- * device; what's left here is a GET, a file write and an Intent.
+ * device; what's left here is a GET and a file write. Installing is [SelfInstaller]'s.
  *
  * Sideloading is what makes this necessary at all. There is no Play Store in the loop, so an APK
  * built by GitHub Actions reaches the phone only if something asks GitHub what the newest one is.
@@ -105,8 +103,8 @@ class Updater(
      * Download [release]'s APK into the app's own cache and hand back the file.
      *
      * Cache, not external storage: the file needs no permission to write there, the OS can reclaim
-     * it once the install is done, and a `content://` URI from our own provider is what the
-     * installer wants anyway. [onProgress] is called with 0f..1f, or with -1f while the total size
+     * it once the install is done, and the installer is handed the bytes through a session rather
+     * than a path, so nothing outside this app ever needs to read it. [onProgress] is called with 0f..1f, or with -1f while the total size
      * is unknown (GitHub always sends Content-Length, but a proxy in between might not).
      */
     suspend fun download(
@@ -171,38 +169,18 @@ class Updater(
     /**
      * Whether the OS will let this app start an install at all.
      *
-     * Since Android 8 "install unknown apps" is granted per-app rather than once for the device, and
-     * it cannot be requested with the normal permission dialog — the user has to be sent to a
-     * Settings page. Checking first means the update flow can say so *before* a download rather than
-     * after it, which is the difference between an explanation and a dead end.
+     * "Install unknown apps" is granted per-app, and it cannot be requested with the normal
+     * permission dialog — the user has to be sent to a Settings page. Checking first means the
+     * update flow can say so *before* a download rather than after it, which is the difference
+     * between an explanation and a dead end.
      */
-    fun canInstallPackages(): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            appContext.packageManager.canRequestPackageInstalls()
-        } else {
-            true
-        }
+    fun canInstallPackages(): Boolean = appContext.packageManager.canRequestPackageInstalls()
 
     /** The Settings page that grants the above, deep-linked to this app. */
     fun unknownSourcesSettingsIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES)
             .setData(Uri.parse("package:${appContext.packageName}"))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-    /**
-     * Hand [apk] to the system installer.
-     *
-     * The URI has to come from a FileProvider — a `file://` URI has been a FileUriExposedException
-     * since Android 7 — and the read permission has to be granted on the Intent, because the
-     * installer is a different process and our provider is not exported.
-     */
-    fun installIntent(apk: File): Intent {
-        val uri = FileProvider.getUriForFile(appContext, "${appContext.packageName}.updates.fileprovider", apk)
-        return Intent(Intent.ACTION_VIEW)
-            .setDataAndType(uri, "application/vnd.android.package-archive")
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
 
     /**
      * Whether the installer will accept [apk] as a replacement for this build, or refuse it.
@@ -221,47 +199,27 @@ class Updater(
         InstallCompatibility.of(installedSigners(), apkSigners(apk))
 
     /** The certificates this running build is signed with — its rotation lineage included. */
-    @Suppress("DEPRECATION")
     private fun installedSigners(): Set<String> = runCatching {
-        val packageManager = appContext.packageManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            certificates(
-                packageManager.getPackageInfo(
-                    appContext.packageName,
-                    PackageManager.GET_SIGNING_CERTIFICATES
-                )
+        certificates(
+            appContext.packageManager.getPackageInfo(
+                appContext.packageName,
+                PackageManager.GET_SIGNING_CERTIFICATES
             )
-        } else {
-            fingerprints(
-                packageManager
-                    .getPackageInfo(appContext.packageName, PackageManager.GET_SIGNATURES)
-                    .signatures
-            )
-        }
+        )
     }.getOrDefault(emptySet())
 
     /** The same, read out of a file that is not installed yet. */
-    @Suppress("DEPRECATION")
     private fun apkSigners(apk: File): Set<String> = runCatching {
-        val packageManager = appContext.packageManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            certificates(
-                packageManager.getPackageArchiveInfo(
-                    apk.absolutePath,
-                    PackageManager.GET_SIGNING_CERTIFICATES
-                )
+        certificates(
+            appContext.packageManager.getPackageArchiveInfo(
+                apk.absolutePath,
+                PackageManager.GET_SIGNING_CERTIFICATES
             )
-        } else {
-            fingerprints(
-                packageManager
-                    .getPackageArchiveInfo(apk.absolutePath, PackageManager.GET_SIGNATURES)
-                    ?.signatures
-            )
-        }
+        )
     }.getOrDefault(emptySet())
 
     /**
-     * Every certificate a package's signing information knows about, on the Androids that have it.
+     * Every certificate a package's signing information knows about.
      *
      * The history counts as much as the current signer: a package whose key has been rotated is
      * still installable by an APK signed with an older certificate in its lineage, so reading only
@@ -269,8 +227,7 @@ class Updater(
      * by several keys at once has no lineage to read, hence the branch.
      */
     private fun certificates(info: PackageInfo?): Set<String> {
-        if (info == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return emptySet()
-        val signing = info.signingInfo ?: return emptySet()
+        val signing = info?.signingInfo ?: return emptySet()
         val current: Array<Signature> = signing.apkContentsSigners ?: emptyArray()
         val history: Array<Signature> =
             if (signing.hasMultipleSigners()) emptyArray() else signing.signingCertificateHistory ?: emptyArray()
