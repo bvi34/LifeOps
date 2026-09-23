@@ -1,7 +1,9 @@
 package com.advisor.app
 
 import android.app.Application
+import android.content.ComponentCallbacks2
 import android.content.Context
+import android.content.res.Configuration
 import android.util.Log
 import androidx.room.RoomDatabase
 import com.advisor.app.data.action.LifeOpsTaskWriter
@@ -23,6 +25,7 @@ import com.advisor.app.data.source.PeopleKnowledgeSource
 import com.advisor.app.data.source.ProjectKnowledgeSource
 import com.advisor.app.data.source.RepositoryKnowledgeSource
 import com.advisor.app.data.source.RoomChangeFeed
+import com.advisor.app.device.DeviceMonitor
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.llm.LlamaCppBackend
@@ -153,12 +156,48 @@ class AdvisorApp private constructor(private val app: Application) {
      * moment the model file is present, with no code change.
      */
     val engine by lazy {
+        val backend = backendHolder.value
+        // A generation already running when the phone crosses into SEVERE is stopped where it is,
+        // keeping what it has written — the budget that let it start was read up to a minute ago.
+        deviceMonitor.watchThermal { level ->
+            if (level.stopsGeneration) backend.interrupt("the phone is ${level.label}")
+        }
         Qwen3LlmEngine(
-            LlamaCppBackend(modelStore),
+            backend,
             // The prompt-boundary diagnostics: the engine itself stays Android-free, so the Android
             // log is attached here, at the wiring layer that already knows about the framework.
-            log = { line -> Log.i(Qwen3LlmEngine.TAG, line) }
+            log = { line -> Log.i(Qwen3LlmEngine.TAG, line) },
+            device = deviceMonitor
         )
+    }
+
+    /** Memory, heat and power, read from the platform for the engine's per-turn budget. */
+    val deviceMonitor by lazy { DeviceMonitor(app) }
+
+    /**
+     * Held as a [Lazy] rather than a `by lazy` property so the memory callback below can ask whether
+     * it exists: a trim must never be the thing that loads the native library.
+     */
+    private val backendHolder = lazy { LlamaCppBackend(modelStore) }
+
+    init {
+        // The weights are gigabytes of anonymous memory in a process every app in the suite shares, so
+        // when the system says that process is now background (TRIM_MEMORY_BACKGROUND — from 34 the
+        // only other level delivered is UI_HIDDEN) they are the one thing worth handing back. Holding
+        // them is what gets the whole suite killed rather than just this model reloaded. UI_HIDDEN
+        // alone is not enough: leaving for a moment and coming back would cost a full reload.
+        app.registerComponentCallbacks(object : ComponentCallbacks2 {
+            override fun onTrimMemory(level: Int) {
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && backendHolder.isInitialized()) {
+                    backendHolder.value.trim()
+                }
+            }
+
+            override fun onConfigurationChanged(newConfig: Configuration) {}
+
+            @Deprecated("Superseded by onTrimMemory; required by the interface.")
+            override fun onLowMemory() {}
+        })
     }
 
     /** The C3A unifying engine: coordinates the components and decides answer / clarify / investigate. */

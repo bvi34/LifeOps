@@ -164,3 +164,109 @@ class Qwen3LlmEngineTest {
         assertTrue("should not claim a real model", spec.isPlaceholder)
     }
 }
+
+class Qwen3LlmEngineBudgetTest {
+
+    private class Backend(
+        override var isLoaded: Boolean = true,
+        override val modelBytes: Long = 2_500_000_000L,
+        private val reply: String = "Mow the lawn.<|im_end|>"
+    ) : LlmBackend {
+        override val isReady = true
+        override val detail = "qwen3-4b-q4_k_m.gguf"
+        var lastParams: GenerationParams? = null
+        var calls = 0
+        var warmedUp = false
+        var interruption: String? = null
+
+        override fun warmUp() { warmedUp = true }
+        override fun generate(prompt: String, params: GenerationParams): String {
+            calls++
+            lastParams = params
+            return reply
+        }
+        override fun takeInterruption(): String? = interruption.also { interruption = null }
+    }
+
+    private val gib = 1024L * 1024 * 1024
+    private val cool = DeviceState(totalMemBytes = 8 * gib, availMemBytes = 4 * gib)
+
+    private fun prompt() = PromptAssembler.assemble(
+        "what should I do",
+        listOf(RetrievedChunk(KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "Mow the lawn", "Task: Mow the lawn"), 1.0))
+    )
+
+    @Test
+    fun without_a_probe_nothing_is_limited() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend)
+        assertEquals(InferenceBudget.UNCONSTRAINED, engine.admit())
+        engine.generate(prompt())
+        assertEquals(GenerationParams().maxTokens, backend.lastParams!!.maxTokens)
+        assertEquals(null, engine.describeDevice())
+    }
+
+    @Test
+    fun a_reduced_turn_hands_the_backend_the_shorter_limit() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(thermal = ThermalLevel.MODERATE) })
+        engine.admit()
+        assertEquals("Mow the lawn.", engine.generate(prompt()))
+        assertEquals(256, backend.lastParams!!.maxTokens)
+    }
+
+    @Test
+    fun a_paused_turn_answers_from_the_records_and_says_why() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(thermal = ThermalLevel.CRITICAL) })
+        engine.admit()
+
+        val answer = engine.generate(prompt())
+
+        assertEquals("the model never ran", 0, backend.calls)
+        assertTrue(answer.contains("[1]"))
+        assertTrue(answer.contains("The model is paused — phone is critically hot"))
+        assertTrue("the card reports the placeholder while paused", engine.spec.isPlaceholder)
+        assertTrue(engine.status.contains("Paused — phone is critically hot"))
+    }
+
+    @Test
+    fun the_budget_is_settled_per_turn_not_per_read() {
+        var state = cool.copy(thermal = ThermalLevel.SEVERE)
+        val engine = Qwen3LlmEngine(Backend(), device = { state })
+        engine.admit()
+        state = cool
+        assertTrue("still the paused turn until the next admit", engine.spec.isPlaceholder)
+        engine.admit()
+        assertFalse(engine.spec.isPlaceholder)
+    }
+
+    @Test
+    fun warm_up_is_skipped_when_the_phone_cannot_afford_the_bet() {
+        val backend = Backend(isLoaded = false)
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(powerSave = true) })
+        engine.warmUp()
+        assertFalse(backend.warmedUp)
+
+        val relaxed = Backend(isLoaded = false)
+        Qwen3LlmEngine(relaxed, device = { cool }).warmUp()
+        assertTrue(relaxed.warmedUp)
+    }
+
+    @Test
+    fun an_answer_stopped_early_keeps_its_text_and_says_so() {
+        val backend = Backend().apply { interruption = "the phone is very hot" }
+        val engine = Qwen3LlmEngine(backend, device = { cool })
+        engine.admit()
+        assertEquals("Mow the lawn.\n\n(Stopped early — the phone is very hot.)", engine.generate(prompt()))
+        assertEquals("cleared by reading", null, backend.takeInterruption())
+    }
+
+    @Test
+    fun a_probe_that_throws_is_treated_as_unmeasured() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { error("binder died") })
+        assertEquals(InferenceBudget.UNCONSTRAINED, engine.admit())
+        assertEquals("Mow the lawn.", engine.generate(prompt()))
+    }
+}

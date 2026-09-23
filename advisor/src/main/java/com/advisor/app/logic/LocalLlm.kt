@@ -66,6 +66,17 @@ interface LocalLlmEngine {
      * and a conservative floor when there isn't.
      */
     val contextTokens: Int get() = LlmBackend.DEFAULT_CONTEXT_TOKENS
+
+    /**
+     * Read the device and settle how this turn may run — called once at the top of a question, so
+     * [spec], [generate] and the caller's own choices (whether to run a refinement pass) all agree for
+     * the whole turn instead of each re-reading a phone whose temperature moves between them. The
+     * default never limits anything, which is right for an engine that costs nothing to run.
+     */
+    fun admit(): InferenceBudget = InferenceBudget.UNCONSTRAINED
+
+    /** What the phone has and what that allows, for the model card; null when nothing is measured. */
+    fun describeDevice(): String? = null
 }
 
 /**

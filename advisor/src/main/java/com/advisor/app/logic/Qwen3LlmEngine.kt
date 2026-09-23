@@ -21,8 +21,16 @@ class Qwen3LlmEngine(
      * by [com.advisor.app.AdvisorApp]. Defaults to discarding, so a test never needs a mocked
      * framework to exercise generation.
      */
-    private val log: (String) -> Unit = {}
+    private val log: (String) -> Unit = {},
+    /**
+     * What the phone can spare right now. Null means unmeasured, and the model always runs as it did
+     * before there was a policy — which is what tests and a backend with nothing to load want.
+     */
+    private val device: DeviceProbe? = null
 ) : LocalLlmEngine {
+
+    /** The budget [admit] settled for the current turn. */
+    @Volatile private var budget: InferenceBudget = InferenceBudget.UNCONSTRAINED
 
     /**
      * What is actually running. Read from the loaded file's name rather than being a constant: the
@@ -31,42 +39,108 @@ class Qwen3LlmEngine(
      * confidently wrong about the thing it exists to report.
      */
     override val spec: ModelSpec
-        get() = if (backend.isReady) GgufName.specOf(backend.detail) else fallback.spec
+        get() = if (backend.isReady && budget.runsModel) GgufName.specOf(backend.detail) else fallback.spec
 
-    override val status: String get() = backend.detail
+    override val status: String
+        get() = if (backend.isReady && !budget.runsModel) "${backend.detail} — ${budget.summary()}"
+        else backend.detail
+
+    override fun admit(): InferenceBudget {
+        val state = sample() ?: return InferenceBudget.UNCONSTRAINED.also { budget = it }
+        val decided = AdvisorConstraints.budget(state, backend.modelBytes, backend.isLoaded, params.maxTokens)
+        if (decided.mode != InferenceBudget.Mode.FULL) log("Inference budget: ${decided.summary()}")
+        budget = decided
+        return decided
+    }
+
+    override fun describeDevice(): String? {
+        val state = sample() ?: return null
+        return AdvisorConstraints.describe(
+            state, AdvisorConstraints.budget(state, backend.modelBytes, backend.isLoaded, params.maxTokens)
+        )
+    }
 
     override fun generate(prompt: AdvisorPrompt): String = run(prompt, onPartial = null)
 
     override fun generate(prompt: AdvisorPrompt, onPartial: (String) -> Unit): String =
         run(prompt, onPartial)
 
-    override fun warmUp() = backend.warmUp()
+    /**
+     * Loading ahead of the first question is a bet that one is coming; it is only placed when the
+     * phone can afford to lose it. Otherwise the model loads when a question actually asks for it.
+     */
+    override fun warmUp() {
+        val decided = admit()
+        if (decided.allowWarmUp) backend.warmUp()
+        else log("Warm-up skipped: ${(decided.reasons).joinToString(", ")}; the model loads on the first question.")
+    }
 
     override val contextTokens: Int get() = backend.contextTokens
 
     private fun run(prompt: AdvisorPrompt, onPartial: ((String) -> Unit)?): String {
         if (!backend.isReady) return fallback.generate(prompt)
+        val turn = budget
+        if (!turn.runsModel) {
+            return fallback.generate(prompt) +
+                "\n\n(The model is paused — ${turn.reasons.joinToString(", ")}. This answer is built " +
+                "from your records alone.)"
+        }
+        val limits = if (turn.mode == InferenceBudget.Mode.REDUCED) params.copy(maxTokens = turn.maxTokens) else params
         val formatted = Qwen3ChatFormat.forPrompt(prompt)
         log("Qwen3 prompt boundary: chars=${formatted.length} hash=${sha256(formatted)}")
         log("Qwen3 prompt boundary head=${formatted.take(120).replace("\n", "\\n")}")
+        val before = sample()
+        val startedAt = System.nanoTime()
         val raw = runCatching {
             if (onPartial == null) {
-                backend.generate(formatted, params)
+                backend.generate(formatted, limits)
             } else {
                 // The backend streams raw model output; the chat format is what makes it an answer.
                 // Cleaning the whole accumulation each time — rather than the newest piece — is what
                 // lets a retraction (a control token completing, a think block closing) simply
                 // produce a shorter string instead of needing to be undone downstream.
                 val seen = StringBuilder()
-                backend.generate(formatted, params) { piece ->
+                backend.generate(formatted, limits) { piece ->
                     seen.append(piece)
                     onPartial(Qwen3ChatFormat.cleanPartial(seen.toString()))
                 }
             }
         }.getOrNull()
+        logCost(before, sample(), (System.nanoTime() - startedAt) / 1_000_000, raw?.length ?: 0, limits.maxTokens)
         val answer = raw?.let { Qwen3ChatFormat.cleanOutput(it) }.orEmpty()
-        return if (answer.isBlank()) fallback.generate(prompt) else answer
+        val stopped = backend.takeInterruption()
+        return when {
+            answer.isBlank() -> fallback.generate(prompt)
+            stopped != null -> "$answer\n\n(Stopped early — $stopped.)"
+            else -> answer
+        }
     }
+
+    private fun sample(): DeviceState? = device?.let { runCatching { it.sample() }.getOrNull() }
+
+    /**
+     * What one generation cost the phone, from the platform's side: the native log says how the
+     * kernels spent the time, this says what that did to the device — whether an answer walked it
+     * from cool to throttling, and how much memory it left everyone else.
+     */
+    private fun logCost(before: DeviceState?, after: DeviceState?, wallMs: Long, chars: Int, maxTokens: Int) {
+        val line = StringBuilder("Generation cost: ")
+            .append(wallMs).append(" ms, ").append(chars).append(" chars (limit ").append(maxTokens).append(" tokens)")
+        if (before != null && after != null) {
+            line.append("; thermal ").append(before.thermal.label).append(" → ").append(after.thermal.label)
+            if (before.thermalHeadroom != null || after.thermalHeadroom != null) {
+                line.append(", headroom ").append(headroom(before.thermalHeadroom))
+                    .append(" → ").append(headroom(after.thermalHeadroom))
+            }
+            line.append(", free ").append(AdvisorConstraints.gb(before.availMemBytes))
+                .append(" → ").append(AdvisorConstraints.gb(after.availMemBytes))
+            if (after.lowMemory) line.append(" (system reports low memory)")
+        }
+        log(line.toString())
+    }
+
+    private fun headroom(value: Float?): String =
+        value?.let { String.format(java.util.Locale.US, "%.2f", it) } ?: "?"
 
     companion object {
         /** The Android log tag [com.advisor.app.AdvisorApp] stamps the diagnostics with. */

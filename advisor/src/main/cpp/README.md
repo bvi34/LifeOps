@@ -177,6 +177,29 @@ this file. The `affinity` list, by contrast, is now chosen here — see below. A
 ggml's abort callback, so a pathological run fails with a logged message and falls back to the
 placeholder engine instead of pinning the caller forever.
 
+### Stopping early, and what the phone can spare
+
+`nativeStop` ends a running generate at the next graph node by moving its deadline into the past —
+the watchdog's own route, so the call unwinds exactly as on a timeout and returns what it has written.
+The Kotlin side calls it when the platform's thermal status reaches SEVERE mid-answer, and the log
+tells the two apart:
+
+```
+nativeGenerate: decode failed after 212 generated tokens — stopped at the app's request
+```
+
+Everything about *whether* the model runs at all is decided on the Kotlin side, from platform APIs the
+minSdk 34 floor made unconditional (`com.advisor.app.device.DeviceMonitor`): memory
+(`ActivityManager.MemoryInfo`, `advertisedMem`), heat (`PowerManager` thermal status and
+`getThermalHeadroom`), power saver and battery, and the previous process's exit reason. The policy
+(`logic/InferenceBudget.kt`, JVM-tested) runs a turn in full, reduced (half the reply, no refinement
+pass) or paused (the placeholder answers and says why), and the weights are freed on
+`TRIM_MEMORY_BACKGROUND` when no generation holds them. Each answer also logs what it cost the device:
+
+```
+Generation cost: 41230 ms, 1834 chars (limit 512 tokens); thermal cool → hot, headroom 0.41 → 0.88, free 3.1 GB → 2.9 GB
+```
+
 When the property is **off** (the default), no `.so` is produced; `LlamaCppBackend` reports
 not-ready and Advisor answers with its deterministic placeholder engine.
 
@@ -207,7 +230,7 @@ the CPU path stays available — flip the flag back off to return to the known-g
 
 The CMake build produces `libadvisor-llm.so` alongside its llama.cpp dependencies (`libllama.so`,
 `libggml.so`). AGP's `externalNativeBuild` packages all of them into the APK's `lib/arm64-v8a/`, and
-the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 26), so the Kotlin side
+the dynamic linker resolves the `NEEDED` dependencies automatically (minSdk 34), so the Kotlin side
 only needs `System.loadLibrary("advisor-llm")`. This build has been verified for `arm64-v8a` against
 the pinned tag with the NDK's CMake toolchain.
 

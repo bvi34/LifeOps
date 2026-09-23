@@ -180,6 +180,9 @@ struct AdvisorLlm {
     // Set for the duration of a generate call; zero means "no deadline in force".
     std::atomic<long long> deadline_at_ms{0};
     std::atomic<bool>      aborted{false};
+    // Set by nativeStop: the Kotlin side asked for the call to end early (the phone is overheating),
+    // which the log should not report as the watchdog firing.
+    std::atomic<bool>      stop_requested{false};
     // The prompt tokens whose KV entries are currently in the cache, so the next call can keep the
     // part it shares and prefill only what actually changed. Prompt tokens only — the generated reply
     // also sits in the cache but is never part of the next prompt, so it always falls after the shared
@@ -200,6 +203,13 @@ size_t common_prefix(const std::vector<llama_token>& a, const std::vector<llama_
 long long steady_now_ms() {
     return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Why a decode failed, for the log line that reports it: nothing, the watchdog, or a stop from Kotlin.
+const char* abort_reason(const AdvisorLlm* h) {
+    if (!h->aborted.load(std::memory_order_relaxed)) return "";
+    return h->stop_requested.load(std::memory_order_relaxed)
+        ? " — stopped at the app's request" : " — hit the generate deadline";
 }
 
 // Called by ggml from the compute threads between graph nodes; returning true aborts the graph and
@@ -651,6 +661,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     // Arm the watchdog for the whole call so a pathologically slow decode fails loudly instead of
     // pinning a coroutine forever. Cleared on every exit path below.
     h->aborted.store(false, std::memory_order_relaxed);
+    h->stop_requested.store(false, std::memory_order_relaxed);
     h->deadline_at_ms.store(steady_now_ms() + GENERATE_DEADLINE_MS, std::memory_order_relaxed);
 
     const ResSnapshot res_before_prefill = sample_resources();
@@ -676,7 +687,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     if (!prefill_ok) {
         LOGW("nativeGenerate: prefill llama_decode failed after %lld ms (%d tokens)%s",
              elapsed_ms(), n_prefill,
-             h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
+             abort_reason(h));
     }
 
     if (prefill_ok) {
@@ -721,7 +732,7 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
 
             if (llama_decode(h->ctx, batch) != 0) {
                 LOGW("nativeGenerate: decode failed after %d generated tokens%s", produced,
-                     h->aborted.load(std::memory_order_relaxed) ? " — hit the generate deadline" : "");
+                     abort_reason(h));
                 break;
             }
         }
@@ -758,6 +769,22 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeContextTokens(
     auto* h = reinterpret_cast<AdvisorLlm*>(handle);
     if (h == nullptr || h->ctx == nullptr) return 0;
     return (jint) llama_n_ctx(h->ctx);
+}
+
+// Ends a running generate at the next graph node by moving its deadline into the past — the same
+// route the watchdog takes, so the call unwinds exactly as it already does on a timeout and returns
+// what it has written so far. Only a call in progress (deadline armed) is touched: a stop that arrives
+// between calls must not carry over into the next one, which re-arms its own deadline anyway.
+JNIEXPORT jboolean JNICALL
+Java_com_advisor_app_llm_LlamaCppBackend_nativeStop(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorLlm*>(handle);
+    if (h == nullptr) return JNI_FALSE;
+    long long armed = h->deadline_at_ms.load(std::memory_order_relaxed);
+    if (armed == 0) return JNI_FALSE;
+    h->stop_requested.store(true, std::memory_order_relaxed);
+    // 1, not 0: zero means "no deadline", and any past instant trips the abort callback.
+    return h->deadline_at_ms.compare_exchange_strong(armed, 1, std::memory_order_relaxed)
+        ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL

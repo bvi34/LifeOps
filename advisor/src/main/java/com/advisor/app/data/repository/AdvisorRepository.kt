@@ -105,6 +105,9 @@ class AdvisorRepository(
     /** Ground-truth diagnostic of the generation layer — the loaded file, or why it's still placeholder. */
     val modelStatus: String get() = engine.status
 
+    /** What the phone has and what that lets the model do, measured now; null when unmeasured. */
+    suspend fun deviceStatus(): String? = withContext(Dispatchers.Default) { engine.describeDevice() }
+
     /** True when retrieval is running semantically (an embedding model is loaded), not lexically. */
     val semanticRetrieval: Boolean get() = retriever.isSemantic
 
@@ -228,6 +231,11 @@ class AdvisorRepository(
         // model can, so we hand those turns to it (with all the same grounding) rather than intercepting
         // them. Explicit write commands and computed functions still run first — those are tools, not
         // guesses. This is the "User ⇄ LLM, engine assists" flow.
+        //
+        // Whether it may run this turn is the phone's call as much as the file's: a hot phone, one
+        // saving power, or one without the memory to load the weights gets a smaller answer or the
+        // placeholder. Settled once, here, so every check below sees the same answer.
+        val budget = withContext(Dispatchers.Default) { engine.admit() }
         val hasModel = !engine.spec.isPlaceholder
 
         // "add a task to Life Ops called X" is a command to *another app*, and the one thing that
@@ -416,15 +424,26 @@ class AdvisorRepository(
                     Citations.citedIds(raw, PromptAssembler.blocks(groundChunks)).any { it in dropped }
                 val nothingLeftStanding = refined.grounding.isEmpty() && groundChunks.isNotEmpty()
 
-                // Either way the misfits stop being shown as sources: when the answer stands, nothing
-                // in its text points at them — that is exactly why it stands — so dropping them leaves
-                // no dangling reference.
-                groundingResult = refined
-                groundChunks = refined.grounding
+                // A phone that is hot or saving power does not get the second pass, since a second
+                // pass is what doubles the cost. The first answer then stands with the grounding
+                // it was written against: its `[n]` markers number *that* set, so narrowing the
+                // sources under an answer that still cites the dropped ones would point them at the
+                // wrong rows. An answer resting on nothing left standing is the exception — it is
+                // wrong, not just longer, so it is redone whatever it costs.
+                val answerAgain = nothingLeftStanding || (leanedOnDropped && budget.allowRefinement)
+                val firstAnswerStandsAsWritten = leanedOnDropped && !answerAgain
 
-                if (leanedOnDropped || nothingLeftStanding) {
-                    raw = withContext(Dispatchers.Default) {
-                        generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
+                if (!firstAnswerStandsAsWritten) {
+                    // Either way the misfits stop being shown as sources: when the answer stands,
+                    // nothing in its text points at them — that is exactly why it stands — so
+                    // dropping them leaves no dangling reference.
+                    groundingResult = refined
+                    groundChunks = refined.grounding
+
+                    if (answerAgain) {
+                        raw = withContext(Dispatchers.Default) {
+                            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
+                        }
                     }
                 }
             }

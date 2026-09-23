@@ -3,6 +3,8 @@ package com.advisor.app.llm
 import android.util.Log
 import com.advisor.app.logic.GenerationParams
 import com.advisor.app.logic.LlmBackend
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * A [LlmBackend] backed by llama.cpp's native inference, loaded over JNI. It loads whatever Qwen3-4B
@@ -20,7 +22,21 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     @Volatile private var handle: Long = 0L
     @Volatile private var failedSignature: String? = null
-    private val lock = Any()
+    @Volatile private var interruption: String? = null
+
+    /**
+     * Held for the whole of a load, a generation and a free, so the weights can never be freed out
+     * from under a running model — which [trim], arriving from the system on the main thread at any
+     * moment, would otherwise do. A lock rather than `synchronized` for one reason: [trim] must be
+     * able to *not* wait.
+     */
+    private val lock = ReentrantLock()
+
+    /**
+     * Guards the handle against [interrupt], which does not take [lock] (it exists to reach a
+     * generation that holds it). Freeing takes both, so a stop can never land on a freed model.
+     */
+    private val handleGuard = Any()
 
     override val isReady: Boolean
         get() {
@@ -63,14 +79,19 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         }
 
     override fun warmUp() {
-        if (!ensureLoaded()) Log.i(TAG, "Warm-up: no model to load; staying on the placeholder.")
+        if (!lock.withLock { ensureLoaded() }) Log.i(TAG, "Warm-up: no model to load; staying on the placeholder.")
     }
 
-    private fun run(prompt: String, params: GenerationParams, sink: TokenSink?): String {
+    override val isLoaded: Boolean get() = handle != 0L
+
+    override val modelBytes: Long get() = modelStore.installedModel()?.length() ?: 0L
+
+    private fun run(prompt: String, params: GenerationParams, sink: TokenSink?): String = lock.withLock {
         if (!ensureLoaded()) return ""
+        interruption = null
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
         Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace("\n", "\\n")}")
-        return runCatching {
+        runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,
                 params.topP, params.topK, params.stop.toTypedArray(), sink
@@ -80,6 +101,36 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
             ""
         }
     }
+
+    /**
+     * Free the weights unless a load or a generation holds them. Never waits: the system calls this
+     * on the main thread, and a generation can run for a minute. A busy model is simply kept — it is
+     * about to answer, and freeing it would only make the next question load it again.
+     */
+    override fun trim(): Boolean {
+        if (handle == 0L || !lock.tryLock()) return false
+        try {
+            if (handle == 0L) return false
+            free()
+            Log.i(TAG, "Released the model's memory at the system's request; it reloads on the next question.")
+            return true
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    override fun interrupt(reason: String) {
+        synchronized(handleGuard) {
+            val h = handle
+            if (h == 0L) return
+            // Recorded before the stop so the generation that returns because of it finds it.
+            interruption = reason
+            val stopped = runCatching { nativeStop(h) }.getOrDefault(false)
+            if (stopped) Log.w(TAG, "Stopping generation early: $reason") else interruption = null
+        }
+    }
+
+    override fun takeInterruption(): String? = interruption.also { interruption = null }
 
     /**
      * What the native side calls as each piece of the answer settles.
@@ -98,33 +149,36 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     }
 
     override fun close() {
-        synchronized(lock) {
-            if (handle != 0L) {
-                runCatching { nativeFree(handle) }
-                handle = 0L
-            }
+        lock.withLock { free() }
+    }
+
+    /** Callers hold [lock]. */
+    private fun free() {
+        synchronized(handleGuard) {
+            val h = handle
+            handle = 0L
+            if (h != 0L) runCatching { nativeFree(h) }
         }
     }
 
+    /** Callers hold [lock], so a load never races a free or a second load. */
     private fun ensureLoaded(): Boolean {
         if (handle != 0L) return true
         if (!NATIVE_AVAILABLE) return false
         val file = modelStore.installedModel() ?: return false
         val sig = signature(file.absolutePath, file.length())
         if (sig == failedSignature) return false
-        synchronized(lock) {
-            if (handle != 0L) return true
-            handle = runCatching { nativeLoad(file.absolutePath) }.getOrElse {
-                Log.w(TAG, "Failed to load Qwen3-4B GGUF at ${file.absolutePath}", it)
-                0L
-            }
-            if (handle == 0L) {
-                failedSignature = sig
-                return false
-            }
-            failedSignature = null
-            return true
+        val loaded = runCatching { nativeLoad(file.absolutePath) }.getOrElse {
+            Log.w(TAG, "Failed to load Qwen3-4B GGUF at ${file.absolutePath}", it)
+            0L
         }
+        if (loaded == 0L) {
+            failedSignature = sig
+            return false
+        }
+        synchronized(handleGuard) { handle = loaded }
+        failedSignature = null
+        return true
     }
 
     private fun signature(path: String, size: Long): String = "$path:$size"
@@ -142,6 +196,8 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     ): String
     private external fun nativeContextTokens(handle: Long): Int
     private external fun nativeFree(handle: Long)
+    /** Asks a running generation to stop at its next graph node; false when none is running. */
+    private external fun nativeStop(handle: Long): Boolean
 
     companion object {
         private const val TAG = "LlamaCppBackend"
