@@ -26,7 +26,12 @@ class Qwen3LlmEngine(
      * What the phone can spare right now. Null means unmeasured, and the model always runs as it did
      * before there was a policy — which is what tests and a backend with nothing to load want.
      */
-    private val device: DeviceProbe? = null
+    private val device: DeviceProbe? = null,
+    /**
+     * How often a running generation re-reads the device. Two seconds: well inside the time it takes
+     * a phone to move a thermal level, and no faster than the platform will answer a headroom query.
+     */
+    private val watchEveryMillis: Long = 2_000L
 ) : LocalLlmEngine {
 
     /** The budget [admit] settled for the current turn. */
@@ -92,27 +97,78 @@ class Qwen3LlmEngine(
         val before = sample()
         val startedAt = System.nanoTime()
         val raw = runCatching {
-            if (onPartial == null) {
-                backend.generate(formatted, limits)
-            } else {
-                // The backend streams raw model output; the chat format is what makes it an answer.
-                // Cleaning the whole accumulation each time — rather than the newest piece — is what
-                // lets a retraction (a control token completing, a think block closing) simply
-                // produce a shorter string instead of needing to be undone downstream.
-                val seen = StringBuilder()
-                backend.generate(formatted, limits) { piece ->
-                    seen.append(piece)
-                    onPartial(Qwen3ChatFormat.cleanPartial(seen.toString()))
-                }
-            }
+            watched(turn, limits) { generateWith(formatted, limits, onPartial) }
         }.getOrNull()
         logCost(before, sample(), (System.nanoTime() - startedAt) / 1_000_000, raw?.length ?: 0, limits.maxTokens)
         val answer = raw?.let { Qwen3ChatFormat.cleanOutput(it) }.orEmpty()
-        val stopped = backend.takeInterruption()
+        val cutoff = backend.takeCutoff()
         return when {
             answer.isBlank() -> fallback.generate(prompt)
-            stopped != null -> "$answer\n\n(Stopped early — $stopped.)"
+            cutoff != null -> "$answer\n\n($cutoff.)"
             else -> answer
+        }
+    }
+
+    private fun generateWith(formatted: String, limits: GenerationParams, onPartial: ((String) -> Unit)?): String =
+        if (onPartial == null) {
+            backend.generate(formatted, limits)
+        } else {
+            // The backend streams raw model output; the chat format is what makes it an answer.
+            // Cleaning the whole accumulation each time — rather than the newest piece — is what
+            // lets a retraction (a control token completing, a think block closing) simply
+            // produce a shorter string instead of needing to be undone downstream.
+            val seen = StringBuilder()
+            backend.generate(formatted, limits) { piece ->
+                seen.append(piece)
+                onPartial(Qwen3ChatFormat.cleanPartial(seen.toString()))
+            }
+        }
+
+    /**
+     * Runs [generation] while a watcher re-reads the device every [watchEveryMillis] and applies the
+     * same rules [admit] does, to the answer already in progress: a phone that has become too hot
+     * (or is forecast to) stops it, one that has become warm or started saving power shortens it.
+     * The turn's budget was read before the answer started, and an answer can run for a minute.
+     *
+     * The reading is taken with the model counted as resident — it is, and refusing it now would
+     * free nothing — so memory never stops an answer; heat and power do. A shortening is applied
+     * once and only to a turn that started in full; a reduced turn is already short. A stop or a
+     * limit the backend could not deliver yet (the model is still loading, prefill not armed) is
+     * simply asked for again on the next reading.
+     */
+    private fun <T> watched(turn: InferenceBudget, limits: GenerationParams, generation: () -> T): T {
+        val probe = device ?: return generation()
+        val done = java.util.concurrent.atomic.AtomicBoolean(false)
+        val watcher = Thread({
+            var shortened = turn.mode != InferenceBudget.Mode.FULL
+            while (!done.get()) {
+                try {
+                    Thread.sleep(watchEveryMillis)
+                } catch (interrupted: InterruptedException) {
+                    break
+                }
+                if (done.get()) break
+                val state = runCatching { probe.sample() }.getOrNull() ?: continue
+                val live = AdvisorConstraints.budget(state, backend.modelBytes, loaded = true, maxTokens = limits.maxTokens)
+                val why = live.reasons.joinToString(", ")
+                when {
+                    !live.runsModel -> if (backend.interrupt(why)) {
+                        log("Mid-answer: stopping — $why")
+                        break
+                    }
+                    live.mode == InferenceBudget.Mode.REDUCED && !shortened -> if (backend.limitTokens(live.maxTokens, why)) {
+                        log("Mid-answer: shortening to ${live.maxTokens} tokens — $why")
+                        shortened = true
+                    }
+                }
+            }
+        }, "advisor-generation-watch").apply { isDaemon = true }
+        watcher.start()
+        try {
+            return generation()
+        } finally {
+            done.set(true)
+            watcher.interrupt()
         }
     }
 

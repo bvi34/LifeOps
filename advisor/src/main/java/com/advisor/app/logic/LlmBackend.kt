@@ -89,16 +89,26 @@ interface LlmBackend {
 
     /**
      * Stop a generation in progress as soon as the model can, keeping what it has written so far.
-     * [reason] is a short phrase for the answer's footnote. Safe to call from any thread and when
-     * nothing is running, in which case it does nothing.
+     * [reason] is a short phrase for the answer's footnote. Safe to call from any thread. Returns
+     * false when nothing was running to stop — including a generation that has not started decoding
+     * yet (the model is still loading), so a caller that means it should ask again.
      */
-    fun interrupt(reason: String) {}
+    fun interrupt(reason: String): Boolean = false
 
     /**
-     * Why the last generation was stopped early, if [interrupt] stopped it — cleared by reading, so a
-     * reason never outlives the answer it belongs to.
+     * Lower the reply limit of a generation in progress to [maxTokens]. Past it the model is not cut
+     * mid-word: it finishes the sentence it is in (within a small allowance) and stops. Only ever
+     * lowers. Same threading and return value as [interrupt].
      */
-    fun takeInterruption(): String? = null
+    fun limitTokens(maxTokens: Int, reason: String): Boolean = false
+
+    /**
+     * The footnote for how the last generation was cut short — "Stopped early — …" or "Kept short —
+     * …" — or null if it ended on its own. Only a cut that actually took effect counts: a limit the
+     * answer never reached leaves nothing to explain. Cleared by reading, so a note never outlives
+     * the answer it belongs to.
+     */
+    fun takeCutoff(): String? = null
 
     /** Release native resources. Safe to call more than once. */
     fun close() {}

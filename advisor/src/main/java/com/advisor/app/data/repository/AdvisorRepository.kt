@@ -425,12 +425,20 @@ class AdvisorRepository(
                 val nothingLeftStanding = refined.grounding.isEmpty() && groundChunks.isNotEmpty()
 
                 // A phone that is hot or saving power does not get the second pass, since a second
-                // pass is what doubles the cost. The first answer then stands with the grounding
-                // it was written against: its `[n]` markers number *that* set, so narrowing the
-                // sources under an answer that still cites the dropped ones would point them at the
-                // wrong rows. An answer resting on nothing left standing is the exception — it is
-                // wrong, not just longer, so it is redone whatever it costs.
-                val answerAgain = nothingLeftStanding || (leanedOnDropped && budget.allowRefinement)
+                // pass is what doubles the cost — and the phone is read *again* here, not trusted
+                // from the start of the turn: the first pass is itself tens of seconds of load, and
+                // is often what heated it. The first answer then stands with the grounding it was
+                // written against: its `[n]` markers number *that* set, so narrowing the sources
+                // under an answer that still cites the dropped ones would point them at the wrong
+                // rows. An answer resting on nothing left standing is the exception — it is wrong,
+                // not just longer, so it is redone; if the phone is now too hot for the model, the
+                // engine redoes it from the records alone and says so.
+                val secondPass = if (leanedOnDropped || nothingLeftStanding) {
+                    withContext(Dispatchers.Default) { engine.admit() }
+                } else {
+                    budget
+                }
+                val answerAgain = nothingLeftStanding || (leanedOnDropped && secondPass.allowRefinement)
                 val firstAnswerStandsAsWritten = leanedOnDropped && !answerAgain
 
                 if (!firstAnswerStandsAsWritten) {

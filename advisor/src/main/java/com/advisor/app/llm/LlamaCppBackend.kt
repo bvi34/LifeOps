@@ -22,7 +22,10 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     @Volatile private var handle: Long = 0L
     @Volatile private var failedSignature: String? = null
-    @Volatile private var interruption: String? = null
+    // Why the running generation was asked to stop or shorten, and what it came to once it returned.
+    @Volatile private var stopReason: String? = null
+    @Volatile private var limitReason: String? = null
+    @Volatile private var cutoff: String? = null
 
     /**
      * Held for the whole of a load, a generation and a free, so the weights can never be freed out
@@ -88,10 +91,12 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
 
     private fun run(prompt: String, params: GenerationParams, sink: TokenSink?): String = lock.withLock {
         if (!ensureLoaded()) return ""
-        interruption = null
+        stopReason = null
+        limitReason = null
+        cutoff = null
         Log.i(TAG, "Qwen3 backend boundary: chars=${prompt.length} hash=${sha256(prompt)}")
         Log.i(TAG, "Qwen3 backend boundary head=${prompt.take(120).replace("\n", "\\n")}")
-        runCatching {
+        val text = runCatching {
             nativeGenerate(
                 handle, prompt, params.maxTokens, params.temperature,
                 params.topP, params.topK, params.stop.toTypedArray(), sink
@@ -100,6 +105,14 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
             Log.w(TAG, "Qwen3 generation failed; falling back.", it)
             ""
         }
+        // Native says what actually ended the call, so a stop or a limit that arrived after the
+        // answer had already finished on its own leaves no footnote.
+        cutoff = when (runCatching { nativeLastCutoff(handle) }.getOrDefault(CUTOFF_NONE)) {
+            CUTOFF_STOPPED -> stopReason?.let { "Stopped early — $it" }
+            CUTOFF_LIMITED -> limitReason?.let { "Kept short — $it" }
+            else -> null
+        }
+        text
     }
 
     /**
@@ -119,18 +132,26 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
         }
     }
 
-    override fun interrupt(reason: String) {
-        synchronized(handleGuard) {
-            val h = handle
-            if (h == 0L) return
-            // Recorded before the stop so the generation that returns because of it finds it.
-            interruption = reason
-            val stopped = runCatching { nativeStop(h) }.getOrDefault(false)
-            if (stopped) Log.w(TAG, "Stopping generation early: $reason") else interruption = null
-        }
+    override fun interrupt(reason: String): Boolean = synchronized(handleGuard) {
+        val h = handle
+        if (h == 0L) return false
+        // Recorded before the stop so the generation that returns because of it finds it.
+        if (stopReason == null) stopReason = reason
+        val stopped = runCatching { nativeStop(h) }.getOrDefault(false)
+        if (stopped) Log.w(TAG, "Stopping generation early: $reason")
+        stopped
     }
 
-    override fun takeInterruption(): String? = interruption.also { interruption = null }
+    override fun limitTokens(maxTokens: Int, reason: String): Boolean = synchronized(handleGuard) {
+        val h = handle
+        if (h == 0L) return false
+        if (limitReason == null) limitReason = reason
+        val limited = runCatching { nativeLimitTokens(h, maxTokens) }.getOrDefault(false)
+        if (limited) Log.w(TAG, "Shortening generation to $maxTokens tokens: $reason")
+        limited
+    }
+
+    override fun takeCutoff(): String? = cutoff.also { cutoff = null }
 
     /**
      * What the native side calls as each piece of the answer settles.
@@ -198,9 +219,18 @@ class LlamaCppBackend(private val modelStore: AdvisorModelStore) : LlmBackend {
     private external fun nativeFree(handle: Long)
     /** Asks a running generation to stop at its next graph node; false when none is running. */
     private external fun nativeStop(handle: Long): Boolean
+    /** Lowers a running generation's reply limit; false when none is running. */
+    private external fun nativeLimitTokens(handle: Long, maxTokens: Int): Boolean
+    /** What ended the last generate call: [CUTOFF_NONE], [CUTOFF_LIMITED] or [CUTOFF_STOPPED]. */
+    private external fun nativeLastCutoff(handle: Long): Int
 
     companion object {
         private const val TAG = "LlamaCppBackend"
+
+        // Must match LastCutoff in advisor_llm.cpp.
+        private const val CUTOFF_NONE = 0
+        private const val CUTOFF_LIMITED = 1
+        private const val CUTOFF_STOPPED = 2
         private val NATIVE_AVAILABLE: Boolean = runCatching {
             System.loadLibrary("advisor-llm")
             true

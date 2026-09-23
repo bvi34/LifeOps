@@ -181,12 +181,28 @@ placeholder engine instead of pinning the caller forever.
 
 `nativeStop` ends a running generate at the next graph node by moving its deadline into the past —
 the watchdog's own route, so the call unwinds exactly as on a timeout and returns what it has written.
-The Kotlin side calls it when the platform's thermal status reaches SEVERE mid-answer, and the log
-tells the two apart:
+The Kotlin side calls it when the phone becomes too hot mid-answer, and the log tells the two apart:
 
 ```
 nativeGenerate: decode failed after 212 generated tokens — stopped at the app's request
 ```
+
+`nativeLimitTokens` lowers a running call's reply limit instead, for a phone that is only warming up.
+Past the new limit the loop finishes the sentence it is in (ending in `.`, `!`, `?` or a newline),
+within `WRAP_UP_TOKENS`, rather than cutting mid-word:
+
+```
+nativeGenerate: wrapped up at 271 tokens under a lowered limit of 256
+```
+
+`nativeLastCutoff` reports which of the two actually ended the call, so the answer is footnoted
+("Stopped early — …", "Kept short — …") only when a cut took effect, not when a request arrived after
+it had already finished.
+
+A budget is read at the start of each question and again before any second (refinement) pass; while
+an answer runs, the engine re-reads the device every two seconds and applies the same rules to it —
+too hot, or forecast to be, stops it; warm or saving power shortens it once. Memory never stops an
+answer already running: the weights are resident and refusing them would free nothing.
 
 Everything about *whether* the model runs at all is decided on the Kotlin side, from platform APIs the
 minSdk 34 floor made unconditional (`com.advisor.app.device.DeviceMonitor`): memory

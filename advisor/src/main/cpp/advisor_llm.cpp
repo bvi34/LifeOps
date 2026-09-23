@@ -65,6 +65,15 @@ constexpr long long GENERATE_DEADLINE_MS = 180000;
 // prompts (the ChatML preamble alone is a handful of tokens) and save nothing worth the bookkeeping.
 constexpr int MIN_PREFIX_REUSE = 32;
 
+// How far past a lowered reply limit (nativeLimitTokens) the model may run to finish the sentence it
+// is in. Cutting at the exact token leaves half a word on screen; running on unbounded defeats the
+// limit. A sentence is rarely longer than this.
+constexpr int WRAP_UP_TOKENS = 64;
+
+// What ended the last generate call, read back by LlamaCppBackend.nativeLastCutoff — keep the values
+// in step with its CUTOFF_* constants.
+enum LastCutoff : int { CUTOFF_NONE = 0, CUTOFF_LIMITED = 1, CUTOFF_STOPPED = 2 };
+
 // The set of CPUs worth running inference on. A phone's cores are not interchangeable: on this class
 // of SoC (a Snapdragon 8+ Gen 1, say) four Cortex-A510s sit alongside three A710s and an X2 running
 // at nearly twice the clock with several times the vector throughput. ggml synchronizes its worker
@@ -183,6 +192,10 @@ struct AdvisorLlm {
     // Set by nativeStop: the Kotlin side asked for the call to end early (the phone is overheating),
     // which the log should not report as the watchdog firing.
     std::atomic<bool>      stop_requested{false};
+    // A reply limit lowered mid-call by nativeLimitTokens; 0 means only the call's own maxTokens.
+    std::atomic<int>       token_limit{0};
+    // What ended the last call (LastCutoff). Written by the generate call, read after it returns.
+    int                    last_cutoff = CUTOFF_NONE;
     // The prompt tokens whose KV entries are currently in the cache, so the next call can keep the
     // part it shares and prefill only what actually changed. Prompt tokens only — the generated reply
     // also sits in the cache but is never part of the next prompt, so it always falls after the shared
@@ -203,6 +216,17 @@ size_t common_prefix(const std::vector<llama_token>& a, const std::vector<llama_
 long long steady_now_ms() {
     return (long long) std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Whether the text so far ends a sentence — where a shortened reply can stop without leaving half a
+// thought on screen. Trailing spaces are ignored; a newline counts, since list items and paragraphs
+// end without a full stop.
+bool ends_sentence(const std::string& text) {
+    size_t i = text.size();
+    while (i > 0 && (text[i - 1] == ' ' || text[i - 1] == '\t')) i--;
+    if (i == 0) return false;
+    const char c = text[i - 1];
+    return c == '.' || c == '!' || c == '?' || c == '\n';
 }
 
 // Why a decode failed, for the log line that reports it: nothing, the watchdog, or a stop from Kotlin.
@@ -662,6 +686,9 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     // pinning a coroutine forever. Cleared on every exit path below.
     h->aborted.store(false, std::memory_order_relaxed);
     h->stop_requested.store(false, std::memory_order_relaxed);
+    h->token_limit.store(0, std::memory_order_relaxed);
+    h->last_cutoff = CUTOFF_NONE;
+    bool capped = false;
     h->deadline_at_ms.store(steady_now_ms() + GENERATE_DEADLINE_MS, std::memory_order_relaxed);
 
     const ResSnapshot res_before_prefill = sample_resources();
@@ -712,6 +739,15 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
                 break;
             }
 
+            // A limit lowered mid-call (the phone is heating up): once past it, finish the sentence
+            // in progress and stop, within WRAP_UP_TOKENS.
+            const int cap = h->token_limit.load(std::memory_order_relaxed);
+            if (cap > 0 && produced >= cap && (ends_sentence(out) || produced >= cap + WRAP_UP_TOKENS)) {
+                capped = true;
+                LOGI("nativeGenerate: wrapped up at %d tokens under a lowered limit of %d", produced, cap);
+                break;
+            }
+
             // Everything except the last `longest_stop` bytes can no longer become a stop sequence,
             // and of that, everything up to the last complete UTF-8 sequence is safe to hand over.
             if (sink.valid() && out.size() > emitted + longest_stop) {
@@ -756,6 +792,11 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeGenerate(
     llama_perf_context_reset(h->ctx);
 
     h->deadline_at_ms.store(0, std::memory_order_relaxed);
+    if (h->aborted.load(std::memory_order_relaxed) && h->stop_requested.load(std::memory_order_relaxed)) {
+        h->last_cutoff = CUTOFF_STOPPED;
+    } else if (capped) {
+        h->last_cutoff = CUTOFF_LIMITED;
+    }
     llama_batch_free(batch);
     llama_sampler_free(smpl);
     return env->NewStringUTF(out.c_str());
@@ -785,6 +826,29 @@ Java_com_advisor_app_llm_LlamaCppBackend_nativeStop(JNIEnv* /*env*/, jobject /*t
     // 1, not 0: zero means "no deadline", and any past instant trips the abort callback.
     return h->deadline_at_ms.compare_exchange_strong(armed, 1, std::memory_order_relaxed)
         ? JNI_TRUE : JNI_FALSE;
+}
+
+// Lowers the reply limit of a running generate; the loop then wraps up at the next sentence end past
+// it. Only ever lowers, and only touches a call in progress, for the same reason as nativeStop.
+JNIEXPORT jboolean JNICALL
+Java_com_advisor_app_llm_LlamaCppBackend_nativeLimitTokens(
+        JNIEnv* /*env*/, jobject /*thiz*/, jlong handle, jint maxTokens) {
+    auto* h = reinterpret_cast<AdvisorLlm*>(handle);
+    if (h == nullptr || maxTokens <= 0) return JNI_FALSE;
+    if (h->deadline_at_ms.load(std::memory_order_relaxed) == 0) return JNI_FALSE;
+    int current = h->token_limit.load(std::memory_order_relaxed);
+    while (current == 0 || maxTokens < current) {
+        if (h->token_limit.compare_exchange_weak(current, (int) maxTokens, std::memory_order_relaxed)) break;
+    }
+    return JNI_TRUE;
+}
+
+// What ended the last generate call (LastCutoff), so the Kotlin side footnotes only a cut that took
+// effect — not a stop or a limit that arrived after the answer had already finished on its own.
+JNIEXPORT jint JNICALL
+Java_com_advisor_app_llm_LlamaCppBackend_nativeLastCutoff(JNIEnv* /*env*/, jobject /*thiz*/, jlong handle) {
+    auto* h = reinterpret_cast<AdvisorLlm*>(handle);
+    return h == nullptr ? CUTOFF_NONE : (jint) h->last_cutoff;
 }
 
 JNIEXPORT void JNICALL
