@@ -13,7 +13,7 @@ import com.lifeops.app.data.db.migrations.LIFEOPS_MIGRATIONS
  * the backup manifest as the version the copied `lifeops.db` was written at, and reads it from here
  * rather than repeating the number — the hand-copied one had drifted seven migrations behind.
  */
-const val LIFEOPS_DB_VERSION = 55
+const val LIFEOPS_DB_VERSION = 56
 
 @Database(
     entities = [
@@ -65,7 +65,9 @@ const val LIFEOPS_DB_VERSION = 55
         PhoneActivityEventEntity::class,
         GameUnlockEntity::class,
         MilestoneEntity::class,
-        BusyBlockPersonEntity::class
+        BusyBlockPersonEntity::class,
+        ObjectiveEntity::class,
+        ObjectiveStepEntity::class
     ],
     version = LIFEOPS_DB_VERSION,
     exportSchema = true
@@ -105,6 +107,7 @@ abstract class LifeOpsDatabase : RoomDatabase() {
     abstract fun phoneActivityEventDao(): PhoneActivityEventDao
     abstract fun gameUnlockDao(): GameUnlockDao
     abstract fun milestoneDao(): MilestoneDao
+    abstract fun objectiveDao(): ObjectiveDao
 
     companion object {
         @Volatile private var INSTANCE: LifeOpsDatabase? = null

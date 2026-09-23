@@ -149,6 +149,7 @@ class LifeOpsApp private constructor(private val app: Application) {
         )
     }
     val futureOperationRepository by lazy { FutureOperationRepository(database.futureOperationDao()) }
+    val objectiveRepository by lazy { ObjectiveRepository(database) }
     val weatherRepository by lazy { WeatherRepository(database.weatherDao()) }
     // The People-seam publish hook is wired here rather than at each ViewModel: a person is minted
     // in more places than the People screen (the calendar worker, the connection layer, the detail

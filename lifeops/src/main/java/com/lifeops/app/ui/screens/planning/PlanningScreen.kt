@@ -61,8 +61,8 @@ fun PlanningScreen(
             }
             item {
                 HubCard(
-                    title = "Future Tasks",
-                    subtitle = "Queued until their due date's week arrives",
+                    title = "Future",
+                    subtitle = "Queued tasks & objectives with steps toward a due date",
                     icon = Icons.Default.Schedule,
                     onClick = onOpenFutureTasks
                 )

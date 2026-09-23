@@ -48,6 +48,10 @@ import com.lifeops.app.ui.components.ImportDialog
 import com.lifeops.app.ui.components.TaskEditDialog
 import com.lifeops.app.ui.components.TaskRow
 import com.lifeops.app.ui.components.formatMinutes
+import com.lifeops.app.ui.components.ObjectiveCard
+import com.lifeops.app.ui.screens.planning.ObjectiveEditorHost
+import com.lifeops.app.ui.screens.planning.ObjectivesViewModel
+import com.lifeops.app.data.model.ObjectiveWithSteps
 import com.lifeops.app.ui.screens.wellness.ChoiceRow
 import com.lifeops.app.ui.screens.wellness.RatingRow
 import com.lifeops.app.ui.theme.parseColor
@@ -59,12 +63,19 @@ import kotlinx.coroutines.delay
 @Composable
 fun ThisWeekScreen(
     viewModel: ThisWeekViewModel,
+    objectivesViewModel: ObjectivesViewModel,
     onOpenOperation: (String) -> Unit = {},
     onOpenPerson: (String) -> Unit = {},
     onOpenCounter: (String) -> Unit = {},
     onOpenTask: (String) -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val objectivesState by objectivesViewModel.uiState.collectAsStateWithLifecycle()
+    // Every active objective sits above its aspect, every week, until it's closed. One whose aspect
+    // has no tasks this week has no header to sit above, so those lead the list instead.
+    val objectivesByAspect = objectivesState.active.groupBy { it.objective.aspectId }
+    val boardAspectIds = state.groupedTasks.map { it.aspectId }.toSet()
+    val leadingObjectives = objectivesState.active.filter { it.objective.aspectId !in boardAspectIds }
     // `activeTimer` changes only on start/stop. `timerElapsedState` ticks each second but is
     // intentionally NOT read at this scope — it's read via a deferred lambda inside the active
     // row/sheet so the per-second tick doesn'sq`t recompose the whole screen.
@@ -154,7 +165,7 @@ fun ThisWeekScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (state.groupedTasks.isEmpty()) {
+        } else if (state.groupedTasks.isEmpty() && objectivesState.active.isEmpty()) {
             Box(
                 Modifier
                     .fillMaxSize()
@@ -217,8 +228,31 @@ fun ThisWeekScreen(
                     }
                 }
 
+                items(leadingObjectives, key = { "objective|${it.objective.id}" }) { item ->
+                    val aspect = item.objective.aspectId?.let { objectivesState.aspects[it] }
+                    BoardObjective(
+                        item = item,
+                        aspectName = aspect?.name,
+                        aspectColor = aspect?.color,
+                        today = objectivesState.today,
+                        viewModel = objectivesViewModel
+                    )
+                }
+
                 state.groupedTasks.forEach { group ->
                     val aspectKey = WeekTaskGrouping.aspectKey(group)
+                    items(
+                        objectivesByAspect[group.aspectId].orEmpty(),
+                        key = { "objective|${it.objective.id}" }
+                    ) { item ->
+                        BoardObjective(
+                            item = item,
+                            aspectName = null,
+                            aspectColor = group.aspectColor,
+                            today = objectivesState.today,
+                            viewModel = objectivesViewModel
+                        )
+                    }
                     val hasActive = group.categories.any { c -> c.tasks.any { it.status == TaskStatus.PENDING } }
                     val expanded = aspectExpanded[aspectKey] ?: hasActive
                     item(key = aspectKey) {
@@ -287,6 +321,8 @@ fun ThisWeekScreen(
             }
         }
     }
+
+    ObjectiveEditorHost(objectivesViewModel)
 
     if (state.importDialogOpen) {
         ImportDialog(
@@ -499,3 +535,34 @@ private fun selfRatingMirror(selfRating: Int?, completionRate: Float?): String? 
     }
 }
 
+/** An objective on the week board. [aspectName] labels it when it isn't sitting above its aspect's
+ *  own header (its aspect has no tasks this week). */
+@Composable
+private fun BoardObjective(
+    item: ObjectiveWithSteps,
+    aspectName: String?,
+    aspectColor: String?,
+    today: String,
+    viewModel: ObjectivesViewModel
+) {
+    Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+        aspectName?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
+            )
+        }
+        ObjectiveCard(
+            item = item,
+            aspectColor = aspectColor?.let { parseColor(it) } ?: MaterialTheme.colorScheme.primary,
+            today = today,
+            onToggleStep = { stepId, done -> viewModel.setStepDone(item.objective.id, stepId, done) },
+            onReportSuccess = { viewModel.reportSuccess(item.objective.id) },
+            onMarkUnsuccessful = { viewModel.markUnsuccessful(item.objective.id) },
+            onReopen = { viewModel.reopen(item.objective.id) },
+            onEdit = { viewModel.startEdit(item) }
+        )
+    }
+}
