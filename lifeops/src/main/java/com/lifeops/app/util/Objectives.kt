@@ -61,6 +61,23 @@ object Objectives {
         return listOfNotNull(states.indices.firstOrNull { states[it] != StepState.DONE })
     }
 
+    /**
+     * Whether the step at [index] should be on this week as a task: whenever it is open (or
+     * overdue), due this week or not. An open step is work you can be doing now — studying for an
+     * exam two months out — so it is on the board to log time against. A step still waiting (on
+     * the step before it, or on its opening date) is not; the board shows it as what comes next.
+     */
+    fun belongsOnWeek(steps: List<ObjectiveStep>, index: Int, today: String): Boolean =
+        stateOf(steps, index, today).let { it == StepState.OPEN || it == StepState.OVERDUE }
+
+    /**
+     * Whether a week's task is early work on an objective step: a step task, still pending, that
+     * isn't due by [weekEnd]. That work is on the week to log time against, not owed to it — so it
+     * stays out of the week's done/total and isn't marked incomplete when the week closes.
+     */
+    fun isEarlyStepWork(objectiveStepId: String?, status: String, dueDate: String?, weekEnd: String): Boolean =
+        objectiveStepId != null && status == "pending" && (dueDate == null || dueDate > weekEnd)
+
     /** Days from [today] until [date], negative once it has passed; null when unparseable. */
     fun daysUntil(date: String, today: String): Long? = try {
         java.time.temporal.ChronoUnit.DAYS.between(

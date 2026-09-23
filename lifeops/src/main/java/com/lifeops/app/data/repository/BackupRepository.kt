@@ -18,7 +18,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class BackupData(
-    val version: Int = 18,
+    val version: Int = 19,
     val aspects: List<AspectEntity>,
     val categories: List<CategoryEntity>,
     val weeks: List<WeekEntity>,
@@ -67,6 +67,9 @@ private data class BackupData(
     // v18: objectives (nullable FK aspectId → aspects) and their steps (FK → objectives).
     val objectives: List<ObjectiveEntity> = emptyList(),
     val objectiveSteps: List<ObjectiveStepEntity> = emptyList(),
+    // v19: notes on an objective itself (FK → objectives). Tasks gained objectiveStepId, which
+    // older backups simply lack (restored as null: an ordinary task).
+    val objectiveNotes: List<ObjectiveNoteEntity> = emptyList(),
     val customPalette: CustomPalette? = null
 )
 
@@ -107,6 +110,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
             busyBlockPeople = db.busyBlockDao().getAllPeopleLinks(),
             objectives = db.objectiveDao().getAll(),
             objectiveSteps = db.objectiveDao().getAllSteps(),
+            objectiveNotes = db.objectiveDao().getAllNotes(),
             customPalette = customPalette
         )
         gson.toJson(data)
@@ -229,6 +233,7 @@ class BackupRepository(private val db: LifeOpsDatabase) {
                 // Objectives after aspects (nullable FK), their steps after them (FK).
                 for (o in data.objectives) db.objectiveDao().upsert(o)
                 for (os in data.objectiveSteps) db.objectiveDao().upsertStep(os)
+                for (on in data.objectiveNotes) db.objectiveDao().upsertNote(on)
                 // Backups written before v7 carried one long-form content blob per future
                 // operation; fold it into a single catch-up note. The deterministic '-catchup'
                 // id matches MIGRATION_25_26, so restoring the same backup twice (or restoring

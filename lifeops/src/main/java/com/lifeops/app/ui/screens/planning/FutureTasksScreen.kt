@@ -47,6 +47,7 @@ enum class FutureTab(val label: String) { TASKS("Tasks"), OBJECTIVES("Objectives
 fun FutureTasksScreen(
     viewModel: FutureTasksViewModel,
     objectivesViewModel: ObjectivesViewModel,
+    onOpenObjective: (String) -> Unit = {},
     onBack: () -> Unit
 ) {
     var tab by rememberSaveable { mutableStateOf(FutureTab.TASKS) }
@@ -75,7 +76,7 @@ fun FutureTasksScreen(
             }
             when (tab) {
                 FutureTab.TASKS -> QueuedTasksList(viewModel)
-                FutureTab.OBJECTIVES -> ObjectivesList(objectivesViewModel)
+                FutureTab.OBJECTIVES -> ObjectivesList(objectivesViewModel, onOpenObjective)
             }
         }
     }
@@ -126,7 +127,7 @@ private fun QueuedTasksList(viewModel: FutureTasksViewModel) {
 }
 
 @Composable
-private fun ObjectivesList(viewModel: ObjectivesViewModel) {
+private fun ObjectivesList(viewModel: ObjectivesViewModel, onOpenObjective: (String) -> Unit) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -155,7 +156,7 @@ private fun ObjectivesList(viewModel: ObjectivesViewModel) {
             }
         }
         items(state.active, key = { it.objective.id }) { item ->
-            ObjectiveListCard(item, state, viewModel)
+            ObjectiveListCard(item, state, viewModel, onOpenObjective)
         }
         val closed = state.closed
         if (closed.isNotEmpty()) {
@@ -169,14 +170,19 @@ private fun ObjectivesList(viewModel: ObjectivesViewModel) {
                 )
             }
             items(closed, key = { it.objective.id }) { item ->
-                ObjectiveListCard(item, state, viewModel)
+                ObjectiveListCard(item, state, viewModel, onOpenObjective)
             }
         }
     }
 }
 
 @Composable
-private fun ObjectiveListCard(item: ObjectiveWithSteps, state: ObjectivesUiState, viewModel: ObjectivesViewModel) {
+private fun ObjectiveListCard(
+    item: ObjectiveWithSteps,
+    state: ObjectivesUiState,
+    viewModel: ObjectivesViewModel,
+    onOpenObjective: (String) -> Unit
+) {
     val aspect = item.objective.aspectId?.let { state.aspects[it] }
     Column {
         Text(
@@ -194,6 +200,7 @@ private fun ObjectiveListCard(item: ObjectiveWithSteps, state: ObjectivesUiState
             onMarkUnsuccessful = { viewModel.markUnsuccessful(item.objective.id) },
             onReopen = { viewModel.reopen(item.objective.id) },
             onEdit = { viewModel.startEdit(item) },
+            onOpen = { onOpenObjective(item.objective.id) },
             startExpanded = true
         )
     }

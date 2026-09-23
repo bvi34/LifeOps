@@ -802,7 +802,8 @@ the receipts.
 - **Task** — a unit of work with a priority, optional estimate, due date, and logged time.
 - **Objective** — a forward-looking goal with a due date, reached through ordered steps that open
   now, on a date, or once the step before them is done. Set in Planning → Future → Objectives; shown
-  above its aspect on This Week every week until success is reported or it's marked unsuccessful.
+  under its aspect on This Week every week until success is reported or it's marked unsuccessful.
+  Every open step is a task under it, due yet or not, so it takes notes, photos and time like any other.
 - **Commitment** — the handful of a week's tasks whose completion decides whether the week
   worked. Marked with a star, worth no extra points, and the one thing that lets the app say
   *"rest is earned"* rather than quote a percentage.
@@ -1030,11 +1031,29 @@ and may carry its own due date:
 | 3. Complete exam | After step 2 | 30 Sep |
 | *Complete when:* Success reported | once every step is done | 30 Sep |
 
-Every **active** objective is drawn on **This Week above its aspect's header, every week** — it
-belongs to no week, so closing a week neither carries nor drops it. The card shows the open steps
-(or, when none is open, the next one waiting and why), a progress bar, and the success criteria.
-A step that hasn't opened can't be ticked; an open one past its due date reads *overdue*. An objective
-whose aspect has no tasks this week leads the list instead, labelled with its aspect.
+Every **active** objective is drawn on **This Week under its aspect's header, every week**, laid out
+like one of the aspect's categories: a header (*Promotion · Objective · Due Dec 31 · 99 days left*),
+then the week's work on its steps as ordinary task rows, then a quiet line for the next step waiting
+(and why), then how it closes. It belongs to no week, so closing a week neither carries nor drops it.
+An aspect with an objective but no tasks that week still gets its header. The outcome is a line with
+*Report success* until the week the objective is due, when it becomes a task-like row of its own.
+
+**Steps are worked as tasks.** Every open step — due this week or two months out — is put on the
+week as a task (linked by `tasks.objectiveStepId`), filed under the objective rather than its
+category. That is how a step gets **notes, photos, time and the timer**, the same way an operation's
+work does. This is the difference from a Future Task: a doctor's appointment in two months stays
+hidden until its week, but studying for an exam due in two months is work you're doing now. Steps
+still waiting (on the step before, or on their opening date) show as a quiet line instead.
+
+Early work isn't owed to the week: a pending step task not due by the week's end stays out of the
+week's done/total, and at close it is set aside as carried rather than marked incomplete; the step
+gets a fresh task on the new week. Finishing it early counts as done. Ticking the task ticks the
+step (and un-ticking re-opens it); ticking the step on its card ticks the week's task. Deleting a
+step or objective turns its tasks back into ordinary tasks, so nothing logged against them is lost.
+
+**Its own page.** Tap the objective's header (or *Notes, time & documents* on its card) to open it:
+each step with the time and notes put into its tasks, the objective's **documents** on the
+household's shelf, and a notes timeline mixing notes on the objective itself with its steps' notes.
 
 **It can't be dismissed.** The only ways off the board are the two outcomes: **Report success**
 (enabled once every step is done) or **Mark unsuccessful** (any time). Both are confirmed, stamp
@@ -1042,10 +1061,11 @@ whose aspect has no tasks this week leads the list instead, labelled with its as
 reopened if either was a mistake. Deleting — from the editor, behind a confirmation — removes it
 with no record, and is offered for mistakes rather than as a way to close one out.
 
-The rules for opening and completing steps live in `util/Objectives.kt` (JVM-tested in
-`ObjectivesTest`). The `objectives` and `objective_steps` tables (migration 55→56; `aspectId` is a
-nullable FK with `ON DELETE SET NULL`, steps cascade with their objective) are additive and
-**included in backup/restore** (backup v18).
+The rules for opening and completing steps, and for when a step belongs on a week, live in
+`util/Objectives.kt` (JVM-tested in `ObjectivesTest`). The `objectives` and `objective_steps` tables
+(migration 55→56; `aspectId` is a nullable FK with `ON DELETE SET NULL`, steps cascade with their
+objective), `tasks.objectiveStepId` and the `objective_notes` table (migration 56→57) are additive
+and **included in backup/restore** (backup v19).
 
 ---
 

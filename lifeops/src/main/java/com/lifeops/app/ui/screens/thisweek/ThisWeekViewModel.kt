@@ -9,6 +9,7 @@ import com.lifeops.app.data.repository.*
 import com.lifeops.app.util.toSlug
 import com.lifeops.app.util.ClosingWeekStats
 import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.Objectives
 import com.lifeops.app.util.WeekCapacity
 import com.lifeops.app.util.WeekCapacityBuilder
 import com.lifeops.app.util.WeekReview
@@ -298,7 +299,7 @@ class ThisWeekViewModel(
                                 taskTimeMinutes = timeByTask,
                                 taskCostEntries = costByTask,
                                 isLoading = false,
-                                weekProgress = computeProgress(tasks, timeByTask),
+                                weekProgress = computeProgress(tasks, timeByTask, week.endDate),
                                 capacity = computeCapacity(tasks, history),
                                 taskWeatherFit = computeWeatherFit(tasks, state.weatherRequirements, state.weeklyForecast)
                             )
@@ -348,8 +349,12 @@ class ThisWeekViewModel(
         }.toMap()
     }
 
-    private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>): WeekProgress {
-        val relevant = tasks.filter { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
+    private fun computeProgress(tasks: List<Task>, timeByTask: Map<String, Int>, weekEnd: String): WeekProgress {
+        // Early work on an objective step is on the week to log time against, not owed to it.
+        val relevant = tasks.filter {
+            it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED &&
+                !Objectives.isEarlyStepWork(it.objectiveStepId, it.status.value, it.dueDate, weekEnd)
+        }
         val completed = relevant.count { it.status == TaskStatus.COMPLETED }
         val total = relevant.size
         val totalTime = timeByTask.values.sum()
@@ -575,13 +580,16 @@ class ThisWeekViewModel(
         val s = _uiState.value
         val tasks = s.rawTasks
         val time = s.taskTimeMinutes
-        val relevant = tasks.count { it.status != TaskStatus.CARRIED_FORWARD && it.status != TaskStatus.QUEUED }
+        // Early objective-step work is set aside as carried at close (see closeWeek), so preview it so.
+        val weekEnd = s.week?.endDate.orEmpty()
+        val early = tasks.count { Objectives.isEarlyStepWork(it.objectiveStepId, it.status.value, it.dueDate, weekEnd) }
+        val relevant = s.weekProgress.totalCount
         val reading = s.week?.id?.let { taskRepository.expectedReadingReward(it) }
             ?: ReadingExpectation(0, 0, null)
         val closing = ClosingWeekStats(
             completed = tasks.count { it.status == TaskStatus.COMPLETED },
             totalRelevant = relevant,
-            carried = tasks.count { it.status == TaskStatus.CARRIED_FORWARD },
+            carried = tasks.count { it.status == TaskStatus.CARRIED_FORWARD } + early,
             totalMinutes = time.values.sum(),
             hardDeadlineHit = tasks.count { it.hardDeadline && it.status == TaskStatus.COMPLETED },
             hardDeadlineExpired = tasks.count {

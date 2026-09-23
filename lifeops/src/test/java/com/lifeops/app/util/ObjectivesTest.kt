@@ -92,4 +92,35 @@ class ObjectivesTest {
         assertEquals(-1L, Objectives.daysUntil("2026-09-22", "2026-09-23"))
         assertEquals(null, Objectives.daysUntil("soon", "2026-09-23"))
     }
+
+    @Test
+    fun `an open step belongs on the week whether or not it is due yet`() {
+        val steps = itil()
+        // Enrolling is due Mar 31; in February it is still work you can be doing.
+        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-02-02"))
+        // Overdue counts too — it's still owed.
+        assertTrue(Objectives.belongsOnWeek(steps, 0, "2026-04-01"))
+        assertTrue(Objectives.belongsOnWeek(listOf(step(0)), 0, "2026-02-02"))
+    }
+
+    @Test
+    fun `a locked, upcoming or done step never belongs on the week`() {
+        // Training waits on enrolling.
+        assertFalse(Objectives.belongsOnWeek(itil(), 1, "2026-07-28"))
+        val dated = listOf(step(0, opensOn = "2026-05-01", dueDate = "2026-05-03"))
+        assertFalse(Objectives.belongsOnWeek(dated, 0, "2026-04-28"))
+        assertFalse(Objectives.belongsOnWeek(itil(enrolled = "2026-02-10T00:00:00Z"), 0, "2026-03-27"))
+    }
+
+    @Test
+    fun `pending step work not due by the week's end is early work`() {
+        assertTrue(Objectives.isEarlyStepWork("s0", "pending", "2026-11-30", "2026-09-27"))
+        assertTrue(Objectives.isEarlyStepWork("s0", "pending", null, "2026-09-27"))
+        // Due this week (or overdue): owed to the week like any task.
+        assertFalse(Objectives.isEarlyStepWork("s0", "pending", "2026-09-27", "2026-09-27"))
+        assertFalse(Objectives.isEarlyStepWork("s0", "pending", "2026-09-01", "2026-09-27"))
+        // Done early counts as done; an ordinary task is never step work.
+        assertFalse(Objectives.isEarlyStepWork("s0", "completed", "2026-11-30", "2026-09-27"))
+        assertFalse(Objectives.isEarlyStepWork(null, "pending", "2026-11-30", "2026-09-27"))
+    }
 }

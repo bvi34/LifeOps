@@ -30,7 +30,8 @@ class WeekTaskGroupingTest {
         status: TaskStatus = TaskStatus.PENDING,
         priority: Priority = Priority.MEDIUM,
         dueDate: String? = null,
-        sortOrder: Int = 0
+        sortOrder: Int = 0,
+        objectiveStepId: String? = null
     ) = Task(
         id = id,
         weekId = "w1",
@@ -41,7 +42,8 @@ class WeekTaskGroupingTest {
         dueDate = dueDate,
         status = status,
         createdAt = "2026-09-01T00:00:00Z",
-        sortOrder = sortOrder
+        sortOrder = sortOrder,
+        objectiveStepId = objectiveStepId
     )
 
     /** Every key the This Week list would emit for [groups], headers and rows alike. */
@@ -243,5 +245,40 @@ class WeekTaskGroupingTest {
         assertEquals(listOf("t2", "t3", "t1"), ids(SortOrder.PRIORITY_HIGH))
         assertEquals(listOf("t1", "t3", "t2"), ids(SortOrder.PRIORITY_LOW))
         assertEquals(listOf("t2", "t3", "t1"), ids(SortOrder.PLANNING))
+    }
+
+    @Test
+    fun `an aspect with an objective but no tasks still gets a header`() {
+        val aspects = mapOf("work" to aspect("work"), "home" to aspect("home"))
+        val groups = WeekTaskGrouping.group(
+            listOf(task("1", aspectId = "home")), aspects, emptyMap(), SortOrder.DEFAULT, ""
+        )
+        val board = WeekTaskGrouping.withObjectiveAspects(groups, listOf("work", "home", "work"), aspects)
+        assertEquals(listOf("home", "work"), board.map { it.aspectId })
+        assertEquals(aspects["work"], board[1].aspect)
+        assertTrue(board[1].categories.isEmpty())
+        // The added header is keyed like any other, so it can't collide with one already there.
+        assertEquals(board.size, board.map { WeekTaskGrouping.aspectKey(it) }.toSet().size)
+    }
+
+    @Test
+    fun `step tasks come out of their category and an emptied category is dropped`() {
+        val aspects = mapOf("work" to aspect("work"))
+        val categories = mapOf("admin" to category("admin", "work"), "ops" to category("ops", "work"))
+        val groups = WeekTaskGrouping.group(
+            listOf(
+                task("1", aspectId = "work", categoryId = "admin"),
+                task("2", aspectId = "work", categoryId = "admin", objectiveStepId = "s1"),
+                task("3", aspectId = "work", objectiveStepId = "s2"),
+                // Work on some other objective's step stays where it is.
+                task("4", aspectId = "work", categoryId = "ops", objectiveStepId = "elsewhere")
+            ),
+            aspects, categories, SortOrder.DEFAULT, ""
+        )
+        val (stepTasks, rest) = WeekTaskGrouping.splitStepTasks(groups.single(), setOf("s1", "s2"))
+        assertEquals(setOf("2", "3"), stepTasks.map { it.id }.toSet())
+        assertEquals(listOf("admin", "ops"), rest.categories.map { it.categoryId })
+        assertEquals(listOf("1"), rest.categories[0].tasks.map { it.id })
+        assertEquals(listOf("4"), rest.categories[1].tasks.map { it.id })
     }
 }

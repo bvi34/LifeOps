@@ -9,6 +9,7 @@ import com.lifeops.app.data.model.ObjectiveWithSteps
 import com.lifeops.app.data.repository.AspectRepository
 import com.lifeops.app.data.repository.ObjectiveRepository
 import com.lifeops.app.data.repository.ObjectiveStepDraft
+import com.lifeops.app.data.repository.WeekRepository
 import com.lifeops.app.util.DateUtil
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,7 +44,8 @@ data class ObjectivesUiState(
  */
 class ObjectivesViewModel(
     private val objectiveRepository: ObjectiveRepository,
-    aspectRepository: AspectRepository
+    aspectRepository: AspectRepository,
+    weekRepository: WeekRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ObjectivesUiState())
@@ -64,6 +66,17 @@ class ObjectivesViewModel(
                     }
                 }
         }
+        // Put open steps that are due (or under way) on the current week as tasks, and again
+        // whenever an objective changes — ticking step 1 can open step 2.
+        viewModelScope.launch {
+            combine(objectiveRepository.observeAll(), weekRepository.observeCurrentWeek()) { _, week -> week }
+                .collectLatest { week -> week?.let { objectiveRepository.syncWeek(it) } }
+        }
+    }
+
+    /** Give an open step a task on this week ahead of its due date; [onReady] gets the task id. */
+    fun workOnThisWeek(stepId: String, onReady: (String) -> Unit = {}) {
+        viewModelScope.launch { objectiveRepository.workOnThisWeek(stepId)?.let(onReady) }
     }
 
     fun startCreate() = _uiState.update { it.copy(editor = ObjectiveEditorTarget(null)) }
@@ -106,9 +119,10 @@ class ObjectivesViewModel(
 
 class ObjectivesViewModelFactory(
     private val objectiveRepository: ObjectiveRepository,
-    private val aspectRepository: AspectRepository
+    private val aspectRepository: AspectRepository,
+    private val weekRepository: WeekRepository
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        ObjectivesViewModel(objectiveRepository, aspectRepository) as T
+        ObjectivesViewModel(objectiveRepository, aspectRepository, weekRepository) as T
 }

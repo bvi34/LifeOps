@@ -298,7 +298,7 @@ fun LifeOpsNavHost(
                     )
                     val objectivesVm = viewModel<com.lifeops.app.ui.screens.planning.ObjectivesViewModel>(
                         factory = com.lifeops.app.ui.screens.planning.ObjectivesViewModelFactory(
-                            app.objectiveRepository, app.aspectRepository
+                            app.objectiveRepository, app.aspectRepository, app.weekRepository
                         )
                     )
                     com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
@@ -315,6 +315,7 @@ fun LifeOpsNavHost(
                         onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                         onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
                         onOpenTask = { id -> navController.navigate("task_detail/$id") },
+                        onOpenObjective = { id -> navController.navigate("objective_detail/$id") },
                         sharedText = sharedText,
                         onImportShared = { text ->
                             taskManagerVm.onImportJsonChange(text)
@@ -397,10 +398,14 @@ fun LifeOpsNavHost(
                     )
                     val objectivesVm = viewModel<com.lifeops.app.ui.screens.planning.ObjectivesViewModel>(
                         factory = com.lifeops.app.ui.screens.planning.ObjectivesViewModelFactory(
-                            app.objectiveRepository, app.aspectRepository
+                            app.objectiveRepository, app.aspectRepository, app.weekRepository
                         )
                     )
-                    com.lifeops.app.ui.screens.planning.FutureTasksScreen(vm, objectivesVm) { navController.navigateUp() }
+                    com.lifeops.app.ui.screens.planning.FutureTasksScreen(
+                        vm,
+                        objectivesVm,
+                        onOpenObjective = { id -> navController.navigate("objective_detail/$id") }
+                    ) { navController.navigateUp() }
                 }
                 composable("operations") {
                     val vm = viewModel<SettingsViewModel>(factory = settingsVmFactory)
@@ -594,6 +599,27 @@ fun LifeOpsNavHost(
                         )
                     )
                     ResourcesScreen(vm, onBack = { navController.navigateUp() })
+                }
+                composable("objective_detail/{objectiveId}") { backStackEntry ->
+                    val objectiveId = backStackEntry.arguments?.getString("objectiveId") ?: return@composable
+                    val vm = viewModel<com.lifeops.app.ui.screens.planning.ObjectiveDetailViewModel>(
+                        key = "objective_detail_$objectiveId",
+                        factory = com.lifeops.app.ui.screens.planning.ObjectiveDetailViewModelFactory(
+                            objectiveId, app.objectiveRepository, app.aspectRepository, app.weekRepository,
+                            app.timeEntryRepository, app.taskNoteRepository
+                        )
+                    )
+                    val objectivesVm = viewModel<com.lifeops.app.ui.screens.planning.ObjectivesViewModel>(
+                        factory = com.lifeops.app.ui.screens.planning.ObjectivesViewModelFactory(
+                            app.objectiveRepository, app.aspectRepository, app.weekRepository
+                        )
+                    )
+                    com.lifeops.app.ui.screens.planning.ObjectiveDetailScreen(
+                        viewModel = vm,
+                        objectivesViewModel = objectivesVm,
+                        onOpenTask = { id -> navController.navigate("task_detail/$id") },
+                        onBack = { navController.navigateUp() }
+                    )
                 }
                 composable("operation_detail/{operationId}") { backStackEntry ->
                     val operationId = backStackEntry.arguments?.getString("operationId") ?: return@composable

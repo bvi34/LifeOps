@@ -96,7 +96,9 @@ data class Task(
     val recurrenceIntervalWeeks: Int = 1,
     val recurrenceDayOfMonth: Int? = null,
     /** One of the few tasks the week is actually judged on. See [TaskEntity.isCommitment]. */
-    val isCommitment: Boolean = false
+    val isCommitment: Boolean = false,
+    /** The objective step this task is the week's work on. See [TaskEntity.objectiveStepId]. */
+    val objectiveStepId: String? = null
 )
 
 data class BusyBlock(

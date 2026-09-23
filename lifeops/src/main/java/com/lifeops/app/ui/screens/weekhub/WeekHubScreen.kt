@@ -79,6 +79,7 @@ fun WeekHubScreen(
     onOpenPerson: (String) -> Unit = {},
     onOpenCounter: (String) -> Unit = {},
     onOpenTask: (String) -> Unit = {},
+    onOpenObjective: (String) -> Unit = {},
     sharedText: String? = null,
     onImportShared: (String) -> Unit = {}
 ) {
@@ -160,7 +161,8 @@ fun WeekHubScreen(
                     onOpenOperation = onOpenOperation,
                     onOpenPerson = onOpenPerson,
                     onOpenCounter = onOpenCounter,
-                    onOpenTask = onOpenTask
+                    onOpenTask = onOpenTask,
+                    onOpenObjective = onOpenObjective
                 )
                 WeekHubTab.DAILY_PLAN -> DailyPlanScreen(dailyPlanViewModel)
                 WeekHubTab.COLLECTION -> CollectionScreen(

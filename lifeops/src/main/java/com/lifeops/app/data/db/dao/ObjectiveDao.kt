@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import com.lifeops.app.data.db.entities.ObjectiveEntity
+import com.lifeops.app.data.db.entities.ObjectiveNoteEntity
 import com.lifeops.app.data.db.entities.ObjectiveStepEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -46,4 +47,16 @@ interface ObjectiveDao {
 
     @Query("DELETE FROM objectives WHERE id = :id")
     suspend fun delete(id: String)
+
+    @Query("SELECT * FROM objective_notes WHERE objectiveId = :objectiveId ORDER BY createdAt ASC")
+    fun observeNotes(objectiveId: String): Flow<List<ObjectiveNoteEntity>>
+
+    @Query("SELECT * FROM objective_notes")
+    suspend fun getAllNotes(): List<ObjectiveNoteEntity>
+
+    @Upsert
+    suspend fun upsertNote(note: ObjectiveNoteEntity)
+
+    @Query("DELETE FROM objective_notes WHERE id = :id")
+    suspend fun deleteNote(id: String)
 }
