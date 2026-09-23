@@ -4,6 +4,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class Qwen3LlmEngineTest {
 
@@ -162,5 +164,267 @@ class Qwen3LlmEngineTest {
     fun with_no_model_loaded_the_spec_is_the_placeholders() {
         val spec = Qwen3LlmEngine(FakeBackend(isReady = false)).spec
         assertTrue("should not claim a real model", spec.isPlaceholder)
+    }
+}
+
+class Qwen3LlmEngineBudgetTest {
+
+    private class Backend(
+        override var isLoaded: Boolean = true,
+        override val modelBytes: Long = 2_500_000_000L,
+        private val reply: String = "Mow the lawn.<|im_end|>"
+    ) : LlmBackend {
+        override val isReady = true
+        override val detail = "qwen3-4b-q4_k_m.gguf"
+        var lastParams: GenerationParams? = null
+        var calls = 0
+        var warmedUp = false
+        var cutoff: String? = null
+
+        override fun warmUp() { warmedUp = true }
+        override fun generate(prompt: String, params: GenerationParams): String {
+            calls++
+            lastParams = params
+            return reply
+        }
+        override fun takeCutoff(): String? = cutoff.also { cutoff = null }
+    }
+
+    private val gib = 1024L * 1024 * 1024
+    private val cool = DeviceState(totalMemBytes = 8 * gib, availMemBytes = 4 * gib)
+
+    private fun prompt() = PromptAssembler.assemble(
+        "what should I do",
+        listOf(RetrievedChunk(KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "Mow the lawn", "Task: Mow the lawn"), 1.0))
+    )
+
+    @Test
+    fun without_a_probe_nothing_is_limited() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend)
+        assertEquals(InferenceBudget.UNCONSTRAINED, engine.admit())
+        engine.generate(prompt())
+        assertEquals(GenerationParams().maxTokens, backend.lastParams!!.maxTokens)
+        assertEquals(null, engine.describeDevice())
+    }
+
+    @Test
+    fun a_reduced_turn_hands_the_backend_the_shorter_limit() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(thermal = ThermalLevel.MODERATE) })
+        engine.admit()
+        assertEquals("Mow the lawn.", engine.generate(prompt()))
+        assertEquals(256, backend.lastParams!!.maxTokens)
+    }
+
+    @Test
+    fun a_paused_turn_answers_from_the_records_and_says_why() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(thermal = ThermalLevel.CRITICAL) })
+        engine.admit()
+
+        val answer = engine.generate(prompt())
+
+        assertEquals("the model never ran", 0, backend.calls)
+        assertTrue(answer.contains("[1]"))
+        assertTrue(answer.contains("The model is paused — phone is critically hot"))
+        assertTrue("the card reports the placeholder while paused", engine.spec.isPlaceholder)
+        assertTrue(engine.status.contains("Paused — phone is critically hot"))
+    }
+
+    @Test
+    fun the_budget_is_settled_per_turn_not_per_read() {
+        var state = cool.copy(thermal = ThermalLevel.SEVERE)
+        val engine = Qwen3LlmEngine(Backend(), device = { state })
+        engine.admit()
+        state = cool
+        assertTrue("still the paused turn until the next admit", engine.spec.isPlaceholder)
+        engine.admit()
+        assertFalse(engine.spec.isPlaceholder)
+    }
+
+    @Test
+    fun warm_up_is_skipped_when_the_phone_cannot_afford_the_bet() {
+        val backend = Backend(isLoaded = false)
+        val engine = Qwen3LlmEngine(backend, device = { cool.copy(powerSave = true) })
+        engine.warmUp()
+        assertFalse(backend.warmedUp)
+
+        val relaxed = Backend(isLoaded = false)
+        Qwen3LlmEngine(relaxed, device = { cool }).warmUp()
+        assertTrue(relaxed.warmedUp)
+    }
+
+    @Test
+    fun an_answer_stopped_early_keeps_its_text_and_says_so() {
+        val backend = Backend().apply { cutoff = "Stopped early — the phone is very hot" }
+        val engine = Qwen3LlmEngine(backend, device = { cool })
+        engine.admit()
+        assertEquals("Mow the lawn.\n\n(Stopped early — the phone is very hot.)", engine.generate(prompt()))
+        assertEquals("cleared by reading", null, backend.takeCutoff())
+    }
+
+    @Test
+    fun a_probe_that_throws_is_treated_as_unmeasured() {
+        val backend = Backend()
+        val engine = Qwen3LlmEngine(backend, device = { error("binder died") })
+        assertEquals(InferenceBudget.UNCONSTRAINED, engine.admit())
+        assertEquals("Mow the lawn.", engine.generate(prompt()))
+    }
+}
+
+/** What happens to an answer while it is being written, as the phone changes under it. */
+class Qwen3LlmEngineWatchTest {
+
+    /**
+     * A generation that runs until something ends it: a stop, a lowered limit, or the test giving up.
+     * Records what it was asked, the way native would.
+     */
+    private class SlowBackend : LlmBackend {
+        override val isReady = true
+        override val detail = "qwen3-4b-q4_k_m.gguf"
+        override val isLoaded = true
+        override val modelBytes = 2_500_000_000L
+        val ended = java.util.concurrent.CountDownLatch(1)
+        @Volatile var stoppedFor: String? = null
+        @Volatile var limitedTo: Int? = null
+        @Volatile var limitCalls = 0
+        /** How many stop requests to refuse first, as native does while the model is still loading. */
+        @Volatile var notArmedFor = 0
+
+        override fun generate(prompt: String, params: GenerationParams): String {
+            ended.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            return "Mow the lawn.<|im_end|>"
+        }
+
+        override fun interrupt(reason: String): Boolean {
+            if (notArmedFor-- > 0) return false
+            stoppedFor = reason
+            ended.countDown()
+            return true
+        }
+
+        override fun limitTokens(maxTokens: Int, reason: String): Boolean {
+            limitCalls++
+            limitedTo = maxTokens
+            ended.countDown()
+            return true
+        }
+
+        override fun takeCutoff(): String? = when {
+            stoppedFor != null -> "Stopped early — $stoppedFor"
+            limitedTo != null -> "Kept short — heating"
+            else -> null
+        }
+    }
+
+    private val gib = 1024L * 1024 * 1024
+    private val cool = DeviceState(totalMemBytes = 8 * gib, availMemBytes = 4 * gib)
+
+    private fun prompt() = PromptAssembler.assemble(
+        "what should I do",
+        listOf(RetrievedChunk(KnowledgeDocument("d0", SourceApp.LIFEOPS, "task", "Mow the lawn", "Task: Mow the lawn"), 1.0))
+    )
+
+    private fun engine(backend: LlmBackend, state: () -> DeviceState) =
+        Qwen3LlmEngine(backend, device = { state() }, watchEveryMillis = 5)
+
+    @Test
+    fun a_phone_that_gets_too_hot_mid_answer_stops_it_and_keeps_the_text() {
+        val backend = SlowBackend()
+        val state = AtomicReference(cool)
+        val engine = engine(backend) { state.get() }
+        engine.admit()
+        state.set(cool.copy(thermal = ThermalLevel.SEVERE))
+
+        val answer = engine.generate(prompt())
+
+        assertEquals("phone is very hot", backend.stoppedFor)
+        assertEquals("Mow the lawn.\n\n(Stopped early — phone is very hot.)", answer)
+    }
+
+    @Test
+    fun a_forecast_of_throttling_stops_it_before_the_status_moves() {
+        val backend = SlowBackend()
+        val state = AtomicReference(cool)
+        val engine = engine(backend) { state.get() }
+        engine.admit()
+        state.set(cool.copy(thermal = ThermalLevel.LIGHT, thermalHeadroom = 1.05f))
+
+        engine.generate(prompt())
+
+        assertEquals("phone is about to throttle", backend.stoppedFor)
+    }
+
+    @Test
+    fun a_phone_that_warms_mid_answer_shortens_it_once() {
+        val backend = SlowBackend()
+        val state = AtomicReference(cool)
+        val engine = engine(backend) { state.get() }
+        engine.admit()
+        state.set(cool.copy(thermal = ThermalLevel.MODERATE))
+
+        engine.generate(prompt())
+
+        assertEquals(256, backend.limitedTo)
+        assertEquals(null, backend.stoppedFor)
+        Thread.sleep(50)
+        assertEquals("shortened once, not every reading", 1, backend.limitCalls)
+    }
+
+    @Test
+    fun a_turn_that_started_reduced_is_not_shortened_again() {
+        val backend = SlowBackend()
+        val hot = cool.copy(thermal = ThermalLevel.MODERATE)
+        val engine = engine(backend) { hot }
+        engine.admit()
+        backend.ended.countDown()  // nothing will end it otherwise; let it finish on its own
+
+        engine.generate(prompt())
+        Thread.sleep(50)
+
+        assertEquals(0, backend.limitCalls)
+    }
+
+    @Test
+    fun memory_never_stops_an_answer_already_running() {
+        val backend = SlowBackend()
+        val state = AtomicReference(cool)
+        val engine = engine(backend) { state.get() }
+        engine.admit()
+        state.set(cool.copy(availMemBytes = gib / 4, lowMemory = true))
+        Thread {
+            Thread.sleep(100)
+            backend.ended.countDown()
+        }.start()
+
+        assertEquals("Mow the lawn.", engine.generate(prompt()))
+        assertEquals(null, backend.stoppedFor)
+    }
+
+    @Test
+    fun a_stop_the_backend_could_not_take_yet_is_asked_for_again() {
+        // Native refuses a stop until the call is armed (the model may still be loading).
+        val backend = SlowBackend().apply { notArmedFor = 3 }
+        val state = AtomicReference(cool)
+        val engine = engine(backend) { state.get() }
+        engine.admit()
+        state.set(cool.copy(thermal = ThermalLevel.CRITICAL))
+
+        engine.generate(prompt())
+
+        assertEquals("phone is critically hot", backend.stoppedFor)
+    }
+
+    @Test
+    fun the_watcher_stops_when_the_answer_does() {
+        val backend = SlowBackend().apply { ended.countDown() }
+        val readings = AtomicInteger()
+        val engine = Qwen3LlmEngine(backend, device = { readings.incrementAndGet(); cool }, watchEveryMillis = 5)
+        engine.admit()
+        engine.generate(prompt())
+        val after = readings.get()
+        Thread.sleep(60)
+        assertEquals("no readings once the answer is done", after, readings.get())
     }
 }

@@ -53,6 +53,16 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
     /** Ground-truth diagnostic for the model card — the loaded file, or why it's still placeholder. */
     val modelStatus: String get() = repo.modelStatus
 
+    /**
+     * The phone's side of the model card — memory, heat, power, and what they allow right now. A
+     * snapshot, refreshed when the card is shown rather than streamed: it is for "why is it slow /
+     * paused?", not a dashboard.
+     */
+    private val _deviceStatus = MutableStateFlow<String?>(null)
+    val deviceStatus: StateFlow<String?> = _deviceStatus.asStateFlow()
+
+    fun refreshDeviceStatus() = viewModelScope.launch { _deviceStatus.value = repo.deviceStatus() }
+
     val permissions: StateFlow<AdvisorPermissions> =
         repo.observePermissions().stateIn(
             viewModelScope, SharingStarted.WhileSubscribed(5_000), AdvisorPermissions.NONE

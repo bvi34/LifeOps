@@ -128,6 +128,11 @@ private fun ModelCard(vm: AdvisorViewModel) {
     Text(vm.model.label(), style = MaterialTheme.typography.bodyMedium)
     // Ground truth from the backend: the loaded file, or exactly why it's still the placeholder.
     Text("Status: ${vm.modelStatus}", style = MaterialTheme.typography.bodySmall)
+    // The phone's half of the answer: a model can be installed and loadable and still be running
+    // short, or not at all, because the device is hot, saving power or out of memory.
+    val deviceStatus by vm.deviceStatus.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.refreshDeviceStatus() }
+    deviceStatus?.let { Text("Device: $it", style = MaterialTheme.typography.bodySmall) }
 
     when (val s = modelState) {
         is ModelUiState.Importing -> {

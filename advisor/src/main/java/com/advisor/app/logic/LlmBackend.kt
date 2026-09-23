@@ -69,6 +69,47 @@ interface LlmBackend {
      */
     fun warmUp() {}
 
+    /**
+     * Whether the weights are in memory right now — as opposed to [isReady], which only says they
+     * *could* be. The difference is what the memory policy turns on: a resident model's cost is
+     * already paid, a cold one's is about to be.
+     */
+    val isLoaded: Boolean get() = isReady
+
+    /** Size of the weights this backend would load, in bytes; 0 when there is nothing to load. */
+    val modelBytes: Long get() = 0L
+
+    /**
+     * Give the weights' memory back if nothing is using it, because the system asked. Must not block:
+     * it is called from the main thread, and a generation in progress keeps its model — the next
+     * question would only have to load it again. Returns whether anything was released. The next
+     * [generate] or [warmUp] loads the model again.
+     */
+    fun trim(): Boolean = false
+
+    /**
+     * Stop a generation in progress as soon as the model can, keeping what it has written so far.
+     * [reason] is a short phrase for the answer's footnote. Safe to call from any thread. Returns
+     * false when nothing was running to stop — including a generation that has not started decoding
+     * yet (the model is still loading), so a caller that means it should ask again.
+     */
+    fun interrupt(reason: String): Boolean = false
+
+    /**
+     * Lower the reply limit of a generation in progress to [maxTokens]. Past it the model is not cut
+     * mid-word: it finishes the sentence it is in (within a small allowance) and stops. Only ever
+     * lowers. Same threading and return value as [interrupt].
+     */
+    fun limitTokens(maxTokens: Int, reason: String): Boolean = false
+
+    /**
+     * The footnote for how the last generation was cut short — "Stopped early — …" or "Kept short —
+     * …" — or null if it ended on its own. Only a cut that actually took effect counts: a limit the
+     * answer never reached leaves nothing to explain. Cleared by reading, so a note never outlives
+     * the answer it belongs to.
+     */
+    fun takeCutoff(): String? = null
+
     /** Release native resources. Safe to call more than once. */
     fun close() {}
 
