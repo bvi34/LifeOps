@@ -83,7 +83,7 @@ dependencies {
     // so a fingerprint can stand in for typing thirty characters. It is never the root of trust —
     // see data/DeviceUnlock, which is the file that explains why that distinction is the whole
     // point of this app.
-    implementation(libs.androidx.security.crypto)
+    implementation(project(":securestore"))
     // Reading the QR code a site shows when it hands over a second-factor seed. `zxing-core` is
     // plain Java — the decoder, with no Android in it and no network anywhere near it — and
     // `zxing-android-embedded` is the camera half. People already takes both for partner pairing,

@@ -88,7 +88,7 @@ dependencies {
     // trust — the vault's copy is the one a new phone recovers from, which is what makes the store
     // in an archive unreadable until Secrets is. Secrets draws the same distinction for its own
     // convenience unlock; see messages/seal/SessionCipher.
-    implementation(libs.androidx.security.crypto)
+    implementation(project(":securestore"))
     implementation(libs.kotlinx.coroutines.android)
     // The appearance documents, stored as JSON rather than as thirty preference keys that have to
     // be kept in step with two data classes by hand. Pure JVM, and already in the catalogue.

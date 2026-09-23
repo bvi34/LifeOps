@@ -256,7 +256,7 @@ class AutoBackupRulesTest {
          * Every preferences file in the suite that holds a credential.
          *
          * The container's two are read from the classes that own them, so a rename cannot leave
-         * this list pointing at a file that no longer exists. The four hosted ones are spelled out,
+         * this list pointing at a file that no longer exists. The hosted ones are spelled out,
          * for the same reason `BackupCoverageTest` spells them out: each is a `private const` inside
          * its app, kept private on purpose (the name is deliberately outside its app's backup
          * prefix, which is the mechanism keeping it out of the sandbox's archive), and opening them
@@ -270,6 +270,10 @@ class AutoBackupRulesTest {
             "secure_finance_access",
             // Secrets: the vault key wrapped by this phone's Keystore.
             "secure_secrets_device",
+            // Utilities: the key the sealed-message store is encrypted with, and its unencrypted
+            // fallback — the one file in this list that is a working key in plain text.
+            "secure_utilities_seal_key",
+            "secure_utilities_seal_key_plain",
             // The container's own, and their unencrypted fallbacks.
             UpdatePrefs.SECRETS_PREFS,
             UpdatePrefs.SECRETS_PREFS_PLAIN,

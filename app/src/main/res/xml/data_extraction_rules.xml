@@ -20,6 +20,8 @@
         <exclude domain="sharedpref" path="opds_catalog_access.xml" />
         <exclude domain="sharedpref" path="secure_finance_access.xml" />
         <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+        <exclude domain="sharedpref" path="secure_utilities_seal_key.xml" />
+        <exclude domain="sharedpref" path="secure_utilities_seal_key_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />
         <exclude domain="sharedpref" path="sandbox_update_secrets_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />
@@ -35,6 +37,8 @@
         <exclude domain="sharedpref" path="opds_catalog_access.xml" />
         <exclude domain="sharedpref" path="secure_finance_access.xml" />
         <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+        <exclude domain="sharedpref" path="secure_utilities_seal_key.xml" />
+        <exclude domain="sharedpref" path="secure_utilities_seal_key_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />
         <exclude domain="sharedpref" path="sandbox_update_secrets_plain.xml" />
         <exclude domain="sharedpref" path="sandbox_cloud_backup_secrets.xml" />

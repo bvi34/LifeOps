@@ -12,9 +12,20 @@
 
     <!-- The suite is sideloaded — built from a git tag by GitHub Actions and published as a
          release — so the container has to be able to install its own successor. This permission
-         does not grant the install; since Android 8 it only makes the app *eligible* to ask, and
-         the user still has to allow it per-app in Settings and then confirm the install itself. -->
+         does not grant the install; it only makes the app *eligible* to ask, and the user still has
+         to allow it per-app in Settings. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- Lets an install session skip the confirmation screen when the sandbox installed the
+         version being replaced — which it did, from the second self-update on. Normal protection:
+         granted at install, and it grants nothing on its own. The Install button is still a tap;
+         only the system dialog after it goes. See update/SelfInstaller. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+
+    <!-- What SelfInstaller's setRequestUpdateOwnership needs: the sandbox becomes the app that
+         updates itself, so a different installer replacing it has to say so first. Normal
+         protection, granted at install. -->
+    <uses-permission android:name="android.permission.ENFORCE_UPDATE_OWNERSHIP" />
 
     <application
         android:name=".SandboxApplication"
@@ -39,19 +50,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Hands the downloaded APK to the system installer. A content:// URI is required: a
-             file:// one has thrown FileUriExposedException since Android 7. Named distinctly from
-             the hosted apps' providers for the reason LifeOpsFileProvider explains — they all live
-             in this one process. -->
-        <provider
-            android:name=".update.UpdateFileProvider"
-            android:authorities="${applicationId}.updates.fileprovider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/update_file_paths" />
-        </provider>
+        <!-- Where an install session reports back (see update/SelfInstaller). Not exported: the
+             only sender is the platform installer, through a PendingIntent this app created. -->
+        <receiver
+            android:name=".update.InstallStatusReceiver"
+            android:exported="false" />
 
     </application>
 

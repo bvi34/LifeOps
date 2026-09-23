@@ -9,6 +9,7 @@ import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.ConnectRecordEntity
 import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
@@ -32,12 +33,13 @@ import com.health.app.data.db.entities.SymptomEntity
  * that lies about its schema is worse than no manifest. (Both LifeOps and Logistics learned this the
  * hard way; Health starts where they ended up.)
  */
-const val HEALTH_DB_VERSION = 9
+const val HEALTH_DB_VERSION = 10
 
 /**
  * Health's own store: people, everything recorded about them, the medicine cabinet those records
  * draw on, the coverage that pays for it, the care team that provides it, and — since v7 — the
- * standing record of what is true about a person between illnesses.
+ * standing record of what is true about a person between illnesses, and — since v10 — what Health
+ * Connect held about the household's primary user.
  * Nothing here is shared with, or
  * sourced from, another app's database — no other module in the suite owns household health data —
  * so unlike Logistics there is no cross-app catalog bridge, only this one file.
@@ -70,7 +72,8 @@ const val HEALTH_DB_VERSION = 9
         AllergyEntity::class,
         ConditionEntity::class,
         ImmunizationEntity::class,
-        DocumentEntity::class
+        DocumentEntity::class,
+        ConnectRecordEntity::class
     ],
     version = HEALTH_DB_VERSION,
     exportSchema = true

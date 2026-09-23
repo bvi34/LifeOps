@@ -10,10 +10,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.operations.sandbox.update.SelfInstaller
 import com.operations.sandbox.update.UpdatePrefs
 import com.operations.sandbox.update.Updater
 import com.operations.sandbox.update.logic.AvailableRelease
 import com.operations.sandbox.update.logic.InstallCompatibility
+import com.operations.sandbox.update.logic.InstallOutcome
 import com.operations.sandbox.update.logic.ReleaseFeed
 import com.operations.sandbox.update.logic.ReleaseLookup
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +57,13 @@ sealed interface UpdateState {
     ) : UpdateState
 
     /**
+     * The APK has been handed to the package installer and the install is running — waiting on the
+     * user's confirmation if Android asked for one. [ready] is where to go back to if it doesn't
+     * finish: the download is still on disk.
+     */
+    data class Installing(val ready: ReadyToInstall) : UpdateState
+
+    /**
      * The check ended without an update to offer, and the reason is worth saying out loud.
      *
      * [title] varies because not every one of these is a failure to *check*: "the newest release
@@ -75,8 +84,8 @@ sealed interface UpdateState {
  *
  * The shell asks GitHub at launch, at most once every six hours, and that is the *only* thing it
  * does on its own: a check that finds something puts a line on the home screen and stops there.
- * Downloading is a tap and installing is another, because the installer takes over the screen and
- * that should never happen unbidden. The launch check can be switched off entirely on the Updates
+ * Downloading is a tap and installing is another, because an install closes the app and that should
+ * never happen unbidden. The launch check can be switched off entirely on the Updates
  * tab, after which nothing here touches the network unless a button is pressed.
  */
 @Stable
@@ -84,7 +93,8 @@ class UpdateController(
     private val context: Context,
     private val updater: Updater,
     private val prefs: UpdatePrefs,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val installer: SelfInstaller = SelfInstaller(context)
 ) {
     var state by mutableStateOf<UpdateState>(UpdateState.Idle)
         private set
@@ -98,6 +108,7 @@ class UpdateController(
             is UpdateState.Available -> s.release
             is UpdateState.Downloading -> s.release
             is UpdateState.ReadyToInstall -> s.release
+            is UpdateState.Installing -> s.ready.release
             else -> null
         }
 
@@ -155,7 +166,7 @@ class UpdateController(
     }
 
     fun check(silent: Boolean = false) {
-        if (state is UpdateState.Checking || state is UpdateState.Downloading) return
+        if (state is UpdateState.Checking || state is UpdateState.Downloading || state is UpdateState.Installing) return
         // A download already waiting to be installed outranks any check: re-checking would throw
         // away a finished download to tell the user about the release they already have on disk.
         if (state is UpdateState.ReadyToInstall && silent) return
@@ -248,7 +259,7 @@ class UpdateController(
      * had half-forgotten about finished — is startling in a way that a button is not.
      */
     fun download(release: AvailableRelease) {
-        if (state is UpdateState.Downloading) return
+        if (state is UpdateState.Downloading || state is UpdateState.Installing) return
         job?.cancel()
         job = scope.launch {
             state = UpdateState.Downloading(release, 0f)
@@ -286,17 +297,52 @@ class UpdateController(
     }
 
     /**
-     * Start the system installer, or send the user to grant this app the right to do so.
+     * Whether pressing Install should go straight through, with no confirmation from Android. Read
+     * once: the answer changes only when an install replaces this process.
+     */
+    val installsWithoutPrompt: Boolean by lazy { installer.installsWithoutPrompt() }
+
+    init {
+        // What the installer said about the session [install] committed. The receiver publishes
+        // into a process-wide flow because it has no reference to this controller.
+        scope.launch {
+            SelfInstaller.outcomes.collect { outcome ->
+                val installing = state as? UpdateState.Installing ?: return@collect
+                state = when (outcome) {
+                    // Android is showing its confirmation screen; the install is still running.
+                    InstallOutcome.AwaitingConfirmation -> installing
+                    // The process is about to be replaced. Nothing to draw that will be seen.
+                    InstallOutcome.Installed -> installing
+                    InstallOutcome.Cancelled -> installing.ready
+                    is InstallOutcome.Failed -> UpdateState.Failed(outcome.message, title = outcome.title)
+                }
+            }
+        }
+    }
+
+    /**
+     * Install the downloaded APK over this app, or send the user to grant this app the right to.
      *
      * Returns false when it did the latter, so the screen can explain what just took them to
      * Settings instead of installing.
      */
-    fun install(apk: File): Boolean {
+    fun install(ready: UpdateState.ReadyToInstall): Boolean {
         if (!updater.canInstallPackages()) {
             context.startActivity(updater.unknownSourcesSettingsIntent())
             return false
         }
-        context.startActivity(updater.installIntent(apk))
+        job?.cancel()
+        state = UpdateState.Installing(ready)
+        job = scope.launch {
+            runCatching { installer.install(ready.apk) }.onFailure { failure ->
+                if (state is UpdateState.Installing) {
+                    state = UpdateState.Failed(
+                        title = "Not installed",
+                        message = "Couldn't hand the update to Android: ${failure.message ?: "unknown error"}"
+                    )
+                }
+            }
+        }
         return true
     }
 

@@ -470,9 +470,46 @@ object HealthMigrations {
         }
     }
 
+    /**
+     * v10 is somewhere to put what Health Connect holds about the primary user.
+     *
+     * One table for every kind, rather than one per kind: Health Connect has more than forty, it
+     * adds more, and each one's shape beyond a time and a headline number lives in `detail` as JSON.
+     * A new kind is a new `ConnectKind`, not a new migration.
+     *
+     * Nothing existing is touched. The readings Health mirrors from here — weight, blood pressure,
+     * temperature, resting heart rate — go into `readings` as ordinary rows, whose ids start `hc-`.
+     */
+    val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS connect_records (" +
+                    "id TEXT NOT NULL PRIMARY KEY, " +
+                    "profileId TEXT NOT NULL, " +
+                    "kind TEXT NOT NULL, " +
+                    "startAt INTEGER NOT NULL, " +
+                    "endAt INTEGER, " +
+                    "zoneOffsetSeconds INTEGER, " +
+                    "value REAL, " +
+                    "secondaryValue REAL, " +
+                    "detail TEXT, " +
+                    "source TEXT, " +
+                    "device TEXT, " +
+                    "modifiedAt INTEGER NOT NULL, " +
+                    "importedAt INTEGER NOT NULL)"
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS index_connect_records_profileId_kind_startAt " +
+                    "ON connect_records(profileId, kind, startAt)"
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS index_connect_records_startAt ON connect_records(startAt)")
+        }
+    }
+
     /** In order, for [HealthDatabase.getInstance]. */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5,
-        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9
+        MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
+        MIGRATION_9_10
     )
 }

@@ -104,10 +104,10 @@ dependencies {
     implementation(libs.gson)
     // The one dependency Finance has that the other apps mostly don't need: an access token that can
     // read a bank account is the most sensitive string in the suite, so it is kept in
-    // EncryptedSharedPreferences (hardware-backed keystore where there is one) rather than in a
-    // plain XML file beside the "which tab were you on" state. Citation already takes this for its
-    // catalogue logins; this is the stronger version of the same case.
-    implementation(libs.androidx.security.crypto)
+    // a store sealed by its own Android Keystore key rather than in a plain XML file beside the
+    // "which tab were you on" state. Citation already takes this for its catalogue logins; this is
+    // the stronger version of the same case.
+    implementation(project(":securestore"))
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

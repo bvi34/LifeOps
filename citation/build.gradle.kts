@@ -163,8 +163,12 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
-    // Encrypted-at-rest storage (Android Keystore) for the library card + PIN.
-    implementation(libs.androidx.security.crypto)
+    // Encrypted-at-rest storage (Android Keystore) for the library card + PIN and catalogue sign-ins.
+    implementation(project(":securestore"))
+    // Credential Manager's client half, so the sign-in forms can offer a saved password — from
+    // Secrets, which is the phone's credential provider, or whichever manager the household uses.
+    // Android 14's own API underneath; nothing from Play Services.
+    implementation(libs.androidx.credentials)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

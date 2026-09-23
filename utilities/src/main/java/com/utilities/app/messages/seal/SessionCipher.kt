@@ -3,9 +3,8 @@ package com.utilities.app.messages.seal
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.operations.backupkit.AppId
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
 import com.operations.vaultkit.SecretsAccess
@@ -28,7 +27,7 @@ import java.security.SecureRandom
  * key bound to one handset would make the archive unreadable on the next one, which is the failure
  * the whole vault was built to fix. It is kept:
  *
- *  - **locally**, in an `EncryptedSharedPreferences` behind an Android Keystore key, so that reading
+ *  - **locally**, in a store sealed by an Android Keystore key of its own, so that reading
  *    a message does not need the vault to be open. A messaging app that could not show a text until
  *    somebody had typed a passphrase would be a messaging app nobody keeps;
  *  - **in the vault**, so that a restore onto a new phone can get it back. That copy is the one that
@@ -149,27 +148,11 @@ class SessionCipher(context: Context) {
     }
 
     /**
-     * The Keystore-backed store, rebuilt empty if it has become unreadable.
-     *
-     * Losing it is survivable in a way it is not for Secrets: the key is also in the vault, so the
-     * next read finds it there and writes it back.
+     * The Keystore-backed store, sealed by a key of its own (see `:securestore`). A file that
+     * outlived its key opens empty, and losing it is survivable in a way it is not for Secrets: the
+     * key is also in the vault, so the next read finds it there and writes it back.
      */
-    private fun localPrefs(): SharedPreferences = runCatching { build() }.getOrElse { failure ->
-        Log.w(TAG, "Sealed key store unreadable (likely a reinstall or restore); rebuilding it", failure)
-        runCatching { app.getSharedPreferences(SECURE_PREFS, Context.MODE_PRIVATE).edit().clear().commit() }
-        build()
-    }
-
-    private fun build(): SharedPreferences {
-        val master = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        return EncryptedSharedPreferences.create(
-            app,
-            SECURE_PREFS,
-            master,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
-    }
+    private fun localPrefs(): SharedPreferences = SecureStore.open(app, SECURE_PREFS)
 
     private fun plainPrefs(): SharedPreferences = app.getSharedPreferences(PLAIN_PREFS, Context.MODE_PRIVATE)
 

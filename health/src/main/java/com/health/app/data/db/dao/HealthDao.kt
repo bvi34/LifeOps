@@ -8,6 +8,8 @@ import com.health.app.data.db.entities.AllergyEntity
 import com.health.app.data.db.entities.CabinetItemEntity
 import com.health.app.data.db.entities.CareNoteEntity
 import com.health.app.data.db.entities.ConditionEntity
+import com.health.app.data.db.entities.ConnectKindCount
+import com.health.app.data.db.entities.ConnectRecordEntity
 import com.health.app.data.db.entities.DocumentEntity
 import com.health.app.data.db.entities.DoseEntity
 import com.health.app.data.db.entities.DrugFactsEntity
@@ -114,6 +116,8 @@ interface HealthDao {
         // Their documents go too. A household document (profileId null) is nobody's to delete here,
         // and stays: an insurance statement is not about the person who has left.
         deleteDocumentsForProfile(profileId)
+        // And what was imported from Health Connect while they were the primary user.
+        deleteConnectRecordsForProfile(profileId)
         deleteProfileRow(profileId)
     }
 
@@ -706,4 +710,80 @@ interface HealthDao {
     /** The file names a profile's documents point at, read before the cascade drops the rows. */
     @Query("SELECT fileName FROM documents WHERE profileId = :profileId")
     suspend fun documentFileNamesForProfile(profileId: String): List<String>
+
+    // --- Health Connect imports (see connect/ and ConnectStore) ---
+
+    @Upsert
+    suspend fun upsertConnectRecords(records: List<ConnectRecordEntity>)
+
+    @Query("DELETE FROM connect_records WHERE id IN (:ids)")
+    suspend fun deleteConnectRecords(ids: List<String>)
+
+    @Query("DELETE FROM readings WHERE id IN (:ids)")
+    suspend fun deleteReadings(ids: List<String>)
+
+    @Query("DELETE FROM connect_records WHERE profileId = :profileId")
+    suspend fun deleteConnectRecordsForProfile(profileId: String)
+
+    /** Every import, whoever it was filed under — what "Delete imported data" means. */
+    @Query("DELETE FROM connect_records")
+    suspend fun deleteAllConnectRecords()
+
+    /** The readings mirrored from Health Connect, which are the only ones whose ids start `hc-`. */
+    @Query("DELETE FROM readings WHERE id LIKE 'hc-%'")
+    suspend fun deleteMirroredReadings()
+
+    @Query("DELETE FROM connect_records WHERE profileId = :profileId AND kind IN (:kinds)")
+    suspend fun deleteConnectRecordsOfKinds(profileId: String, kinds: List<String>)
+
+    @Query("SELECT id FROM connect_records WHERE profileId = :profileId AND kind IN (:kinds)")
+    suspend fun connectRecordIdsOfKinds(profileId: String, kinds: List<String>): List<String>
+
+    @Query(
+        "SELECT kind, COUNT(*) AS count, MAX(COALESCE(endAt, startAt)) AS latestAt " +
+            "FROM connect_records WHERE profileId = :profileId GROUP BY kind"
+    )
+    fun observeConnectKindCounts(profileId: String): Flow<List<ConnectKindCount>>
+
+    @Query(
+        "SELECT * FROM connect_records WHERE profileId = :profileId AND kind = :kind " +
+            "ORDER BY startAt DESC LIMIT :limit"
+    )
+    fun observeConnectRecords(profileId: String, kind: String, limit: Int): Flow<List<ConnectRecordEntity>>
+
+    /**
+     * Everything that ended (or happened) at or after [since], for the day summaries. A record is
+     * counted towards the day it ended in, so the window is on the end.
+     */
+    @Query(
+        "SELECT * FROM connect_records WHERE profileId = :profileId " +
+            "AND COALESCE(endAt, startAt) >= :since ORDER BY startAt"
+    )
+    fun observeConnectRecordsSince(profileId: String, since: Long): Flow<List<ConnectRecordEntity>>
+
+    @Query("SELECT * FROM connect_records WHERE id = :id")
+    suspend fun getConnectRecord(id: String): ConnectRecordEntity?
+
+    @Query("SELECT COUNT(*) FROM connect_records WHERE profileId = :profileId")
+    suspend fun connectRecordCount(profileId: String): Int
+
+    /** Move what was imported for one person onto another — the primary user was the wrong one. */
+    @Transaction
+    suspend fun reassignConnectRecords(fromProfileId: String, toProfileId: String) {
+        moveConnectRecords(fromProfileId, toProfileId)
+        moveMirroredReadings(fromProfileId, toProfileId)
+    }
+
+    @Query("UPDATE connect_records SET profileId = :toProfileId WHERE profileId = :fromProfileId")
+    suspend fun moveConnectRecords(fromProfileId: String, toProfileId: String)
+
+    /**
+     * The mirrored readings follow, and lose the illness they were filed under: that illness was
+     * the other person's.
+     */
+    @Query(
+        "UPDATE readings SET profileId = :toProfileId, episodeId = NULL " +
+            "WHERE profileId = :fromProfileId AND id LIKE 'hc-%'"
+    )
+    suspend fun moveMirroredReadings(fromProfileId: String, toProfileId: String)
 }

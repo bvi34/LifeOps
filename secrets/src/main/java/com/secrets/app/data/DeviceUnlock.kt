@@ -5,10 +5,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.VaultCrypto
-import java.security.KeyStore
 
 /**
  * The fingerprint shortcut: the vault key, wrapped by the Android Keystore, so that opening the app
@@ -45,7 +43,7 @@ import java.security.KeyStore
  *
  * ## What is stored
  *
- * The 32 raw bytes of the vault key, Base64'd into an `EncryptedSharedPreferences` file whose name
+ * The 32 raw bytes of the vault key, Base64'd into a Keystore-sealed store file whose name
  * — `secure_secrets_device` — deliberately does not begin with `secrets`. That prefix is what the
  * backup contributor collects, so this file cannot be swept into an archive even by a later change
  * that relaxes a filter: the exclusion is a property of the name. It is the same trick
@@ -124,55 +122,17 @@ class DeviceUnlock(context: Context) {
          * vault safe to back up.
          */
         const val PREFS_NAME = "secure_secrets_device"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
 
         const val KEY_VAULT_KEY = "vault_key"
 
-        fun openPrefs(context: Context): SharedPreferences =
-            runCatching { buildPrefs(context) }.getOrElse { failure ->
-                // The same recovery Finance and Citation take: the encrypted file can outlive the
-                // hardware-bound master key that wrapped it, and here the consequence is only that
-                // the shortcut is gone. The vault itself is untouched — it was never protected by
-                // this key — so the household types their passphrase and turns the shortcut back on.
-                Log.w(TAG, "Device key store unreadable (likely reinstall/restore); rebuilding it", failure)
-                wipeCorruptStore(context)
-                buildPrefs(context)
-            }
-
-        fun buildPrefs(context: Context): SharedPreferences {
-            val key = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            return EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                key,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }
-
         /**
-         * Drop the unreadable keyset and the master key that failed to open it.
+         * Open the store: its own file behind its own Keystore key (see `:securestore`).
          *
-         * The master key alias is androidx.security's default, which every app in the suite that
-         * keeps an encrypted store shares. Deleting it therefore affects Finance's and Citation's
-         * stores too — and that reads worse than it is: this path only runs when the key can no
-         * longer open a file it wrote, which means those stores are already unreadable for the same
-         * reason. They rebuild themselves empty exactly as they do today, and the credentials they
-         * lose are now the ones the vault gives back on the next read (see
-         * `com.operations.vaultkit.ManagedSecrets`).
+         * If the file outlived that key — a reinstall, a restore — it opens empty and the shortcut is
+         * simply gone. The vault itself is untouched, since it was never protected by this key, so the
+         * household types their passphrase and turns the shortcut back on. Unlike the store this replaced,
+         * recovering here touches no other app's key.
          */
-        fun wipeCorruptStore(context: Context) {
-            runCatching {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
-            }
-            runCatching {
-                val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-                if (ks.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
-                    ks.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-                }
-            }
-        }
+        fun openPrefs(context: Context): SharedPreferences = SecureStore.open(context, PREFS_NAME)
     }
 }

@@ -714,6 +714,79 @@ Nothing in the future can be entered. The date picker won't offer it and the tim
 temperature that hasn't been taken yet is a typo, and `DoseSchedule` takes future-dated doses
 seriously enough to ignore them for exactly that reason.
 
+## Health Connect — the primary user's own data
+
+Android 14 and later keep **Health Connect** in the platform: the phone's own health store, which the
+watch, the scale, the running app and the period tracker a household already uses all write into.
+Health reads it — every kind of data Health Connect has, and the medical records where the phone
+offers them — into `health.db`, beside everything typed in by hand. It is reached from the button in
+Health's top bar, on every tab.
+
+### The primary user
+
+Health keeps records for a whole household; Health Connect holds one person's — whoever the phone
+belongs to. So before anything is read, somebody says **whose** it is: the **primary user**, chosen
+at the top of the Health Connect screen. Everything imported is filed under that profile, and nothing
+is imported until one is chosen. It is a preference (`HealthPrefs.primaryProfileId`), not a column,
+because it is a fact about the phone rather than the person.
+
+Changing it later asks what to do with what was already imported: **move it** (the first choice was a
+mistake — those were the new person's all along) or **leave it** (the phone has changed hands, and the
+old records really are the old owner's; only new imports go to the new person).
+
+### What is read, and how
+
+- **Every record type Health Connect has** — activity (steps, distance, calories, floors, exercise
+  sessions with their laps and segments, speed, power, cadence), body measurements, vitals (heart rate
+  series, resting heart rate, HRV, blood pressure, glucose, temperatures, oxygen, breathing rate,
+  VO₂ max), sleep sessions with their stages, nutrition with every nutrient a meal named, water, cycle
+  tracking, and mindfulness. Exercise *routes* are the one thing not read: Health Connect asks for
+  consent per route, and a GPS trail is not health data Health needs.
+- **Medical records** — vaccinations, allergies, conditions, medications, lab results, clinical vital
+  signs, procedures, visits and the rest, as the FHIR resources their source sent. Only where the
+  phone's Health Connect has the feature.
+
+Each record becomes one row in **`connect_records`**: its time, one headline number in the unit
+`logic/ConnectKind` names, and everything else it carried as JSON in `detail`. Nothing Health Connect
+held is thrown away on the way in. The row's id is Health Connect's own, so a record that arrives
+twice is kept once.
+
+The first import reads everything Health Connect will give — all of history if "access past data" is
+allowed, otherwise the thirty days it allows without. After that each import asks only for **what
+changed**, through Health Connect's changes token, and honours deletions made at the source. Medical
+records have no change feed, so they are re-read whole and swapped in. Imports run when Health is
+opened (at most every fifteen minutes), when *Import now* is pressed, and every four hours in the
+background if "access data in the background" is allowed.
+
+### Four kinds are mirrored into readings
+
+Weight, blood pressure, body temperature and resting heart rate already have a home in Health — the
+Vitals tab, the chart, the fever rules, "when was that last taken?" beside a condition, and Advisor.
+Imported ones are **mirrored** into `readings` as ordinary rows (ids starting `hc-`, note *From Health
+Connect*) so all of those see them, and a smart thermometer's 38.4 °C in the ear gets the same verdict
+a typed one would. A number outside `logic/Vitals` is kept in `connect_records` but not mirrored.
+
+Oxygen, breathing rate and the heart-rate series are **not** mirrored: a watch writes them every few
+minutes all night, and four hundred overnight oxygen readings would bury the one taken by hand during
+a chest infection. They are all on the Health Connect screen.
+
+### Day totals, and the second device
+
+The Health Connect screen shows the primary user's **today**: amounts (steps, distance, calories,
+water, sleep) added up, states (weight, resting heart rate) as the latest reading. A phone and a watch
+both count steps and both write them to Health Connect; adding them together would count one walk
+twice. Health can't read the priority order Health Connect uses to choose between them, so it takes
+**the largest single source** — never more than was walked. A night's sleep counts towards the
+morning it ended in. See `ConnectSummaries`.
+
+### The line it holds
+
+Read-only: Health writes nothing to Health Connect. What it reads stays in `health.db` and goes only
+where the rest of Health's records go — the suite's own backup. The manifest lists every permission
+because every kind is imported; Health Connect's own screen is where the household chooses which to
+allow, and **Disconnect** hands every grant back. *Delete everything imported* removes the rows and
+their mirrored readings and nothing typed by hand.
+
 ## Module layout
 
 ```
@@ -778,7 +851,7 @@ not read People's database; the roster is replicated over a mailbox, not borrowe
 
 ## Storage
 
-One `health.db`, nineteen tables:
+One `health.db`, twenty tables:
 
 - **`profile_tombstones`** — profiles removed here, kept only long enough to publish the un-tick so
   the next round doesn't hand the person straight back. See PEOPLE.md.
@@ -788,7 +861,11 @@ One `health.db`, nineteen tables:
   `syncVersion` that make a profile a peer's view of a household member. *Schema v2 adds those two
   via `MIGRATION_1_2`; the colour, baseline and notes are Health's own and never leave it.*
 - **`readings`** — every measurement, in the canonical unit for its type (temperature always in °C,
-  weight always in kg), with the site for temperatures and a nullable episode link.
+  weight always in kg), with the site for temperatures and a nullable episode link. Rows whose id
+  starts `hc-` are mirrored from Health Connect.
+- **`connect_records`** — *schema v10*: every record imported from Health Connect for the primary
+  user, keyed by Health Connect's own id — time, headline number, the source app and device, and the
+  rest of the record as JSON. See *Health Connect* above.
 - **`symptoms`** — name, severity 1–5, started, ended (null while it's still going).
 - **`medications`** — **one person's use of a product**: their dose, the label's limits (every one
   nullable), their reminder setting, and the two links that keep it from duplicating anything —

@@ -151,6 +151,11 @@ the receipts.
 > device**: the drug lookup asks what a medicine *is*, never who takes it, and the directory check
 > asks about a *doctor*, never about anybody in the household — no member number, no profile, ever.
 > That is the line it holds. It records; it does not give medical advice.
+>
+> It also reads **Health Connect** — every kind of data the phone's own health store holds, from
+> steps and sleep stages to lab results — for the household's **primary user**, the one person the
+> phone belongs to, chosen before anything is read. Read-only, kept in `health.db`, and weight,
+> blood pressure, temperature and resting heart rate land on the Vitals tab like typed readings.
 
 > **Project** (the document and planning repository) is a peer module — see **[docs/PROJECT.md](docs/PROJECT.md)**.
 > It owns *the work you are making*: a shelf of projects, and inside each one five ways of looking at
@@ -592,6 +597,14 @@ the receipts.
 > passkey signature failing to verify over client data it was not made for. The codes themselves
 > are checked against **RFC 6238's own test vectors** on all three hashes, which is the only test
 > worth having for a generator whose failure mode is six plausible digits that no site accepts.
+>
+> On the phone itself, every app's working copy of a credential — Citation's sign-ins, Finance's bank
+> tokens, the fingerprint shortcut, Utilities' message key, the updater's token, the backup
+> signature — sits in **`:securestore`**: a preferences file sealed with an Android Keystore key
+> that belongs to that file alone. An unreadable one (a reinstall, a restore) opens empty on its own
+> without touching any other app's key, and files written by the old EncryptedSharedPreferences are
+> moved across the first time they open. Citation's sign-in forms can also **fill from a saved
+> password** through Android's Credential Manager, which is where Secrets answers.
 
 > **Utilities** (the takeovers) is a peer module — see **[docs/UTILITIES.md](docs/UTILITIES.md)**.
 > Every other app here replaces a *service*; this one replaces pieces of the **phone**, and the reason

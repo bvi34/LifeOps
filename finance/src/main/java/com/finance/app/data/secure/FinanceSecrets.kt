@@ -2,14 +2,11 @@ package com.finance.app.data.secure
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.finance.app.logic.Endpoints
 import com.operations.backupkit.AppId
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.ManagedSecrets
 import com.operations.vaultkit.SecretRef
-import java.security.KeyStore
 
 /**
  * Every string in this app that could read a bank account, kept behind the Android Keystore.
@@ -51,12 +48,11 @@ import java.security.KeyStore
  *
  * ## Recovery when the key is gone
  *
- * The encrypted file can outlive the hardware-bound master key that wrapped it — a reinstall, a
- * device restore — and decrypting the survivor with a fresh key throws out of
- * [EncryptedSharedPreferences.create]. Rather than a permanent boot crash, the unreadable keyset is
- * dropped and the store rebuilt empty: the connections have to be re-authorised, but they never
- * left the device and the app opens. This is Citation's `CatalogCredentials` bargain, taken for
- * stronger reasons.
+ * The file can outlive the hardware-bound key that sealed it — a reinstall, a device restore — and
+ * then it opens empty rather than crashing the app (see `:securestore`): the connections have to be
+ * re-authorised unless the vault gives the tokens back, but they never left the device and the app
+ * opens. This is Citation's `CatalogCredentials` bargain, taken for stronger reasons. The key is
+ * this file's alone, so recovering here touches no other app's store.
  */
 class FinanceSecrets internal constructor(context: Context, private val override: SharedPreferences?) {
 
@@ -67,7 +63,7 @@ class FinanceSecrets internal constructor(context: Context, private val override
     /**
      * [override] is a test seam and nothing else.
      *
-     * `EncryptedSharedPreferences` needs `AndroidKeyStore`, which does not exist on the JVM, so
+     * The sealed store needs `AndroidKeyStore`, which does not exist on the JVM, so
      * every unit test of this class would otherwise die in [openPrefs] before reaching a line worth
      * testing. What the tests need to exercise is the *mirroring* — which refs are used, that a
      * write goes to both stores, that a read falls through to the vault — none of which is about
@@ -314,42 +310,16 @@ class FinanceSecrets internal constructor(context: Context, private val override
          * exclusion is a property of the name rather than of a filter somebody could relax later.
          */
         const val PREFS_NAME = "secure_finance_access"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
 
         const val KEY_PLAID_CLIENT = "plaid_client_id"
         const val KEY_PLAID_SECRET = "plaid_secret"
         const val KEY_PLAID_ENV = "plaid_environment"
 
-        fun openPrefs(context: Context): SharedPreferences =
-            runCatching { buildPrefs(context) }.getOrElse { failure ->
-                Log.w(TAG, "Encrypted store unreadable (likely reinstall/restore); rebuilding it", failure)
-                wipeCorruptStore(context)
-                buildPrefs(context)
-            }
-
-        fun buildPrefs(context: Context): SharedPreferences {
-            val key = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            return EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                key,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }
-
-        fun wipeCorruptStore(context: Context) {
-            runCatching {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
-            }
-            runCatching {
-                val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-                if (ks.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
-                    ks.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-                }
-            }
-        }
+        /**
+         * Open the store: its own file behind its own Keystore key (see `:securestore`). A file that
+         * outlived its key after a reinstall or restore opens empty instead of crashing the app, and a
+         * file still in the old EncryptedSharedPreferences format is moved across on the first open.
+         */
+        fun openPrefs(context: Context): SharedPreferences = SecureStore.open(context, PREFS_NAME)
     }
 }

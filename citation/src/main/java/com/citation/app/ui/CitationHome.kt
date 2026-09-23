@@ -543,6 +543,12 @@ private fun OreillyAccessSection(vm: ReaderViewModel) {
     var proxyHost by rememberSaveable { mutableStateOf("") }
     var card by rememberSaveable { mutableStateOf("") }
     var pin by rememberSaveable { mutableStateOf("") }
+    // The card number is the "username" and the PIN the password, as they would be saved from the
+    // library's own sign-in page.
+    val pickSaved = rememberSavedPasswordPicker { id, secret ->
+        card = id
+        pin = secret
+    }
     var warmCacheBytes by remember { mutableStateOf(-1L) }
 
     // Measure the warm page cache footprint on entry (best-effort; browser-managed).
@@ -593,7 +599,10 @@ private fun OreillyAccessSection(vm: ReaderViewModel) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End) {
+        TextButton(onClick = pickSaved, modifier = Modifier.padding(top = 4.dp)) {
+            Text("Use a saved password")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             if (config.hasCredentials) {
                 TextButton(onClick = { vm.clearOreillyCredentials(); card = ""; pin = "" }) {
                     Text("Forget card + PIN")
