@@ -2,13 +2,10 @@ package com.citation.app.data.opds
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.operations.backupkit.AppId
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.ManagedSecrets
 import com.operations.vaultkit.SecretRef
-import java.security.KeyStore
 
 /**
  * Encrypted, on-device store for catalog sign-ins — the username and password a private OPDS server
@@ -20,11 +17,9 @@ import java.security.KeyStore
  * secret lives here, behind the Android Keystore — the same bargain the O'Reilly library card
  * already makes, and like it, **never synced**.
  *
- * The reinstall/restore recovery is the same too: the encrypted file can outlive the hardware-bound
- * master key that wrapped it, and decrypting the survivor with a fresh key throws out of
- * `EncryptedSharedPreferences.create`. Rather than a permanent boot crash, the unreadable keyset is
- * dropped and the store rebuilt empty — sign-ins have to be re-entered, but they never left the
- * device and the app opens.
+ * The reinstall/restore recovery is the same too: the file can outlive the Keystore key that sealed
+ * it, and then it opens empty rather than crashing the app (see `:securestore`) — sign-ins have to
+ * be re-entered, but they never left the device and the app opens.
  *
  * ## What the vault changed
  *
@@ -167,38 +162,12 @@ class CatalogCredentials(context: Context) {
         const val USER_PREFIX = "user:"
 
         const val PREFS_NAME = "opds_catalog_access"
-        const val ANDROID_KEYSTORE = "AndroidKeyStore"
 
-        fun openPrefs(context: Context): SharedPreferences =
-            runCatching { buildPrefs(context) }.getOrElse { failure ->
-                Log.w(TAG, "Encrypted store unreadable (likely reinstall/restore); rebuilding it", failure)
-                wipeCorruptStore(context)
-                buildPrefs(context)
-            }
-
-        fun buildPrefs(context: Context): SharedPreferences {
-            val key = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            return EncryptedSharedPreferences.create(
-                context,
-                PREFS_NAME,
-                key,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        }
-
-        fun wipeCorruptStore(context: Context) {
-            runCatching {
-                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().commit()
-            }
-            runCatching {
-                val ks = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
-                if (ks.containsAlias(MasterKey.DEFAULT_MASTER_KEY_ALIAS)) {
-                    ks.deleteEntry(MasterKey.DEFAULT_MASTER_KEY_ALIAS)
-                }
-            }
-        }
+        /**
+         * Open the store: its own file behind its own Keystore key (see `:securestore`). A file that
+         * outlived its key after a reinstall or restore opens empty instead of crashing the app, and a
+         * file still in the old EncryptedSharedPreferences format is moved across on the first open.
+         */
+        fun openPrefs(context: Context): SharedPreferences = SecureStore.open(context, PREFS_NAME)
     }
 }

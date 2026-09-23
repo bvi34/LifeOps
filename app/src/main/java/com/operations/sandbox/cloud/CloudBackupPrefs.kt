@@ -2,14 +2,13 @@ package com.operations.sandbox.cloud
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.operations.backupkit.AppId
 import com.operations.backupkit.cloud.AzureBlobTarget
 import com.operations.backupkit.cloud.CloudBackupFrequency
 import com.operations.backupkit.cloud.CloudBackupRetention
 import com.operations.backupkit.cloud.CloudBackupSchedule
 import com.operations.backupkit.cloud.TargetCheck
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.ManagedSecrets
 import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
@@ -26,7 +25,7 @@ import com.operations.vaultkit.SecretRef
  * silently resume a schedule nobody asked for.
  *
  * The signature is the exception, and it is the same exception the updater's GitHub token is: it is
- * kept locally in `EncryptedSharedPreferences` *and* mirrored into the vault, so a restore onto a
+ * kept locally in a sealed store (`:securestore`) *and* mirrored into the vault, so a restore onto a
  * new phone can put it back rather than leaving the household's backups quietly switched off. See
  * [SAS_REF] and the long version in [ManagedSecrets].
  */
@@ -41,22 +40,15 @@ class CloudBackupPrefs internal constructor(context: Context, private val overri
     /**
      * The signature's working copy, encrypted at rest and separate from the settings.
      *
-     * The fallback to a plain app-private file is not laziness: `EncryptedSharedPreferences` fails
-     * outright on devices whose keystore is in a bad state, and a container that will not launch
-     * because it could not open an optional credential store would be a far worse bug than the one
-     * the encryption guards against. [override] is the test seam `UpdatePrefs` carries for the same
-     * reason — `AndroidKeyStore` does not exist on the JVM, and what the tests exercise is the
-     * mirroring, not androidx's encryption.
+     * The fallback to a plain app-private file is not laziness: making the store's Keystore key
+     * fails outright on devices whose keystore is in a bad state, and a container that will not
+     * launch because it could not open an optional credential store would be a far worse bug than
+     * the one the encryption guards against. [override] is the test seam `UpdatePrefs` carries for
+     * the same reason — `AndroidKeyStore` does not exist on the JVM, and what the tests exercise is
+     * the mirroring, not the sealing.
      */
     private val secrets: SharedPreferences = override ?: runCatching {
-        val key = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            app,
-            SECRETS_PREFS,
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        SecureStore.open(app, SECRETS_PREFS)
     }.getOrElse {
         app.getSharedPreferences(SECRETS_PREFS_PLAIN, Context.MODE_PRIVATE)
     }

@@ -2,9 +2,8 @@ package com.operations.sandbox.update
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.operations.sandbox.update.logic.UpdateSchedule
+import com.operations.securestore.SecureStore
 import com.operations.vaultkit.ManagedSecrets
 import com.operations.vaultkit.SecretOwner
 import com.operations.vaultkit.SecretRef
@@ -33,27 +32,19 @@ class UpdatePrefs internal constructor(context: Context, private val override: S
      * not from anyone holding an unlocked, rooted, or backed-up phone. Keystore-backed encryption
      * closes that, and costs nothing — the token is read once per check.
      *
-     * The fallback matters more than it looks. EncryptedSharedPreferences fails outright on devices
-     * whose keystore is in a bad state (a known problem after some restores and OS upgrades), and a
-     * suite that will not launch because it could not open an *optional* token store would be a far
-     * worse bug than the one this guards against. So a failure degrades to the ordinary
+     * The fallback matters more than it looks. The store is sealed with its own Keystore key (see
+     * `:securestore`), and on a device whose keystore is in a bad state even making that key can
+     * fail. A suite that will not launch because it could not open an *optional* token store would
+     * be a far worse bug than the one this guards against, so that failure degrades to the ordinary
      * app-private file rather than taking the process down.
      *
      * [override] is a test seam and nothing else, and the same one `FinanceSecrets` carries for the
-     * same reason: `EncryptedSharedPreferences` needs `AndroidKeyStore`, which does not exist on the
-     * JVM. What the tests need to exercise is the *mirroring* — which ref is used, that a write goes
+     * same reason: the sealed store needs `AndroidKeyStore`, which does not exist on the JVM. What the tests need to exercise is the *mirroring* — which ref is used, that a write goes
      * to both stores, that a read falls through to the vault after a restore — none of which is
      * about where the local copy is kept. Production has one constructor and it passes null.
      */
     private val secrets: SharedPreferences = override ?: runCatching {
-        val key = MasterKey.Builder(app).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()
-        EncryptedSharedPreferences.create(
-            app,
-            SECRETS_PREFS,
-            key,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        SecureStore.open(app, SECRETS_PREFS)
     }.getOrElse {
         app.getSharedPreferences(SECRETS_PREFS_PLAIN, Context.MODE_PRIVATE)
     }
@@ -71,7 +62,7 @@ class UpdatePrefs internal constructor(context: Context, private val override: S
      *
      * ## Why this one is mirrored into the vault
      *
-     * Everything above describes a credential in `EncryptedSharedPreferences`, behind a Keystore
+     * Everything above describes a credential in a sealed store, behind a Keystore
      * key, deliberately left out of the archive — which is word for word the arrangement Finance
      * and Citation had, and word for word the reason Secrets exists. A key bound to this phone's
      * hardware cannot be carried to the next phone, so a restore brought back every setting on this

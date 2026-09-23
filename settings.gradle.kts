@@ -128,3 +128,4 @@ include(":vaultkit")
 // Tuesday without either forking the control.
 include(":suitekit")
 include(":suiteui")
+include(":securestore")

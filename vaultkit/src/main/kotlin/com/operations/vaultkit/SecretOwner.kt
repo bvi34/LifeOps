@@ -8,7 +8,7 @@ import com.operations.backupkit.AppId
  * This used to be an [AppId] and could not stay one. The suite's credentials are not all held by
  * *hosted apps*: the Operations Sandbox — the container the twelve apps live inside — holds one
  * itself, the GitHub token its updater checks releases with, and it is the same kind of thing for
- * exactly the same reason. It sits in `EncryptedSharedPreferences` behind a Keystore key, it is
+ * exactly the same reason. It sits in a store sealed by a Keystore key, it is
  * deliberately kept out of the archive, and so it dies on a restore. That is the failure this whole
  * app exists to fix, and it was happening in the shell that hosts it.
  *

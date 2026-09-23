@@ -260,7 +260,10 @@ class BackupCoverageTest {
 
         // And the things that must NOT travel, seeded so their absence from the archive is a fact
         // this test establishes rather than an assumption it makes.
-        listOf("secure_finance_access", "oreilly_access", "opds_catalog_access", "secure_secrets_device")
+        listOf(
+            "secure_finance_access", "oreilly_access", "opds_catalog_access", "secure_secrets_device",
+            "secure_utilities_seal_key", "secure_utilities_seal_key_plain"
+        )
             .forEach { context.getSharedPreferences(it, Context.MODE_PRIVATE).edit().putString("token", "SECRET").commit() }
         // Utilities' outbox, which must not travel for a different reason than the credentials do:
         // it is a list of claims that the platform's message store is missing something, and on a
@@ -367,6 +370,9 @@ class BackupCoverageTest {
             "shared_prefs/secure_secrets_device" to
                 "the vault key wrapped by this phone's Keystore: an archive holding both it and the " +
                     "sealed vault would be an archive holding the vault in plaintext",
+            "shared_prefs/secure_utilities_seal_key" to
+                "the key Utilities' sealed messages are encrypted with, and its plain fallback: the " +
+                    "vault carries the key, so the sealed store in an archive opens only once Secrets does",
             "shared_prefs/sandbox_" to
                 "the container's own settings — the updater's and the scheduled cloud backup's, " +
                     "including their credential stores, which the vault carries instead",

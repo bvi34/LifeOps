@@ -52,6 +52,10 @@
     <!-- Secrets: the vault key wrapped by *this* phone's Keystore for the fingerprint shortcut. A
          backup holding both it and the vault would be a backup holding the vault in plaintext. -->
     <exclude domain="sharedpref" path="secure_secrets_device.xml" />
+    <!-- Utilities: the key sealed messages are encrypted with, and its plain fallback. The vault's
+         copy is the one that comes back after a restore; the plain one must never leave at all. -->
+    <exclude domain="sharedpref" path="secure_utilities_seal_key.xml" />
+    <exclude domain="sharedpref" path="secure_utilities_seal_key_plain.xml" />
     <!-- The container's own: the updater's GitHub token, and the signature the scheduled archive
          uploads with. Both are mirrored into the vault and come back from there. -->
     <exclude domain="sharedpref" path="sandbox_update_secrets.xml" />

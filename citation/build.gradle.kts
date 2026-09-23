@@ -163,8 +163,8 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.gson)
-    // Encrypted-at-rest storage (Android Keystore) for the library card + PIN.
-    implementation(libs.androidx.security.crypto)
+    // Encrypted-at-rest storage (Android Keystore) for the library card + PIN and catalogue sign-ins.
+    implementation(project(":securestore"))
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")
