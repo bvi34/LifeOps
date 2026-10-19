@@ -115,6 +115,7 @@ private fun GrowthControls(
                     append("${state.totalWeeks} week${if (state.totalWeeks == 1) "" else "s"}")
                     val h = state.totalHours
                     if (h > 0) append(" · ${if (h % 1.0 == 0.0) h.toInt().toString() else String.format("%.1f", h)}h logged")
+                    if (state.skippedWeeks > 0) append(" · ${state.skippedWeeks} skipped")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -174,6 +175,7 @@ private fun RingsHelpDialog(onDismiss: () -> Unit) {
                 HelpLine("To grow a ring: log time against your tasks, then close the week on This Week. More hours → thicker, brighter bands (≈50h reads as \"full\", then it glows).")
                 HelpLine("Every aspect keeps the same track across all rings, so you can follow one outward through time.")
                 HelpLine("A week with zero logged hours leaves a permanent grey scar — never a gap.")
+                HelpLine("Weeks written off with \"Reset to current week\" (This Week) are scars too. Tap one to see the reason you gave.")
                 HelpLine("Prefer a timeline? Switch to \"Bars\": the same weeks as stacked bars, oldest on the left, taller = more hours. Tap a bar (or a ring) for that week's hours.")
                 HelpLine("\"Colour by hours\" and \"Glow\" only change how it looks, never the record.")
                 HelpLine("History is sealed at week-close: deleting, renaming or recolouring an aspect later won't repaint past rings. It can't be faked or ground.")
@@ -450,11 +452,23 @@ private fun SelectedWeekDetail(state: GrowthUiState) {
     ) {
         Column(Modifier.padding(12.dp)) {
             Text(
-                if (ring.isScar) "Week of ${ring.label} — a scar (no hours logged)"
-                else "Week of ${ring.label}",
+                when {
+                    state.selectedWeekSkipped -> "Week of ${ring.label} — skipped (a scar)"
+                    ring.isScar -> "Week of ${ring.label} — a scar (no hours logged)"
+                    else -> "Week of ${ring.label}"
+                },
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
+            if (state.selectedWeekSkipped) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    state.selectedWeekNote?.takeIf { it.isNotBlank() }?.let { "Reason: $it" }
+                        ?: "Written off by Reset to current week.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                )
+            }
             if (state.selectedWeekDetail.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
                 state.selectedWeekDetail.forEach { row ->

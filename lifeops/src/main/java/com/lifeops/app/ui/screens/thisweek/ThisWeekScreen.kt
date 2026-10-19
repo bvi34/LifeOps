@@ -85,6 +85,11 @@ fun ThisWeekScreen(
     val activeTimer by viewModel.activeTimer.collectAsStateWithLifecycle()
     val timerElapsedState = viewModel.timerElapsedSeconds.collectAsStateWithLifecycle()
     var showCloseConfirm by remember { mutableStateOf(false) }
+    var showResetDialog by remember { mutableStateOf(false) }
+    val openResetDialog = {
+        viewModel.refreshResetPlan()
+        showResetDialog = true
+    }
     var fabExpanded by remember { mutableStateOf(false) }
     // Per-aspect expand/collapse. The default follows whether the aspect still has open
     // work (expanded when it does); an explicit user tap is remembered here and overrides it.
@@ -262,11 +267,13 @@ fun ThisWeekScreen(
                                 busyBlocks = state.busyBlocks,
                                 onOpenTask = onOpenTask
                             )
+                            ResetWeekBanner(plan = state.resetPlan, onReset = openResetDialog)
                             WeekProgressHeader(
                                 progress = state.weekProgress,
                                 capacity = state.capacity,
                                 canCloseWeek = state.week?.isClosed == false,
-                                onCloseWeek = { showCloseConfirm = true }
+                                onCloseWeek = { showCloseConfirm = true },
+                                onResetWeek = openResetDialog
                             )
                         }
                     }
@@ -413,6 +420,18 @@ fun ThisWeekScreen(
                 viewModel.saveTaskEdit(title, priority, dueDate, hardDeadline, isRecurring, estimatedMinutes, aspectId, categoryId, operationId, counterId, recurrenceIntervalWeeks, recurrenceDayOfMonth)
             },
             onDismiss = viewModel::cancelEditTask
+        )
+    }
+
+    if (showResetDialog) {
+        ResetWeekDialog(
+            plan = state.resetPlan,
+            inFlight = state.resetInFlight,
+            onConfirm = { reason, trueReset ->
+                showResetDialog = false
+                viewModel.onResetToCurrentWeek(reason, trueReset)
+            },
+            onDismiss = { showResetDialog = false }
         )
     }
 

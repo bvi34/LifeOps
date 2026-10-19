@@ -51,7 +51,10 @@ class GrowthRepository(
                 startDate = week.startDate,
                 isClosed = week.isClosed,
                 aspectHistory = sealedHistory,
-                liveMinutesByAspect = minutesByWeekAspect[week.id] ?: emptyMap()
+                liveMinutesByAspect = minutesByWeekAspect[week.id] ?: emptyMap(),
+                skipped = week.isSkipped,
+                skipReason = week.skipReason,
+                skipTrueReset = week.skipTrueReset == true
             )
         }
         GrowthData.assemble(liveAspects, sources)

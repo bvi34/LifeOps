@@ -54,13 +54,13 @@ object GrowthBars {
     ): Chart {
         val bars = weeks.map { week ->
             val total = aspects.sumOf { max(0.0, week.hoursByAspect[it.id] ?: 0.0) }
-            if (total <= 0.0) {
+            if (total <= 0.0 || week.skipped) {
                 Bar(
                     weekId = week.weekId,
                     label = week.label,
                     totalHours = 0.0,
                     isScar = true,
-                    segments = listOf(Segment(null, "No hours logged", SCAR_COLOR, 0.0))
+                    segments = listOf(Segment(null, if (week.skipped) "Skipped" else "No hours logged", SCAR_COLOR, 0.0))
                 )
             } else {
                 val segments = aspects.mapNotNull { a ->

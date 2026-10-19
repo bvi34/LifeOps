@@ -14,6 +14,7 @@ import com.lifeops.app.util.WeekCapacity
 import com.lifeops.app.util.WeekCapacityBuilder
 import com.lifeops.app.util.WeekReview
 import com.lifeops.app.util.WeekReviewBuilder
+import com.lifeops.app.util.WeekReset
 import com.lifeops.app.util.ImportParser
 import com.lifeops.app.util.SevereWeatherIntel
 import com.lifeops.app.util.TaskWeatherFit
@@ -95,7 +96,14 @@ data class ThisWeekUiState(
      * trailing history has been read; [WeekCapacity.headline] is null whenever there's nothing
      * honest to say (no estimates, or no baseline yet).
      */
-    val capacity: WeekCapacity? = null
+    val capacity: WeekCapacity? = null,
+    /**
+     * What "Reset to current week" would scar right now. Recomputed whenever the weeks change, so
+     * the This Week banner can offer it after an absence. Null until first read.
+     */
+    val resetPlan: WeekReset.Plan? = null,
+    /** True while a reset is running — the dialog's confirm stays disabled. */
+    val resetInFlight: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -154,6 +162,12 @@ class ThisWeekViewModel(
     val undoEvents = _undoChannel.receiveAsFlow()
 
     init {
+        viewModelScope.launch {
+            weekRepository.observeAllWeeks().collectLatest {
+                val plan = runCatching { weekService.planReset() }.getOrNull()
+                _uiState.update { it.copy(resetPlan = plan) }
+            }
+        }
         viewModelScope.launch {
             costResourceRepository.observeActiveResources().collectLatest { resources ->
                 _uiState.update { it.copy(costResources = resources) }
@@ -566,6 +580,35 @@ class ThisWeekViewModel(
                 refreshWidget()
             } finally {
                 weekCloseInFlight = false
+            }
+        }
+    }
+
+    /** Re-read the reset plan when the dialog opens, so the scar count it shows is current. */
+    fun refreshResetPlan() {
+        viewModelScope.launch {
+            val plan = runCatching { weekService.planReset() }.getOrNull()
+            _uiState.update { it.copy(resetPlan = plan) }
+        }
+    }
+
+    /**
+     * "Reset to current week": every untouched week becomes a skipped scar carrying [reason], and
+     * the app lands on today's week. [trueReset] also sets aside weekly / repeating tasks.
+     */
+    fun onResetToCurrentWeek(reason: String, trueReset: Boolean) {
+        if (_uiState.value.resetInFlight) return
+        _uiState.update { it.copy(resetInFlight = true) }
+        // App-scoped, like a save: leaving the screen mid-reset must not stop it halfway through
+        // the weeks it is closing.
+        saveScope.launch {
+            try {
+                stopTimer(saveEntry = true)
+                weekService.resetToCurrent(reason.trim(), trueReset)
+                refreshWidget()
+            } finally {
+                val plan = runCatching { weekService.planReset() }.getOrNull()
+                _uiState.update { it.copy(resetInFlight = false, resetPlan = plan) }
             }
         }
     }

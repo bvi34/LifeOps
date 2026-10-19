@@ -27,7 +27,11 @@ object GrowthData {
         /** Sealed at close; empty for the open week or any pre-backfill week. */
         val aspectHistory: Map<String, AspectHist>,
         /** Live fallback: aspectId -> minutes from current time-entries. */
-        val liveMinutesByAspect: Map<String, Int>
+        val liveMinutesByAspect: Map<String, Int>,
+        /** Written off by "Reset to current week" — drawn as a scar, with [skipReason] beside it. */
+        val skipped: Boolean = false,
+        val skipReason: String? = null,
+        val skipTrueReset: Boolean = false
     )
 
     data class Assembled(
@@ -53,7 +57,13 @@ object GrowthData {
                 w.liveMinutesByAspect
             }
             val hoursByAspect = minutes.filterValues { it > 0 }.mapValues { it.value / 60.0 }
-            weekInputs.add(GrowthRings.WeekInput(w.weekId, w.startDate, hoursByAspect))
+            weekInputs.add(
+                GrowthRings.WeekInput(
+                    w.weekId, w.startDate, hoursByAspect,
+                    skipped = w.skipped,
+                    note = if (w.skipped) WeekReset.note(w.skipReason, w.skipTrueReset) else null
+                )
+            )
         }
 
         // Global append-only aspect order: every id seen anywhere, sorted by stable id.

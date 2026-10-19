@@ -41,7 +41,11 @@ object GrowthRings {
     data class WeekInput(
         val weekId: String,
         val label: String,
-        val hoursByAspect: Map<String, Double>
+        val hoursByAspect: Map<String, Double>,
+        /** Written off by "Reset to current week". A skipped week is always a scar, hours or not. */
+        val skipped: Boolean = false,
+        /** Shown with the week and written to the CSV's notes column (the skip reason). */
+        val note: String? = null
     )
 
     /** A shape-agnostic render primitive: a coloured annulus, either a crisp fill or a glow. */
@@ -100,7 +104,7 @@ object GrowthRings {
         weeks.forEachIndexed { index, week ->
             val hours = aspects.map { max(0.0, week.hoursByAspect[it.id] ?: 0.0) }
             val totalHours = hours.sum()
-            val isScar = totalHours <= 0.0
+            val isScar = totalHours <= 0.0 || week.skipped
             val ringInner = innerR
             val ringOuter = ringInner + ringThickness(isScar)
             val bands = if (isScar) {

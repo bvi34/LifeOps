@@ -65,8 +65,14 @@ data class Week(
     val startDate: String,
     val endDate: String,
     val isClosed: Boolean = false,
-    val closedAt: String? = null
-)
+    val closedAt: String? = null,
+    val skipReason: String? = null,
+    val skippedAt: String? = null,
+    val skipTrueReset: Boolean? = null
+) {
+    /** Written off by "Reset to current week" — see [com.lifeops.app.data.db.entities.WeekEntity.skipReason]. */
+    val isSkipped: Boolean get() = skippedAt != null
+}
 
 data class Task(
     val id: String,
