@@ -64,3 +64,14 @@ internal val MIGRATION_56_57 = object : Migration(56, 57) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_objective_notes_objectiveId ON objective_notes(objectiveId)")
     }
 }
+
+internal val MIGRATION_57_58 = object : Migration(57, 58) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // "Reset to current week": a week written off as skipped carries its reason, when, and
+        // whether it was a true reset (WeekEntity.skipReason / skippedAt / skipTrueReset). All
+        // nullable with no default — an existing week simply isn't a skipped one.
+        db.execSQL("ALTER TABLE weeks ADD COLUMN skipReason TEXT")
+        db.execSQL("ALTER TABLE weeks ADD COLUMN skippedAt TEXT")
+        db.execSQL("ALTER TABLE weeks ADD COLUMN skipTrueReset INTEGER")
+    }
+}

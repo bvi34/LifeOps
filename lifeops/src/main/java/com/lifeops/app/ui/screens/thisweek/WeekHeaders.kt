@@ -31,7 +31,8 @@ internal fun WeekProgressHeader(
     progress: WeekProgress,
     capacity: WeekCapacity? = null,
     canCloseWeek: Boolean = false,
-    onCloseWeek: () -> Unit = {}
+    onCloseWeek: () -> Unit = {},
+    onResetWeek: (() -> Unit)? = null
 ) {
     if (progress.totalCount == 0) return
     Surface(tonalElevation = 3.dp, modifier = Modifier.fillMaxWidth()) {
@@ -64,6 +65,15 @@ internal fun WeekProgressHeader(
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary
                     )
+                }
+                onResetWeek?.let { onReset ->
+                    IconButton(onClick = onReset, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "Reset to current week",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 if (canCloseWeek) {
                     IconButton(onClick = onCloseWeek, modifier = Modifier.size(32.dp)) {

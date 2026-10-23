@@ -9,8 +9,8 @@ fun Aspect.toEntity() = AspectEntity(id, name, color, icon, isArchived)
 fun CategoryEntity.toModel() = Category(id, aspectId, name, isArchived)
 fun Category.toEntity() = CategoryEntity(id, aspectId, name, isArchived)
 
-fun WeekEntity.toModel() = Week(id, startDate, endDate, isClosed, closedAt)
-fun Week.toEntity() = WeekEntity(id, startDate, endDate, isClosed, closedAt)
+fun WeekEntity.toModel() = Week(id, startDate, endDate, isClosed, closedAt, skipReason, skippedAt, skipTrueReset)
+fun Week.toEntity() = WeekEntity(id, startDate, endDate, isClosed, closedAt, skipReason, skippedAt, skipTrueReset)
 
 fun TaskEntity.toModel() = Task(
     id, weekId, title, aspectId, categoryId,

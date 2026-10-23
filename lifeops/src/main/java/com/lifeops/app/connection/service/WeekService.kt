@@ -3,6 +3,7 @@ package com.lifeops.app.connection.service
 import com.lifeops.app.data.model.Week
 import com.lifeops.app.data.repository.TaskRepository
 import com.lifeops.app.data.repository.WeekRepository
+import com.lifeops.app.util.WeekReset
 
 /**
  * Use-case layer for the weekly cycle. Owns the compound "close the week" orchestration that spans
@@ -43,4 +44,14 @@ class WeekService(
         taskRepository.seedRecurringTasks(week.id, newWeek.id)
         return CloseOutcome.Closed(closedWeek = week, newWeek = newWeek)
     }
+
+    /** What "Reset to current week" would scar right now (for the confirmation prompt). */
+    suspend fun planReset(): WeekReset.Plan = taskRepository.planReset()
+
+    /**
+     * "Reset to current week": write off every untouched week as skipped (a scar with [reason]
+     * beside it) and land on today's week. See [TaskRepository.resetToCurrentWeek].
+     */
+    suspend fun resetToCurrent(reason: String, trueReset: Boolean): WeekReset.Plan =
+        taskRepository.resetToCurrentWeek(reason, trueReset)
 }

@@ -5,7 +5,8 @@ import kotlin.math.roundToLong
 /**
  * Serialisers for the Growth Record. Both consume the same pure primitives as the
  * on-screen renderer:
- *   - CSV  (`week,<aspect names>`; one row per week, hours per column) — round-trips.
+ *   - CSV  (`week,<aspect names>,skipped,notes`; one row per week, hours per aspect column,
+ *     then whether the week was written off by "Reset to current week" and its reason) — round-trips.
  *   - SVG  (filters + gradients intact) — the shareable vector artifact.
  */
 object GrowthExport {
@@ -13,16 +14,23 @@ object GrowthExport {
     data class ParsedRingsCsv(
         val aspectNames: List<String>,
         /** label -> hours, positionally aligned to [aspectNames]. */
-        val weeks: List<Pair<String, List<Double>>>
+        val weeks: List<Pair<String, List<Double>>>,
+        /** label -> skip note, for the weeks marked skipped (note may be blank). */
+        val skipped: Map<String, String> = emptyMap()
     )
+
+    const val SKIPPED_COLUMN = "skipped"
+    const val NOTES_COLUMN = "notes"
 
     // ---- CSV ---------------------------------------------------------------
 
     fun buildRingsCsv(aspects: List<GrowthRings.AspectRef>, weeks: List<GrowthRings.WeekInput>): String {
         val sb = StringBuilder()
-        sb.append(Csv.row(listOf("week") + aspects.map { it.name })).append('\n')
+        sb.append(Csv.row(listOf("week") + aspects.map { it.name } + listOf(SKIPPED_COLUMN, NOTES_COLUMN))).append('\n')
         for (w in weeks) {
-            sb.append(Csv.row(listOf(w.label) + aspects.map { formatHours(w.hoursByAspect[it.id] ?: 0.0) })).append('\n')
+            val hours = aspects.map { formatHours(w.hoursByAspect[it.id] ?: 0.0) }
+            val skipped = if (w.skipped) "yes" else ""
+            sb.append(Csv.row(listOf(w.label) + hours + listOf(skipped, w.note.orEmpty()))).append('\n')
         }
         return sb.toString()
     }
@@ -37,8 +45,14 @@ object GrowthExport {
         if (header.size < 2 || !header.first().trim().equals("week", ignoreCase = true)) {
             return Result.failure(IllegalArgumentException("Couldn't read that file — expected a \"week\" column followed by one column per aspect."))
         }
-        val aspectNames = header.drop(1).map { it.trim() }
+        // The trailing skipped / notes columns aren't aspects. Older exports don't have them.
+        val columns = header.drop(1).map { it.trim() }
+        val skippedIdx = columns.indexOfFirst { it.equals(SKIPPED_COLUMN, ignoreCase = true) }
+            .takeIf { it >= 0 && columns.drop(it + 1).all { c -> c.equals(NOTES_COLUMN, ignoreCase = true) } }
+        val aspectNames = if (skippedIdx != null) columns.take(skippedIdx) else columns
+        val notesIdx = skippedIdx?.let { it + 1 }?.takeIf { it < columns.size }
         val weeks = ArrayList<Pair<String, List<Double>>>()
+        val skipped = LinkedHashMap<String, String>()
         for (i in 1 until lines.size) {
             val cells = Csv.parseLine(lines[i])
             val label = cells.firstOrNull()?.trim().orEmpty()
@@ -50,8 +64,11 @@ object GrowthExport {
                 )
             }
             weeks.add(label to hours)
+            if (skippedIdx != null && cells.getOrNull(skippedIdx + 1)?.trim()?.isNotEmpty() == true) {
+                skipped[label] = notesIdx?.let { cells.getOrNull(it + 1)?.trim() }.orEmpty()
+            }
         }
-        return Result.success(ParsedRingsCsv(aspectNames, weeks))
+        return Result.success(ParsedRingsCsv(aspectNames, weeks, skipped))
     }
 
     // ---- SVG ---------------------------------------------------------------

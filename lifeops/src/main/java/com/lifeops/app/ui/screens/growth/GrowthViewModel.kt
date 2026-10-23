@@ -36,6 +36,12 @@ data class GrowthUiState(
     val glowEnabled: Boolean = true,
     val selectedWeekId: String? = null,
     val selectedWeekDetail: List<GrowthLegendRow> = emptyList(),
+    /** The selected week was written off by "Reset to current week". */
+    val selectedWeekSkipped: Boolean = false,
+    /** The selected skipped week's reason (blank when none was given). */
+    val selectedWeekNote: String? = null,
+    /** How many weeks in the record are skipped scars. */
+    val skippedWeeks: Int = 0,
     val isLoading: Boolean = true
 )
 
@@ -82,7 +88,10 @@ class GrowthViewModel(
                 totalWeeks = assembled.weeks.size,
                 totalHours = totalHours,
                 isLoading = false,
-                selectedWeekDetail = it.selectedWeekId?.let { id -> detailFor(id) } ?: emptyList()
+                selectedWeekDetail = it.selectedWeekId?.let { id -> detailFor(id) } ?: emptyList(),
+                selectedWeekSkipped = it.selectedWeekId?.let { id -> weekFor(id)?.skipped } ?: false,
+                selectedWeekNote = it.selectedWeekId?.let { id -> weekFor(id)?.note },
+                skippedWeeks = assembled.weeks.count { w -> w.skipped }
             )
         }
     }
@@ -93,6 +102,9 @@ class GrowthViewModel(
             val swatch = if (colorByHours && h > 0.0) GrowthColor.intensify(a.colorHex, h) else a.colorHex
             GrowthLegendRow(a.id, a.name, swatch, h)
         }
+
+    private fun weekFor(weekId: String): GrowthRings.WeekInput? =
+        assembled.weeks.firstOrNull { it.weekId == weekId }
 
     private fun detailFor(weekId: String): List<GrowthLegendRow> {
         val week = assembled.weeks.firstOrNull { it.weekId == weekId } ?: return emptyList()
@@ -117,7 +129,9 @@ class GrowthViewModel(
         _uiState.update {
             it.copy(
                 selectedWeekId = weekId,
-                selectedWeekDetail = weekId?.let { id -> detailFor(id) } ?: emptyList()
+                selectedWeekDetail = weekId?.let { id -> detailFor(id) } ?: emptyList(),
+                selectedWeekSkipped = weekId?.let { id -> weekFor(id)?.skipped } ?: false,
+                selectedWeekNote = weekId?.let { id -> weekFor(id)?.note }
             )
         }
     }

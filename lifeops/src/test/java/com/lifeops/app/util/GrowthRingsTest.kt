@@ -151,6 +151,34 @@ class GrowthRingsTest {
     }
 
     @Test
+    fun `csv carries skipped and notes columns`() {
+        val a = listOf(GrowthRings.AspectRef("a", "Mind", "#1E88E5"))
+        val weeks = listOf(
+            GrowthRings.WeekInput("w1", "2026-01-05", mapOf("a" to 3.0)),
+            GrowthRings.WeekInput("w2", "2026-01-12", emptyMap(), skipped = true, note = "True reset: away, sick")
+        )
+        val csv = GrowthExport.buildRingsCsv(a, weeks)
+        val lines = csv.trim().lines()
+        assertEquals("week,Mind,skipped,notes", lines[0])
+        assertEquals("2026-01-05,3,,", lines[1])
+        assertEquals("2026-01-12,0,yes,\"True reset: away, sick\"", lines[2])
+        val parsed = GrowthExport.parseRingsCsv(csv).getOrThrow()
+        assertEquals(listOf("Mind"), parsed.aspectNames)
+        assertEquals(listOf(0.0), parsed.weeks[1].second)
+        assertEquals(mapOf("2026-01-12" to "True reset: away, sick"), parsed.skipped)
+    }
+
+    @Test
+    fun `a skipped week is a scar even with hours`() {
+        val a = aspects("a" to "#1E88E5")
+        val weeks = listOf(GrowthRings.WeekInput("w", "d", mapOf("a" to 4.0), skipped = true))
+        assertTrue(GrowthRings.computeScene(a, weeks).rings.single().isScar)
+        val bar = GrowthBars.computeChart(a, weeks).bars.single()
+        assertTrue(bar.isScar)
+        assertEquals("Skipped", bar.segments.single().name)
+    }
+
+    @Test
     fun `bad csv fails in the interface voice`() {
         val r = GrowthExport.parseRingsCsv("nope,1,2\nx,1,2")
         assertTrue(r.isFailure)

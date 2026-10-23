@@ -32,4 +32,7 @@ interface WeekDao {
 
     @Query("SELECT * FROM weeks ORDER BY startDate DESC")
     suspend fun getAllSync(): List<WeekEntity>
+
+    @Query("UPDATE weeks SET skipReason = :reason, skippedAt = :at, skipTrueReset = :trueReset WHERE id = :id")
+    suspend fun markSkipped(id: String, reason: String, at: String, trueReset: Boolean)
 }

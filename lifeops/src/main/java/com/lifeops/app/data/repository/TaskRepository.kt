@@ -264,6 +264,91 @@ class TaskRepository(
         return lastClosed
     }
 
+    /**
+     * What "Reset to current week" would scar right now — see [WeekReset.plan]. Whether a closed
+     * week was used is only worked out for the newest run of closed weeks: the walk stops at the
+     * first used one, so older weeks never need their time entries read.
+     */
+    suspend fun planReset(now: Long = System.currentTimeMillis()): WeekReset.Plan {
+        val currentIndex = DateUtil.weekIndexFor(now)
+        val snapshots = weekSnapshotDao.getAll().associateBy { it.weekId }
+        var foundUsed = false
+        val infos = weekDao.getAllSync()   // newest first
+            .map { w ->
+                val index = DateUtil.weekIndexFor(LocalDate.parse(w.startDate))
+                val used = when {
+                    !w.isClosed || index >= currentIndex -> false
+                    foundUsed -> true   // past the newest used week: never reached by the walk
+                    else -> weekWasUsed(w.id, snapshots[w.id]).also { if (it) foundUsed = true }
+                }
+                WeekReset.WeekInfo(w.id, index, w.isClosed, w.skippedAt != null, used)
+            }
+        return WeekReset.plan(infos, currentIndex)
+    }
+
+    private suspend fun weekWasUsed(weekId: String, snapshot: WeekSnapshotEntity?): Boolean {
+        if (snapshot != null && (snapshot.completedCount > 0 || snapshot.subtaskTickCount > 0 ||
+                snapshot.selfRating != null || snapshot.mentalReset != null || snapshot.exhaustion != null)) return true
+        return db.timeEntryDao().getByWeek(weekId).any { it.durationMinutes > 0 }
+    }
+
+    /**
+     * "Reset to current week": write off every week the app sat untouched as skipped, and land on
+     * today's week. Already-closed untouched weeks only gain the skip mark (their sealed record is
+     * left alone); stale open weeks are closed the same way a normal close would, then marked.
+     * Today's week stays open — it's the fresh start.
+     *
+     * With [trueReset], weekly / repeating tasks are set aside (skipped) in every week the reset
+     * closes and in today's week, so you come back to a clean list. The series keep going: the next
+     * week seeds them as usual. Returns the plan it carried out.
+     */
+    suspend fun resetToCurrentWeek(
+        reason: String,
+        trueReset: Boolean,
+        now: Long = System.currentTimeMillis()
+    ): WeekReset.Plan {
+        val plan = planReset(now)
+        if (plan.scarCount == 0) return plan
+        val at = DateUtil.now()
+        val currentIndex = DateUtil.weekIndexFor(now)
+
+        for (id in plan.closedWeekIds) weekDao.markSkipped(id, reason, at, trueReset)
+
+        var guard = 0
+        while (guard++ < MAX_CATCHUP_WEEKS) {
+            val open = weekRepository.getCurrentWeek() ?: break
+            if (DateUtil.weekIndexFor(LocalDate.parse(open.startDate)) >= currentIndex) break
+            if (trueReset) setAsideRecurring(open.id)
+            val next = weekRepository.createNextWeek(open)
+            closeWeek(open.id, next.id)
+            weekDao.markSkipped(open.id, reason, at, trueReset)
+            seedRecurringTasks(open.id, next.id)
+        }
+        if (plan.weeksToClose > 0 && currentIndex - 1 > preferencesRepository.lastClosedWeek) {
+            preferencesRepository.lastClosedWeek = currentIndex - 1
+        }
+
+        val landing = weekRepository.getOrCreateCurrentWeek()
+        if (trueReset) setAsideRecurring(landing.id)
+        return plan
+    }
+
+    /**
+     * Skip [weekId]'s pending weekly / repeating tasks that have no time logged — the true-reset
+     * clean slate. Skipped (not deleted), so any one can be un-skipped; and because the instance
+     * is still present, the week won't be re-seeded with a fresh copy on the next launch.
+     */
+    private suspend fun setAsideRecurring(weekId: String) {
+        val loggedTaskIds = db.timeEntryDao().getByWeek(weekId)
+            .filter { it.durationMinutes > 0 }.map { it.taskId }.toSet()
+        val toSkip = taskDao.getPendingByWeek(weekId)
+            .filter { it.isRecurring && it.id !in loggedTaskIds }
+        for (task in toSkip) {
+            notificationRepository.cancelForTask(task.id)
+            taskDao.updateStatus(task.id, TaskStatus.SKIPPED.value)
+        }
+    }
+
     suspend fun getLineageIds(taskId: String): List<String> {
         val upChain = mutableListOf<String>()
         var currentId: String? = taskId
