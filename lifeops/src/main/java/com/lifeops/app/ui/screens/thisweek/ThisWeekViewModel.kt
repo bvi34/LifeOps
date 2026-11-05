@@ -98,7 +98,7 @@ data class ThisWeekUiState(
      */
     val capacity: WeekCapacity? = null,
     /**
-     * What "Reset to current week" would scar right now. Recomputed whenever the weeks change, so
+     * The choices for "Scar past weeks". Recomputed whenever the weeks change, so
      * the This Week banner can offer it after an absence. Null until first read.
      */
     val resetPlan: WeekReset.Plan? = null,
@@ -593,10 +593,10 @@ class ThisWeekViewModel(
     }
 
     /**
-     * "Reset to current week": every untouched week becomes a skipped scar carrying [reason], and
-     * the app lands on today's week. [trueReset] also sets aside weekly / repeating tasks.
+     * "Scar past weeks": the last [count] weeks become skipped scars carrying [reason], and the app
+     * lands on today's week. [clearRecurring] also clears weekly / repeating tasks.
      */
-    fun onResetToCurrentWeek(reason: String, trueReset: Boolean) {
+    fun onScarPastWeeks(count: Int, reason: String, clearRecurring: Boolean) {
         if (_uiState.value.resetInFlight) return
         _uiState.update { it.copy(resetInFlight = true) }
         // App-scoped, like a save: leaving the screen mid-reset must not stop it halfway through
@@ -604,7 +604,7 @@ class ThisWeekViewModel(
         saveScope.launch {
             try {
                 stopTimer(saveEntry = true)
-                weekService.resetToCurrent(reason.trim(), trueReset)
+                weekService.scarPastWeeks(count, reason.trim(), clearRecurring)
                 refreshWidget()
             } finally {
                 val plan = runCatching { weekService.planReset() }.getOrNull()

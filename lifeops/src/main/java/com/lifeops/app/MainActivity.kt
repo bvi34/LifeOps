@@ -572,7 +572,7 @@ fun LifeOpsNavHost(
                 }
                 composable("growth") {
                     val vm = viewModel<com.lifeops.app.ui.screens.growth.GrowthViewModel>(
-                        factory = GrowthViewModelFactory(app.growthRepository)
+                        factory = GrowthViewModelFactory(app.growthRepository, app.weekService)
                     )
                     GrowthScreen(vm, onBack = { navController.navigateUp() })
                 }

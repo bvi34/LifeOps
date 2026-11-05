@@ -70,7 +70,7 @@ data class Week(
     val skippedAt: String? = null,
     val skipTrueReset: Boolean? = null
 ) {
-    /** Written off by "Reset to current week" — see [com.lifeops.app.data.db.entities.WeekEntity.skipReason]. */
+    /** Written off by "Scar past weeks" — see [com.lifeops.app.data.db.entities.WeekEntity.skipReason]. */
     val isSkipped: Boolean get() = skippedAt != null
 }
 

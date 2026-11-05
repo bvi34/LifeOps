@@ -42,7 +42,7 @@ object GrowthRings {
         val weekId: String,
         val label: String,
         val hoursByAspect: Map<String, Double>,
-        /** Written off by "Reset to current week". A skipped week is always a scar, hours or not. */
+        /** Written off by "Scar past weeks". A skipped week is always a scar, hours or not. */
         val skipped: Boolean = false,
         /** Shown with the week and written to the CSV's notes column (the skip reason). */
         val note: String? = null

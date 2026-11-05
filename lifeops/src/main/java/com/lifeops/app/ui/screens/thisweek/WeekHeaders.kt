@@ -70,7 +70,7 @@ internal fun WeekProgressHeader(
                     IconButton(onClick = onReset, modifier = Modifier.size(32.dp)) {
                         Icon(
                             Icons.Default.History,
-                            contentDescription = "Reset to current week",
+                            contentDescription = "Scar past weeks",
                             modifier = Modifier.size(20.dp)
                         )
                     }

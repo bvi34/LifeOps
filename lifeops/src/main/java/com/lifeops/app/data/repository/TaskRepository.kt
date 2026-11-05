@@ -265,13 +265,12 @@ class TaskRepository(
     }
 
     /**
-     * What "Reset to current week" would scar right now — see [WeekReset.plan]. Whether a closed
-     * week was used is only worked out for the newest run of closed weeks: the walk stops at the
-     * first used one, so older weeks never need their time entries read.
+     * The choices for "Scar past weeks" — see [WeekReset.plan]. Whether a closed week was used is
+     * only worked out for the newest run of closed weeks: the walk stops at the first used one, so
+     * older weeks never need their time entries read.
      */
     suspend fun planReset(now: Long = System.currentTimeMillis()): WeekReset.Plan {
         val currentIndex = DateUtil.weekIndexFor(now)
-        val snapshots = weekSnapshotDao.getAll().associateBy { it.weekId }
         var foundUsed = false
         val infos = weekDao.getAllSync()   // newest first
             .map { w ->
@@ -279,58 +278,80 @@ class TaskRepository(
                 val used = when {
                     !w.isClosed || index >= currentIndex -> false
                     foundUsed -> true   // past the newest used week: never reached by the walk
-                    else -> weekWasUsed(w.id, snapshots[w.id]).also { if (it) foundUsed = true }
+                    else -> weekWasUsed(w.id).also { if (it) foundUsed = true }
                 }
                 WeekReset.WeekInfo(w.id, index, w.isClosed, w.skippedAt != null, used)
             }
         return WeekReset.plan(infos, currentIndex)
     }
 
-    private suspend fun weekWasUsed(weekId: String, snapshot: WeekSnapshotEntity?): Boolean {
-        if (snapshot != null && (snapshot.completedCount > 0 || snapshot.subtaskTickCount > 0 ||
-                snapshot.selfRating != null || snapshot.mentalReset != null || snapshot.exhaustion != null)) return true
-        return db.timeEntryDao().getByWeek(weekId).any { it.durationMinutes > 0 }
-    }
+    /** Used = at least [WeekReset.QUIET_MINUTES] logged; a few hours squeezed in still reads as away. */
+    private suspend fun weekWasUsed(weekId: String): Boolean =
+        db.timeEntryDao().getByWeek(weekId).sumOf { it.durationMinutes.coerceAtLeast(0) } >= WeekReset.QUIET_MINUTES
 
     /**
-     * "Reset to current week": write off every week the app sat untouched as skipped, and land on
-     * today's week. Already-closed untouched weeks only gain the skip mark (their sealed record is
-     * left alone); stale open weeks are closed the same way a normal close would, then marked.
-     * Today's week stays open — it's the fresh start.
+     * "Scar past weeks": mark the last [count] weeks before today's as skipped, each carrying
+     * [reason], and land on today's week. Any still-open stale week is closed first, the same way
+     * a normal close would. Already-closed weeks only gain the mark — their sealed record is left
+     * alone; a week scarred before is re-marked with the new reason. Today's week stays open.
      *
-     * With [trueReset], weekly / repeating tasks are set aside (skipped) in every week the reset
-     * closes and in today's week, so you come back to a clean list. The series keep going: the next
-     * week seeds them as usual. Returns the plan it carried out.
+     * With [clearRecurring], weekly / repeating tasks are cleared (skipped) in today's week and in
+     * every scarred week, so they neither clutter the fresh start nor stand as misses in the weeks
+     * written off. The series keep going: next week seeds them as usual. Returns how many weeks
+     * were scarred.
      */
-    suspend fun resetToCurrentWeek(
+    suspend fun scarPastWeeks(
+        count: Int,
         reason: String,
-        trueReset: Boolean,
+        clearRecurring: Boolean,
         now: Long = System.currentTimeMillis()
-    ): WeekReset.Plan {
+    ): Int {
         val plan = planReset(now)
-        if (plan.scarCount == 0) return plan
+        val range = plan.range(count)
+        if (range.isEmpty()) return 0
         val at = DateUtil.now()
-        val currentIndex = DateUtil.weekIndexFor(now)
+        val currentIndex = plan.currentIndex
 
-        for (id in plan.closedWeekIds) weekDao.markSkipped(id, reason, at, trueReset)
-
+        var closedAny = false
         var guard = 0
         while (guard++ < MAX_CATCHUP_WEEKS) {
             val open = weekRepository.getCurrentWeek() ?: break
-            if (DateUtil.weekIndexFor(LocalDate.parse(open.startDate)) >= currentIndex) break
-            if (trueReset) setAsideRecurring(open.id)
+            val openIndex = DateUtil.weekIndexFor(LocalDate.parse(open.startDate))
+            if (openIndex >= currentIndex) break
+            if (clearRecurring && openIndex in range) setAsideRecurring(open.id)
             val next = weekRepository.createNextWeek(open)
             closeWeek(open.id, next.id)
-            weekDao.markSkipped(open.id, reason, at, trueReset)
             seedRecurringTasks(open.id, next.id)
+            closedAny = true
         }
-        if (plan.weeksToClose > 0 && currentIndex - 1 > preferencesRepository.lastClosedWeek) {
+        if (closedAny && currentIndex - 1 > preferencesRepository.lastClosedWeek) {
             preferencesRepository.lastClosedWeek = currentIndex - 1
         }
 
+        var scarred = 0
+        for (w in weekDao.getAllSync()) {
+            if (DateUtil.weekIndexFor(LocalDate.parse(w.startDate)) !in range) continue
+            if (clearRecurring) excuseRecurring(w.id)
+            weekDao.markSkipped(w.id, reason, at, clearRecurring)
+            scarred++
+        }
+
         val landing = weekRepository.getOrCreateCurrentWeek()
-        if (trueReset) setAsideRecurring(landing.id)
-        return plan
+        if (clearRecurring) setAsideRecurring(landing.id)
+        return scarred
+    }
+
+    /**
+     * In a closed week being scarred, turn the weekly / repeating tasks that closed as missed
+     * (incomplete, no time logged) into skipped — they weren't missed, the week was written off.
+     * The sealed snapshot is untouched.
+     */
+    private suspend fun excuseRecurring(weekId: String) {
+        val loggedTaskIds = db.timeEntryDao().getByWeek(weekId)
+            .filter { it.durationMinutes > 0 }.map { it.taskId }.toSet()
+        taskDao.getAllByWeek(weekId)
+            .filter { it.isRecurring && it.status == TaskStatus.INCOMPLETE.value && it.id !in loggedTaskIds }
+            .forEach { taskDao.updateStatus(it.id, TaskStatus.SKIPPED.value) }
     }
 
     /**
