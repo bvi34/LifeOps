@@ -6,7 +6,7 @@ import kotlin.math.roundToLong
  * Serialisers for the Growth Record. Both consume the same pure primitives as the
  * on-screen renderer:
  *   - CSV  (`week,<aspect names>,skipped,notes`; one row per week, hours per aspect column,
- *     then whether the week was written off by "Reset to current week" and its reason) — round-trips.
+ *     then whether the week was written off by "Scar past weeks" and its reason) — round-trips.
  *   - SVG  (filters + gradients intact) — the shareable vector artifact.
  */
 object GrowthExport {

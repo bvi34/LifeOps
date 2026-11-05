@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,6 +45,7 @@ import com.lifeops.app.ui.components.AppHeader
 import com.lifeops.app.ui.components.BackNavIcon
 import com.lifeops.app.ui.theme.parseColor
 import com.lifeops.app.util.GrowthRings
+import com.lifeops.app.ui.screens.thisweek.ResetWeekDialog
 import kotlin.math.hypot
 import kotlin.math.min
 
@@ -51,6 +53,7 @@ import kotlin.math.min
 fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showHelp by remember { mutableStateOf(false) }
+    var showScarDialog by remember { mutableStateOf(false) }
 
     Scaffold(topBar = { AppHeader(navigationIcon = { onBack?.let { BackNavIcon(it) } }) }) { padding ->
         Column(
@@ -63,7 +66,8 @@ fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
                 onColorByHours = viewModel::setColorByHours,
                 onGlow = viewModel::setGlow,
                 onView = viewModel::setView,
-                onHelp = { showHelp = true }
+                onHelp = { showHelp = true },
+                onScarWeeks = viewModel::startScarPick
             )
 
             when {
@@ -80,17 +84,41 @@ fun GrowthScreen(viewModel: GrowthViewModel, onBack: (() -> Unit)? = null) {
                             GrowthView.BARS -> BarChart(
                                 chart = state.chart!!,
                                 selectedWeekId = state.selectedWeekId,
-                                onSelectWeek = viewModel::selectWeek
+                                onSelectWeek = viewModel::selectWeek,
+                                scarPick = state.scarPick,
+                                onPickScar = viewModel::pickScarFrom
                             )
                         }
                     }
-                    SelectedWeekDetail(state)
-                    Legend(state.legend, state.latestWeekLabel)
+                    val pick = state.scarPick
+                    if (pick != null) {
+                        ScarPickPanel(
+                            pick = pick,
+                            onCancel = viewModel::cancelScarPick,
+                            onScar = { showScarDialog = true }
+                        )
+                    } else {
+                        SelectedWeekDetail(state)
+                        Legend(state.legend, state.latestWeekLabel)
+                    }
                 }
             }
         }
 
         if (showHelp) RingsHelpDialog(onDismiss = { showHelp = false })
+        val pick = state.scarPick
+        if (showScarDialog && pick != null) {
+            ResetWeekDialog(
+                plan = pick.plan,
+                inFlight = pick.inFlight,
+                initialCount = pick.count,
+                onConfirm = { count, reason, clearRecurring ->
+                    showScarDialog = false
+                    viewModel.confirmScar(count, reason, clearRecurring)
+                },
+                onDismiss = { showScarDialog = false }
+            )
+        }
     }
 }
 
@@ -100,7 +128,8 @@ private fun GrowthControls(
     onColorByHours: (Boolean) -> Unit,
     onGlow: (Boolean) -> Unit,
     onView: (GrowthView) -> Unit,
-    onHelp: () -> Unit
+    onHelp: () -> Unit,
+    onScarWeeks: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -153,6 +182,11 @@ private fun GrowthControls(
                 )
             }
             Spacer(Modifier.weight(1f))
+            if (state.scarPick == null && state.totalWeeks > 1) {
+                IconButton(onClick = onScarWeeks) {
+                    Icon(Icons.Default.History, contentDescription = "Scar past weeks")
+                }
+            }
             IconButton(onClick = onHelp) {
                 Icon(Icons.Default.Info, contentDescription = "How the Growth Record works")
             }
@@ -175,7 +209,7 @@ private fun RingsHelpDialog(onDismiss: () -> Unit) {
                 HelpLine("To grow a ring: log time against your tasks, then close the week on This Week. More hours → thicker, brighter bands (≈50h reads as \"full\", then it glows).")
                 HelpLine("Every aspect keeps the same track across all rings, so you can follow one outward through time.")
                 HelpLine("A week with zero logged hours leaves a permanent grey scar — never a gap.")
-                HelpLine("Weeks written off with \"Reset to current week\" (This Week) are scars too. Tap one to see the reason you gave.")
+                HelpLine("Weeks written off with \"Scar past weeks\" (the history icon here or on This Week) are scars too, even if they had a few hours. Tap one to see the reason you gave.")
                 HelpLine("Prefer a timeline? Switch to \"Bars\": the same weeks as stacked bars, oldest on the left, taller = more hours. Tap a bar (or a ring) for that week's hours.")
                 HelpLine("\"Colour by hours\" and \"Glow\" only change how it looks, never the record.")
                 HelpLine("History is sealed at week-close: deleting, renaming or recolouring an aspect later won't repaint past rings. It can't be faked or ground.")
@@ -341,7 +375,9 @@ private fun RingCanvas(
 private fun BarChart(
     chart: GrowthBars.Chart,
     selectedWeekId: String?,
-    onSelectWeek: (String?) -> Unit
+    onSelectWeek: (String?) -> Unit,
+    scarPick: ScarPick? = null,
+    onPickScar: (String) -> Unit = {}
 ) {
     val bars = chart.bars
     val listState = rememberLazyListState()
@@ -367,8 +403,12 @@ private fun BarChart(
                     plotHeight = plotHeight,
                     labelHeight = labelHeight,
                     showLabel = index % step == 0 || index == bars.lastIndex,
-                    selected = bar.weekId == selectedWeekId,
-                    onClick = { onSelectWeek(if (selectedWeekId == bar.weekId) null else bar.weekId) }
+                    selected = scarPick == null && bar.weekId == selectedWeekId,
+                    scarPicked = scarPick?.includes(bar.label) == true,
+                    onClick = {
+                        if (scarPick != null) onPickScar(bar.label)
+                        else onSelectWeek(if (selectedWeekId == bar.weekId) null else bar.weekId)
+                    }
                 )
             }
         }
@@ -383,13 +423,18 @@ private fun BarColumn(
     labelHeight: androidx.compose.ui.unit.Dp,
     showLabel: Boolean,
     selected: Boolean,
+    scarPicked: Boolean = false,
     onClick: () -> Unit
 ) {
     val barWidth = 24.dp
     val barShape = RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp)
+    val pickColor = MaterialTheme.colorScheme.error
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            // A picked week gets a faint full-height column so even a stub reads as selected.
+            .then(if (scarPicked) Modifier.background(pickColor.copy(alpha = 0.14f), RoundedCornerShape(4.dp)) else Modifier)
     ) {
         Box(
             modifier = Modifier.height(plotHeight).width(barWidth),
@@ -399,7 +444,13 @@ private fun BarColumn(
                 modifier = Modifier
                     .width(barWidth)
                     .clip(barShape)
-                    .then(if (selected) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, barShape) else Modifier),
+                    .then(
+                        when {
+                            scarPicked -> Modifier.border(1.5.dp, pickColor, barShape)
+                            selected -> Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, barShape)
+                            else -> Modifier
+                        }
+                    ),
                 verticalArrangement = Arrangement.Bottom
             ) {
                 if (bar.isScar) {
@@ -427,6 +478,39 @@ private fun BarColumn(
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
+            }
+        }
+    }
+}
+
+/** While picking weeks to scar: what's selected, and the way to go on or back out. */
+@Composable
+private fun ScarPickPanel(pick: ScarPick, onCancel: () -> Unit, onScar: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = MaterialTheme.shapes.medium
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Scar past weeks", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            val range = pick.range
+            Text(
+                if (range.isEmpty()) "Tap the oldest week to scar. It and every week after it, up to last week, are picked — hours or not."
+                else {
+                    val from = shortDate(com.lifeops.app.util.DateUtil.weekStartForIndex(range.first).toString())
+                    val to = shortDate(com.lifeops.app.util.DateUtil.weekStartForIndex(range.last).toString())
+                    "Last ${pick.count} week${if (pick.count == 1) "" else "s"}: " +
+                        (if (range.first == range.last) "week of $from" else "$from – $to") +
+                        ". Tap another bar to change."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.align(Alignment.End)) {
+                TextButton(enabled = !pick.inFlight, onClick = onCancel) { Text("Cancel") }
+                Button(enabled = pick.count > 0 && !pick.inFlight, onClick = onScar) {
+                    Text(if (pick.count > 0) "Scar ${pick.count} week${if (pick.count == 1) "" else "s"}…" else "Scar…")
+                }
             }
         }
     }
@@ -464,7 +548,7 @@ private fun SelectedWeekDetail(state: GrowthUiState) {
                 Spacer(Modifier.height(4.dp))
                 Text(
                     state.selectedWeekNote?.takeIf { it.isNotBlank() }?.let { "Reason: $it" }
-                        ?: "Written off by Reset to current week.",
+                        ?: "Written off with Scar past weeks.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
                 )

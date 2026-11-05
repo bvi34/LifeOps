@@ -1,7 +1,6 @@
 package com.lifeops.app.util
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -14,63 +13,71 @@ class WeekResetTest {
         WeekReset.WeekInfo(id, index, isClosed = false, isSkipped = false, wasUsed = false)
 
     @Test
-    fun `stale open week plus every week up to today is closed`() {
-        // Open week is 10, today is 14 → weeks 10..13 get closed and scarred.
-        val plan = WeekReset.plan(listOf(closed("w9", 9, used = true), open("w10", 10)), currentIndex = 14)
-        assertEquals(4, plan.weeksToClose)
-        assertTrue(plan.closedWeekIds.isEmpty())
-        assertEquals(4, plan.scarCount)
-        assertEquals(10, plan.firstIndex)
-        assertEquals(13, plan.lastIndex)
+    fun `last X weeks end right before today's week`() {
+        val weeks = (1..9).map { closed("w$it", it, used = true) } + open("w10", 10)
+        val plan = WeekReset.plan(weeks, currentIndex = 10)
+        assertEquals(9, plan.availableCount)
+        assertEquals(7..9, plan.range(3))
+        assertEquals(9..9, plan.range(1))
     }
 
     @Test
-    fun `weeks auto-closed during the gap are scarred, today's week stays open`() {
+    fun `used weeks can still be picked by hand`() {
+        val weeks = listOf(closed("w1", 1, used = true), closed("w2", 2, used = true), open("w3", 3))
+        val plan = WeekReset.plan(weeks, currentIndex = 3)
+        assertEquals(0, plan.suggestedCount)
+        assertEquals(1..2, plan.range(2))
+    }
+
+    @Test
+    fun `range is clamped to the weeks that exist`() {
+        val plan = WeekReset.plan(listOf(closed("w5", 5), open("w6", 6)), currentIndex = 6)
+        assertEquals(1, plan.availableCount)
+        assertEquals(5..5, plan.range(10))
+        assertTrue(plan.range(0).isEmpty())
+    }
+
+    @Test
+    fun `no past weeks means nothing to pick`() {
+        val plan = WeekReset.plan(listOf(open("w1", 1)), currentIndex = 1)
+        assertEquals(0, plan.availableCount)
+        assertTrue(plan.range(3).isEmpty())
+    }
+
+    @Test
+    fun `availability is capped`() {
+        val plan = WeekReset.plan(listOf(closed("w1", 1), open("w200", 200)), currentIndex = 200)
+        assertEquals(WeekReset.MAX_WEEKS, plan.availableCount)
+    }
+
+    @Test
+    fun `suggestion is the quiet run right before today's week`() {
         val weeks = listOf(
             closed("w8", 8, used = true),
             closed("w9", 9), closed("w10", 10), closed("w11", 11),
             open("w12", 12)
         )
-        val plan = WeekReset.plan(weeks, currentIndex = 12)
-        assertEquals(listOf("w9", "w10", "w11"), plan.closedWeekIds)
-        assertEquals(0, plan.weeksToClose)
-        assertEquals(3, plan.scarCount)
-        assertEquals(9, plan.firstIndex)
-        assertEquals(11, plan.lastIndex)
+        assertEquals(3, WeekReset.plan(weeks, currentIndex = 12).suggestedCount)
     }
 
     @Test
-    fun `untouched closed weeks and a stale open week combine`() {
+    fun `stale open weeks count toward the suggestion`() {
         val weeks = listOf(closed("w5", 5, used = true), closed("w6", 6), closed("w7", 7), open("w8", 8))
         val plan = WeekReset.plan(weeks, currentIndex = 10)
-        assertEquals(listOf("w6", "w7"), plan.closedWeekIds)
-        assertEquals(2, plan.weeksToClose)
-        assertEquals(4, plan.scarCount)
-        assertEquals(6, plan.firstIndex)
-        assertEquals(9, plan.lastIndex)
+        assertEquals(4, plan.suggestedCount)   // 6, 7, the open 8, and the not-yet-minted 9
+        assertEquals(5, plan.availableCount)
     }
 
     @Test
-    fun `nothing to do when last week was used`() {
-        val plan = WeekReset.plan(listOf(closed("w1", 1, used = true), open("w2", 2)), currentIndex = 2)
-        assertEquals(0, plan.scarCount)
-        assertNull(plan.firstIndex)
+    fun `suggestion stops at a used or already scarred week`() {
+        val used = listOf(closed("w1", 1), closed("w2", 2, used = true), open("w3", 3))
+        assertEquals(0, WeekReset.plan(used, currentIndex = 3).suggestedCount)
+        val scarred = listOf(closed("w1", 1), closed("w2", 2, skipped = true), closed("w3", 3), open("w4", 4))
+        assertEquals(1, WeekReset.plan(scarred, currentIndex = 4).suggestedCount)
     }
 
     @Test
-    fun `an old quiet stretch followed by a used week is not this absence`() {
-        val weeks = listOf(closed("w1", 1), closed("w2", 2), closed("w3", 3, used = true), open("w4", 4))
-        assertEquals(0, WeekReset.plan(weeks, currentIndex = 4).scarCount)
-    }
-
-    @Test
-    fun `already skipped weeks are never scarred twice`() {
-        val weeks = listOf(closed("w1", 1), closed("w2", 2, skipped = true), closed("w3", 3, skipped = true), open("w4", 4))
-        assertEquals(0, WeekReset.plan(weeks, currentIndex = 4).scarCount)
-    }
-
-    @Test
-    fun `note flags a true reset`() {
+    fun `note flags cleared tasks`() {
         assertEquals("True reset: hospital", WeekReset.note(" hospital ", true))
         assertEquals("True reset", WeekReset.note(null, true))
         assertEquals("travel", WeekReset.note("travel", false))

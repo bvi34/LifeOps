@@ -45,13 +45,13 @@ class WeekService(
         return CloseOutcome.Closed(closedWeek = week, newWeek = newWeek)
     }
 
-    /** What "Reset to current week" would scar right now (for the confirmation prompt). */
+    /** The choices for "Scar past weeks" (for the confirmation prompt). */
     suspend fun planReset(): WeekReset.Plan = taskRepository.planReset()
 
     /**
-     * "Reset to current week": write off every untouched week as skipped (a scar with [reason]
-     * beside it) and land on today's week. See [TaskRepository.resetToCurrentWeek].
+     * "Scar past weeks": mark the last [count] weeks as skipped scars with [reason] beside them,
+     * optionally clearing weekly / repeating tasks. See [TaskRepository.scarPastWeeks].
      */
-    suspend fun resetToCurrent(reason: String, trueReset: Boolean): WeekReset.Plan =
-        taskRepository.resetToCurrentWeek(reason, trueReset)
+    suspend fun scarPastWeeks(count: Int, reason: String, clearRecurring: Boolean): Int =
+        taskRepository.scarPastWeeks(count, reason, clearRecurring)
 }

@@ -28,7 +28,7 @@ object GrowthData {
         val aspectHistory: Map<String, AspectHist>,
         /** Live fallback: aspectId -> minutes from current time-entries. */
         val liveMinutesByAspect: Map<String, Int>,
-        /** Written off by "Reset to current week" — drawn as a scar, with [skipReason] beside it. */
+        /** Written off by "Scar past weeks" — drawn as a scar, with [skipReason] beside it. */
         val skipped: Boolean = false,
         val skipReason: String? = null,
         val skipTrueReset: Boolean = false

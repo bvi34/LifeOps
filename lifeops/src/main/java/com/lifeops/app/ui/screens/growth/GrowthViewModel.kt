@@ -3,7 +3,11 @@ package com.lifeops.app.ui.screens.growth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lifeops.app.connection.service.WeekService
 import com.lifeops.app.data.repository.GrowthRepository
+import com.lifeops.app.util.DateUtil
+import com.lifeops.app.util.WeekReset
+import java.time.LocalDate
 import com.lifeops.app.util.GrowthBars
 import com.lifeops.app.util.GrowthColor
 import com.lifeops.app.util.GrowthData
@@ -36,17 +40,37 @@ data class GrowthUiState(
     val glowEnabled: Boolean = true,
     val selectedWeekId: String? = null,
     val selectedWeekDetail: List<GrowthLegendRow> = emptyList(),
-    /** The selected week was written off by "Reset to current week". */
+    /** The selected week was written off as skipped ("Scar past weeks"). */
     val selectedWeekSkipped: Boolean = false,
     /** The selected skipped week's reason (blank when none was given). */
     val selectedWeekNote: String? = null,
     /** How many weeks in the record are skipped scars. */
     val skippedWeeks: Int = 0,
+    /**
+     * Picking weeks to scar on the bars: tap a bar and it plus every week after it, up to last
+     * week, is selected — "the last X weeks". Null when not picking.
+     */
+    val scarPick: ScarPick? = null,
     val isLoading: Boolean = true
 )
 
+/** The "scar the last X weeks" selection on the Growth Record. */
+data class ScarPick(
+    val plan: WeekReset.Plan,
+    /** How many of the weeks before this one are selected (0 = none yet). */
+    val count: Int,
+    val inFlight: Boolean = false
+) {
+    val range: IntRange get() = plan.range(count)
+
+    /** Whether the bar starting [startDate] is in the selection. */
+    fun includes(startDate: String): Boolean =
+        runCatching { DateUtil.weekIndexFor(LocalDate.parse(startDate)) in range }.getOrDefault(false)
+}
+
 class GrowthViewModel(
-    private val growthRepository: GrowthRepository
+    private val growthRepository: GrowthRepository,
+    private val weekService: WeekService? = null
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(GrowthUiState())
@@ -122,7 +146,49 @@ class GrowthViewModel(
     }
 
     fun setView(view: GrowthView) {
-        _uiState.update { it.copy(view = view) }
+        // Picking weeks to scar happens on the bars; leaving them ends the pick.
+        _uiState.update { it.copy(view = view, scarPick = if (view == GrowthView.BARS) it.scarPick else null) }
+    }
+
+    /** Start picking weeks to scar; preselects the quiet run right before this week. */
+    fun startScarPick() {
+        val service = weekService ?: return
+        viewModelScope.launch {
+            val plan = runCatching { service.planReset() }.getOrNull() ?: return@launch
+            _uiState.update {
+                it.copy(view = GrowthView.BARS, scarPick = ScarPick(plan, plan.suggestedCount))
+            }
+        }
+    }
+
+    fun cancelScarPick() = _uiState.update { it.copy(scarPick = null) }
+
+    /**
+     * Tap a bar while picking: select it and every week after it up to last week. Tapping the
+     * oldest selected bar again clears the selection; this week's bar can't be scarred.
+     */
+    fun pickScarFrom(startDate: String) {
+        val pick = _uiState.value.scarPick ?: return
+        val index = runCatching { DateUtil.weekIndexFor(LocalDate.parse(startDate)) }.getOrNull() ?: return
+        val count = (pick.plan.currentIndex - index).coerceIn(0, pick.plan.availableCount)
+        if (count == 0) return
+        val next = if (count == pick.count) 0 else count
+        _uiState.update { it.copy(scarPick = pick.copy(count = next)) }
+    }
+
+    fun confirmScar(count: Int, reason: String, clearRecurring: Boolean) {
+        val service = weekService ?: return
+        val pick = _uiState.value.scarPick ?: return
+        if (pick.inFlight) return
+        _uiState.update { it.copy(scarPick = pick.copy(inFlight = true)) }
+        viewModelScope.launch {
+            try {
+                service.scarPastWeeks(count, reason.trim(), clearRecurring)
+                _uiState.update { it.copy(scarPick = null) }
+            } catch (e: Exception) {
+                _uiState.update { s -> s.copy(scarPick = s.scarPick?.copy(inFlight = false)) }
+            }
+        }
     }
 
     fun selectWeek(weekId: String?) {
@@ -138,9 +204,10 @@ class GrowthViewModel(
 }
 
 class GrowthViewModelFactory(
-    private val growthRepository: GrowthRepository
+    private val growthRepository: GrowthRepository,
+    private val weekService: WeekService? = null
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T =
-        GrowthViewModel(growthRepository) as T
+        GrowthViewModel(growthRepository, weekService) as T
 }

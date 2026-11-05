@@ -427,9 +427,9 @@ fun ThisWeekScreen(
         ResetWeekDialog(
             plan = state.resetPlan,
             inFlight = state.resetInFlight,
-            onConfirm = { reason, trueReset ->
+            onConfirm = { count, reason, clearRecurring ->
                 showResetDialog = false
-                viewModel.onResetToCurrentWeek(reason, trueReset)
+                viewModel.onScarPastWeeks(count, reason, clearRecurring)
             },
             onDismiss = { showResetDialog = false }
         )
