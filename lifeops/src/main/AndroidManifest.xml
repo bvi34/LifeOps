@@ -28,6 +28,11 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- Lets the running task timer's notification be shown as a Live Update (Android 16 QPR2+):
+         promoted in the shade and on the lock screen, with its clock as a status-bar chip. Normal
+         protection, granted at install; an older Android doesn't know it and ignores it. -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <!-- Wellness: estimate sleep from screen-time (last phone use → wake). Special access the user
          grants once in Settings; the sleep prompt degrades to hand-entered duration without it. -->
     <uses-permission
@@ -106,6 +111,44 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- The running task timer as an ongoing notification / Live Update, and what keeps the
+             in-memory timer's process alive while it runs. Started and stopped by
+             TaskTimerService.follow, mirroring TimerController. -->
+        <service
+            android:name=".service.TaskTimerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="task_time_tracking" />
+        </service>
+
+        <!-- Quick Settings tiles. Exported only to the system UI, which holds BIND_QUICK_SETTINGS_TILE. -->
+        <service
+            android:name=".tile.TaskTimerTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_timer"
+            android:label="Task timer"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
+            android:name=".tile.SleepTrackingTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_sleep"
+            android:label="Sleep tracking"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
 
     </application>
 

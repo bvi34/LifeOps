@@ -80,6 +80,12 @@ Time is the currency of LifeOps. Three ways to log it:
 Logged time drives your **accuracy score** and your **Growth rings**. Untracked work is
 invisible to both.
 
+While a timer runs, LifeOps keeps a notification up with the task and its clock, and a **Stop & log**
+button. On Android 16 (QPR2 or later; a Pixel 10, for instance) that notification is a **Live Update**:
+it sits at the top of the shade and on the lock screen, and the clock shows as a chip in the status
+bar. A Pomodoro counts down and fills a progress bar. The notification also keeps the timer running
+if Android would otherwise close LifeOps in the background.
+
 ### Task outcomes (statuses)
 
 - **Pending** — not yet done.
@@ -295,6 +301,19 @@ From **Settings → Data**:
 
 LifeOps includes a widget that shows your top pending tasks at a glance, so the week's work
 is visible without opening the app. Add it from your launcher's widget picker.
+
+---
+
+## Quick Settings tiles
+
+Pull down the shade, tap the pencil to edit your tiles, and drag these in:
+
+- **Task timer** shows the running task and its minutes. Tap it to stop the timer and log the
+  time. With no timer running, it opens LifeOps (timers start from a task).
+- **Sleep tracking** turns background sleep tracking on and off, the same switch as in Settings.
+  If Android won't let the tile start it, the tile opens Settings so you can turn it on there.
+
+Secrets adds a third, **Lock Secrets**; see [Secrets](SECRETS.md).
 
 ---
 
