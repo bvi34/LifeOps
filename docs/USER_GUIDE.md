@@ -53,6 +53,9 @@ design. The data underneath is sincere.
 
 This is where you live day-to-day.
 
+On a wide screen (a Pixel Fold opened, or a tablet), This Week shows the task you tap in a pane
+beside the week instead of on its own screen. Fold the phone with a task open and it stays open.
+
 ### Creating a task
 
 Tap **+** and fill in:
@@ -297,10 +300,18 @@ From **Settings → Data**:
 
 ---
 
-## The home-screen widget
+## Home-screen widgets
 
 LifeOps includes a widget that shows your top pending tasks at a glance, so the week's work
 is visible without opening the app. Add it from your launcher's widget picker.
+
+The suite has three more, in the same style and in each app's colour:
+
+- **People:** birthdays and other dates in the next two months.
+- **Maintenance:** what's overdue or due soon, across everything you own.
+- **Finance:** unpaid bills due in the next month. It shows payees and amounts, never balances.
+
+Tapping a widget opens its app. They refresh every half hour, and whenever you leave the app.
 
 ---
 

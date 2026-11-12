@@ -9,6 +9,7 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -19,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -314,6 +316,26 @@ fun LifeOpsNavHost(
                             app.objectiveRepository, app.aspectRepository, app.weekRepository
                         )
                     )
+                    // On a wide window — a Pixel Fold opened, a tablet — the week and the task you
+                    // tapped sit side by side instead of the task replacing the week. Narrow windows
+                    // navigate to the task as before; folding the phone with a task open carries it
+                    // over into that full-screen view rather than dropping it.
+                    androidx.compose.foundation.layout.BoxWithConstraints {
+                    val wide = maxWidth >= TWO_PANE_MIN_WIDTH
+                    var paneTaskId by androidx.compose.runtime.saveable.rememberSaveable {
+                        androidx.compose.runtime.mutableStateOf<String?>(null)
+                    }
+                    androidx.compose.runtime.LaunchedEffect(wide) {
+                        val open = paneTaskId
+                        if (!wide && open != null) {
+                            paneTaskId = null
+                            navController.navigate("task_detail/$open")
+                        }
+                    }
+                    androidx.compose.foundation.layout.Row(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    androidx.compose.foundation.layout.Box(
+                        androidx.compose.ui.Modifier.weight(1f).fillMaxHeight()
+                    ) {
                     com.lifeops.app.ui.screens.weekhub.WeekHubScreen(
                         dailyPlanViewModel = dailyPlanVm,
                         taskManagerViewModel = taskManagerVm,
@@ -327,7 +349,9 @@ fun LifeOpsNavHost(
                         onOpenOperation = { id -> navController.navigate("operation_detail/$id") },
                         onOpenPerson = { id -> navController.navigate("person_detail/$id") },
                         onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
-                        onOpenTask = { id -> navController.navigate("task_detail/$id") },
+                        onOpenTask = { id ->
+                            if (wide) paneTaskId = id else navController.navigate("task_detail/$id")
+                        },
                         onOpenObjective = { id -> navController.navigate("objective_detail/$id") },
                         sharedText = sharedText,
                         onImportShared = { text ->
@@ -335,6 +359,22 @@ fun LifeOpsNavHost(
                             taskManagerVm.openImportDialog()
                         }
                     )
+                    }
+                    if (wide) {
+                        androidx.compose.material3.VerticalDivider()
+                        androidx.compose.foundation.layout.Box(
+                            androidx.compose.ui.Modifier.weight(1f).fillMaxHeight()
+                        ) {
+                            val open = paneTaskId
+                            if (open == null) {
+                                TaskPanePlaceholder()
+                            } else {
+                                TaskDetailRoute(app, navController, open, onBack = { paneTaskId = null })
+                            }
+                        }
+                    }
+                    }
+                    }
                 }
                 composable("recipe_detail/{recipeId}") { backStackEntry ->
                     val recipeId = backStackEntry.arguments?.getString("recipeId") ?: return@composable
@@ -670,25 +710,57 @@ fun LifeOpsNavHost(
             // including tasks from past, closed weeks. Dismissing (Back) returns to the caller.
             composable("task_detail/{taskId}") { backStackEntry ->
                 val taskId = backStackEntry.arguments?.getString("taskId") ?: return@composable
-                val vm = viewModel<com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModel>(
-                    key = "task_detail_$taskId",
-                    factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
-                        app.appContext, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
-                        app.costResourceRepository, app.runbookRepository, app.operationRepository,
-                        app.counterRepository, app.personRepository, app.taskAttachmentRepository,
-                        app.weatherRepository, app.weekRepository, app.aspectRepository,
-                        app.notificationRepository, app.timerController
-                    )
-                )
-                com.lifeops.app.ui.screens.taskdetail.TaskDetailScreen(
-                    viewModel = vm,
-                    onOpenOperation = { id -> navController.navigate("operation_detail/$id") },
-                    onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
-                    onOpenPerson = { id -> navController.navigate("person_detail/$id") },
-                    onBack = { navController.navigateUp() }
-                )
+                TaskDetailRoute(app, navController, taskId, onBack = { navController.navigateUp() })
             }
         }
     }
     } // CompositionLocalProvider
+}
+
+/** From this width the week and an open task are shown side by side (see the This Week hub). */
+private val TWO_PANE_MIN_WIDTH = 700.dp
+
+/**
+ * One task's detail screen, wherever it is shown: as its own destination, or in the right-hand pane
+ * of a wide This Week. Keyed by task, so switching tasks in the pane swaps the screen's state too.
+ */
+@Composable
+private fun TaskDetailRoute(
+    app: LifeOpsApp,
+    navController: androidx.navigation.NavController,
+    taskId: String,
+    onBack: () -> Unit
+) {
+    val vm = viewModel<com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModel>(
+        key = "task_detail_$taskId",
+        factory = com.lifeops.app.ui.screens.taskdetail.TaskDetailViewModelFactory(
+            app.appContext, taskId, app.taskRepository, app.taskNoteRepository, app.timeEntryRepository,
+            app.costResourceRepository, app.runbookRepository, app.operationRepository,
+            app.counterRepository, app.personRepository, app.taskAttachmentRepository,
+            app.weatherRepository, app.weekRepository, app.aspectRepository,
+            app.notificationRepository, app.timerController
+        )
+    )
+    com.lifeops.app.ui.screens.taskdetail.TaskDetailScreen(
+        viewModel = vm,
+        onOpenOperation = { id -> navController.navigate("operation_detail/$id") },
+        onOpenCounter = { id -> navController.navigate("counter_detail/$id") },
+        onOpenPerson = { id -> navController.navigate("person_detail/$id") },
+        onBack = onBack
+    )
+}
+
+/** The empty right-hand pane: says what goes there instead of sitting blank. */
+@Composable
+private fun TaskPanePlaceholder() {
+    androidx.compose.foundation.layout.Box(
+        androidx.compose.ui.Modifier.fillMaxSize().padding(32.dp),
+        contentAlignment = androidx.compose.ui.Alignment.Center
+    ) {
+        androidx.compose.material3.Text(
+            "Pick a task to see it here.",
+            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
