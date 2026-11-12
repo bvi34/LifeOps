@@ -48,6 +48,18 @@
             android:theme="@style/Theme.Finance"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Home-screen widget (see widget/FinanceWidget). Exported because the launcher binds it. -->
+        <receiver
+            android:name=".widget.FinanceWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/finance_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

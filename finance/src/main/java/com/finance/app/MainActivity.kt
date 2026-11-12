@@ -50,6 +50,7 @@ import com.finance.app.ui.picture.PictureScreen
 import com.finance.app.ui.picture.PictureViewModel
 import com.finance.app.ui.settings.FinanceSettingsScreen
 import com.finance.app.ui.theme.FinanceTheme
+import kotlinx.coroutines.launch
 
 /**
  * Finance's entry point: four lists and one door.
@@ -63,6 +64,18 @@ import com.finance.app.ui.theme.FinanceTheme
  * mortgage cleared should not have to walk past the summary to get there.
  */
 class MainActivity : ComponentActivity() {
+
+    /**
+     * Leaving the app is when its data has most likely changed, so the home-screen widget is redrawn
+     * here rather than waiting up to half an hour for the system's own update.
+     */
+    override fun onStop() {
+        super.onStop()
+        val context = applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            com.finance.app.widget.FinanceWidget.refresh(context)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

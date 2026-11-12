@@ -64,6 +64,7 @@ import com.lifeops.app.ui.screens.settings.SettingsViewModel
 import com.lifeops.app.ui.screens.settings.SettingsViewModelFactory
 import com.lifeops.app.ui.screens.thisweek.ThisWeekViewModelFactory
 import com.lifeops.app.ui.theme.LifeOpsTheme
+import kotlinx.coroutines.launch
 
 sealed class Screen(val route: String, val label: String, val icon: ImageVector) {
     object ThisWeek : Screen("this_week", "This Week", Icons.Default.CalendarToday)
@@ -103,6 +104,18 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         LifeOpsApp.getOrNull()?.syncPeople()
+    }
+
+    /**
+     * Leaving the app is when its data has most likely changed, so the home-screen widget is redrawn
+     * here rather than waiting up to half an hour for the system's own update.
+     */
+    override fun onStop() {
+        super.onStop()
+        val context = applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            com.lifeops.app.widget.LifeOpsWidget.refresh(context)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
