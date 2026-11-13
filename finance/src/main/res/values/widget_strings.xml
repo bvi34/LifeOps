@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="finance_widget_description">Unpaid bills due in the next month. Shows payees and amounts, never balances.</string>
+</resources>

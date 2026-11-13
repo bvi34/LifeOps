@@ -43,6 +43,7 @@ import com.maintenance.app.ui.costs.CostsViewModel
 import com.maintenance.app.ui.due.DueScreen
 import com.maintenance.app.ui.due.DueViewModel
 import com.maintenance.app.ui.theme.MaintenanceTheme
+import kotlinx.coroutines.launch
 
 /**
  * Maintenance's entry point: three lists and one thing at a time.
@@ -57,6 +58,18 @@ import com.maintenance.app.ui.theme.MaintenanceTheme
  * back gesture should return you to the list you came from, whichever it was.
  */
 class MainActivity : ComponentActivity() {
+
+    /**
+     * Leaving the app is when its data has most likely changed, so the home-screen widget is redrawn
+     * here rather than waiting up to half an hour for the system's own update.
+     */
+    override fun onStop() {
+        super.onStop()
+        val context = applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            com.maintenance.app.widget.MaintenanceWidget.refresh(context)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -13,6 +13,8 @@ import com.advisor.app.data.source.KnowledgeSource
 import com.advisor.app.llm.AdvisorModelInfo
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
+import com.advisor.app.llm.MlKitNanoBackend
+import com.advisor.app.llm.NanoPreference
 import com.advisor.app.logic.AdvisorFunction
 import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.AdvisorPrompt
@@ -36,6 +38,7 @@ import com.advisor.app.logic.MemoryDirectives
 import com.advisor.app.logic.MemoryRecall
 import com.advisor.app.logic.MemoryRecord
 import com.advisor.app.logic.ModelSpec
+import com.advisor.app.logic.NanoAvailability
 import com.advisor.app.logic.Profile
 import com.advisor.app.logic.ProfileDirectives
 import com.advisor.app.logic.ProfileEntry
@@ -97,7 +100,10 @@ class AdvisorRepository(
     private val retriever: HybridRetriever = HybridRetriever(),
     private val functions: FunctionRouter = FunctionRouter.DEFAULT,
     /** The one write capability into another app: creating a task the user asked for. */
-    private val taskWriter: TaskWriter? = null
+    private val taskWriter: TaskWriter? = null,
+    /** Gemini Nano on this phone, for the model card's switch and status; null in a build without it. */
+    private val nano: MlKitNanoBackend? = null,
+    private val nanoPreference: NanoPreference? = null
 ) {
 
     val model: ModelSpec get() = engine.spec
@@ -110,6 +116,26 @@ class AdvisorRepository(
 
     /** True when retrieval is running semantically (an embedding model is loaded), not lexically. */
     val semanticRetrieval: Boolean get() = retriever.isSemantic
+
+    // --- Gemini Nano, the phone's system model (through AICore) ---
+
+    /** Whether the user has asked for Gemini Nano to answer when the phone has it. */
+    fun isNanoEnabled(): Boolean = nanoPreference?.enabled ?: false
+
+    fun setNanoEnabled(on: Boolean) {
+        nanoPreference?.enabled = on
+    }
+
+    /** Ask AICore again whether Nano is here, downloadable or missing. */
+    suspend fun nanoAvailability(): NanoAvailability =
+        withContext(Dispatchers.IO) { nano?.refresh() ?: NanoAvailability.UNAVAILABLE }
+
+    /** Have AICore fetch Nano, reporting bytes as they arrive; true once it has finished. */
+    suspend fun downloadNano(onBytes: (Long) -> Unit): Boolean =
+        withContext(Dispatchers.IO) { nano?.download(onBytes) ?: false }
+
+    /** Why Nano's last call failed, if one has. */
+    val nanoError: String? get() = nano?.lastError
 
     // --- on-device model file (in-app import; no network, nothing leaves the device) ---
 

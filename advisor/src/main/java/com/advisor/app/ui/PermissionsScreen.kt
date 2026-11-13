@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.logic.Identity
+import com.advisor.app.logic.NanoAvailability
 import com.advisor.app.logic.SourceApp
 
 /**
@@ -66,6 +67,8 @@ fun PermissionsScreen(vm: AdvisorViewModel, modifier: Modifier = Modifier) {
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
 
+        GeminiNanoCard(vm)
+
         ModelCard(vm)
 
         HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -111,6 +114,77 @@ private fun describe(app: SourceApp): String = when (app) {
 }
 
 /**
+ * The Gemini Nano switch: hand questions to the phone's own system model (through Android's AICore)
+ * when it has one, ahead of the local engine below. Off until the user turns it on. The card says
+ * plainly what AICore reports — ready, downloadable, downloading, or not on this phone — and offers
+ * the download when AICore can do one.
+ */
+@Composable
+private fun GeminiNanoCard(vm: AdvisorViewModel) {
+    val nano by vm.nano.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.refreshNano() }
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Gemini Nano", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "This phone's model: ${nano.availability.label}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Switch(
+                    checked = nano.enabled,
+                    onCheckedChange = { on -> vm.setNanoEnabled(on) },
+                    enabled = nano.enabled || nano.availability != NanoAvailability.UNAVAILABLE
+                )
+            }
+            Text(
+                "Phones with Android's AICore (Pixel 10 and other recent flagships) keep Gemini Nano on " +
+                    "the device. Turned on, Advisor asks it first: it runs on the phone's own AI " +
+                    "hardware, needs no model file, and your question goes to the system service over " +
+                    "the phone, not to a server. If Nano is missing or fails, the model below answers " +
+                    "as usual. ML Kit's usage reporting is switched off in this build.",
+                style = MaterialTheme.typography.bodySmall
+            )
+            val downloaded = nano.downloadedBytes
+            when {
+                downloaded != null -> {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(
+                        "AICore is downloading Gemini Nano… ${AdvisorModelStore.humanBytes(downloaded)}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                nano.availability == NanoAvailability.DOWNLOADABLE -> {
+                    OutlinedButton(onClick = { vm.downloadNano() }) {
+                        Text("Download Gemini Nano")
+                    }
+                    Text(
+                        "AICore fetches the model from Google itself, as it does for the phone's own " +
+                            "features. Advisor sends nothing.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                nano.availability == NanoAvailability.DOWNLOADING -> {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("AICore is downloading Gemini Nano.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.refreshNano() }) { Text("Check again") }
+                }
+            }
+            nano.error?.let {
+                Text(
+                    "Last problem: $it",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+/**
  * The model card: what's running, plus in-app provisioning of the Qwen3-4B GGUF. The weights are
  * *imported* from a file the user picked (no `INTERNET`, nothing leaves the device); Advisor loads
  * them on the next question. When a file is present but generation is still the placeholder, the card
@@ -119,6 +193,8 @@ private fun describe(app: SourceApp): String = when (app) {
 @Composable
 private fun ModelCard(vm: AdvisorViewModel) {
     val modelState by vm.modelState.collectAsStateWithLifecycle()
+    // Read so the label and status below are re-read when the Nano switch or its status changes.
+    vm.nano.collectAsStateWithLifecycle().value
 
     val pickModel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importModel(uri)

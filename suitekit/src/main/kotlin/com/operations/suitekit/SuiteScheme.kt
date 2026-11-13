@@ -30,6 +30,32 @@ data class SuiteScheme(
 )
 
 /**
+ * The phone's own dynamic colours — Android's Material You palette, drawn from the wallpaper — in
+ * the six slots a preset is seeded from. Read on the Android side and handed in, so this layer stays
+ * framework-free.
+ */
+data class SuiteSystemColors(
+    val primary: Long,
+    val secondary: Long,
+    val tertiary: Long,
+    val background: Long,
+    val surface: Long,
+    val surfaceVariant: Long
+)
+
+/**
+ * Where [SuitePreset.SYSTEM] gets its colours. `:suiteui` installs a source that reads the platform's
+ * dynamic scheme; until then (and in tests, and on a platform with none) it answers null, and the
+ * preset falls back to [SuitePreset.DEFAULT]'s seeds.
+ */
+object SuiteSystemPalette {
+    @Volatile
+    var source: ((dark: Boolean) -> SuiteSystemColors?)? = null
+
+    fun current(dark: Boolean): SuiteSystemColors? = runCatching { source?.invoke(dark) }.getOrNull()
+}
+
+/**
  * How the suite decides what an app looks like.
  *
  * Two inputs, in this order:
@@ -71,9 +97,10 @@ object SuiteThemes {
         preset: SuitePreset,
         dark: Boolean,
         palette: SuitePalette = SuitePalette(),
-        accent: Long? = null
+        accent: Long? = null,
+        system: SuiteSystemColors? = if (preset == SuitePreset.SYSTEM) SuiteSystemPalette.current(dark) else null
     ): SuiteScheme {
-        val seed = seedFor(preset, dark, palette)
+        val seed = seedFor(preset, dark, palette, system)
         val tinted = if (accent == null) seed else tint(seed, accent, dark)
         return build(tinted, dark)
     }
@@ -129,7 +156,18 @@ object SuiteThemes {
      * The preset seeds. DEFAULT/BEACON/OCEAN/SUNSET are the palettes LifeOps shipped, kept
      * value-for-value so an existing install's look survives the move to a suite-wide theme.
      */
-    private fun seedFor(preset: SuitePreset, dark: Boolean, palette: SuitePalette): Seed = when (preset) {
+    private fun seedFor(
+        preset: SuitePreset,
+        dark: Boolean,
+        palette: SuitePalette,
+        system: SuiteSystemColors?
+    ): Seed = when (preset) {
+        SuitePreset.SYSTEM -> system?.let {
+            Seed(
+                primary = it.primary, secondary = it.secondary, tertiary = it.tertiary,
+                background = it.background, surface = it.surface, surfaceVariant = it.surfaceVariant
+            )
+        } ?: seedFor(SuitePreset.DEFAULT, dark, palette, null)
         SuitePreset.DEFAULT -> if (dark) Seed(
             primary = 0xFFBB86FCL, secondary = 0xFF03DAC6L, tertiary = 0xFF7F5AF0L,
             background = 0xFF121212L, surface = 0xFF1E1E1EL, surfaceVariant = 0xFF2A2A2AL

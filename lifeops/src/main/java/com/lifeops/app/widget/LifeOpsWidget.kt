@@ -1,77 +1,49 @@
 package com.lifeops.app.widget
 
 import android.content.Context
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
-import androidx.glance.GlanceModifier
 import androidx.glance.action.actionStartActivity
 import androidx.glance.appwidget.GlanceAppWidget
+import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.provideContent
-import androidx.glance.background
-import androidx.glance.action.clickable
-import androidx.glance.layout.*
-import androidx.glance.text.*
-import androidx.glance.unit.ColorProvider
-import com.lifeops.app.LifeOpsApp
+import androidx.glance.appwidget.updateAll
 import com.lifeops.app.MainActivity
+import com.lifeops.app.LifeOpsApp
+import com.operations.backupkit.AppId
+import com.operations.suite.ui.SuiteWidget
+import com.operations.suite.ui.SuiteWidgetContent
+import com.operations.suite.ui.SuiteWidgetRow
 
+/**
+ * Your top pending tasks this week. Drawn with the suite's shared widget frame ([SuiteWidget]), in this app's accent; tapping
+ * it opens the app. Refreshed every half hour by the system, and whenever the app is left.
+ */
 class LifeOpsWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val app = LifeOpsApp.get(context)
-        val tasks = try {
-            app.database.taskDao().getTopPendingTitles(5)
-        } catch (e: Exception) {
-            emptyList()
-        }
-
+        val rows = runCatching { LifeOpsApp.get(context).database.taskDao().getTopPendingTitles(SuiteWidget.MAX_ROWS) }
+            .getOrDefault(emptyList())
+            .map { SuiteWidgetRow(it) }
+        val colors = SuiteWidget.colors(context, AppId.LIFEOPS)
         provideContent {
-            WidgetContent(taskTitles = tasks)
+            SuiteWidgetContent(
+                title = "LifeOps – This Week",
+                rows = rows,
+                empty = "No pending tasks",
+                colors = colors,
+                onClick = actionStartActivity<MainActivity>()
+            )
+        }
+    }
+
+    companion object {
+        /** Redraw every placed copy. Cheap when none is placed; never throws. */
+        suspend fun refresh(context: Context) {
+            runCatching { LifeOpsWidget().updateAll(context) }
         }
     }
 }
 
-@Composable
-private fun WidgetContent(taskTitles: List<String>) {
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .background(Color(0xFF1E1E1E))
-            .padding(12.dp)
-            .clickable(actionStartActivity<MainActivity>()),
-        verticalAlignment = Alignment.Top
-    ) {
-        Text(
-            text = "LifeOps – This Week",
-            style = TextStyle(
-                color = ColorProvider(Color(0xFFD0BCFF)),
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
-        )
-        Spacer(GlanceModifier.height(6.dp))
-        if (taskTitles.isEmpty()) {
-            Text(
-                text = "No pending tasks",
-                style = TextStyle(
-                    color = ColorProvider(Color(0xFF9E9E9E)),
-                    fontSize = 12.sp
-                )
-            )
-        } else {
-            taskTitles.forEach { title ->
-                Text(
-                    text = "• $title",
-                    style = TextStyle(
-                        color = ColorProvider(Color(0xFFE0E0E0)),
-                        fontSize = 12.sp
-                    ),
-                    modifier = GlanceModifier.padding(vertical = 1.dp)
-                )
-            }
-        }
-    }
+class LifeOpsWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = LifeOpsWidget()
 }

@@ -369,6 +369,9 @@ class LifeOpsApp private constructor(private val app: Application) {
         if (preferencesRepository.sleepTrackingEnabled) {
             runCatching { com.lifeops.app.service.SleepTrackingService.start(app) }
         }
+        // Show a running task timer outside the app (ongoing notification / Live Update) and keep
+        // its process alive while it runs; refresh the timer's Quick Settings tile as it changes.
+        com.lifeops.app.service.TaskTimerService.follow(app, this)
         // Periodic Google Calendar sync, opt-in via the Calendar Sync screen. A manual "Sync now"
         // there works regardless of this toggle.
         if (preferencesRepository.googleCalendarSyncEnabled && preferencesRepository.googleCalendarId != null) {

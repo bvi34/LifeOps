@@ -15,7 +15,14 @@ enum class SuitePreset(val displayName: String) {
     BEACON("Beacon"),
     OCEAN("Ocean"),
     SUNSET("Sunset"),
-    CUSTOM("Custom");
+    CUSTOM("Custom"),
+
+    /**
+     * Material You: seeded from the phone's own wallpaper colours (see [SuiteSystemColors]). Apps
+     * still wear their accents on top unless those are switched off. Where the platform has no
+     * wallpaper palette to give, it looks like [DEFAULT].
+     */
+    SYSTEM("Wallpaper");
 
     companion object {
         /** Tolerant lookup by enum name; anything unknown (or null) falls back to [DEFAULT]. */

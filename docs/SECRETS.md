@@ -30,6 +30,10 @@ Any app or page  →  the system's autofill  →  Secrets  (unlock, or pick)  �
 Any app or page  →  Credential Manager      →  Secrets  (unlock, then sign) →  a passkey
 ```
 
+**Lock Secrets** is a Quick Settings tile (add it from the shade's edit screen). It's on while the
+vault is open, and a tap shuts it. It only locks: opening the vault still takes the passphrase or
+biometrics inside the app, so the tile is no way in from the shade or the lock screen.
+
 ## The problem this app was built for
 
 Every app in this suite that holds a credential keeps it the same way, and for a good reason. From

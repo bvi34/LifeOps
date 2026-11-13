@@ -29,6 +29,7 @@ import com.people.app.ui.partner.PartnerWeekViewModel
 import com.people.app.ui.roster.RosterScreen
 import com.people.app.ui.roster.RosterViewModel
 import com.people.app.ui.theme.PeopleTheme
+import kotlinx.coroutines.launch
 
 /**
  * People's single entry point: the roster, and one person at a time.
@@ -44,6 +45,18 @@ import com.people.app.ui.theme.PeopleTheme
  * somewhere else.
  */
 class MainActivity : ComponentActivity() {
+
+    /**
+     * Leaving the app is when its data has most likely changed, so the home-screen widget is redrawn
+     * here rather than waiting up to half an hour for the system's own update.
+     */
+    override fun onStop() {
+        super.onStop()
+        val context = applicationContext
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            com.people.app.widget.PeopleWidget.refresh(context)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- LifeOps and Citation contribute their own <uses-permission> entries via the manifest
          merger (they're library dependencies), so they are not repeated here. That includes
@@ -49,6 +50,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- ML Kit's usage reporting, switched off. ML Kit — Logistics' recipe-screenshot OCR, and
+             Advisor's Gemini Nano engine (the GenAI Prompt API) — brings in Google's datatransport
+             library, whose "cct" backend uploads usage logs (which API was called, how long it took)
+             to Google. Not the images or the prompts, but still traffic this suite has no reason to
+             send. Removing the backend's registration leaves the transport with nowhere to send: it
+             deletes each batch locally ("Unknown backend …, deleting event batch") and nothing else
+             changes. ML Kit is its only user in the suite. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            android:exported="false">
+            <meta-data
+                android:name="backend:com.google.android.datatransport.cct.CctBackendFactory"
+                tools:node="remove" />
+        </service>
 
         <!-- Where an install session reports back (see update/SelfInstaller). Not exported: the
              only sender is the platform installer, through a PendingIntent this app created. -->

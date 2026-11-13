@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- previewLayout is what the launcher's widget picker shows (Android 12+): the widget's real shape
+     with example rows, rather than a blank box. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="250dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen"
+    android:description="@string/people_widget_description"
+    android:previewLayout="@layout/people_widget_preview"
+    android:initialLayout="@layout/glance_default_loading_layout" />

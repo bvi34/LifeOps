@@ -35,6 +35,18 @@
             android:theme="@style/Theme.People"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Home-screen widget (see widget/PeopleWidget). Exported because the launcher binds it. -->
+        <receiver
+            android:name=".widget.PeopleWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/people_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

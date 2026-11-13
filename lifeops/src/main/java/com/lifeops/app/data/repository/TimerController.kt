@@ -47,7 +47,7 @@ class TimerController(
                 val elapsed = ((System.currentTimeMillis() - startMillis) / 1000).toInt()
                 _elapsedSeconds.value = elapsed
                 // Auto-stop Pomodoro at 25 minutes.
-                if (isPomodoro && elapsed >= 1500) {
+                if (isPomodoro && elapsed >= POMODORO_SECONDS) {
                     stop(saveEntry = true)
                     break
                 }
@@ -66,5 +66,10 @@ class TimerController(
         }
         _activeTimer.value = null
         _elapsedSeconds.value = 0
+    }
+
+    companion object {
+        /** A Pomodoro's length; the timer stops itself and logs the time when it is reached. */
+        const val POMODORO_SECONDS = 25 * 60
     }
 }

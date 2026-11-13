@@ -149,7 +149,12 @@ class SuiteAppearanceStore private constructor(context: Context) {
         /** The one store for this process. Safe to call from any thread, at any time. */
         fun get(context: Context): SuiteAppearanceStore =
             instance ?: synchronized(this) {
-                instance ?: SuiteAppearanceStore(context).also { instance = it }
+                instance ?: SuiteAppearanceStore(context).also {
+                    instance = it
+                    // Whoever first asks for the appearance also makes the Wallpaper preset's
+                    // colours readable — every themed screen comes through here.
+                    SuiteDynamicColors.install(context)
+                }
             }
     }
 }
