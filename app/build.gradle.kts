@@ -157,6 +157,11 @@ dependencies {
     // suite's single APK offerable as a keyboard and as a messaging app at all.
     implementation(project(":utilities"))
     implementation(project(":backupkit"))
+    // The new-phone transfer: draw its QR code (zxing-core) and scan it on the new phone
+    // (zxing-android-embedded, which also brings the CAMERA permission). People and Secrets
+    // already pull both into this APK, so they add no weight here.
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

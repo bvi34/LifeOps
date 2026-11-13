@@ -20,7 +20,11 @@ import androidx.compose.ui.platform.LocalContext
 import com.operations.backupkit.AppId
 import com.operations.sandbox.ui.BackupController
 import com.operations.sandbox.ui.CloudBackupController
+import com.operations.sandbox.transfer.FirstRun
+import com.operations.sandbox.transfer.TransferHost
 import com.operations.sandbox.ui.SandboxHomeScreen
+import com.operations.sandbox.ui.TransferInScreen
+import com.operations.sandbox.ui.TransferOutScreen
 import com.operations.sandbox.ui.SandboxSettingsScreen
 import com.operations.sandbox.ui.SettingsTab
 import com.operations.sandbox.ui.UpdateController
@@ -76,6 +80,10 @@ class SandboxActivity : ComponentActivity() {
         // The archive records the build that wrote it; now that the version is the release tag
         // rather than a hardcoded "1.0", a restore can say what it came from.
         val center = BackupCenter(this, sandboxVersion = BuildConfig.VERSION_NAME)
+        // Before anything is drawn, and so before any hosted app has opened a database: is this a
+        // brand-new install with nothing in it? If so the shell opens on "Restore from old phone".
+        FirstRun.decide(this)
+        if (savedInstanceState == null) TransferHost.sweepLeftovers(this)
         setContent {
             SandboxTheme {
                 SandboxShell(
@@ -116,6 +124,8 @@ class SandboxActivity : ComponentActivity() {
 
 private const val ROUTE_HOME = "home"
 private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_TRANSFER_OUT = "transfer-out"
+private const val ROUTE_TRANSFER_IN = "transfer-in"
 
 @Composable
 private fun SandboxShell(
@@ -158,7 +168,12 @@ private fun SandboxShell(
     val arrangement = appearance.homeApps.joinToString(",") { it.key }
     LaunchedEffect(arrangement) { SuiteShortcuts.publish(context) }
 
-    var route by rememberSaveable { mutableStateOf(ROUTE_HOME) }
+    var route by rememberSaveable {
+        mutableStateOf(if (FirstRun.shouldOfferRestore(context)) ROUTE_TRANSFER_IN else ROUTE_HOME)
+    }
+    // Where a transfer screen goes back to: the Backups tab it was opened from, or home for the
+    // first-launch offer, which was opened from nowhere.
+    var transferFromSettings by rememberSaveable { mutableStateOf(false) }
     var tabName by rememberSaveable { mutableStateOf(SettingsTab.APPEARANCE.name) }
     // The app whose colour the settings should open on — set by a long-press on its home tile.
     var focusedAppKey by rememberSaveable { mutableStateOf<String?>(null) }
@@ -169,7 +184,15 @@ private fun SandboxShell(
         route = ROUTE_SETTINGS
     }
 
-    BackHandler(enabled = route != ROUTE_HOME) { route = ROUTE_HOME }
+    fun leaveTransfer() {
+        route = if (transferFromSettings) ROUTE_SETTINGS else ROUTE_HOME
+        transferFromSettings = false
+        FirstRun.resolve(context)
+    }
+
+    BackHandler(enabled = route != ROUTE_HOME) {
+        if (route == ROUTE_TRANSFER_OUT || route == ROUTE_TRANSFER_IN) leaveTransfer() else route = ROUTE_HOME
+    }
 
     when (route) {
         ROUTE_SETTINGS -> SandboxSettingsScreen(
@@ -179,7 +202,17 @@ private fun SandboxShell(
             tab = SettingsTab.entries.firstOrNull { it.name == tabName } ?: SettingsTab.APPEARANCE,
             onTabChange = { tabName = it.name },
             focusedApp = focusedAppKey?.let { AppId.fromKey(it) },
-            onBack = { route = ROUTE_HOME }
+            onBack = { route = ROUTE_HOME },
+            onTransferOut = { transferFromSettings = true; route = ROUTE_TRANSFER_OUT },
+            onTransferIn = { transferFromSettings = true; route = ROUTE_TRANSFER_IN }
+        )
+
+        ROUTE_TRANSFER_OUT -> TransferOutScreen(center = center, onBack = ::leaveTransfer)
+
+        ROUTE_TRANSFER_IN -> TransferInScreen(
+            center = center,
+            onBack = ::leaveTransfer,
+            onStartFresh = if (transferFromSettings) null else ({ leaveTransfer() })
         )
 
         else -> SandboxHomeScreen(

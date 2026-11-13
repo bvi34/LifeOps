@@ -23,7 +23,9 @@ internal fun BackupsTab(
     backup: BackupController,
     cloud: CloudBackupController,
     onBackup: () -> Unit,
-    onRestore: () -> Unit
+    onRestore: () -> Unit,
+    onTransferOut: () -> Unit = {},
+    onTransferIn: () -> Unit = {}
 ) {
     // One list of ticks governs the whole tab — the zip, the restore, and the scheduled upload.
     // A second, invisible selection for the schedule is how somebody unticks Finance, takes a
@@ -102,6 +104,20 @@ internal fun BackupsTab(
         backup.status?.let { message ->
             Spacer(Modifier.height(12.dp))
             Text(message, style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+
+    SectionCard(
+        title = "New phone",
+        subtitle = "Move the whole suite, app included, from this phone to another over your Wi-Fi. " +
+            "No cable, no cloud, and nothing leaves until you allow it."
+    ) {
+        Button(onClick = onTransferOut, enabled = !backup.working, modifier = Modifier.fillMaxWidth()) {
+            Text("Transfer to new device")
+        }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onTransferIn, enabled = !backup.working, modifier = Modifier.fillMaxWidth()) {
+            Text("Restore from old phone")
         }
     }
 

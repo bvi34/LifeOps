@@ -50,6 +50,17 @@
             </intent-filter>
         </activity>
 
+        <!-- The scanner for "Restore from old phone": the library's activity plus FLAG_SECURE,
+             because the code it reads carries the transfer's key. See transfer/TransferCaptureActivity. -->
+        <activity
+            android:name=".transfer.TransferCaptureActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="fullSensor"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
         <!-- Where an install session reports back (see update/SelfInstaller). Not exported: the
              only sender is the platform installer, through a PendingIntent this app created. -->
         <receiver
