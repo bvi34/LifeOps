@@ -88,7 +88,9 @@ fun SandboxSettingsScreen(
     tab: SettingsTab,
     onTabChange: (SettingsTab) -> Unit,
     focusedApp: AppId?,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onTransferOut: () -> Unit = {},
+    onTransferIn: () -> Unit = {}
 ) {
     val store = SuiteAppearanceStore.get(LocalContext.current)
     val appearance by store.state.collectAsState()
@@ -137,7 +139,9 @@ fun SandboxSettingsScreen(
                         backup = backup,
                         cloud = cloud,
                         onBackup = { createBackup.launch(defaultBackupName()) },
-                        onRestore = { pickRestore.launch(RESTORE_MIME_TYPES) }
+                        onRestore = { pickRestore.launch(RESTORE_MIME_TYPES) },
+                        onTransferOut = onTransferOut,
+                        onTransferIn = onTransferIn
                     )
                     SettingsTab.UPDATES -> UpdatesTab(updates)
                 }

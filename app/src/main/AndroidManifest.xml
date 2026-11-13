@@ -51,6 +51,17 @@
             </intent-filter>
         </activity>
 
+        <!-- The scanner for "Restore from old phone": the library's activity plus FLAG_SECURE,
+             because the code it reads carries the transfer's key. See transfer/TransferCaptureActivity. -->
+        <activity
+            android:name=".transfer.TransferCaptureActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="fullSensor"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden" />
+
         <!-- ML Kit's usage reporting, switched off. ML Kit — Logistics' recipe-screenshot OCR, and
              Advisor's Gemini Nano engine (the GenAI Prompt API) — brings in Google's datatransport
              library, whose "cct" backend uploads usage logs (which API was called, how long it took)

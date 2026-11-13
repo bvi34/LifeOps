@@ -386,6 +386,91 @@ the app takes it either way.
 
 ---
 
+## Moving to a new phone (`:backupkit/transfer` + `:app/transfer`)
+
+**Settings → Backups → Transfer to new device** on the old phone, and **Restore from old phone** on
+the new one (which a brand-new install also opens on by itself, once). It moves the app and all of
+its data over the local network, with no cable and no cloud.
+
+### The flow
+
+1. **Old phone.** The screen is gated behind the phone's own screen lock (the device-credential
+   prompt). A phone with no screen lock is refused, because there "unlocked" only means somebody is
+   holding it. Once unlocked, it shows a QR code and starts a small HTTP server on its Wi-Fi address
+   (or its own hotspot), and meanwhile writes the ordinary suite archive and seals it.
+2. **New phone, camera app.** The code is a URL. The browser opens a landing page served by the
+   old phone and downloads **the old phone's own installed APK**, so the versions always match.
+   The person allows "install unknown apps" for the browser and taps Install.
+3. **New phone, first launch.** A fresh install with no databases opens on **Restore from old
+   phone**, with "Start fresh instead" beside it. The person scans the same code from inside the app.
+4. **Both phones** show the same six digits. The old phone taps **Allow**; nothing is sent before
+   that, and only one device can ever be allowed.
+5. **New phone** downloads the sealed bundle (resuming from the last byte if the link drops), checks
+   it, and restores it through the same `BackupCenter.restore` as "Restore from zip". Secrets stays
+   sealed under the master passphrase, which is typed on the new phone as after any restore.
+
+### Why not a SAS link to Azure
+
+The obvious design is to upload the APK and backup to Azure and put a ten-minute, read-only,
+two-blob SAS in the QR. The suite can't produce one. On purpose, it holds only a *container* SAS
+(see above), never an account key, and a SAS can't mint a narrower SAS. Revoking one early needs a
+stored access policy, which needs the account key or an Entra sign-in. Serving the files from the
+old phone gives the same guarantees without either:
+
+| Wanted | How it's met |
+|---|---|
+| Scoped to the APK and the backup | Two routes under one 128-bit random path; everything else is 404. 20 wrong-path requests shut the server down. |
+| Expires in ~10 minutes | The server stops itself at the ticket's expiry. |
+| Revoked when the screen closes | Leaving the screen, `ON_STOP` (backgrounding, screen off) or **Stop** closes the socket. |
+| A leaked QR gets nothing | Once closed, the address answers nothing. While open, the bundle needs **Allow**, and it is sealed under a key the network never carries. |
+| Version always matches | The APK served is `applicationInfo.sourceDir`, and the new phone refuses a bundle whose `versionCode` differs from its own. |
+
+### The pieces
+
+- **`TransferTicket`** is what the QR holds: `http://<lan-ip>:<port>/t/<token>/#k=<key>&e=<expiry>`.
+  The key is in the **fragment**, which a browser never sends, so the APK download doesn't put it on
+  the network. `confirmationCode(key, nonce)` is the six digits: an HMAC of the new phone's nonce
+  under the key. A third device on the Wi-Fi can send a nonce, but can't know what code it will show.
+- **`TransferBundle`** seals the archive with AES-256-GCM in 1 MiB chunks. The header (with the
+  plaintext's SHA-256 and the build's `versionCode`) is additional data on every chunk, along with
+  the chunk index and a last-chunk flag, so reordering, truncation and header swaps all fail the tag.
+  Its length is known up front, which is what makes `Range` resume possible. The new phone decrypts
+  to a scratch file and restores only once every chunk, the length, the trailing bytes and the
+  whole-archive hash have checked out.
+- **`TransferServer`** and **`TransferClient`** are the HTTP pair over raw sockets. The client avoids
+  `HttpURLConnection` so the app doesn't have to allow cleartext HTTP app-wide for one LAN
+  conversation that carries only sealed data.
+- **`TransferHost`** / **`TransferReceiver`** (`:app/transfer`) and `ui/TransferScreens.kt` are the
+  Android halves. The transfer screen keeps the display on and sets `FLAG_SECURE` (the QR carries the
+  key); the scanner is a `FLAG_SECURE` subclass for the same reason. Every cache file is deleted on
+  close, and any left by a killed process are swept on the next launch.
+
+### What it doesn't do
+
+- **The APK leg is unauthenticated.** On a first install Android checks that an APK is signed, not
+  by whom, so someone able to tamper with traffic on the Wi-Fi could swap the download. The landing
+  page and the transfer screen say to use a trusted network. The data leg doesn't have this gap.
+  The browser may also warn about a download over HTTP.
+- **No foreground service.** The checklist asked for one *and* for the link to close on screen-off
+  and `onStop`. Those conflict, and closing wins: a server that outlives the screen is a server
+  nobody is watching. The screen is kept on instead.
+- **No Nearby Connections leg.** The LAN server already gives a direct phone-to-phone link with
+  confirmation, resume and a hotspot fallback, so a second transport would add a Play-services
+  dependency to a sideloaded APK for the same result.
+- **An APK installed as splits** (not how this suite ships) can't be served as one download; the
+  screen says so and the new phone installs from the release page instead.
+
+### Credentials that might not travel
+
+None of the suite's credentials depend on a non-exportable Keystore key. Everything sealed by
+`:securestore` (the update token, the Azure SAS, Finance's tokens, Citation's library card and
+catalogue sign-ins, Utilities' message-store key) is mirrored into the Secrets vault and read back
+from it on a phone where the local copy is empty. Secrets' own `DeviceUnlock` is a Keystore-wrapped
+*shortcut*, excluded from the archive by its file name. On a new phone it's simply absent, and the
+passphrase opens the vault. The vault's root of trust is that passphrase, not a passkey, so nothing
+depends on the WebAuthn PRF extension. Passkeys *stored in* Secrets ride the vault and sign on the
+new phone (see `VaultStoreTest`).
+
 ## The GUI (`:app`)
 
 The sandbox opens on a **phone-style home screen**, because that is the honest picture of what it
@@ -816,6 +901,14 @@ expiry in — and that an *unreadable* expiry is never treated as expired — pe
 awkward cases (never run, a clock moved backwards, an early wake-up), a real `List Blobs` answer and
 a real error document, which statuses are worth retrying, and retention: newest kept, oldest first,
 "keep everything" by default, and **nothing the app did not write is ever a candidate for deletion**.
+
+The new-phone transfer is tested in the same module, end to end over loopback: a ticket survives
+its own QR code with the key only in the fragment; both phones derive the same confirmation code and
+a stranger without the key can't; the sealed bundle round-trips across chunk boundaries and refuses
+a wrong key, a flipped bit anywhere, truncation (even on a chunk boundary), trailing bytes and
+reordered chunks; and the server waits for **Allow**, approves one device only, resumes a
+half-finished download from its byte offset, escapes its landing page, serves the APK with `Range`,
+shuts itself down on expiry and on path probing, and gives a leaked code nothing once it's closed.
 
 The shell's own half is Robolectric (`gradle :app:testDebugUnitTest`): what an unconfigured install
 does (nothing, on Wi-Fi, keeping a week), a destination read back from preferences, and the
