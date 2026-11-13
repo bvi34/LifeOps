@@ -75,16 +75,31 @@ internal fun AppearanceTab(
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
         )
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SuitePreset.entries.forEach { preset ->
-                PresetCard(
-                    preset = preset,
-                    selected = appearance.preset == preset,
-                    appearance = appearance,
-                    onClick = { store.preset = preset },
-                    modifier = Modifier.weight(1f)
-                )
+        // Three to a row: six presets side by side leave no room for a name on a phone.
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SuitePreset.entries.chunked(3).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { preset ->
+                        PresetCard(
+                            preset = preset,
+                            selected = appearance.preset == preset,
+                            appearance = appearance,
+                            onClick = { store.preset = preset },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
+        }
+        if (appearance.preset == SuitePreset.SYSTEM) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Colours come from your phone's wallpaper (Material You) and change when it does. " +
+                    "Each app still wears its own accent; turn accents off below for the wallpaper " +
+                    "colours everywhere.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
         }
 
         if (appearance.preset == SuitePreset.CUSTOM) {

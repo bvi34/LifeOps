@@ -43,6 +43,18 @@
             android:theme="@style/Theme.Maintenance"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Home-screen widget (see widget/MaintenanceWidget). Exported because the launcher binds it. -->
+        <receiver
+            android:name=".widget.MaintenanceWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/maintenance_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

@@ -53,6 +53,9 @@ design. The data underneath is sincere.
 
 This is where you live day-to-day.
 
+On a wide screen (a Pixel Fold opened, or a tablet), This Week shows the task you tap in a pane
+beside the week instead of on its own screen. Fold the phone with a task open and it stays open.
+
 ### Creating a task
 
 Tap **+** and fill in:
@@ -79,6 +82,12 @@ Time is the currency of LifeOps. Three ways to log it:
 
 Logged time drives your **accuracy score** and your **Growth rings**. Untracked work is
 invisible to both.
+
+While a timer runs, LifeOps keeps a notification up with the task and its clock, and a **Stop & log**
+button. On Android 16 (QPR2 or later; a Pixel 10, for instance) that notification is a **Live Update**:
+it sits at the top of the shade and on the lock screen, and the clock shows as a chip in the status
+bar. A Pomodoro counts down and fills a progress bar. The notification also keeps the timer running
+if Android would otherwise close LifeOps in the background.
 
 ### Task outcomes (statuses)
 
@@ -291,10 +300,31 @@ From **Settings → Data**:
 
 ---
 
-## The home-screen widget
+## Home-screen widgets
 
 LifeOps includes a widget that shows your top pending tasks at a glance, so the week's work
 is visible without opening the app. Add it from your launcher's widget picker.
+
+The suite has three more, in the same style and in each app's colour:
+
+- **People:** birthdays and other dates in the next two months.
+- **Maintenance:** what's overdue or due soon, across everything you own.
+- **Finance:** unpaid bills due in the next month. It shows payees and amounts, never balances.
+
+Tapping a widget opens its app. They refresh every half hour, and whenever you leave the app.
+
+---
+
+## Quick Settings tiles
+
+Pull down the shade, tap the pencil to edit your tiles, and drag these in:
+
+- **Task timer** shows the running task and its minutes. Tap it to stop the timer and log the
+  time. With no timer running, it opens LifeOps (timers start from a task).
+- **Sleep tracking** turns background sleep tracking on and off, the same switch as in Settings.
+  If Android won't let the tile start it, the tile opens Settings so you can turn it on there.
+
+Secrets adds a third, **Lock Secrets**; see [Secrets](SECRETS.md).
 
 ---
 

@@ -40,6 +40,10 @@ dependencies {
     // in its types — SuiteAppearance, SuitePreset, SuiteApps — and AppId is how apps are addressed.
     api(project(":suitekit"))
     api(project(":backupkit"))
+    // Glance, for the shared home-screen widget frame (SuiteWidget). `api` because each app's widget
+    // is a GlanceAppWidget built from it.
+    api(libs.androidx.glance)
+    api(libs.androidx.glance.appwidget)
 
     implementation(libs.androidx.core.ktx)
     implementation(platform(libs.androidx.compose.bom))

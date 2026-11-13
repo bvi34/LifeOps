@@ -28,6 +28,10 @@ on the device, the engine transparently falls back to a deterministic, grounded 
 Advisor answers either way and gains real reasoning the moment the model file is present — no code
 change.
 
+On a phone with Android's **AICore** — a Pixel 10, among others — Advisor can instead ask **Gemini
+Nano**, the model the phone already keeps on the device. It's a switch on the model card, off until
+the user turns it on; see [Gemini Nano — the phone's own model](#gemini-nano--the-phones-own-model).
+
 > **Nothing leaves the device.** Advisor requests no permissions of its own — no `INTERNET`. It reads
 > the other apps' databases in-process and (once wired) will run the model locally.
 
@@ -493,6 +497,40 @@ carried in the ViewModel (`pendingQuestion`) and shown until the stored turn rep
 the question would appear *after* its own answer.
 
 ---
+
+## Gemini Nano — the phone's own model
+
+Phones with Android's **AICore** system service (Pixel 10 and other recent flagships) ship Gemini Nano
+on the device and let apps use it through ML Kit's GenAI **Prompt API**. Advisor can hand its
+questions to it ahead of the local engine:
+
+- **`logic/GeminiNanoLlmEngine`** is a `LocalLlmEngine` that wraps the local one (Qwen3 → placeholder).
+  Once per question, in `admit()`, it asks whether the user's switch is on and whether AICore reports
+  Nano as ready. If both are true, Nano answers that turn. Otherwise, and whenever a Nano call throws or
+  comes back empty, the local engine answers exactly as before. Turning it on can only add an
+  answerer, never remove one. Framework-free and JVM-tested (`GeminiNanoLlmEngineTest`).
+- **`logic/GeminiNanoFormat`** shapes the prompt. The Prompt API takes one block of text with no chat
+  template, so earlier turns are given as a transcript that is explicitly closed before the question
+  (an open `Advisor: …` line invites the model to restate it). Replies are capped at 256 tokens, the
+  Prompt API's limit, and the budget the repository sizes against says so.
+- **`llm/MlKitNanoBackend`** is the Android half: status, model name and input window from AICore, a
+  blocking generate with streaming, warm-up, and the AICore download for phones where Nano is
+  supported but not fetched yet. Where AICore isn't present, everything reports *not available* rather
+  than throwing.
+- **`llm/NanoPreference`** holds the switch. It's **off by default**, and deliberately not in the
+  suite backup: whether Nano exists is a fact about one phone.
+
+**What leaves the phone.** The prompt goes to AICore over local IPC and Nano runs on the phone's own
+hardware. The model download, when one is needed, is done by AICore itself. ML Kit also bundles Google's
+`datatransport` usage logging (`transport-backend-cct`, which declares `INTERNET`). Logistics' ML Kit OCR
+(recipe screenshots) was already bringing it into the app. The container manifest
+(`app/src/main/AndroidManifest.xml`) removes that backend's registration, so the transport has nowhere
+to send and deletes its batches locally. That covers both users.
+
+**Version.** `genai-prompt` is pinned to `1.0.0-beta2`. Its classes carry newer Kotlin metadata than
+this project's Kotlin 2.0 compiler accepts, so `:advisor` alone compiles with
+`-Xskip-metadata-version-check`. Later releases also pull kotlin-stdlib 2.3+ into the whole app, so
+raise the library and the Kotlin plugin together and drop the flag then.
 
 ## Semantic retrieval
 

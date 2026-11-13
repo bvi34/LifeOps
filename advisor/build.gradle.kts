@@ -93,6 +93,11 @@ android {
 
     kotlinOptions {
         jvmTarget = "11"
+        // ML Kit's GenAI libraries (Gemini Nano) are compiled with a newer Kotlin than this project's
+        // 2.0 compiler, which refuses their metadata by version alone. The API Advisor uses from them is
+        // plain suspend functions and classes, which 2.0 reads correctly, so the version check is
+        // skipped — in this module only. Drop this when the project's Kotlin plugin catches up.
+        freeCompilerArgs += "-Xskip-metadata-version-check"
     }
 
     buildFeatures {
@@ -142,6 +147,9 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     // Identity-based data is persisted as a portable JSON file (IdentityStore), read/written here.
     implementation(libs.gson)
+    // Gemini Nano via AICore (the phone's system model), used ahead of the local engine when the user
+    // turns it on and the phone has it. See logic/GeminiNano.kt and llm/MlKitNanoBackend.kt.
+    implementation(libs.mlkit.genai.prompt)
     debugImplementation(libs.androidx.ui.tooling)
 
     testImplementation("junit:junit:4.13.2")

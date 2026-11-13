@@ -174,12 +174,17 @@ fun SandboxHomeScreen(
 
             // The grid takes the space between the clock and the dock and scrolls inside it, so a
             // eighth and ninth app can arrive without pushing the dock off a short screen.
+            //
+            // Three across on a phone; on a wider window (a Fold opened, a tablet) as many ~120dp
+            // columns as fit, up to six, so the tiles stay tile-sized instead of stretching.
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f)) {
+            val columns = (maxWidth / TILE_MIN_WIDTH).toInt().coerceIn(COLUMNS, MAX_COLUMNS)
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxSize()
                     .verticalScroll(rememberScrollState())
             ) {
-                appearance.homeApps.chunked(COLUMNS).forEach { row ->
+                appearance.homeApps.chunked(columns).forEach { row ->
                     Row(modifier = Modifier.fillMaxWidth()) {
                         row.forEach { info ->
                             AppTile(
@@ -195,10 +200,11 @@ fun SandboxHomeScreen(
                             )
                         }
                         // Keep a short last row aligned with the columns above it.
-                        repeat(COLUMNS - row.size) { Spacer(Modifier.weight(1f)) }
+                        repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                     Spacer(Modifier.height(20.dp))
                 }
+            }
             }
 
             Dock(onOpenSettings = onOpenSettings, onOpenBackups = onOpenBackups)
@@ -207,6 +213,8 @@ fun SandboxHomeScreen(
 }
 
 private const val COLUMNS = 3
+private const val MAX_COLUMNS = 6
+private val TILE_MIN_WIDTH = 120.dp
 
 /**
  * "v1.4.2 is available — tap to update", written on the wallpaper.

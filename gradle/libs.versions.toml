@@ -16,6 +16,10 @@ securityCrypto = "1.1.0-alpha06"
 credentials = "1.3.0"
 providerevents = "1.0.0-beta01"
 healthConnect = "1.1.0"
+# Compiled with a newer Kotlin than this project's 2.0, so :advisor skips the metadata version check
+# (see advisor/build.gradle.kts). beta2 is held because beta3+ also pull kotlin-stdlib 2.3+ into the
+# whole app; move it up together with the Kotlin plugin.
+mlkitGenaiPrompt = "1.0.0-beta2"
 zxing = "3.5.3"
 zxingAndroid = "4.3.0"
 uiGraphics = "1.11.4"
@@ -58,6 +62,9 @@ androidx-providerevents-play-services = { group = "androidx.credentials.provider
 # heart rate, weight, medical records. On Android 14+ Health Connect is part of the platform, so this
 # is a client library over a system service, not a dependency on an app somebody has to install.
 androidx-health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
+# Gemini Nano through ML Kit's GenAI Prompt API — Advisor's optional engine on phones with AICore
+# (Pixel 10 and other recent flagships). The model lives in the AICore system service, not in the APK.
+mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxingAndroid" }
 

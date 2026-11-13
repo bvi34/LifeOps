@@ -30,8 +30,12 @@ import com.advisor.app.llm.AdvisorModelStore
 import com.advisor.app.llm.EmbeddingModelStore
 import com.advisor.app.llm.LlamaCppBackend
 import com.advisor.app.llm.LlamaCppEmbedder
+import com.advisor.app.llm.MlKitNanoBackend
+import com.advisor.app.llm.NanoPreference
 import com.advisor.app.logic.C3AEngine
+import com.advisor.app.logic.GeminiNanoLlmEngine
 import com.advisor.app.logic.HybridRetriever
+import com.advisor.app.logic.LocalLlmEngine
 import com.advisor.app.logic.LogicEngine
 import com.advisor.app.logic.Qwen3LlmEngine
 import com.advisor.app.logic.TaskWriter
@@ -150,12 +154,32 @@ class AdvisorApp private constructor(private val app: Application) {
     }
 
     /**
-     * The language model: a local **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the
+     * The language model. When the user has switched it on and the phone has it, **Gemini Nano**
+     * through Android's AICore answers first; otherwise — and whenever a Nano call fails — the local
+     * engine does, exactly as it did before Nano was an option. See [GeminiNanoLlmEngine].
+     */
+    val engine: LocalLlmEngine by lazy {
+        GeminiNanoLlmEngine(
+            backend = nanoBackend,
+            local = localEngine,
+            enabled = { nanoPreference.enabled },
+            log = { line -> Log.i(GeminiNanoLlmEngine.TAG, line) }
+        )
+    }
+
+    /** Gemini Nano through ML Kit's Prompt API — the phone's system model, when it has one. */
+    val nanoBackend by lazy { MlKitNanoBackend() }
+
+    /** The model card's "Use Gemini Nano" switch; off until the user turns it on. */
+    val nanoPreference by lazy { NanoPreference(app) }
+
+    /**
+     * The local language model: a **Qwen3-4B** (Q4_K_M GGUF) run on-device via llama.cpp. Until the
      * weights are provisioned on the device the backend reports not-ready and the engine falls back to
      * a deterministic, grounded placeholder — so Advisor works either way and gains real reasoning the
      * moment the model file is present, with no code change.
      */
-    val engine by lazy {
+    private val localEngine by lazy {
         val backend = backendHolder.value
         // A generation already running when the phone crosses into SEVERE is stopped where it is,
         // keeping what it has written — the budget that let it start was read up to a minute ago.
@@ -223,7 +247,9 @@ class AdvisorApp private constructor(private val app: Application) {
             modelStore = modelStore,
             embeddingModelStore = embeddingModelStore,
             retriever = retriever,
-            taskWriter = taskWriter
+            taskWriter = taskWriter,
+            nano = nanoBackend,
+            nanoPreference = nanoPreference
         )
     }
 

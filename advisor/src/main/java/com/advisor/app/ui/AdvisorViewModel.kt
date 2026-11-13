@@ -11,6 +11,7 @@ import com.advisor.app.logic.AdvisorPermissions
 import com.advisor.app.logic.Identity
 import com.advisor.app.logic.MemoryRecord
 import com.advisor.app.logic.ModelSpec
+import com.advisor.app.logic.NanoAvailability
 import com.advisor.app.logic.Profile
 import com.advisor.app.logic.ProfileKind
 import com.advisor.app.logic.SourceApp
@@ -35,6 +36,15 @@ data class ChatMessage(
     val text: String,
     val citationIds: List<String>,
     val isClarification: Boolean = false
+)
+
+/** Gemini Nano on this phone, for the model card: the user's switch, and what AICore says. */
+data class NanoUiState(
+    val enabled: Boolean = false,
+    val availability: NanoAvailability = NanoAvailability.UNKNOWN,
+    /** Bytes AICore has fetched while downloading; null when no download is running here. */
+    val downloadedBytes: Long? = null,
+    val error: String? = null
 )
 
 /** The state of the on-device model file, for the Permissions model card. */
@@ -117,6 +127,36 @@ class AdvisorViewModel(private val repo: AdvisorRepository) : ViewModel() {
      */
     private val _pendingQuestion = MutableStateFlow<String?>(null)
     val pendingQuestion: StateFlow<String?> = _pendingQuestion.asStateFlow()
+
+    // --- Gemini Nano (the phone's system model, through AICore) ---
+
+    private val _nano = MutableStateFlow(NanoUiState(enabled = repo.isNanoEnabled()))
+    val nano: StateFlow<NanoUiState> = _nano.asStateFlow()
+
+    /** Ask AICore again; the card calls this when it is shown. */
+    fun refreshNano() = viewModelScope.launch {
+        val availability = repo.nanoAvailability()
+        _nano.value = _nano.value.copy(
+            enabled = repo.isNanoEnabled(),
+            availability = availability,
+            error = repo.nanoError
+        )
+    }
+
+    fun setNanoEnabled(on: Boolean) {
+        repo.setNanoEnabled(on)
+        _nano.value = _nano.value.copy(enabled = on)
+        refreshNano()
+    }
+
+    /** Have AICore fetch Nano, streaming progress into [nano]. */
+    fun downloadNano() = viewModelScope.launch {
+        if (_nano.value.downloadedBytes != null) return@launch
+        _nano.value = _nano.value.copy(downloadedBytes = 0L, availability = NanoAvailability.DOWNLOADING, error = null)
+        repo.downloadNano { bytes -> _nano.value = _nano.value.copy(downloadedBytes = bytes) }
+        _nano.value = _nano.value.copy(downloadedBytes = null)
+        refreshNano()
+    }
 
     // --- on-device model file ---
 
