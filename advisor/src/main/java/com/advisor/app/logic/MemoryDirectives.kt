@@ -29,6 +29,8 @@ object MemoryDirectives {
     // @memorize: <text with optional #tags>  — case-insensitive, one per line.
     private val DIRECTIVE = Regex("""(?im)^[ \t]*@memorize\s*:\s*(.+?)[ \t]*$""")
 
+    private val INLINE = Regex("""(?i)@memorize\s*:""")
+
     // A #tag: a leading letter/digit then word-ish characters. Captured without the leading '#'.
     private val TAG = Regex("""#([A-Za-z0-9][A-Za-z0-9_-]*)""")
 
@@ -38,10 +40,15 @@ object MemoryDirectives {
             .filter { it.content.isNotBlank() }
             .toList()
 
-    /** The reply with directive lines removed and surrounding blank lines tidied. */
+    /**
+     * The reply with directive lines removed and surrounding blank lines tidied. One written
+     * mid-sentence isn't applied, but is cut from the `@memorize` to the end of its line all the same:
+     * it's bookkeeping, never prose.
+     */
     fun strip(text: String): String =
         text.lineSequence()
             .filterNot { DIRECTIVE.matches(it) }
+            .map { line -> INLINE.find(line)?.let { line.substring(0, it.range.first).trimEnd() } ?: line }
             .joinToString("\n")
             .replace(Regex("\n{3,}"), "\n\n")
             .trim()
