@@ -30,6 +30,7 @@ import com.advisor.app.logic.FunctionRequest
 import com.advisor.app.logic.FunctionRouter
 import com.advisor.app.logic.GroundingResult
 import com.advisor.app.logic.Identity
+import com.advisor.app.logic.IdentityQuestions
 import com.advisor.app.logic.KnowledgeDocument
 import com.advisor.app.logic.LocalLlmEngine
 import com.advisor.app.logic.LogicEngine
@@ -286,19 +287,26 @@ class AdvisorRepository(
         // only the placeholder, reply warmly from what we already hold rather than dead-ending in the
         // grounding gate. With a real model loaded, let it handle the chit-chat itself — it's more
         // natural, and the system prompt already tells it who it is and what it can do.
-        if (!hasModel) {
-            SmallTalk.detect(
-                question,
-                SmallTalk.Context(
-                    userName = identity.name,
-                    assistantName = SmallTalk.assistantNameFrom(profiles),
-                    grantedApps = permissions.granted
-                )
-            )?.let { chat ->
-                persistTurn(question, chat.text, emptyList(), KIND_NORMAL)
-                return AdvisorAnswer(chat.text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
-            }
+        val social = SmallTalk.detect(
+            question,
+            SmallTalk.Context(
+                userName = identity.name,
+                assistantName = SmallTalk.assistantNameFrom(profiles),
+                grantedApps = permissions.granted
+            )
+        )
+        if (!hasModel && social != null) {
+            persistTurn(question, social.text, emptyList(), KIND_NORMAL)
+            return AdvisorAnswer(social.text, emptyList(), emptyList(), engine.spec, EngineDecision.ANSWER)
         }
+
+        // A turn that is conversation rather than a look-up — chit-chat, "who are you?", "who am I?",
+        // "what do you know about <the user>?" — is answered from who the user is, what they asked us to
+        // remember and the chat so far, never from retrieved app rows. Those share no meaning with the
+        // question, only stray words, so retrieving for it handed the model a temperature log and a
+        // pantry item to talk about, and showed them as the answer's "sources".
+        val aboutUser = IdentityQuestions.isAboutUser(question, identity.name)
+        val conversational = hasModel && (social != null || aboutUser)
 
         // Load only what the user has granted — denied apps are never read. Sources cache their
         // snapshot between questions (rebuilding when their tables change), so revoking an app must
@@ -343,7 +351,11 @@ class AdvisorRepository(
 
         // Retrieval may be semantic (an embedding model runs off the UI thread) or lexical; the
         // retriever picks. The corpus is already permission-filtered, so revocation is honoured here.
-        val retrieved = withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+        val retrieved = if (conversational) {
+            emptyList<RetrievedChunk>()
+        } else {
+            withContext(Dispatchers.Default) { retriever.retrieve(corpus, retrievalQuery) }
+        }
 
         // Categorical relevance grounding: judge each candidate against what the question actually asks
         // for — object type (a *book*?) and lifecycle state (one I'm *reading* now?) — and keep only what
@@ -354,7 +366,13 @@ class AdvisorRepository(
         val chunks = grounding.grounding
 
         // Recall long-term memory (always available; not permission-gated).
-        val recalled = MemoryRecall.recall(retrievalQuery, memory.allRecords())
+        // A question about the user shares no words with what is remembered about them ("who am I?"
+        // vs "I work at SWCA"), so lexical recall finds nothing; take what is about them instead.
+        val recalled = if (aboutUser) {
+            MemoryRecall.aboutUser(memory.allRecords(), identity.name)
+        } else {
+            MemoryRecall.recall(retrievalQuery, memory.allRecords())
+        }
 
         // The C3A unifying engine decides whether to answer, ask for clarification, or flag that a
         // source is needed. justAsked = the previous turn was itself a clarification, so it won't loop.
@@ -385,6 +403,15 @@ class AdvisorRepository(
             return AdvisorAnswer(text, emptyList(), emptyList(), engine.spec, logic.decision)
         }
 
+        // What the model is told beyond the context: the engine's notes, and for a conversational turn,
+        // that it is one — with nothing retrieved, CONTEXT reads "(none available)", and without this
+        // a model would answer "hi" by apologising for having found no data.
+        val notes = if (conversational) {
+            logic.derivedContext + if (aboutUser) ABOUT_USER_NOTE else CONVERSATIONAL_NOTE
+        } else {
+            logic.derivedContext
+        }
+
         // The grounded set the answer is built from; the refinement round below may narrow it.
         var groundingResult = grounding
         var groundChunks = chunks
@@ -402,7 +429,7 @@ class AdvisorRepository(
         val promptConversation = ConversationWindow.fit(
             conversation,
             PromptBudget.historyChars(
-                groundedPrompt(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, emptyList(), systemPrompt)
+                groundedPrompt(question, groundChunks, identity, recalled, profiles, notes, groundingResult, emptyList(), systemPrompt)
                     .render(includeConversation = false),
                 engine.contextTokens
             )
@@ -412,7 +439,7 @@ class AdvisorRepository(
         // the answer with them removed — including one still being typed, which the whole-line strip
         // patterns cannot match yet.
         val stream: ((String) -> Unit)? = onPartial?.let { emit ->
-            { text: String -> emit(AnswerText.inProgress(text)) }
+            { text: String -> emit(AnswerText.withoutContextTags(AnswerText.inProgress(text), profiles)) }
         }
 
         // First pass. The prompt carries the grounded context plus the logic notes and the relevance
@@ -420,7 +447,7 @@ class AdvisorRepository(
         // seconds and can block on native inference, so keep generation off the UI thread; the
         // placeholder engine is instant, so this is free when no model is loaded.
         var raw = withContext(Dispatchers.Default) {
-            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
+            generate(question, groundChunks, identity, recalled, profiles, notes, groundingResult, promptConversation, systemPrompt, stream)
         }
 
         // Model-in-the-loop refinement: the model may flag any shown candidate that doesn't fit with a
@@ -476,7 +503,7 @@ class AdvisorRepository(
 
                     if (answerAgain) {
                         raw = withContext(Dispatchers.Default) {
-                            generate(question, groundChunks, identity, recalled, profiles, logic.derivedContext, groundingResult, promptConversation, systemPrompt, stream)
+                            generate(question, groundChunks, identity, recalled, profiles, notes, groundingResult, promptConversation, systemPrompt, stream)
                         }
                     }
                 }
@@ -486,13 +513,17 @@ class AdvisorRepository(
         // Apply any writes the model emitted — @remember(<profile>): … to a standing profile and
         // @memorize: … to long-term memory — then show a clean answer with every directive (writes and
         // relevance votes alike) removed.
+        // Only what is actually new: a small model shown a profile tends to "save" it straight back.
+        val known = identity.toContextLines()
         for (append in ProfileDirectives.parse(raw)) {
+            val target = profiles.firstOrNull { it.key == append.profileKey }
+            if (!ProfileDirectives.isNew(append, target, known)) continue
             profileStore.append(append.profileKey, append.text, ProfileEntry.AUTHOR_ADVISOR)
         }
         for (write in MemoryDirectives.parse(raw)) {
             memory.remember(content = write.content, tags = write.tags, source = SOURCE_ADVISOR)
         }
-        val text = AnswerText.finished(raw)
+        val text = AnswerText.withoutContextTags(AnswerText.finished(raw), profiles)
 
         memory.markRecalled(recalled.map { it.id })
         persistTurn(question, text, groundChunks.map { it.document }, KIND_NORMAL)
@@ -729,5 +760,15 @@ class AdvisorRepository(
         const val SOURCE_ADVISOR = "advisor"
         /** The seeded persona profile the assistant's name is stored in (see [ProfileStore]). */
         const val PERSONA_PROFILE_KEY = "llm-persona"
+
+        /** Told to the model on a social or meta turn, which carries no app data by design. */
+        const val CONVERSATIONAL_NOTE =
+            "This is conversation, not a data question: reply naturally and briefly, in your own " +
+                "voice, without mentioning data, records or sources."
+
+        /** Told to the model when the user asks about themselves. */
+        const val ABOUT_USER_NOTE =
+            "The user is asking about themselves: answer warmly in the second person (\"you\") from " +
+                "IDENTITY and MEMORY, in a sentence or two, without labels or citations."
     }
 }

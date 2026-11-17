@@ -40,15 +40,21 @@ data class AdvisorPrompt(
     fun render(includeConversation: Boolean = true): String = buildString {
         append(system).append("\n\n")
 
-        if (identity.isNotEmpty()) {
+        // The user's own profile reads as more facts about them, folded in with identity and
+        // de-duplicated; the persona profile isn't here at all — it is in [system], as instructions.
+        // Neither shows its summary: that is a description of the profile for the Profiles screen
+        // ("Freeform, long-running notes about the user…"), and a small model reads it back as a fact.
+        val aboutUser = aboutUserLines()
+        if (aboutUser.isNotEmpty()) {
             append("IDENTITY (who you are advising):\n")
-            for (line in identity) append("- ").append(line).append('\n')
+            for (line in aboutUser) append("- ").append(line).append('\n')
             append('\n')
         }
 
-        if (profiles.isNotEmpty()) {
+        val others = profiles.filterNot { it.isAboutUser() || it.isPersona() }
+        if (others.isNotEmpty()) {
             append("PROFILES (standing context; reference by name):\n")
-            for (profile in profiles) {
+            for (profile in others) {
                 append("## ").append(profile.headerLine()).append('\n')
                 for (entry in profile.recentEntries()) append("- ").append(entry.text).append('\n')
             }
@@ -94,7 +100,32 @@ data class AdvisorPrompt(
         append("QUESTION: ").append(question).append('\n')
         append("ANSWER:")
     }
+
+    /** Identity lines, then the user profile's entries that don't merely repeat one of them. */
+    fun aboutUserLines(): List<String> {
+        val lines = ArrayList(identity)
+        val seen = identity.map(::comparable).toMutableSet()
+        for (profile in profiles.filter { it.isAboutUser() }) {
+            for (entry in profile.recentEntries()) {
+                val key = comparable(entry.text)
+                if (key.isEmpty() || seen.any { it.contains(key) }) continue
+                seen += key
+                lines += entry.text
+            }
+        }
+        return lines
+    }
+
+    private fun comparable(text: String): String =
+        text.lowercase().replace(Regex("[^a-z0-9 ]+"), " ").replace(Regex("\\s+"), " ").trim()
 }
+
+/** The user's own standing profile — facts about them rather than a project or the assistant. */
+internal fun Profile.isAboutUser(): Boolean = kind == ProfileKind.USER || key == "user"
+
+/** The assistant's persona profile — how it should behave, read as instructions. */
+internal fun Profile.isPersona(): Boolean =
+    kind == ProfileKind.PERSONA || key.contains("persona", ignoreCase = true)
 
 /**
  * The **A**ugmentation step: turns a question plus identity, recalled memory, retrieved chunks and
@@ -105,26 +136,36 @@ object PromptAssembler {
 
     /** The grounding contract the model is held to — use what's given, cite sources, don't guess. */
     const val SYSTEM: String =
-        "You are Advisor, a private on-device assistant for the Operations Sandbox suite. Be warm, " +
-            "conversational, and practical: acknowledge what the user seems to mean, translate casual " +
-            "phrasing into the app concepts you know (tasks, goals, books, notes, groceries, pantry, " +
-            "recipes, people, health records, projects and their outlines, assets and their upkeep, " +
-            "and filed documents), and answer in plain language rather than database-speak. Fuse the data into the " +
-            "reply: open with a short, natural sentence, phrased freshly each time, that frames what you " +
-            "found, and weave the specifics into it rather than dumping a bare list. Never repeat or " +
-            "restate an earlier reply — answer only what was just asked. Use the user's " +
-            "IDENTITY, the standing PROFILES (referenced by name), recalled MEMORY, the CONTEXT drawn " +
-            "from their own data in the apps they have turned on, the recent CONVERSATION (to resolve " +
-            "follow-up references like \"it\" or \"that\"), and any REASONING provided. Cite app " +
-            "context you use as [n]. If none of it answers the question, say so plainly rather than " +
-            "guessing, and ask one natural follow-up question. To save a durable fact to a standing " +
-            "profile, add a line: @remember(<profile>): <fact> — use an existing profile key (e.g. " +
-            "user, llm-persona) or a new project key. To save a durable fact to long-term memory, add " +
-            "a line: @memorize: <fact> #tag1 #tag2 (tags optional). You cannot create, change or " +
-            "delete anything in the other apps — you only read them. Requests to add " +
-            "a task are carried out before they ever reach you, so if one is in front of you it was " +
-            "not understood: never say you added, created or changed a task, goal or operation. Ask for " +
-            "it plainly instead (for example: \"add a task to LifeOps called <title>\"). " +
+        "You are a private, on-device personal assistant in the Operations Sandbox suite: a " +
+            "thoughtful, friendly companion who happens to know the user's tasks, goals, books, " +
+            "notes, groceries, pantry, recipes, people, health records, projects, assets and filed " +
+            "documents.\n\n" +
+            "How you talk:\n" +
+            "- Be warm, natural and to the point, like a capable friend. Match the user's tone and " +
+            "length: a greeting or a passing remark gets a friendly line or two back, not a report.\n" +
+            "- Speak to the user as \"you\" and of yourself as \"I\". Use their first name now and " +
+            "then, not in every reply.\n" +
+            "- Bring up their data only when it helps with what they asked, and weave it into " +
+            "plain sentences rather than dumping a list. Never mention section labels, profile names " +
+            "or how your context is organised.\n" +
+            "- Never repeat or restate an earlier reply — answer only what was just asked, and vary " +
+            "how you open.\n" +
+            "- If what you have doesn't answer it, say so plainly rather than guessing, and ask one " +
+            "natural follow-up question.\n\n" +
+            "What you know arrives with each message: IDENTITY is who the user is; PROFILES are " +
+            "standing notes on their projects; MEMORY is what they asked you to remember; CONTEXT " +
+            "is rows from the apps they have turned on — cite a row you use as [n], and cite nothing " +
+            "else; REASONING is notes from the app. Use the earlier turns to resolve \"it\" or " +
+            "\"that\".\n\n" +
+            "Saving: only when the user tells you a new lasting fact that is not already shown to " +
+            "you, end your reply with one line on its own: @remember(user): <fact> (or a project " +
+            "key instead of user), or @memorize: <fact> #tag. Never save what you were just shown, " +
+            "and never write these inside a sentence.\n\n" +
+            "You can only read the other apps — you cannot create, change or delete anything in " +
+            "them. Requests to add a task are carried out before they ever reach you, so if one is " +
+            "in front of you it was not understood: never say you added, created or changed a task, " +
+            "goal or operation. Ask for it plainly instead (for example: \"add a task to LifeOps " +
+            "called <title>\"). " +
             RelevanceDirectives.INSTRUCTION
 
     /** The most of any one row's body worth showing, however few rows came back. */
@@ -176,8 +217,9 @@ object PromptAssembler {
         system: String = SYSTEM
     ): AdvisorPrompt {
         val blocks = blocks(chunks)
+        val base = system.trim().ifBlank { SYSTEM }
         return AdvisorPrompt(
-            system = system.trim().ifBlank { SYSTEM },
+            system = personaPreamble(profiles)?.let { "$it\n\n$base" } ?: base,
             identity = identity.toContextLines(),
             profiles = profiles,
             memories = memories,
@@ -187,6 +229,35 @@ object PromptAssembler {
             conversation = conversation
         )
     }
+
+    /**
+     * Who the assistant is, from the persona profile: its name, and the rest of that profile's
+     * entries as standing instructions. Null when there is no persona profile, so the shipped
+     * instruction is used exactly as written.
+     *
+     * It leads the system turn rather than sitting among the per-question context, for two reasons.
+     * A name buried in a context block as "Name: Ava" was read as data about *someone*, and the model
+     * went on calling itself Advisor; stated first, as an instruction, it is who the model is. And the
+     * persona changes rarely, so it belongs in the stable prefix the backend keeps cached.
+     */
+    fun personaPreamble(profiles: List<Profile>): String? {
+        val persona = profiles.firstOrNull { it.isPersona() } ?: return null
+        val name = SmallTalk.assistantNameFrom(profiles)
+        val instructions = persona.recentEntries()
+            .map { it.text.trim() }
+            .filter { it.isNotEmpty() && !NAME_ENTRY.containsMatchIn(it) }
+        return buildString {
+            append("Your name is ").append(name).append(". Always refer to yourself as ").append(name)
+            if (name != SmallTalk.DEFAULT_NAME) append(", never as \"").append(SmallTalk.DEFAULT_NAME).append('"')
+            append('.')
+            if (instructions.isNotEmpty()) {
+                append("\nHow the user wants you to be:")
+                for (line in instructions) append("\n- ").append(line)
+            }
+        }
+    }
+
+    private val NAME_ENTRY = Regex("(?i)^\\s*(?:your\\s+)?name\\s*[:=\\-–—]|\\b(?:called|named)\\s")
 
     private fun excerpt(body: String, limit: Int = MAX_EXCERPT): String {
         val clean = body.trim()

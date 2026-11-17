@@ -32,4 +32,29 @@ object AnswerText {
         if (!lastLine.trimStart().startsWith("@")) return text
         return if (lastBreak < 0) "" else text.substring(0, lastBreak).trimEnd()
     }
+
+    /**
+     * [text] without bracketed labels for the *standing context* — `[User]`, `[llm-persona]`,
+     * `[Memory]`, `[M2]`. Only app rows are citable (`[1]`, `[2]`, which the sources line resolves);
+     * a small model imitating that style tags profile facts too, and "you are Brenden [User] [User]"
+     * reads as a glitch. Numbered citations are left alone.
+     */
+    fun withoutContextTags(text: String, profiles: List<Profile> = emptyList()): String {
+        val labels = buildSet {
+            addAll(CONTEXT_LABELS)
+            for (profile in profiles) {
+                add(profile.key.lowercase())
+                add(profile.name.lowercase())
+            }
+        }
+        return CONTEXT_TAG.replace(text) { match ->
+            val inner = match.groupValues[1].trim().lowercase()
+            if (inner in labels || MEMORY_REF.matches(inner)) "" else match.value
+        }
+    }
+
+    private val CONTEXT_TAG = Regex("""[ \t]*\[([^\]\n\d][^\]\n]{0,40})\]""")
+    private val MEMORY_REF = Regex("""m\d+""")
+    private val CONTEXT_LABELS =
+        setOf("user", "profile", "profiles", "memory", "identity", "persona", "llm-persona", "llm persona")
 }

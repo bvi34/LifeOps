@@ -174,8 +174,9 @@ object SmallTalk {
     private val NON_WORD = Regex("[^a-z0-9]+")
     private val WHITESPACE = Regex("\\s+")
 
+    // "called Ava", "your name is Ava", and the form the Profiles screen invites: a "Name: Ava" entry.
     private val NAME_PATTERN =
-        Regex("(?i)\\b(?:called|named|name is|call you)\\s+([A-Za-z][\\w'-]*)")
+        Regex("(?i)\\b(?:called|named|name is|call you|name\\s*[:=\\-–—])\\s*([A-Za-z][\\w'-]*)")
 
     // When several social kinds appear in one turn ("thanks, bye"), the closing one wins.
     private val SOCIAL_PRIORITY =
